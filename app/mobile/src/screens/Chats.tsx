@@ -19,6 +19,7 @@ import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Tex
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { filterChoices, filterLabel, meAvatar, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
+import { needsComputer } from "../cloud/account";
 import { useHub, type ChatsParams, type RootParams } from "../hubContext";
 import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
@@ -44,6 +45,7 @@ import { Badge, EmptyState } from "../ui/States";
 import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
 import { unreachable } from "../link";
+import { ConnectComputer } from "./Cloud";
 import { useHubWord, useLinkDown } from "./linkHeader";
 import { newChatItem } from "./manage";
 import { PinnedGrid } from "./Pinned";
@@ -265,6 +267,8 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <EmptyState icon="pin" title="No Pinned Chats" body="Swipe a chat right, or hold it, and pin it to keep it on top." />
     ) : filter === "archived" ? (
       <EmptyState icon="archive" title="Nothing Archived" body="Archive a project from its info page to set it aside here, with everything kept." />
+    ) : needsComputer(paired, state) ? (
+      <ConnectComputer />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a project, and its chat shows up here." />
     );

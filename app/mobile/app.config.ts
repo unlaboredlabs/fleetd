@@ -17,13 +17,17 @@
 // - FLEETD_GOOGLE_SERVICES_FILE: the Firebase project's google-services.json, for FCM on Android. Without it the app
 //   builds and runs, and gets no notifications: Android gives it no push token.
 // - FLEETD_ANDROID_KEYSTORE: a keystore that signs release builds (plugins/android-signing.js), else debug-signed.
+// - EXPO_PUBLIC_FLEETD_ACCOUNTS_URL and EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID: fleetd cloud's accounts service and WorkOS
+//   client id, both public, which Metro inlines into the bundle (src/cloud/config.ts). With both, the first screen
+//   offers Sign In beside Use Your Own Hub; releases set neither until fleetd cloud opens, and are the self-hosted app.
 //
 // The runtime version is the native fingerprint, which takes in this config (not the build number): the release's
 // update job (build-release.yml) resolves it with the same settings, so a build gets only bundles made for it, and a
 // native change, or another URL or channel, gives builds a runtime version older bundles don't match.
 //
 // `scheme` registers fleetd:// links: a pairing QR code (`fleetd://pair?hub=…&code=…`) scanned with iOS's Camera opens
-// the app, which pairs with it.
+// the app, which pairs with it. Sign In's page comes back on fleetd://signin/callback, which the system's auth session
+// (expo-web-browser) takes itself.
 //
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
 //. The iOS Notification Service Extension that opens them comes from plugins/notification-service.

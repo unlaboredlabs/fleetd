@@ -23,7 +23,8 @@ type Team = { id: string; name: string; url: string; server: Server; codes: Set<
 /** A key one of the teams' /pair handed out. */
 export type FakeKey = { team: string; deviceName: string; key: string };
 
-const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+// Crockford base32 without I L O U, as a hub mints them (app/desktop/src/shared/pairing.ts normalizeCode).
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
 const pairingCode = (): string => {
   const bytes = randomBytes(8);
   const c = [...bytes].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join("");

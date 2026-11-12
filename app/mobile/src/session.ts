@@ -55,6 +55,8 @@ const NEWEST: OpenAt = { offset: 0, rows: 0, oldestSeq: undefined };
 
 /** How long after a change what the cache keeps is written: a burst of events writes once. */
 const CACHE_SAVE_MS = 1000;
+/** How long a switch to another hub waits for this one to drop its push registration. */
+const LEAVE_TIMEOUT_MS = 5_000;
 
 /** A transfer's read as the call outcome the screens take: the file, or the hub's or the link's error. */
 const typed = (r: Read): Typed<"attachment_get"> => (r.ok ? { ok: true, output: r.file } : { ok: false, error: { code: r.code, message: r.message } });
@@ -176,6 +178,15 @@ export class Session {
   /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
   signOut(): ReturnType<typeof signOut> {
     return signOut(this.#client, { loadDevice: this.#push?.loadDevice ?? (async () => null) }, this.#key);
+  }
+
+  /**
+   * Leaving this hub to show another this phone keeps: its push registration goes, as the next hub gets a key pair of
+   * its own (vault.ts pairWith) and this one would seal notifications nothing here opens. The key stays, to come back.
+   */
+  async leave(): Promise<void> {
+    const deviceId = await (this.#push?.loadDevice() ?? Promise.resolve(null)).catch(() => null);
+    if (deviceId !== null) await this.#client.call("push_device_remove", { deviceId }, LEAVE_TIMEOUT_MS);
   }
 
   /**

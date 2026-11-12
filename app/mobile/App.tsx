@@ -1,8 +1,10 @@
 // The app: pair with a hub once, then its chats, where its approvals are answered too. The paired hub lives in secure
 // storage (vault.ts); one Session talks to it while the app runs, and checks its link whenever the app comes back to
 // the front. Pairing makes the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and
-// forgets both. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once
-// confirmed, pairs it. A Shortcuts action's link (src/shortcutLink.ts) opens a chat, or Chats on Needs You.
+// forgets both. A build given fleetd cloud's values also signs in (screens/Cloud.tsx): each of the account's teams is a
+// hub this phone keeps a key for, beside the person's own; one is shown at a time, its notifications the ones that
+// come, and Settings switches between them. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's
+// Camera) opens the app and, once confirmed, pairs it. A Shortcuts action's link (src/shortcutLink.ts) opens a chat, or Chats on Needs You.
 //
 // Navigation is iOS's own (react-native-screens): Chats, as Messages on iOS 26, with a compact bar on top and the
 // search field and filters in a toolbar at the bottom, no tab bar; the person's avatar at its top left pushes
@@ -23,7 +25,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { diskCache, diskPreviews, forgetCache } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import type { Paired } from "./src/hub/pair";
+import { afterSignIn, endSession, revokeOver, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
@@ -31,6 +33,7 @@ import { pinStoreFor, sectionStoreFor } from "./src/prefsStore";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
+import { cloud, type OnSignedIn } from "./src/screens/Cloud";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { ImportMemory } from "./src/screens/ImportMemory";
@@ -47,7 +50,7 @@ import { tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
-import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
+import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
 const nav = createNavigationContainerRef<RootParams>();
 const pairNav = createNavigationContainerRef<PairParams>();
@@ -87,20 +90,66 @@ const useOpenedLink = (): [string | null, () => void] => {
 
 export default function App() {
   const t = useTheme();
-  // Undefined while secure storage is read.
-  const [paired, setPaired] = useState<Paired | null | undefined>(undefined);
+  // The hub shown; undefined while secure storage is read.
+  const [paired, setPaired] = useState<KeptHub | null | undefined>(undefined);
+  // Every hub this phone keeps a key for, and who is signed in to fleetd cloud.
+  const [hubs, setHubs] = useState<readonly KeptHub[]>([]);
+  const [account, setAccount] = useState<SavedAccount | null>(null);
   const [note, setNote] = useState<string | undefined>(undefined);
   // Storage that can't be read pairs again, rather than leave a blank screen.
   useEffect(() => {
-    void loadPaired()
-      .catch(() => null)
-      .then(setPaired);
+    void (async () => {
+      const shown = await loadPaired().catch(() => null);
+      const list = await loadHubs(shown).catch(() => (shown === null ? [] : [shown]));
+      setAccount(await loadAccount().catch(() => null));
+      setHubs(list);
+      setPaired(shown === null ? null : (list.find((h) => h.hub === shown.hub) ?? shown));
+    })();
   }, []);
-  const forget = useCallback((why?: string) => {
-    setNote(why);
-    forgetCache();
-    void Promise.all([forgetPaired(), forgetPush()]).then(() => setPaired(null));
+  /** Shows `next` (null: none, the first screen), `list` the hubs kept; a hub shown gets a notification key pair of its own. */
+  const show = useCallback(async (next: KeptHub | null, list: readonly KeptHub[]) => {
+    await saveHubs(list);
+    setHubs(list);
+    if (next === null) {
+      forgetCache();
+      await Promise.all([forgetPaired(), forgetPush()]);
+    } else await pairWith(next);
+    setPaired(next);
   }, []);
+  // Disconnect, or a key the hub refused: that hub goes, and the next one kept shows, or the first screen.
+  const forget = useCallback(
+    (why?: string) => {
+      const rest = hubs.filter((h) => h.hub !== paired?.hub);
+      setNote(rest.length === 0 ? why : undefined);
+      forgetCache();
+      void show(rest[0] ?? null, rest).catch(() => setPaired(null));
+    },
+    [hubs, paired, show],
+  );
+  // Signed in: the account's teams beside the person's own hubs, the first of them shown. A new sign-in's session
+  // replaces the one kept, which ends as signing out would end it.
+  const signedIn = useCallback<OnSignedIn>(
+    async (out) => {
+      const before = account;
+      await saveAccount(out.account);
+      setAccount(out.account);
+      if (cloud !== null && before !== null && before.sessionId !== out.account.sessionId) void endSession(fetch, cloud, before.sessionId);
+      const list = afterSignIn(hubs, out.teams);
+      setNote(undefined);
+      await show(list.find((h) => h.cloud === true) ?? null, list);
+    },
+    [account, hubs, show],
+  );
+  // Signed out, `rest` the hubs left: a team shown gives way to the person's own hub, or the first screen.
+  const signedOut = useCallback(
+    async (rest: readonly KeptHub[]) => {
+      await saveAccount(null).catch(() => undefined);
+      setAccount(null);
+      if (paired?.cloud === true) await show(rest[0] ?? null, rest);
+      else await saveHubs(rest).then(() => setHubs(rest));
+    },
+    [paired, show],
+  );
   const theme = useMemo(() => navigationTheme(t), [t]);
   // A pairing link from outside the app (iOS's Camera, a page, a message): a phone that isn't paired asks first, once
   // the pairing screens are up, as anyone can send one; a paired one says how to switch hubs.
@@ -153,14 +202,25 @@ export default function App() {
             <Pairing
               note={note}
               onPaired={async (p) => {
-                await pairWith(p);
+                await show(p, [...hubs.filter((h) => h.hub !== p.hub), p]);
                 setNote(undefined);
-                setPaired(p);
               }}
+              onSignedIn={signedIn}
             />
           </NavigationContainer>
         ) : (
-          <Hub key={`${paired.hub} ${paired.key}`} paired={paired} onForget={forget} opened={opened} onOpened={() => setOpened(null)} />
+          <Hub
+            key={`${paired.hub} ${paired.key}`}
+            paired={paired}
+            hubs={hubs}
+            account={account}
+            onForget={forget}
+            onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch hubs", "This phone couldn't write its keychain. Try again."))}
+            onSignedIn={signedIn}
+            onSignedOut={signedOut}
+            opened={opened}
+            onOpened={() => setOpened(null)}
+          />
         )}
       </View>
     </SafeAreaProvider>
@@ -181,12 +241,15 @@ const largeTitle = (t: Palette): NativeStackNavigationOptions => ({
 
 const PairStack = createNativeStackNavigator<PairParams>();
 
-function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: Paired) => Promise<void> }) {
+function Pairing({ note, onPaired, onSignedIn }: { note: string | undefined; onPaired: (p: KeptHub) => Promise<void>; onSignedIn: OnSignedIn }) {
   const t = useTheme();
   return (
     <PairStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
-        {(props) => <Welcome {...props} note={note} />}
+        {(props) => <Welcome {...props} note={note} onSignedIn={onSignedIn} />}
+      </PairStack.Screen>
+      <PairStack.Screen name="OwnHub" options={{ title: "", headerTransparent: true, headerBackButtonDisplayMode: "minimal", contentStyle: { backgroundColor: t.bg } }}>
+        {(props) => <Welcome {...props} note={undefined} onSignedIn={onSignedIn} own />}
       </PairStack.Screen>
       <PairStack.Screen name="Scan" component={Scan} options={{ headerShown: false, presentation: "fullScreenModal", contentStyle: { backgroundColor: "#000000" } }} />
       <PairStack.Screen name="Pair" options={{ title: "Enter Code", headerBackButtonDisplayMode: "minimal" }}>
@@ -211,7 +274,34 @@ const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "proj
   return true;
 };
 
-function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget: (why?: string) => void; opened: ShortcutLink | null; onOpened: () => void }) {
+/** Asks before a destructive step, as iOS does: an action sheet, or Android's alert. */
+const confirm = (title: string, message: string, action: string, onYes: () => void, onNo: () => void = () => undefined): void => {
+  haptics.warning();
+  if (Platform.OS === "ios") {
+    ActionSheetIOS.showActionSheetWithOptions({ title, message, options: [action, "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => (i === 0 ? onYes() : onNo()));
+  } else {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: onNo },
+      { text: action, style: "destructive", onPress: onYes },
+    ]);
+  }
+};
+
+interface HubProps {
+  readonly paired: KeptHub;
+  readonly hubs: readonly KeptHub[];
+  readonly account: SavedAccount | null;
+  readonly onForget: (why?: string) => void;
+  /** Shows another hub kept. */
+  readonly onShow: (hub: KeptHub) => void;
+  readonly onSignedIn: OnSignedIn;
+  /** The account's teams are signed out, `rest` the hubs left. */
+  readonly onSignedOut: (rest: readonly KeptHub[]) => Promise<void>;
+  readonly opened: ShortcutLink | null;
+  readonly onOpened: () => void;
+}
+
+function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), sections: sectionStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const t = useTheme();
@@ -265,37 +355,68 @@ function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget:
     };
   }, [session]);
 
+  // Signing out of the hub shown: its key is revoked on purpose, so the hub refusing it is no news to say.
+  const leaving = useRef(false);
   const value = useMemo((): HubContextValue => {
     const signOut = () =>
       void session.signOut().then((r) => {
         if (r.ok) return onForget();
+        leaving.current = false;
         Alert.alert("The hub didn't sign this phone out", `${r.error.message} Forget the hub here anyway? Then sign the phone out under Settings › You in the desktop app.`, [
           { text: "Cancel", style: "cancel" },
           { text: "Forget anyway", style: "destructive", onPress: () => onForget() },
         ]);
       });
-    const title = `Disconnect from ${paired.hubName}?`;
-    const message = "This phone signs out of the hub and stops getting its notifications. Pairing again takes a new code.";
-    const disconnect = () => {
-      haptics.warning();
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions({ title, message, options: ["Disconnect", "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
-          if (i === 0) signOut();
-        });
-      } else {
-        Alert.alert(title, message, [
-          { text: "Cancel", style: "cancel" },
-          { text: "Disconnect", style: "destructive", onPress: signOut },
-        ]);
-      }
+    const disconnect = () =>
+      confirm(`Disconnect from ${paired.hubName}?`, "This phone signs out of the hub and stops getting its notifications. Pairing again takes a new code.", "Disconnect", () => {
+        leaving.current = true;
+        signOut();
+      });
+    // This hub's notifications stop before another's start: each hub shown gets its own key pair.
+    const switchTo = (hub: KeptHub) => {
+      haptics.select();
+      void session.leave().finally(() => onShow(hub));
     };
-    return { session, state, paired, disconnect };
-  }, [session, state, paired, onForget]);
+    const signedIn: OnSignedIn = async (out) => {
+      await session.leave().catch(() => undefined);
+      await onSignedIn(out);
+    };
+    const teams = hubs.filter((h) => h.cloud === true);
+    const names = teams.map((h) => h.hubName).join(", ");
+    const signOutCloud = () =>
+      new Promise<void>((resolve) =>
+        confirm(
+          "Sign Out of fleetd?",
+          `This phone drops its key on ${names === "" ? "your fleetd teams" : names} and stops getting their notifications. Agents keep running, and your own hubs stay as they are.`,
+          "Sign Out",
+          () => {
+            if (paired.cloud === true) leaving.current = true;
+            void signOutAll(
+              {
+                config: cloud,
+                fetch,
+                // Every team kept, not only the one shown: the shown one over its own link, the others over one each.
+                revoke: (h) => (h.hub === paired.hub ? session.signOut().then((r) => r.ok) : revokeOver({ hub: h.hub, key: h.key, transport: webSocketTransport })),
+              },
+              account,
+              hubs,
+            )
+              .then(async (out) => {
+                await onSignedOut(out.hubs);
+                if (out.kept.length > 0) Alert.alert("Some teams weren't reached", `${out.kept.join(", ")} couldn't be reached, so this phone stays in its Devices until someone signs it out there.`);
+              })
+              .finally(resolve);
+          },
+          resolve,
+        ),
+      );
+    return { session, state, paired, disconnect, hubs, account, switchTo, signedIn, signOutCloud };
+  }, [session, state, paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut]);
 
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
   useEffect(() => {
-    if (refused === undefined) return;
+    if (refused === undefined || leaving.current) return;
     haptics.warning();
     Alert.alert("Pair This Phone Again", refused, [
       { text: "Not Now", style: "cancel" },

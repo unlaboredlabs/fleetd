@@ -69,7 +69,9 @@ export const signOut = async (client: HubClient, deps: Pick<PushDeps, "loadDevic
   const mine = people.output.devices.find((d) => key.startsWith(d.prefix) && (people.output.me === undefined || d.person?.personId === people.output.me));
   if (mine === undefined) return { ok: false, error: { code: "not_found", message: "The hub doesn't list this phone's key." } };
   const revoked = await client.call("device_revoke", { keyId: mine.keyId });
-  return revoked.ok ? { ok: true } : revoked;
+  // A hub seldom answers the revoke of the caller's own key: revoking it closes the very link the call came on (4401),
+  // so the call fails and the hub then refuses the key, which is the revoke done.
+  return revoked.ok || client.state.phase === "refused" ? { ok: true } : revoked;
 };
 
 /** The plaintext the hub seals (PushPayload in crates/fleetd-contracts/src/push.rs). */
