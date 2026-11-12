@@ -8,7 +8,10 @@
 // answer lists it apart, with its inviter's email and a one-use accept value, and only POST ACCOUNTS_ACCEPT_PATH with
 // that value makes the person one of the team (decision hosted.invites-need-accept). A person with no team and an
 // invitation pending gets no team of their own made. Each team entry says whether the person made it (`made`): the
-// first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't.
+// first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't. Each team's
+// origin also answers POST GITHUB_INSTALL_PATH as fleetd-cloud's src/github/install.ts does: an owner's or admin's key
+// whose person connected their own GitHub (`githubConnected`) gets GitHub's install page for fleetd's App with a state
+// made for them; one who didn't, 409; with `githubSetUp` false, 503.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -17,6 +20,7 @@ import {
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
+  GITHUB_INSTALL_PATH,
   type AccountsFailure,
   type AccountsInvitation,
   type AccountsInvite,
@@ -114,6 +118,12 @@ export class FakeAccounts {
   readonly accepted: string[] = [];
   /** The time invites are made and run out by, epoch ms. */
   now: () => number = () => Date.now();
+  /** Whether the service was given fleetd's GitHub App; false: GitHub's routes answer that it isn't set up. */
+  githubSetUp = true;
+  /** The emails whose own GitHub is connected, as `<team> <email>`: only they get an install page. */
+  readonly githubConnected = new Set<string>();
+  /** Each install page handed out, as `<team> <email>`. */
+  readonly installs: string[] = [];
   #server: Server | null = null;
   #origin = "";
   readonly #people = new Map<string, string[]>();
@@ -322,7 +332,35 @@ export class FakeAccounts {
     const path = new URL(req.url ?? "/", "http://x").pathname;
     if (req.method === "POST" && path === "/pair") return this.#pair(name, req, res);
     if (path === ACCOUNTS_INVITES_PATH || path.startsWith(`${ACCOUNTS_INVITES_PATH}/`)) return this.#invites(name, path, req, res);
+    if (req.method === "POST" && path === GITHUB_INSTALL_PATH) return this.#githubInstall(name, req, res);
     fail(res, 404, { code: "not_found", message: "Nothing here." });
+  }
+
+  /** POST GITHUB_INSTALL_PATH, in fleetd-cloud's words (src/github/install.ts `begin`). */
+  #githubInstall(name: string, req: IncomingMessage, res: ServerResponse): void {
+    const team = this.#teams.get(name)!;
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    if (caller === undefined) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    if (!this.githubSetUp) return fail(res, 503, { code: "failed", message: "GitHub isn't set up on this service.", fix: "Write to fleetd's support." });
+    const role = team.roles.get(caller.email);
+    if (role !== "owner" && role !== "admin") {
+      return fail(res, 403, {
+        code: "forbidden",
+        message: "Only the team's owners and admins connect its GitHub.",
+        fix: "Ask an owner or admin; they install fleetd's GitHub App from Settings › Hub › GitHub.",
+      });
+    }
+    if (!this.githubConnected.has(`${name} ${caller.email}`)) {
+      return fail(res, 409, {
+        code: "failed",
+        message: "Connect your own GitHub first: fleetd asks GitHub, as you, that you administer the account you install it on.",
+        fix: "Connect GitHub in Settings › Your accounts › GitHub, then install again.",
+      });
+    }
+    this.installs.push(`${name} ${caller.email}`);
+    const state = `${team.id}.${randomBytes(32).toString("base64url")}`;
+    send(res, 200, { url: `https://github.com/apps/fleetd-cloud/installations/new?state=${encodeURIComponent(state)}` });
   }
 
   async #pair(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {

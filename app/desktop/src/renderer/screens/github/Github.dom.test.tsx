@@ -2,11 +2,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GithubApp } from "../../../shared/contracts";
+import type { InstallGithubOutcome } from "../../../shared/cloud";
+import type { GithubAccount, GithubApp } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import type { GithubAppRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AdminGithub, appName, reachWords } from "./AdminGithub";
 
@@ -38,6 +39,21 @@ const installed: GithubApp = {
   lastTest: { at: AT, ok: true, said: '"fleetd on devbox 2" is installed on acme (2 repositories), and its tokens work.' },
 };
 
+// fleetd's one App on a cloud team (fleetd-cloud's github_app_get): its public page, installed nowhere yet.
+const fleetdApp: GithubApp = {
+  appId: 5736169,
+  slug: "fleetd-cloud",
+  name: "fleetd-cloud",
+  clientId: "Iv23liCLOUD",
+  owner: "fleetd",
+  htmlUrl: "https://github.com/apps/fleetd-cloud",
+  settingsUrl: "https://github.com/apps/fleetd-cloud",
+  createdAt: "1970-01-01T00:00:00.000Z",
+  installations: [],
+};
+const sam: GithubAccount = { login: "sam", userId: 77, connectedAt: AT };
+const ACME_INSTALL = "https://github.com/organizations/acme/settings/installations/7";
+
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
@@ -47,6 +63,11 @@ let createAnswer: CallOutcome;
 let opened: string[];
 let hang: boolean;
 let cancelled: number;
+let cloud: boolean;
+let me: GithubAccount | undefined;
+let installs: string[];
+let installAnswer: InstallGithubOutcome;
+let connects: string[];
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -59,6 +80,11 @@ beforeEach(() => {
   hang = false;
   cancelled = 0;
   createAnswer = { ok: true, output: { app: made } };
+  cloud = false;
+  me = undefined;
+  installs = [];
+  installAnswer = { ok: true };
+  connects = [];
   vi.stubGlobal("fleetd", {
     platform: "linux",
     openExternal: (url: string) => {
@@ -76,6 +102,17 @@ beforeEach(() => {
         cancelled += 1;
         return Promise.resolve();
       },
+      connect: (hub: string): Promise<CallOutcome> => {
+        connects.push(hub);
+        me = sam;
+        return Promise.resolve({ ok: true, output: { me: sam } });
+      },
+    },
+    cloud: {
+      installGithub: (hub: string): Promise<InstallGithubOutcome> => {
+        installs.push(hub);
+        return Promise.resolve(installAnswer);
+      },
     },
   });
 });
@@ -91,17 +128,36 @@ const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 const answer = (tool: string): CallOutcome => {
   switch (tool) {
     case "github_app_get":
-      return { ok: true, output: { ...(app === undefined ? {} : { app }), permissions: PERMISSIONS } };
+      return { ok: true, output: { ...(app === undefined ? {} : { app }), ...(me === undefined ? {} : { me }), permissions: PERMISSIONS } };
+    case "hub_info":
+      // fleetd cloud's hub_info names what it leaves out, the hub's own App among them.
+      return { ok: true, output: { version: "0.9.0", protocol: 1, busy: [], ...(cloud ? { leftOut: ["github_app_manifest", "github_app_create", "setup_list"] } : {}) } };
     case "github_app_test":
       app = installed;
       return { ok: true, output: { app } };
     case "github_app_remove":
+      if (cloud) {
+        app = fleetdApp;
+        return { ok: true, output: { settingsUrl: ACME_INSTALL } };
+      }
       app = undefined;
       return { ok: true, output: { settingsUrl: made.settingsUrl } };
     default:
       return { ok: true, output: {} };
   }
 };
+
+/** The one hub: a team of fleetd cloud's (one that came with the account) while `cloud`, else a self-hosted one. */
+function Hub() {
+  const layer = useDataLayer();
+  return (
+    <HubScope hub={{ id: layer.hub, label: cloud ? "acme" : "", layer, ...(cloud ? { cloud: true as const } : {}) }}>
+      <AdminGithub />
+    </HubScope>
+  );
+}
+
+const reads = () => calls.filter((c) => c.tool === "github_app_get").length;
 
 const render = async () => {
   let listener: (frame: HubFrame) => void = () => undefined;
@@ -119,7 +175,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AdminGithub />
+          <Hub />
         </DataProvider>
       </UiProvider>,
     );
@@ -181,6 +237,8 @@ describe("Hub › Setup › GitHub", () => {
     expect(document.body.textContent).toContain("Not installed yet");
     await click(button("Install it on repositories"));
     expect(opened).toEqual(["https://github.com/apps/fleetd-on-devbox-2/installations/new"]);
+    // A self-hosted hub's App: the link is the App's own, and the cloud is never asked.
+    expect(installs).toEqual([]);
   });
 
   it("creates it in an organization, and stops waiting on Cancel", async () => {
@@ -229,5 +287,97 @@ describe("Hub › Setup › GitHub", () => {
     expect(calls.some((c) => c.tool === "github_app_remove")).toBe(true);
     expect(document.body.textContent).toContain("No App yet");
     expect(document.querySelector('[role="status"]')?.textContent).toContain(`${made.settingsUrl}/advanced`);
+  });
+});
+
+describe("Hub › Setup › GitHub on a fleetd cloud team", () => {
+  beforeEach(() => {
+    cloud = true;
+    app = fleetdApp;
+    me = sam;
+  });
+
+  it("installs fleetd's App by the page the team answers, with nothing to create", async () => {
+    await render();
+    expect(document.body.textContent).not.toContain("Create GitHub App");
+    expect(document.body.textContent).not.toContain("Its settings on GitHub");
+    expect(document.body.textContent).not.toContain("Remove");
+    await click(button("Install it on repositories"));
+    expect(installs).toHaveLength(1);
+    // main opens the team's page itself; the app builds no link.
+    expect(opened).toEqual([]);
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("asks for the person's own GitHub first when the team answers 409, then Install", async () => {
+    installAnswer = {
+      ok: false,
+      connectFirst: true,
+      failure: {
+        code: "failed",
+        message: "Connect your own GitHub first: fleetd asks GitHub, as you, that you administer the account you install it on.",
+        fix: "Connect GitHub in Settings › Your accounts › GitHub, then install again.",
+      },
+    };
+    await render();
+    await click(button("Install it on repositories"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Connect your own GitHub first: fleetd asks GitHub, as you, that you administer the account you install it on.");
+    await click(button("Connect GitHub"));
+    expect(connects).toHaveLength(1);
+    installAnswer = { ok: true };
+    await click(button("Install it on repositories"));
+    expect(installs).toHaveLength(2);
+  });
+
+  it("offers Connect GitHub before Install while the person's own isn't connected", async () => {
+    me = undefined;
+    await render();
+    expect(document.body.textContent).not.toContain("Install it on repositories");
+    await click(button("Connect GitHub"));
+    expect(connects).toHaveLength(1);
+    await click(button("Install it on repositories"));
+    expect(installs).toHaveLength(1);
+  });
+
+  it("reads the App again when the window gets focus back from GitHub", async () => {
+    await render();
+    await click(button("Install it on repositories"));
+    const before = reads();
+    app = { ...fleetdApp, installations: [{ installationId: 7, account: "acme", allRepositories: true, repositoryCount: 12 }] };
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await settle();
+    await settle();
+    expect(reads()).toBeGreaterThan(before);
+    expect(document.body.textContent).toContain("acme: all 12 repositories");
+    expect(button("Install on more repositories")).toBeDefined();
+  });
+
+  it("Remove takes it off the team and points at its installation on GitHub", async () => {
+    app = { ...fleetdApp, installations: [{ installationId: 7, account: "acme", allRepositories: true, repositoryCount: 12 }] };
+    await render();
+    await click(button("Remove"));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("Take GitHub off this team?");
+    expect(dialog?.textContent).toContain("It stays installed on GitHub until you uninstall it there.");
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent.trim() === "Remove");
+    if (confirm === undefined) throw new Error("no confirm");
+    await click(confirm);
+    expect(calls.some((c) => c.tool === "github_app_remove")).toBe(true);
+    expect(document.body.textContent).toContain("Taken off this team.");
+    expect(document.body.textContent).not.toContain("Delete it on GitHub");
+    expect(document.body.textContent).not.toContain("No App yet");
+    await click(button("Uninstall on GitHub"));
+    expect(opened).toEqual([ACME_INSTALL]);
+  });
+
+  it("says GitHub isn't set up when the service has no App", async () => {
+    app = undefined;
+    await render();
+    expect(document.body.textContent).toContain("GitHub isn't set up on this service.");
+    expect(document.body.textContent).not.toContain("No App yet");
+    expect(document.body.textContent).not.toContain("Create GitHub App");
   });
 });

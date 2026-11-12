@@ -1,11 +1,11 @@
-// fleetd cloud in main: Sign in, Sign out, Connect this computer and a team's invites by email behind one interface, which a fixture
-// (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
+// fleetd cloud in main: Sign in, Sign out, Connect this computer, a team's invites by email and installing fleetd's
+// GitHub App on a team, behind one interface, which a fixture (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
 // the page shows the self-hosted app alone.
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cloudDomain, teamOrigin } from "../../shared/accounts";
-import type { CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -15,6 +15,7 @@ import { trustSystemCAs } from "../trust";
 import { CloudAccount, SavedAccount, type CloudHub } from "./account";
 import type { CloudConfig } from "./config";
 import { connectComputer } from "./connect";
+import { installGithub } from "./github";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 export interface Cloud {
@@ -30,6 +31,7 @@ export interface Cloud {
   invites(hub: HubId): Promise<InvitesOutcome>;
   invite(hub: HubId, request: InviteRequest): Promise<InviteOutcome>;
   revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
+  installGithub(hub: HubId): Promise<InstallGithubOutcome>;
 }
 
 /** Asked of a hub that didn't come with the account: the page never offers it there. */
@@ -118,6 +120,10 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     revokeInvite: async (id, inviteId) => {
       const t = team(id);
       return t === null ? NOT_CLOUD : revokeInvite(fetch, t, inviteId);
+    },
+    installGithub: async (id) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : installGithub(fetch, t, open);
     },
   };
 };

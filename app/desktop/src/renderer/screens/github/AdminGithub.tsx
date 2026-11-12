@@ -5,13 +5,19 @@
 // from GitHub to the hub and never to this computer. Then the admin installs it on repositories at GitHub, and Test
 // (github_app_test) reads where it is installed with a token for each. Without an App, the hub's gh uses its
 // machine's own login, as before.
+//
+// On a team of fleetd cloud (a hub that came with the account) there is one App, fleetd's (decision hosted.github-app),
+// and nothing to create: Install asks the team for GitHub's install page (window.fleetd.cloud.installGithub), whose
+// state only this person can finish, after they connect their own GitHub; the step reads the App again when the window
+// gets focus back from the browser. Remove takes the installations off the team; they stay installed on GitHub.
 import { Check, ExternalLink } from "lucide-react";
-import { useState } from "react";
-import type { GithubApp, GithubAppGetOutput, GithubAppTestOutput, GithubInstallation } from "../../../shared/contracts";
+import { useEffect, useState } from "react";
+import type { GithubAccount, GithubApp, GithubAppGetOutput, GithubAppTestOutput, GithubInstallation } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Segmented, Text } from "../../ui";
+import { useServes } from "../admin/role";
 import { useNow } from "../live";
 import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -57,6 +63,9 @@ const installUrl = (app: GithubApp): string => `https://github.com/apps/${app.sl
 
 export function AdminGithub() {
   const live = useLive();
+  const cloud = useHub().cloud === true;
+  // fleetd cloud leaves the hub's own App out (hub_info's leftOut): nothing to create there.
+  const creates = useServes("github_app_create") && !cloud;
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
@@ -70,12 +79,19 @@ export function AdminGithub() {
     );
   }
   const app = read.data.app;
+  if (app === undefined && !creates) {
+    return (
+      <SettingsSection reveal="admin.github">
+        <GroupNote>GitHub isn&apos;t set up on this service.</GroupNote>
+      </SettingsSection>
+    );
+  }
   return (
     <>
       <SettingsSection reveal="admin.github">
-        {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
+        {app === undefined ? <NoApp removed={removed} /> : cloud ? <CloudApp app={app} me={read.data.me} /> : <AppStatus app={app} onRemoved={setRemoved} />}
       </SettingsSection>
-      <Create info={read.data} />
+      {creates ? <Create info={read.data} /> : null}
     </>
   );
 }
@@ -125,8 +141,6 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
       },
     );
   };
-  const nowMs = useNow(true, 60_000);
-  const last: Tested | null = app.lastTest === undefined ? null : testWords(app.lastTest, nowMs);
   const installs = app.installations ?? [];
   return (
     <SettingsRow
@@ -140,17 +154,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
         </Button>
       }
     >
-      {installs.length === 0 ? (
-        <Text size="sm">Not installed yet: install it on the repositories fleetd works on, then Test.</Text>
-      ) : (
-        <ul className={s.list} aria-label="Installed on">
-          {installs.map((i) => (
-            <li key={i.installationId}>
-              <Text size="sm">{reachWords(i)}</Text>
-            </li>
-          ))}
-        </ul>
-      )}
+      <Installs app={app} />
       <div className={s.links}>
         <Button variant={installs.length === 0 ? "primary" : "secondary"} icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(installUrl(app))}>
           {installs.length === 0 ? "Install it on repositories" : "Install on more repositories"}
@@ -162,14 +166,8 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
           Remove
         </Button>
       </div>
-      {last === null ? null : <TestLine tested={last} />}
-      {problem === null ? null : (
-        <div role="alert">
-          <Text size="sm" tone="danger">
-            {problem}
-          </Text>
-        </div>
-      )}
+      <LastTest app={app} />
+      <ProblemLine text={problem} />
       {removing ? (
         <ConfirmRemove
           title={`Remove ${app.name} from the hub?`}
@@ -179,6 +177,156 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
             hubCall("github_app_remove", {}).then((out) => {
               onRemoved(`Removed from the hub. Delete it on GitHub too, under Advanced: ${out.settingsUrl}/advanced`);
               // The step, ConfirmRemove reads again itself.
+              refetch(["github_app_get"]);
+            })
+          }
+          onClose={() => setRemoving(false)}
+        />
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+/** Where the App is installed, or that it isn't yet. */
+function Installs({ app }: { app: GithubApp }) {
+  const installs = app.installations ?? [];
+  return installs.length === 0 ? (
+    <Text size="sm">Not installed yet: install it on the repositories fleetd works on, then Test.</Text>
+  ) : (
+    <ul className={s.list} aria-label="Installed on">
+      {installs.map((i) => (
+        <li key={i.installationId}>
+          <Text size="sm">{reachWords(i)}</Text>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LastTest({ app }: { app: GithubApp }) {
+  const nowMs = useNow(true, 60_000);
+  return app.lastTest === undefined ? null : <TestLine tested={testWords(app.lastTest, nowMs)} />;
+}
+
+function ProblemLine({ text }: { text: string | null }) {
+  return text === null ? null : (
+    <div role="alert">
+      <Text size="sm" tone="danger">
+        {text}
+      </Text>
+    </div>
+  );
+}
+
+/**
+ * fleetd's App on a cloud team: where the team installed it, Install (after the person's own GitHub is connected,
+ * which the team checks), Test and Remove. Read again whenever the window gets focus back, as from GitHub's page.
+ */
+function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }) {
+  const { hub } = useDataLayer();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState<"test" | "install" | "connect" | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  // The team said the person's own GitHub isn't connected, whatever the last read said.
+  const [connectFirst, setConnectFirst] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removed, setRemoved] = useState<string | null>(null);
+  useEffect(() => {
+    const again = () => refetch(["github_app_get"]);
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [refetch]);
+  const installs = app.installations ?? [];
+  const connect = me === undefined || me.lapsed === true || connectFirst;
+  const test = () => {
+    setBusy("test");
+    setProblem(null);
+    hubCall("github_app_test", {}, { timeoutMs: 60_000 }).then(
+      () => {
+        setBusy(null);
+        refetch(["github_app_get"]);
+      },
+      (e: unknown) => {
+        setBusy(null);
+        setProblem(errorText(e));
+      },
+    );
+  };
+  const install = async () => {
+    setBusy("install");
+    setProblem(null);
+    setRemoved(null);
+    const out = await window.fleetd.cloud.installGithub(hub);
+    setBusy(null);
+    if (out.ok) return;
+    if (out.connectFirst === true) setConnectFirst(true);
+    setProblem(out.connectFirst === true ? out.failure.message : errorText(new CallError(out.failure)));
+  };
+  const connectGithub = async () => {
+    setBusy("connect");
+    setProblem(null);
+    const out = await window.fleetd.github.connect(hub).catch((e: unknown) => ({ ok: false as const, error: { code: "failed", message: errorText(e) } }));
+    setBusy(null);
+    if (!out.ok) {
+      if (out.error.code !== "cancelled") setProblem(errorText(new CallError(out.error)));
+      return;
+    }
+    setConnectFirst(false);
+    refetch(["github_app_get"]);
+  };
+  return (
+    <SettingsRow
+      title={app.name}
+      label="GitHub App"
+      control={
+        installs.length === 0 ? null : (
+          <Button size="sm" disabled={busy !== null} onClick={test}>
+            {busy === "test" ? "Testing…" : "Test"}
+          </Button>
+        )
+      }
+    >
+      {installs.length === 0 ? null : <Installs app={app} />}
+      <div className={s.links}>
+        {busy === "connect" ? (
+          <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
+            Cancel
+          </Button>
+        ) : null}
+        {connect ? (
+          <Button variant="primary" disabled={busy !== null} onClick={() => void connectGithub()}>
+            {busy === "connect" ? "Waiting for GitHub…" : "Connect GitHub"}
+          </Button>
+        ) : (
+          <Button variant={installs.length === 0 ? "primary" : "secondary"} icon={<ExternalLink size={14} />} disabled={busy !== null} onClick={() => void install()}>
+            {installs.length === 0 ? "Install it on repositories" : "Install on more repositories"}
+          </Button>
+        )}
+        {installs.length === 0 ? null : (
+          <Button variant="ghost" onClick={() => setRemoving(true)}>
+            Remove
+          </Button>
+        )}
+      </div>
+      <LastTest app={app} />
+      <ProblemLine text={problem} />
+      {removed === null ? null : (
+        <div role="status" className={s.links}>
+          <Text size="sm">Taken off this team.</Text>
+          <Button variant="ghost" icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(removed)}>
+            Uninstall on GitHub
+          </Button>
+        </div>
+      )}
+      {removing ? (
+        <ConfirmRemove
+          title="Take GitHub off this team?"
+          description="Agents stop working on its repositories. It stays installed on GitHub until you uninstall it there."
+          action="Remove"
+          onRemove={() =>
+            hubCall("github_app_remove", {}).then((out) => {
+              setRemoved(out.settingsUrl);
               refetch(["github_app_get"]);
             })
           }

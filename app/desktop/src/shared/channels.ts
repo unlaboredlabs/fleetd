@@ -71,6 +71,8 @@ export const IPC = {
   cloudInvite: "cloud:invite",
   /** invoke(hub, inviteId) → RevokeInviteOutcome. Takes an invite by email back. */
   cloudRevokeInvite: "cloud:revoke-invite",
+  /** invoke(hub) → InstallGithubOutcome. Opens GitHub's install page for fleetd's App, as the cloud team answers it (POST GITHUB_INSTALL_PATH with its key). */
+  cloudInstallGithub: "cloud:install-github",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /**

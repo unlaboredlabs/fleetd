@@ -153,6 +153,11 @@ export const fixtures = [
   "cloud-people-member",
   "cloud-people-limit",
   "cloud-admin",
+  // ...and the team's GitHub step with fleetd's one App: to install, installed, Connect GitHub first, not set up.
+  "cloud-github-install",
+  "cloud-github-installed",
+  "cloud-github-connect-first",
+  "cloud-github-not-set-up",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -2530,6 +2535,30 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["cloud-admin"], variant: "cloud" },
+  // Its GitHub step: fleetd's one App, with no Create; Install asks the team for GitHub's page, a 409 swaps it for
+  // Connect GitHub, and a service without the App says so.
+  {
+    id: "settings.hub.setup.step",
+    route: "#/settings/hub/setup",
+    fixtures: ["cloud-github-install", "cloud-github-installed", "cloud-github-not-set-up"],
+    variant: "cloud-github",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.locator('[data-screen="settings.hub.setup.step"]').waitFor();
+      await expect(page.getByRole("button", { name: "Create GitHub App" })).toHaveCount(0);
+    },
+  },
+  {
+    id: "settings.hub.setup.step",
+    route: "#/settings/hub/setup",
+    fixtures: ["cloud-github-connect-first"],
+    variant: "cloud-github-connect-first",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("button", { name: "Install it on repositories" }).click();
+      await page.getByRole("button", { name: "Connect GitHub" }).waitFor();
+    },
+  },
   // UX-1 [22]: a code typed in lower case with no dash shows as ABCD-2345, and pressing Connect moves nothing above
   // the hub's answer: the field and the button stay where they were.
   {

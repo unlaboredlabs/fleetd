@@ -71,6 +71,9 @@ export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 /** A team's invites by email, on the team's own address (not the accounts service's), with an owner's or admin's device key: GET lists, POST makes one, `<this>/<inviteId>/revoke` (POST) takes one back. */
 export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
 
+/** fleetd cloud's GitHub App installed on a team (decision hosted.github-app), on the team's own address, with an owner's or admin's device key: POST answers `{ url }`, GitHub's install page to open, whose `state` only that person of that team can finish; 409 while the person's own GitHub isn't connected. */
+export const GITHUB_INSTALL_PATH = "/github/v1/install";
+
 /** Where WorkOS sends the browser back on the desktop: `http://127.0.0.1:<any port>` then this path. */
 export const ACCOUNTS_LOOPBACK_PATH = "/signin/callback";
 

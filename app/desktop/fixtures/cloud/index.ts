@@ -3,7 +3,9 @@
 // an invitation asked about before anything connects; Connect a computer on a team with
 // no machine yet; the account's row in Settings; People on a team, where owners and admins invite by email; and
 // `cloud-admin`, the Hub group as a team's owner sees it, the hub's own controls (Updates, Restart hub, adding a machine
-// over SSH, setup steps) gone, as hub_info's leftOut says. Without a `cloud` section every other fixture is today's app.
+// over SSH, setup steps, creating a GitHub App) gone, as hub_info's leftOut says; and `cloud-github-*`, its GitHub step
+// with fleetd's one App: to install, installed, the person's own GitHub to connect first, and a service without the
+// App. Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -25,6 +27,8 @@ const LEFT_OUT = [
   "machine_add",
   "machine_add_status",
   "machine_hosts",
+  "github_app_manifest",
+  "github_app_create",
 ];
 const EMAIL = "sam@example.com";
 
@@ -69,6 +73,42 @@ const people = (base: Fixture, name: string, note: string, me: JsonObject, cloud
   return f;
 };
 
+/** Settings' Hub group as the owner of the team acme, whose hub_info leaves the hub's own controls out. */
+const admin = (base: Fixture, name: string, note: string, cloud: JsonObject = {}): Fixture => {
+  const f = answerHub(Fixture.from(base, name, note));
+  f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+  f.label = "acme";
+  f.cloud = { email: EMAIL, hub: true, ...cloud };
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, people: 4, url: TEAM, leftOut: LEFT_OUT });
+  return f;
+};
+
+/** fleetd's one GitHub App as a cloud team's github_app_get answers it (fleetd-cloud src/github/app.ts getApp). */
+const fleetdApp = (installations: JsonObject[]): JsonObject => ({
+  appId: 5736169,
+  slug: "fleetd-cloud",
+  name: "fleetd-cloud",
+  clientId: "Iv23liX0kkkRsQcthp98",
+  owner: "fleetd",
+  htmlUrl: "https://github.com/apps/fleetd-cloud",
+  settingsUrl: "https://github.com/apps/fleetd-cloud",
+  createdAt: installations.length === 0 ? "1970-01-01T00:00:00.000Z" : "2026-10-18T09:00:00.000Z",
+  installations,
+});
+
+/** The GitHub step on the team acme: fleetd's App (or none, `app` null), and whether Sam's own GitHub is connected. */
+const github = (base: Fixture, name: string, note: string, app: JsonObject | null, connected: boolean, cloud: JsonObject = {}): Fixture => {
+  const f = admin(base, `cloud-github-${name}`, note, cloud);
+  f.answer("github_app_get", undefined, {
+    ...(app === null ? {} : { app }),
+    permissions: [],
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+    ...(connected ? { me: { login: "sam-rivera", userId: 10, connectedAt: "2026-10-18T09:20:00.000Z" } } : {}),
+    people: [],
+  });
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => [
     unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own hub under it.", {}),
@@ -100,12 +140,25 @@ export default defineGroup({
     people(base("chat-empty"), "limit", "People on a cloud team at its limit of people: the invite is refused by the field.", sam, {
       inviteFailure: { code: "failed", message: "This team has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
     }),
+    github(base("typical"), "install", "GitHub on a cloud team: fleetd's App, installed nowhere yet; the owner's own GitHub is connected, so Install.", fleetdApp([]), true),
+    github(
+      base("typical"),
+      "installed",
+      "GitHub on a cloud team with fleetd's App installed on acme's repositories: Test, Install on more, Remove.",
+      fleetdApp([{ installationId: 7, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/web", "acme/api"] }]),
+      true,
+    ),
+    github(base("typical"), "connect-first", "Install on a cloud team that answers 409, the owner's own GitHub no longer taken: Connect GitHub first.", fleetdApp([]), true, {
+      githubInstallFailure: {
+        connectFirst: true,
+        code: "failed",
+        message: "Connect your own GitHub first: fleetd asks GitHub, as you, that you administer the account you install it on.",
+        fix: "Connect GitHub in Settings › Your accounts › GitHub, then install again.",
+      },
+    }),
+    github(base("typical"), "not-set-up", "GitHub on a cloud team whose service wasn't given fleetd's App.", null, true),
     (() => {
-      const f = answerHub(Fixture.from(base("typical"), "cloud-admin", "Settings' Hub group as the owner of a team of fleetd cloud, which leaves its own updates, restart, setup and SSH out."));
-      f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
-      f.label = "acme";
-      f.cloud = { email: EMAIL, hub: true };
-      f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, people: 4, url: TEAM, leftOut: LEFT_OUT });
+      const f = admin(base("typical"), "cloud-admin", "Settings' Hub group as the owner of a team of fleetd cloud, which leaves its own updates, restart, setup and SSH out.");
       f.answer("machine_join", undefined, {
         machineId: "laptop",
         hubUrl: TEAM,

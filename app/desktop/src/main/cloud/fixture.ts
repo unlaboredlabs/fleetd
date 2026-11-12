@@ -6,7 +6,7 @@
 // answers them; Join and Not now then connect nothing, a fixture's hubs being fixed.
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { Arrival, CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -36,6 +36,8 @@ export const CloudSection = z.object({
   invites: z.array(Invite).optional(),
   /** Every invite by email is refused so, as the team would (its limit of people, say). */
   inviteFailure: Failure.optional(),
+  /** Installing fleetd's GitHub App is refused so; with `connectFirst`, as the team answers a person whose own GitHub isn't connected. Absent: GitHub's page "opens". */
+  githubInstallFailure: Failure.extend({ connectFirst: z.literal(true).optional() }).optional(),
 });
 export type CloudSection = z.infer<typeof CloudSection>;
 
@@ -145,5 +147,13 @@ export class FixtureCloud implements Cloud {
   revokeInvite(_hub: string, inviteId: string): Promise<RevokeInviteOutcome> {
     this.#invites = this.#invites.filter((i) => i.inviteId !== inviteId);
     return Promise.resolve({ ok: true });
+  }
+
+  installGithub(): Promise<InstallGithubOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    const refusal = this.#section?.githubInstallFailure;
+    if (refusal === undefined) return Promise.resolve({ ok: true });
+    const { connectFirst, ...rest } = refusal;
+    return Promise.resolve({ ...failed(rest), ...(connectFirst === true ? { connectFirst } : {}) });
   }
 }
