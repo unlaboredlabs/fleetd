@@ -97,8 +97,7 @@ moment and opens the page as that step found it. Press **Steps** again to close 
 open a screen.
 
 Any key that can read the screen's machine may watch. Taking over and typing take a person's device with operate
-there. An [Only me](/docs/projects#only-me) project's screen is its owner's alone, as the project is: nobody else watches it, takes it over, ends it or reads
-its recording. MCP clients use `browser_control` to take over and hand back.
+there. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 

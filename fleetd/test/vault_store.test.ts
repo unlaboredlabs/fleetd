@@ -1,4 +1,4 @@
-// The vault's tools from a person's device: who lists, changes and reveals what (person, project, Only me, order,
+// The vault's tools from a person's device: who lists, changes and reveals what (person, project, order,
 // hub), sharing, the trash, the limits, and that the database holds no value in the clear.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";

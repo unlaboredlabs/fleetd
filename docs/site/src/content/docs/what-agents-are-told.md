@@ -258,9 +258,8 @@ Leads remember how you work and what each project decided, so you don't say "con
 correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
 an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
-- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start and the leads
-  of your [Only me](/docs/projects#only-me) projects get it; on a hub with several people, a shared project's lead
-  gets nobody's (see below).
+- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start get it; on a hub with several people, a
+  project's lead gets nobody's (see below).
 - **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
   never sees it.
 
@@ -294,8 +293,8 @@ Your memory › Import memory:
    added.
 
 The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
-[Claude accounts](/docs/people#claude)), in an [Only me](/docs/projects#only-me) project of yours and nowhere else, so nobody else can read what you
-pasted. Without one, import offers **New project** first; while its machine is offline, it says so, and you try again
+[Claude accounts](/docs/people#claude)), in one of the hub's projects, so everyone on the hub can read what it writes. On a hub with no project yet, import
+offers **New project** first; while its machine is offline, it says so, and you try again
 once it's back. That turn has no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
 that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
 memory, which the hub writes the way the lead's `remember` does:
@@ -334,7 +333,7 @@ no longer holds stops misleading the agents:
   shows its next and last run, and its Run now refreshes the project at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it
-  is: an Only me project's owner, else the one person who wrote since the last refresh.
+  is: the one person who wrote since the last refresh.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
   writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
   Claude's own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it

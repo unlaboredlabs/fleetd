@@ -90,7 +90,7 @@ test("refused: off its site, over http, a card, an unknown session, another proj
   expect(lines.filter((t) => t.startsWith("An agent tried to fill")).length).toBe(1);
 });
 
-test("a person's login: usable for their own work and Only me projects, or where they shared it; not elsewhere", async () => {
+test("a person's login: usable for their own work, or where they shared it; not elsewhere", async () => {
   const id = await save({ kind: "login", scope: "person", label: "Bo's mail", sites: ["mail.example"], sealed: k.sealToHub({ password: "bo-pw" }) }, k.memberDevice);
   // This project's lead works for the hub, not for Bo.
   expect((await refused(fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" }))).code).toBe("not_found");

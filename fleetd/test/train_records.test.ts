@@ -1,5 +1,5 @@
 // The train's records and `changes_list`: Changes numbered per hub and lined
-// up per repo, drafts at the back, the newest open one per PR, and the list filtered by grant and Only me project.
+// up per repo, drafts at the back, the newest open one per PR, and the list filtered by grant.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";

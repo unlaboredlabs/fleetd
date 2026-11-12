@@ -64,13 +64,12 @@ without asking. Each reveal is in the item's activity, and a person can reveal a
 
 | Item | Listed for | Used by |
 |---|---|---|
-| Yours | You | The work you start (your orders' agents) and your [Only me](/docs/projects#only-me) projects. Share one with projects under **Used by › Change…**: their agents can then fill it, never see it. |
-| A project's | Everyone who sees the project (an Only me project's owner only) | That project's leads and agents |
+| Yours | You | The work you start (your orders' agents). Share one with projects under **Used by › Change…**: their agents can then fill it, never see it. |
+| A project's | Everyone who sees the project | That project's leads and agents |
 | An order's variable | As the project | That order's agents, until the order closes. A `request_secret` answer makes one ([order variables](/docs/approvals-and-secrets#order-variables)). |
 | The hub's | Everyone on the hub | Every project's work. Logins, cards and addresses only. |
 
-A variable of yours reaches an Only me project's agents, and each order you start, unless the project or the order
-has one of the same name: order > project > yours. A change reaches an agent at its next start. Setting a variable no
+A variable of yours reaches each order you start, unless the project or the order has one of the same name: order > project > yours. A change reaches an agent at its next start. Setting a variable no
 longer needs the project's machine online: the hub delivers it as soon as the machine is back.
 
 ## How agents fill {#fill}

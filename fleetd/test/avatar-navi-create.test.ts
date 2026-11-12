@@ -91,7 +91,7 @@ test("project_avatar_set keeps the rendered picture, forgets the upload, and say
   expect("error" in (await call(key("read"), "project_avatar_set", r))).toBe(true);
 });
 
-test("navi_create makes an Only me project in a free folder under its node's home, its owner the caller", async () => {
+test("navi_create makes an ordinary project in a free folder under its node's home, its maker recorded", async () => {
   const { hub, ok, call } = rig();
   hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'member', 0)");
   const ada = key("operate", { human: true, name: "phone", machines: ["devbox"], person: { personId: "p-ada", name: "Ada" } });

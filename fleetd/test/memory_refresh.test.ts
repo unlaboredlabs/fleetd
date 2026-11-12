@@ -259,7 +259,7 @@ test("a launch that fails is the row's failed run, tried again the next night", 
 
 // ---- import ----
 
-/** A person with an Only me project of their own on the test machine, and the import's turn as `reply`. */
+/** A person on a hub with one project on the test machine, and the import's turn as `reply`. */
 function importSetup(reply: (input: LaunchInput) => string) {
   const t = setup();
   const hub = t.hub;

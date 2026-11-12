@@ -186,7 +186,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
 `chat.message` event.
 
-Tools for projects: `project_discover`, `project_add {path | url | create, onlyMe?}` (a path is a git checkout or a
+Tools for projects: `project_discover`, `project_add {path | url | create}` (a path is a git checkout or a
 plain folder; `create` makes a new folder for it on the machine; with `dryRun` to see its CI and merge rules, and where a
 clone would go, without adding it), `project_settings_set`, `project_archive` and `project_remove`
 ([more](/docs/projects#clients)). A clone answers with an `addId`, then sends

@@ -91,8 +91,7 @@ it, the list goes back and a line over it says why.
 
 Tap **+** at the top of Chats for **New Project**: a name, and optionally a GitHub repo to clone (`owner/repo` or its
 URL) or the path of a folder already on a machine; with neither, the machine makes a new folder for it. Then the
-machine, and **Only Me**, on for a project with no repo until you turn it off ([Only me](/docs/projects#only-me)). A
-new folder's chat opens at once. Under the field, the app lists the checkouts it found on your machines and your
+machine. A new folder's chat opens at once. Under the field, the app lists the checkouts it found on your machines and your
   GitHub repos, filtered as you type; one that's already a project opens its chat. A clone shows its progress, then
   what the hub read of the repo: its default branch, CI and merge rules. When the clone's folder already holds the
   same repo, **Add the Folder That's There** adds it as it is.
@@ -110,7 +109,6 @@ The **ⓘ** at the top of a chat opens its project's page:
 - **Name**: rename it. Its folder keeps its name.
 - **Agent profiles**, when the hub has more than one: the profiles its lead may run agents on. The hub's default is
   always allowed.
-- **Only Me**: who sees and uses it, as in the desktop app.
 - **Machine** and **Folder**: where it runs, read only.
 - **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the project's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
@@ -124,8 +122,8 @@ The **ⓘ** at the top of a chat opens its project's page:
   project](/docs/projects#delete)), with a tickbox for its folder, once you type its name. When worktrees hold
   uncommitted changes, which the delete loses, the confirm names them. Delete waits until the machine can list them.
 
-A member does everything here on the machines they operate, and what you may not do isn't offered. An
-[Only me](/docs/projects#only-me) project is its owner's alone. The hub checks each change too.
+A member does everything here on the machines they operate, and what you may not do isn't offered. The hub checks
+each change too.
 
 ## Screens {#screens}
 
@@ -148,8 +146,7 @@ site's name.
 
 It's the desktop's live view and takeover, over the same hub connection: the phone draws at most 12 frames a second,
 and a slow connection skips frames rather than falling behind. Only a person's device takes a screen over, with
-operate on its machine, and an [Only me](/docs/projects#only-me) project's screen is its owner's alone: nobody else can
-watch it, take it over or read its recording. What you type goes to the page; the action log says that you took over,
+operate on its machine. What you type goes to the page; the action log says that you took over,
 never what you typed.
 
 **New Screen**, on a project's ⓘ page, opens a screen of your own: a browser unless you pick another kind, and the
@@ -274,7 +271,7 @@ If an action can't run, it says why:
 
 In the Shortcuts app's **Automation** tab, or on the Action Button:
 
-- **Arrive home → Send Message:** "I'm home" to an Only me project, which can turn the lights on or post your evening
+- **Arrive home → Send Message:** "I'm home" to a project of yours, which can turn the lights on or post your evening
   plan.
 - **Action Button → Take Screenshot, then Send Message with it as Files:** what's on screen goes to a project with
   "What's wrong here?".

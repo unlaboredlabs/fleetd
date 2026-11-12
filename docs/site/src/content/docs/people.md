@@ -22,8 +22,8 @@ A device never holds more than its person's role allows. A member's device opera
 paired with `admin`. Each device keeps its own cap too: a device paired `--role read` stays read-only. Admin options
 live on the Hub pages of the app's Settings, which only owners and admins see.
 
-A project is open to everyone on the hub unless it is [Only me](/docs/projects#only-me): then only its owner sees
-and uses it, admins included. Per-project roles come later.
+Every project is open to everyone on the hub ([Who sees a project](/docs/projects#who-sees)). Per-project roles come
+later.
 
 ## Invite someone {#invite}
 
@@ -65,9 +65,8 @@ A person signs out one of their other devices (a lost phone, an old computer) un
 the desktop app: **Sign out** on its row, then confirm, and its key stops working at once, and so does every
 [hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out
 anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
-once: an app it has open is disconnected, and its phone gets no more notifications. What a removed person did keeps their name. Their Only me projects are archived, so nothing
-runs in them; **Settings › Hub › People** lists them by name under *Left by removed people*, with Delete. Nobody else
-opens them.
+once: an app it has open is disconnected, and its phone gets no more notifications. What a removed person did keeps their name, and
+their projects stay as they are, open to everyone on the hub.
 
 ## Claude accounts {#claude}
 
@@ -77,8 +76,7 @@ configuration**. They can switch at any time.
 | Work | Runs on |
 |---|---|
 | An order's agents (writers, readers, reviewers) | The choice of the person who started the order |
-| An [Only me](/docs/projects#only-me) project, its lead included | Its owner's choice |
-| A shared project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
+| A project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
 | Work nobody started (automations, train fixes, the nightly memory refresh) | The same as the lead |
 
 - **The hub's API configuration** is a Claude API key and an optional custom endpoint (`ANTHROPIC_BASE_URL`). An
@@ -101,7 +99,7 @@ configuration**. They can switch at any time.
 
 In the app:
 
-- **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders and your Only me projects run on now, or "Connect
+- **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders run on now, or "Connect
   your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key, and shows only
   when the hub's key is yours to pick. *Your subscription* takes the token: paste it and press Connect and test. The
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
