@@ -1,10 +1,10 @@
 // The nightly memory refresh's stored state (`get`, `put`, `you`, `record`,
 // `line_items`, `put_line_items`, `listed`): table `memory_refreshes` per project, `memory_refresh_lines` per line.
-import type { MemoryRefreshed, MemoryRefreshRun, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
+import type { MemoryRefreshRun, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
 import { naviOwner, type You, youOf } from "./index.ts";
 
-export const REFRESHED_LISTED = 200;
+export { listed, REFRESHED_LISTED } from "./refresh_rules.ts";
 
 /** One project's refresh state. */
 export type Run = {
@@ -144,12 +144,3 @@ export function putLineItems(db: HubDb, r: ProjectRef, messageId: string, items:
     .run(messageId, r.machineId, r.projectId, JSON.stringify(items));
 }
 
-/** What a line lists of `items`: the first REFRESHED_LISTED, how many there are when that is not all, how many undone. */
-export function listed(items: RememberedItem[]): MemoryRefreshed {
-  const undone = items.filter((i) => i.undone === true).length;
-  return {
-    items: items.slice(0, REFRESHED_LISTED),
-    ...(items.length > REFRESHED_LISTED ? { total: items.length } : {}),
-    ...(undone > 0 ? { undone } : {}),
-  };
-}

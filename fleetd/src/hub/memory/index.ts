@@ -22,30 +22,12 @@ import { kept } from "../navi/store.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
 import { redact } from "./redact.ts";
+import { CAP_MIN, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
 
-export const USER_FILE = "user.md";
-export const INDEX_FILE = "MEMORY.md";
-export const PEOPLE_DIR = "people";
 const MIGRATED_KEY = "user_migrated";
-export const CAP_MIN = 1_000;
-export const FILE_CAP_MAX = 100_000;
-export const PROJECT_CAP_MAX = 400_000;
-export const DEFAULT_CAPS: MemoryCaps = { user: 16_000, index: 16_000, topic: 32_000, project: 128_000 };
 
-export const isTopic = (s: string) => s !== "memory" && /^[a-z0-9][a-z0-9-]{0,47}$/.test(s);
+export { CAP_MIN, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
 
-export type RememberCall = { scope: MemoryScope; topic?: string; text: string; replaces?: string };
-export type ForgetCall = { scope: MemoryScope; topic?: string; entry: string; reason?: string };
-
-/** One memory file: a person's own, the shared `user.md`, a project's `MEMORY.md` or one of its topics. */
-export type Target = { project?: ProjectRef; topic?: string; person?: PersonId };
-
-export const userTarget = (person?: PersonId): Target => (person === undefined ? {} : { person });
-export const projectTarget = (r: ProjectRef, topic?: string): Target => (topic === undefined ? { project: r } : { project: r, topic });
-export const scopeOf = (t: Target): MemoryScope => (t.project ? "project" : "user");
-export const nameOf = (t: Target) => (!t.project ? USER_FILE : t.topic === undefined ? INDEX_FILE : `${t.topic}.md`);
-
-/** `<home>/memory`; a hub without a home keeps none. */
 export const memoryDir = (hub: Hub) => (hub.config.home ? join(hub.config.home, "memory") : undefined);
 
 /** The caps the hub keeps; each one not set has its default. */
@@ -59,24 +41,10 @@ export function memoryCaps(db: HubDb): MemoryCaps {
   return caps;
 }
 
-/** A project's directory name: its id when that is a plain file name, else a hash of it. */
-export function projectDirName(r: ProjectRef): string {
-  const id = r.projectId;
-  if (Buffer.byteLength(id) <= 128 && !id.startsWith(".") && /^[A-Za-z0-9._-]*$/.test(id)) return id;
-  return `p-${new Bun.CryptoHasher("sha256").update(id).digest("hex").slice(0, 16)}`;
-}
-
 const entryLine = (text: string) => `- ${text}`;
 const indexLine = (topic: string) => `- [${topic}](${topic}.md)`;
 const isIndexLine = (line: string) => line.startsWith("- [") && line.trimEnd().endsWith(".md)");
 const chars = (text: string) => [...text].length;
-
-/** Rust's `str::lines`: split on \n, a trailing \r dropped, no last empty line. */
-export function linesOf(text: string): string[] {
-  const lines = text.split("\n").map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
-  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-  return lines;
-}
 
 const joinLines = (lines: string[]) => (lines.length === 0 ? "" : `${lines.join("\n")}\n`);
 
@@ -385,14 +353,6 @@ export class Memory {
     this.db.conn.query("INSERT INTO memory_settings (key, value) VALUES (?1, 1) ON CONFLICT (key) DO NOTHING").run(MIGRATED_KEY);
     return copied;
   }
-}
-
-/** Whose "You" memory a session reads: a person's own, the shared `user.md`, or no one's. */
-export type You = { kind: "person"; person: PersonId } | { kind: "shared" } | { kind: "nobody" };
-
-export function youTarget(you: You): Target | undefined {
-  if (you.kind === "person") return userTarget(you.person);
-  return you.kind === "shared" ? userTarget() : undefined;
 }
 
 /** The hub's people still on it, oldest first (people/mod.rs `active`). */

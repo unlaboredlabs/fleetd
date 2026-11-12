@@ -4,7 +4,7 @@
 // sessions never get. The hub is the only writer, and every write here is synchronous, so writes never interleave.
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProjectRef, SkillInstall, SkillOrigin, SkillScope, SkillSummary, SkillVersion } from "../../shared/contracts.ts";
+import type { ProjectRef, SkillInstall, SkillScope, SkillVersion } from "../../shared/contracts.ts";
 import type { SkillBundle, SkillFile } from "../../shared/sessions.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -12,46 +12,17 @@ import { projectDirName } from "../memory/index.ts";
 import { redact } from "../memory/redact.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
-import { checkSkillMd, descriptionOf, isSkillName, SCOPE_CAP, SKILL_BYTES_CAP, SKILL_FILE, SKILL_FILES_CAP } from "./frontmatter.ts";
+import { checkSkillMd, isSkillName, SCOPE_CAP, SKILL_BYTES_CAP, SKILL_FILE, SKILL_FILES_CAP } from "./frontmatter.ts";
 import * as versions from "./versions.ts";
+import { cmp, INSTALL_FILE, type Kept, originOf } from "./kept.ts";
 
-/** Where an installed skill's source and pin are kept, in its folder. */
-export const INSTALL_FILE = ".fleetd-install.json";
+export { INSTALL_FILE, type Kept, markShadowed, originOf, summary } from "./kept.ts";
+
 /** What one launch carries, all skills together. */
 const LAUNCH_BYTES_CAP = 4 * 1024 * 1024;
 
 /** A skill folder to put in place: its name, its files (folder-relative path, bytes) and where it came from. */
 export type Folder = [name: string, files: [path: string, bytes: Uint8Array][], install: SkillInstall];
-
-export const originOf = (scope: SkillScope): SkillOrigin => (scope === "project" ? "project" : "global");
-
-/** One skill the hub keeps, read from its folder. */
-export type Kept = {
-  name: string;
-  scope: SkillScope;
-  /** SKILL.md. */
-  text: string;
-  install?: SkillInstall;
-  /** The other files, folder-relative, sorted. */
-  files: string[];
-  updatedAt?: string;
-  /** Its newest version. */
-  changed?: SkillVersion;
-};
-
-export function summary(k: Kept): SkillSummary {
-  return {
-    name: k.name,
-    origin: originOf(k.scope),
-    description: descriptionOf(k.text),
-    ...(k.install ? { install: k.install } : {}),
-    files: k.files,
-    ...(k.updatedAt ? { updatedAt: k.updatedAt } : {}),
-    ...(k.changed ? { changed: k.changed } : {}),
-  } as SkillSummary;
-}
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The folder-relative paths of `dir`'s files, dot-files and dot-folders left out, at most one past `cap`. */
 export function filesOf(dir: string, cap: number): string[] {
@@ -336,14 +307,3 @@ export class Skills {
   }
 }
 
-const ORIGINS: SkillOrigin[] = ["repo_agents", "repo_claude", "project", "global"];
-
-/** Marks each skill that another of the same name outranks, and sorts the list by origin, then name. */
-export function markShadowed(skills: SkillSummary[]): void {
-  skills.sort((a, b) => ORIGINS.indexOf(a.origin) - ORIGINS.indexOf(b.origin) || cmp(a.name, b.name));
-  skills.forEach((s, i) => {
-    const winner = skills.slice(0, i).find((o) => o.name === s.name)?.origin;
-    if (winner === undefined) delete s.shadowedBy;
-    else s.shadowedBy = winner;
-  });
-}
