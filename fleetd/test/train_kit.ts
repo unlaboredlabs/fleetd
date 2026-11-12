@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HubDb } from "../src/hub/store/db.ts";
 import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
+import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "../src/hub/train/host.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
 import type { Change, ProjectRef } from "../src/shared/contracts.ts";
@@ -104,6 +105,10 @@ export class FakeGh implements GhRunner {
   readonly runReruns: number[] = [];
   /** The workflow runs a person or a schedule started, [run id, event]: on every commit. Every other run is a push. */
   readonly runEvents: [number, string][] = [];
+  /** Each Actions job's log, by job id. */
+  readonly jobLogs = new Map<number, string>();
+  /** gh before 2.97.0: it knows no `--allow-escape-sequences`, and prints a log with escape sequences as it is. */
+  oldGh = false;
 
   constructor(
     readonly origin: string,
@@ -224,6 +229,10 @@ export class FakeGh implements GhRunner {
   }
 
   answer(args: string[]): GhOut {
+    // gh's own words for a flag it doesn't know: the flag, then its usage.
+    if (this.oldGh && args.includes(ALLOW_ESCAPES)) {
+      return { exitCode: 1, stdout: "", stderr: `unknown flag: ${ALLOW_ESCAPES}\n\nUsage:  gh api <endpoint> [flags]\n\nFlags:\n  -X, --method string   The HTTP method for the request (default "GET")\n` };
+    }
     if (args[0] === "pr" && args[1] === "update-branch") return this.updateBranch(Number(args[2]), args.includes("--rebase"));
     const fields = new Map<string, string>();
     for (let i = 0; i < args.length - 1; i++) {
@@ -469,6 +478,15 @@ export class FakeGh implements GhRunner {
       return ok({});
     }
     if (a === "actions" && b === "runs") return ok({ workflow_runs: [] });
+    if (a === "actions" && b === "jobs" && parts[3] === "logs" && method === "GET") {
+      const log = this.jobLogs.get(Number(c));
+      if (log === undefined) return httpError(404, "Not Found");
+      // gh 2.102.0's answer, read on a fleetd job's log on 2026-11-12: exit 1, nothing on stdout.
+      if (log.includes("\u001b") && !this.oldGh && !args.includes(ALLOW_ESCAPES)) {
+        return { exitCode: 1, stdout: "", stderr: `the response contains terminal escape sequences; pass ${ALLOW_ESCAPES} to output it anyway\n` };
+      }
+      return { exitCode: 0, stdout: log, stderr: "" };
+    }
     if (a === "actions" && b === "jobs" && parts[3] === "rerun" && method === "POST") {
       this.reruns.push(Number(c));
       this.log.push(`rerun ${c}`);

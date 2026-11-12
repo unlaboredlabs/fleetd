@@ -15,7 +15,7 @@ export const FAILED_RERUNS = 1;
 /** A check that failed and was re-run, with the test its log named. */
 export type Flaky = { check: string; test?: string };
 
-/** The first failing test a job's log names (cargo, nextest, Go, pytest, vitest, jest, Playwright); undefined for none. */
+/** The first failing test a job's log names (cargo, nextest, Go, pytest, Bun, vitest, jest, Playwright); undefined for none. */
 export function failedTest(log: string): string | undefined {
   for (const raw of log.split("\n")) {
     const line = plain(raw.endsWith("\r") ? raw.slice(0, -1) : raw).trim();
@@ -24,6 +24,8 @@ export function failedTest(log: string): string | undefined {
     else if (line.startsWith("FAIL [") && line.indexOf("]") >= 0) name = line.slice(line.indexOf("]") + 1);
     else if (line.startsWith("--- FAIL: ")) name = line.slice(10).split(/\s+/)[0] ?? "";
     else if (line.startsWith("FAILED ")) name = line.slice(7).split(" - ")[0] ?? "";
+    // Bun: `(fail) describe > test [97.28ms]`.
+    else if (line.startsWith("(fail) ")) name = line.slice(7).replace(/ \[[\d.]+m?s\]$/, "");
     else {
       const mark = ["FAIL ", "× ", "✗ ", "✘ ", "● "].find((m) => line.startsWith(m));
       if (mark === undefined) continue;

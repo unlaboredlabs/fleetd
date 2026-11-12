@@ -103,6 +103,32 @@ test("a failed check outside the fast set merges once its re-run passed, called 
   expect(k.host.sends.filter(([, m]) => m.includes("bun (experimental) failed, then passed")).length).toBe(1);
 });
 
+// --- a flaky check's note names the test its failed run's log names, the log read through gh as it answers ---
+
+/** `bun (experimental)`'s failed log as GitHub serves it: a coloured step header, then Bun's own lines. */
+const BUN_LOG = [
+  "2026-11-12T08:58:22.4046591Z \u001b[36;1mbun test --parallel=4\u001b[0m",
+  "2026-11-12T08:58:54.7877500Z (pass) the train merges a green PR [98.10ms]",
+  "2026-11-12T08:58:54.9047475Z (fail) a session keeps its scratch dir through a node restart [97.28ms]",
+  "2026-11-12T08:59:54.2412571Z  1 fail",
+].join("\n");
+
+for (const oldGh of [false, true]) {
+  test(`a flaky check's note names the failing test from its coloured log${oldGh ? ", on a gh before 2.97.0" : ""}`, async () => {
+    const k = kit();
+    nonFastReRun(k, "success");
+    k.gh.jobLogs.set(10, BUN_LOG);
+    k.gh.oldGh = oldGh;
+    k.pr(7, "fleetd/T7-docs", { "docs.md": "docs\n" });
+    await k.enqueue(7);
+    await k.settle();
+    expect(k.change(7).state).toBe("merged");
+    const named = "bun (experimental) (test a session keeps its scratch dir through a node restart) failed, then passed";
+    expect(k.host.sends.filter(([, m]) => m.includes(named)).length).toBe(1);
+    expect(k.host.wakes.filter((w) => w.includes(named)).length).toBe(1);
+  });
+}
+
 // --- #1303: a check failing on main after a merge is re-run once before one fix order; manual runs ignored ---
 
 /**
