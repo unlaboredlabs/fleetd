@@ -79,6 +79,7 @@
     "./hub/claude_accounts/setup": "./fleetd/src/hub/claude_accounts/setup.ts",
     "./hub/doctor/base": "./fleetd/src/hub/doctor/base.ts",
     "./hub/doctor/entry": "./fleetd/src/hub/doctor/entry.ts",
+    "./hub/executor/activity_tracker": "./fleetd/src/hub/executor/activity_tracker.ts",
     "./hub/executor/error": "./fleetd/src/hub/executor/error.ts",
     "./hub/executor/ids": "./fleetd/src/hub/executor/ids.ts",
     "./hub/executor/launch_call": "./fleetd/src/hub/executor/launch_call.ts",
