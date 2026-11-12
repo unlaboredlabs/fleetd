@@ -5,7 +5,7 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import { isBase64 } from "../../shared/text.ts";
-import { isHuman, requireRole } from "../api/grants.ts";
+import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
@@ -18,14 +18,10 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { naviBridge } from "./bridge.ts";
 import { follow, hello as helloThere, revokeThere } from "./client.ts";
+import { personOnly } from "./links.ts";
 import { boxKey, checkUrl, forget, issued, issuedGet, keep, kept, keptGet, keptInfo, mint, revokeIssued, setHello } from "./store.ts";
 
 const B64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
-
-function personOnly(caller: Caller): void {
-  if (isHuman(caller)) return;
-  throw new ToolError("forbidden", "Only a person links hubs: a link acts as them on the other hub.", "Do it in the desktop app.");
-}
 
 /**
  * Who changes a project's links: an Only me project's are its owner's alone (D215), admins included; one with no

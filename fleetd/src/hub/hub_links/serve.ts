@@ -6,16 +6,14 @@
 // - `GET feed?after=&wait=`: what happened to its asks after `after`, waiting up to `wait` seconds for some.
 // - `POST revoke`: the link revokes itself, when the hub with the Navi removes it.
 // A refusal is an McpToolError as JSON: 401 with `dead: true` when the link is dead for good, else by its code.
-import type { ErrorCode } from "../../shared/contracts.ts";
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { json, type Route } from "../http/route.ts";
 import { events } from "../store/events.ts";
 import { naviBridge } from "./bridge.ts";
+import { statusOf } from "./links.ts";
 import { failed, FEED_WAIT_MAX_SEC, type Issued, type LinkHello, revokeIssued, verify } from "./store.ts";
 
-const STATUS: Record<string, number> = { forbidden: 403, not_found: 404, invalid: 400, machine_offline: 503, failed: 500 };
-const statusOf = (code: ErrorCode) => STATUS[code] ?? 500;
 
 const refused = (e: ToolError) => json(e.toJSON(), statusOf(e.code));
 
