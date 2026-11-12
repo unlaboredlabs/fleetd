@@ -1,9 +1,9 @@
-// `confirm_step` (W239): a Navi's lead calls it right before the final Confirm
+// `confirm_step` (W239): a project's lead calls it right before the final Confirm
 // or Submit click on a site that doesn't pay or order: booking a table, cancelling a subscription, sending a form, an
 // expense, a return, a post. Its lead is always asked for the call (the node's `LEAD_ASK`), so the call is a
-// permission prompt the approvals relay decides by the Navi's approval mode like a send: the checker's go, the
+// permission prompt the approvals relay decides by the project's approval mode like a send: the checker's go, the
 // person's approval on a card (with the page's screenshot) or YOLO let it run, and running it only answers "click it
-// now". A payment, a trade or an order never goes through here: `refused` denies it, and the Navi hands it to the
+// now". A payment, a trade or an order never goes through here: `refused` denies it, and the project hands it to the
 // person.
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -20,7 +20,7 @@ export function start(hub: Hub): void {
   for (const op of OPS) leadCalls(hub).register(op, (caller, call) => answer(hub, caller, call));
 }
 
-/** The call ran: it was let through (by the checker, the person or YOLO), so the Navi clicks. */
+/** The call ran: it was let through (by the checker, the person or YOLO), so the project clicks. */
 export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   mayUse(hub.db.conn, caller.projectRef);
   if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a project confirms a step on a site.");

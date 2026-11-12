@@ -249,7 +249,7 @@ export class OnePassword {
     return (Array.isArray(parsed.vaults) ? parsed.vaults : []).filter((v): v is string => typeof v === "string");
   }
 
-  /** The Credit Card items the token reads: a Navi's card picker. */
+  /** The Credit Card items the token reads: a project's card picker. */
   async cards(): Promise<OnePasswordCard[]> {
     const parsed = await this.exchange({ cards: true });
     return (Array.isArray(parsed.cards) ? parsed.cards : []).filter(

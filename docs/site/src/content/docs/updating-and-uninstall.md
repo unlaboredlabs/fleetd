@@ -26,8 +26,8 @@ an update only swaps it in and restarts, in order:
 2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Its agents
    run under small hosts of their own that outlive the node, so they carry on through its restart, mid-step included
    (a build, a test run): the node doesn't wait for them. It waits only for what its restart would cut off: a live
-   browser, device or desktop session, an approved command running, a check the merge train runs there, or a Navi
-   mid-step. On a machine without systemd user scopes (macOS, a container), or when the new build's hosts speak
+   browser, device or desktop session, an approved command running, a check the merge train runs there, or a
+   project's own lead mid-step. On a machine without systemd user scopes (macOS, a container), or when the new build's hosts speak
    another protocol, the agents can't carry on, so the node holds every tool call that hasn't started yet and waits
    for the ones running to end, as before. Either way it updates within 2 minutes, whatever still runs: what the
    restart cuts off carries on by itself. Meanwhile Settings › Hub › Machines › Updates says what the machines wait for and when

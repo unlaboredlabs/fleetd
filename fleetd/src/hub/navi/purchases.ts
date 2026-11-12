@@ -1,14 +1,13 @@
-// A Navi's purchases (D265 navi.purchases): the card it pays with, the
-// person's purchase log, and its node's calls.
-// - `navi_card_set`, from the owner's own device: the Credit Card item in their 1Password the Navi pays with, kept as
-//   its `op://vault/item` reference only (store.ts `card`, `setCard`).
-// - `navi_purchases`: the card and every purchase the Navi asked for, newest first, with what the person said.
+// A project's purchases (D265): the card it pays with, the person's purchase log, and its node's calls.
+// - `project_card_set`, from a person's own device: the card the project pays with, kept as its reference only
+//   (store.ts `card`, `setCard`).
+// - `project_purchases`: the card and every purchase the project asked for, newest first, with what the person said.
 // - `purchase_open`, `purchase_claim`, `purchase_filled`: its node's calls for its lead's `purchase_request` and
 //   `purchase_fill`. Only a project's lead buys; a purchase is a record approved as it opens, with no ask (D310,
 //   approvals/purchases.ts), and its fill posts a quiet "Paid …" line in the chat.
 // - `secure_input_open`, `secure_input_claim`, `secure_input_filled`: its node's calls for `request_secure_input` and
 //   `secure_input_fill`.
-import type { NaviCard, ProjectRef, Purchase, PurchaseLogEntry } from "../../shared/contracts.ts";
+import type { PaymentCard, ProjectRef, Purchase, PurchaseLogEntry } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_NO_ASK_FILL } from "../../shared/node_link.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
@@ -37,22 +36,22 @@ import { link } from "../link/server.ts";
 import { store } from "../store/hub_store.ts";
 import { cardLabelOf, checkCardPick, purchaseSettled, sealedCardFor, vaultCardId } from "../vault/aliases.ts";
 import { isProject } from "./bridge.ts";
-import * as navis from "./store.ts";
+import * as kept from "./store.ts";
 
 export const OPS = ["purchase_open", "purchase_claim", "purchase_filled", "secure_input_open", "secure_input_claim", "secure_input_filled"] as const;
 
-/** The most purchases `navi_purchases` lists. */
+/** The most purchases `project_purchases` lists. */
 const LOG_MAX = 200;
 
 /** A card reference (fleetd-contracts purchase.rs `CardRef`): a vault card, or for one release an `op://<vault>/<item>`. */
 const CARD_REF = /^(vault:V[0-9a-f]{32}|op:\/\/[^/?\r\n]+\/[^/?\r\n]+)$/;
 
-/** The Navi's card, if its person picked one; a vault card with its label and last four digits. */
-export function card(hub: Hub, r: ProjectRef): NaviCard | undefined {
-  const kept = navis.card(hub.db.conn, r);
-  if (kept === undefined || !CARD_REF.test(kept)) return undefined;
-  const shown = cardLabelOf(hub, kept);
-  return { ref: kept, ...(shown ?? {}) } as NaviCard;
+/** The project's card, if a person picked one; a vault card with its label and last four digits. */
+export function card(hub: Hub, r: ProjectRef): PaymentCard | undefined {
+  const ref = kept.card(hub.db.conn, r);
+  if (ref === undefined || !CARD_REF.test(ref)) return undefined;
+  const shown = cardLabelOf(hub, ref);
+  return { ref, ...(shown ?? {}) } as PaymentCard;
 }
 
 /** Exchanges and brokers: paying one buys holdings, which is trading (crypto included), whatever the basket says. */
@@ -172,58 +171,54 @@ function paidLine(hub: Hub, r: ProjectRef, p: Purchase): void {
   chat(hub).add(r, { author: "system", text: `Paid ${p.total.amount} ${p.total.currency} at ${p.shop.name} with ${cardLabel(p.card)}` });
 }
 
-function naviRef(hub: Hub, input: { machineId: string; projectId: string }): ProjectRef {
+function projectRefOf(hub: Hub, input: { machineId: string; projectId: string }): ProjectRef {
   const r = { machineId: input.machineId, projectId: input.projectId };
   if (!store(hub).projectGet(r)) throw unknownProject(r);
   return r;
 }
 
 export function register(tools: Registry): void {
-  for (const name of ["project_purchases", "navi_purchases"] as const) {
-    tools.add(name, (hub, caller, input) => {
-      requireRole(caller, "read", input.machineId);
-      const r = naviRef(hub, input);
-      const paysWith = card(hub, r);
-      const list: PurchaseLogEntry[] = purchaseRequests(approvals(hub), r, LOG_MAX).flatMap((q) =>
-        q.purchase
-          ? [
-              {
-                purchase: q.purchase,
-                requestId: q.requestId,
-                state: q.state,
-                askedAt: q.createdAt,
-                ...(q.answeredAt !== undefined ? { answeredAt: q.answeredAt } : {}),
-                ...(q.answeredBy !== undefined ? { answeredBy: q.answeredBy } : {}),
-                ...(q.evidence !== undefined ? { note: String(q.evidence) } : {}),
-              },
-            ]
-          : [],
-      );
-      const next = !paysWith
-        ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the project can " +
-          "pay; each purchase is recorded, with no ask."
-        : list.length === 0
-          ? "No purchases yet."
-          : undefined;
-      return { ...(paysWith ? { card: paysWith } : {}), purchases: list, ...(next !== undefined ? { next } : {}) };
-    });
-  }
-  for (const name of ["project_card_set", "navi_card_set"] as const) {
-    tools.add(name, (hub, caller, input) => {
-      requireRole(caller, "operate", input.machineId);
-      if (!isHuman(caller)) {
-        throw new ToolError("forbidden", "Only a person picks the card a project pays with.", "Pick it in the app: the project's Settings › Payments.");
-      }
-      const r = naviRef(hub, input);
-      if (input.card !== undefined) checkCardPick(hub, input.card);
-      navis.setCard(hub.db.conn, r, input.card);
-      const paysWith = input.card !== undefined ? card(hub, r) : undefined;
-      return {
-        ...(paysWith ? { card: paysWith } : {}),
-        next: paysWith
-          ? `The project pays with ${cardLabel(paysWith)} from now on, with no ask at each purchase.`
-          : "The project has no card now: it can't pay at a checkout.",
-      };
-    });
-  }
+  tools.add("project_purchases", (hub, caller, input) => {
+    requireRole(caller, "read", input.machineId);
+    const r = projectRefOf(hub, input);
+    const paysWith = card(hub, r);
+    const list: PurchaseLogEntry[] = purchaseRequests(approvals(hub), r, LOG_MAX).flatMap((q) =>
+      q.purchase
+        ? [
+            {
+              purchase: q.purchase,
+              requestId: q.requestId,
+              state: q.state,
+              askedAt: q.createdAt,
+              ...(q.answeredAt !== undefined ? { answeredAt: q.answeredAt } : {}),
+              ...(q.answeredBy !== undefined ? { answeredBy: q.answeredBy } : {}),
+              ...(q.evidence !== undefined ? { note: String(q.evidence) } : {}),
+            },
+          ]
+        : [],
+    );
+    const next = !paysWith
+      ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the project can " +
+        "pay; each purchase is recorded, with no ask."
+      : list.length === 0
+        ? "No purchases yet."
+        : undefined;
+    return { ...(paysWith ? { card: paysWith } : {}), purchases: list, ...(next !== undefined ? { next } : {}) };
+  });
+  tools.add("project_card_set", (hub, caller, input) => {
+    requireRole(caller, "operate", input.machineId);
+    if (!isHuman(caller)) {
+      throw new ToolError("forbidden", "Only a person picks the card a project pays with.", "Pick it in the app: the project's Settings › Payments.");
+    }
+    const r = projectRefOf(hub, input);
+    if (input.card !== undefined) checkCardPick(hub, input.card);
+    kept.setCard(hub.db.conn, r, input.card);
+    const paysWith = input.card !== undefined ? card(hub, r) : undefined;
+    return {
+      ...(paysWith ? { card: paysWith } : {}),
+      next: paysWith
+        ? `The project pays with ${cardLabel(paysWith)} from now on, with no ask at each purchase.`
+        : "The project has no card now: it can't pay at a checkout.",
+    };
+  });
 }

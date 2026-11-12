@@ -1,12 +1,12 @@
 // What the approval checker reads, and what fleetd decides past it (W239, built from T1480's eval of 86 risky actions;
-// crates/fleetd/src/hub/navi/review.rs). Pure: no hub, no model.
+// crates/fleetd/src/hub/project_lead/review.rs). Pure: no hub, no model.
 //
 // The checker's input is a `Review`, sent as JSON inside `<action_review>`: the person and their recent messages (the
-// only authority), the Navi's last question to them (so a bare "yes" can be judged), the action exactly as it runs, and
+// only authority), the project's last question to them (so a bare "yes" can be judged), the action exactly as it runs, and
 // where each of its parts came from (`provenance`), found by matching values against what the person said and what
-// the Navi read: `person`, `person (pasted text)`, `contacts`, `thread`, `sent_mail`, `person's files`,
+// the project read: `person`, `person (pasted text)`, `contacts`, `thread`, `sent_mail`, `person's files`,
 // `allowed site <host>`, `untrusted: <kind> from <sender>`, or `the lead`. Long text gets the spans quoted from
-// untrusted content or from the person. The content the Navi read never goes in, nor the Navi's own explanation.
+// untrusted content or from the person. The content the project read never goes in, nor the project's own explanation.
 //
 // Then the code rules (`rules`), which no model's word overrides: the floors (money, trading, credentials in what goes
 // out) block; a destination only untrusted content named, a URL carrying data, a public or editor share to a new
@@ -29,15 +29,15 @@ const TEXT_MIN = 120;
 /** The checker's whole input; its JSON keys are Rust's field names. */
 export type Review = {
   person: unknown;
-  /** The person's own addresses and those of their contacts the Navi read, for the lookalike rule. */
+  /** The person's own addresses and those of their contacts the project read, for the lookalike rule. */
   contacts: unknown[];
   allowed_sites: string[];
   today: string;
   /** Oldest first. */
   person_messages: string[];
-  /** The Navi's last message to the person, when it asked something: Navi-written, never authority. */
+  /** The project's last message to the person, when it asked something: written by its lead, never authority. */
   lead_last_question?: string;
-  /** The automations whose runs the Navi is doing now and whose prompt the person wrote or said yes to. */
+  /** The automations whose runs the project is doing now and whose prompt the person wrote or said yes to. */
   standing_requests: Standing[];
   action: unknown;
   provenance: Provenance[];
@@ -53,10 +53,10 @@ export type Provenance = {
   from_person: string[];
 };
 
-/** An automation the person wrote or said yes to, whose run the Navi is doing: its name and its prompt. */
+/** An automation the person wrote or said yes to, whose run the project is doing: its name and its prompt. */
 export type Standing = { automation: string; prompt: string };
 
-/** Content the Navi read: one tool call's output, with the call (`WebFetch https://…`). */
+/** Content the project read: one tool call's output, with the call (`WebFetch https://…`). */
 export type Read = { source: string; text: string };
 
 const prov = (part: string, sources: string[], value?: string, quoted: string[] = [], said: string[] = []): Provenance => ({
@@ -274,14 +274,14 @@ const DESTINATIONS = [
 ];
 /** Keys that can name which of the person's own accounts a tool acts as. On a send or an invite they may name whom it reaches. */
 const ACTING_AS = ["account", "account_id", "accountid", "mailbox", "user_id", "userid"];
-/** The source of an ACTING_AS value the Navi already read the person's data as. It vouches for no recipient. */
+/** The source of an ACTING_AS value the project already read the person's data as. It vouches for no recipient. */
 const ACCOUNT = "an account the lead read the person's data as";
 /** The source of what the lead wrote itself, as the checker and a card name it. */
 const LEAD = "the lead";
 /** Keys of ACTING_AS that only ever pick the account a tool acts as, on a send too: its sender. */
 const SENDER = ["account", "account_id", "accountid", "mailbox"];
 
-/** What the Navi read, sorted into the person's own data (each value with its source) and untrusted text. */
+/** What the project read, sorted into the person's own data (each value with its source) and untrusted text. */
 class Sources {
   /** Lower-case values and the source they name. */
   readonly own: [string, string][] = [];
@@ -460,7 +460,7 @@ function key(part: string): string {
 
 /**
  * The person's own addresses (the sender of each of their sent mails) and the addresses of their contacts (a contact
- * list, their sent mail) in what the Navi read. Nothing the action itself says counts, nor a thread's or an invite's.
+ * list, their sent mail) in what the project read. Nothing the action itself says counts, nor a thread's or an invite's.
  */
 export function known(person: string[], reads: Read[]): [string[], string[]] {
   const mine: string[] = [];
@@ -551,7 +551,7 @@ export function visitUrl(input: unknown): string | undefined {
   return m ? m[0].replace(/'+$/, "") : undefined;
 }
 
-/** Whether `url` carries data: an email address, a long base64 or hex blob, or text quoted from what the Navi read. */
+/** Whether `url` carries data: an email address, a long base64 or hex blob, or text quoted from what the project read. */
 export function carriesData(url: string, quoted: string[]): boolean {
   const decoded = formParse(url.replaceAll("?", "&"))
     .map(([k, v]) => `${k}=${v}`)
@@ -559,13 +559,13 @@ export function carriesData(url: string, quoted: string[]): boolean {
   return isEmail(`${decoded} ${url.replaceAll("%40", "@")}`) || blob(url) || quoted.length > 0;
 }
 
-/** A path part or fragment this long, found in what the person said or in their own data the Navi read, is data. */
+/** A path part or fragment this long, found in what the person said or in their own data the project read, is data. */
 const PATH_DATA_MIN = 8;
 
 /**
  * Whether `url` is a plain public read (D286): an http or https link to a named public host (no IP address, no
  * loopback, no local or tailnet name) with no query, carrying no data by `carriesData`, and no part of its path or
- * fragment that the person's messages or their own data the Navi read hold.
+ * fragment that the person's messages or their own data the project read hold.
  */
 export function plainRead(url: string, person: string[], reads: Read[]): boolean {
   const parsed = parse(url);
@@ -607,7 +607,7 @@ export function plainRead(url: string, person: string[], reads: Read[]): boolean
 }
 
 /**
- * Whether a part names whom or where the action reaches. An ACTING_AS key whose value the Navi already read the
+ * Whether a part names whom or where the action reaches. An ACTING_AS key whose value the project already read the
  * person's data as picks the account the tool acts in, and reaches no one.
  */
 function isDestination(p: Provenance, confirm: boolean, write: boolean): boolean {
@@ -620,9 +620,9 @@ function isDestination(p: Provenance, confirm: boolean, write: boolean): boolean
   return m !== null && bytes(m[0]) === bytes(v) && !p.part.startsWith("address in");
 }
 
-/** Content anyone could have written, or a contact the Navi made from it. */
+/** Content anyone could have written, or a contact the project made from it. */
 const untrusted = (source: string) => source.startsWith("untrusted") || source.includes("from an email");
-/** A source of the person's own: anything but untrusted content and the Navi. */
+/** A source of the person's own: anything but untrusted content and the project. */
 const own = (source: string) => !untrusted(source) && source !== LEAD && source !== ACCOUNT;
 
 /** The addresses an action reaches: each destination's value, and every address in a list part. */

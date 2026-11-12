@@ -4,7 +4,7 @@
 // request with a `fill:` sink; one from 1Password is an approval filled the same way as a card.
 import type {
   HumanRequest,
-  NaviCard,
+  PaymentCard,
   ProjectRef,
   Purchase,
   PurchaseItem,
@@ -20,8 +20,8 @@ import { clip } from "./text.ts";
 
 export { PAYMENT_CLIS, pays, personOnly } from "./person_only.ts";
 
-/** A NaviCard as the person reads it: a vault card's label, or an `op://vault/item` as "item (vault)". */
-export function cardLabel(card: NaviCard): string {
+/** A PaymentCard as the person reads it: a vault card's label, or an `op://vault/item` as "item (vault)". */
+export function cardLabel(card: PaymentCard): string {
   if (card.label) return card.label;
   const rest = card.ref.replace(/^(op:\/\/)+/, "");
   const at = rest.indexOf("/");
@@ -40,15 +40,15 @@ export type SecureInputOpenCall = {
 };
 
 /** The key a secure input's secret request goes by: never a variable, only a name for the request. */
-const SECURE_INPUT_KEY = "navi.secure_input";
+const SECURE_INPUT_KEY = "browser.secure_input";
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 /**
- * A Navi's `purchase_request`, from its node: opens the purchase card with the Navi's card. `noAsk`: approved as it
+ * A project's `purchase_request`, from its node: opens the purchase card with the project's card. `noAsk`: approved as it
  * opens (D310); false for a node that would wait for the person, who is asked instead.
  */
-export function openPurchase(a: Approvals, project: ProjectRef, call: PurchaseOpenCall, card: NaviCard, noAsk: boolean): HumanRequest {
+export function openPurchase(a: Approvals, project: ProjectRef, call: PurchaseOpenCall, card: PaymentCard, noAsk: boolean): HumanRequest {
   const { sessionId, purchase } = call;
   const now = a.deps.clock.now();
   const text = `Pay ${purchase.total.amount} ${purchase.total.currency} at ${purchase.shop.name} (${purchase.shop.domain}) with ${cardLabel(card)}`;
@@ -97,7 +97,7 @@ function claimable(a: Approvals, r: HumanRequest, sessionId: string, asked: stri
 }
 
 /**
- * The Navi's node claims an approved purchase for one fill: refused unless it is approved, unfilled, within its
+ * The project's node claims an approved purchase for one fill: refused unless it is approved, unfilled, within its
  * window and asked for in this browser session. Claimed, it is `ran` until the node says nothing was typed.
  */
 export function claimPurchase(a: Approvals, project: ProjectRef, requestId: string, sessionId: string) {
@@ -173,7 +173,7 @@ export const purchases = (a: Approvals, project: ProjectRef, limit: number) =>
     .slice(0, Math.max(0, limit));
 
 /**
- * A Navi's `request_secure_input`, from its node: a sealed field for the person to type in, or an approval to fill
+ * A project's `request_secure_input`, from its node: a sealed field for the person to type in, or an approval to fill
  * it from 1Password. `noAsk`: a 1Password field is approved as it opens (D310).
  */
 export function openSecureInput(a: Approvals, project: ProjectRef, call: SecureInputOpenCall, noAsk: boolean): HumanRequest {
@@ -212,7 +212,7 @@ function ownSecureInput(a: Approvals, project: ProjectRef, requestId: string): [
   return [r, r.secureInput];
 }
 
-/** The Navi's node claims an approved 1Password secure input for one fill, within its window, from the asking session. */
+/** The project's node claims an approved 1Password secure input for one fill, within its window, from the asking session. */
 export function claimSecureInput(a: Approvals, project: ProjectRef, requestId: string, sessionId: string) {
   const [r, input] = ownSecureInput(a, project, requestId);
   const reference = input.ref;

@@ -14,14 +14,14 @@ import { automations } from "./index.ts";
 export function start(hub: Hub): void {
   registerLeadCalls(hub);
   Object.assign(approvals(hub).deps.hooks, {
-    naviAutomation: async (project: ProjectRef, id: string) => {
+    ownAutomation: async (project: ProjectRef, id: string) => {
       try {
         return automations(hub).own(project, id);
       } catch {
         return undefined;
       }
     },
-    naviAutomationConfirm: async (project: ProjectRef, shown: unknown, by: string) => {
+    automationConfirm: async (project: ProjectRef, shown: unknown, by: string) => {
       const id = shown !== null && typeof shown === "object" ? (shown as { automationId?: unknown }).automationId : undefined;
       if (typeof id !== "string") return false;
       try {

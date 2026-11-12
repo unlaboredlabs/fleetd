@@ -4,7 +4,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FleetStatus, NaviAsksOutput, ProjectSummary } from "../../../shared/contracts";
+import type { FleetStatus, ProjectAsksOutput, ProjectSummary } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -96,8 +96,8 @@ const button = (name: string): HTMLButtonElement => {
   return b;
 };
 
-const READ: NaviAsksOutput = {
-  navi: { machineId: "devbox", projectId: "ada" },
+const READ: ProjectAsksOutput = {
+  project: { machineId: "devbox", projectId: "ada" },
   asks: [
     {
       handle: "N4",
@@ -124,7 +124,7 @@ const READ: NaviAsksOutput = {
 const ADA_KEY = { machineId: "devbox", projectId: "ada" };
 const ITEM = { id: 1, text: "Ship saved carts", state: "doing", createdAt: AT, updatedAt: AT };
 const answers =
-  (asks: NaviAsksOutput | "fails", items: readonly unknown[] = []) =>
+  (asks: ProjectAsksOutput | "fails", items: readonly unknown[] = []) =>
   (tool: string): CallOutcome | undefined => {
     if (tool === PROJECT_TOOLS.asks) return asks === "fails" ? { ok: false, error: { code: "invalid", message: "no" } } : { ok: true, output: asks };
     if (tool === "checklist_get") return { ok: true, output: { items } };
@@ -134,7 +134,7 @@ const answers =
 describe("Asked work", () => {
   it("reads this project's asks and shows each ask as a row that opens to its words and orders, with no ids", async () => {
     const { calls } = await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers(READ));
-    expect(calls).toContainEqual({ tool: PROJECT_TOOLS.asks, input: { navi: { machineId: "devbox", projectId: "ada" } } });
+    expect(calls).toContainEqual({ tool: PROJECT_TOOLS.asks, input: { project: { machineId: "devbox", projectId: "ada" } } });
     expect(screen()).toBe("asked");
     expect([...host.querySelectorAll("[data-ask]")].map((a) => a.getAttribute("data-ask"))).toEqual(["N4", "N3"]);
     // Closed: the ask in a line, its chip, the project; no order yet is Waiting.

@@ -1,5 +1,5 @@
 // What the session service does for the machine around each agent (sessions/mod.rs): a worker's share of the CPUs in
-// its environment and its brief, its cargo builds taking turns for the build slots, a former Navi's lead in the home it
+// its environment and its brief, its cargo builds taking turns for the build slots, a former project's lead in the home it
 // kept, a review at its PR's head, its screens ended when its claude exits, what its task left running ended with the
 // task, a refused login shown at once; and the node's own start-up cleanups and crash guard.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -10,6 +10,7 @@ import { guard, startupCleanups } from "../../src/node/index.ts";
 import { binDir } from "../../src/node/build_slots.ts";
 import { leftFile } from "../../src/node/runner/host.ts";
 import { statOf } from "../../src/node/runner/procs.ts";
+import { ownHomeDir } from "../../src/node/own_homes.ts";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { tempHome } from "../helpers.ts";
@@ -87,16 +88,16 @@ test("a worker builds with its share of the machine, its cargo taking turns, and
   await settled("l1", "l1-r1");
 });
 
-test("a former Navi's lead runs its commands in the home it kept", async () => {
-  const own = join(node, "navis", "p1", "home");
+test("a former project's lead runs its commands in the home it kept", async () => {
+  const own = join(ownHomeDir(node, "p1"), "home");
   mkdirSync(own, { recursive: true });
   await launch("n1", { role: "assistant" });
   await settled("n1", "n1-r1");
   const sourced = readFileSync(hostEnv("n1").CLAUDE_ENV_FILE!, "utf8");
   expect(sourced).toContain(`export HOME='${realpathSync(own)}'\n`);
   expect(sourced).toContain('export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.cargo/bin:$HOME/go/bin:$HOME/.bun/bin:$HOME/.deno/bin:$PATH"\n');
-  expect(sourced).toContain(`export TMPDIR='${join(node, "navis", "p1", "tmp")}'`);
-  expect(existsSync(join(node, "navis", "p1", "tmp"))).toBe(true);
+  expect(sourced).toContain(`export TMPDIR='${join(ownHomeDir(node, "p1"), "tmp")}'`);
+  expect(existsSync(join(ownHomeDir(node, "p1"), "tmp"))).toBe(true);
 });
 
 test("a worker's stop ends its screens and what its session left running", async () => {
@@ -139,9 +140,9 @@ test("a review elsewhere reads its pr's head, fetched from the remote", async ()
   await settled("rv1", "rv1-r1");
 });
 
-test("a removed project takes the home its Navi kept", async () => {
+test("a removed project takes the home its project kept", async () => {
   await ok("project_remove", { projectId: "p1" });
-  expect(existsSync(join(node, "navis", "p1"))).toBe(false);
+  expect(existsSync(ownHomeDir(node, "p1"))).toBe(false);
 });
 
 test("a starting node clears what a stopped one left", () => {

@@ -175,7 +175,7 @@ export class Vault {
 
   // --- what an agent's session may use ---
 
-  /** Whose work a session of `r` is: a task's order starter or a Navi's owner; undefined: the hub's. */
+  /** Whose work a session of `r` is: a task's order starter or a project's owner; undefined: the hub's. */
   personFor(r: ProjectRef, taskId: string | undefined): { personId?: string; workstreamId?: string } {
     const db = this.hub.db;
     const order = taskId !== undefined ? this.orderOfTask(taskId) : undefined;

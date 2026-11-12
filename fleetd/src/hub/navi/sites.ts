@@ -1,4 +1,4 @@
-// A Navi's site gate: the site a URL is on, and the sites a person's own message
+// A project's site gate: the site a URL is on, and the sites a person's own message
 // links to. The relay's prompt parsing comes with the approvals hooks.
 
 /** The characters a URL the gate reads may hold: a URL's own (RFC 3986). */

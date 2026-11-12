@@ -568,7 +568,7 @@ export function claim(hub: Hub, ids: readonly AttachmentId[], project: ProjectRe
 
 /**
  * Whether attachment `id` is project `r`'s own (a file a person gave it, or an image its lead or tasks made with
- * `chat_image`); if so it is marked the project's, kept past the unused-upload cleanup and read by the app, as `show`
+ * `chat_file`); if so it is marked the project's, kept past the unused-upload cleanup and read by the app, as `show`
  * marks a message's.
  */
 export function claimOwn(c: Database, r: ProjectRef, id: AttachmentId): boolean {
@@ -581,7 +581,7 @@ export function claimOwn(c: Database, r: ProjectRef, id: AttachmentId): boolean 
 
 /**
  * A final lead message's parts, each `image`, `clip` or `file` block checked against project `r`: one whose attachment
- * is the project's (a file a person gave it, or one its lead or tasks made with `chat_image` or `chat_file`) stays,
+ * is the project's (a file a person gave it, or one its lead or tasks made with `chat_file`) stays,
  * with the file's name, type and size filled in, and marks the file the project's, so it is kept past the
  * unused-upload cleanup and the app reads it; any other shows as its text. An `image` block of a file that isn't an
  * image shows as a `file` block.
@@ -722,5 +722,5 @@ async function putOnce(hub: Hub, project: ProjectRef, rel: string, data: Uint8Ar
   );
 }
 
-/** Joins byte pieces; re-exported for chat_image's reads. */
+/** Joins byte pieces; re-exported for chat_file's reads. */
 export { concat };

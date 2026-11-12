@@ -369,7 +369,7 @@ export class Tasks {
     const branch = write ? branchFor(policy.branchPrefix, task.taskId, task.title) : undefined;
     const elsewhere = write ? this.elsewhereFor(task) : [];
     const set = prompts(this.hub.db).current(r);
-    // A writer gets the memory of whoever started its order (a Navi's owner); a reader none.
+    // A writer gets the memory of whoever started its order (a project's owner); a reader none.
     let memory = "";
     if (write) {
       try {

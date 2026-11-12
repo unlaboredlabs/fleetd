@@ -10,7 +10,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-21",
         "toolName": "mcp__gmail__send_message",
         "summary": "Sends a message",
@@ -33,7 +33,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-22",
         "toolName": "mcp__gmail__send_message",
         "summary": "Sends a message",
@@ -56,7 +56,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-23",
         "toolName": "mcp__fleetd__confirm_step",
         "summary": "Confirm a step",

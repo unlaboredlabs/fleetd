@@ -62,7 +62,7 @@ export async function hostSession(
   key: string,
   frame: BrowserCallFrame,
   sealed: string | undefined,
-  navi: string | undefined,
+  project: string | undefined,
   waitMs: number,
 ): Promise<BrowserResultFrame> {
   const id = `host-${newKey().slice(1, 13)}`;
@@ -75,7 +75,7 @@ export async function hostSession(
       hostKey: key,
       frame,
       ...(sealed === undefined ? {} : { sealed }),
-      ...(navi === undefined ? {} : { navi }),
+      ...(project === undefined ? {} : { project }),
     },
     waitMs,
   );

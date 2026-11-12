@@ -1,8 +1,8 @@
-// The Navi's word on its lead's prompts, as approvals reaches it (D348; crates/fleetd/src/hub/usage/wire_approvals.rs
-// `navi_*`, and the navi rules approvals/permissions.rs calls): `naviHooks(hub)` is `hub.area("navi_hooks")`, which
-// approvals' `naviFilled` looks up at each call. A hook left out here keeps approvals' default: the automation and
+// The project's word on its lead's prompts, as approvals reaches it (D348; crates/fleetd/src/hub/usage/wire_approvals.rs,
+// and the project rules approvals/permissions.rs calls): `projectHooks(hub)` is `hub.area("project_hooks")`, which
+// approvals' `hooksFilled` looks up at each call. A hook left out here keeps approvals' default: the automation and
 // image hooks are their own areas' to fill.
-import type { NaviApprovals, ProjectRef } from "../../shared/contracts.ts";
+import type { ProjectApprovals, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { ApprovalHooks, Checked } from "../approvals/ports.ts";
 import { isoMs } from "../store/time.ts";
@@ -12,18 +12,18 @@ import { askEverything, promptVerdict, visitCarriesData } from "./prompt_rules.t
 import { clip, floor } from "./review.ts";
 import { refused as shellRefused } from "./shell_guard.ts";
 import { visit } from "./site_visit.ts";
-import * as navis from "./store.ts";
+import * as kept from "./store.ts";
 
 export { automationPreview, bridgePreview, promptVerdict, visitCarriesData } from "./prompt_rules.ts";
 
-export type NaviHooks = Pick<
+export type ProjectHooks = Pick<
   ApprovalHooks,
-  | "naviLead"
-  | "naviSite"
-  | "naviSiteAllow"
-  | "naviApprovals"
-  | "naviCheck"
-  | "naviAutoApproved"
+  | "isLead"
+  | "siteAllowed"
+  | "allowSite"
+  | "approvalSettings"
+  | "checkAction"
+  | "autoApproved"
   | "promptVerdict"
   | "siteVisit"
   | "floor"
@@ -32,40 +32,40 @@ export type NaviHooks = Pick<
   | "alwaysAsks"
 >;
 
-function hooks(hub: Hub): NaviHooks {
+function hooks(hub: Hub): ProjectHooks {
   const c = () => hub.db.conn;
   return {
-    naviLead: async (project, threadId) => {
+    isLead: async (project, threadId) => {
       const lead = c()
         .query<{ thread_id: string }, [string, string]>("SELECT thread_id FROM leads WHERE machine_id = ? AND project_id = ?")
         .get(project.machineId, project.projectId);
       return lead?.thread_id === threadId;
     },
-    naviSite: async (project, site) => {
+    siteAllowed: async (project, site) => {
       if (site === undefined) return false;
       try {
-        return navis.siteAllowed(c(), project, site);
+        return kept.siteAllowed(c(), project, site);
       } catch {
         return false;
       }
     },
-    naviSiteAllow: async (project, site, by) => {
+    allowSite: async (project, site, by) => {
       try {
-        navis.allowSite(c(), project, site, by, hub.clock.now());
+        kept.allowSite(c(), project, site, by, hub.clock.now());
       } catch (error) {
-        console.warn(`approvals: a Navi's allowed site was not saved: ${(error as Error).message}`);
+        console.warn(`approvals: a project's allowed site was not saved: ${(error as Error).message}`);
       }
     },
-    naviApprovals: async (project) => {
+    approvalSettings: async (project) => {
       try {
         return checker.approvals(c(), project);
       } catch (error) {
-        console.warn(`approvals: a Navi's approval settings were not read: ${(error as Error).message}`);
+        console.warn(`approvals: a project's approval settings were not read: ${(error as Error).message}`);
         return askEverything();
       }
     },
-    naviCheck: (project, threadId, action, settings) => check(hub, project, threadId, action, settings),
-    naviAutoApproved: async (project, action, by, reason) => {
+    checkAction: (project, threadId, action, settings) => check(hub, project, threadId, action, settings),
+    autoApproved: async (project, action, by, reason) => {
       try {
         autoApproved(hub, project, action, by, reason);
       } catch (error) {
@@ -81,8 +81,8 @@ function hooks(hub: Hub): NaviHooks {
   };
 }
 
-/** The checker's verdict on one of the lead's actions, with the context the hub has of the Navi (wire_approvals.rs `navi_check`). */
-async function check(hub: Hub, r: ProjectRef, threadId: string, action: Parameters<typeof judge>[5], settings: NaviApprovals): Promise<Checked> {
+/** The checker's verdict on one of the lead's actions, with the context the hub has of the project (wire_approvals.rs). */
+async function check(hub: Hub, r: ProjectRef, threadId: string, action: Parameters<typeof judge>[5], settings: ProjectApprovals): Promise<Checked> {
   try {
     const c = hub.db.conn;
     let said: string[] = [];
@@ -92,7 +92,7 @@ async function check(hub: Hub, r: ProjectRef, threadId: string, action: Paramete
     } catch {}
     let allowedSites: string[] = [];
     try {
-      allowedSites = navis.sites(c, r).map((s) => s.site);
+      allowedSites = kept.sites(c, r).map((s) => s.site);
     } catch {}
     let fromRelays: Awaited<ReturnType<typeof reads>> = [];
     try {
@@ -114,5 +114,5 @@ async function check(hub: Hub, r: ProjectRef, threadId: string, action: Paramete
   }
 }
 
-/** The Navi's hooks, `hub.area("navi_hooks")`: started with the navi area, looked up by approvals at each call. */
-export const naviHooks = (hub: Hub): NaviHooks => hub.area("navi_hooks", hooks);
+/** The project's hooks, `hub.area("project_hooks")`: started with the project-lead area, looked up by approvals at each call. */
+export const projectHooks = (hub: Hub): ProjectHooks => hub.area("project_hooks", hooks);

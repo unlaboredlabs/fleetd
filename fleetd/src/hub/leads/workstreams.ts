@@ -55,7 +55,7 @@ export class Workstreams {
     return this.create(input, true);
   }
 
-  /** A `brief` without a workstream opens one: the same draft, with no intent wake. `asked` is a Navi message's handle. */
+  /** A `brief` without a workstream opens one: the same draft, with no intent wake. `asked` is a project message's handle. */
   open(input: IntakeInput, asked?: string): { workstreamId: string } {
     return this.create(input, false, asked);
   }
@@ -92,7 +92,7 @@ export class Workstreams {
   }
 
   /**
-   * `brief` from the lead of `caller`: sets the brief of a draft and starts it, or edits it. `folded` is a Navi
+   * `brief` from the lead of `caller`: sets the brief of a draft and starts it, or edits it. `folded` is a project
    * message the lead folds into it, said in a `workstream.state` event of its own.
    */
   briefCreate(caller: ProjectRef, workstreamId: string, brief: Brief, folded?: string): { workstreamId: string; state: WorkstreamState; next: string } {

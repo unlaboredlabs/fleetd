@@ -1,18 +1,18 @@
-// What erasing a Navi deletes, by table, and the guard that keeps a hub-wide key from being erased as a project's
+// What erasing a project deletes, by table, and the guard that keeps a hub-wide key from being erased as a project's
 // (erase.ts deletes).
 import type { ProjectRef } from "../../shared/contracts.ts";
 
-/** Tables with the Navi's rows by `machine_id` and `project_id`. */
+/** Tables with the project's rows by `machine_id` and `project_id`. */
 export const BY_PROJECT = [
   "chat_messages", "chat_projects", "checklists", "leads", "lead_mcp", "approval_checks", "memory_imports",
-  "memory_refreshes", "memory_refresh_lines", "navi_auto_approved", "navi_approvals", "navi_sites", "skill_versions",
+  "memory_refreshes", "memory_refresh_lines", "project_auto_approved", "project_approvals", "project_sites", "skill_versions",
   "skill_uses", "browser_sessions", "screen_waits", "session_prompts", "tasks", "slot_claims", "workstreams", "hub_links",
 ];
 
-/** Tables with rows of the Navi's sessions, by `machine_id` and `thread_id`. */
+/** Tables with rows of the project's sessions, by `machine_id` and `thread_id`. */
 export const BY_THREAD = ["threads", "wakes", "queued_writes", "steers", "thread_accounts", "task_threads", "time_lead_runs", "time_wakes"];
 
-/** Tables with the Navi's rows by `project_key` (`<machine>/<project>`). */
+/** Tables with the project's rows by `project_key` (`<machine>/<project>`). */
 export const BY_KEY = ["requests", "legacy_asks", "decisions"];
 
 /**

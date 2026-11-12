@@ -65,7 +65,7 @@ export const toolApproval = (project: Ref, name: string, call: ToolCall = BOOKIN
   state: "open",
   permission: {
     requestId: `perm-${name}-1`,
-    threadId: uuid(`navi ${name} thread`),
+    threadId: uuid(`inbox ${name} thread`),
     toolName: `mcp__${call.server}__${call.tool}`,
     summary: call.summary,
     input: call.input,
@@ -111,7 +111,7 @@ const two = (base: Fixture): Fixture => {
     { author: "human", text: "File the quarterly estimate before the 15th." },
     { author: "lead", text: "Paid on the 12th; the receipt is in my folder." },
   ]);
-  f.answer(PROJECT_TOOLS.asks, { navi: { ...TAXES } }, { navi: { ...TAXES }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...TAXES } }, { project: { ...TAXES }, asks: [], next: "This project has asked no other project for anything yet." });
   // Ada's to-do list, its panel's Plan.
   f.answer("checklist_get", { projectRef: { ...ADA } }, {
     projectRef: { ...ADA },
@@ -126,8 +126,8 @@ const two = (base: Fixture): Fixture => {
     requests: [{ requestId: "Q1", projectRef: { ...ADA }, kind: "approval", state: "open", text: "Book a table for two on Tuesday at 12:30", createdAt: at(f.now, -120_000) }],
   });
   // Asked work (#649).
-  f.answer(PROJECT_TOOLS.asks, { navi: { ...ADA } }, {
-    navi: { ...ADA },
+  f.answer(PROJECT_TOOLS.asks, { project: { ...ADA } }, {
+    project: { ...ADA },
     asks: [
       {
         handle: "N8",
@@ -262,14 +262,14 @@ const links = (from: Fixture): Fixture => {
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, url: "https://hub.devbox.example", me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
   const kept = (label: string, url: string, extra: JsonObject): JsonObject => ({
     linkId: `hl_${label.replace(/[^a-z]/gu, "").slice(0, 4).padEnd(8, "a")}`,
-    navi: { ...ADA },
+    project: { ...ADA },
     label,
     url,
     createdAt: at(f.now, -5 * 86_400_000),
     checkedAt: at(f.now, -60_000),
     ...extra,
   });
-  f.answer("hub_links_get", { navi: { ...ADA } }, {
+  f.answer("hub_links_get", { project: { ...ADA } }, {
     boxPubKey: BOX,
     issued: [],
     links: [
@@ -316,7 +316,7 @@ const links = (from: Fixture): Fixture => {
 
 const linksNone = (from: Fixture): Fixture => {
   const f = Fixture.from(from, "no-repo-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
-  for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
+  for (const input of [{ project: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
   return f;
 };
 
@@ -353,7 +353,7 @@ const files = (from: Fixture): Fixture => {
     { author: "human", text: "Can you put the Lisbon trip together as a PDF I can keep offline? And the receipts as a spreadsheet.", minutesAgo: 6 },
     { author: "lead", text, parts, minutesAgo: 1 },
   ]);
-  f.answer(PROJECT_TOOLS.asks, { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
   return f;
 };
 
@@ -379,7 +379,7 @@ const pictures = (from: Fixture): Fixture => {
   ]);
   // After the chat, which drops the project's earlier files as it is written.
   f.answer("attachment_get", { projectRef: { ...HOME }, attachmentId: "F21" }, { attachmentId: "F21", name: "checkout-with-code.jpg", mime: "image/jpeg", bytes: applied.length, dataB64: applied.toString("base64") });
-  f.answer(PROJECT_TOOLS.asks, { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
   return f;
 };
 

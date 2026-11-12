@@ -2,7 +2,7 @@
 // made it, when it was archived, its bot's color and the card it pays with. Every project is everyone's on its hub
 // (D491): `only_me` and `owner_person` are no longer read.
 import type { Database } from "bun:sqlite";
-import type { BotColor, NaviSite, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
+import type { BotColor, ProjectSite, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 
 /** What the hub keeps of any project: its maker and archive. */
@@ -44,7 +44,7 @@ export function setAvatarColor(db: Database, r: ProjectRef, color: BotColor): vo
   ).run(r.machineId, r.projectId, color === "slate" ? null : color);
 }
 
-/** Records who made a new project and when (`navi_create`). */
+/** Records who made a new project and when. */
 export function put(db: Database, r: ProjectRef, by: ProjectCreator, atMs: number): void {
   db.query(
     `INSERT INTO project_settings (machine_id, project_id, created_ms, created_by_key, created_by_name) VALUES (?, ?, ?, ?, ?)
@@ -75,33 +75,33 @@ export function archived(db: Database, r: ProjectRef): boolean {
   );
 }
 
-/** Whether the Navi may fetch and open `site` without asking. */
+/** Whether the project may fetch and open `site` without asking. */
 export function siteAllowed(db: Database, r: ProjectRef, site: string): boolean {
-  return db.query("SELECT 1 FROM navi_sites WHERE machine_id = ? AND project_id = ? AND site = ?").get(r.machineId, r.projectId, site) !== null;
+  return db.query("SELECT 1 FROM project_sites WHERE machine_id = ? AND project_id = ? AND site = ?").get(r.machineId, r.projectId, site) !== null;
 }
 
 export function allowSite(db: Database, r: ProjectRef, site: string, by: string, atMs: number): void {
   db.query(
-    `INSERT INTO navi_sites (machine_id, project_id, site, allowed_ms, allowed_by) VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO project_sites (machine_id, project_id, site, allowed_ms, allowed_by) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (machine_id, project_id, site) DO NOTHING`,
   ).run(r.machineId, r.projectId, site, atMs, by);
 }
 
 export function revokeSite(db: Database, r: ProjectRef, site: string): void {
-  db.query("DELETE FROM navi_sites WHERE machine_id = ? AND project_id = ? AND site = ?").run(r.machineId, r.projectId, site);
+  db.query("DELETE FROM project_sites WHERE machine_id = ? AND project_id = ? AND site = ?").run(r.machineId, r.projectId, site);
 }
 
-/** The Navi's allowed sites, by site. */
-export function sites(db: Database, r: ProjectRef): NaviSite[] {
+/** The project's allowed sites, by site. */
+export function sites(db: Database, r: ProjectRef): ProjectSite[] {
   return db
     .query<{ site: string; allowed_ms: number; allowed_by: string }, [string, string]>(
-      "SELECT site, allowed_ms, allowed_by FROM navi_sites WHERE machine_id = ? AND project_id = ? ORDER BY site",
+      "SELECT site, allowed_ms, allowed_by FROM project_sites WHERE machine_id = ? AND project_id = ? ORDER BY site",
     )
     .all(r.machineId, r.projectId)
     .map((row) => ({ site: row.site, allowedAt: isoMs(row.allowed_ms), allowedBy: row.allowed_by }));
 }
 
-/** The card the Navi pays with, as its `op://vault/item` reference. */
+/** The card the project pays with, as its `op://vault/item` reference. */
 export function card(db: Database, r: ProjectRef): string | undefined {
   return (
     db.query<{ card_ref: string | null }, [string, string]>("SELECT card_ref FROM project_settings WHERE machine_id = ? AND project_id = ?").get(r.machineId, r.projectId)

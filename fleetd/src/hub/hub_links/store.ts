@@ -1,7 +1,7 @@
-// Hub links (W104, D194), as crates/fleetd/src/hub/hub_links/mod.rs keeps them: a Navi on one hub opens and follows
+// Hub links (W104, D194), as crates/fleetd/src/hub/hub_links/mod.rs keeps them: a project on one hub opens and follows
 // work in projects on another. On the hub whose projects it reaches, a person's device mints a link (`flk_…`, shown
 // once, kept as its SHA-256) acting as that person at the lesser of their role and the device's grants, never above
-// operate, only through /link/v1. On the hub with the Navi, the link's key is kept sealed to this hub's box key and
+// operate, only through /link/v1. On the hub with the project, the link's key is kept sealed to this hub's box key and
 // opened only to call the other hub (client.ts).
 import { isIP } from "node:net";
 import type { AgentKeyInfo, Grant, HubLinkState, IssuedLink, PersonRef, ProjectRef } from "../../shared/contracts.ts";
@@ -190,7 +190,7 @@ const KEPT_COLUMNS = "link_id, machine_id, project_id, label, url, sealed, curso
 function readKept(r: KeptRow): Kept {
   return {
     linkId: r.link_id,
-    navi: { machineId: r.machine_id, projectId: r.project_id },
+    project: { machineId: r.machine_id, projectId: r.project_id },
     label: r.label,
     url: r.url,
     sealed: r.sealed,
@@ -213,9 +213,9 @@ export function setHello(db: HubDb, id: string, hello: LinkHello): void {
 }
 
 /** The links a project keeps, by label; every project's without one. */
-export function kept(db: HubDb, navi: ProjectRef | undefined): Kept[] {
-  const rows = navi
-    ? db.all<KeptRow>(`SELECT ${KEPT_COLUMNS} FROM hub_links WHERE machine_id = ? AND project_id = ? ORDER BY label`, [navi.machineId, navi.projectId])
+export function kept(db: HubDb, project: ProjectRef | undefined): Kept[] {
+  const rows = project
+    ? db.all<KeptRow>(`SELECT ${KEPT_COLUMNS} FROM hub_links WHERE machine_id = ? AND project_id = ? ORDER BY label`, [project.machineId, project.projectId])
     : db.all<KeptRow>(`SELECT ${KEPT_COLUMNS} FROM hub_links ORDER BY created_ms`);
   return rows.map(readKept);
 }
@@ -226,11 +226,11 @@ export function keptGet(db: HubDb, id: string): Kept | undefined {
 }
 
 /** A project's links as `factory_status` lists them. */
-export const linked = (db: HubDb, navi: ProjectRef) =>
-  kept(db, navi).map((k) => ({ label: k.label, state: k.state, ...(k.error === undefined ? {} : { error: k.error }) }));
+export const linked = (db: HubDb, project: ProjectRef) =>
+  kept(db, project).map((k) => ({ label: k.label, state: k.state, ...(k.error === undefined ? {} : { error: k.error }) }));
 
 /** Adds a link to a project: its id; undefined when the project has one by that label already. */
-export function keep(hub: Hub, navi: ProjectRef, label: string, url: string, sealed: Uint8Array, cursor: number): string | undefined {
+export function keep(hub: Hub, project: ProjectRef, label: string, url: string, sealed: Uint8Array, cursor: number): string | undefined {
   const id = linkId();
   const now = hub.clock.now();
   const added = hub.db.conn
@@ -238,7 +238,7 @@ export function keep(hub: Hub, navi: ProjectRef, label: string, url: string, sea
       `INSERT OR IGNORE INTO hub_links (link_id, machine_id, project_id, label, url, sealed, cursor, state,
        checked_ms, created_ms) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)`,
     )
-    .run(id, navi.machineId, navi.projectId, label, url, sealed, cursor, now, now).changes;
+    .run(id, project.machineId, project.projectId, label, url, sealed, cursor, now, now).changes;
   return added > 0 ? id : undefined;
 }
 

@@ -1,10 +1,10 @@
-// A project's picture (its tests) and navi_create.
+// A project's picture (its tests).
 import { afterEach, expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
-import * as navis from "../src/hub/navi/store.ts";
+import * as kept from "../src/hub/navi/store.ts";
 import { AVATAR_PX, render, square } from "../src/hub/projects/avatar.ts";
 import { pngRows } from "../src/hub/projects/avatar-render.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -89,55 +89,4 @@ test("project_avatar_set keeps the rendered picture, forgets the upload, and say
     ["App's picture removed", { avatar: null }],
   ]);
   expect("error" in (await call(key("read"), "project_avatar_set", r))).toBe(true);
-});
-
-test("navi_create makes an ordinary project in a free folder under its node's home, its maker recorded", async () => {
-  const { hub, ok, call } = rig();
-  hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'member', 0)");
-  const ada = key("operate", { human: true, name: "phone", machines: ["devbox"], person: { personId: "p-ada", name: "Ada" } });
-  store(hub).machineUpsert({ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT });
-  // A project already in navi/home, so the new one goes to navi/home-2 (the node then says home-2 is taken too).
-  project(hub, { machineId: "devbox", projectId: "old" }, { workspaceRoot: "/home/me/.fleetd/node/navi/home" });
-  const calls: SessionCall[] = [];
-  let allTaken = false;
-  const ex = executors(hub);
-  ex.attach("devbox", {
-    linkId: 1,
-    send(frame) {
-      if (frame.call.op !== "subscribe") calls.push(frame.call);
-      const c = frame.call;
-      const result =
-        c.op === "project_upsert" && (allTaken || c.workspaceRoot === "navi/home-2")
-          ? { err: { code: "invalid" as const, message: `${FOLDER_TAKEN}navi/home-2` } }
-          : c.op === "project_upsert"
-            ? { ok: { kind: "folder" as const, path: `/home/me/.fleetd/node/${c.workspaceRoot}` } }
-            : { ok: { kind: "done" as const } };
-      queueMicrotask(() => ex.handleFrame("devbox", { t: "session_reply", id: frame.id, result }));
-    },
-  });
-  await ex.awaitLive("devbox");
-  const caps = (list: string[]) => (link(hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(list));
-  caps([CAP_REPOS]);
-  const old = await call(ada, "navi_create", { name: "Home", machineId: "devbox" });
-  expect("error" in old && old.error.kind === "tool" && old.error.error.message).toBe("devbox's node is too old to hold a project");
-  caps([CAP_REPOS, CAP_ASSISTANT]);
-  const made = await ok(ada, "navi_create", { name: "Home", machineId: "devbox" });
-  // An ordinary project, everyone's on the hub (D491): no Only me, no owner.
-  expect(made.navi).toMatchObject({ title: "Home", workspaceRoot: "/home/me/.fleetd/node/navi/home-3", createdBy: { keyId: "key_phone", name: "phone" } });
-  expect(made.navi).not.toHaveProperty("onlyMe");
-  expect(made.navi).not.toHaveProperty("owner");
-  expect(made.next).toBe("Write to it with chat_send; its lead starts with the first message.");
-  expect(calls.map((c) => c.op === "project_upsert" && c.workspaceRoot)).toEqual(["navi/home-2", "navi/home-3"]);
-  const r = { machineId: "devbox", projectId: made.navi.projectId };
-  expect(navis.kept(hub.db.conn, r)).toEqual({ createdBy: { keyId: "key_phone", name: "phone" } });
-  // A new project starts in YOLO; the one that was there has no stored mode, so it still asks its checker.
-  expect((await ok(ada, "project_approvals", r)).approvals.mode).toBe("yolo");
-  expect((await ok(key("read"), "project_approvals", { machineId: "devbox", projectId: "old" })).approvals.mode).toBe("checker");
-  const added = events(hub).page(0).events.find((e) => e.type === "project.added");
-  expect(added).toMatchObject({ summary: "Home made on devbox", projectId: r.projectId, data: { title: "Home", created: true } });
-  // Every free folder taken: the mark goes, and nothing is left behind.
-  allTaken = true;
-  const full = await call(ada, "navi_create", { name: "Work", machineId: "devbox" });
-  expect("error" in full && full.error.kind === "tool" && full.error.error.message).toBe("every free folder name for Work on devbox is taken");
-  expect(hub.db.conn.query("SELECT COUNT(*) AS n FROM project_settings WHERE created_by_key IS NOT NULL").get()).toEqual({ n: 1 });
 });

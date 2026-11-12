@@ -3,7 +3,7 @@
 // `base:` frontmatter naming the default it was edited from. Files are read on every resolve, so an edit reaches the
 // next session at once. Every text a session was given is kept in `prompt_versions`, and `session_prompts` pins each
 // session to its refs: every later message to that thread renders from the text it started with.
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type {
   PromptDetail,
@@ -19,7 +19,7 @@ import type {
   StalePrompt,
 } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
-import { type Audience, ENTRIES, getEntry, INSTRUCTIONS, oldId, perProject, placeholdersOf, type RegistryEntry, safetyRules } from "./entry.ts";
+import { type Audience, ENTRIES, getEntry, INSTRUCTIONS, perProject, placeholdersOf, type RegistryEntry, safetyRules } from "./entry.ts";
 import { gitBlobSha, merge, refOf, rulePresent, sameWords, warnings } from "./render.ts";
 import { RETIRED, type Retired } from "./retired.ts";
 import { defaultOf, PromptSet, type Resolved } from "./set.ts";
@@ -161,8 +161,7 @@ export class Prompts {
   /** The override at exactly this level. */
   overrideOf(e: RegistryEntry, project?: ProjectRef): Override | undefined {
     if (project !== undefined && !perProject(e)) return undefined;
-    const old = oldId(e.id);
-    const raw = readText(this.fileOf(e.id, project)) ?? (old === undefined ? undefined : readText(this.fileOf(old, project)));
+    const raw = readText(this.fileOf(e.id, project));
     return raw === undefined ? undefined : parseFile(raw);
   }
 
@@ -258,6 +257,45 @@ export class Prompts {
     });
   }
 
+  /**
+   * Moves the overrides of each prompt a release renamed (`prompt_renames`, which its migration fills) to the new id,
+   * hub-wide and per project, their `base:` with them: first the base, in place, then the file, each step atomic, so a
+   * stop between the two is finished at the next start. An override already under the new id is the one in effect: the
+   * old file stays beside it, untouched, and is named in the log. Returns the files moved.
+   */
+  moveRenamed(): string[] {
+    const dir = promptsDir(this.db);
+    if (dir === undefined) return [];
+    const renames = this.db.all<{ old_id: string; new_id: string }>("SELECT old_id, new_id FROM prompt_renames ORDER BY old_id");
+    let projects: string[] = [];
+    try {
+      projects = readdirSync(join(dir, "projects")).map((key) => join(dir, "projects", key));
+    } catch {}
+    const moved: string[] = [];
+    for (const level of [dir, ...projects]) {
+      for (const { old_id: old, new_id: now } of renames) {
+        const from = join(level, `${old}.md`);
+        const raw = readText(from);
+        if (raw === undefined) continue;
+        const to = join(level, `${now}.md`);
+        if (existsSync(to)) {
+          console.warn(`prompts: ${from} stays as it is: ${to}, the override of its new name, is the one in effect`);
+          continue;
+        }
+        try {
+          const o = parseFile(raw);
+          const base = o.base?.startsWith(`${old}@`) ? `${now}${o.base.slice(old.length)}` : o.base;
+          if (base !== o.base) writeAtomic(from, `---\nbase: ${base}\n---\n${o.text}`);
+          renameSync(from, to);
+          moved.push(to);
+        } catch (error) {
+          console.warn(`prompts: ${from} was not moved to ${to}: ${(error as Error).message}`);
+        }
+      }
+    }
+    return moved;
+  }
+
   /** Keeps every shipped text, so an override edited from an older release can still be compared with its base. */
   keepDefaults(): void {
     this.keep(ENTRIES.map((e) => [refOf(e.id, e.default), e.default]));
@@ -326,11 +364,8 @@ export class Prompts {
 
   /** Removes the override at this level; the next level down is in effect again. */
   reset(e: RegistryEntry, scope: PromptScope, project?: ProjectRef): void {
-    const level = this.level(e, scope, project);
-    const old = oldId(e.id);
-    for (const file of [this.fileOf(e.id, level), old === undefined ? undefined : this.fileOf(old, level)]) {
-      if (file !== undefined) removeFile(file);
-    }
+    const file = this.fileOf(e.id, this.level(e, scope, project));
+    if (file !== undefined) removeFile(file);
   }
 
   private level(e: RegistryEntry, scope: PromptScope, project?: ProjectRef): ProjectRef | undefined {

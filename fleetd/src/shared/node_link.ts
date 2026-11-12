@@ -59,7 +59,8 @@ export const CAP_UPDATE_FETCH = "update_fetch";
 export const CAP_UPDATE_HOLD = "update_hold";
 export const CAP_SESSION_HOST = "session_host";
 export const CAP_ASSISTANT = "assistant";
-export const CAP_NAVI_SIGNINS = "navi_signins";
+/** `signins_forget`: the node forgets a project's kept browser sign-ins. */
+export const CAP_SIGNINS_FORGET = "signins_forget";
 export const CAP_FOLDER_MAKE = "folder_make";
 export const CAP_SESSION_END = "session_end";
 export const CAP_SESSION_SEAL = "session_seal";
@@ -74,7 +75,6 @@ export const CAP_CLAUDE_MODELS = "claude_models";
 export const CAP_PROFILE_NAMES = "profile_names";
 export const CAP_SYSTEM_PROMPT = "system_prompt";
 export const CAP_SCREEN_SETTINGS = "screen_settings";
-export const CAP_NAVI_ERASE = "navi_erase";
 export const CAP_PROJECT_ERASE = "project_erase";
 export const CAP_NO_ASK_FILL = "no_ask_fill";
 export const CAP_PROJECT_SIGNINS = "project_signins";
@@ -246,7 +246,7 @@ export type NodeAction = {
   screens?: unknown;
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
-   * only the sessions mid-step that aren't hosted (a Navi's); else hold every one, as without it. An older node ignores
+   * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores
    * it and holds every one, answering no `hosted`.
    */
   unhosted?: boolean;

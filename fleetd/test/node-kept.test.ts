@@ -6,6 +6,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileS
 import { join } from "node:path";
 import { installCommand, installTmp, Kept, keptDir, type KeptLease, Pool, readyKept } from "../src/node/browser/chrome.ts";
 import { Broker, screenHooks } from "../src/node/browser/index.ts";
+import { oldProfilesDir } from "../src/node/own_homes.ts";
 import { chrome, driver, rig, THREAD } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
@@ -19,8 +20,9 @@ test("a project's profile is its own, one browser at a time, keeps only sign-ins
   const home = tempHome();
   cleanups.push(home.done);
   expect(keptDir(home.dir, "ada")).toBe(join(home.dir, "browser/kept/ada"));
-  mkdirSync(join(home.dir, "browser/navis/old"), { recursive: true });
-  expect(keptDir(home.dir, "old")).toBe(join(home.dir, "browser/navis/old"));
+  // One not moved yet from where it was before D310 stays the project's until it moves (own_homes.ts).
+  mkdirSync(join(oldProfilesDir(home.dir), "old"), { recursive: true });
+  expect(keptDir(home.dir, "old")).toBe(join(oldProfilesDir(home.dir), "old"));
   for (const name of ["", "..", "../ada", "a/b", ".hidden"]) expect(keptDir(home.dir, name)).toBeUndefined();
   const kept = new Kept(home.dir);
   const ada = kept.take("ada");
@@ -187,7 +189,7 @@ test.skipIf(!chrome)("a lead stays signed in between sessions, no other agent is
   // A lead with repos keeps its sign-ins where the hub places it here, but isn't held here.
   hooks.launched("t-lead-repos", "lead", "proj-2");
   expect(r.broker.staysHere("t-lead-repos")).toBe(false);
-  expect(r.broker.isNavi("t-lead-repos")).toBe(true);
+  expect(r.broker.hasKept("t-lead-repos")).toBe(true);
 
   // Forgetting: the lead's browser ends, then the profile goes.
   await hooks.forgetSignins("proj-1");
@@ -198,5 +200,5 @@ test.skipIf(!chrome)("a lead stays signed in between sessions, no other agent is
   r.node.area("launch").ended(THREAD);
   for (let i = 0; i < 100 && r.broker.live(THREAD); i++) await Bun.sleep(20);
   expect(r.broker.live(THREAD)).toBeUndefined();
-  expect(r.broker.isNavi(THREAD)).toBe(false);
+  expect(r.broker.hasKept(THREAD)).toBe(false);
 });

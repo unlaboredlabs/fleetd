@@ -45,13 +45,6 @@ export const SNAPSHOT = snapshotJson as Snapshot;
 /** The server's name in a session's `--mcp-config`; claude shows its tools as `mcp__fleetd__<name>`. */
 export const SERVER_NAME = "fleetd";
 
-/** Tools that left the list, and the listed tool each one's calls go to with the same arguments: an older lead or
- * skill may still name them. One release, then they go. */
-export const ALIASES: [string, string][] = [
-  ["automation_pause", "automation_update"],
-  ["chat_image", "chat_file"],
-];
-
 /** What a person must do before a tool's call takes effect, by tool; a tool missing here needs nothing. */
 export const HUMAN: Record<string, string> = {
   request_secret: "The human enters the value in chat; you see only its fingerprint.",

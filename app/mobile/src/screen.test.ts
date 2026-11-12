@@ -36,7 +36,7 @@ const AT = "2026-10-31T10:00:00.000Z";
 
 const screen = (sessionId: string, extra: Partial<BrowserSession> = {}): BrowserSession => ({
   sessionId,
-  projectRef: { machineId: "devbox", projectId: "navi" },
+  projectRef: { machineId: "devbox", projectId: "inbox" },
   threadId: "th-1",
   purpose: "Book the hotel",
   state: "live",

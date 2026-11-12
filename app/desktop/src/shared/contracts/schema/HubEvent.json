@@ -432,7 +432,7 @@
         },
         {
           "const": "sidebar.order",
-          "description": "A person moved a project or a Navi in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
+          "description": "A person moved a project in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
           "type": "string"
         },
         {

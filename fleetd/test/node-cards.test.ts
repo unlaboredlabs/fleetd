@@ -1,6 +1,6 @@
-// A Navi's purchases and secure inputs in its browser (cards.rs's
+// A project's purchases and secure inputs in its browser (cards.rs's
 // tests), with a fake 1Password and a fake hub: an approved purchase's card fills into the payment provider's frame
-// once, a person's typed value into the site's own frame once, an approved passport from 1Password once, and the Navi
+// once, a person's typed value into the site's own frame once, an approved passport from 1Password once, and the project
 // never sees any of them. Never a real vault or a real card.
 import { afterEach, expect, test } from "bun:test";
 import { cardLabel, paymentFrame, secretForms, selectValues, valueFor } from "../src/node/browser/cards.ts";
@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 /** The security code is a marker no page, id or encoding makes by chance (a 3-digit code turns up in Chrome's random
- * hex ids), so a check that the Navi never heard it can't flake; the fake checkout takes any text. */
+ * hex ids), so a check that the project never heard it can't flake; the fake checkout takes any text. */
 const CARD: Card = { number: "4242424242424242", month: "03", year: "2030", cvc: "cvc-4k7Zq91", name: "Ada Devbox" };
 const CARD_REF = "op://Shared/Visa";
 const PASSPORT = "P9X81774Q";
@@ -118,7 +118,7 @@ async function click(d: Awaited<ReturnType<typeof driver>>, page: string, select
   for (const type of ["mousePressed", "mouseReleased"]) await d.ok("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }, page);
 }
 
-test.skipIf(!chrome)("an approved purchase fills the card into the provider's frame once, and the Navi never sees it", async () => {
+test.skipIf(!chrome)("an approved purchase fills the card into the provider's frame once, and the project never sees it", async () => {
   const r = await rig();
   cleanups.push(r.done);
   const { site, charges } = checkout();
@@ -159,7 +159,7 @@ test.skipIf(!chrome)("an approved purchase fills the card into the provider's fr
   await click(d, page, "#pay");
   await d.until(page, "document.title", "Paid");
   expect(charges).toEqual([{ number: CARD.number, exp: "03/30", cvc: CARD.cvc, holder: CARD.name, masked: true }]);
-  // Whatever the Navi heard: the card in no form.
+  // Whatever the project heard: the card in no form.
   const heard = JSON.stringify([asked, filled, d.got]);
   for (const value of [CARD.number, "4242 4242 4242 4242", CARD.cvc, "03/30"]) for (const form of forms(value).slice(0, 5)) expect(heard).not.toContain(form);
   const ended = await r.call("session_end");
@@ -205,7 +205,7 @@ test.skipIf(!chrome)("what the person types fills the site's own frame once, and
   const secret = crypto.getRandomValues(new Uint8Array(32));
   const box = new NodeBoxKey(secret);
   const sealed = (value: string) => Buffer.from(seal(publicKeyOf(secret), new TextEncoder().encode(value))).toString("base64");
-  const frame = { id: "d1", sink: `fill:devbox:${started.result!.sessionId}`, sealed: sealed("771204"), requestId: "S1", secretKey: "navi.secure_input" };
+  const frame = { id: "d1", sink: `fill:devbox:${started.result!.sessionId}`, sealed: sealed("771204"), requestId: "S1", secretKey: "inbox.secure_input" };
   expect(await r.broker.deliver(frame as never, box, "elsewhere")).toMatchObject({ error: "the sink is on devbox, not on elsewhere" });
   const result = await r.broker.deliver(frame as never, box, "devbox");
   expect(result.error).toBeUndefined();

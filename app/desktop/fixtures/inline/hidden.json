@@ -28,7 +28,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-21",
         "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",
@@ -47,7 +47,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-22",
         "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",

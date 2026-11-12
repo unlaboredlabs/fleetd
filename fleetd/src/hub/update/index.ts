@@ -2,7 +2,7 @@
 // then tells every connected node to do the same, with src/update's pieces. The hub restarts at once; a node too when
 // nothing its restart would cut off runs: its agents run under hosts in systemd scopes of their own, which carry on
 // through it, mid-step included. It waits only for a live session, an approved command, a check the hub runs there or
-// a session that isn't hosted (a Navi's) mid-step, for a while at most (`drain`, 2 minutes by default). Where its
+// a session that isn't hosted (a project's) mid-step, for a while at most (`drain`, 2 minutes by default). Where its
 // agents can't carry on (no scopes, or a new build on another host protocol) it holds their tool calls that haven't
 // started until none runs, as before. Update now doesn't wait.
 //
@@ -42,7 +42,7 @@ import { pause } from "../serve/every.ts";
 import { isoMs } from "../store/time.ts";
 
 /**
- * How long a node waits by default for what its restart would cut off (a live session, a Navi mid-step, an approved
+ * How long a node waits by default for what its restart would cut off (a live session, a project mid-step, an approved
  * command, a check), or for its agents to finish their step where they don't carry on through it.
  */
 export const DRAIN_MINUTES = 2;
@@ -1105,7 +1105,7 @@ class Drive {
       );
     }
     // The node waits only for what its restart would cut off: a live session, an approved command, a check the hub runs
-    // there, and a session that isn't hosted (a Navi's) mid-step. Its hosted agents carry on through the restart,
+    // there, and a session that isn't hosted (a project's) mid-step. Its hosted agents carry on through the restart,
     // mid-step included, so they aren't held or waited for, unless they can't: a machine without systemd scopes, whose
     // hosts die with the node, or a new build on another host protocol, whose node won't take them back. Then it holds
     // every agent's tool calls that haven't started, and waits for those running to finish, as before. At the deadline

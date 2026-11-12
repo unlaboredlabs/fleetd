@@ -178,7 +178,7 @@ export type SessionCall =
   | { op: "project_env_copy"; from: ProjectId; to: ProjectId }
   | { op: "mcp_secrets"; scope: McpSecretScope; server: McpServerName; set?: McpSecretSet[]; keep?: McpSecretKey[] }
   | { op: "mcp_test"; projectId?: ProjectId; server: McpSessionServer }
-  | { op: "navi_signins_forget"; projectId: ProjectId }
+  | { op: "signins_forget"; projectId: ProjectId }
   | { op: "order_env_drop"; projectId: ProjectId; orderId: WorkstreamId; name?: EnvVarName; fingerprint?: SecretFingerprint }
   | { op: "claude_account_secret"; account: ClaudeAccount; set?: ClaudeSecretSet }
   | { op: "claude_account_test"; account: ClaudeAccount }
@@ -289,10 +289,6 @@ export type ThreadSnapshot = {
 
 export type LoginStatus = "logged_in" | "logged_out" | "unknown";
 
-/** What a Navi's OS sandbox is on a machine, in a person's words. */
-export type SandboxStatus = "ready" | "gap" | "missing";
-export type NaviSandbox = { status: SandboxStatus; line: string; fix?: string };
-
 export type RunnerInfo = {
   runner: RunnerKind;
   version?: string;
@@ -307,7 +303,6 @@ export type RunnerInfo = {
   proxySource?: string;
   configDir?: string;
   selfUpdate?: boolean;
-  sandbox?: NaviSandbox;
   accountOverrides?: string[];
 };
 

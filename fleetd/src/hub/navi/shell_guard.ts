@@ -1,16 +1,16 @@
-// The one guard on a Navi's shell commands (W239): they never ask (D208),
+// The one guard on a project's shell commands (W239): they never ask (D208),
 // whatever its approval mode, but a command that would wipe the machine or the person's home is refused, with why. It
 // is a short list of the obvious ones (removing `/` or the home directory recursively, making a filesystem, writing
 // raw onto a disk, a fork bomb), not a sandbox: the OS sandbox stays the guard of what a command may touch.
 
 const ROOT =
-  "Refused by fleetd: this would delete everything on the machine or in your home folder. A Navi's commands never " +
+  "Refused by fleetd: this would delete everything on the machine or in your home folder. A lead's commands never " +
   "ask, but this one never runs. Say what you meant to remove, by its own path.";
 const FILESYSTEM =
-  "Refused by fleetd: making a filesystem or erasing a disk wipes what's on it. A Navi never does that; the person " +
+  "Refused by fleetd: making a filesystem or erasing a disk wipes what's on it. A lead never does that; the person " +
   "does it themselves.";
 const DISK =
-  "Refused by fleetd: writing straight onto a disk device destroys what's on it. A Navi never does that; the person " +
+  "Refused by fleetd: writing straight onto a disk device destroys what's on it. A lead never does that; the person " +
   "does it themselves.";
 const FORK_BOMB = "Refused by fleetd: this command starts processes without end and would freeze the machine.";
 

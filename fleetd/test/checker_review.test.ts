@@ -14,7 +14,7 @@ import { visit } from "../src/hub/navi/site_visit.ts";
 
 type Case = { id: string; expected: string; acceptable: string[]; review: Review };
 
-const EVAL = join(import.meta.dir, "fixtures/navi/checker_eval.jsonl");
+const EVAL = join(import.meta.dir, "fixtures/checker/checker_eval.jsonl");
 
 function cases(): Case[] {
   const [first, ...rest] = readFileSync(EVAL, "utf8").split("\n");
@@ -169,7 +169,7 @@ test("the obvious wipes are refused and everything else runs", () => {
     expect([wipe, shellRefused(wipe, home) !== undefined]).toEqual([wipe, true]);
   }
   for (const runs of [
-    "rm -rf node_modules", "rm -rf ./build /tmp/x", "rm -rf ~/navi/ada/drafts", "rm -rf /home/ada/navi/ada/tmp", "rm /", "ls -la /",
+    "rm -rf node_modules", "rm -rf ./build /tmp/x", "rm -rf ~/inbox/ada/drafts", "rm -rf /home/ada/inbox/ada/tmp", "rm /", "ls -la /",
     "dd if=/dev/zero of=./disk.img bs=1M count=10", "echo hi > /dev/null", "curl -s https://api.example | jq . > out.json",
     "grep -r mkfs notes", "chmod -R u+w ./out", "agent-browser open https://example.org",
   ]) {

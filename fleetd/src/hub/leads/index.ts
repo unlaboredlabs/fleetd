@@ -106,7 +106,7 @@ export class Leads {
     return new ToolError(
       "invalid",
       `${project.title} is archived: its lead doesn't start.`,
-      "Bring it back with navi_archive (archived false) or in the app; a message waits until then.",
+      "Bring it back with project_archive (archived false) or in the app; a message waits until then.",
     );
   }
 
@@ -380,7 +380,7 @@ export class Leads {
     const allowed = store_.list().filter((p) => names.includes(p.name));
     const { text: digest, idleSince } = this.wakes.digestToSend(r);
     const manual = wiring.ports.oneLeadMode(r.machineId);
-    const ownWork = manual ? (project.repos ?? []).length === 0 : project.kind === "assistant";
+    const ownWork = manual && (project.repos ?? []).length === 0;
     const leadProfile = store_.leadProfile();
     // Read before the launch, as the launch reads it: an edit that lands meanwhile reads as changed.
     const launched = this.launchedNow();

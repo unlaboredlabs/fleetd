@@ -1,16 +1,16 @@
-// A Navi's approval checker's turn (W239, D263; crates/fleetd/src/hub/navi/checker.rs, whose settings and log are
+// A project's approval checker's turn (W239, D263; crates/fleetd/src/hub/project_lead/checker.rs, whose settings and log are
 // checker.ts): before one of its risky actions becomes an approval card, a fresh model judges it. `go` runs it, with
-// one quiet line in the chat and an entry in the Navi's auto-approved log; `ask` brings the card, with the checker's
+// one quiet line in the chat and an entry in the project's auto-approved log; `ask` brings the card, with the checker's
 // reason; `block` refuses it, tells the person why, and lets them approve it anyway.
 //
 // The checker is a tool-less turn on the account its project's lead runs on, in that project, on the hub's model and
-// effort for it. Its input is built here, not by the Navi: the action exactly as it runs, where each of its parts came
-// from (review.ts), and the person's recent messages. The content the Navi read is only searched for those parts; it
+// effort for it. Its input is built here, not by the project: the action exactly as it runs, where each of its parts came
+// from (review.ts), and the person's recent messages. The content the project read is only searched for those parts; it
 // never reaches the checker. Its answer is one JSON verdict; anything else, a failure or a timeout asks the person.
 //
-// The turn itself, the Navi's reads and its running automations are other areas' (src/hub/executor, src/hub/automations):
+// The turn itself, the project's reads and its running automations are other areas' (src/hub/executor, src/hub/automations):
 // `checkerSeams(hub)` holds them, each with a default until its area sets it, which asks the person.
-import type { Automation, AutoApproved, ClaudeAccount, AutoApprovedBy, CheckerNote, ChatMessage, NaviApprovals, PersonId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
+import type { Automation, AutoApproved, ClaudeAccount, AutoApprovedBy, CheckerNote, ChatMessage, ProjectApprovals, PersonId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import { CAP_CLAUDE_ACCOUNTS, CAP_ISOLATED } from "../../shared/node_link.ts";
 import type { McpSessionConfig, RuntimeMode, SessionRole } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
@@ -32,11 +32,11 @@ const MESSAGES = 12;
 const MESSAGES_LOOKED = 200;
 /** Each of the person's messages, cut to this many characters. */
 const MESSAGE_MAX = 2_000;
-/** The Navi's recent tool calls whose output counts as content it read. */
+/** The project's recent tool calls whose output counts as content it read. */
 export const READS = 60;
 
 /**
- * An action that ran without asking: an entry in the Navi's log. A checker's go is also one quiet line in the Navi's
+ * An action that ran without asking: an entry in the project's log. A checker's go is also one quiet line in the project's
  * chat, which the entry links to; YOLO posts nothing, since the person chose not to be bothered.
  */
 export function autoApproved(hub: Hub, r: ProjectRef, action: Action, by: AutoApprovedBy, reason?: string): AutoApproved {
@@ -45,19 +45,19 @@ export function autoApproved(hub: Hub, r: ProjectRef, action: Action, by: AutoAp
   const at = hub.clock.now();
   const entry = autoApprovedEntry(action, by, reason, at, posted?.messageId);
   hub.db.conn
-    .query("INSERT INTO navi_auto_approved (machine_id, project_id, at_ms, data) VALUES (?, ?, ?, ?)")
+    .query("INSERT INTO project_auto_approved (machine_id, project_id, at_ms, data) VALUES (?, ?, ?, ?)")
     .run(r.machineId, r.projectId, at, JSON.stringify(entry));
   return entry;
 }
 
 /**
- * Whether a human message is the person's own word (decision `navi.shortcuts-authority`): typed in the app or in
+ * Whether a human message is the person's own word (D291): typed in the app or in
  * `fleetd chat`. What came through the share sheet or a shortcut is no go-ahead for a risky action.
  */
 const authority = (m: ChatMessage) => m.client !== "share" && m.client !== "shortcuts";
 
 /**
- * The person's recent messages in the Navi's chat, oldest first, and the Navi's last message to them when it asked
+ * The person's recent messages in the project's chat, oldest first, and the project's last message to them when it asked
  * something after their last word but one (so "yes" can be judged against it).
  */
 export function personMessages(hub: Hub, r: ProjectRef): [string[], string | undefined] {
@@ -75,7 +75,7 @@ export function personMessages(hub: Hub, r: ProjectRef): [string[], string | und
   return [said, asked];
 }
 
-/** The recent human messages that are no authority, as content the Navi read: what they name is untrusted. */
+/** The recent human messages that are no authority, as content the project read: what they name is untrusted. */
 export function relayed(hub: Hub, r: ProjectRef): Read[] {
   const { messages } = chat(hub).page(r, undefined, undefined, MESSAGES_LOOKED);
   const out = messages
@@ -115,7 +115,7 @@ export type Turn = { run(r: ProjectRef, person: PersonId | undefined, launch: Ch
 export type CheckerSeams = {
   /** The approval check's turn (executor/turn.rs `executors(hub, Owner::ApprovalCheck)`). */
   turn: Turn;
-  /** What the Navi's lead read lately: each recent tool call, with its whole output (executor `reads`). */
+  /** What the project's lead read lately: each recent tool call, with its whole output (executor `reads`). */
   reads(thread: ThreadRef, limit: number): Promise<[string, string][]>;
   /** The project's automations with a run open now (automations `running`). */
   running(r: ProjectRef): Automation[];
@@ -123,7 +123,7 @@ export type CheckerSeams = {
 
 /** The checker's seams: `checkerSeams(hub).turn = …` from the area that runs turns. */
 export const checkerSeams = (hub: Hub): CheckerSeams =>
-  hub.area<CheckerSeams>("navi_checker", () => ({
+  hub.area<CheckerSeams>("approval_checker", () => ({
     turn: {
       run: async () => {
         throw new Error(TURN_NOT_PORTED);
@@ -133,12 +133,12 @@ export const checkerSeams = (hub: Hub): CheckerSeams =>
     running: () => [],
   }));
 
-/** What the Navi's lead read lately: its recent tool calls' whole output, each with its call. */
+/** What the project's lead read lately: its recent tool calls' whole output, each with its call. */
 export async function reads(hub: Hub, thread: ThreadRef): Promise<Read[]> {
   try {
     return (await checkerSeams(hub).reads(thread, READS)).map(([call, text]) => ({ source: oneLine(call), text }));
   } catch (error) {
-    console.warn(`approval checker: the Navi's reads not read (${thread.threadId}): ${(error as Error).message}`);
+    console.warn(`approval checker: the project's reads not read (${thread.threadId}): ${(error as Error).message}`);
     return [];
   }
 }
@@ -151,7 +151,7 @@ export function standing(hub: Hub, r: ProjectRef): Standing[] {
       .filter((a) => a.confirmed)
       .map((a) => ({ automation: a.name, prompt: a.prompt }));
   } catch (error) {
-    console.warn(`approval checker: the Navi's running automations not read (${r.projectId}): ${(error as Error).message}`);
+    console.warn(`approval checker: the project's running automations not read (${r.projectId}): ${(error as Error).message}`);
     return [];
   }
 }
@@ -162,7 +162,7 @@ export async function judge(
   turn: Turn,
   r: ProjectRef,
   owner: PersonId | undefined,
-  settings: NaviApprovals,
+  settings: ProjectApprovals,
   action: Action,
   context: Context,
 ): Promise<Checked> {
@@ -171,7 +171,7 @@ export async function judge(
 }
 
 /**
- * The checker's verdict on `action`, in the Navi `r` of `owner`: its turn on `turn` with the review, then fleetd's code
+ * The checker's verdict on `action`, in the project `r` of `owner`: its turn on `turn` with the review, then fleetd's code
  * rules (`review.decide`). Anything but a readable verdict asks the person, saying why.
  */
 export async function check(
@@ -179,7 +179,7 @@ export async function check(
   turn: Turn,
   r: ProjectRef,
   owner: PersonId | undefined,
-  settings: NaviApprovals,
+  settings: ProjectApprovals,
   action: Action,
   context: Context,
 ): Promise<CheckerNote> {
@@ -214,8 +214,8 @@ const nonce = () => [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b
  * The checker's session: no tools at all, on the owner's own Claude, on the checker's model and effort, with the
  * `approvals.checker` prompt as its rules and the review as its one message. A string says why it can't start.
  */
-export function launch(hub: Hub, r: ProjectRef, owner: PersonId | undefined, settings: NaviApprovals, rv: review.Review): CheckerLaunch | string {
-  // Run apart from the Navi's folder, whose CLAUDE.md and settings the Navi writes: only on a node that can.
+export function launch(hub: Hub, r: ProjectRef, owner: PersonId | undefined, settings: ProjectApprovals, rv: review.Review): CheckerLaunch | string {
+  // Run apart from the project's folder, whose CLAUDE.md and settings the project writes: only on a node that can.
   if (!link(hub).can(r.machineId, CAP_ISOLATED)) {
     return `${r.machineId} runs a fleetd too old to hold the checker apart from the lead; update it`;
   }

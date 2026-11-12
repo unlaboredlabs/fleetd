@@ -3,10 +3,10 @@
 import type { ToolPreview } from "../../shared/contracts.ts";
 import { clipUtf16, never, sortedValue, words } from "../integrations/policy.ts";
 
-/** The tool as a Navi's session asks for it. */
+/** The tool as a project's session asks for it. */
 export const TOOL = "mcp__fleetd__confirm_step";
 
-/** fleetd-contracts navi.rs `ConfirmStepCall`. */
+/** fleetd-contracts' `ConfirmStepCall`. */
 export type ConfirmStepCall = { site: string; button: string; does: string; page?: string; screenshot?: string };
 
 /** A `Line<1, max>`: a single line of 1 to `max` UTF-16 units. */
@@ -47,7 +47,7 @@ export function refused(input: unknown): string | undefined {
   const text = `${call.button} ${call.does}`;
   const w = words(text);
   const has = (list: string[]) => w.some((x) => list.includes(x));
-  // Undoing an order goes through the Navi's mode like any final click (decision navi.final-confirm-by-mode), but only
+  // Undoing an order goes through the project's mode like any final click (D267), but only
   // when the button itself says so (Cancel, Return, Refund) and nothing in the step places, buys or pays: "free
   // returns" in what a Place order does undoes nothing.
   const button = words(call.button);

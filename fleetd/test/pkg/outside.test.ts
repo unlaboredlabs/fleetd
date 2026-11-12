@@ -103,16 +103,16 @@ test("a project outside the repo installs the package, imports every entry point
   expect(typecheck("deep.ts").out).toContain("error TS2307");
 }, 120_000);
 
-/** The prompt relay and the Navi's prompt rules through the package, as fleetd cloud drives them over its own store. */
+/** The prompt relay and the project's prompt rules through the package, as fleetd cloud drives them over its own store. */
 const PROMPTS = `
 import type { HubEvent, HumanRequest } from "fleetd/contracts";
 import { projectOf } from "fleetd/hub/approvals/names";
 import { answerPrompt, onThreadEvent } from "fleetd/hub/approvals/permissions";
 import { personOnly } from "fleetd/hub/approvals/person_only";
 import { defaultHooks, type PermissionDecision, type PromptApprovals } from "fleetd/hub/approvals/ports";
-import { alwaysAsks, autoApprovedEntry, autoApprovedText } from "fleetd/hub/navi/checker_rules";
-import { TOOL } from "fleetd/hub/navi/confirm_rules";
-import { promptVerdict, visitCarriesData } from "fleetd/hub/navi/prompt_rules";
+import { alwaysAsks, autoApprovedEntry, autoApprovedText } from "fleetd/hub/inbox/checker_rules";
+import { TOOL } from "fleetd/hub/inbox/confirm_rules";
+import { promptVerdict, visitCarriesData } from "fleetd/hub/inbox/prompt_rules";
 
 const at = "2026-01-01T00:00:00.000Z";
 const rows: HumanRequest[] = [];
@@ -121,7 +121,7 @@ let pending = { requestId: "r1", toolName: "Bash", summary: "ls", input: { comma
 const row = (id: string) => rows.find((r) => r.requestId === id)!;
 const a: PromptApprovals = {
   deps: {
-    hooks: { ...defaultHooks(), naviLead: async () => true },
+    hooks: { ...defaultHooks(), isLead: async () => true },
     hub: { mcpServers: async () => [], wakeRequest: async () => {} },
     nodes: { answerPermission: async (_m, _t, _r, d) => void answers.push(d), pendingPermission: async () => pending },
     clock: { now: () => 0 },

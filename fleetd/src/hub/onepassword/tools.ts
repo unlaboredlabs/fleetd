@@ -106,7 +106,7 @@ export function register(tools: Registry): void {
   tools.add("onepassword_cards", async (hub, caller, input) => {
     const p = me(hub, caller);
     const id = p.personId;
-    const project: ProjectRef | undefined = input.project ?? input.navi;
+    const project: ProjectRef | undefined = input.project;
     let machineId: string;
     if (project) {
       // Its own token is its project's secret: listed with operate on its machine, for any project (D310).

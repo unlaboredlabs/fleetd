@@ -1,4 +1,4 @@
-// A Navi's approval checker's rules, without the hub (checker_turn.ts): what an action does in a line, the review the
+// A project's approval checker's rules, without the hub (checker_turn.ts): what an action does in a line, the review the
 // checker is given, a plain public read that needs no checker, the class of action it never judges, and the log entry
 // and chat line of an action that ran without asking.
 import type { AutoApproved, AutoApprovedBy } from "../../shared/contracts.ts";
@@ -61,7 +61,7 @@ export function autoApprovedText(action: Action, by: AutoApprovedBy, reason?: st
   return why !== undefined ? `Let through without asking you: ${did}. The checker's reason: ${why}` : `Let through without asking you: ${did}.`;
 }
 
-/** An action that ran without asking at `atMs`, as the Navi's auto-approved log keeps it, linked to its chat line. */
+/** An action that ran without asking at `atMs`, as the project's auto-approved log keeps it, linked to its chat line. */
 export function autoApprovedEntry(
   action: Action,
   by: AutoApprovedBy,

@@ -6,7 +6,7 @@ import { deleteSkill, listSkills, readSkill, readSkillView, restoreSkill, saveSk
 
 const AT = "2026-10-31T10:00:00Z";
 const REF = { machineId: "devbox", projectId: "nova" };
-const NOVA = { ...REF, title: "Nova", workspaceRoot: "/home/ada/.fleetd/navi/nova", lastActivityAt: AT, threads: { running: 0, waiting: 0, failed: 0, idle: 0 } };
+const NOVA = { ...REF, title: "Nova", workspaceRoot: "/home/ada/.fleetd/inbox/nova", lastActivityAt: AT, threads: { running: 0, waiting: 0, failed: 0, idle: 0 } };
 const SKILL = { name: "weekly-invoices", description: "Sends the week's invoices", origin: "project" };
 const V2 = { version: 2, author: "agent", by: "Nova", at: AT, why: "Learned the export step" };
 

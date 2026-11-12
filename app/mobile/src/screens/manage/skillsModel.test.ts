@@ -10,11 +10,10 @@ const install = { source: "acme/skills", url: "https://github.com/acme/skills", 
 const version = (n: number, extra: Partial<SkillVersion> = {}): SkillVersion => ({ version: n, author: "agent", by: "Nova", at: hoursAgo(2), why: "Learned the export step", ...extra });
 
 describe("the Skills list", () => {
-  it("shows only on a hub that keeps skills' versions", () => {
+  it("shows while the hub is live, whatever features it names", () => {
     const live = { phase: "live", hub: "http://devbox:4790", protocol: 1 } as const;
-    expect(skillsShown({ ...live, features: ["presence", "navi_skills"] })).toBe(true);
-    expect(skillsShown({ ...live, features: ["presence"] })).toBe(false);
-    expect(skillsShown(live)).toBe(false);
+    expect(skillsShown({ ...live, features: ["presence"] })).toBe(true);
+    expect(skillsShown(live)).toBe(true);
     expect(skillsShown({ phase: "connecting", hub: "http://devbox:4790", attempt: 1 })).toBe(false);
   });
 

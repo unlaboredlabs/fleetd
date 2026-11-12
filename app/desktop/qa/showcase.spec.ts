@@ -7,7 +7,6 @@
 //   the train merges four PRs as one batch.
 // - team: checkout's chat, which the team shares: Sam asks, Alice adds hers, the lead answers the two of them.
 // - screens: an agent's live browser; cut to the iPhone's sign-in asking for you, Take over, the code, Hand back.
-// - navi: Ada, a Navi, with a lease renewal that waits on you; Send it, and it went.
 //
 // And the stills beside the sections without a clip, each a part of a registered screen (registry.ts) on its QA
 // fixture: site/showcase-<still>-<theme>.jpg, at 2x, with a -small twin at 1x.
@@ -479,7 +478,7 @@ async function typeCode(page: Page, takenAt: number) {
 }
 
 /** The clips, in the page's order. */
-const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | "screens" | "navi", Script> => ({
+const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | "screens", Script> => ({
   // The ask, the lead's split and its three writers, #231 up; then the merge line as the batch goes through CI and
   // merges. Between them QA takes the phone over and hands it back, as the screens clip shows, so the order runs on.
   lead: async (page) => {
@@ -528,15 +527,6 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
       takes: [[sent + STEPS.screens + 1000, sent + 9300], [sent + STEPS.phoneAsks - 300, sent + STEPS.phoneAsks + 4800]],
       poster: takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200,
     };
-  },
-  // From storefront to Ada: its lease renewal for Marta waits on you. Send it, and it went.
-  navi: async (page, start) => {
-    await sleepUntil(start + 700);
-    await press(page, item(page, /^Ada\b/u));
-    await sleepUntil(start + 2900);
-    await press(page, page.getByRole("button", { name: "Send it" }));
-    await sleepUntil(start + 5000);
-    return { takes: [[start, start + 5000]], poster: start + 2500 };
   },
 });
 
@@ -660,7 +650,7 @@ function pacing(clip: string, frames: ReadonlyArray<{ at: number }>, takes: Read
   console.log(`${clip}: screencast ${String(gaps.length + takes.length)} frames, every ${String(q(0.5))} ms (p95 ${String(q(0.95))}, longest ${String(q(1))}); ${String(moves.length)} frames at ${String(FPS)} fps, ${String(jumps)} cursor jumps`);
 }
 
-for (const clip of ["lead", "team", "screens", "navi"] as const) {
+for (const clip of ["lead", "team", "screens"] as const) {
   for (const theme of ["light", "dark"] as const) {
     test(`showcase ${clip} ${theme}`, async () => {
       test.setTimeout(600_000);

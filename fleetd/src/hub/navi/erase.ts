@@ -1,12 +1,11 @@
-// Deleting a Navi erases it (D287 navi.delete-erases): `project_remove` of a
-// Navi forgets it on its node, which also deletes its sessions, their transcripts and the attachments in its folder,
+// Deleting a project erases it (D287): `project_remove` of a project forgets it on its node, which also deletes its sessions, their transcripts and the attachments in its folder,
 // then `erase` deletes everything of it the hub keeps: its chat and the events that carried it, its approvals and
 // purchases (`requests`), asks and decisions, its orders and what they hold, its memory and skills, its attachments
 // and its screen recordings, and the time inspector's record of its sessions. Its agents' slots and its own max agents
 // go from the slot board, and its project.removed stays in the log for the open apps.
 //
-// The delete is marked as asked for first (`navi_erases`, `asked`): when its node removes the Navi but its answer
-// never reaches the hub, `run` finishes the erase once the hub's cache no longer has the Navi, at the node's
+// The delete is marked as asked for first (`project_erases`, `asked`): when its node removes the project but its answer
+// never reaches the hub, `run` finishes the erase once the hub's cache no longer has the project, at the node's
 // `project_removed` or the first snapshot after, and at the hub's start.
 import type { Database } from "bun:sqlite";
 import { lstatSync, rmSync } from "node:fs";
@@ -27,20 +26,20 @@ const projectKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
 /** The slot board, as the slots area keeps it (`hub.area("slots")`); absent until that area is ported (D355). */
 type Slots = { forgetProject(r: ProjectRef): void };
 
-/** Marks the Navi's delete as asked for, before its node is asked: `run` finishes it if the answer never comes. */
+/** Marks the project's delete as asked for, before its node is asked: `run` finishes it if the answer never comes. */
 export function asked(hub: Hub, r: ProjectRef): void {
   hub.db.conn
-    .query("INSERT OR REPLACE INTO navi_erases (machine_id, project_id, asked_ms) VALUES (?, ?, ?)")
+    .query("INSERT OR REPLACE INTO project_erases (machine_id, project_id, asked_ms) VALUES (?, ?, ?)")
     .run(r.machineId, r.projectId, hub.clock.now());
 }
 
 /**
- * Erases each Navi whose delete was asked for and that the hub's cache no longer has: its node removed it, whether or
+ * Erases each project whose delete was asked for and that the hub's cache no longer has: its node removed it, whether or
  * not its answer came. One its node still has waits. How many were erased.
  */
 export function finishPending(hub: Hub): number {
   const pending = hub.db.conn
-    .query<{ machine_id: string; project_id: string }, []>("SELECT machine_id, project_id FROM navi_erases")
+    .query<{ machine_id: string; project_id: string }, []>("SELECT machine_id, project_id FROM project_erases")
     .all();
   let n = 0;
   for (const row of pending) {
@@ -126,7 +125,7 @@ export async function run(hub: Hub): Promise<void> {
       try {
         finishPending(hub);
       } catch (error) {
-        console.warn(`a deleted Navi's erase wasn't finished: ${(error as Error).message}`);
+        console.warn(`a deleted project's erase wasn't finished: ${(error as Error).message}`);
       }
     }
     try {
@@ -136,7 +135,7 @@ export async function run(hub: Hub): Promise<void> {
       cursor = page.cursor;
     } catch (error) {
       if (signal.aborted) return;
-      console.warn(`navi erases: event log read failed: ${(error as Error).message}`);
+      console.warn(`project erases: event log read failed: ${(error as Error).message}`);
       due = true;
       await new Promise<void>((done) => {
         const t = setTimeout(done, 5_000);
@@ -146,7 +145,7 @@ export async function run(hub: Hub): Promise<void> {
   }
 }
 
-/** Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark. Run once its node has forgotten it. */
+/** Erases what the hub keeps of the project `r`, its rows and its files, and its mark. Run once its node has forgotten it. */
 export function erase(hub: Hub, r: ProjectRef): void {
   aProject(r);
   // Its tasks' rows go below, so their slots are given back here, while the board still knows whose they are.
@@ -169,10 +168,10 @@ export function eraseIn(db: HubDb, home: string, r: ProjectRef): void {
     gone(join(home, "memory", r.machineId, projectDirName(r)));
     gone(join(home, "skills", "projects", r.machineId, projectDirName(r)));
   }
-  db.conn.query("DELETE FROM navi_erases WHERE machine_id = ? AND project_id = ?").run(r.machineId, r.projectId);
+  db.conn.query("DELETE FROM project_erases WHERE machine_id = ? AND project_id = ?").run(r.machineId, r.projectId);
 }
 
-/** Deletes the Navi's rows; the ids of its screen recordings and the files of its attachments, for their files. */
+/** Deletes the project's rows; the ids of its screen recordings and the files of its attachments, for their files. */
 function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<string> } {
   const [m, p, key] = [r.machineId, r.projectId, projectKey(r)];
   const strings = (sql: string, ...args: (string | number)[]) =>
@@ -197,7 +196,7 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
     strings("SELECT sha256 AS v FROM attachments WHERE project = ? OR workstream_id IN (SELECT value FROM json_each(?))", key, ordersJson),
   );
   c.query("DELETE FROM attachments WHERE project = ? OR workstream_id IN (SELECT value FROM json_each(?))").run(key, ordersJson);
-  for (const table of ["navi_ask_orders", "order_env", "time_orders", "time_paths", "time_order_ci"]) {
+  for (const table of ["project_ask_orders", "order_env", "time_orders", "time_paths", "time_order_ci"]) {
     c.query(`DELETE FROM ${table} WHERE workstream_id IN (SELECT value FROM json_each(?))`).run(ordersJson);
   }
   c.query(
@@ -229,7 +228,7 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
   for (const table of BY_PROJECT) c.query(`DELETE FROM ${table} WHERE machine_id = ? AND project_id = ?`).run(m, p);
   for (const table of BY_KEY) c.query(`DELETE FROM ${table} WHERE project_key = ?`).run(key);
   c.query(
-    `DELETE FROM navi_asks WHERE (from_machine_id = ?1 AND from_project_id = ?2)
+    `DELETE FROM project_asks WHERE (from_machine_id = ?1 AND from_project_id = ?2)
        OR (to_machine_id = ?1 AND to_project_id = ?2)`,
   ).run(m, p);
   // The event log: its chat's messages ride in their events, under `data.projectRef`; the rest name it at the top.
@@ -258,6 +257,6 @@ function gone(path: string): void {
   try {
     rmSync(path, { recursive: true, force: true });
   } catch (error) {
-    console.warn(`a deleted Navi's file was not removed (${path}): ${(error as Error).message}`);
+    console.warn(`a deleted project's file was not removed (${path}): ${(error as Error).message}`);
   }
 }

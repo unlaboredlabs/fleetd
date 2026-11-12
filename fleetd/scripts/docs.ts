@@ -815,7 +815,7 @@ function builtins(): string {
     "\n**Every lead** runs in `manual` permission mode with no sandbox (D310): it does unasked what full access does, and any " +
     "tool not below asks first ([How leads run](/docs/security#how-leads-run)). A lead whose project has no repo does its own " +
     "work: it keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, re-read at each lead start, so adding a repo takes them away. " +
-    "The node answers a shell command: it runs (decision `navi.shell-unasked`, D208), unless it would wipe the machine or opens " +
+    "The node answers a shell command: it runs (D208), unless it would wipe the machine or opens " +
     "a site in the browser. A fetch or `agent-browser open` goes through without asking to a site the person allowed at its " +
     "first visit or linked in their own chat message. A tool of an MCP server saved without `integration` runs unasked; an " +
     "integration's send reaches the person as an approval in the project's chat, showing the tool and exactly what it would " +

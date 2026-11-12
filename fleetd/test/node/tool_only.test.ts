@@ -13,7 +13,7 @@ test("a runner's hello lists the node core's calls then the areas'; the agents' 
   expect(mac[0]).toBe("agents_mac");
   expect(mac.at(-1)).toBe("mac_tool");
   expect(mac.filter((c) => c === "mac_tool" || c === "agents_mac")).toHaveLength(2);
-  // Nothing that carries a secret, a claude, a Navi or a repo; an Android emulator isn't the Mac's to host.
+  // Nothing that carries a secret, a claude, a project or a repo; an Android emulator isn't the Mac's to host.
   for (const gone of ["repos", "claude_install", "claude_login", "onepassword", "assistant", "session_android", "skills", "mcp_servers"])
     expect(mac).not.toContain(gone);
   for (const kept of ["self_update", "update_fetch", "update_hold", "link_deflate", "browser"]) expect(mac).toContain(kept);

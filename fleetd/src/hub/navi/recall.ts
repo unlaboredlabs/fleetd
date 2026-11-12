@@ -1,4 +1,4 @@
-// A Navi reads back through its own chat: `chat_search` finds the messages
+// A project reads back through its own chat: `chat_search` finds the messages
 // holding some words, in a date range or not, newest first and a page at a time, and `chat_read` reads the messages
 // around one of them. A fresh session sees only the latest part of the chat; these reach all of it.
 //
@@ -14,7 +14,7 @@ import { parseMs } from "../store/time.ts";
 import { mayUse } from "./bridge.ts";
 
 export const OPS = ["chat_search", "chat_read"] as const;
-/** The hits `chat_search` returns at once (fleetd-contracts navi.rs `CHAT_SEARCH_PAGE`). */
+/** The hits `chat_search` returns at once (fleetd-contracts' `CHAT_SEARCH_PAGE`). */
 export const CHAT_SEARCH_PAGE = 20;
 /** The most messages `chat_read` reads on each side. */
 export const CHAT_READ_SIDE_MAX = 10;
@@ -25,7 +25,7 @@ const READ_CHARS = 2000;
 /** Messages `chat_read` reads on each side when not told. */
 const SIDE = 5;
 
-/** One message as the recall calls show it (navi.rs `RecalledMessage`). */
+/** One message as the recall calls show it (fleetd-contracts' `RecalledMessage`). */
 export type RecalledMessage = { messageId: string; at: string; author: string; by?: string; text: string; cut?: boolean };
 
 export function start(hub: Hub): void {
@@ -33,7 +33,7 @@ export function start(hub: Hub): void {
 }
 
 const failed = (error: unknown) => {
-  console.error(`navi recall store: ${(error as Error).message}`);
+  console.error(`recall store: ${(error as Error).message}`);
   return new ToolError("failed", "The hub failed to read the chat.");
 };
 

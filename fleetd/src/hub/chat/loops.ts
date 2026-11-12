@@ -1,5 +1,5 @@
 // The chat's start: the flow's loop (chat::flow::run), its lead calls, each project's chat state in fleetd_status
-// (chat/tools.rs `extend_status`), the Navi bridge's `sendAsAgent`, the /app `chat` subscription and its `chat_delta`
+// (chat/tools.rs `extend_status`), the project bridge's `sendAsAgent`, the /app `chat` subscription and its `chat_delta`
 // frames, and the `chat_state` area the push area reads.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { allows } from "../auth/index.ts";
@@ -25,7 +25,7 @@ export function start(hub: Hub): void {
   void run(hub).catch((error) => {
     if (!hub.shutdown.signal.aborted) console.error("chat: the flow stopped:", error);
   });
-  // The Navi bridge's project_message writes to another project's lead as an agent.
+  // The project bridge's project_message writes to another project's lead as an agent.
   found.sendAsAgent = (h, to, by, body, requestId) => sendAsAgent(h, to, by, body, requestId);
   const ws = appWs(hub);
   ws.on("chat", (conn, message) => {

@@ -304,17 +304,6 @@
     "ProjectId": {
       "type": "string"
     },
-    "ProjectKind": {
-      "description": "What a project is. Absent on a project: one of code, a lead with its repos and folders.",
-      "oneOf": [
-        {
-          "const": "assistant",
-          "description": "A Navi: a personal assistant in a plain folder of its own, whose lead runs the `navi.start` prompt in the\nassistant role (`SessionRole::Assistant`).",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
     "ProjectOutcome": {
       "description": "The one-call project outcome, returned as-is by project_get.",
       "properties": {
@@ -448,7 +437,7 @@
       "properties": {
         "archivedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until\nit is brought back (`navi_archive` with `archived: false`)."
+          "description": "When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until\nit is brought back (`project_archive` with `archived: false`)."
         },
         "avatar": {
           "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
@@ -460,15 +449,11 @@
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
-          "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a Navi made before it\nwas recorded."
+          "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it\nwas recorded."
         },
         "icon": {
           "$ref": "#/$defs/ProjectIcon",
           "description": "Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked\n(`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from\na node and an older hub: its letters show."
-        },
-        "kind": {
-          "$ref": "#/$defs/ProjectKind",
-          "description": "Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a\nformer Navi. Absent from a node."
         },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"

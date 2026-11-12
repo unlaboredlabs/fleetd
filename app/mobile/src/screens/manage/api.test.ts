@@ -59,7 +59,7 @@ describe("Rename and Archive", () => {
     const { hub, session, calls } = setup();
     const archived = setArchived(session, SHOP, true);
     expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: true });
-    hub.answer(PROJECT_TOOLS.archive, { navi: SHOP });
+    hub.answer(PROJECT_TOOLS.archive, { project: SHOP });
     await expect(archived).resolves.toEqual({ ok: true, value: null });
     void setArchived(session, SHOP, false);
     expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: false });
@@ -363,12 +363,12 @@ describe("Approvals and Linked hubs", () => {
     await expect(next).resolves.toEqual({ ok: true, value: { log: [entry], older: undefined } });
   });
 
-  it("lists only its own hub links, and removes one", async () => {
+  it("lists the hub links the hub reads for the project, and removes one", async () => {
     const { hub, session, calls } = setup();
     const read = readLinks(session, SHOP);
-    expect(calls("hub_links_get").at(-1)?.input).toEqual({ navi: REF });
-    const link = (linkId: string, navi: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, navi });
-    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF), link("hl_2", { machineId: "devbox", projectId: "ada" })] });
+    expect(calls("hub_links_get").at(-1)?.input).toEqual({ project: REF });
+    const link = (linkId: string, project: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, project });
+    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF)] });
     await expect(read).resolves.toMatchObject({ ok: true, value: [{ linkId: "hl_1" }] });
     const removed = removeLink(session, "hl_1");
     expect(calls("hub_link_remove").at(-1)?.input).toEqual({ linkId: "hl_1" });

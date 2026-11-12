@@ -59,9 +59,9 @@ test("Changes are numbered, lined up per repo with drafts at the back, and store
 test("changes_list filters by grant, and lists a project that was another person's Only me one (D491)", async () => {
   const { hub, tools, records } = lab();
   records.create(change("web", 7));
-  records.create(change("navi", 8));
+  records.create(change("inbox", 8));
   hub.db.conn.query("INSERT INTO people (person_id, name, role, created_ms) VALUES ('P1', 'Owner', 'owner', 1), ('P2', 'Sam', 'member', 2)").run();
-  hub.db.conn.query("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'navi', 1, 'P2')").run();
+  hub.db.conn.query("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'inbox', 1, 'P2')").run();
   const owner: Caller = { keyId: "k", name: "k", prefix: "fld_aaaaaa", grants: [{ role: "read", machines: "*" }], createdAt: AT };
   const out = await tools.call(hub, owner, "changes_list", {});
   expect("output" in out && (out.output as any).changes.map((c: Change) => c.changeId).sort()).toEqual(["X1", "X2"]);

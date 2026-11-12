@@ -12,7 +12,7 @@ export const FEED_WAIT_MAX_SEC = 25;
 /** A link unused this long expires, revoked at its next use. */
 export const IDLE_EXPIRY_MS = 90 * 24 * 60 * 60 * 1000;
 
-/** A link minted here as a request through it sees it, read again at each request (T2246's navi_bridge `Issued`). */
+/** A link minted here as a request through it sees it, read again at each request (T2246's ask bridge `Issued`). */
 export type Issued = {
   linkId: string;
   label: string;
@@ -47,7 +47,7 @@ export const dead = (message: string) =>
 /** A link this hub keeps for one of its projects, its key still sealed. */
 export type Kept = {
   linkId: string;
-  navi: ProjectRef;
+  project: ProjectRef;
   label: string;
   url: string;
   sealed: Uint8Array;
@@ -75,7 +75,7 @@ export function keptInfo(k: Kept): HubLink {
     ...(k.error === undefined ? {} : { error: k.error }),
     label: k.label,
     linkId: k.linkId,
-    navi: k.navi,
+    project: k.project,
     ...(projects === undefined ? {} : { projects }),
     state: k.state,
     url: k.url,

@@ -4,7 +4,7 @@
     {
       "kind": "secret_request",
       "requestId": "Q31",
-      "name": "navi.secure_input",
+      "name": "browser.secure_input",
       "text": "Enter Passport number for Visa application (visas.devbox.example): The visa form needs it to continue",
       "sink": "fill:devbox:B00000000000000000000000000000031",
       "state": "open",

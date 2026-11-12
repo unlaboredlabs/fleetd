@@ -251,7 +251,7 @@ export class NodeCommands {
   /** `session_host` -> `session_host_result`: one of an agent's session calls, answered by the runner's node. */
   hostSession(
     machineId: string,
-    input: { hostKey: unknown; frame: unknown; sealed?: string; navi?: string },
+    input: { hostKey: unknown; frame: unknown; sealed?: string; project?: string },
     waitSec: number,
   ) {
     return this.request(machineId, { ...input, t: "session_host" }, { waitSec });

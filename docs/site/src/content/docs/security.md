@@ -185,8 +185,7 @@ or Ask me about everything to be asked):
 - `project_message`, `confirm_step` and `automation_confirm`.
 
 A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A project
-that had a home of its own from an earlier fleetd still runs its lead's commands there (`navis/<project id>/home` in
-the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose
+that had a home of its own from an earlier fleetd still runs its lead's commands there (in the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose
 project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 

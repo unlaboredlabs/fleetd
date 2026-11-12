@@ -29,9 +29,9 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { chat } from "../chat/index.ts";
 import { projectRemove } from "../executor/projects.ts";
 import { dir as attachmentsDir } from "../intake/attachments.ts";
-import { readInto, sessionOf } from "../intake/chat_image.ts";
+import { readInto, sessionOf } from "../intake/chat_file.ts";
 import { type LeadCall, type LeadCaller, leadCalls, leadWakes, requireHuman, unknownProject } from "../leads/seams.ts";
-import * as navis from "../navi/store.ts";
+import { setArchived } from "../navi/store.ts";
 import { INSTRUCTIONS } from "../prompts/entry.ts";
 import { entryOr, PromptError, prompts } from "../prompts/store.ts";
 import { changed as promptChanged } from "../prompts/tools.ts";
@@ -459,9 +459,9 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
   if (c.archive === true) {
     await step(() => {
       if (projectOf(hub, r).archivedAt !== undefined) return undefined;
-      navis.setArchived(db, r, hub.clock.now());
+      setArchived(db, r, hub.clock.now());
       const p = projectOf(hub, r);
-      announce(hub, r, `${p.title} archived`, { kind: p.kind ?? null, title: p.title, archivedAt: p.archivedAt ?? null });
+      announce(hub, r, `${p.title} archived`, { title: p.title, archivedAt: p.archivedAt ?? null });
       const line = "Archived the project";
       post(hub, r, line, { kind: "archived" });
       return line;
@@ -552,9 +552,9 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
       return undefined;
     }
     case "archived": {
-      navis.setArchived(db, r, undefined);
+      setArchived(db, r, undefined);
       const p = projectOf(hub, r);
-      announce(hub, r, `${p.title} back`, { kind: p.kind ?? null, title: p.title, archivedAt: p.archivedAt ?? null });
+      announce(hub, r, `${p.title} back`, { title: p.title, archivedAt: p.archivedAt ?? null });
       return "Its lead starts with the next chat message.";
     }
   }

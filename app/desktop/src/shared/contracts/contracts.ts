@@ -574,6 +574,13 @@ export type ApprovalAnswerOutput = {
 /** The human's answer to a `command_approval`. */
 export type ApprovalDecision = "approve" | "deny";
 
+/**
+ * How a project's risky actions are approved (W239, D263): its sends, replies, shares and invites through an
+ * integration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and
+ * placing orders are refused, and so is a credential in outgoing content.
+ */
+export type ApprovalMode = "ask" | "checker" | "yolo";
+
 export type KnownArtifactFormat = "md" | "html";
 /** KnownArtifactFormat, or a value from a newer hub. */
 export type ArtifactFormat = KnownArtifactFormat | (string & {});
@@ -616,7 +623,7 @@ export type ArtifactSummary = {
 /** One kept version of an artifact, without its content. */
 export type ArtifactVersion = {
   at: Timestamp;
-  /** Who published it: the lead, a task's title, or a Navi's name. */
+  /** Who published it: the lead, a task's title, or a project's name. */
   by: string;
   /** Its content's size in bytes. */
   bytes: number;
@@ -761,15 +768,15 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
-/** One risky action a Navi ran without asking its person, as its settings' log shows it. */
+/** One risky action a project ran without asking its person, as its settings' log shows it. */
 export type AutoApproved = {
   at: Timestamp;
   by: AutoApprovedBy;
-  /** The quiet line in the Navi's chat that told the person; absent in YOLO, which posts none. */
+  /** The quiet line in the project's chat that told the person; absent in YOLO, which posts none. */
   messageId?: ChatMessageId;
   /** The checker's reason; absent in YOLO. */
   reason?: string;
-  /** The tool the Navi's session asked for: `mcp__mail__send_message`, `WebFetch`. */
+  /** The tool the project's session asked for: `mcp__mail__send_message`, `WebFetch`. */
   tool: string;
   /** What it did, in one line: "Send on mail to sam@example.com", "Open example.org". */
   what: string;
@@ -786,7 +793,7 @@ export type Automation = {
   automationId: AutomationId;
   /**
    * Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card
-   * `automation_confirm` shows them ("Let it run on its own"). A Navi's approval checker then takes the prompt as
+   * `automation_confirm` shows them ("Let it run on its own"). A project's approval checker then takes the prompt as
    * their own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.
    */
   confirmed?: boolean;
@@ -1507,7 +1514,7 @@ export type ChatItem = SecretRequestItem & {
 
 export type ChatMessage = {
   /**
-   * A system line "Published …": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a
+   * A system line "Published …": a lead or task published an artifact (`artifact_publish`); the app shows a
    * card that opens it.
    */
   artifact?: ArtifactPublished;
@@ -1552,7 +1559,7 @@ export type ChatMessage = {
    */
   setupChanged?: SetupChanged;
   /**
-   * A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
+   * A system line "Saved a skill: …": a project's lead saved or changed one of its skills (`skill_save`); the app links it
    * to the skill.
    */
   skillSaved?: SkillSaved;
@@ -1783,7 +1790,7 @@ export type ChatStopOutput = {
   truncated?: boolean;
 };
 
-/** What a Navi's approval checker said of an action it didn't let through. */
+/** What a project's approval checker said of an action it didn't let through. */
 export type CheckerNote = {
   /** Its reason, in one line. A checker that failed or answered nothing readable says so here. */
   reason: string;
@@ -2175,12 +2182,12 @@ export type CommandApprovalItem = {
    */
   permission?: ToolPermission;
   /**
-   * A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
+   * A project's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the project's node
    * fills the card into that checkout once. Boxed, as `permission` is.
    */
   purchase?: Purchase;
   requestId: ChatRequestId;
-  /** A Navi's secure input from a 1Password field: approved, its node fills that field once. */
+  /** A project's secure input from a 1Password field: approved, its node fills that field once. */
   secureInput?: SecureInput;
   state: CommandApprovalState;
 };
@@ -3208,7 +3215,7 @@ export type HubInfoOutput = {
   version: string;
 };
 
-/** A link this hub keeps for one of its Navis. The key stays sealed in the hub; nothing returns it. */
+/** A link this hub keeps for one of its projects. The key stays sealed in the hub; nothing returns it. */
 export type HubLink = {
   checkedAt?: Timestamp;
   createdAt: Timestamp;
@@ -3216,7 +3223,7 @@ export type HubLink = {
   error?: string;
   label: string;
   linkId: HubLinkId;
-  navi: ProjectRef;
+  project: ProjectRef;
   /** The projects it is limited to there, as the other hub last said; absent: every project its person reaches. */
   projects?: LinkProject[];
   state: HubLinkState;
@@ -3228,10 +3235,8 @@ export type HubLink = {
 
 export type HubLinkAddInput = {
   label: string;
-  /** Old name of `project`, accepted for one release. */
-  navi?: ProjectRef;
-  /** The project (D310); one of `project` and `navi`, its old name for one release. */
-  project?: ProjectRef;
+  /** The project. */
+  project: ProjectRef;
   /** The link key sealed to this hub's boxPubKey. */
   sealed: SealedSecret;
   /** The other hub's URL, as the app pairs with it: https, or http over a tailnet. */
@@ -3241,7 +3246,7 @@ export type HubLinkAddInput = {
 export type HubLinkAddOutput = {
   link: HubLink;
   next?: string;
-  /** What the Navi reaches there. */
+  /** What the project reaches there. */
   projects: LinkProject[];
   truncated?: boolean;
 };
@@ -3256,7 +3261,7 @@ export type HubLinkMintInput = {
 };
 
 export type HubLinkMintOutput = {
-  /** "flk_…": shown once, never stored; paste it into the other hub's Navi, which seals it. */
+  /** "flk_…": shown once, never stored; paste it into the other hub's project, Linked hubs, which seals it. */
   key: string;
   link: IssuedLink;
   next?: string;
@@ -3289,9 +3294,7 @@ export type KnownHubLinkState = "ok" | "unreachable" | "revoked";
 export type HubLinkState = KnownHubLinkState | (string & {});
 
 export type HubLinksGetInput = {
-  /** Old name of `project`, accepted for one release. */
-  navi?: ProjectRef;
-  /** The project (D310); `navi` is its old name, accepted for one release. */
+  /** The project. */
   project?: ProjectRef;
 };
 
@@ -3300,7 +3303,7 @@ export type HubLinksGetOutput = {
   boxPubKey: string;
   /** Links minted on this hub: the caller's own, or every one for an admin. */
   issued: IssuedLink[];
-  /** The navi's links to other hubs. */
+  /** The project's links to other hubs. */
   links: HubLink[];
   next?: string;
   truncated?: boolean;
@@ -3496,7 +3499,7 @@ export type HumanRequest = {
   permission?: ToolPermission;
   projectRef: ProjectRef;
   /**
-   * approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill
+   * approval of a project's purchase (purchase_request), instead of a gated run: approving it lets the project's node fill
    * its card into that checkout once. Only a person answers it, in every approval mode.
    */
   purchase?: Purchase;
@@ -3504,8 +3507,8 @@ export type HumanRequest = {
   /** secret only. */
   secret?: SecretRequest;
   /**
-   * A Navi's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink
-   * is `fill:`); on an approval, a 1Password field the Navi's node fills once approved.
+   * A project's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink
+   * is `fill:`); on an approval, a 1Password field the project's node fills once approved.
    */
   secureInput?: SecureInput;
   state: RequestState;
@@ -3679,7 +3682,7 @@ export type IssuedLink = {
    * revokes it too); a link from before people acts at this device's grants.
    */
   keyId: string;
-  /** What the person called the hub it is for; requests through it read "asked via <label> Navi". */
+  /** What the person called the hub it is for; requests through it read "<person> via <label>". */
   label: string;
   lastUsedAt?: Timestamp;
   linkId: HubLinkId;
@@ -3957,7 +3960,7 @@ export type MacTool = {
 
 export type Machine = {
   /**
-   * The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,
+   * The agents' Mac (D298): a tool every project's agents use, never a runner. No agent or lead runs there,
    * and clients seal no secret to it. Absent on every other machine.
    */
   agentsMac?: boolean;
@@ -4211,19 +4214,13 @@ export type MachineRolesEntry = {
   maxSessionsWhy: string;
   name: string;
   /**
-   * The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`); `missing` on a Mac,
-   * where Navis don't run (D299). Absent until it reports, from a node before it, and on a system fleetd has no
-   * sandbox for.
-   */
-  naviSandbox?: NaviSandbox;
-  /**
    * The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,
    * a node that still runs its old build needs it.
    */
   nodeRestart?: string;
   /** Its node is linked to the hub now. */
   online: boolean;
-  /** The caller may work there (operate): make a Navi, start agents. Absent from a hub before it. */
+  /** The caller may work there (operate): make a project, start agents. Absent from a hub before it. */
   operates?: boolean;
   roles: MachineRole[];
   /**
@@ -4238,7 +4235,7 @@ export type MachineRolesEntry = {
 export type MachineRolesInput = { [key: string]: unknown };
 
 export type MachineRolesOutput = {
-  /** Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is. */
+  /** Where a new project goes when none is named (`project_discover.best`). Absent: no machine is. */
   best?: MachineId;
   machines: MachineRolesEntry[];
   next?: string;
@@ -4253,7 +4250,7 @@ export type MachineRolesOutput = {
 export type MachineRolesSetInput = {
   /** Drop the session cap: it hosts what it fits again. */
   autoSessions?: boolean;
-  /** The agents' Mac only: "Agents may use this Mac", for every project's agents (Navis never). */
+  /** The agents' Mac only: "Agents may use this Mac", for every project's agents (leads never). */
   macTool?: boolean;
   machineId: MachineId;
   /** The most sessions it hosts at once, in place of what it fits. */
@@ -4615,8 +4612,8 @@ export type MemoryGetOutput = {
   projectChars?: number;
   truncated?: boolean;
   /**
-   * Your own memory: how you work, read by the agents of work you start and by your Navi. Empty for a key with no
-   * person. The one shared user.md on a hub from before people.
+   * Your own memory: how you work, read by the agents of work you start and by the leads you write to. Empty for a key
+   * with no person. The one shared user.md on a hub from before people.
    */
   user: MemoryFile;
 };
@@ -4917,252 +4914,6 @@ export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 /** A mouse button, as CDP names it. */
 export type MouseButton = "none" | "left" | "middle" | "right";
 
-/**
- * How a Navi's risky actions are approved (W239, D263): its sends, replies, shares and invites through an
- * integration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and
- * placing orders are refused, and so is a credential in outgoing content.
- */
-export type NaviApprovalMode = "ask" | "checker" | "yolo";
-
-/** A Navi's approval settings: its mode, and the checker's model and effort. */
-export type NaviApprovals = {
-  /** Always true now; kept for older apps, which offered "Use the default" when it was false. */
-  defaults: boolean;
-  effort: Effort;
-  mode: NaviApprovalMode;
-  /**
-   * The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with
-   * `effort`, for older phones, which showed them.
-   */
-  model: ModelName;
-};
-
-export type NaviApprovalsInput = {
-  /** The page's end: the `older` of the page before. Absent: from the newest. */
-  before?: number;
-  /** How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read). */
-  limit?: number;
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviApprovalsOutput = {
-  approvals: NaviApprovals;
-  /** Newest first, at most `limit`. */
-  log: AutoApproved[];
-  next?: string;
-  /** Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest. */
-  older?: number;
-  /** How many the whole log holds. Absent from older hubs. */
-  total?: number;
-  truncated?: boolean;
-};
-
-export type NaviApprovalsSetInput = {
-  /** Ignored, as `model` is. */
-  effort?: Effort;
-  machineId: MachineId;
-  mode: NaviApprovalMode;
-  /** Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works. */
-  model?: ModelName;
-  projectId: ProjectId;
-};
-
-export type NaviApprovalsSetOutput = {
-  approvals: NaviApprovals;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type NaviArchiveInput = {
-  /** False brings an archived Navi back. Default true. */
-  archived?: boolean;
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviArchiveOutput = {
-  navi: ProjectSummary;
-  next?: string;
-  truncated?: boolean;
-};
-
-/**
- * One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened
- * for it.
- */
-export type NaviAsk = {
-  at: Timestamp;
-  handle: AskHandle;
-  orders: NaviAskOrder[];
-  /** The Navi's words, without the line telling the lead about the handle. */
-  text: string;
-  to: ProjectRef;
-  toTitle: string;
-};
-
-/** An order opened for an ask, as it stands now. */
-export type NaviAskOrder = {
-  /** The lead's latest one-line headline for it. */
-  headline?: string;
-  /** True once a PR of it merged; absent otherwise. */
-  merged?: boolean;
-  state: WorkstreamState;
-  title: string;
-  workstreamId: WorkstreamId;
-};
-
-export type NaviAsksInput = {
-  /** Old name of `project`, accepted for one release. */
-  navi?: ProjectRef;
-  /** The project (D310); one of `project` and `navi`, its old name for one release. */
-  project?: ProjectRef;
-};
-
-export type NaviAsksOutput = {
-  asks: NaviAsk[];
-  navi: ProjectRef;
-  next?: string;
-  truncated?: boolean;
-};
-
-/**
- * The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is
- * kept.
- */
-export type NaviCard = {
-  brand?: CardBrand;
-  /** A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`. */
-  label?: string;
-  last4?: CardLast4;
-  ref: CardRef;
-};
-
-export type NaviCardSetInput = {
-  /**
-   * A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported
-   * into the vault, then set); absent: the Navi has no card.
-   */
-  card?: CardRef;
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviCardSetOutput = {
-  card?: NaviCard;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type NaviCreateInput = {
-  /** Where it lives; absent: the best worker (see `project_discover.best`). */
-  machineId?: MachineId;
-  /** What the person calls it ("Ada", "Home", "Taxes"). Its folder is named after it and keeps that name. */
-  name: string;
-};
-
-export type NaviCreateOutput = {
-  /** The new Navi: `kind` is `assistant`. */
-  navi: ProjectSummary;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type NaviListInput = {
-  /** Include archived ones (default false). */
-  archived?: boolean;
-  /** Only those on this machine; absent: every machine. */
-  machineId?: MachineId;
-};
-
-export type NaviListOutput = {
-  /** Oldest first. */
-  navis: ProjectSummary[];
-  next?: string;
-  truncated?: boolean;
-};
-
-export type NaviPurchasesInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviPurchasesOutput = {
-  /** Absent until the person picks one: the Navi can't pay until then. */
-  card?: NaviCard;
-  next?: string;
-  /** Newest first, at most 200. */
-  purchases: PurchaseLogEntry[];
-  truncated?: boolean;
-};
-
-export type NaviRenameInput = {
-  machineId: MachineId;
-  /** Its new name; its folder keeps the old one. */
-  name: string;
-  projectId: ProjectId;
-};
-
-export type NaviRenameOutput = {
-  navi: ProjectSummary;
-  next?: string;
-  truncated?: boolean;
-};
-
-/** What a Navi's OS sandbox is on a machine, in a person's words. */
-export type NaviSandbox = {
-  /** What to run to close a gap or make Navis run here. */
-  fix?: string;
-  /** "Navis run in bubblewrap, with abstract sockets scoped (Landlock)." */
-  line: string;
-  status: SandboxStatus;
-};
-
-export type NaviSigninsForgetInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviSigninsForgetOutput = {
-  next?: string;
-  ok: true;
-  truncated?: boolean;
-};
-
-/** A site a Navi fetches and opens without asking: a person approved its first visit. */
-export type NaviSite = {
-  allowedAt: Timestamp;
-  /** Who approved it: `human:<their device's name>`. */
-  allowedBy: string;
-  /** Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own. */
-  site: string;
-};
-
-export type NaviSiteRevokeInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-  site: string;
-};
-
-export type NaviSiteRevokeOutput = {
-  next?: string;
-  /** What it may still fetch and open unasked. */
-  sites: NaviSite[];
-  truncated?: boolean;
-};
-
-export type NaviSitesInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type NaviSitesOutput = {
-  next?: string;
-  /** By site. */
-  sites: NaviSite[];
-  truncated?: boolean;
-};
-
 /** Space on the volume holding a node's worktrees and build cache. */
 export type NodeDisk = {
   /** Free for the node's user. */
@@ -5256,7 +5007,7 @@ export type NotifyPolicy = {
   quiet: QuietWindow[];
 };
 
-/** A Credit Card item a person's 1Password token reads, for the Navi's card picker. */
+/** A Credit Card item a person's 1Password token reads, for the project's card picker. */
 export type OnePasswordCard = {
   ref: OpItemReference;
   title: string;
@@ -5266,11 +5017,9 @@ export type OnePasswordCard = {
 export type OnePasswordCardsInput = {
   /** Where to list them; default: the first machine online that holds the token. */
   machineId?: MachineId;
-  /** Old name of `project`, accepted for one release. */
-  navi?: ProjectRef;
   /**
    * The project the card is for: listed on its machine with the token its fills use (its own
-   * OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's). `navi` is its old name, accepted for one release.
+   * OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's).
    */
   project?: ProjectRef;
 };
@@ -5470,6 +5219,18 @@ export type PathSegment = {
   startMs: number;
 };
 
+/**
+ * The card a project pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is
+ * kept.
+ */
+export type PaymentCard = {
+  brand?: CardBrand;
+  /** A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`. */
+  label?: string;
+  last4?: CardLast4;
+  ref: CardRef;
+};
+
 export type KnownPeopleChange =
   | "invited"
   | "joined"
@@ -5563,7 +5324,7 @@ export type PersonClaude = {
   /** Whether the hub's API is theirs to use: it is set up, and they administer the hub or members may use it. */
   mayUseHubApi: boolean;
   person: PersonRef;
-  /** What the orders they start, and their Navi, run on now. */
+  /** What the orders they start run on now. */
   runsOn: ClaudeRunsOn;
   subscription?: ClaudeSubscription;
 };
@@ -6042,6 +5803,106 @@ export type ProjectAddedData = {
   title: string;
 };
 
+/** A project's approval settings: its mode, and the checker's model and effort. */
+export type ProjectApprovals = {
+  /** Always true now; kept for older apps, which offered "Use the default" when it was false. */
+  defaults: boolean;
+  effort: Effort;
+  mode: ApprovalMode;
+  /**
+   * The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with
+   * `effort`, for older phones, which showed them.
+   */
+  model: ModelName;
+};
+
+export type ProjectApprovalsInput = {
+  /** The page's end: the `older` of the page before. Absent: from the newest. */
+  before?: number;
+  /** How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read). */
+  limit?: number;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectApprovalsOutput = {
+  approvals: ProjectApprovals;
+  /** Newest first, at most `limit`. */
+  log: AutoApproved[];
+  next?: string;
+  /** Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest. */
+  older?: number;
+  /** How many the whole log holds. Absent from older hubs. */
+  total?: number;
+  truncated?: boolean;
+};
+
+export type ProjectApprovalsSetInput = {
+  /** Ignored, as `model` is. */
+  effort?: Effort;
+  machineId: MachineId;
+  mode: ApprovalMode;
+  /** Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works. */
+  model?: ModelName;
+  projectId: ProjectId;
+};
+
+export type ProjectApprovalsSetOutput = {
+  approvals: ProjectApprovals;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type ProjectArchiveInput = {
+  /** False brings an archived project back. Default true. */
+  archived?: boolean;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectArchiveOutput = {
+  next?: string;
+  project: ProjectSummary;
+  truncated?: boolean;
+};
+
+/**
+ * One ask in `project_asks` (the app's read of a project's asked work): where it went, its words, and the orders opened
+ * for it.
+ */
+export type ProjectAsk = {
+  at: Timestamp;
+  handle: AskHandle;
+  orders: ProjectAskOrder[];
+  /** The project's words, without the line telling the lead about the handle. */
+  text: string;
+  to: ProjectRef;
+  toTitle: string;
+};
+
+/** An order opened for an ask, as it stands now. */
+export type ProjectAskOrder = {
+  /** The lead's latest one-line headline for it. */
+  headline?: string;
+  /** True once a PR of it merged; absent otherwise. */
+  merged?: boolean;
+  state: WorkstreamState;
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
+export type ProjectAsksInput = {
+  /** The project. */
+  project: ProjectRef;
+};
+
+export type ProjectAsksOutput = {
+  asks: ProjectAsk[];
+  next?: string;
+  project: ProjectRef;
+  truncated?: boolean;
+};
+
 export type ProjectAvatarGetInput = {
   machineId: MachineId;
   projectId: ProjectId;
@@ -6070,6 +5931,22 @@ export type ProjectAvatarSetInput = {
 export type ProjectAvatarSetOutput = {
   next?: string;
   project: ProjectSummary;
+  truncated?: boolean;
+};
+
+export type ProjectCardSetInput = {
+  /**
+   * A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported
+   * into the vault, then set); absent: the project has no card.
+   */
+  card?: CardRef;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectCardSetOutput = {
+  card?: PaymentCard;
+  next?: string;
   truncated?: boolean;
 };
 
@@ -6225,11 +6102,6 @@ export type ProjectInspect = {
   repo?: GitHubRepo;
 };
 
-/** What a project is. Absent on a project: one of code, a lead with its repos and folders. */
-export type KnownProjectKind = "assistant";
-/** KnownProjectKind, or a value from a newer hub. */
-export type ProjectKind = KnownProjectKind | (string & {});
-
 /** The one-call project outcome, returned as-is by project_get. */
 export type ProjectOutcome = {
   asOf: Timestamp;
@@ -6273,6 +6145,20 @@ export type ProjectProblemCode =
   | "dest_exists"
   | "clone_failed"
   | "node_too_old";
+
+export type ProjectPurchasesInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectPurchasesOutput = {
+  /** Absent until the person picks one: the project can't pay until then. */
+  card?: PaymentCard;
+  next?: string;
+  /** Newest first, at most 200. */
+  purchases: PurchaseLogEntry[];
+  truncated?: boolean;
+};
 
 /**
  * A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its
@@ -6451,6 +6337,51 @@ export type ProjectSettingsSetOutput = {
   truncated?: boolean;
 };
 
+export type ProjectSigninsForgetInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectSigninsForgetOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+/** A site a project fetches and opens without asking: a person approved its first visit. */
+export type ProjectSite = {
+  allowedAt: Timestamp;
+  /** Who approved it: `human:<their device's name>`. */
+  allowedBy: string;
+  /** Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own. */
+  site: string;
+};
+
+export type ProjectSiteRevokeInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+  site: string;
+};
+
+export type ProjectSiteRevokeOutput = {
+  next?: string;
+  /** What it may still fetch and open unasked. */
+  sites: ProjectSite[];
+  truncated?: boolean;
+};
+
+export type ProjectSitesInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectSitesOutput = {
+  next?: string;
+  /** By site. */
+  sites: ProjectSite[];
+  truncated?: boolean;
+};
+
 /** One project on the Status screen: a state word, its work in groups, agents running and the last merge. */
 export type ProjectStatusRow = {
   /** Its task agents holding a slot now (the lead's own turn is not one). */
@@ -6518,7 +6449,7 @@ export type ProjectSetupUndoOutput = {
 export type ProjectSummary = {
   /**
    * When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until
-   * it is brought back (`navi_archive` with `archived: false`).
+   * it is brought back (`project_archive` with `archived: false`).
    */
   archivedAt?: Timestamp;
   /**
@@ -6529,7 +6460,7 @@ export type ProjectSummary = {
   /** Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default. */
   avatarColor?: BotColor;
   /**
-   * The key that created it, from the hub. Absent for a project the hub didn't make, and for a Navi made before it
+   * The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it
    * was recorded.
    */
   createdBy?: ProjectCreator;
@@ -6539,11 +6470,6 @@ export type ProjectSummary = {
    * a node and an older hub: its letters show.
    */
   icon?: ProjectIcon;
-  /**
-   * Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a
-   * former Navi. Absent from a node.
-   */
-  kind?: ProjectKind;
   lastActivityAt: Timestamp;
   machineId: MachineId;
   projectId: ProjectId;
@@ -6717,8 +6643,8 @@ export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | 
 
 /** A purchase as its request keeps it: what the person approves. */
 export type Purchase = {
-  /** The Navi's card when it asked. */
-  card: NaviCard;
+  /** The project's card when it asked. */
+  card: PaymentCard;
   /** When its card was filled into the checkout; absent until then. A purchase fills once. */
   filledAt?: Timestamp;
   items: PurchaseItem[];
@@ -6738,7 +6664,7 @@ export type PurchaseItem = {
   quantity?: number;
 };
 
-/** One purchase in a Navi's log: what it was, and what the person and the node did with it. */
+/** One purchase in a project's log: what it was, and what the person and the node did with it. */
 export type PurchaseLogEntry = {
   answeredAt?: Timestamp;
   /** Who approved or denied it: `human:<device>`. */
@@ -7077,10 +7003,6 @@ export type SafetyRule = {
   present?: boolean;
 };
 
-export type KnownSandboxStatus = "ready" | "gap" | "missing";
-/** KnownSandboxStatus, or a value from a newer hub. */
-export type SandboxStatus = KnownSandboxStatus | (string & {});
-
 export type ScreenEndInput = {
   sessionId?: BrowserSessionId;
   waitId?: string;
@@ -7226,7 +7148,7 @@ export type SecretRequestItem = {
   /** Why it is open again, or why it could not be stored. */
   note?: string;
   requestId: ChatRequestId;
-  /** A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once. */
+  /** A project's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once. */
   secureInput?: SecureInput;
   sink: SecretSink;
   state: SecretRequestState;
@@ -7477,15 +7399,15 @@ export type SidebarOrderGetInput = { [key: string]: unknown };
 export type SidebarOrderGetOutput = {
   next?: string;
   /**
-   * The caller's projects and Navis in the order they put them, by ref; empty until they move one. A project or
-   * Navi it doesn't name goes after the ones it does.
+   * The caller's projects in the order they put them, by ref; empty until they move one. A project it doesn't name
+   * goes after the ones it does.
    */
   order: ProjectRef[];
   truncated?: boolean;
 };
 
 export type SidebarOrderSetInput = {
-  /** The caller's projects and Navis in their new order; it replaces the one before. */
+  /** The caller's projects in their new order; it replaces the one before. */
   order: ProjectRef[];
 };
 
@@ -7595,14 +7517,14 @@ export type SkillRevertOutput = {
 };
 
 /**
- * A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links
+ * A chat line's skill: a lead saved or changed one (`skill_save`), or installed one (`skill_install`). The app links
  * it to the skill's view.
  */
 export type SkillSaved = {
   /** Its first version. */
   created: boolean;
   /**
-   * Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then
+   * Installed: the source as the lead gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then
    * says the same, for an app that doesn't know this field.
    */
   installed?: string;
@@ -7645,7 +7567,7 @@ export type SkillSummary = {
   files?: string[];
   /** Installed from a source. */
   install?: SkillInstall;
-  /** Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's, a Navi's). */
+  /** Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's). */
   lastUsedAt?: Timestamp;
   name: SkillName;
   /** Listed for a project: the person turned it off there (`skill_off`), so its sessions don't get it. */
@@ -7674,17 +7596,17 @@ export type SkillUpdateOutput = {
 };
 
 /**
- * One version of a hub-kept skill's `SKILL.md`: every write keeps one (a Navi's save, a person's edit or revert, an
+ * One version of a hub-kept skill's `SKILL.md`: every write keeps one (a lead's save, a person's edit or revert, an
  * install), the newest [`SKILL_VERSIONS_KEPT`] of them.
  */
 export type SkillVersion = {
   at: Timestamp;
   author: SkillAuthor;
-  /** The Navi's (or the lead's project's) title, or the person's name. */
+  /** The lead's project's title, or the person's name. */
   by: string;
   /** 1 for its first, one more for each after; a revert is a new version too. */
   version: number;
-  /** The one line its author gave: a Navi always gives one; a person may. */
+  /** The one line its author gave: a lead always gives one; a person may. */
   why?: string;
 };
 
@@ -8590,8 +8512,8 @@ export type ToolAction = "send" | "write" | "delete" | "share" | "spend" | "conf
  */
 export type ToolPermission = {
   /**
-   * A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused
-   * it. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input
+   * A project's approval checker judged it before it reached the person (W239): why it asks them, or why it refused
+   * it. A blocked prompt was already refused on its node; approving it anyway lets the project run exactly this input
    * once, when it asks again.
    */
   checker?: CheckerNote;
@@ -8606,11 +8528,11 @@ export type ToolPermission = {
    */
   preview?: ToolPreview;
   requestId: string;
-  /** A Navi's `confirm_step`: its screenshot of the page, the project's, for the card. */
+  /** A lead's `confirm_step`: its screenshot of the page, the project's, for the card. */
   screenshot?: AttachmentId;
   /**
-   * A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may
-   * fetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).
+   * A project's first fetch or browser visit to this site (its host, such as `example.com`): approved, the project may
+   * fetch and open it without asking from then on, until a person revokes it (`project_site_revoke`).
    */
   site?: string;
   /** The command, the path, or the tool's own description. */
@@ -8632,7 +8554,7 @@ export type ToolPreview = {
   input: string;
   /** The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`). */
   server: McpServerName;
-  /** What it does, as a verb phrase the app puts after "<the Navi> wants to": "Use create_page on docs". */
+  /** What it does, as a verb phrase the app puts after "<the project> wants to": "Use create_page on docs". */
   title: string;
   tool: McpToolName;
 };
@@ -9895,18 +9817,6 @@ export interface ToolMap {
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
-  navi_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
-  navi_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
-  navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
-  navi_asks: { input: NaviAsksInput; output: NaviAsksOutput };
-  navi_card_set: { input: NaviCardSetInput; output: NaviCardSetOutput };
-  navi_create: { input: NaviCreateInput; output: NaviCreateOutput };
-  navi_list: { input: NaviListInput; output: NaviListOutput };
-  navi_purchases: { input: NaviPurchasesInput; output: NaviPurchasesOutput };
-  navi_rename: { input: NaviRenameInput; output: NaviRenameOutput };
-  navi_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
-  navi_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
-  navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
   onepassword_cards: { input: OnePasswordCardsInput; output: OnePasswordCardsOutput };
   onepassword_get: { input: OnePasswordGetInput; output: OnePasswordGetOutput };
   onepassword_remove: { input: OnePasswordRemoveInput; output: OnePasswordRemoveOutput };
@@ -9930,19 +9840,19 @@ export interface ToolMap {
   profile_update: { input: ProfileUpdateInput; output: ProfileUpdateOutput };
   profiles_list: { input: ProfilesListInput; output: ProfilesListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
-  project_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
-  project_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
-  project_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
-  project_asks: { input: NaviAsksInput; output: NaviAsksOutput };
+  project_approvals: { input: ProjectApprovalsInput; output: ProjectApprovalsOutput };
+  project_approvals_set: { input: ProjectApprovalsSetInput; output: ProjectApprovalsSetOutput };
+  project_archive: { input: ProjectArchiveInput; output: ProjectArchiveOutput };
+  project_asks: { input: ProjectAsksInput; output: ProjectAsksOutput };
   project_avatar_get: { input: ProjectAvatarGetInput; output: ProjectAvatarGetOutput };
   project_avatar_set: { input: ProjectAvatarSetInput; output: ProjectAvatarSetOutput };
-  project_card_set: { input: NaviCardSetInput; output: NaviCardSetOutput };
+  project_card_set: { input: ProjectCardSetInput; output: ProjectCardSetOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_icon_set: { input: ProjectIconSetInput; output: ProjectIconSetOutput };
-  project_purchases: { input: NaviPurchasesInput; output: NaviPurchasesOutput };
+  project_purchases: { input: ProjectPurchasesInput; output: ProjectPurchasesOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_repo_add: { input: ProjectRepoAddInput; output: ProjectRepoAddOutput };
   project_repo_list: { input: ProjectRepoListInput; output: ProjectRepoListOutput };
@@ -9951,9 +9861,9 @@ export interface ToolMap {
   project_settings_get: { input: ProjectSettingsGetInput; output: ProjectSettingsGetOutput };
   project_setup_undo: { input: ProjectSetupUndoInput; output: ProjectSetupUndoOutput };
   project_settings_set: { input: ProjectSettingsSetInput; output: ProjectSettingsSetOutput };
-  project_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
-  project_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
-  project_sites: { input: NaviSitesInput; output: NaviSitesOutput };
+  project_signins_forget: { input: ProjectSigninsForgetInput; output: ProjectSigninsForgetOutput };
+  project_site_revoke: { input: ProjectSiteRevokeInput; output: ProjectSiteRevokeOutput };
+  project_sites: { input: ProjectSitesInput; output: ProjectSitesOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };

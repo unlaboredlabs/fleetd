@@ -4,8 +4,8 @@
   "publicKey": "u1D/noKldM+/gg6X9g+5wUPsdBXPUU+M/Zjv9Z4FlhQ=",
   "cases": [
     {
-      "plaintext": "{\"v\":1,\"kind\":\"message\",\"title\":\"Ada\",\"body\":\"Your flight moved to 9:40.\",\"hub\":\"http://devbox:4790\",\"machineId\":\"devbox\",\"projectId\":\"navi-ada\",\"messageId\":\"m42\",\"quiet\":true,\"at\":\"2026-10-29T08:12:00.000Z\"}",
-      "ciphertext": "/ahVj8Ni3WtLmh9sY7BcAD8eqpEckY3CbvUF1zspA1zZrq7wPt4V8cHDUQdFsXB30k2Mw49yVMC53srRre+YX0XW/3j+zcvEVanirjbznZyfFNPYOrKHD8UckvJOwyeIker96yjM5IJ/AFQTWYYmGedYPVcL1bFTSVPRdkwhbkczn4n34q7KCSoEtacUOYtQTxJtzTbEcb3AVKSMA0BCWSYibi27FKYFqCAnOMkzPxes800W8LPqmVU5/3ZyBfKrgA2ZIjln6vx7Tm8UYu2lIB0kDNN/UPTAgewAw3CS75H8VfhoZH1VKr10mUTArlNGhoiWgKrLhFPB7TPuwifkzA=="
+      "plaintext": "{\"v\":1,\"kind\":\"message\",\"title\":\"Ada\",\"body\":\"Your flight moved to 9:40.\",\"hub\":\"http://devbox:4790\",\"machineId\":\"devbox\",\"projectId\":\"inbox-ada\",\"messageId\":\"m42\",\"quiet\":true,\"at\":\"2026-10-29T08:12:00.000Z\"}",
+      "ciphertext": "2ESmYufAR2mdWCN/cIT5gif9O9IDycKodXARDKixLV03VvPPxsQWYE6vE1HYOjZsECqzcaoIZi+PWfE87p/duC/QQQDBR+aqiPIzNOb1s8iaf5BwCxl9bAGVTBVatdVcXmLZv+mhLI0FHNnSzCJJYbi/73AZggp4ozf0EDLV5sGFWoVxy+ZNLfX9KGo4SNPXIQQ2ABi9WpY+M62jhdiKLMPD01TqDeeREv9/px6f4J9CDLAecBiH9DdvOzMHNLW4qsXbMMjE3sirWfqgS2dlYQxX+GO3mfdfqve71H+U2SG0HxOqlLMKNntndWdk7GWx6KNaa+LCxS8me6Cr212+Jqo="
     },
     {
       "plaintext": "{\"v\":1,\"kind\":\"approval\",\"title\":\"storefront\",\"body\":\"Send an email to landlord@example.com — naïve café ✓\",\"hub\":\"http://devbox:4790\",\"machineId\":\"devbox\",\"projectId\":\"shop\",\"threadId\":\"t1\",\"requestId\":\"Q7\",\"urgent\":true,\"at\":\"2026-10-29T08:13:00.000Z\"}",

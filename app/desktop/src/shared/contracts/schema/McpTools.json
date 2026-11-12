@@ -849,6 +849,26 @@
       ],
       "type": "string"
     },
+    "ApprovalMode": {
+      "description": "How a project's risky actions are approved (W239, D263): its sends, replies, shares and invites through an\nintegration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and\nplacing orders are refused, and so is a credential in outgoing content.",
+      "oneOf": [
+        {
+          "const": "ask",
+          "description": "Every risky action asks the person on a card; no checker runs.",
+          "type": "string"
+        },
+        {
+          "const": "checker",
+          "description": "A fresh checker model judges each risky action first: go runs it, ask brings the card, block refuses it.",
+          "type": "string"
+        },
+        {
+          "const": "yolo",
+          "description": "Nothing asks and no checker runs: every risky action runs, past the hard floors.",
+          "type": "string"
+        }
+      ]
+    },
     "ArtifactFormat": {
       "oneOf": [
         {
@@ -985,7 +1005,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "by": {
-          "description": "Who published it: the lead, a task's title, or a Navi's name.",
+          "description": "Who published it: the lead, a task's title, or a project's name.",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -1372,7 +1392,7 @@
       "type": "string"
     },
     "AutoApproved": {
-      "description": "One risky action a Navi ran without asking its person, as its settings' log shows it.",
+      "description": "One risky action a project ran without asking its person, as its settings' log shows it.",
       "properties": {
         "at": {
           "$ref": "#/$defs/Timestamp"
@@ -1382,7 +1402,7 @@
         },
         "messageId": {
           "$ref": "#/$defs/ChatMessageId",
-          "description": "The quiet line in the Navi's chat that told the person; absent in YOLO, which posts none."
+          "description": "The quiet line in the project's chat that told the person; absent in YOLO, which posts none."
         },
         "reason": {
           "description": "The checker's reason; absent in YOLO.",
@@ -1392,7 +1412,7 @@
           "type": "string"
         },
         "tool": {
-          "description": "The tool the Navi's session asked for: `mcp__mail__send_message`, `WebFetch`.",
+          "description": "The tool the project's session asked for: `mcp__mail__send_message`, `WebFetch`.",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -1424,7 +1444,7 @@
         },
         {
           "const": "yolo",
-          "description": "The Navi is in YOLO.",
+          "description": "The project is in YOLO.",
           "type": "string"
         }
       ]
@@ -1456,7 +1476,7 @@
         },
         "confirmed": {
           "default": false,
-          "description": "Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card\n`automation_confirm` shows them (\"Let it run on its own\"). A Navi's approval checker then takes the prompt as\ntheir own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.",
+          "description": "Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card\n`automation_confirm` shows them (\"Let it run on its own\"). A project's approval checker then takes the prompt as\ntheir own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.",
           "type": "boolean"
         },
         "createdAt": {
@@ -3399,7 +3419,7 @@
       "properties": {
         "artifact": {
           "$ref": "#/$defs/ArtifactPublished",
-          "description": "A system line \"Published …\": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
+          "description": "A system line \"Published …\": a lead or task published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
         },
         "attachments": {
           "default": [],
@@ -3488,7 +3508,7 @@
         },
         "skillSaved": {
           "$ref": "#/$defs/SkillSaved",
-          "description": "A system line \"Saved a skill: …\": a Navi saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
+          "description": "A system line \"Saved a skill: …\": a project's lead saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
         },
         "skills": {
           "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
@@ -4013,7 +4033,7 @@
       "type": "object"
     },
     "CheckerNote": {
-      "description": "What a Navi's approval checker said of an action it didn't let through.",
+      "description": "What a project's approval checker said of an action it didn't let through.",
       "properties": {
         "reason": {
           "description": "Its reason, in one line. A checker that failed or answered nothing readable says so here.",
@@ -5087,14 +5107,14 @@
         },
         "purchase": {
           "$ref": "#/$defs/Purchase",
-          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `permission` is."
+          "description": "A project's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the project's node\nfills the card into that checkout once. Boxed, as `permission` is."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
-          "description": "A Navi's secure input from a 1Password field: approved, its node fills that field once."
+          "description": "A project's secure input from a 1Password field: approved, its node fills that field once."
         },
         "state": {
           "$ref": "#/$defs/CommandApprovalState"
@@ -7540,7 +7560,7 @@
         },
         {
           "const": "sidebar.order",
-          "description": "A person moved a project or a Navi in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
+          "description": "A person moved a project in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
           "type": "string"
         },
         {
@@ -7660,7 +7680,7 @@
       "type": "object"
     },
     "HubLink": {
-      "description": "A link this hub keeps for one of its Navis. The key stays sealed in the hub; nothing returns it.",
+      "description": "A link this hub keeps for one of its projects. The key stays sealed in the hub; nothing returns it.",
       "properties": {
         "checkedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -7681,7 +7701,7 @@
         "linkId": {
           "$ref": "#/$defs/HubLinkId"
         },
-        "navi": {
+        "project": {
           "$ref": "#/$defs/ProjectRef"
         },
         "projects": {
@@ -7705,7 +7725,7 @@
       },
       "required": [
         "linkId",
-        "navi",
+        "project",
         "label",
         "url",
         "state",
@@ -7721,13 +7741,9 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
-        "navi": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "Old name of `project`, accepted for one release."
-        },
         "project": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
+          "description": "The project."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -7743,8 +7759,9 @@
       },
       "required": [
         "label",
-        "url",
-        "sealed"
+        "project",
+        "sealed",
+        "url"
       ],
       "type": "object"
     },
@@ -7757,7 +7774,7 @@
           "type": "string"
         },
         "projects": {
-          "description": "What the Navi reaches there.",
+          "description": "What the project reaches there.",
           "items": {
             "$ref": "#/$defs/LinkProject"
           },
@@ -7802,7 +7819,7 @@
     "HubLinkMintOutput": {
       "properties": {
         "key": {
-          "description": "\"flk_…\": shown once, never stored; paste it into the other hub's Navi, which seals it.",
+          "description": "\"flk_…\": shown once, never stored; paste it into the other hub's project, Linked hubs, which seals it.",
           "type": "string"
         },
         "link": {
@@ -7900,13 +7917,9 @@
     },
     "HubLinksGetInput": {
       "properties": {
-        "navi": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "Old name of `project`, accepted for one release."
-        },
         "project": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The project (D310); `navi` is its old name, accepted for one release."
+          "description": "The project."
         }
       },
       "type": "object"
@@ -7925,7 +7938,7 @@
           "type": "array"
         },
         "links": {
-          "description": "The navi's links to other hubs.",
+          "description": "The project's links to other hubs.",
           "items": {
             "$ref": "#/$defs/HubLink"
           },
@@ -8325,7 +8338,7 @@
         },
         "purchase": {
           "$ref": "#/$defs/Purchase",
-          "description": "approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill\nits card into that checkout once. Only a person answers it, in every approval mode."
+          "description": "approval of a project's purchase (purchase_request), instead of a gated run: approving it lets the project's node fill\nits card into that checkout once. Only a person answers it, in every approval mode."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -8336,7 +8349,7 @@
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
-          "description": "A Navi's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink\nis `fill:`); on an approval, a 1Password field the Navi's node fills once approved."
+          "description": "A project's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink\nis `fill:`); on an approval, a 1Password field the project's node fills once approved."
         },
         "state": {
           "$ref": "#/$defs/RequestState"
@@ -8830,7 +8843,7 @@
           "type": "string"
         },
         "label": {
-          "description": "What the person called the hub it is for; requests through it read \"asked via <label> Navi\".",
+          "description": "What the person called the hub it is for; requests through it read \"<person> via <label>\".",
           "maxLength": 40,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -9388,7 +9401,7 @@
     "Machine": {
       "properties": {
         "agentsMac": {
-          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,\nand clients seal no secret to it. Absent on every other machine.",
+          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent or lead runs there,\nand clients seal no secret to it. Absent on every other machine.",
           "type": "boolean"
         },
         "boxPubKey": {
@@ -9962,10 +9975,6 @@
         "name": {
           "type": "string"
         },
-        "naviSandbox": {
-          "$ref": "#/$defs/NaviSandbox",
-          "description": "The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`); `missing` on a Mac,\nwhere Navis don't run (D299). Absent until it reports, from a node before it, and on a system fleetd has no\nsandbox for."
-        },
         "nodeRestart": {
           "description": "The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,\na node that still runs its old build needs it.",
           "maxLength": 200,
@@ -9978,7 +9987,7 @@
           "type": "boolean"
         },
         "operates": {
-          "description": "The caller may work there (operate): make a Navi, start agents. Absent from a hub before it.",
+          "description": "The caller may work there (operate): make a project, start agents. Absent from a hub before it.",
           "type": "boolean"
         },
         "roles": {
@@ -10019,7 +10028,7 @@
       "properties": {
         "best": {
           "$ref": "#/$defs/MachineId",
-          "description": "Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is."
+          "description": "Where a new project goes when none is named (`project_discover.best`). Absent: no machine is."
         },
         "machines": {
           "items": {
@@ -10051,7 +10060,7 @@
           "type": "boolean"
         },
         "macTool": {
-          "description": "The agents' Mac only: \"Agents may use this Mac\", for every project's agents (Navis never).",
+          "description": "The agents' Mac only: \"Agents may use this Mac\", for every project's agents (leads never).",
           "type": "boolean"
         },
         "machineId": {
@@ -11324,78 +11333,6 @@
         "metrics_get.output": {
           "$ref": "#/$defs/MetricsGetOutput"
         },
-        "navi_approvals.input": {
-          "$ref": "#/$defs/NaviApprovalsInput"
-        },
-        "navi_approvals.output": {
-          "$ref": "#/$defs/NaviApprovalsOutput"
-        },
-        "navi_approvals_set.input": {
-          "$ref": "#/$defs/NaviApprovalsSetInput"
-        },
-        "navi_approvals_set.output": {
-          "$ref": "#/$defs/NaviApprovalsSetOutput"
-        },
-        "navi_archive.input": {
-          "$ref": "#/$defs/NaviArchiveInput"
-        },
-        "navi_archive.output": {
-          "$ref": "#/$defs/NaviArchiveOutput"
-        },
-        "navi_asks.input": {
-          "$ref": "#/$defs/NaviAsksInput"
-        },
-        "navi_asks.output": {
-          "$ref": "#/$defs/NaviAsksOutput"
-        },
-        "navi_card_set.input": {
-          "$ref": "#/$defs/NaviCardSetInput"
-        },
-        "navi_card_set.output": {
-          "$ref": "#/$defs/NaviCardSetOutput"
-        },
-        "navi_create.input": {
-          "$ref": "#/$defs/NaviCreateInput"
-        },
-        "navi_create.output": {
-          "$ref": "#/$defs/NaviCreateOutput"
-        },
-        "navi_list.input": {
-          "$ref": "#/$defs/NaviListInput"
-        },
-        "navi_list.output": {
-          "$ref": "#/$defs/NaviListOutput"
-        },
-        "navi_purchases.input": {
-          "$ref": "#/$defs/NaviPurchasesInput"
-        },
-        "navi_purchases.output": {
-          "$ref": "#/$defs/NaviPurchasesOutput"
-        },
-        "navi_rename.input": {
-          "$ref": "#/$defs/NaviRenameInput"
-        },
-        "navi_rename.output": {
-          "$ref": "#/$defs/NaviRenameOutput"
-        },
-        "navi_signins_forget.input": {
-          "$ref": "#/$defs/NaviSigninsForgetInput"
-        },
-        "navi_signins_forget.output": {
-          "$ref": "#/$defs/NaviSigninsForgetOutput"
-        },
-        "navi_site_revoke.input": {
-          "$ref": "#/$defs/NaviSiteRevokeInput"
-        },
-        "navi_site_revoke.output": {
-          "$ref": "#/$defs/NaviSiteRevokeOutput"
-        },
-        "navi_sites.input": {
-          "$ref": "#/$defs/NaviSitesInput"
-        },
-        "navi_sites.output": {
-          "$ref": "#/$defs/NaviSitesOutput"
-        },
         "onepassword_cards.input": {
           "$ref": "#/$defs/OnePasswordCardsInput"
         },
@@ -11535,28 +11472,28 @@
           "$ref": "#/$defs/ProjectAddOutput"
         },
         "project_approvals.input": {
-          "$ref": "#/$defs/NaviApprovalsInput"
+          "$ref": "#/$defs/ProjectApprovalsInput"
         },
         "project_approvals.output": {
-          "$ref": "#/$defs/NaviApprovalsOutput"
+          "$ref": "#/$defs/ProjectApprovalsOutput"
         },
         "project_approvals_set.input": {
-          "$ref": "#/$defs/NaviApprovalsSetInput"
+          "$ref": "#/$defs/ProjectApprovalsSetInput"
         },
         "project_approvals_set.output": {
-          "$ref": "#/$defs/NaviApprovalsSetOutput"
+          "$ref": "#/$defs/ProjectApprovalsSetOutput"
         },
         "project_archive.input": {
-          "$ref": "#/$defs/NaviArchiveInput"
+          "$ref": "#/$defs/ProjectArchiveInput"
         },
         "project_archive.output": {
-          "$ref": "#/$defs/NaviArchiveOutput"
+          "$ref": "#/$defs/ProjectArchiveOutput"
         },
         "project_asks.input": {
-          "$ref": "#/$defs/NaviAsksInput"
+          "$ref": "#/$defs/ProjectAsksInput"
         },
         "project_asks.output": {
-          "$ref": "#/$defs/NaviAsksOutput"
+          "$ref": "#/$defs/ProjectAsksOutput"
         },
         "project_avatar_get.input": {
           "$ref": "#/$defs/ProjectAvatarGetInput"
@@ -11571,10 +11508,10 @@
           "$ref": "#/$defs/ProjectAvatarSetOutput"
         },
         "project_card_set.input": {
-          "$ref": "#/$defs/NaviCardSetInput"
+          "$ref": "#/$defs/ProjectCardSetInput"
         },
         "project_card_set.output": {
-          "$ref": "#/$defs/NaviCardSetOutput"
+          "$ref": "#/$defs/ProjectCardSetOutput"
         },
         "project_discover.input": {
           "$ref": "#/$defs/ProjectDiscoverInput"
@@ -11607,10 +11544,10 @@
           "$ref": "#/$defs/ProjectIconSetOutput"
         },
         "project_purchases.input": {
-          "$ref": "#/$defs/NaviPurchasesInput"
+          "$ref": "#/$defs/ProjectPurchasesInput"
         },
         "project_purchases.output": {
-          "$ref": "#/$defs/NaviPurchasesOutput"
+          "$ref": "#/$defs/ProjectPurchasesOutput"
         },
         "project_remove.input": {
           "$ref": "#/$defs/ProjectRemoveInput"
@@ -11661,22 +11598,22 @@
           "$ref": "#/$defs/ProjectSetupUndoOutput"
         },
         "project_signins_forget.input": {
-          "$ref": "#/$defs/NaviSigninsForgetInput"
+          "$ref": "#/$defs/ProjectSigninsForgetInput"
         },
         "project_signins_forget.output": {
-          "$ref": "#/$defs/NaviSigninsForgetOutput"
+          "$ref": "#/$defs/ProjectSigninsForgetOutput"
         },
         "project_site_revoke.input": {
-          "$ref": "#/$defs/NaviSiteRevokeInput"
+          "$ref": "#/$defs/ProjectSiteRevokeInput"
         },
         "project_site_revoke.output": {
-          "$ref": "#/$defs/NaviSiteRevokeOutput"
+          "$ref": "#/$defs/ProjectSiteRevokeOutput"
         },
         "project_sites.input": {
-          "$ref": "#/$defs/NaviSitesInput"
+          "$ref": "#/$defs/ProjectSitesInput"
         },
         "project_sites.output": {
-          "$ref": "#/$defs/NaviSitesOutput"
+          "$ref": "#/$defs/ProjectSitesOutput"
         },
         "project_stop.input": {
           "$ref": "#/$defs/ProjectStopInput"
@@ -12220,30 +12157,6 @@
         "memory_undo.output",
         "metrics_get.input",
         "metrics_get.output",
-        "navi_approvals.input",
-        "navi_approvals.output",
-        "navi_approvals_set.input",
-        "navi_approvals_set.output",
-        "navi_archive.input",
-        "navi_archive.output",
-        "navi_asks.input",
-        "navi_asks.output",
-        "navi_card_set.input",
-        "navi_card_set.output",
-        "navi_create.input",
-        "navi_create.output",
-        "navi_list.input",
-        "navi_list.output",
-        "navi_purchases.input",
-        "navi_purchases.output",
-        "navi_rename.input",
-        "navi_rename.output",
-        "navi_signins_forget.input",
-        "navi_signins_forget.output",
-        "navi_site_revoke.input",
-        "navi_site_revoke.output",
-        "navi_sites.input",
-        "navi_sites.output",
         "onepassword_cards.input",
         "onepassword_cards.output",
         "onepassword_get.input",
@@ -12741,7 +12654,7 @@
         },
         "user": {
           "$ref": "#/$defs/MemoryFile",
-          "description": "Your own memory: how you work, read by the agents of work you start and by your Navi. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
+          "description": "Your own memory: how you work, read by the agents of work you start and by the leads you write to. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
         }
       },
       "required": [
@@ -13634,661 +13547,6 @@
       ],
       "type": "string"
     },
-    "NaviApprovalMode": {
-      "description": "How a Navi's risky actions are approved (W239, D263): its sends, replies, shares and invites through an\nintegration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and\nplacing orders are refused, and so is a credential in outgoing content.",
-      "oneOf": [
-        {
-          "const": "ask",
-          "description": "Every risky action asks the person on a card; no checker runs.",
-          "type": "string"
-        },
-        {
-          "const": "checker",
-          "description": "A fresh checker model judges each risky action first: go runs it, ask brings the card, block refuses it.",
-          "type": "string"
-        },
-        {
-          "const": "yolo",
-          "description": "Nothing asks and no checker runs: every risky action runs, past the hard floors.",
-          "type": "string"
-        }
-      ]
-    },
-    "NaviApprovals": {
-      "description": "A Navi's approval settings: its mode, and the checker's model and effort.",
-      "properties": {
-        "defaults": {
-          "description": "Always true now; kept for older apps, which offered \"Use the default\" when it was false.",
-          "type": "boolean"
-        },
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
-        "mode": {
-          "$ref": "#/$defs/NaviApprovalMode"
-        },
-        "model": {
-          "$ref": "#/$defs/ModelName",
-          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with\n`effort`, for older phones, which showed them."
-        }
-      },
-      "required": [
-        "mode",
-        "model",
-        "effort",
-        "defaults"
-      ],
-      "type": "object"
-    },
-    "NaviApprovalsInput": {
-      "properties": {
-        "before": {
-          "description": "The page's end: the `older` of the page before. Absent: from the newest.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "limit": {
-          "description": "How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read).",
-          "maximum": 200,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviApprovalsOutput": {
-      "properties": {
-        "approvals": {
-          "$ref": "#/$defs/NaviApprovals"
-        },
-        "log": {
-          "description": "Newest first, at most `limit`.",
-          "items": {
-            "$ref": "#/$defs/AutoApproved"
-          },
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "older": {
-          "description": "Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total": {
-          "description": "How many the whole log holds. Absent from older hubs.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "approvals",
-        "log"
-      ],
-      "type": "object"
-    },
-    "NaviApprovalsSetInput": {
-      "properties": {
-        "effort": {
-          "$ref": "#/$defs/Effort",
-          "description": "Ignored, as `model` is."
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "mode": {
-          "$ref": "#/$defs/NaviApprovalMode"
-        },
-        "model": {
-          "$ref": "#/$defs/ModelName",
-          "description": "Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works."
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "mode"
-      ],
-      "type": "object"
-    },
-    "NaviApprovalsSetOutput": {
-      "properties": {
-        "approvals": {
-          "$ref": "#/$defs/NaviApprovals"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "approvals"
-      ],
-      "type": "object"
-    },
-    "NaviArchiveInput": {
-      "properties": {
-        "archived": {
-          "description": "False brings an archived Navi back. Default true.",
-          "type": "boolean"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviArchiveOutput": {
-      "properties": {
-        "navi": {
-          "$ref": "#/$defs/ProjectSummary"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "navi"
-      ],
-      "type": "object"
-    },
-    "NaviAsk": {
-      "description": "One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened\nfor it.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "handle": {
-          "$ref": "#/$defs/AskHandle"
-        },
-        "orders": {
-          "items": {
-            "$ref": "#/$defs/NaviAskOrder"
-          },
-          "type": "array"
-        },
-        "text": {
-          "description": "The Navi's words, without the line telling the lead about the handle.",
-          "type": "string"
-        },
-        "to": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "toTitle": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "handle",
-        "to",
-        "toTitle",
-        "text",
-        "at",
-        "orders"
-      ],
-      "type": "object"
-    },
-    "NaviAskOrder": {
-      "description": "An order opened for an ask, as it stands now.",
-      "properties": {
-        "headline": {
-          "description": "The lead's latest one-line headline for it.",
-          "type": "string"
-        },
-        "merged": {
-          "description": "True once a PR of it merged; absent otherwise.",
-          "type": "boolean"
-        },
-        "state": {
-          "$ref": "#/$defs/WorkstreamState"
-        },
-        "title": {
-          "type": "string"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "title",
-        "state"
-      ],
-      "type": "object"
-    },
-    "NaviAsksInput": {
-      "properties": {
-        "navi": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "Old name of `project`, accepted for one release."
-        },
-        "project": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
-        }
-      },
-      "type": "object"
-    },
-    "NaviAsksOutput": {
-      "properties": {
-        "asks": {
-          "items": {
-            "$ref": "#/$defs/NaviAsk"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "navi": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "navi",
-        "asks"
-      ],
-      "type": "object"
-    },
-    "NaviCard": {
-      "description": "The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
-      "properties": {
-        "brand": {
-          "$ref": "#/$defs/CardBrand"
-        },
-        "label": {
-          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
-          "type": "string"
-        },
-        "last4": {
-          "$ref": "#/$defs/CardLast4"
-        },
-        "ref": {
-          "$ref": "#/$defs/CardRef"
-        }
-      },
-      "required": [
-        "ref"
-      ],
-      "type": "object"
-    },
-    "NaviCardSetInput": {
-      "properties": {
-        "card": {
-          "$ref": "#/$defs/CardRef",
-          "description": "A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported\ninto the vault, then set); absent: the Navi has no card."
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviCardSetOutput": {
-      "properties": {
-        "card": {
-          "$ref": "#/$defs/NaviCard"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
-    "NaviCreateInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId",
-          "description": "Where it lives; absent: the best worker (see `project_discover.best`)."
-        },
-        "name": {
-          "description": "What the person calls it (\"Ada\", \"Home\", \"Taxes\"). Its folder is named after it and keeps that name.",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "NaviCreateOutput": {
-      "properties": {
-        "navi": {
-          "$ref": "#/$defs/ProjectSummary",
-          "description": "The new Navi: `kind` is `assistant`."
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "navi"
-      ],
-      "type": "object"
-    },
-    "NaviListInput": {
-      "properties": {
-        "archived": {
-          "description": "Include archived ones (default false).",
-          "type": "boolean"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId",
-          "description": "Only those on this machine; absent: every machine."
-        }
-      },
-      "type": "object"
-    },
-    "NaviListOutput": {
-      "properties": {
-        "navis": {
-          "description": "Oldest first.",
-          "items": {
-            "$ref": "#/$defs/ProjectSummary"
-          },
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "navis"
-      ],
-      "type": "object"
-    },
-    "NaviPurchasesInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviPurchasesOutput": {
-      "properties": {
-        "card": {
-          "$ref": "#/$defs/NaviCard",
-          "description": "Absent until the person picks one: the Navi can't pay until then."
-        },
-        "next": {
-          "type": "string"
-        },
-        "purchases": {
-          "description": "Newest first, at most 200.",
-          "items": {
-            "$ref": "#/$defs/PurchaseLogEntry"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "purchases"
-      ],
-      "type": "object"
-    },
-    "NaviRenameInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "name": {
-          "description": "Its new name; its folder keeps the old one.",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "name"
-      ],
-      "type": "object"
-    },
-    "NaviRenameOutput": {
-      "properties": {
-        "navi": {
-          "$ref": "#/$defs/ProjectSummary"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "navi"
-      ],
-      "type": "object"
-    },
-    "NaviSandbox": {
-      "description": "What a Navi's OS sandbox is on a machine, in a person's words.",
-      "properties": {
-        "fix": {
-          "description": "What to run to close a gap or make Navis run here.",
-          "type": "string"
-        },
-        "line": {
-          "description": "\"Navis run in bubblewrap, with abstract sockets scoped (Landlock).\"",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/SandboxStatus"
-        }
-      },
-      "required": [
-        "status",
-        "line"
-      ],
-      "type": "object"
-    },
-    "NaviSigninsForgetInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviSigninsForgetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "ok": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "NaviSite": {
-      "description": "A site a Navi fetches and opens without asking: a person approved its first visit.",
-      "properties": {
-        "allowedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "allowedBy": {
-          "description": "Who approved it: `human:<their device's name>`.",
-          "type": "string"
-        },
-        "site": {
-          "description": "Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "site",
-        "allowedAt",
-        "allowedBy"
-      ],
-      "type": "object"
-    },
-    "NaviSiteRevokeInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "site": {
-          "maxLength": 253,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "site"
-      ],
-      "type": "object"
-    },
-    "NaviSiteRevokeOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "sites": {
-          "description": "What it may still fetch and open unasked.",
-          "items": {
-            "$ref": "#/$defs/NaviSite"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "sites"
-      ],
-      "type": "object"
-    },
-    "NaviSitesInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "NaviSitesOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "sites": {
-          "description": "By site.",
-          "items": {
-            "$ref": "#/$defs/NaviSite"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "sites"
-      ],
-      "type": "object"
-    },
     "NotifyPolicy": {
       "description": "When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the\nhub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.",
       "properties": {
@@ -14314,7 +13572,7 @@
       "type": "object"
     },
     "OnePasswordCard": {
-      "description": "A Credit Card item a person's 1Password token reads, for the Navi's card picker.",
+      "description": "A Credit Card item a person's 1Password token reads, for the project's card picker.",
       "properties": {
         "ref": {
           "$ref": "#/$defs/OpItemReference"
@@ -14339,13 +13597,9 @@
           "$ref": "#/$defs/MachineId",
           "description": "Where to list them; default: the first machine online that holds the token."
         },
-        "navi": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "Old name of `project`, accepted for one release."
-        },
         "project": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The project the card is for: listed on its machine with the token its fills use (its own\nOP_SERVICE_ACCOUNT_TOKEN variable, else the caller's). `navi` is its old name, accepted for one release."
+          "description": "The project the card is for: listed on its machine with the token its fills use (its own\nOP_SERVICE_ACCOUNT_TOKEN variable, else the caller's)."
         }
       },
       "type": "object"
@@ -14963,6 +14217,28 @@
       ],
       "type": "object"
     },
+    "PaymentCard": {
+      "description": "The card a project pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
+      "properties": {
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "label": {
+          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
+          "type": "string"
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
+        "ref": {
+          "$ref": "#/$defs/CardRef"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "type": "object"
+    },
     "PeopleListInput": {
       "properties": {
         "includeRemoved": {
@@ -15162,7 +14438,7 @@
         },
         "runsOn": {
           "$ref": "#/$defs/ClaudeRunsOn",
-          "description": "What the orders they start, and their Navi, run on now."
+          "description": "What the orders they start run on now."
         },
         "subscription": {
           "$ref": "#/$defs/ClaudeSubscription"
@@ -16489,6 +15765,277 @@
       ],
       "type": "object"
     },
+    "ProjectApprovals": {
+      "description": "A project's approval settings: its mode, and the checker's model and effort.",
+      "properties": {
+        "defaults": {
+          "description": "Always true now; kept for older apps, which offered \"Use the default\" when it was false.",
+          "type": "boolean"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "mode": {
+          "$ref": "#/$defs/ApprovalMode"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName",
+          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with\n`effort`, for older phones, which showed them."
+        }
+      },
+      "required": [
+        "mode",
+        "model",
+        "effort",
+        "defaults"
+      ],
+      "type": "object"
+    },
+    "ProjectApprovalsInput": {
+      "properties": {
+        "before": {
+          "description": "The page's end: the `older` of the page before. Absent: from the newest.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read).",
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectApprovalsOutput": {
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/ProjectApprovals"
+        },
+        "log": {
+          "description": "Newest first, at most `limit`.",
+          "items": {
+            "$ref": "#/$defs/AutoApproved"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "older": {
+          "description": "Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "How many the whole log holds. Absent from older hubs.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approvals",
+        "log"
+      ],
+      "type": "object"
+    },
+    "ProjectApprovalsSetInput": {
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort",
+          "description": "Ignored, as `model` is."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "mode": {
+          "$ref": "#/$defs/ApprovalMode"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName",
+          "description": "Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "ProjectApprovalsSetOutput": {
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/ProjectApprovals"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approvals"
+      ],
+      "type": "object"
+    },
+    "ProjectArchiveInput": {
+      "properties": {
+        "archived": {
+          "description": "False brings an archived project back. Default true.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectArchiveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "ProjectAsk": {
+      "description": "One ask in `project_asks` (the app's read of a project's asked work): where it went, its words, and the orders\nopened for it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "handle": {
+          "$ref": "#/$defs/AskHandle"
+        },
+        "orders": {
+          "items": {
+            "$ref": "#/$defs/ProjectAskOrder"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "The project's words, without the line telling the lead about the handle.",
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "toTitle": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "handle",
+        "to",
+        "toTitle",
+        "text",
+        "at",
+        "orders"
+      ],
+      "type": "object"
+    },
+    "ProjectAskOrder": {
+      "description": "An order opened for an ask, as it stands now.",
+      "properties": {
+        "headline": {
+          "description": "The lead's latest one-line headline for it.",
+          "type": "string"
+        },
+        "merged": {
+          "description": "True once a PR of it merged; absent otherwise.",
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ProjectAsksInput": {
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project."
+        }
+      },
+      "type": "object",
+      "required": [
+        "project"
+      ]
+    },
+    "ProjectAsksOutput": {
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/ProjectAsk"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "asks"
+      ],
+      "type": "object"
+    },
     "ProjectAvatarGetInput": {
       "properties": {
         "machineId": {
@@ -16573,6 +16120,39 @@
       "required": [
         "project"
       ],
+      "type": "object"
+    },
+    "ProjectCardSetInput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/CardRef",
+          "description": "A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported\ninto the vault, then set); absent: the project has no card."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectCardSetOutput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/PaymentCard"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "ProjectChatState": {
@@ -17007,17 +16587,6 @@
       ],
       "type": "object"
     },
-    "ProjectKind": {
-      "description": "What a project is. Absent on a project: one of code, a lead with its repos and folders.",
-      "oneOf": [
-        {
-          "const": "assistant",
-          "description": "A Navi: a personal assistant in a plain folder of its own, whose lead runs the `navi.start` prompt in the\nassistant role (`SessionRole::Assistant`).",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
     "ProjectProblem": {
       "description": "Why something could not be done, and the one step that fixes it.",
       "properties": {
@@ -17091,6 +16660,46 @@
           "type": "string"
         }
       ]
+    },
+    "ProjectPurchasesInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectPurchasesOutput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/PaymentCard",
+          "description": "Absent until the person picks one: the project can't pay until then."
+        },
+        "next": {
+          "type": "string"
+        },
+        "purchases": {
+          "description": "Newest first, at most 200.",
+          "items": {
+            "$ref": "#/$defs/PurchaseLogEntry"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "purchases"
+      ],
+      "type": "object"
     },
     "ProjectRef": {
       "description": "A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its\n`projectId` is the node's id for that directory, so the ref also addresses the files; the directory may be a git\nrepo or a plain folder. A project holds zero or more repos (`ProjectRepo`), each in a node directory of its\nown or in the project's.",
@@ -17582,6 +17191,142 @@
       ],
       "type": "object"
     },
+    "ProjectSigninsForgetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSigninsForgetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ProjectSite": {
+      "description": "A site a project fetches and opens without asking: a person approved its first visit.",
+      "properties": {
+        "allowedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "allowedBy": {
+          "description": "Who approved it: `human:<their device's name>`.",
+          "type": "string"
+        },
+        "site": {
+          "description": "Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "site",
+        "allowedAt",
+        "allowedBy"
+      ],
+      "type": "object"
+    },
+    "ProjectSiteRevokeInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "site": {
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "site"
+      ],
+      "type": "object"
+    },
+    "ProjectSiteRevokeOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sites": {
+          "description": "What it may still fetch and open unasked.",
+          "items": {
+            "$ref": "#/$defs/ProjectSite"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sites"
+      ],
+      "type": "object"
+    },
+    "ProjectSitesInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSitesOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sites": {
+          "description": "By site.",
+          "items": {
+            "$ref": "#/$defs/ProjectSite"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sites"
+      ],
+      "type": "object"
+    },
     "ProjectStatusRow": {
       "description": "One project on the Status screen: a state word, its work in groups, agents running and the last merge.",
       "properties": {
@@ -17724,7 +17469,7 @@
       "properties": {
         "archivedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until\nit is brought back (`navi_archive` with `archived: false`)."
+          "description": "When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until\nit is brought back (`project_archive` with `archived: false`)."
         },
         "avatar": {
           "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
@@ -17736,15 +17481,11 @@
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
-          "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a Navi made before it\nwas recorded."
+          "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it\nwas recorded."
         },
         "icon": {
           "$ref": "#/$defs/ProjectIcon",
           "description": "Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked\n(`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from\na node and an older hub: its letters show."
-        },
-        "kind": {
-          "$ref": "#/$defs/ProjectKind",
-          "description": "Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a\nformer Navi. Absent from a node."
         },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
@@ -18191,8 +17932,8 @@
       "description": "A purchase as its request keeps it: what the person approves.",
       "properties": {
         "card": {
-          "$ref": "#/$defs/NaviCard",
-          "description": "The Navi's card when it asked."
+          "$ref": "#/$defs/PaymentCard",
+          "description": "The project's card when it asked."
         },
         "filledAt": {
           "$ref": "#/$defs/Timestamp",
@@ -18253,7 +17994,7 @@
       "type": "object"
     },
     "PurchaseLogEntry": {
-      "description": "One purchase in a Navi's log: what it was, and what the person and the node did with it.",
+      "description": "One purchase in a project's log: what it was, and what the person and the node did with it.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -19139,26 +18880,6 @@
       ],
       "type": "object"
     },
-    "SandboxStatus": {
-      "oneOf": [
-        {
-          "const": "ready",
-          "description": "Navis run fenced, with nothing left open fleetd knows of.",
-          "type": "string"
-        },
-        {
-          "const": "gap",
-          "description": "Navis run fenced, with a gap the line names.",
-          "type": "string"
-        },
-        {
-          "const": "missing",
-          "description": "Navis can't run here: no sandbox starts.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
     "ScreenEndInput": {
       "properties": {
         "sessionId": {
@@ -19451,7 +19172,7 @@
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
-          "description": "A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
+          "description": "A project's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
         },
         "sink": {
           "$ref": "#/$defs/SecretSink"
@@ -19504,7 +19225,7 @@
         },
         {
           "const": "fill",
-          "description": "A Navi's secure input (`fill:<machine>:<browser session>`, secure_input.rs): the node types the value straight\ninto the field the Navi asked about, on its site, in that browser session, and keeps it nowhere.",
+          "description": "A project's secure input (`fill:<machine>:<browser session>`, secure_input.rs): the node types the value straight\ninto the field the project asked about, on its site, in that browser session, and keeps it nowhere.",
           "type": "string"
         }
       ]
@@ -20161,7 +19882,7 @@
           "type": "string"
         },
         "order": {
-          "description": "The caller's projects and Navis in the order they put them, by ref; empty until they move one. A project or\nNavi it doesn't name goes after the ones it does.",
+          "description": "The caller's projects in the order they put them, by ref; empty until they move one. A project it doesn't name goes after the ones it does.",
           "items": {
             "$ref": "#/$defs/ProjectRef"
           },
@@ -20179,7 +19900,7 @@
     "SidebarOrderSetInput": {
       "properties": {
         "order": {
-          "description": "The caller's projects and Navis in their new order; it replaces the one before.",
+          "description": "The caller's projects in their new order; it replaces the one before.",
           "items": {
             "$ref": "#/$defs/ProjectRef"
           },
@@ -20218,7 +19939,7 @@
       "oneOf": [
         {
           "const": "agent",
-          "description": "A Navi's `skill_save`, or a lead's `skill_install`.",
+          "description": "A lead's `skill_save` or `skill_install`.",
           "type": "string"
         },
         {
@@ -20534,14 +20255,14 @@
       "type": "object"
     },
     "SkillSaved": {
-      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
+      "description": "A chat line's skill: a lead saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
       "properties": {
         "created": {
           "description": "Its first version.",
           "type": "boolean"
         },
         "installed": {
-          "description": "Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
+          "description": "Installed: the source as the lead gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
           "maxLength": 300,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -20661,7 +20382,7 @@
         },
         "lastUsedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's, a Navi's)."
+          "description": "Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's)."
         },
         "name": {
           "$ref": "#/$defs/SkillName"
@@ -20737,7 +20458,7 @@
       "type": "object"
     },
     "SkillVersion": {
-      "description": "One version of a hub-kept skill's `SKILL.md`: every write keeps one (a Navi's save, a person's edit or revert, an\ninstall), the newest [`SKILL_VERSIONS_KEPT`] of them.",
+      "description": "One version of a hub-kept skill's `SKILL.md`: every write keeps one (a lead's save, a person's edit or revert, an\ninstall), the newest [`SKILL_VERSIONS_KEPT`] of them.",
       "properties": {
         "at": {
           "$ref": "#/$defs/Timestamp"
@@ -20746,7 +20467,7 @@
           "$ref": "#/$defs/SkillAuthor"
         },
         "by": {
-          "description": "The Navi's (or the lead's project's) title, or the person's name.",
+          "description": "The lead's project's title, or the person's name.",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -20759,7 +20480,7 @@
           "type": "integer"
         },
         "why": {
-          "description": "The one line its author gave: a Navi always gives one; a person may.",
+          "description": "The one line its author gave: a lead always gives one; a person may.",
           "maxLength": 300,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -23434,7 +23155,7 @@
         },
         {
           "const": "confirm",
-          "description": "A Navi's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
+          "description": "A project's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
           "type": "string"
         }
       ]
@@ -23444,7 +23165,7 @@
       "properties": {
         "checker": {
           "$ref": "#/$defs/CheckerNote",
-          "description": "A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input\nonce, when it asks again."
+          "description": "A project's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the project run exactly this input\nonce, when it asks again."
         },
         "input": {
           "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
@@ -23459,10 +23180,10 @@
         },
         "screenshot": {
           "$ref": "#/$defs/AttachmentId",
-          "description": "A Navi's `confirm_step`: its screenshot of the page, the project's, for the card."
+          "description": "A lead's `confirm_step`: its screenshot of the page, the project's, for the card."
         },
         "site": {
-          "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",
+          "description": "A project's first fetch or browser visit to this site (its host, such as `example.com`): approved, the project may\nfetch and open it without asking from then on, until a person revokes it (`project_site_revoke`).",
           "type": "string"
         },
         "summary": {
@@ -23522,7 +23243,7 @@
           "description": "The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`)."
         },
         "title": {
-          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Use create_page on docs\".",
+          "description": "What it does, as a verb phrase the app puts after \"<the project> wants to\": \"Use create_page on docs\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

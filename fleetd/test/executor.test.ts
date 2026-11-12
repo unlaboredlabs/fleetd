@@ -213,7 +213,7 @@ test("a call is answered by the reply with its id, or fails with the node's word
   await expect(ex.call("devbox", "read", { op: "runner_info" }, 20)).rejects.toThrow("no answer within 0 s");
 });
 
-test("project_get offline is the cache as of the last sighting; hooks add their fields; another's Navi is refused", async () => {
+test("project_get offline is the cache as of the last sighting; hooks add their fields; another's project is refused", async () => {
   const k = kit();
   store(k.hub).machineUpsert(machine("offline"));
   store(k.hub).projectsUpsertMany("devbox", [

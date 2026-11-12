@@ -4,13 +4,13 @@
 // - `POST ask`: `project_message` as the link's person, "<person> via <label>".
 // - `GET status?project=`: `factory_status` over the projects it reaches, with its own asks.
 // - `GET feed?after=&wait=`: what happened to its asks after `after`, waiting up to `wait` seconds for some.
-// - `POST revoke`: the link revokes itself, when the hub with the Navi removes it.
+// - `POST revoke`: the link revokes itself, when the hub with the project removes it.
 // A refusal is an McpToolError as JSON: 401 with `dead: true` when the link is dead for good, else by its code.
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { json, type Route } from "../http/route.ts";
 import { events } from "../store/events.ts";
-import { naviBridge } from "./bridge.ts";
+import { askBridge } from "./bridge.ts";
 import { statusOf } from "./links.ts";
 import { failed, FEED_WAIT_MAX_SEC, type Issued, type LinkHello, revokeIssued, verify } from "./store.ts";
 
@@ -21,7 +21,7 @@ const refused = (e: ToolError) => json(e.toJSON(), statusOf(e.code));
 const keyRefused = (e: ToolError) => (e.code !== "forbidden" ? refused(e) : json({ ...e.toJSON(), dead: true }, 401));
 
 async function hello(hub: Hub, link: Issued): Promise<LinkHello> {
-  const all = await naviBridge(hub).factoryStatus({ kind: "link", link }, {});
+  const all = await askBridge(hub).factoryStatus({ kind: "link", link }, {});
   return {
     label: link.label,
     projects: all.projects.map((p) => ({ projectRef: p.projectRef, title: p.title })),
@@ -41,7 +41,7 @@ async function ask(hub: Hub, link: Issued, body: string) {
   if (typeof call?.project !== "string" || typeof call.text !== "string") {
     throw new ToolError("invalid", `Not an ask: missing field \`${typeof call?.project !== "string" ? "project" : "text"}\`.`);
   }
-  const out = await naviBridge(hub).projectMessage({ kind: "link", link }, { project: call.project, text: call.text });
+  const out = await askBridge(hub).projectMessage({ kind: "link", link }, { project: call.project, text: call.text });
   return {
     handle: out.handle,
     projectRef: out.projectRef,
@@ -62,9 +62,9 @@ async function feed(hub: Hub, link: Issued, query: URLSearchParams, bearer: stri
   const wait = Math.min(Math.max(number("wait") ?? 0, 0), FEED_WAIT_MAX_SEC);
   const until = performance.now() + wait * 1000;
   for (;;) {
-    let page: ReturnType<ReturnType<typeof naviBridge>["feed"]>;
+    let page: ReturnType<ReturnType<typeof askBridge>["feed"]>;
     try {
-      page = naviBridge(hub).feed(link.linkId, after);
+      page = askBridge(hub).feed(link.linkId, after);
     } catch (error) {
       if (error instanceof NotImplemented || error instanceof ToolError) throw error;
       throw failed(error);
@@ -113,7 +113,7 @@ export const hubLink: Route = async (req, { hub, params }) => {
       if (project !== null && (project.trim() === "" || [...project].length > 200 || /[\r\n]/.test(project))) {
         throw new ToolError("invalid", "project must be one line of 1 to 200 characters");
       }
-      return json(await naviBridge(hub).factoryStatus({ kind: "link", link }, project === null ? {} : { project }));
+      return json(await askBridge(hub).factoryStatus({ kind: "link", link }, project === null ? {} : { project }));
     }
     if (req.method === "GET" && op === "feed") return await feed(hub, link, url.searchParams, bearer);
     if (req.method === "POST" && op === "revoke") {

@@ -1,4 +1,4 @@
-// The bot (shared/bot.ts): one character for every project and Navi without a picture, the body alone, cropped to it
+// The bot (shared/bot.ts): one character for every project without a picture, the body alone, cropped to it
 // (CROP) with no circle behind it, whose motion says its state. ui/lib/botLife.ts draws it on a canvas that reaches past
 // its box (PAD), so its hops and slumps are never cut off, in its project's color for the app's theme (BOT_PAINT). It
 // arrives settled in its state, drawn before its first paint; botLife then moves it on its springs, and a new `state`

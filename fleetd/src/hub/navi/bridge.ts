@@ -1,9 +1,9 @@
-// A Navi's factory bridge: a project's lead writes to another project's lead
+// A project's factory bridge: a project's lead writes to another project's lead
 // (`project_message`), reads the factory in one call (`factory_status`), and is woken when what it asked for changes.
 // Each message is an ask `N<n>`; the lead that opens an order for it passes `asked: "N<n>"` to `brief`, and from then
 // on `step` follows the order in the event log and wakes the asking lead with one line.
 //
-// A hub link is the bridge's other asker: a Navi on another hub, acting as the person who minted the link here. Its
+// A hub link is the bridge's other asker: a project on another hub, acting as the person who minted the link here. Its
 // asks go into chats as "<person> via <label>", reach only the link's projects, and what happens to them goes out on
 // the link's feed (`feed`) instead of a wake. A call that names a linked hub goes there (hub_links/client.ts).
 //
@@ -25,10 +25,10 @@ import { askFooter, RETRY_MS } from "./asks.ts";
 export { askFooter, RETRY_MS } from "./asks.ts";
 
 export const OPS = ["project_message", "factory_status"] as const;
-/** `project_message` as a Navi's session asks for it. */
+/** `project_message` as a project's session asks for it. */
 export const TOOL = "mcp__fleetd__project_message";
 /** The event log cursor `run` keeps in `time_cursors`. */
-const CURSOR = "navi.bridge";
+const CURSOR = "project.bridge";
 /** Asks per project `factory_status` lists, newest first. */
 const ASKS_SHOWN = 5;
 const TYPES = ["workstream.created", "workstream.done", "workstream.state", "change.state"];
@@ -36,8 +36,8 @@ const TYPES = ["workstream.created", "workstream.done", "workstream.state", "cha
 /** A link minted here, as the hub-links area hands it over: Rust's `Issued`, as data. */
 export type Issued = { linkId: string; label: string; projects?: ProjectRef[]; person?: PersonRef; grants: Grant[]; who: string };
 
-/** Who asks: a project's lead on this hub, or a link minted here, for a Navi on another hub. */
-export type Asker = { kind: "navi"; navi: ProjectRef } | { kind: "link"; link: Issued };
+/** Who asks: a project's lead on this hub, or a link minted here, for a project on another hub. */
+export type Asker = { kind: "project"; project: ProjectRef } | { kind: "link"; link: Issued };
 
 const RANK: Record<Role, number> = { read: 0, operate: 1, admin: 2 };
 /** The link holds `role` on the machine. */
@@ -92,9 +92,9 @@ type StatusRow = {
 type Found = {
   sendAsAgent?: (hub: Hub, to: ProjectRef, by: string, body: string, requestId: string) => Promise<{ leadWaiting?: string | boolean }>;
   statusRows?: (hub: Hub, nowMs: number) => StatusRow[];
-  ask?: (hub: Hub, navi: ProjectRef, label: string, call: ProjectMessageCall) => Promise<ProjectMessageResult>;
-  status?: (hub: Hub, navi: ProjectRef, label: string, call: FactoryStatusCall) => Promise<FactoryStatusResult>;
-  linked?: (hub: Hub, navi: ProjectRef) => unknown[];
+  ask?: (hub: Hub, project: ProjectRef, label: string, call: ProjectMessageCall) => Promise<ProjectMessageResult>;
+  status?: (hub: Hub, project: ProjectRef, label: string, call: FactoryStatusCall) => Promise<FactoryStatusResult>;
+  linked?: (hub: Hub, project: ProjectRef) => unknown[];
 };
 /**
  * The other areas' parts the bridge calls that have no module on main yet, set by those areas with
@@ -141,12 +141,12 @@ export function mayUse(db: Database, r: ProjectRef): void {
   );
 }
 
-/** The asker sees the project at all: a Navi every project here, a link those its device reads. */
-const sees = (asker: Asker, p: ProjectRef) => asker.kind === "navi" || linkAllows(asker.link, "read", p.machineId);
+/** The asker sees the project at all: a lead every project here, a link those its device reads. */
+const sees = (asker: Asker, p: ProjectRef) => asker.kind === "project" || linkAllows(asker.link, "read", p.machineId);
 
-/** The asker reaches the project: not a Navi's own, and one of a link's projects. */
+/** The asker reaches the project: not the lead's own, and one of a link's projects. */
 const reaches = (asker: Asker, p: ProjectRef) =>
-  asker.kind === "navi" ? !same(asker.navi, p) : sees(asker, p) && linkLimits(asker.link, p);
+  asker.kind === "project" ? !same(asker.project, p) : sees(asker, p) && linkLimits(asker.link, p);
 
 /** The project `name` names, by project id or title, other than the caller's own. */
 function target(hub: Hub, asker: Asker, name: string): ProjectSummary {
@@ -161,7 +161,7 @@ function target(hub: Hub, asker: Asker, name: string): ProjectSummary {
   if (found.length > 1) throw new ToolError("invalid", `${found.length} projects are called ${name}.`, "Name it by its project id, from factory_status.");
   const p = found[0] as ProjectSummary;
   if (!reaches(asker, refOf(p))) {
-    throw asker.kind === "navi"
+    throw asker.kind === "project"
       ? new ToolError("invalid", "That is this lead's own project.", "project_message writes to another project's lead; say it in your own reply.")
       : new ToolError(
           "forbidden",
@@ -204,7 +204,7 @@ type AskRow = {
 
 function askRow(c: Database, row: AskRow): Ask {
   const orders = c
-    .query<{ workstream_id: string }, [number]>("SELECT workstream_id FROM navi_ask_orders WHERE n = ? ORDER BY rowid")
+    .query<{ workstream_id: string }, [number]>("SELECT workstream_id FROM project_ask_orders WHERE n = ? ORDER BY rowid")
     .all(row.n)
     .map((r) => r.workstream_id);
   return {
@@ -222,26 +222,26 @@ function askRow(c: Database, row: AskRow): Ask {
 /** An asker's asks, newest first. */
 export function asksOf(c: Database, asker: Asker): Ask[] {
   const rows =
-    asker.kind === "navi"
+    asker.kind === "project"
       ? c
           .query<AskRow, [string, string]>(
-            `SELECT ${ASK_COLUMNS} FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ? ORDER BY n DESC LIMIT 200`,
+            `SELECT ${ASK_COLUMNS} FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? ORDER BY n DESC LIMIT 200`,
           )
-          .all(asker.navi.machineId, asker.navi.projectId)
-      : c.query<AskRow, [string]>(`SELECT ${ASK_COLUMNS} FROM navi_asks WHERE via_link = ? ORDER BY n DESC LIMIT 200`).all(asker.link.linkId);
+          .all(asker.project.machineId, asker.project.projectId)
+      : c.query<AskRow, [string]>(`SELECT ${ASK_COLUMNS} FROM project_asks WHERE via_link = ? ORDER BY n DESC LIMIT 200`).all(asker.link.linkId);
   return rows.map((row) => askRow(c, row));
 }
 
-/** A Navi's asks to projects on this hub, newest first. Its asks through a hub link name projects there. */
-export const asksFrom = (c: Database, from: ProjectRef) => asksOf(c, { kind: "navi", navi: from }).filter((a) => a.toHub === undefined);
+/** A project's asks to projects on this hub, newest first. Its asks through a hub link name projects there. */
+export const asksFrom = (c: Database, from: ProjectRef) => asksOf(c, { kind: "project", project: from }).filter((a) => a.toHub === undefined);
 
-/** The ask a Navi here sent through a kept link, by its handle there. */
+/** The ask a project here sent through a kept link, by its handle there. */
 export function askSent(c: Database, linkId: string, remote: string): Ask | undefined {
-  const row = c.query<AskRow, [string, string]>(`SELECT ${ASK_COLUMNS} FROM navi_asks WHERE to_hub = ? AND remote = ?`).get(linkId, remote);
+  const row = c.query<AskRow, [string, string]>(`SELECT ${ASK_COLUMNS} FROM project_asks WHERE to_hub = ? AND remote = ?`).get(linkId, remote);
   return row ? askRow(c, row) : undefined;
 }
 
-/** Records an ask a Navi here sent through a kept link (once per handle there): its handle here. */
+/** Records an ask a project here sent through a kept link (once per handle there): its handle here. */
 export function recordSent(
   c: Database,
   from: ProjectRef,
@@ -254,7 +254,7 @@ export function recordSent(
   if (kept) return kept.handle;
   const row = c
     .query<{ n: number }, [string, string, string, string, string, number, string, string]>(
-      `INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
+      `INSERT INTO project_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
              to_hub, remote) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING n`,
     )
     .get(from.machineId, from.projectId, sent.projectRef.machineId, sent.projectRef.projectId, text, nowMs, linkId, sent.handle);
@@ -264,13 +264,13 @@ export function recordSent(
 function askByHandle(c: Database, handle: string): Ask | undefined {
   const m = /^N(\d+)$/.exec(handle);
   if (!m) return undefined;
-  const row = c.query<AskRow, [number]>(`SELECT ${ASK_COLUMNS} FROM navi_asks WHERE n = ?`).get(Number(m[1]));
+  const row = c.query<AskRow, [number]>(`SELECT ${ASK_COLUMNS} FROM project_asks WHERE n = ?`).get(Number(m[1]));
   return row ? askRow(c, row) : undefined;
 }
 
 /** The ask an order was opened for: its first, when its lead folded others in later. */
 function askOf(c: Database, workstreamId: string): Ask | undefined {
-  const n = c.query<{ n: number }, [string]>("SELECT n FROM navi_ask_orders WHERE workstream_id = ? ORDER BY rowid LIMIT 1").get(workstreamId)?.n;
+  const n = c.query<{ n: number }, [string]>("SELECT n FROM project_ask_orders WHERE workstream_id = ? ORDER BY rowid LIMIT 1").get(workstreamId)?.n;
   return n === undefined ? undefined : askByHandle(c, `N${n}`);
 }
 
@@ -286,7 +286,7 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
       "Ask an admin of that hub for operate on its machine.",
     );
   }
-  const from = asker.kind === "navi" ? asker.navi : { machineId: "", projectId: "" };
+  const from = asker.kind === "project" ? asker.project : { machineId: "", projectId: "" };
   const via = asker.kind === "link" ? asker.link.linkId : null;
   const text = call.text;
   const now = hub.clock.now();
@@ -294,7 +294,7 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
   // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again.
   const first = c
     .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
-      `SELECT n FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
+      `SELECT n FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
                      AND to_project_id = ? AND text = ? AND at_ms >= ? AND via_link IS ? AND to_hub IS NULL
                      ORDER BY n DESC LIMIT 1`,
     )
@@ -303,13 +303,13 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
     first ??
     (c
       .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
-        `INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
+        `INSERT INTO project_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
                  via_link) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING n`,
       )
       .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via)?.n as number);
   const handle = `N${n}`;
-  const by = asker.kind === "navi" ? author(hub, asker.navi) : linkAuthor(asker.link);
-  const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `navi:${handle}`);
+  const by = asker.kind === "project" ? author(hub, asker.project) : linkAuthor(asker.link);
+  const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `ask:${handle}`);
   const waiting = typeof sent.leadWaiting === "string" ? sent.leadWaiting : undefined;
   return {
     handle,
@@ -389,7 +389,7 @@ function news(hub: Hub, e: HubEvent): [Ask, string] | undefined {
     // Only the project asked can open an order for the ask, and only for one asked here.
     const asked = askByHandle(c, data.asked);
     if (!asked || asked.toHub !== undefined || asked.to.machineId !== e.machineId || asked.to.projectId !== e.projectId) return undefined;
-    c.query("INSERT OR IGNORE INTO navi_ask_orders (workstream_id, n) VALUES (?, ?)").run(w, asked.handle.slice(1));
+    c.query("INSERT OR IGNORE INTO project_ask_orders (workstream_id, n) VALUES (?, ?)").run(w, asked.handle.slice(1));
     return [asked, folded ? `its lead folded it into order ${w}${title()}` : `its lead opened order ${w}${title()}`];
   }
   const asked = askOf(c, w);
@@ -445,7 +445,7 @@ export function feed(hub: Hub, linkId: string, cursor: number): { cursor: number
   return { cursor: page.cursor, more: page.more, items };
 }
 
-/** Follows the event log for what Navis asked for, from where it left off, until the hub stops. */
+/** Follows the event log for what projects asked for, from where it left off, until the hub stops. */
 export async function run(hub: Hub): Promise<void> {
   // A first start begins at the head: nothing was asked before the bridge existed.
   let cursor = cursorGet(hub.db.conn) ?? events(hub).head();
@@ -457,7 +457,7 @@ export async function run(hub: Hub): Promise<void> {
       if (page.more) continue;
       await events(hub).wait({ cursor, types: TYPES, timeoutSec: 3600 }, signal);
     } catch (error) {
-      console.error("navi bridge: events not followed:", error);
+      console.error("ask bridge: events not followed:", error);
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, 5000);
         function done() {
@@ -471,22 +471,22 @@ export async function run(hub: Hub): Promise<void> {
   }
 }
 
-/** The bridge as other areas reach it, `hub.area("navi_bridge")`: the hub-links area answers its links with it. */
-export type NaviBridge = {
+/** The bridge as other areas reach it, `hub.area("ask_bridge")`: the hub-links area answers its links with it. */
+export type AskBridge = {
   factoryStatus(asker: Asker, call: FactoryStatusCall): FactoryStatusResult;
   projectMessage(asker: Asker, call: ProjectMessageCall): Promise<ProjectMessageResult>;
   feed(linkId: string, after: number): { cursor: number; more: boolean; items: LinkFeedItem[] };
-  mayUse(navi: ProjectRef): void;
+  mayUse(project: ProjectRef): void;
   askSent(linkId: string, remote: string): { handle: string; from: ProjectRef } | undefined;
   recordSent(from: ProjectRef, linkId: string, sent: { handle: string; projectRef: ProjectRef; title: string; leadWaiting?: string }, text: string, nowMs: number): string;
 };
 
-export function bridgeOf(hub: Hub): NaviBridge {
+export function bridgeOf(hub: Hub): AskBridge {
   return {
     factoryStatus: (asker, call) => factoryStatus(hub, asker, call),
     projectMessage: (asker, call) => projectMessage(hub, asker, call),
     feed: (linkId, after) => feed(hub, linkId, after),
-    mayUse: (navi) => mayUse(hub.db.conn, navi),
+    mayUse: (project) => mayUse(hub.db.conn, project),
     askSent: (linkId, remote) => {
       const a = askSent(hub.db.conn, linkId, remote);
       return a ? { handle: a.handle, from: a.from } : undefined;
@@ -496,14 +496,14 @@ export function bridgeOf(hub: Hub): NaviBridge {
 }
 
 /** The lead-side calls: a project's lead's `project_message` and `factory_status`, here or through a linked hub. */
-export async function answer(hub: Hub, navi: ProjectRef, call: { op: string } & Record<string, unknown>): Promise<unknown> {
-  mayUse(hub.db.conn, navi);
-  const asker: Asker = { kind: "navi", navi };
+export async function answer(hub: Hub, project: ProjectRef, call: { op: string } & Record<string, unknown>): Promise<unknown> {
+  mayUse(hub.db.conn, project);
+  const asker: Asker = { kind: "project", project };
   if (call.op === "project_message") {
     const c = call as unknown as ProjectMessageCall;
     if (c.hub !== undefined) {
       if (!found.ask) throw new NotImplemented("src/hub/hub_links (client ask)");
-      return found.ask(hub, navi, c.hub, c);
+      return found.ask(hub, project, c.hub, c);
     }
     return projectMessage(hub, asker, c);
   }
@@ -511,10 +511,10 @@ export async function answer(hub: Hub, navi: ProjectRef, call: { op: string } & 
     const c = call as unknown as FactoryStatusCall;
     if (c.hub !== undefined) {
       if (!found.status) throw new NotImplemented("src/hub/hub_links (client status)");
-      return found.status(hub, navi, c.hub, c);
+      return found.status(hub, project, c.hub, c);
     }
     const out = factoryStatus(hub, asker, c);
-    const hubs = found.linked ? found.linked(hub, navi) : [];
+    const hubs = found.linked ? found.linked(hub, project) : [];
     return hubs.length > 0 ? { ...out, hubs } : out;
   }
   throw new ToolError("invalid", `${call.op} is not a factory bridge call.`);

@@ -1,4 +1,4 @@
-// `artifact_publish`, a lead's, task's or Navi's report for the person, and `artifact_read`, one of its own project's
+// `artifact_publish`, a lead's or task's report for the person, and `artifact_read`, one of its own project's
 // read back.
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";

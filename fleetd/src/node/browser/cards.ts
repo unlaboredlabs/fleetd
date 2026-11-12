@@ -1,4 +1,4 @@
-// A Navi's purchases in its browser (D265; the hub's side is
+// A project's purchases in its browser (D265; the hub's side is
 // hub/browser/purchases.ts).
 // - `purchaseRequest`: on the checkout page, the node checks the page is on the shop's domain and opens the purchase
 //   on the hub, which asks the person (or, from D310 on, records it approved). The session waits for them without
@@ -47,7 +47,7 @@ export function onDomain(host: string, domain: string): boolean {
 /** Whether a card may fill in a frame on `host`: a payment provider's, or one `extra` names (tests). */
 export const paymentFrame = (host: string, extra: string[] = []) => [...PAYMENT_FRAMES, ...extra].some((p) => onDomain(host, p));
 
-/** How a card is named to the person: its item and its vault, `Visa (Personal)` (purchase.rs `NaviCard::label`); a
+/** How a card is named to the person: its item and its vault, `Visa (Personal)` (purchase.rs `PaymentCard::label`); a
  * vault card, whose label the claim doesn't carry, as the vault's card. */
 export function cardLabel(reference: string): string {
   if (reference.startsWith("vault:")) return "the vault's card";
@@ -56,9 +56,9 @@ export function cardLabel(reference: string): string {
   return at < 0 ? rest : `${rest.slice(at + 1)} (${rest.slice(0, at)})`;
 }
 
-/** The Navi's live browser session, or why a purchase call can't use it. */
-export function naviSession(broker: Broker, thread: string): Session {
-  if (!broker.isNavi(thread)) throw new ToolError("forbidden", "Only a project's lead pays at a checkout.", "leave the payment to the person and say so");
+/** The lead's live browser session, or why a purchase call can't use it. */
+export function leadSession(broker: Broker, thread: string): Session {
+  if (!broker.hasKept(thread)) throw new ToolError("forbidden", "Only a project's lead pays at a checkout.", "leave the payment to the person and say so");
   const session = broker.live(thread);
   if (!session) throw new ToolError("not_found", "No browser session is open.", "open the shop's checkout in a browser session (session_start) first");
   if (session.control() === "human") throw new ToolError("invalid", PAUSED, "try again once they hand it back");
@@ -69,7 +69,7 @@ const domainOf = (call: Record<string, unknown>) => String(((call.shop ?? call.s
 
 /** An agent's `purchase_request`: the person is asked to approve exactly this purchase, on this checkout. */
 export async function purchaseRequest(broker: Broker, thread: string, call: Record<string, unknown>): Promise<{ requestId: string; message: string }> {
-  const session = naviSession(broker, thread);
+  const session = leadSession(broker, thread);
   const page = (await pageUrl(session)) ?? "";
   const domain = domainOf(call);
   const host = hostOf(page) ?? "";
@@ -118,7 +118,7 @@ export function oneLine(text: string): string {
 /** An agent's `purchase_fill`: the approved purchase's card, typed into the checkout's card fields. */
 export async function purchaseFill(broker: Broker, thread: string, call: Record<string, unknown>): Promise<{ message: string }> {
   const started = performance.now();
-  const session = naviSession(broker, thread);
+  const session = leadSession(broker, thread);
   const id = String(call.requestId ?? "");
   const args = { requestId: id };
   const failed = (error: ToolError) => {

@@ -245,7 +245,7 @@ test("the tools check runs pod and says how to install CocoaPods", () => {
   expect(verdict(fake, "tools")[0]).toBe("fail");
 });
 
-test("the Mac lists no call that carries a secret, a claude or a Navi, and its tool only while it is on", () => {
+test("the Mac lists no call that carries a secret, a claude or a project, and its tool only while it is on", () => {
   const all = ["self_update", "session_ios", "claude_accounts", "onepassword", "mcp_servers", "assistant", "order_env", "claude_login", "link_deflate"];
   expect(toolOnly(all, false)).toEqual(["agents_mac", "self_update", "session_ios", "link_deflate"]);
   expect(toolOnly(["self_update", "mac_tool"], true)).toEqual(["agents_mac", "self_update", "mac_tool"]);

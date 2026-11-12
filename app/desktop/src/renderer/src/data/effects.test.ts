@@ -88,7 +88,7 @@ describe("event effects", () => {
       invalidate: [{ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" }],
       resync: false,
     });
-    expect(tools(e("vault.changed", { itemId: "V1", scope: "person" }))).toEqual(["vault_list", "vault_get", "vault_audit", "navi_purchases", "vault_status"]);
+    expect(tools(e("vault.changed", { itemId: "V1", scope: "person" }))).toEqual(["vault_list", "vault_get", "vault_audit", "project_purchases", "vault_status"]);
   });
 
   it("your pins changed on another device: this sidebar reads them again, and nothing else", () => {

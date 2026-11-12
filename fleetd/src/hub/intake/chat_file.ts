@@ -1,8 +1,7 @@
 // `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the chat takes (a PDF, a
-// CSV, a document), in its project's chat, and is told which block shows it.
-// `chat_image`, its images-only forerunner, comes only from older nodes now. The hub asks the caller's own node for the
-// file, which reads it only from that session's working directory, as the node started it, and only a png, jpeg, webp
-// or gif by its bytes, or for `chat_file` a file whose bytes fit the type its name says. It is stored as an attachment
+// CSV, a document), in its project's chat, and is told which block shows it. The hub asks the caller's own node for the
+// file, which reads it only from that session's working directory, as the node started it, and only a file whose bytes
+// fit the type its name says. It is stored as an attachment
 // `by` the project's lead (`lead:<project>`), so no person's key reads it and no other project shows it: a lead
 // message's `image` or `file` block of it marks it the project's (attachments.ts `show`), and one never shown goes with
 // the other unused uploads after 24 h. The node's pieces go to a file under the uploads directory, never all in memory.
@@ -18,12 +17,10 @@ import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.t
 import { dir, safeName, store } from "./attachments.ts";
 import { fits, isImage, ofImage } from "./mime.ts";
 
-export const OPS = ["chat_image", "chat_file"] as const;
+export const OPS = ["chat_file"] as const;
 
 export function registerLeadCalls(hub: Hub): void {
-  for (const op of OPS) {
-    leadCalls(hub).register(op, (caller, call) => chatImage(hub, caller, call, op === "chat_file"));
-  }
+  leadCalls(hub).register("chat_file", (caller, call) => chatFile(hub, caller, call));
 }
 
 /** The session the caller runs in, by the hub's own records: its working directory is the only place its file is read from. */
@@ -101,14 +98,14 @@ export async function readInto(hub: Hub, thread: ThreadRef, path: string, file: 
   }
 }
 
-async function chatImage(hub: Hub, caller: LeadCaller, call: LeadCall, file: boolean): Promise<Record<string, unknown>> {
+async function chatFile(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Record<string, unknown>> {
   const path = String(call.path ?? "");
   const thread = sessionOf(hub, caller);
   const root = join(dir(hub), "uploads");
   const tmp = join(root, `read-${crypto.randomUUID()}`);
   try {
     mkdirSync(root, { recursive: true });
-    const { name, mime } = await readInto(hub, thread, path, file, tmp);
+    const { name, mime } = await readInto(hub, thread, path, true, tmp);
     const stored = await store(hub, { path: tmp }, safeName(name), mime, caller.by);
     // An image shows inline in an image block, anything else as a file card.
     const image = isImage(mime);

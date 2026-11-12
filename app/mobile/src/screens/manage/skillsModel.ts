@@ -33,8 +33,8 @@ export interface SkillRead {
   readonly versions: readonly SkillVersion[];
 }
 
-/** The hub keeps skills' versions and lets a person restore and turn them off (`navi_skills`), as the desktop checks. */
-export const skillsShown = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("navi_skills") === true;
+/** The hub keeps skills' versions and lets a person restore and turn them off: shown while it is live. */
+export const skillsShown = (hub: HubState): boolean => hub.phase === "live";
 
 export type Kind = "own" | "installed" | "folder";
 

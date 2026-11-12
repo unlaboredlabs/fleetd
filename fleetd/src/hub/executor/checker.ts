@@ -1,4 +1,4 @@
-// The Navi checker's turn and reads, run on the executors (crates/fleetd/src/hub/usage/wire_approvals.rs
+// The project checker's turn and reads, run on the executors (crates/fleetd/src/hub/usage/wire_approvals.rs
 // `executor::turn::executors(hub, Owner::ApprovalCheck)`, and the executor's `reads`); the navi area's start calls it.
 import type { Effort } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

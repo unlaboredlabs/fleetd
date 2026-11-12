@@ -1,4 +1,4 @@
-// A project's or Navi's picture: what its chat shows in place of its
+// A project's or project's picture: what its chat shows in place of its
 // letters. The app uploads the picture as it was picked (attachment_put) and names the square to keep; the hub
 // decodes it (png, jpeg or webp), turns it as its EXIF says, crops it, shrinks it to at most AVATAR_PX a side and keeps
 // that alone, re-encoded as JPEG: none of the original's metadata is kept, and the upload is forgotten at once. The

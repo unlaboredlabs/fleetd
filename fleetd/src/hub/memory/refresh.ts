@@ -319,7 +319,7 @@ async function start(hub: Hub, launcher: Launcher, r: ProjectRef, title: string,
     title: [...`fleetd memory refresh: ${title}`].slice(0, 80).join(""),
     clientRequestId: `fleetd-memory:${r.machineId}/${r.projectId}:${night}`,
   };
-  // Nobody asked for it: it runs on the account the project's lead does (a Navi's, its owner's).
+  // Nobody asked for it: it runs on the account the project's lead does (a project's, its owner's).
   const account = forLead(hub.db, (m) => nodeAccounts(hub, m), r);
   if (isRefusal(account)) {
     console.warn(`memory refresh of ${title}: not started: ${account.message}`);

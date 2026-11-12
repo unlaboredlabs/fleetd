@@ -1,4 +1,4 @@
-// A project's or Navi's built-in icon: a glass being's face on a field of a
+// A project's or project's built-in icon: a glass being's face on a field of a
 // color, which its chat shows when it has no picture. One a person never picked is derived from its id, so each looks
 // the same on every app and every launch.
 import type { Database } from "bun:sqlite";

@@ -22,7 +22,7 @@ const BOARD = {} as const;
 /** This project's asks. */
 export const useAskedWork = (project: ProjectKey, enabled = true) => {
   const client = useQueryClient();
-  const input = useMemo(() => ({ navi: { machineId: project.machineId, projectId: project.projectId } }), [project.machineId, project.projectId]);
+  const input = useMemo(() => ({ project: { machineId: project.machineId, projectId: project.projectId } }), [project.machineId, project.projectId]);
   const query = useToolQuery(PROJECT_TOOLS.asks, input, { enabled });
   // An order opening, merging or closing moves the board and this read alike: read again when the board does.
   const board = useToolQuery("orders_board", BOARD).dataUpdatedAt;

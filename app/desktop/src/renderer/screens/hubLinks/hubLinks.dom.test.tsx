@@ -35,7 +35,7 @@ const SAM = { personId: "p_bbbbbbbb", name: "Sam" };
 
 const kept = (label: string, extra: Partial<HubLink> = {}): HubLink => ({
   linkId: `hl_${label.padEnd(8, "a").slice(0, 8)}`,
-  navi: ADA,
+  project: ADA,
   label,
   url: `https://${label}.example`,
   state: "ok",
@@ -182,7 +182,7 @@ const row = (label: string) => {
 describe("a project's Linked hubs", () => {
   it("with none yet, says so in one line with a button", async () => {
     await render(<LinkedHubs project={ADA} />);
-    expect(calls).toContainEqual({ tool: "hub_links_get", input: { navi: ADA } });
+    expect(calls).toContainEqual({ tool: "hub_links_get", input: { project: ADA } });
     expect(text()).toContain("None yet.");
     expect(button("Link a hub")).toBeTruthy();
     expect(document.querySelector("form")).toBeNull();
@@ -362,7 +362,7 @@ describe("You › Hubs & devices › Hub links", () => {
     expect(text()).toContain("Links to this hub");
     expect(text()).toContain("Paste its key into that project’s Linked hubs.");
     expect(text()).not.toContain("Ada");
-    const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { navi?: { projectId: string } }).navi?.projectId);
+    const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { project?: { projectId: string } }).project?.projectId);
     expect(asked.filter((id) => id !== undefined)).toEqual([]);
   });
 });

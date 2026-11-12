@@ -254,7 +254,7 @@ test("machine_roles lists each machine's roles and slots; machine_roles_set chan
   });
 });
 
-test("machine_roles names where a new Navi or project goes: the online machine that takes repos", async () => {
+test("machine_roles names where a new project goes: the online machine that takes repos", async () => {
   setup();
   const best = async () =>
     ((await t.tools.call(t.hub, caller("read"), "machine_roles", {})) as { output: { best?: string } }).output.best;

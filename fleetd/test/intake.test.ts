@@ -329,7 +329,7 @@ function chatRig() {
     .run();
   const asLead = (p: string): LeadCaller => ({ projectRef: { machineId: "devbox", projectId: p }, by: leadBy({ machineId: "devbox", projectId: p }), agent: { kind: "lead" } });
   const asTask: LeadCaller = { projectRef: app, by: leadBy(app), agent: { kind: "task", taskId: "T1" } };
-  const call = (op: "chat_image" | "chat_file", caller: LeadCaller, path: string) =>
+  const call = (op: "chat_file", caller: LeadCaller, path: string) =>
     Promise.resolve(leadCalls(r.hub).handler(op)!(caller, { op, path })) as Promise<Record<string, any>>;
   return { ...r, asLead, asTask, call };
 }
@@ -343,11 +343,11 @@ test("a lead and a task put a PNG in the chat; a lead message's block shows it, 
     "app-lead:shot.png": { name: "shot.png", mime: "image/png", bytes: shot },
     "task-1:out/ui.png": { name: "ui.png", mime: "image/png", bytes: shot },
   });
-  const mine = await call("chat_image", asLead("app"), "shot.png");
+  const mine = await call("chat_file", asLead("app"), "shot.png");
   expect(mine.attachmentId).toMatch(/^F\d+$/);
   expect([mine.mime, mine.bytes]).toEqual(["image/png", shot.length]);
   expect(mine.next).toContain(`{"v":1,"kind":"image","attachmentId":"${mine.attachmentId}"`);
-  const task = await call("chat_image", asTask, "out/ui.png");
+  const task = await call("chat_file", asTask, "out/ui.png");
   expect(task.next).toBe(`Put ${task.attachmentId} in your result for your lead to show in an image block. Unshown, it is deleted after 24 h.`);
   expect(node.reads).toContain("task-1:out/ui.png");
   // Shown in a lead message: its name, type and size filled in, and the file the project's.
@@ -362,19 +362,21 @@ test("a lead and a task put a PNG in the chat; a lead message's block shows it, 
   expect(refs(hub, [mine.attachmentId, task.attachmentId]).map((r) => r.attachmentId)).toEqual([mine.attachmentId]);
 });
 
-test("chat_image takes only an image the node reads in the caller's own directory; another project's never shows", async () => {
+test("chat_file takes only a file the node reads in the caller's own directory; another project's never shows; chat_image is gone", async () => {
   const { hub, asLead, call } = chatRig();
   const shot = png(40, 30, noisy);
   fakeNode(hub, {
     "app-lead:shot.png": { name: "shot.png", mime: "image/png", bytes: shot },
     "app-lead:notes.txt": "notes.txt is not a png, jpeg, webp or gif image.",
   });
-  const outside = await refusal(call("chat_image", asLead("app"), "../shop-lead/shot.png"));
+  const outside = await refusal(call("chat_file", asLead("app"), "../shop-lead/shot.png"));
   expect([outside.code, outside.message]).toEqual(["invalid", "../shop-lead/shot.png is outside your working directory."]);
-  expect(outside.fix).toContain("png, jpeg, webp or gif");
-  expect((await refusal(call("chat_image", asLead("app"), "notes.txt"))).code).toBe("invalid");
+  expect(outside.fix).toContain("inside your working directory");
+  // The images-only call older nodes sent is no lead call now.
+  expect(leadCalls(hub).handler("chat_image")).toBeUndefined();
+  expect((await refusal(call("chat_file", asLead("app"), "notes.txt"))).code).toBe("invalid");
   expect(hub.db.conn.query("SELECT COUNT(*) AS n FROM attachments").get()).toEqual({ n: 0 });
-  const id = (await call("chat_image", asLead("app"), "shot.png")).attachmentId as string;
+  const id = (await call("chat_file", asLead("app"), "shot.png")).attachmentId as string;
   // Shop's lead message names app's image: it shows as text, and shop's readers don't get the file.
   const shop: ProjectRef = { machineId: "devbox", projectId: "shop" };
   expect(show(hub.db.conn, shop, [imageBlock(id)])).toBeUndefined();

@@ -219,7 +219,7 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
     await ensure(hub, r);
     // Only a lead message of this chat is answered; any other names nothing, and the text goes as it is.
     const replyTo = input.replyTo && repliedIn(hub, r, input.replyTo) ? input.replyTo : undefined;
-    // A link the person wrote is a site they gave their Navi: allowed before its lead reads the message.
+    // A link the person wrote is a site they gave their project: allowed before its lead reads the message.
     if (writer.author === "human") allowPasted(hub, r, input.text, writer.by);
     const added = chat(hub).add(r, {
       author: writer.author,
@@ -249,7 +249,7 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
 }
 
 /**
- * A message one of fleetd's own agents writes to another project's lead, as the agent `by` (the Navi bridge): stored
+ * A message one of fleetd's own agents writes to another project's lead, as the agent `by` (the project bridge): stored
  * held and sent as an agent key's message is, idempotent per `request`. Returns it, and why it waits when it does.
  */
 export async function sendAsAgent(

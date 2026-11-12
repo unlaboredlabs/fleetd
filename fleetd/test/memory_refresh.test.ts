@@ -14,7 +14,7 @@ import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts
 import { ExecutorTurn } from "../src/hub/executor/turn.ts";
 import { register as registerAutomationTools } from "../src/hub/automations/tools.ts";
 import { job, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
-import { put as putNavi, setArchived } from "../src/hub/navi/store.ts";
+import { put as putProject, setArchived } from "../src/hub/navi/store.ts";
 import type { ToolError } from "../src/shared/errors.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -264,7 +264,7 @@ function importSetup(reply: (input: LaunchInput) => string) {
   const t = setup();
   const hub = t.hub;
   hub.db.conn.query("INSERT INTO people (person_id, name, role, created_ms) VALUES ('pe_ada00001', 'Ada', 'owner', 0)").run();
-  putNavi(hub.db.conn, PROJECT, { keyId: "key_h", name: "Ada's phone" }, NIGHT_MS);
+  putProject(hub.db.conn, PROJECT, { keyId: "key_h", name: "Ada's phone" }, NIGHT_MS);
   const turns: LaunchInput[] = [];
   const turn: Turn = {
     async run(_r, person, input, options) {

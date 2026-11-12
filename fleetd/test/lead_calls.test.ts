@@ -44,7 +44,7 @@ for (const op of ["decide", "ask_lead", "remember", "forget", "task_spawn", "bro
     seen.push(caller);
     if (call.key === "boom") throw new Error("crash");
     if (call.key === "no") throw new ToolError("invalid", "not that key", "pick another");
-    if (call.key === "later") throw new NotImplemented("src/hub/navi (factory status)");
+    if (call.key === "later") throw new NotImplemented("src/hub/inbox (factory status)");
     return { echoed: call.op };
   });
 }
@@ -146,7 +146,7 @@ test("an op nobody registered, a refusal and a crash", async () => {
   // A part not ported yet is said as such, never "try again": it can't work on this hub.
   expect(error(await answer("/work/app", { ...DECIDE, key: "later" }))).toEqual({
     code: "failed",
-    message: "fleetd doesn't do this yet: src/hub/navi (factory status)",
+    message: "fleetd doesn't do this yet: src/hub/inbox (factory status)",
     fix: "carry on without this call and say so in your result",
   });
 });

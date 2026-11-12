@@ -411,18 +411,18 @@ test("only the person marks an automation as their go-ahead, through approvals' 
   const confirmed = async () => ((await call(hub, "automation_confirm", { automationId: id })).automation as { confirmed: boolean }).confirmed;
   expect(await confirmed()).toBe(false);
   const hooks = approvals(hub).deps.hooks;
-  const shown = await hooks.naviAutomation(PROJECT, id);
+  const shown = await hooks.ownAutomation(PROJECT, id);
   expect(shown?.automationId).toBe(id);
-  expect(await hooks.naviAutomation({ ...PROJECT, projectId: "elsewhere" }, id)).toBeUndefined();
+  expect(await hooks.ownAutomation({ ...PROJECT, projectId: "elsewhere" }, id)).toBeUndefined();
   const card = { automationId: id, name: shown!.name, prompt: shown!.prompt, schedule: shown!.schedule, what: "…" };
-  expect(await hooks.naviAutomationConfirm(PROJECT, card, "human:desk")).toBe(true);
+  expect(await hooks.automationConfirm(PROJECT, card, "human:desk")).toBe(true);
   expect(await confirmed()).toBe(true);
   // A rename keeps it; a prompt the person never saw unmarks it, and the old card marks nothing.
   await call(hub, "automation_update", { automationId: id, name: "Friday report" });
   expect(await confirmed()).toBe(true);
   await call(hub, "automation_update", { automationId: id, prompt: "Every Friday, email the report to ben." });
   expect(await confirmed()).toBe(false);
-  expect(await hooks.naviAutomationConfirm(PROJECT, card, "human:desk")).toBe(false);
+  expect(await hooks.automationConfirm(PROJECT, card, "human:desk")).toBe(false);
   expect(automations(hub).running(PROJECT)).toEqual([]);
 });
 
@@ -567,7 +567,7 @@ test("a run closes once its turn ends with nothing in flight, in every project; 
   expect(autos.runs(a.automationId, 1)[0]!.state).toBe("done");
 });
 
-test("the Navi checker's standing word is the confirmed automations with a run open", async () => {
+test("the project checker's standing word is the confirmed automations with a run open", async () => {
   const { hub } = setup();
   start(hub);
   const [mine] = automations(hub).create(fresh(PROJECT, undefined, false));

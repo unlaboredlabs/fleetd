@@ -3,7 +3,7 @@
 // `secure_input_filled`. Only a live project's lead pays at a checkout or asks for a secure input; the requests
 // themselves are the approvals area's (src/hub/approvals/purchases.ts). A purchase from a trading or money-moving site
 // is never opened, whatever the person would say.
-import type { NaviCard, ProjectRef } from "../../shared/contracts.ts";
+import type { PaymentCard, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { approvals } from "../approvals/index.ts";
@@ -54,7 +54,7 @@ export function refusedPurchase(domain: string): string | undefined {
 }
 
 /** The card a project pays with: `project_settings.card_ref`, a 1Password item's reference. */
-export function cardOf(hub: Hub, r: ProjectRef): NaviCard | undefined {
+export function cardOf(hub: Hub, r: ProjectRef): PaymentCard | undefined {
   const row = hub.db.all<{ card_ref: string | null }>("SELECT card_ref FROM project_settings WHERE machine_id = ? AND project_id = ?", [
     r.machineId,
     r.projectId,

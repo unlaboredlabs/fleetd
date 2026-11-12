@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ENTRIES, entry, placeholdersOf } from "../src/hub/prompts/entry.ts";
 import { gitBlobSha, merge, placeholdersIn, render } from "../src/hub/prompts/render.ts";
 import { RETIRED } from "../src/hub/prompts/retired.ts";
-import { prompts, promptsDir } from "../src/hub/prompts/store.ts";
+import { projectKey, prompts, promptsDir } from "../src/hub/prompts/store.ts";
 import { openHubDb, tempHome } from "./helpers.ts";
 
 test("refs are git blob SHAs, as the Rust hub makes them", () => {
@@ -81,22 +81,42 @@ test("a reflowed default is not a changed default", () => {
   home.done();
 });
 
-test("a renamed prompt's edit under its old id still applies until reset", () => {
+test("a renamed prompt's overrides move to its new id at the hub's start, base and all, hub-wide and per project", () => {
   const home = tempHome();
   const db = openHubDb(home.dir);
   const dir = promptsDir(db) as string;
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "navi.start.md"), "---\nbase: navi.start@0123456789\n---\nYou are {{project}}, mine.");
-  const e = entry("navi.start");
-  expect(e.id).toBe("assistant.start");
+  // The old ids live only in the migration that fills prompt_renames.
+  const renames = db.all<{ old_id: string; new_id: string }>("SELECT old_id, new_id FROM prompt_renames ORDER BY old_id");
+  const start = renames.find((r) => r.new_id === "assistant.start")!;
+  expect(start).toBeDefined();
+  const project = join(dir, "projects", projectKey({ machineId: "devbox", projectId: "ada" }));
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(dir, `${start.old_id}.md`), `---\nbase: ${start.old_id}@0123456789\n---\nYou are {{project}}, mine.`);
+  writeFileSync(join(project, `${start.old_id}.md`), "You are {{project}}, Ada's own.");
   const p = prompts(db);
-  const shown = () => p.current().render("assistant.start", { project: "Ada" });
-  expect(shown().startsWith("You are Ada, mine.")).toBe(true);
-  p.save(e, "global", undefined, "You are {{project}}, newer.");
-  expect(shown().startsWith("You are Ada, newer.")).toBe(true);
-  p.reset(e, "global");
-  expect(existsSync(join(dir, "navi.start.md"))).toBe(false);
-  expect(shown().startsWith("You are Ada, a personal assistant")).toBe(true);
+  expect(p.moveRenamed().sort()).toEqual([join(dir, "assistant.start.md"), join(project, "assistant.start.md")]);
+  expect(readFileSync(join(dir, "assistant.start.md"), "utf8")).toBe("---\nbase: assistant.start@0123456789\n---\nYou are {{project}}, mine.");
+  expect(existsSync(join(dir, `${start.old_id}.md`))).toBe(false);
+  expect(p.current().render("assistant.start", { project: "Ada" }).startsWith("You are Ada, mine.")).toBe(true);
+  expect(p.current({ machineId: "devbox", projectId: "ada" }).render("assistant.start", { project: "Ada" }).startsWith("You are Ada, Ada's own.")).toBe(true);
+  // Again: nothing left to move.
+  expect(p.moveRenamed()).toEqual([]);
+  db.close();
+  home.done();
+});
+
+test("an override already under the new id stays in effect; the old one is kept beside it, untouched", () => {
+  const home = tempHome();
+  const db = openHubDb(home.dir);
+  const dir = promptsDir(db) as string;
+  const start = db.all<{ old_id: string }>("SELECT old_id FROM prompt_renames WHERE new_id = 'assistant.start'")[0]!;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${start.old_id}.md`), "You are {{project}}, older.");
+  writeFileSync(join(dir, "assistant.start.md"), "You are {{project}}, newer.");
+  const p = prompts(db);
+  expect(p.moveRenamed()).toEqual([]);
+  expect(readFileSync(join(dir, `${start.old_id}.md`), "utf8")).toBe("You are {{project}}, older.");
+  expect(p.current().render("assistant.start", { project: "Ada" }).startsWith("You are Ada, newer.")).toBe(true);
   db.close();
   home.done();
 });

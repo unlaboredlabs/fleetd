@@ -612,8 +612,8 @@ does, on a fresh profile.
 - **What's kept:** the browser's cookies and site data (local storage, IndexedDB), in a browser profile of the
   project's own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from
   1Password aren't saved either: each session that fills one still refuses to read it back.
-- **Where:** on the project's machine, under fleetd's node directory (`browser/kept/<project id>`; a project from an
-  earlier fleetd keeps `browser/navis/<project id>`). Only the browsers fleetd starts on it use them, though with no
+- **Where:** on the project's machine, under fleetd's node directory (`browser/kept/<project id>`; a node moves one an
+  earlier fleetd kept elsewhere there at its start). Only the browsers fleetd starts on it use them, though with no
   sandbox the lead's own commands could read them, as yours can.
 - **Whose:** that project's alone. Another project's lead keeps its own, and agents each start with a fresh, empty
   profile that is thrown away when the session ends.
@@ -737,8 +737,7 @@ acme/skills@0123456789ab*.
 A new project is `project_add {create: true, title, machineId?, gitInit?}`; `project_settings_set {machineId,
 projectId, title?}` renames it; `project_archive {machineId, projectId, archived?}` archives it or brings it back. A
 project summary says `createdBy` (the id and name of the key that made it) and, once archived, `archivedAt`. An older
-app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored, and the `navi_*` tools still answer as
-aliases. Its bot's color is `project_settings_set {machineId, projectId,
+app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored. Its bot's color is `project_settings_set {machineId, projectId,
 avatarColor}`, one of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage` and `teal`; a summary's `avatarColor`
 says which it wears, and has none for slate. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
 crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and
@@ -749,12 +748,11 @@ crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId
 | Sites | `project_sites {machineId, projectId}`, `project_site_revoke {machineId, projectId, site}` |
 | Approvals | `project_approvals {machineId, projectId}`, `project_approvals_set {machineId, projectId, mode, model?, effort?}` |
 | Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the project's own token's, when it has one; refused in a shared project without one). |
-| Asked | `project_asks {project}`, with the orders opened for each, on a hub whose ready frame names the `navi_asks` feature. |
+| Asked | `project_asks {project}`, with the orders opened for each. |
 | Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the project's machine online and on a fleetd that keeps them. |
 | Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |
 
-A project's [skills](#skills) are `scope: "project"` skills with its `projectRef`, on a hub whose ready frame names
-the `navi_skills` feature. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
+A project's [skills](#skills) are `scope: "project"` skills with its `projectRef`. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
 `author` `agent` or `person`, `by`, `at`, `why`), `off` and `lastUsedAt`. `skill_get {origin, projectRef, name,
 version?}` adds `versions`, newest first, without their texts; with `version`, its text is that version's.
 `skill_set {scope, projectRef, name, text, why?}` is the person's edit, `skill_revert {scope, projectRef, name,

@@ -65,13 +65,13 @@ export function readAnswer<T>(response: { status: number; statusText: string; ok
   );
 }
 
-/** The plain words for a hub this one can't reach, for the Navi and the app alike. */
+/** The plain words for a hub this one can't reach, for the project and the app alike. */
 export const unreachable = (label: string, url: string, why: string) =>
   new ToolError(
     "failed",
     `Can't reach ${label} at ${url}: ${why}.`,
     `A hub link needs ${label}'s hub reachable from this hub, over a tailnet or HTTPS. Check it is up and its URL ` +
-      "in the Navi's Linked hubs; nothing was sent.",
+      "in the project's Linked hubs; nothing was sent.",
   );
 
 export const noLongerWorks = (label: string, message: string) =>

@@ -7,7 +7,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-3",
         "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",
@@ -26,7 +26,7 @@
       "machineId": "devbox",
       "state": "open",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-4",
         "toolName": "mcp__docs__delete_page",
         "summary": "Updates a page",
@@ -47,7 +47,7 @@
       "answeredAt": "2026-10-19T09:12:00.000Z",
       "by": "desk",
       "permission": {
-        "threadId": "t-navi",
+        "threadId": "t-inbox",
         "requestId": "perm-5",
         "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",

@@ -428,7 +428,7 @@ function signOut(hub: Hub, row: Row, problem: string): void {
   say(
     hub,
     row,
-    `${row.name} is signed out: ${problem} Navi can't use it until you press Reconnect on it in Navi's settings › Integrations.`,
+    `${row.name} is signed out: ${problem} Its project can't use it until you press Reconnect on it in the project's settings › Integrations.`,
   );
 }
 

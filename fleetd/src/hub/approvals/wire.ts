@@ -106,16 +106,16 @@ export function storeHub(hub: Hub, mcpServers: (project: ProjectRef) => Promise<
 }
 
 /**
- * The hooks as T2285's navi port fills them: each call peeks at `hub.area("navi_hooks")` (its `naviHooks(hub)`, D355) at
- * runtime, so this builds before that lands and whichever starts first; a hook it doesn't fill keeps the default. An
+ * The hooks as the project-lead area fills them: each call peeks at `hub.area("project_hooks")` (its `projectHooks(hub)`,
+ * D355) at runtime, so this builds before that lands and whichever starts first; a hook it doesn't fill keeps the default. An
  * area that sets `approvals(hub).deps.hooks.<name>` itself replaces the lookup for that hook.
  */
-export function naviFilled(hub: Hub, base: ApprovalHooks): ApprovalHooks {
-  const navi = () => hub.peek<Partial<ApprovalHooks>>("navi_hooks");
+export function hooksFilled(hub: Hub, base: ApprovalHooks): ApprovalHooks {
+  const filled = () => hub.peek<Partial<ApprovalHooks>>("project_hooks");
   const out = {} as Record<keyof ApprovalHooks, unknown>;
   for (const name of Object.keys(base) as (keyof ApprovalHooks)[]) {
     out[name] = (...args: unknown[]) => {
-      const fill = navi()?.[name] as ((...a: unknown[]) => unknown) | undefined;
+      const fill = filled()?.[name] as ((...a: unknown[]) => unknown) | undefined;
       return (fill ?? (base[name] as (...a: unknown[]) => unknown))(...args);
     };
   }
@@ -135,7 +135,7 @@ export function hubDeps(hub: Hub): ApprovalsDeps {
         return [];
       }
     }),
-    hooks: naviFilled(hub, defaultHooks()),
+    hooks: hooksFilled(hub, defaultHooks()),
     events: events(hub),
     clock: hub.clock,
     signal: hub.shutdown.signal,

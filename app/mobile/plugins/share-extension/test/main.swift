@@ -44,27 +44,27 @@ if case let .event(type, data)? = Frame.parse(json(#"{"t":"event","seq":3,"type"
 } else { check(false, "event") }
 check(Frame.parse(json(#"{"t":"event","seq":3}"#)) == nil && Frame.parse(json(#"{"t":"chat_delta"}"#)) == nil && Frame.parse(json("nope")) == nil, "frames it doesn't read")
 
-// Chats: who spoke last first; a Navi's archive hides it; a project shows its machine.
+// Chats: who spoke last first; an archive hides one; each shows its machine, or "Project" with none named.
 let snapshot = try! JSONSerialization.jsonObject(with: json("""
 {"t":"snapshot","cursor":1,"attention":[],
  "machines":[{"machineId":"m1","name":"devbox"}],
  "projects":[
   {"machineId":"m1","projectId":"p1","title":"billing-api","lastActivityAt":"2026-10-29T10:00:00Z"},
-  {"machineId":"m1","projectId":"p2","title":"Inbox","kind":"assistant","lastActivityAt":"2026-10-20T10:00:00Z"},
-  {"machineId":"m1","projectId":"p3","title":"Old Navi","kind":"assistant","archivedAt":"2026-10-01T00:00:00Z","lastActivityAt":"2026-10-29T12:00:00Z"},
+  {"machineId":"m1","projectId":"p2","title":"Inbox","lastActivityAt":"2026-10-20T10:00:00Z"},
+  {"machineId":"m1","projectId":"p3","title":"Old notes","archivedAt":"2026-10-01T00:00:00Z","lastActivityAt":"2026-10-29T12:00:00Z"},
   {"machineId":"m2","projectId":"p4","title":"Résumé site","lastActivityAt":"2026-10-28T10:00:00Z"}],
  "chats":[{"projectRef":{"machineId":"m1","projectId":"p2"},"lastMessageAt":"2026-10-29T11:00:00Z","lastSeq":4,"leadWorking":false,"needsYou":false}]}
 """)) as! [String: Any]
 let chats = ChatTarget.from(snapshot: snapshot)
 check(chats.map(\.title) == ["Inbox", "billing-api", "Résumé site"], "order: \(chats.map(\.title))")
-check(chats.map(\.subtitle) == ["Navi", "devbox", "Project"], "subtitles: \(chats.map(\.subtitle))")
+check(chats.map(\.subtitle) == ["devbox", "devbox", "Project"], "subtitles: \(chats.map(\.subtitle))")
 check(chats.first?.id == "m1/p2", "id")
 check(ChatTarget.search(chats, "resume").map(\.title) == ["Résumé site"], "search ignores case and accents")
-check(ChatTarget.search(chats, "DEVBOX").map(\.title) == ["billing-api"], "search finds a machine")
+check(ChatTarget.search(chats, "DEVBOX").map(\.title) == ["Inbox", "billing-api"], "search finds a machine")
 check(ChatTarget.search(chats, "  ").count == 3, "an empty search")
 
 // Avatars, as src/avatar.ts draws them.
-for (name, initials, tint) in [("Ada", "A", 5), ("billing-api", "BA", 5), ("Léa's Navi", "LS", 5), ("fleetd", "F", 7), ("Inbox", "I", 9)] {
+for (name, initials, tint) in [("Ada", "A", 5), ("billing-api", "BA", 5), ("Léa's Shop", "LS", 5), ("fleetd", "F", 7), ("Inbox", "I", 9)] {
   check(Avatar.initials(name) == initials && Avatar.tint(name, count: 10) == tint, "avatar of \(name): \(Avatar.initials(name)) \(Avatar.tint(name, count: 10))")
 }
 

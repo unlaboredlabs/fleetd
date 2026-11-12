@@ -164,7 +164,7 @@ test("stop sends the node's stop, removing the worktree when asked", async () =>
   expect(why).toBe("thread nope is not known on machine devbox");
 });
 
-test("the wired checker runs the Navi checker's turn and reads on the executors", async () => {
+test("the wired checker runs the project checker's turn and reads on the executors", async () => {
   const n = await node();
   wireChecker(n.hub);
   const seams = checkerSeams(n.hub);
@@ -179,7 +179,7 @@ test("the wired checker runs the Navi checker's turn and reads on the executors"
   let why = "";
   await checked.catch((e: Error) => (why = e.message));
   expect(why).toContain("no room");
-  // The Navi's reads come from its thread's follow.
+  // The project's reads come from its thread's follow.
   let readWhy = "";
   await seams.reads({ machineId: "devbox", threadId: "lead-1" }, 60).catch((e: Error) => (readWhy = e.message));
   expect(readWhy).toBe("thread lead-1 is not known on machine devbox");

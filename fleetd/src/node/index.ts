@@ -39,6 +39,7 @@ import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliv
 import { fleetdDir } from "../shared/home.ts";
 import { VERSION } from "../shared/version.ts";
 import { protect } from "./oom.ts";
+import { moveKeptProfiles } from "./own_homes.ts";
 import { uploads } from "./uploads.ts";
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
@@ -54,9 +55,9 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
   CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
-  CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
+  CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
-  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.ONEPASSWORD,
+  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.ONEPASSWORD,
   CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT,
 ];
 
@@ -67,7 +68,8 @@ function clearHold(home: string): void {
 }
 
 /** What a stopped node left that nothing uses now: the remote-screen forwarders and folders of its sessions (their
- * screens went with it) and the Telegram state of an older node (D339). Stale pins are self_exe.ts's. */
+ * screens went with it) and the Telegram state of an older node (D339); and kept browser profiles still where they
+ * were before D310 move to where every project's are (own_homes.ts). Stale pins are self_exe.ts's. */
 export function startupCleanups(home: string): void {
   let sessions: string[] = [];
   try {
@@ -75,6 +77,7 @@ export function startupCleanups(home: string): void {
   } catch {}
   for (const id of sessions) for (const dir of ["device-remote", "device-work"]) rmSync(join(home, "sessions", id, dir), { recursive: true, force: true });
   rmSync(join(home, "telegram"), { recursive: true, force: true });
+  moveKeptProfiles(home);
 }
 
 /** The node's own temp dir, for it and everything it starts, when its environment names none. Not under `tmp/`: that
@@ -429,7 +432,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         return;
       case "secret_deliver": {
         const deliver = frame as unknown as SecretDeliver;
-        // A Navi's secure input: opened here and typed into its browser session's field by the broker.
+        // A lead's secure input: opened here and typed into its browser session's field by the broker.
         if (deliver.sink.startsWith("fill:")) {
           // A delivery that fails is answered as one, never left as an unhandled rejection.
           void broker(node)

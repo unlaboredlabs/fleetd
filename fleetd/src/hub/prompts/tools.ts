@@ -82,11 +82,13 @@ export function changed(hub: Hub, id: string, scope: PromptScope, project: Proje
 }
 
 /**
- * At hub start: keeps this release's shipped texts and raises one `prompt.default_changed` per override whose default
- * changed since it was edited (once per new default). The override stays in effect.
+ * At hub start: moves the overrides of renamed prompts to their new ids, keeps this release's shipped texts and raises
+ * one `prompt.default_changed` per override whose default changed since it was edited (once per new default). The
+ * override stays in effect.
  */
 export function start(hub: Hub): void {
   const p = prompts(hub.db);
+  p.moveRenamed();
   p.keepDefaults();
   const at = isoMs(nowMs(hub.clock));
   for (const stale of p.stale()) {

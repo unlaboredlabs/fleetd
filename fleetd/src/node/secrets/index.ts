@@ -116,7 +116,7 @@ export function deliverSecret(frame: SecretDeliver, ctx: SecretsContext): Secret
     }
     return { id: frame.id, fingerprint };
   }
-  // A Navi's secure input goes to its browser session (node/browser), never to a file.
+  // A project's secure input goes to its browser session (node/browser), never to a file.
   if (sink.kind === "fill") return fail("this node has no browser session for that secure input");
   const target = confineSink(sink.path, ctx.roots);
   if (typeof target !== "string") return fail(target.refused);

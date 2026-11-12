@@ -2,18 +2,15 @@
 // hub would take, a delete's words, and the hub tools the project calls go by. Pure, so it is unit-tested.
 import type { ProjectSummary } from "../../../shared/contracts";
 
-/**
- * The hub's names for a project's own calls, in one place: the hub takes `navi_*` as aliases of `project_*` for one
- * release, and this app calls them until every hub it meets has the new names.
- */
+/** The hub's names for a project's own calls, in one place. */
 export const PROJECT_TOOLS = {
-  archive: "navi_archive",
-  approvals: "navi_approvals",
-  approvalsSet: "navi_approvals_set",
-  purchases: "navi_purchases",
-  cardSet: "navi_card_set",
-  signinsForget: "navi_signins_forget",
-  asks: "navi_asks",
+  archive: "project_archive",
+  approvals: "project_approvals",
+  approvalsSet: "project_approvals_set",
+  purchases: "project_purchases",
+  cardSet: "project_card_set",
+  signinsForget: "project_signins_forget",
+  asks: "project_asks",
 } as const;
 
 /** An archived project keeps its chat, memory and folder; its lead doesn't start until it is brought back. */

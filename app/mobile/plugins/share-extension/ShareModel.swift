@@ -70,8 +70,7 @@ final class ShareModel: ObservableObject {
   /// The most recent chats, for the row on top.
   var recent: [ChatTarget] { Array(chats.prefix(8)) }
 
-  var navis: [ChatTarget] { ChatTarget.search(chats, query).filter(\.navi) }
-  var projects: [ChatTarget] { ChatTarget.search(chats, query).filter { !$0.navi } }
+  var projects: [ChatTarget] { ChatTarget.search(chats, query) }
 
   var canSend: Bool {
     phase == .choosing && selected != nil && !preview.loading && itemProblem == nil

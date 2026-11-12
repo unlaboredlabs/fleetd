@@ -1,6 +1,6 @@
-// The hub with the Navi calling the other hub over a kept link:
+// The hub with the project calling the other hub over a kept link:
 // `project_message` and `factory_status` with `hub`, and `follow`, which long-polls the link's feed there and wakes
-// the Navi's lead with each piece of news. When the other hub can't be reached it retries with backoff (1 s doubling
+// the project's lead with each piece of news. When the other hub can't be reached it retries with backoff (1 s doubling
 // to 30 s, ±20% jitter) and the link reads "unreachable" until it answers again.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -13,7 +13,7 @@ import {
   type FactoryStatusResult,
   isProject,
   type LinkFeedItem,
-  naviBridge,
+  askBridge,
   type ProjectMessageCall,
   type ProjectMessageResult,
 } from "./bridge.ts";
@@ -70,8 +70,8 @@ export function openKey(hub: Hub, link: Kept): string {
 }
 
 /** A project's link by label, with its key opened. */
-function open(hub: Hub, navi: ProjectRef, label: string): { link: Kept; key: string } {
-  const all = kept(hub.db, navi);
+function open(hub: Hub, project: ProjectRef, label: string): { link: Kept; key: string } {
+  const all = kept(hub.db, project);
   const link = all.find((k) => k.label.toLowerCase() === label.toLowerCase());
   if (!link) {
     const labels = all.map((k) => k.label);
@@ -117,8 +117,8 @@ async function over<T>(hub: Hub, link: Kept, key: string, post: unknown, path: s
 }
 
 /** `project_message` with `hub`: the ask goes to the other hub as the link's person, and gets a handle here. */
-export async function ask(hub: Hub, navi: ProjectRef, label: string, msg: ProjectMessageCall): Promise<ProjectMessageResult> {
-  const { link, key } = open(hub, navi, label);
+export async function ask(hub: Hub, project: ProjectRef, label: string, msg: ProjectMessageCall): Promise<ProjectMessageResult> {
+  const { link, key } = open(hub, project, label);
   const sent = await over<{ handle: string; projectRef: ProjectRef; title: string; leadWaiting?: string }>(
     hub,
     link,
@@ -127,7 +127,7 @@ export async function ask(hub: Hub, navi: ProjectRef, label: string, msg: Projec
     "ask",
     CALL_MS,
   );
-  const handle = naviBridge(hub).recordSent(navi, link.linkId, sent, msg.text, hub.clock.now());
+  const handle = askBridge(hub).recordSent(project, link.linkId, sent, msg.text, hub.clock.now());
   return {
     handle,
     projectRef: sent.projectRef,
@@ -142,11 +142,11 @@ export async function ask(hub: Hub, navi: ProjectRef, label: string, msg: Projec
 }
 
 /** `factory_status` with `hub`: the other hub's read over the link's projects, its handles mapped to this hub's. */
-export async function status(hub: Hub, navi: ProjectRef, label: string, req: FactoryStatusCall): Promise<FactoryStatusResult> {
-  const { link, key } = open(hub, navi, label);
+export async function status(hub: Hub, project: ProjectRef, label: string, req: FactoryStatusCall): Promise<FactoryStatusResult> {
+  const { link, key } = open(hub, project, label);
   const path = req.project === undefined ? "status" : `status?project=${formEncode(req.project)}`;
   const out = await over<FactoryStatusResult>(hub, link, key, undefined, path, CALL_MS);
-  const here = (there: string) => naviBridge(hub).askSent(link.linkId, there)?.handle;
+  const here = (there: string) => askBridge(hub).askSent(link.linkId, there)?.handle;
   for (const p of out.projects) {
     for (const o of p.openOrders ?? []) {
       const h = o.asked === undefined ? undefined : here(o.asked);
@@ -166,12 +166,12 @@ export async function status(hub: Hub, navi: ProjectRef, label: string, req: Fac
 /** The link while it is still followed: kept here, not dead there, and its project not archived. */
 function followed(hub: Hub, linkId: string): Kept | undefined {
   const link = keptGet(hub.db, linkId);
-  if (!link || link.state === "revoked" || !isProject(hub, link.navi, false)) return undefined;
+  if (!link || link.state === "revoked" || !isProject(hub, link.project, false)) return undefined;
   return link;
 }
 
-const wake = (hub: Hub, navi: ProjectRef, line: string) =>
-  leadWakes(hub).trigger(navi, { kind: "line", line: "factory", text: line });
+const wake = (hub: Hub, project: ProjectRef, line: string) =>
+  leadWakes(hub).trigger(project, { kind: "line", line: "factory", text: line });
 
 /** Whether a follower goes on after one read: the wakes it sent, or "stop". */
 export type Followed = { read: [ProjectRef, string][] } | "stop";
@@ -192,15 +192,15 @@ export async function followOnce(hub: Hub, linkId: string, wait: number): Promis
     const now = keptGet(hub.db, linkId);
     if (!now) return "stop";
     if (now.state !== "revoked") throw error;
-    if (!isProject(hub, link.navi, false)) return "stop";
-    wake(hub, link.navi, `- ${(error as Error).message} Asks through it are no longer followed.`);
+    if (!isProject(hub, link.project, false)) return "stop";
+    wake(hub, link.project, `- ${(error as Error).message} Asks through it are no longer followed.`);
     return "stop";
   }
   // Removed here, or its project archived, while the read waited there: its news goes nowhere.
   if (!followed(hub, linkId)) return "stop";
   const sent: [ProjectRef, string][] = [];
   for (const item of feed.items) {
-    const asked = naviBridge(hub).askSent(link.linkId, item.handle);
+    const asked = askBridge(hub).askSent(link.linkId, item.handle);
     if (!asked) continue;
     const line = `- ${asked.handle} to ${item.title} on ${link.label}: ${item.what}`;
     wake(hub, asked.from, line);

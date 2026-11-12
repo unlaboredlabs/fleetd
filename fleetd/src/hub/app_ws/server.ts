@@ -52,9 +52,7 @@ export const MAX_BYTES_PER_SEC = 32 * 1024;
 export const APP_FEATURES = [
   "presence",
   "browser_sessions",
-  "navi_asks",
   "screen_open",
-  "navi_skills",
   "vault",
   "vault_team",
   "browser_navigate",

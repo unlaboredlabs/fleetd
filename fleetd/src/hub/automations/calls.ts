@@ -21,7 +21,6 @@ export const OPS = [
   "automation_create",
   "automation_list",
   "automation_update",
-  "automation_pause",
   "automation_delete",
   "automation_run",
   "automation_runs",
@@ -135,14 +134,9 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
       const automation = a.own(r, id);
       const next = automation.confirmed
         ? "The person lets it run on its own: its runs count as their go-ahead for what its prompt names."
-        : "Not confirmed: only the person confirms it, on the card this call shows them in a Navi's chat, or by editing it " +
+        : "Not confirmed: only the person confirms it, on the card this call shows them in the project's chat, or by editing it " +
           "in the app. Its runs still ask as any other action does.";
       return { automation, next };
-    }
-    case "automation_pause": {
-      a.own(r, id);
-      const paused = call.paused === true;
-      return { automation: a.pause(id, paused, by), next: pauseNext(paused) };
     }
     case "automation_delete":
       a.own(r, id);

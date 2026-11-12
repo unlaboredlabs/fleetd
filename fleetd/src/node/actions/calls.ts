@@ -1,6 +1,6 @@
 // The session calls the node answers outside its sessions: MCP
 // servers' secrets and their Test, Claude accounts and the hub's model list, 1Password tokens, their Test and cards,
-// a Navi's sign-ins, repo clones and `gh repo list`, the landed log, a checkout's skills and an agent's images. The
+// a project's sign-ins, repo clones and `gh repo list`, the landed log, a checkout's skills and an agent's images. The
 // session service hands each here (sessions/index.ts); a refusal is a CallRefusal.
 import type { SessionCall, SessionOutput } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
@@ -45,7 +45,7 @@ export type CallContext = {
 export const OPS = [
   "mcp_secrets",
   "mcp_test",
-  "navi_signins_forget",
+  "signins_forget",
   "claude_account_secret",
   "claude_account_reseal",
   "claude_account_test",
@@ -126,7 +126,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         return { kind: "mcp_tested", tools: [], error: `this machine doesn't hold its ${error.message}: save the server again` };
       }
     }
-    case "navi_signins_forget":
+    case "signins_forget":
       ctx.projectRoot(call.projectId);
       if (ctx.forgetSignins) await ctx.forgetSignins(call.projectId);
       else asInvalid(() => forgetSignins(home, call.projectId));

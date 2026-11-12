@@ -1,6 +1,6 @@
 // The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session.
 // User scope is a person's own memory: the one whose message the turn answers
-// (a Navi's owner), and refused when that is nobody. A nightly refresh's changes are kept for its one line at the end.
+// (a project's owner), and refused when that is nobody. A nightly refresh's changes are kept for its one line at the end.
 import type { MemoryScope, PersonId, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";

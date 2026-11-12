@@ -10,7 +10,7 @@ import { checkArguments } from "./check.ts";
 import { at, isObject, rustJson } from "./json.ts";
 import { browserResult, errorResult, toolResult } from "./results.ts";
 import { callerCwd, NODE_RESTARTING, nodeSocketPath, osError, sendToNode } from "./socket.ts";
-import { ALIASES, toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
+import { toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
 
 export { SERVER_NAME } from "./tools.ts";
 
@@ -24,8 +24,7 @@ const BROWSER_OPS = new Set(SNAPSHOT.tools.filter((t) => t.browser).map((t) => t
 
 /** The lead call a `tools/call` makes, or (thrown, a string) why its arguments are not one. */
 export function callOf(role: Role, name: string, args: unknown): Call {
-  const listed = ALIASES.find(([old]) => old === name)?.[1] ?? name;
-  const tool = toolsFor(role).find((t) => t.name === listed);
+  const tool = toolsFor(role).find((t) => t.name === name);
   if (!tool) throw `No tool ${name} here.`;
   if (args !== null && args !== undefined && !isObject(args)) throw "The arguments must be an object.";
   const call: Call = { ...(args ?? {}), op: tool.op };

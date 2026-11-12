@@ -1,5 +1,5 @@
 // The hub link tools. On the hub whose projects a link reaches, a person
-// mints and revokes links (their own; an admin anyone's). On the hub with the Navi, a person adds a link to a project,
+// mints and revokes links (their own; an admin anyone's). On the hub with the project, a person adds a link to a project,
 // its key sealed to this hub, and removes it.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
@@ -14,7 +14,7 @@ import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { naviBridge } from "./bridge.ts";
+import { askBridge } from "./bridge.ts";
 import { follow, hello as helloThere, revokeThere } from "./client.ts";
 import { personOnly } from "./links.ts";
 import { boxKey, checkUrl, forget, issued, issuedGet, keep, kept, keptGet, keptInfo, mint, revokeIssued, setHello } from "./store.ts";
@@ -34,15 +34,15 @@ function box(hub: Hub): Uint8Array {
   }
 }
 
-const refOf = (input: { project?: ProjectRef; navi?: ProjectRef }) => input.project ?? input.navi;
+const refOf = (input: { project?: ProjectRef }) => input.project;
 
 export function register(tools: Registry): void {
   tools.add("hub_links_get", (hub, caller, input) => {
-    const navi = refOf(input);
+    const project = refOf(input);
     let links: ReturnType<typeof keptInfo>[] = [];
-    if (navi) {
-      requireRole(caller, "read", navi.machineId);
-      links = kept(hub.db, navi).map(keptInfo);
+    if (project) {
+      requireRole(caller, "read", project.machineId);
+      links = kept(hub.db, project).map(keptInfo);
     }
     const mine = allowsEverywhere(caller, "admin")
       ? undefined
@@ -71,7 +71,7 @@ export function register(tools: Registry): void {
       key,
       link,
       next:
-        "Shown once: paste it into the other hub's Navi, Linked hubs. It acts as you on this hub, at the " +
+        "Shown once: paste it into the other hub's project, Linked hubs. It acts as you on this hub, at the " +
         "lesser of your role here and this device's grants, never above operate; revoke it here at any time.",
     };
   });
@@ -96,10 +96,10 @@ export function register(tools: Registry): void {
 
   tools.add("hub_link_add", async (hub, caller, input) => {
     personOnly(caller);
-    const navi = refOf(input) as ProjectRef;
-    requireRole(caller, "operate", navi.machineId);
-    if (!store(hub).projectGet(navi)) throw unknownProject(navi);
-    naviBridge(hub).mayUse(navi);
+    const project = refOf(input) as ProjectRef;
+    requireRole(caller, "operate", project.machineId);
+    if (!store(hub).projectGet(project)) throw unknownProject(project);
+    askBridge(hub).mayUse(project);
     const url = checkUrl(input.url).href.replace(/\/+$/, "");
     if (!isBase64(input.sealed)) throw new ToolError("invalid", "sealed is not base64.");
     const sealedIn = Buffer.from(input.sealed, "base64");
@@ -116,7 +116,7 @@ export function register(tools: Registry): void {
     const linkKey = pasted.trim();
     const sealed = seal(publicKeyOf(key), new TextEncoder().encode(linkKey));
     const hello = await helloThere(input.label, url, linkKey);
-    const linkId = keep(hub, navi, input.label, url, sealed, hello.cursor);
+    const linkId = keep(hub, project, input.label, url, sealed, hello.cursor);
     if (linkId === undefined) {
       throw new ToolError(
         "invalid",
@@ -148,15 +148,15 @@ export function register(tools: Registry): void {
       throw new ToolError("not_found", `No linked hub ${input.linkId} here.`, "hub_links_get with the project lists its links.");
     }
     // Anyone who operates on the project's machine changes its links (D491).
-    requireRole(caller, "operate", link.navi.machineId);
+    requireRole(caller, "operate", link.project.machineId);
     // The key goes first, so nothing more goes through it; then the other hub is asked to revoke it too.
     forget(hub.db, link.linkId);
     // crates/fleetd/src/hub/projects/settings.rs `announce`.
     events(hub).append({
       at: isoMs(hub.clock.now()),
       type: "project.settings",
-      machineId: link.navi.machineId,
-      projectId: link.navi.projectId,
+      machineId: link.project.machineId,
+      projectId: link.project.projectId,
       summary: `${link.label} unlinked`,
       data: { hubLinkRemoved: link.linkId },
     });
