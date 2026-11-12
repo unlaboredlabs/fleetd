@@ -4,6 +4,7 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { withReviews } from "../src/hub/reviews/service.ts";
 import { compare } from "../src/hub/reviews/rebase.ts";
+import { limitStop } from "../src/hub/reviews/endings.ts";
 import { gate, reviewTitle, toolsFailed } from "../src/hub/reviews/rules.ts";
 import { Kit, PROJECT } from "./train_kit.ts";
 
@@ -117,6 +118,53 @@ test("a reviewer whose fleetd tools failed is not a retry: the next starts after
   expect(k.change(10).lastError).toContain("another review recorded a verdict since, so the tools work again: T52 reviews it now");
 });
 
+/** A reviewer's result on 2026-11-12, verbatim: the 429 cooldown the node then classed invalid_request. */
+const LIMITED_TAIL = `[invalid_request] API Error: Request rejected (429) · All credentials for model claude-fable-5-2 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.) (reset after 4m15s)
+--- stderr tail ---
+[claude-code:unrecognized_model] {"model":"claude-fable-5-2","query_source":"sdk"}
+
+Not resumed automatically: API Error: Request rejected (429) · All credentials for model claude-fable-5-2 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again la…, which resuming won't fix. Decide: continue it with instructions (message_agent), split the work, or cancel it.`;
+
+test("reviewers a usage or rate limit stopped are no tries: the next starts at the reset, and the patch never stalls", async () => {
+  const { k, ended, verdict } = lab();
+  k.pr(13, "fleetd/T13-a", { "a.md": "a\n" });
+  const change = await k.enqueue(13);
+  for (const [i, reviewer] of ["T50", "T51"].entries()) {
+    await ended(reviewer, LIMITED_TAIL, "failed");
+    expect(k.change(13).lastError).toStartWith(`review limited: the reviewer ${reviewer} was stopped by a usage or rate limit`);
+    // Nothing starts before the reset the error named.
+    k.clock.ms += 4 * 60_000;
+    await k.train.step("acme/storefront");
+    expect(k.host.spawns.length).toBe(i + 1);
+    k.clock.ms += 15_000;
+    await k.train.step("acme/storefront");
+    expect(k.host.spawns.length).toBe(i + 2);
+    expect(k.change(13).lastError).toContain(`it has reset: T5${i + 1} reviews it now`);
+  }
+  expect(k.host.wakes.some((w) => w.includes("no more start until a new head") || w.includes("ended without one"))).toBe(false);
+  expect(k.change(13).state).toBe("reviewing");
+  // The gate holds as ever: only a recorded clean verdict makes it ready.
+  await verdict("T52", change.headSha, 0);
+  expect(k.change(13).state).toBe("ready");
+});
+
+test("a Change whose reviewers stalled without a verdict goes back in review when the lead enqueues it again", async () => {
+  const { k, ended, verdict } = lab();
+  k.pr(14, "fleetd/T14-a", { "a.md": "a\n" });
+  const change = await k.enqueue(14);
+  for (const reviewer of ["T50", "T50", "T51", "T51"]) await ended(reviewer, "lgtm");
+  expect(k.change(14).lastError).toContain("no more start until a new head");
+  await k.train.step("acme/storefront");
+  expect(k.host.spawns.length).toBe(2);
+  // The same head, enqueued again.
+  const again = await k.train.enqueue(PROJECT, { prUrl: change.prUrl });
+  expect(again.lastError).toStartWith("enqueued again after its reviewers ended without a verdict");
+  expect(again.headSha).toBe(change.headSha);
+  expect(k.host.spawns.length).toBe(3);
+  await verdict("T52", change.headSha, 0);
+  expect(k.change(14).state).toBe("ready");
+});
+
 test("findings the lead resolved without a new patch count no more, and a fresh full review of the patch starts", async () => {
   const { k, verdict } = lab();
   k.pr(12, "fleetd/T12-a", { "a.md": "a\n" });
@@ -140,6 +188,13 @@ test("the gate's pure rules", () => {
   expect(toolsFailed("I could not record my verdict")).toBe(true);
   expect(toolsFailed("spawn ENOENT")).toBe(true);
   expect(toolsFailed("Two findings: a.rs:3 leaks the key")).toBe(false);
+  // A limit ends a reviewer by its error line: the node's class, or the words under an older class; nothing else does.
+  expect(limitStop(LIMITED_TAIL, 1_000)).toEqual({ resetMs: 1_000 + 255_000 });
+  expect(limitStop("Reviewed.\n\n[rate_limit] API Error: Request rejected (429)", 0)).toEqual({});
+  expect(limitStop("[usage_limit] You've hit your limit · resets 4pm (UTC)", 0)).toEqual({ resetMs: 16 * 3_600_000 });
+  expect(limitStop("The PR adds a rate limit to the API; I could not finish.", 0)).toBeUndefined();
+  expect(limitStop("[invalid_request] API Error: 400 unknown provider for model claude-nope-1", 0)).toBeUndefined();
+  expect(limitStop("[auth] Not logged in · Please run /login", 0)).toBeUndefined();
 });
 
 test("a rebase that moved the approved lines alone carries the approval; one that changed them doesn't", () => {

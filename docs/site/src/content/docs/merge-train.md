@@ -256,13 +256,17 @@ a minute later, then after longer waits up to 15 minutes. It starts at once when
 since that shows the tools work again. These don't count toward the one retry a reviewer that ended without a verdict
 for other reasons gets.
 
+A reviewer stopped by a usage or rate limit is parked and continued at the reset like any agent. One that ended on a
+limit anyway says "review limited", never counts toward that retry, and a new reviewer starts once the limit resets.
+
 ### Findings resolved without a new patch {#resolved}
 
 Blocking findings hold a PR until its next commit. Sometimes the lead resolves a finding another way, for example by
 narrowing the brief the reviewer judged against. In that case, enqueue the PR again with `change_enqueue`. The
 findings on its current patch stop counting, and a fresh, full review of the same patch starts. No approval carries
 over to it. The PR lands only on that review's clean verdict. If the review finds blockers again, they hold the PR as
-before. Enqueuing a PR that nothing blocks starts nothing. Only the lead's `change_enqueue` does this: a writer whose
+before. A PR whose reviewers ended without a verdict until no more started goes back in review the same way, without a
+new head. Enqueuing a PR that nothing blocks starts nothing. Only the lead's `change_enqueue` does this: a writer whose
 turn ends without a push, its result naming the same PR, starts no review.
 
 When blocking findings have held a PR at the same commit for 30 minutes with no push, the lead hears once. The message
