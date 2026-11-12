@@ -3,6 +3,7 @@
 // didn't restart.
 import { useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { serves } from "../desktop";
 import { useHub } from "../hubContext";
 import { afterAnswer, afterLink, restartRow, RESTART_FOOTER, RESTART_NOTE, RESTART_TITLE, RESTART_WAIT_MS, type RestartStep } from "../hubRestart";
 import { useAnnounce } from "../ui/announce";
@@ -23,7 +24,7 @@ export function RestartHub() {
   // Small and cheap: read on every render, against the clock.
   const step = afterLink(asked, state.hub, state.restart, Date.now());
   if (step !== asked) setStep(step);
-  const row = restartRow(state.admin, state.hub, step);
+  const row = restartRow(state.admin, state.hub, step, serves(state, "hub_restart"));
   useAnnounce(row?.value ?? row?.detail);
   if (row === null) return null;
 

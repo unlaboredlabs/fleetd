@@ -27,6 +27,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { useReveal } from "../settings/search";
+import { useServes } from "../admin/role";
 import {
   glyphOf,
   hereLine,
@@ -134,8 +135,10 @@ export function AddMachine({
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
-  const status = useToolQuery("machine_add_status", noInput);
-  const hosts = useToolQuery("machine_hosts", noInput);
+  // fleetd cloud reaches no machine over SSH: no hosts, runs or plans to read there, and no row for them.
+  const ssh = useServes("machine_hosts");
+  const status = useToolQuery("machine_add_status", noInput, { enabled: useServes("machine_add_status") });
+  const hosts = useToolQuery("machine_hosts", noInput, { enabled: ssh });
   const hostName = useHostName();
   const join = useJoinHere();
   const ref = useReveal<HTMLElement>("hub.add-machine");
@@ -168,8 +171,9 @@ export function AddMachine({
 
   // The hub's own machine, where a command that lets the hub reach another one runs.
   const hubMachine = hosts.data?.hosts.find((h) => h.source === "hub")?.machineId ?? "the hub's machine";
+  const hostList = ssh ? hosts.data?.hosts : [];
   const here =
-    hosts.data && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
+    hostList && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hostList, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);
@@ -215,6 +219,7 @@ export function AddMachine({
       ) : shown.kind === "choose" ? (
         <Choose
           here={here}
+          ssh={ssh}
           busy={busy}
           onHere={addHere}
           onHosts={() => setView({ kind: "hosts" })}
@@ -256,6 +261,8 @@ export function AddMachine({
 
 function Choose(props: {
   here: Here | undefined;
+  /** The hub reaches machines over SSH: not fleetd cloud, where one line under the ways in says how they join. */
+  ssh: boolean;
   busy: boolean;
   onHere: (h: Here) => void;
   onHosts: () => void;
@@ -291,22 +298,24 @@ function Choose(props: {
             </Button>
           )}
         </li>
+        {props.ssh ? (
+          <li className={s.row}>
+            <div className={s.rowText}>
+              <Text>A machine the hub can reach</Text>
+              <Text size="sm" tone="quiet">
+                Over SSH from the hub: one in its ~/.ssh/config or on its tailnet.
+              </Text>
+            </div>
+            <Button className={s.rowAction} onClick={props.onHosts}>
+              Choose…
+            </Button>
+          </li>
+        ) : null}
         <li className={s.row}>
           <div className={s.rowText}>
-            <Text>A machine the hub can reach</Text>
+            <Text>{props.ssh ? "Any other machine" : "Another machine"}</Text>
             <Text size="sm" tone="quiet">
-              Over SSH from the hub: one in its ~/.ssh/config or on its tailnet.
-            </Text>
-          </div>
-          <Button className={s.rowAction} onClick={props.onHosts}>
-            Choose…
-          </Button>
-        </li>
-        <li className={s.row}>
-          <div className={s.rowText}>
-            <Text>Any other machine</Text>
-            <Text size="sm" tone="quiet">
-              A laptop, or one behind NAT: one line to paste in its terminal. It must reach the hub.
+              {props.ssh ? "A laptop, or one behind NAT: one line to paste in its terminal. It must reach the hub." : "One line to paste in its terminal. On fleetd cloud, machines join this way, not over SSH."}
             </Text>
           </div>
           <Button className={s.rowAction} onClick={props.onLine}>
@@ -594,7 +603,8 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
   const machines = useData((d) => d.machines);
   const mac = props.mac === true;
   // The hub's own guide for the Mac: the admin block before the line, the two permission clicks after it.
-  const guide = useToolQuery("setup_list", noInput, { enabled: mac }).data?.steps.find((step) => step.id === "mac")?.parts;
+  const guided = useServes("setup_list");
+  const guide = useToolQuery("setup_list", noInput, { enabled: mac && guided }).data?.steps.find((step) => step.id === "mac")?.parts;
   const [name, setName] = useState(props.machineId ?? (mac ? "mac" : ""));
   const [tried, setTried] = useState(false);
   // A repair's line is being made as it opens.
@@ -724,13 +734,18 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
       {mac ? (
         <>
           <Text size="sm" tone="quiet">
-            Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents).
+            {guided
+              ? "Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents)."
+              : "Agents act as this Mac account. To keep them out of yours, give them their own user."}
           </Text>
-          <span>
-            <Button size="sm" variant="link" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.setup" }))}>
-              Open Setup
-            </Button>
-          </span>
+          {/* fleetd cloud has no Setup step for the Mac to point at. */}
+          {guided ? (
+            <span>
+              <Button size="sm" variant="link" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.setup" }))}>
+                Open Setup
+              </Button>
+            </span>
+          ) : null}
         </>
       ) : null}
       {state === undefined ? null : (
@@ -742,7 +757,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
         </div>
       )}
       <div className={s.actions}>
-        {state === "joined" && mac ? (
+        {state === "joined" && mac && guided ? (
           <Button variant="primary" onClick={() => (window.location.hash = "#/setup/mac")}>
             {"Open the Mac's checks"}
           </Button>

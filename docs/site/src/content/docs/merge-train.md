@@ -527,6 +527,19 @@ When the checks of the batch, or of a PR merging alone, have been queued for mor
 the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
 back.
 
+## GitHub's API limit {#api-limit}
+
+The hub reads GitHub through its App's installation, which GitHub allows a set number of API calls an hour. It asks
+again for what it has read before with the answer's ETag, so an unchanged PR or check list costs no call. When less
+than a tenth of the hour's calls are left, the hub's log says so once, with the time the limit resets, and the hub
+polls GitHub 4 times less often until then.
+
+When GitHub says the limit is used up, the hub calls GitHub on it no more until the reset GitHub names (an hour at
+most). Nothing is refused or failed for it: a PR enqueued meanwhile is kept and read once the limit resets, then goes
+to review with no one enqueuing it again, and a PR whose checks, rebase or merge GitHub refused stays in line. Its
+entry says "waiting for GitHub's API rate limit to reset at" the reset time, and the time it waits doesn't count
+toward [CI's](#ci-time). A `wait_ci` goes on through it too.
+
 ## Several repos {#repos}
 
 A project can hold several repos. Each repo has its own train, so its PRs line up and merge on their own, apart from

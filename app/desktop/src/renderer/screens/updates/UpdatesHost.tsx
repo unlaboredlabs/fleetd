@@ -4,7 +4,7 @@
 // Hub › Machines › Updates for an admin and General, with this app's own, for anyone else.
 import { useEffect } from "react";
 import { useData, useDataLayer } from "../../src/data/react";
-import { useSettledAdministers } from "../admin/role";
+import { useServes, useSettledAdministers } from "../admin/role";
 import { useCommands } from "../palette";
 import { useFlowDeps } from "./hooks";
 import { loadRun, READY_EVERY_MS } from "./flow";
@@ -21,7 +21,9 @@ const settled = (): boolean => {
 export function UpdatesHost({ commands = true }: { commands?: boolean }) {
   const ready = useAppUpdate()?.app.kind === "ready";
   const deps = useFlowDeps();
-  const admin = useSettledAdministers();
+  // On fleetd cloud, which updates itself, nothing to ask, and Check for updates is this app's own, as for a member.
+  const updates = useServes("hub_update_status");
+  const admin = useSettledAdministers() && updates;
   const { hub } = useDataLayer();
   // The hub's last run and the build it has ready, on connect, every few minutes, and as the hub says one began or
   // ended (its snapshot's and each hub.update event's word); a run going on (another window started it, or the hub's
@@ -29,11 +31,11 @@ export function UpdatesHost({ commands = true }: { commands?: boolean }) {
   const live = useData((d) => d.hub.phase === "live");
   const said = useData((d) => (d.update === undefined ? "" : `${d.update.runId} ${d.update.state}`));
   useEffect(() => {
-    if (!live) return;
+    if (!live || !updates) return;
     void loadRun(deps);
     const every = setInterval(() => void loadRun(deps), READY_EVERY_MS);
     return () => clearInterval(every);
-  }, [live, deps, said]);
+  }, [live, updates, deps, said]);
 
   const list = [
     {

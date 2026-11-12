@@ -5,6 +5,7 @@ import type { Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useData, useToolQuery } from "../../src/data/react";
+import { serves } from "../../../shared/hub";
 import { administers } from "./model";
 
 const noInput = {};
@@ -49,4 +50,18 @@ export function useSettledAdministers(): boolean {
   const [settled, setSettled] = useState(role.administers);
   if (!role.pending && settled !== role.administers) setSettled(role.administers);
   return role.pending ? settled : role.administers;
+}
+
+/**
+ * Whether the hub in scope serves `tool` (shared/hub.ts `serves`): fleetd cloud leaves out self-update, restart,
+ * doctor, setup and the SSH machine add, and their controls are absent there. No until hub_info first answers, then
+ * held at the last answer while it is asked again, as useSettledAdministers; yes on a hub too old to have hub_info.
+ */
+export function useServes(tool: string): boolean {
+  const info = useToolQuery("hub_info", noInput);
+  const old = info.error instanceof CallError && lacksTool(info.error.error);
+  const now = old ? true : info.data === undefined ? undefined : serves(info.data, tool);
+  const [settled, setSettled] = useState(now);
+  if (now !== undefined && settled !== now) setSettled(now);
+  return now ?? settled ?? false;
 }

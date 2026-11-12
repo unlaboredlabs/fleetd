@@ -3,9 +3,9 @@
 import type { Database } from "bun:sqlite";
 import type { ProjectRef, Workstream } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
-import { type StoredLead, type NewWorkstream, type WorkstreamFilter } from "./stored.ts";
+import { encodeWorkstream, type NewWorkstream, type StoredLead, type WorkstreamFilter } from "./stored.ts";
 
-export { type StoredLead, isClosed, type NewWorkstream, type WorkstreamFilter } from "./stored.ts";
+export { encodeWorkstream, isClosed, type NewWorkstream, type StoredLead, type WorkstreamFilter } from "./stored.ts";
 
 type LeadRow = {
   machine_id: string;
@@ -25,19 +25,6 @@ const leadOf = (row: LeadRow): StoredLead => ({
 });
 
 export const workstreamNumber = (id: string) => Number.parseInt(id.slice(1), 10) || 0;
-
-/** The workstream in the Rust struct's field order, so rows read the same. */
-export function encodeWorkstream(w: Workstream): string {
-  const o: Record<string, unknown> = { workstreamId: w.workstreamId, projectRef: w.projectRef, title: w.title, source: w.source };
-  if (w.brief !== undefined) o.brief = w.brief;
-  o.state = w.state;
-  if (w.headline !== undefined) o.headline = w.headline;
-  if (w.headlineAt !== undefined) o.headlineAt = w.headlineAt;
-  o.createdAt = w.createdAt;
-  o.updatedAt = w.updatedAt;
-  if (w.startedBy !== undefined) o.startedBy = w.startedBy;
-  return JSON.stringify(o);
-}
 
 export function readWorkstream(c: Database, id: string): Workstream | undefined {
   const row = c.query<{ data: string }, [number]>("SELECT data FROM workstreams WHERE n = ?").get(workstreamNumber(id));

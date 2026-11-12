@@ -210,6 +210,8 @@ const render = async (open?: { view: View; at: number }, page: { closed?: boolea
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }], projects: [] } });
     await new Promise((r) => setTimeout(r, 0));
   });
+  // The hosts and runs are read once hub_info says the hub serves them.
+  await settle();
   await settle();
 };
 
@@ -249,6 +251,24 @@ it("offers this computer, a machine the hub can reach, and any other machine", a
   expect(host.textContent).toContain("A machine the hub can reach");
   expect(host.textContent).toContain("Any other machine");
   expect(button("Get the line…")?.disabled).toBe(false);
+});
+
+/** hub_info as fleetd cloud answers it: no computer of the team runs the hub, and no machine is reached over SSH. */
+const CLOUD_LEFT_OUT = ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart", "doctor_list", "doctor_fix", "setup_list", "setup_test", "machine_add_plan", "machine_add", "machine_add_status", "machine_hosts"];
+
+it("offers no SSH way on fleetd cloud, says how machines join there, and adds this computer with a line", async () => {
+  hubInfo = Promise.resolve({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: CLOUD_LEFT_OUT } });
+  await render();
+  expect(state()).toBe("choose");
+  expect(host.textContent).not.toContain("A machine the hub can reach");
+  expect(button("Choose…")).toBeUndefined();
+  expect(host.textContent).toContain("Another machine");
+  expect(host.textContent).toContain("On fleetd cloud, machines join this way, not over SSH.");
+  // This computer joins with a line through main, as on any hub that isn't on this computer.
+  expect(host.textContent).toContain("laptop: installs fleetd here and joins the hub.");
+  await click("Add this computer");
+  expect(joinHere).toHaveBeenCalledWith("laptop");
+  expect(calls.filter((c) => c.tool.startsWith("machine_add") || c.tool === "machine_hosts" || c.tool === "setup_list")).toEqual([]);
 });
 
 const typeName = async (name: string) => {
@@ -532,6 +552,8 @@ it("decides nothing about this computer before the hub says which computer it ru
     answer({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, machineFingerprint: HUB_FP } });
     await Promise.resolve();
   });
+  // Then its hosts, which it serves.
+  await settle();
   await settle();
   // It is the hub's own computer: the hub repairs it, nothing is joined.
   expect(host.textContent).toContain("devbox is a machine of this hub already");
@@ -577,6 +599,32 @@ it("shows A Mac for agents' 6-digit code, made once, with the hub's address, and
   expect(host.textContent).toContain("mac joined. The Mac's window finishes the setup");
   await click("Open the Mac's checks");
   expect(window.location.hash).toBe("#/setup/mac");
+});
+
+it("sends a Mac that joined fleetd cloud, which has no Setup step for it, to its own page, by code or by line", async () => {
+  hubInfo = Promise.resolve({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: CLOUD_LEFT_OUT } });
+  await render();
+  await click("Set up…");
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  expect(button("Open the Mac's checks")).toBeUndefined();
+  await click("Open mac");
+  expect(window.location.hash).toBe("#/settings/hub/machines/mac");
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render();
+  await click("Set up…");
+  await click("Use Terminal instead");
+  // No hub's guide, and no Setup step to point at: the user of its own is only said.
+  expect(host.textContent).toContain("give them their own user.");
+  expect(host.textContent).not.toContain("see Setup");
+  expect(button("Open Setup")).toBeUndefined();
+  await click("Make the line");
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  expect(button("Open the Mac's checks")).toBeUndefined();
+  await click("Open mac");
+  expect(window.location.hash).toBe("#/settings/hub/machines/mac");
+  expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
 });
 
 it("says when A Mac for agents' code closed after ten wrong codes, or the Mac took it, from the hub's word", async () => {

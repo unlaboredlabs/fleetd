@@ -10,6 +10,7 @@
 import type { Change, ProjectRef } from "../../shared/contracts.ts";
 import { prNote } from "./events.ts";
 import { type CheckRun, GhError, jobOf, NEXT_LABEL, type Pull, workflowRun } from "./github.ts";
+import { WAITING_FOR_LIMIT } from "./budget.ts";
 import { HEAD_STATES, parsePrUrl, QUEUED_STATES } from "./records.ts";
 import { errorText } from "./records.ts";
 import { BLOCKED_PREFIX, timedOut, type Train } from "./service.ts";
@@ -266,13 +267,16 @@ export async function relabel(t: Train, repo: string, wanted: [number, boolean][
   }
 }
 
-/** `note` (`waiting for CI runners (N queued)`) on each of `changes` still in CI; undefined takes it off. */
+/**
+ * `note` (`waiting for CI runners (N queued)`, or for GitHub's rate limit to reset) on each of `changes` still in CI;
+ * undefined takes it off.
+ */
 export function runnerNote(t: Train, changes: string[], note: string | undefined, earlier: Map<string, string | undefined>): void {
   for (const id of changes) {
     const change = t.records.get(id);
     if (!change) continue;
     const shown = change.lastError;
-    const ours = shown?.startsWith(WAITING_FOR_RUNNERS) ?? false;
+    const ours = (shown?.startsWith(WAITING_FOR_RUNNERS) || shown?.startsWith(WAITING_FOR_LIMIT)) ?? false;
     let next: string | undefined;
     if (note !== undefined) next = note;
     else if (ours) {

@@ -3,7 +3,7 @@
 // A machine gets a row only when it didn't update or is behind. It is where the chats list's word for the hub leads
 // (hubWord.ts): after an update everyone, members too, reads how it ended, without a button.
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { clockAt, startUpdate, useAuto, useFlow, useReady, useRun } from "../desktop";
+import { clockAt, serves, startUpdate, useAuto, useFlow, useReady, useRun } from "../desktop";
 import { useHub } from "../hubContext";
 import { space, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
@@ -22,7 +22,7 @@ export function UpdateFleetd() {
   const run = useRun();
   const ready = useReady();
   const auto = useAuto();
-  const status = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready, auto, restart: state.restart, update: state.hubUpdate });
+  const status = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready, auto, restart: state.restart, update: state.hubUpdate, updates: serves(state, "hub_update") });
   // An update as it goes and how it ended; what merely stands (up to date, one to take) is read, not announced.
   useAnnounce(status !== null && (status.kind === "updating" || status.kind === "failed" || status.updatedAt !== undefined) ? status.title : undefined);
   if (status === null) return null;

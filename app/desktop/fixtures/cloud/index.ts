@@ -1,13 +1,30 @@
 // fleetd cloud's Sign in, on a build that has it (src/main/cloud/fixture.ts reads each fixture's `cloud` section):
 // the first screen's two ways in, the wait for the browser and how a sign-in fails; Connect a computer on a team with
-// no machine yet; the account's row in Settings; and People on a team, where owners and admins invite by email. Without
-// a `cloud` section every other fixture is today's app.
+// no machine yet; the account's row in Settings; People on a team, where owners and admins invite by email; and
+// `cloud-admin`, the Hub group as a team's owner sees it, the hub's own controls (Updates, Restart hub, adding a machine
+// over SSH, setup steps) gone, as hub_info's leftOut says. Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 
 const TEAM = "https://acme.fleetd.dev";
+
+/** What fleetd cloud's hub_info leaves out: the tools of its port map's `left out:` rows. */
+const LEFT_OUT = [
+  "hub_update",
+  "hub_update_settings",
+  "hub_update_status",
+  "hub_restart",
+  "doctor_list",
+  "doctor_fix",
+  "setup_list",
+  "setup_test",
+  "machine_add_plan",
+  "machine_add",
+  "machine_add_status",
+  "machine_hosts",
+];
 const EMAIL = "sam@example.com";
 
 const unpaired = (name: string, note: string, cloud: JsonObject): Fixture => {
@@ -76,6 +93,21 @@ export default defineGroup({
     people(base("chat-empty"), "limit", "People on a cloud team at its limit of people: the invite is refused by the field.", sam, {
       inviteFailure: { code: "failed", message: "This team has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
     }),
+    (() => {
+      const f = answerHub(Fixture.from(base("typical"), "cloud-admin", "Settings' Hub group as the owner of a team of fleetd cloud, which leaves its own updates, restart, setup and SSH out."));
+      f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+      f.label = "acme";
+      f.cloud = { email: EMAIL, hub: true };
+      f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, people: 4, url: TEAM, leftOut: LEFT_OUT });
+      f.answer("machine_join", undefined, {
+        machineId: "laptop",
+        hubUrl: TEAM,
+        code: "fje_7QmK2xVd9LpR4sNw",
+        expiresAt: "2026-10-19T10:45:00Z",
+        line: `curl -fsSL https://fleetd.sh | sh -s -- --join ${TEAM} --code fje_7QmK2xVd9LpR4sNw --machine-id laptop`,
+      });
+      return f;
+    })(),
     (() => {
       const f = Fixture.from(base("typical"), "cloud-account-signed-out", "Settings on a build with fleetd cloud, not signed in.");
       f.cloud = {};

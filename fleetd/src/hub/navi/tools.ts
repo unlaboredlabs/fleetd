@@ -29,6 +29,9 @@ import { others, who } from "./owner.ts";
 import { register as registerPurchases } from "./purchases.ts";
 import { pasted, siteOf } from "./sites.ts";
 import * as navis from "./store.ts";
+import { NAVI_ASKS_MAX } from "./asks.ts";
+
+export { NAVI_ASKS_MAX } from "./asks.ts";
 
 /** The project's summary as the hub serves it: any project (D310). Another person's never gets here (the guard). */
 function naviOf(hub: Hub, r: ProjectRef): ProjectSummary {
@@ -79,9 +82,6 @@ export function allowPasted(hub: Hub, r: ProjectRef, text: string, by: string): 
 }
 
 const refOf = (input: { machineId: string; projectId: string }): ProjectRef => ({ machineId: input.machineId, projectId: input.projectId });
-
-/** The most asks navi_asks lists. */
-export const NAVI_ASKS_MAX = 100;
 
 /** Where Navis' folders go, under the node's home. */
 export const FOLDER = "navi";

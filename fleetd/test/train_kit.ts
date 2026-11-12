@@ -661,8 +661,11 @@ export class Kit {
   readonly db = HubDb.memory();
   readonly train: Train;
   private readonly options: Partial<TrainOptions>;
+  /** What the train runs as `gh`: the fake, or a stand-in around it. */
+  readonly runner: GhRunner;
 
-  constructor(options: Partial<TrainOptions> = {}) {
+  /** `wrap`, when given, puts a stand-in between the train and the fake GitHub. */
+  constructor(options: Partial<TrainOptions> = {}, wrap?: (gh: FakeGh, now: () => number) => GhRunner) {
     this.dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-bun-train-"));
     this.origin = join(this.dir, "origin.git");
     this.clone = join(this.dir, "clone");
@@ -674,6 +677,7 @@ export class Kit {
     git(this.clone, ["push", "-q", "origin", "HEAD:main"]);
     const clock = this.clock;
     this.gh = new FakeGh(this.origin, () => clock.ms);
+    this.runner = wrap ? wrap(this.gh, () => clock.ms) : this.gh;
     this.options = {
       autoRun: false,
       pollIntervalMs: 1000,
@@ -688,7 +692,7 @@ export class Kit {
   }
 
   private newTrain(): Train {
-    const train = new Train(this.host, this.clock, this.db, this.gh, this.options);
+    const train = new Train(this.host, this.clock, this.db, this.runner, this.options);
     train.gate = this.gate;
     this.trains.push(train);
     return train;
