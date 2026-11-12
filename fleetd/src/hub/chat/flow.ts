@@ -33,7 +33,7 @@ import { archivedNote } from "../leads/lead_wakes.ts";
 import { leadWiring } from "../leads/ports.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { ofPerson, setZone, stamp } from "../leads/zone.ts";
-import { allowPasted } from "../navi/tools.ts";
+import { allowPasted } from "../project_lead/tools.ts";
 import { writer as writerName } from "../people/store.ts";
 import { prompts } from "../prompts/store.ts";
 import { writeQueue } from "../queue/index.ts";

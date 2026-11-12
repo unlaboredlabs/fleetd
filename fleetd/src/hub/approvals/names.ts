@@ -1,4 +1,4 @@
-// Names approvals' tool prompts and requests share with the areas that answer them (permissions.ts, navi/hooks.ts).
+// Names approvals' tool prompts and requests share with the areas that answer them (permissions.ts, project_lead/hooks.ts).
 import type { HumanRequest, ProjectRef } from "../../shared/contracts.ts";
 
 /** The project tool whose approval lets an automation run on its own (automations/calls.rs `CONFIRM_TOOL`). */

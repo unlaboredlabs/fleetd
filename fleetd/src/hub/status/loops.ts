@@ -1,5 +1,5 @@
 import type { Hub } from "../api/hub.ts";
-import { found } from "../navi/bridge.ts";
+import { found } from "../project_lead/bridge.ts";
 import { status, statusRows } from "./index.ts";
 
 /**

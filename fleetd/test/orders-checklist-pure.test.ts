@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { digestOf, edited } from "../src/hub/checklist/list.ts";
 import { encodeWorkstream, titleOf } from "../src/hub/leads/stored.ts";
-import { askFooter } from "../src/hub/navi/asks.ts";
+import { askFooter } from "../src/hub/project_lead/asks.ts";
 import { BOARD_MAX_BYTES, trimmed } from "../src/hub/orders/board.ts";
 import { prRef } from "../src/hub/orders/cards.ts";
 

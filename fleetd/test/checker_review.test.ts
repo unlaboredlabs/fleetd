@@ -4,13 +4,13 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as confirm from "../src/hub/navi/confirm.ts";
-import { onDomain, refusedPurchase } from "../src/hub/navi/purchases.ts";
-import { excerpt } from "../src/hub/navi/recall.ts";
-import * as review from "../src/hub/navi/review.ts";
-import type { Answer, Provenance, Review } from "../src/hub/navi/review.ts";
-import { refused as shellRefused } from "../src/hub/navi/shell_guard.ts";
-import { visit } from "../src/hub/navi/site_visit.ts";
+import * as confirm from "../src/hub/project_lead/confirm.ts";
+import { onDomain, refusedPurchase } from "../src/hub/project_lead/purchases.ts";
+import { excerpt } from "../src/hub/project_lead/recall.ts";
+import * as review from "../src/hub/project_lead/review.ts";
+import type { Answer, Provenance, Review } from "../src/hub/project_lead/review.ts";
+import { refused as shellRefused } from "../src/hub/project_lead/shell_guard.ts";
+import { visit } from "../src/hub/project_lead/site_visit.ts";
 
 type Case = { id: string; expected: string; acceptable: string[]; review: Review };
 

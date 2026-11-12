@@ -3,7 +3,7 @@ import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { setAskBridge } from "../src/hub/hub_links/bridge.ts";
 import { start as startLinks } from "../src/hub/hub_links/loops.ts";
-import { found } from "../src/hub/navi/bridge.ts";
+import { found } from "../src/hub/project_lead/bridge.ts";
 import { boxKey, checkUrl, linkGrants, reachableUrl, verify } from "../src/hub/hub_links/store.ts";
 import { followOnce, retryDelayMs, failedReads } from "../src/hub/hub_links/client.ts";
 import { leadWakes } from "../src/hub/api/leads.ts";

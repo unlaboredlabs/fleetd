@@ -9,7 +9,7 @@ import { CAP_ISOLATED } from "../src/shared/node_link.ts";
 import type { Action } from "../src/hub/approvals/ports.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { link } from "../src/hub/link/server.ts";
-import * as checker from "../src/hub/navi/checker.ts";
+import * as checker from "../src/hub/project_lead/checker.ts";
 import {
   autoApproved,
   check,
@@ -23,11 +23,11 @@ import {
   reviewOf,
   standing,
   type Turn,
-} from "../src/hub/navi/checker_turn.ts";
-import * as review from "../src/hub/navi/review.ts";
-import type { Read } from "../src/hub/navi/review.ts";
-import { siteOf } from "../src/hub/navi/sites.ts";
-import * as kept from "../src/hub/navi/store.ts";
+} from "../src/hub/project_lead/checker_turn.ts";
+import * as review from "../src/hub/project_lead/review.ts";
+import type { Read } from "../src/hub/project_lead/review.ts";
+import { siteOf } from "../src/hub/project_lead/sites.ts";
+import * as kept from "../src/hub/project_lead/store.ts";
 import { ensureOwnerOn } from "../src/hub/people/store.ts";
 import { key, kit, project } from "./work-kit.ts";
 

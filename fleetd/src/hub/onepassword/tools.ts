@@ -201,7 +201,7 @@ function holding(hub: Hub, held: ClaudeSealedOn[], asked: string | undefined): s
   return m;
 }
 
-/** The project is on the hub and not archived (navi/bridge.rs `is_project`). */
+/** The project is on the hub and not archived (project_lead/bridge.rs `is_project`). */
 const isProject = (hub: Hub, r: ProjectRef) =>
   hub.db.conn
     .query(

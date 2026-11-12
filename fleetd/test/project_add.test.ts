@@ -6,7 +6,7 @@ import { approvals } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/index.ts";
-import { start as startLeadArea } from "../src/hub/navi/loops.ts";
+import { start as startLeadArea } from "../src/hub/project_lead/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { start as startLoops } from "../src/hub/projects/loops.ts";
 import { FOLDER_NEEDS } from "../src/hub/projects/inspect.ts";

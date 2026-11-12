@@ -3,8 +3,8 @@
 import { expect, test } from "bun:test";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
-import { answer, bridgeOf, found, step } from "../src/hub/navi/bridge.ts";
-import { start } from "../src/hub/navi/loops.ts";
+import { answer, bridgeOf, found, step } from "../src/hub/project_lead/bridge.ts";
+import { start } from "../src/hub/project_lead/loops.ts";
 import { apply } from "../src/hub/checklist/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import type { ProjectRef } from "../src/shared/contracts.ts";

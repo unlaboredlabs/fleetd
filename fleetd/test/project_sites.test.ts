@@ -1,7 +1,7 @@
 // Projects' list, archive, sites and approvals (tools.rs, sites.rs).
 import { expect, test } from "bun:test";
-import { pasted, siteOf } from "../src/hub/navi/sites.ts";
-import * as kept from "../src/hub/navi/store.ts";
+import { pasted, siteOf } from "../src/hub/project_lead/sites.ts";
+import * as kept from "../src/hub/project_lead/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import mcpTools from "../../app/desktop/src/shared/contracts/schema/McpTools.json";
 import { key, kit, project } from "./work-kit.ts";

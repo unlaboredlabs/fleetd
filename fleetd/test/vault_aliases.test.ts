@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
-import { answer, start as startPurchases } from "../src/hub/navi/purchases.ts";
+import { answer, start as startPurchases } from "../src/hub/project_lead/purchases.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { start as startVault } from "../src/hub/vault/loops.ts";
 import { seal } from "../src/shared/sealed_box.ts";

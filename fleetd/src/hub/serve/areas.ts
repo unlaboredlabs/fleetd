@@ -23,7 +23,7 @@ import { register as r19 } from "../mcp_oauth/tools.ts";
 import { register as r20 } from "../mcp_servers/tools.ts";
 import { register as r21 } from "../memory/tools.ts";
 import { register as r22 } from "../metrics/tools.ts";
-import { register as r23 } from "../navi/tools.ts";
+import { register as r23 } from "../project_lead/tools.ts";
 import { register as r24 } from "../onepassword/tools.ts";
 import { register as r25 } from "../orders/tools.ts";
 import { register as r26 } from "../pair/tools.ts";
@@ -72,7 +72,7 @@ export function registerAll(tools: Registry): void {
   r20(tools); // hub/mcp_servers
   r21(tools); // hub/memory
   r22(tools); // hub/metrics
-  r23(tools); // hub/navi
+  r23(tools); // hub/project_lead
   r24(tools); // hub/onepassword
   r25(tools); // hub/orders
   r26(tools); // hub/pair

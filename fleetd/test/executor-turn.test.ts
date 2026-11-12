@@ -6,7 +6,7 @@ import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts
 import { wireChecker } from "../src/hub/executor/checker.ts";
 import { stop } from "../src/hub/executor/stop.ts";
 import { ExecutorTurn, limitMs, Owner, turn } from "../src/hub/executor/turn.ts";
-import { checkerSeams } from "../src/hub/navi/checker_turn.ts";
+import { checkerSeams } from "../src/hub/project_lead/checker_turn.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { SessionLaunch, SessionOutput, SessionSummary } from "../src/shared/sessions.ts";
 import { AT, kit } from "./work-kit.ts";

@@ -1,5 +1,5 @@
 // project_remove: removes the checkouts of its repos with it, erases
-// the project (navi/erase.rs, one rule for every project since D310), and asks each hub it is linked to to revoke its
+// the project (project_lead/erase.rs, one rule for every project since D310), and asks each hub it is linked to to revoke its
 // link. A project whose machine the hub no longer has is only forgotten in the hub.
 import type { ProjectRef, ProjectRemoveInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -14,7 +14,7 @@ import { fromExecutor } from "../executor/tools.ts";
 import { revokeAllThere } from "../hub_links/client.ts";
 import { kept } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
-import { asked, erase } from "../navi/erase.ts";
+import { asked, erase } from "../project_lead/erase.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -54,7 +54,7 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
       `Run fleetd update on ${m}, then delete it again.`,
     );
   }
-  // Marked first: should the node remove it but its answer never come, the hub still erases it (navi/erase.ts `run`).
+  // Marked first: should the node remove it but its answer never come, the hub still erases it (project_lead/erase.ts `run`).
   asked(hub, r);
   const checkouts: string[] = [];
   for (const checkout of otherCheckouts(hub, r)) {

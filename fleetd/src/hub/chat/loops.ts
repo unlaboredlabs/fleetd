@@ -7,7 +7,7 @@ import { forbidden } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { type AppConn, appWs, errorFrame } from "../app_ws/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
-import { found } from "../navi/bridge.ts";
+import { found } from "../project_lead/bridge.ts";
 import { registerLeadCalls } from "./calls.ts";
 import { run, states } from "./flow.ts";
 import { chat, chatState, sendAsAgent } from "./index.ts";

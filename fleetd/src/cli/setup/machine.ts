@@ -13,7 +13,7 @@ import { VERSION } from "../../shared/version.ts";
 import { build, HttpFeed, REPO, sums, type Sums, verified } from "../../update/index.ts";
 import { edgeStamp } from "../../update/version.ts";
 import type { HubDb } from "../../hub/store/db.ts";
-import { eraseIn } from "../../hub/navi/erase.ts";
+import { eraseIn } from "../../hub/project_lead/erase.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
 import { ArgError, parse } from "../args.ts";
 import {
@@ -220,11 +220,11 @@ export const print: Progress = {
   say,
 };
 
-/** Erases one project as deleting it would: its chat, memory, skills, files and orders (Rust: navi::erase::erase_in). */
+/** Erases one project as deleting it would: its chat, memory, skills, files and orders (Rust: project_lead::erase::erase_in). */
 export type Erase = (db: HubDb, home: string, r: ProjectRef) => void | Promise<void>;
 
 /** The hub's database as `machine add` and `remove` use it: opened beside the hub by the CLI, the hub's own in its
- * tools. `by` names who runs it in the hub log's line for an enroll code. `erase` is src/hub/navi/erase.ts's
+ * tools. `by` names who runs it in the hub log's line for an enroll code. `erase` is src/hub/project_lead/erase.ts's
  * `eraseIn` (T2285's), which the caller imports by its literal path (a computed `import()` isn't bundled by
  * `bun build --compile`, D355); `remove` refuses without it. */
 export type HubSide = { db: HubDb; home: string; by: string; erase?: Erase };
@@ -731,7 +731,7 @@ export async function remove(
   progress: Progress,
 ): Promise<Removed> {
   const erase = hub.erase;
-  if (erase === undefined) throw new NotImplemented("src/hub/navi/erase.ts: erasing a removed machine's projects");
+  if (erase === undefined) throw new NotImplemented("src/hub/project_lead/erase.ts: erasing a removed machine's projects");
   let state: SetupState | undefined;
   try {
     state = readSetup(home);

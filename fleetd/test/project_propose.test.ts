@@ -7,7 +7,7 @@ import { approvals, PROJECT_PROPOSE_TOOL } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { leadCalls, type LeadResultFrame } from "../src/hub/lead_calls/index.ts";
-import { start as startLeadArea } from "../src/hub/navi/loops.ts";
+import { start as startLeadArea } from "../src/hub/project_lead/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { registerLeadCalls } from "../src/hub/projects/calls.ts";
 import { PEOPLE_ONLY } from "../src/hub/projects/people_only.ts";

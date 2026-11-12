@@ -14,7 +14,7 @@ import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts
 import { ExecutorTurn } from "../src/hub/executor/turn.ts";
 import { register as registerAutomationTools } from "../src/hub/automations/tools.ts";
 import { job, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
-import { put as putProject, setArchived } from "../src/hub/navi/store.ts";
+import { put as putProject, setArchived } from "../src/hub/project_lead/store.ts";
 import type { ToolError } from "../src/shared/errors.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
 import { events } from "../src/hub/store/events.ts";

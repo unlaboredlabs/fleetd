@@ -20,7 +20,7 @@ export type LineKind =
   | "quiet"
   /** The lead's own turn was cut off by its node stopping or restarting. */
   | "cut_off"
-  /** Work a project asked another project for opened, closed, merged or failed (hub/navi/bridge.rs). */
+  /** Work a project asked another project for opened, closed, merged or failed (hub/project_lead/bridge.rs). */
   | "factory";
 
 /** Why a lead wakes: a person's order, or a line the area that raises it renders itself. */

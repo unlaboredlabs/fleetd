@@ -110,9 +110,9 @@ import { projectOf } from "fleetd/hub/approvals/names";
 import { answerPrompt, onThreadEvent } from "fleetd/hub/approvals/permissions";
 import { personOnly } from "fleetd/hub/approvals/person_only";
 import { defaultHooks, type PermissionDecision, type PromptApprovals } from "fleetd/hub/approvals/ports";
-import { alwaysAsks, autoApprovedEntry, autoApprovedText } from "fleetd/hub/inbox/checker_rules";
-import { TOOL } from "fleetd/hub/inbox/confirm_rules";
-import { promptVerdict, visitCarriesData } from "fleetd/hub/inbox/prompt_rules";
+import { alwaysAsks, autoApprovedEntry, autoApprovedText } from "fleetd/hub/project_lead/checker_rules";
+import { TOOL } from "fleetd/hub/project_lead/confirm_rules";
+import { promptVerdict, visitCarriesData } from "fleetd/hub/project_lead/prompt_rules";
 
 const at = "2026-01-01T00:00:00.000Z";
 const rows: HumanRequest[] = [];

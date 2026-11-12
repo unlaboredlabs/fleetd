@@ -4,7 +4,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
-import * as kept from "../src/hub/navi/store.ts";
+import * as kept from "../src/hub/project_lead/store.ts";
 import { AVATAR_PX, render, square } from "../src/hub/projects/avatar.ts";
 import { pngRows } from "../src/hub/projects/avatar-render.ts";
 import { events } from "../src/hub/store/events.ts";

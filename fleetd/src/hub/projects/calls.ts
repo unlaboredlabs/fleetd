@@ -31,7 +31,7 @@ import { projectRemove } from "../executor/projects.ts";
 import { dir as attachmentsDir } from "../intake/attachments.ts";
 import { readInto, sessionOf } from "../intake/chat_file.ts";
 import { type LeadCall, type LeadCaller, leadCalls, leadWakes, requireHuman, unknownProject } from "../leads/seams.ts";
-import { setArchived } from "../navi/store.ts";
+import { setArchived } from "../project_lead/store.ts";
 import { INSTRUCTIONS } from "../prompts/entry.ts";
 import { entryOr, PromptError, prompts } from "../prompts/store.ts";
 import { changed as promptChanged } from "../prompts/tools.ts";

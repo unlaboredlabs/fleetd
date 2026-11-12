@@ -23,7 +23,7 @@ export function namesFolder(message: string, path: string): boolean {
   return message.includes(path) || (path.startsWith("~/") && message.includes(path.slice(1)));
 }
 
-/** `slug_or` (navi/mod.rs): a folder name from a title, at most 40 bytes, `fallback` when nothing is left. */
+/** `slug_or` (project_lead/mod.rs): a folder name from a title, at most 40 bytes, `fallback` when nothing is left. */
 export function slugOr(name: string, fallback: string): string {
   let out = "";
   for (const c of name.trim().toLowerCase()) {

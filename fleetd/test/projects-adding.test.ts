@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { aProject, BY_KEY, BY_PROJECT, BY_THREAD } from "../src/hub/navi/erase_tables.ts";
+import { aProject, BY_KEY, BY_PROJECT, BY_THREAD } from "../src/hub/project_lead/erase_tables.ts";
 import { archivedNote, namesFolder, problem, problemError, slugOr } from "../src/hub/projects/adding.ts";
 import { nameFor } from "../src/hub/repos/names.ts";
 

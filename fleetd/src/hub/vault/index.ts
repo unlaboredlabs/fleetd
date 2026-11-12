@@ -18,7 +18,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { ClaudeAccountStore, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
-import { who } from "../navi/owner.ts";
+import { who } from "../project_lead/owner.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { type AuditEntry, type NewAudit, VaultAudit } from "./audit.ts";

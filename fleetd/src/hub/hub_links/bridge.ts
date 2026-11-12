@@ -1,8 +1,8 @@
-// What /link/v1 and the asking side's client reach in the project-lead area's bridge (src/hub/navi/bridge.ts, T2246's): its
+// What /link/v1 and the asking side's client reach in the project-lead area's bridge (src/hub/project_lead/bridge.ts, T2246's): its
 // `bridgeOf(hub)`, imported, never an area made here (D354). A test hands its own bridge to `setAskBridge`.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { bridgeOf, type AskBridge } from "../navi/bridge.ts";
+import { bridgeOf, type AskBridge } from "../project_lead/bridge.ts";
 
 export type {
   Asker,
@@ -12,7 +12,7 @@ export type {
   AskBridge,
   ProjectMessageCall,
   ProjectMessageResult,
-} from "../navi/bridge.ts";
+} from "../project_lead/bridge.ts";
 
 const overrides = new WeakMap<Hub, Partial<AskBridge>>();
 

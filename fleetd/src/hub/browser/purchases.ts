@@ -63,7 +63,7 @@ export function cardOf(hub: Hub, r: ProjectRef): PaymentCard | undefined {
   return ref && /^op:\/\/[^/?\r\n]+\/[^/?\r\n]+(\/[^/?\r\n]+){1,2}(\?attribute=[a-z]+)?$/.test(ref) ? { ref } : undefined;
 }
 
-/** A project that is on the hub and not archived (navi/bridge.rs `is_project`). */
+/** A project that is on the hub and not archived (project_lead/bridge.rs `is_project`). */
 function isLiveProject(hub: Hub, r: ProjectRef): boolean {
   return (
     hub.db.all(

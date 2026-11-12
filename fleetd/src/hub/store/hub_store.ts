@@ -12,7 +12,7 @@ import type {
   Timestamp,
 } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import * as projectSettings from "../navi/store.ts";
+import * as projectSettings from "../project_lead/store.ts";
 import * as avatar from "../projects/avatar.ts";
 import * as icon from "../projects/icon.ts";
 import * as repos from "../repos/store.ts";
@@ -158,7 +158,7 @@ function forgetRef(conn: Database, table: "sidebar_orders" | "chat_pins", r: Pro
   }
 }
 
-/** An empty machine or project id is the hub's own, not a project's (hub/navi/erase.rs `a_project`). */
+/** An empty machine or project id is the hub's own, not a project's (hub/project_lead/erase.rs `a_project`). */
 function aProject(r: ProjectRef): void {
   if (r.machineId === "" || r.projectId === "") {
     throw new Error("an empty machine or project id is the hub's own, not a project's: nothing was erased");

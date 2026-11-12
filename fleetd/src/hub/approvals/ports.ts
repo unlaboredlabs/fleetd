@@ -77,7 +77,7 @@ export type OrderEnvSaved = {
   requestId: string;
 };
 
-/** One of a lead's actions the approval step judges (hub/navi/checker.rs `Action`). */
+/** One of a lead's actions the approval step judges (hub/project_lead/checker.rs `Action`). */
 export type Action = { tool: string; summary: string; input: unknown; preview?: ToolPreview; site?: string };
 
 /** The checker's answer: a plain public read passes on its rule; anything else is its note. */
@@ -119,13 +119,13 @@ export type ApprovalHooks = {
   ownImage(project: ProjectRef, id: string): Promise<boolean>;
   /** How the project's risky actions are approved; undefined when unread. */
   approvalSettings(project: ProjectRef): Promise<ProjectApprovals | undefined>;
-  /** The checker's verdict on one of the lead's actions (navi/checker.rs `judge`). */
+  /** The checker's verdict on one of the lead's actions (project_lead/checker.rs `judge`). */
   checkAction(project: ProjectRef, threadId: string, action: Action, settings: ProjectApprovals): Promise<Checked>;
   /** An action ran without asking: an entry in the project's auto-approved log (checker.rs `auto_approved`). */
   autoApproved(project: ProjectRef, action: Action, by: "checker" | "yolo", reason?: string): Promise<void>;
   /**
-   * The project's rules on a prompt the integrations policy had no word on (navi confirm.rs `refused`/`preview`,
-   * automations calls.rs `confirm_preview`, navi bridge.rs `preview`); undefined: no rule, so the approval mode decides.
+   * The project's rules on a prompt the integrations policy had no word on (project_lead confirm.rs `refused`/`preview`,
+   * automations calls.rs `confirm_preview`, project_lead bridge.rs `preview`); undefined: no rule, so the approval mode decides.
    */
   promptVerdict(
     project: ProjectRef,
@@ -134,15 +134,15 @@ export type ApprovalHooks = {
     servers: McpServer[],
     automation: Automation | undefined,
   ): PromptVerdict | undefined;
-  /** A fetch or browser visit (navi/sites.rs `visit`): its host, `null` for one it can't tell; undefined: no visit. */
+  /** A fetch or browser visit (project_lead/sites.rs `visit`): its host, `null` for one it can't tell; undefined: no visit. */
   siteVisit(tool: string, input: unknown): string | null | undefined;
-  /** The floors every mode keeps (navi/review.rs `floor`): why `shown` (the input with its `tool`) is refused. */
+  /** The floors every mode keeps (project_lead/review.rs `floor`): why `shown` (the input with its `tool`) is refused. */
   floor(shown: Record<string, unknown>): string | undefined;
-  /** A visit whose link carries data (navi/review.rs `visit_url` + `carries_data`). */
+  /** A visit whose link carries data (project_lead/review.rs `visit_url` + `carries_data`). */
   visitCarriesData(input: unknown): boolean;
-  /** A shell command YOLO still refuses (navi/shell_guard.rs `refused`). */
+  /** A shell command YOLO still refuses (project_lead/shell_guard.rs `refused`). */
   shellRefused(command: string): string | undefined;
-  /** An action the checker never judges (navi/checker.rs `always_asks`). */
+  /** An action the checker never judges (project_lead/checker.rs `always_asks`). */
   alwaysAsks(action: Action): boolean;
   /** The key a new secret request's value is sealed to (the vault's: the hub's own); undefined: the sink machine's. */
   vaultSealTo(): string | undefined;

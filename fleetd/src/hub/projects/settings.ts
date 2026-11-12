@@ -34,7 +34,7 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { setAvatarColor } from "../navi/store.ts";
+import { setAvatarColor } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";

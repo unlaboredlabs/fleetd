@@ -15,7 +15,7 @@ const END_EVENTS: HubEventType[] = ["thread.completed", "thread.failed", "thread
 export const Owner = {
   /** Import memory (`hub/memory/import`). */
   MemoryImport: "memory_import",
-  /** A project's approval checker (`hub/navi/checker`). */
+  /** A project's approval checker (`hub/project_lead/checker`). */
   ApprovalCheck: "approval_check",
 } as const;
 export type Owner = (typeof Owner)[keyof typeof Owner];

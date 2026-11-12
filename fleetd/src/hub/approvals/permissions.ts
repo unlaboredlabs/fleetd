@@ -18,7 +18,7 @@ import { clip } from "./text.ts";
 
 /** A prompt whose input the node didn't send (over 64 KiB): an approval couldn't show what approving it runs. */
 const UNSHOWN = "Blocked by fleetd: what this call would do is too large to show on an approval card.";
-/** A project's final Confirm on a site (navi/confirm.rs `TOOL`): its screenshot shows on the card. */
+/** A project's final Confirm on a site (project_lead/confirm.rs `TOOL`): its screenshot shows on the card. */
 export const CONFIRM_TOOL = "mcp__fleetd__confirm_step";
 
 /** Events that change whether a thread's prompt is still open. */

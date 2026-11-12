@@ -29,7 +29,7 @@ import type { Hub } from "../api/hub.ts";
 import { sendRunId } from "../executor/sessions.ts";
 import { checkFanOut } from "../lead_calls/policy.ts";
 import { Memory, youForTask } from "../memory/index.ts";
-import { archived } from "../navi/store.ts";
+import { archived } from "../project_lead/store.ts";
 import { prompts } from "../prompts/store.ts";
 import * as repos from "../repos/store.ts";
 import { type Grant, priorityOf, type SlotRequest, slots } from "../slots/index.ts";

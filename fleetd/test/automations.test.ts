@@ -14,7 +14,7 @@ import type { RouteContext } from "../src/hub/http/route.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { LeadRecords } from "../src/hub/leads/records.ts";
 import { intake } from "../src/hub/leads/workstreams.ts";
-import { standing } from "../src/hub/navi/checker_turn.ts";
+import { standing } from "../src/hub/project_lead/checker_turn.ts";
 import { workstreamGet, workstreamsList } from "../src/hub/orders/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";

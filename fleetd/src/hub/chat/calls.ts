@@ -5,7 +5,7 @@ import type { ChatAuthor, ChatMessage, ProjectRef, ThreadRef } from "../../share
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadCalls, type LeadCaller } from "../leads/seams.ts";
-import { mayUse } from "../navi/bridge.ts";
+import { mayUse } from "../project_lead/bridge.ts";
 import { parseMs } from "../store/time.ts";
 import { type LiveParts, leadThread, liveOf, state } from "./flow.ts";
 import { leadSource } from "./history.ts";
