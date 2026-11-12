@@ -146,6 +146,7 @@ export const fixtures = [
   "cloud-people-admin",
   "cloud-people-member",
   "cloud-people-limit",
+  "cloud-admin",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -2472,6 +2473,23 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
+  // A team's owner on fleetd cloud, whose hub_info leaves out the hub's own controls: no Restart hub on its row; Hub ›
+  // Machines with one line where Updates was; Add machine's ways in without SSH, saying how machines join; Setup with
+  // only the team's accounts.
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-admin"], variant: "cloud-admin" },
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["cloud-admin"], variant: "cloud" },
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["cloud-admin"],
+    variant: "cloud-add",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
+      await page.getByRole("button", { name: "Get the line…" }).waitFor();
+      await expect(page.getByRole("button", { name: "Choose…" })).toHaveCount(0);
+    },
+  },
+  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["cloud-admin"], variant: "cloud" },
   // UX-1 [22]: a code typed in lower case with no dash shows as ABCD-2345, and pressing Connect moves nothing above
   // the hub's answer: the field and the button stay where they were.
   {

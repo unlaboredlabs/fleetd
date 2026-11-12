@@ -14,7 +14,7 @@ import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { HubText } from "../projects/HubText";
-import { useSettledAdministers } from "../admin/role";
+import { useServes, useSettledAdministers } from "../admin/role";
 import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
 import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
@@ -153,6 +153,8 @@ function HubSetting({ only }: { only: boolean }) {
   const state = useData((st) => st.hub);
   const store = useKeyStore();
   const administers = useSettledAdministers();
+  // fleetd cloud restarts nothing for a team: no button there.
+  const restarts = useServes("hub_restart");
   const { step, restart } = useHubRestart();
   const [confirm, setConfirm] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
@@ -183,7 +185,7 @@ function HubSetting({ only }: { only: boolean }) {
             </Button>
           ) : null}
           {/* Admins of this hub only, and only while it is there to ask. */}
-          {administers && (state.phase === "live" || busy) ? (
+          {administers && restarts && (state.phase === "live" || busy) ? (
             <Button disabled={busy} onClick={() => setConfirmRestart(true)}>
               Restart hub…
             </Button>

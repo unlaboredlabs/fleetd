@@ -45,13 +45,16 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** Settings › You › Hubs & devices on a connected hub; `admin`: what hub_info says of this app's person. */
-const render = async (admin: boolean) => {
+/**
+ * Settings › You › Hubs & devices on a connected hub; `admin`: what hub_info says of this app's person; `leftOut`: the
+ * tools it doesn't serve, as fleetd cloud says (absent from a self-run hub).
+ */
+const render = async (admin: boolean, leftOut?: string[]) => {
   send = () => undefined;
   const hub: HubApi = {
     call: (tool) => {
       calls.push(tool);
-      if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin } });
+      if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin, ...(leftOut === undefined ? {} : { leftOut }) } });
       if (tool === "hub_restart") return restart();
       return Promise.resolve({ ok: true, output: {} });
     },
@@ -115,6 +118,18 @@ it("shows Restart hub to an admin of the hub, and nothing of it to a member", as
   act(() => root.unmount());
   root = createRoot(host);
   await render(true);
+  expect(button("Restart hub…", row())).toBeDefined();
+});
+
+it("shows an admin of fleetd cloud, which leaves hub_restart out, no Restart hub: the row keeps the rest", async () => {
+  await render(true, ["hub_update", "hub_restart"]);
+  expect(row().textContent).toContain("Connected.");
+  expect(find("Restart hub…")).toBeUndefined();
+  expect(button("Disconnect and forget key")).toBeDefined();
+  // A hub that leaves out something else keeps it.
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render(true, ["machine_hosts"]);
   expect(button("Restart hub…", row())).toBeDefined();
 });
 

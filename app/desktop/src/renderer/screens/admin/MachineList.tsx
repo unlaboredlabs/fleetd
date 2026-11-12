@@ -18,6 +18,7 @@ import { useReveal } from "../settings/search";
 import { GroupNote, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { toHash } from "../shell/routes";
 import { needsOf } from "./machines";
+import { useServes } from "./role";
 import a from "./admin.module.css";
 
 const noInput = {};
@@ -27,7 +28,8 @@ const allChecks = {};
 export function MachineList() {
   const views = useData(selectMachines);
   // As the hub last checked them, and as a machine's page reads them: a check that failed is the row's dot.
-  const checks = useToolQuery("doctor_list", allChecks).data?.checks;
+  // fleetd cloud runs no doctor: no checks to read there.
+  const checks = useToolQuery("doctor_list", allChecks, { enabled: useServes("doctor_list") }).data?.checks;
   const roles = useToolQuery("machine_roles", noInput).data?.machines;
   const nowMs = useNow(true, 60_000);
   const all = views?.map((v) => v.machine);

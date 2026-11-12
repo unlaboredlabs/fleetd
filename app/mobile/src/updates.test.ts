@@ -58,6 +58,14 @@ describe("updateSection", () => {
     expect(updateSection(input({ hub: { phase: "retrying", hub: HUB.hub, reason: "gone", retryAt: NOW } }))).toBeNull();
   });
 
+  it("says to an admin of fleetd cloud, which updates itself, only that: no button, whatever the hub's version", () => {
+    expect(updateSection(input({ updates: false }))).toEqual({ kind: "current", title: "fleetd cloud updates itself.", rows: [] });
+    expect(updateSection(input({ updates: false, ready: "0.9.1", machines: [machine("devbox", "0.8.0")] }))).toEqual({ kind: "current", title: "fleetd cloud updates itself.", rows: [] });
+    expect(updateSection(input({ updates: false, admin: false }))).toBeNull();
+    // A self-run hub, which serves hub_update, as before.
+    expect(updateSection(input({ updates: true, ready: "0.9.1" }))?.action).toEqual({ label: "Update", act: "update" });
+  });
+
   it("offers the hub's ready build in one line with one button, as the desktop app says it", () => {
     expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ kind: "available", title: "Update available", detail: "fleetd 0.9.1", action: { label: "Update", act: "update" }, rows: [] });
     expect(updateSection(input({ hub: { ...HUB, version: "0.0.0-edge.202610281816+e6ed04e" }, machines: [], ready: "0.0.0-edge.202610292301+c1d2e3f4" }))?.detail).toBe("fleetd Edge · Oct 29, 23:01");

@@ -51,6 +51,8 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let admin: boolean;
+/** hub_info's `leftOut`, as fleetd cloud answers it; undefined, as a self-run hub leaves it out. */
+let leftOut: string[] | undefined;
 let scenario: Scenario;
 /** The hub's GitHub App; none unless a test makes one. Its GitHub step reads done once the App's test passed. */
 let app: GithubApp | undefined;
@@ -63,6 +65,7 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   admin = true;
+  leftOut = undefined;
   scenario = scenarios["setup-github"] as Scenario;
   app = undefined;
   vi.stubGlobal("fleetd", {
@@ -89,7 +92,7 @@ const answer = (tool: string, input: unknown): CallOutcome => {
   const asked = input as { step?: string };
   switch (tool) {
     case "hub_info":
-      return { ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin } };
+      return { ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin, ...(leftOut === undefined ? {} : { leftOut }) } };
     case "setup_list": {
       const reads: Reads = app?.lastTest?.ok === true ? { ...scenario.list, github: scenario.tests.github ?? {} } : scenario.list;
       return { ok: true, output: { steps: guides.map((g) => step(g.id, reads[g.id])), requiredLeft: scenario.requiredLeft } };
@@ -299,6 +302,19 @@ describe("setup", () => {
 });
 
 describe("Settings › Hub › Setup", () => {
+  it("lists only the team's own accounts on fleetd cloud, which has no setup steps: nothing asked, nothing said to update", async () => {
+    leftOut = ["setup_list", "setup_test"];
+    await render(page);
+    expect(rows("Accounts")).toEqual(["claude:Claude", "github:GitHub"]);
+    expect(settings()?.textContent).toBe("AccountsClaudeGitHub");
+    expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
+    // The first run goes on to Get started, with no welcome to steps it has none of.
+    await render(<FirstRun onAddProject={() => undefined} />);
+    expect(document.querySelector("[data-screen='setup.welcome']")).toBeNull();
+    expect(document.body.textContent).toContain("Add a project to chat with its lead");
+    expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
+  });
+
   it("lists the hub's accounts, every one a row saying where it stands, then the other steps left, and the done ones as one line", async () => {
     await render(page);
     // Claude is done and stays listed, saying what it uses; the others say when they are needed.

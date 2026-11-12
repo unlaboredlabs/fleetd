@@ -21,6 +21,12 @@ describe("the Restart Hub row", () => {
     expect(restartRow(true, retrying, idle)).toBeNull();
   });
 
+  it("is absent on a hub that doesn't serve hub_restart (fleetd cloud), and there as before on one that does", () => {
+    expect(restartRow(true, live, idle, false)).toBeNull();
+    expect(restartRow(true, live, restarting, false)).toBeNull();
+    expect(restartRow(true, live, idle, true)).toEqual({ detail: undefined, value: undefined, canAsk: true });
+  });
+
   it("says Restarting… while one goes, without a second tap, through the hub's time away", () => {
     for (const step of [{ at: "asking", asked: T }, restarting] as const) {
       expect(restartRow(true, live, step)).toEqual({ detail: undefined, value: "Restarting…", canAsk: false });

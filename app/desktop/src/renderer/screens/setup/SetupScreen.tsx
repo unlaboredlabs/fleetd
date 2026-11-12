@@ -12,7 +12,7 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError, callKey } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text, cx } from "../../ui";
-import { useHubRole } from "../admin/role";
+import { useHubRole, useServes } from "../admin/role";
 import { errorText, useRefetch } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
@@ -39,10 +39,12 @@ export function useFreshSetup(enabled = true) {
   }, [enabled, refetch]);
 }
 
-/** The hub's steps; null while they load. */
+/** The hub's steps; null while they load. None on fleetd cloud, which has no setup of its own: its accounts stay. */
 export function useSetupSteps(): Steps {
-  useFreshSetup();
-  const query = useToolQuery("setup_list", noInput);
+  const served = useServes("setup_list");
+  useFreshSetup(served);
+  const query = useToolQuery("setup_list", noInput, { enabled: served });
+  if (!served) return { steps: [] };
   if (query.data !== undefined) return { steps: query.data.steps };
   if (query.error === null) return null;
   return { problem: errorText(query.error), old: query.error instanceof CallError && lacksTool(query.error.error) };

@@ -3152,6 +3152,12 @@ export type HubInfoOutput = {
   /** Absent for a local build. */
   channel?: HubChannel;
   /**
+   * The contract's tools this hub doesn't serve, by name (fleetd cloud's self-update, restart, doctor, setup and
+   * SSH machine add): the apps hide their controls. Absent: it serves every one, as every self-run hub does. An app
+   * ignores a name it doesn't know.
+   */
+  leftOut?: string[];
+  /**
    * A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
    * hub. Absent where the OS gives none, and from older hubs.
    */

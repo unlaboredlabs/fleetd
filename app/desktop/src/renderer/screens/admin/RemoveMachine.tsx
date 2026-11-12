@@ -8,6 +8,7 @@ import { useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Text, toast } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { MACHINE_WAIT_MS, removeLine } from "./machines";
+import { useServes } from "./role";
 
 const noInput = {};
 
@@ -15,7 +16,7 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
   const call = useHubCall();
   const refetch = useRefetch();
   const live = useLive();
-  const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
+  const hosts = useToolQuery("machine_hosts", noInput, { enabled: useServes("machine_hosts") }).data?.hosts;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   // The hub refused because removing it would stop its projects' leads or undo an add still going: the error says
