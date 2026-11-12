@@ -6,7 +6,6 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { startOf } from "../../src/node/runner/host.ts";
 import { SCRATCH_KEEP_MS, scratchKept, SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import type { SessionRow } from "../../src/node/sessions/store.ts";
 import { tempHome } from "../helpers.ts";
@@ -23,6 +22,14 @@ const until = async <T>(what: string, fn: () => T | undefined | false, ms = 10_0
     if (got) return got;
     if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
     await Bun.sleep(20);
+  }
+};
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 };
 const scratchName = (id: string) => createHash("sha256").update(id).digest("hex").slice(0, 16);
@@ -60,8 +67,10 @@ async function nodeKit() {
       const pid = k.service.store.session(id)!.local.pid!;
       await k.service.shutdown();
       process.kill(pid, "SIGKILL");
-      // The kill lands a moment later on a loaded machine: a node started before it would re-adopt the dying host.
-      await until("its process's exit", () => startOf(pid) === undefined);
+      // The kill takes a while to land on a loaded machine: a node started before the host's last thread is gone
+      // still reaches its socket and re-adopts it. Its main thread shows as a zombie before then, so the wait is for
+      // the host to be reaped (this process started it), when the pid is no more.
+      await until("its process's exit", () => !alive(pid));
       k.service = await SessionService.start(config);
     },
   };
