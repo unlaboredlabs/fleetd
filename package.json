@@ -218,6 +218,7 @@
     "./hub/work/claims": "./fleetd/src/hub/work/claims.ts",
     "./hub/work/elsewhere": "./fleetd/src/hub/work/elsewhere.ts",
     "./hub/work/intent": "./fleetd/src/hub/work/intent.ts",
+    "./hub/work/landing_rules": "./fleetd/src/hub/work/landing_rules.ts",
     "./hub/work/matcher": "./fleetd/src/hub/work/matcher.ts",
     "./hub/work/repo_key": "./fleetd/src/hub/work/repo_key.ts",
     "./hub/work/view": "./fleetd/src/hub/work/view.ts"

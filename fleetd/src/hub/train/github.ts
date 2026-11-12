@@ -6,6 +6,9 @@ import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
 import { BATCH_MARKER, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
+import { type ClosedPull, MERGED_PAGE, MERGED_PAGES, type MergedPull, merged } from "../work/landing_rules.ts";
+
+export { MERGED_PAGES, type MergedPull } from "../work/landing_rules.ts";
 
 export { BATCH_MARKER, batchHeads } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
@@ -93,7 +96,6 @@ export const held = (pull: Pull) => labelled(pull, HOLD_LABEL);
 /** GitHub found it conflicts with its base. Never while GitHub still works it out. */
 export const conflicts = (pull: Pull) => pull.mergeable === false || pull.mergeable_state === "dirty";
 
-
 export type WorkflowRun = {
   id: number;
   workflow_id: number;
@@ -142,38 +144,6 @@ function supersedes(next: CheckRun, seen: CheckRun): boolean {
 /** An open PR as the list answers it. */
 export type OpenPull = { number: number; draft: boolean; head: PullHead };
 
-export type MergedPull = {
-  number: number;
-  mergedAt: string;
-  mergeSha?: string;
-  base: string;
-  /** Its branch. */
-  head: string;
-  /** Opened by a bot account, when GitHub said. */
-  authorBot?: boolean;
-  createdAt?: string;
-};
-
-type ClosedPull = {
-  number: number;
-  merged_at?: string | null;
-  merge_commit_sha?: string | null;
-  base: { ref: string };
-  head: { ref: string };
-  user?: { type?: string } | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-function merged(p: ClosedPull): MergedPull | undefined {
-  if (p.merged_at == null) return undefined;
-  const m: MergedPull = { number: p.number, mergedAt: p.merged_at, base: p.base.ref, head: p.head.ref };
-  if (p.merge_commit_sha != null) m.mergeSha = p.merge_commit_sha;
-  if (p.user != null) m.authorBot = p.user.type === "Bot";
-  if (p.created_at != null) m.createdAt = p.created_at;
-  return m;
-}
-
 /**
  * GitHub's squash message from the repo's settings and the PR's commit messages, oldest first. One commit gives its
  * own subject and body; several give the PR's title and a `* ` line per commit, with their `Co-authored-by` trailers
@@ -214,10 +184,6 @@ export function squashText(pull: Pull, titleFrom: string, bodyFrom: string, mess
   }
   return [`${title} (#${pull.number})`, body];
 }
-
-/** Pages of closed PRs `mergedPulls` reads at most per check. */
-export const MERGED_PAGES = 2;
-const MERGED_PAGE = 100;
 
 export type MergeOutcome = { kind: "merged"; sha: string } | { kind: "refused"; status: number; message: string };
 /** What `gh pr update-branch --rebase` did to a PR's branch. */
