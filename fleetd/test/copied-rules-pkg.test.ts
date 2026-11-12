@@ -9,6 +9,7 @@ import { ActivityTracker, liveParts } from "../src/hub/executor/activity_tracker
 import { codeRefusal, NAMELESS, suffixed } from "../src/hub/auth/node_rules.ts";
 import { ftsQuery, searchWords, overturnLine, overturnedNext } from "../src/hub/ledger/rules.ts";
 import { backSummary, downSummary } from "../src/hub/outage/rules.ts";
+import { isBranchPrefix, parsePolicy, POLICY_FILE_PATH, POLICY_TTL_MS } from "../src/hub/policy/file.ts";
 import { givenUpLine, mergeLine, ownPr, targetFor, waitingMerge, waitLabel } from "../src/hub/tasks/ci_rules.ts";
 import * as worktrees from "../src/hub/tasks/worktrees.ts";
 import { closedOrderReason, givenUpLine as givenUpWorktrees, holdsWork, keptWorktree, nextRunMs, validZone } from "../src/hub/tasks/worktree_rules.ts";
@@ -32,6 +33,7 @@ const MODULES = [
   "link/duration",
   "mcp/rpc",
   "outage/rules",
+  "policy/file",
   "project_lead/purchase_rules",
   "prompts/disallowed",
   "tasks/ci_rules",
@@ -54,6 +56,17 @@ test("an outage's and a stall's lines", () => {
   expect(backSummary("devbox", 7_500_000)).toBe("devbox is back online after 2h05m");
   expect(stallWhy(600_000, false)).toBe("no progress for 10 min outside a tool, so fleetd interrupted it");
   expect(stallWhy(90_500, true)).toBe("no progress for 91 s inside a tool, so fleetd interrupted it");
+});
+
+test("a policy file's parse and its refusals", () => {
+  expect([POLICY_FILE_PATH, POLICY_TTL_MS]).toEqual([".fleetd/policy.yaml", 60_000]);
+  expect(parsePolicy("")).toEqual({});
+  expect(parsePolicy('tools:\n  deny: ["Bash(git push:*)"]\nbranchPrefix: team/bots/')).toEqual({
+    tools: { allow: [], deny: ["Bash(git push:*)"] },
+    branchPrefix: "team/bots/",
+  });
+  expect(() => parsePolicy("branchPrefix: ../x/")).toThrow(".fleetd/policy.yaml is invalid: branchPrefix: expected a branch prefix ending in /");
+  expect([isBranchPrefix("fleetd/"), isBranchPrefix("fleetd"), isBranchPrefix("a/.b/")]).toEqual([true, false, false]);
 });
 
 test("a CI wait's target, its refusals and its lines", () => {
