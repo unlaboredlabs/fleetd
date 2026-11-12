@@ -2,7 +2,7 @@
 // from `fleetd pair` on the hub, and `POST <hub>/pair {code, deviceName}` trades it for this phone's own key. No auth
 // header: the code is the credential, so it goes to the typed address only, never where a redirect points. React
 // Native's fetch may follow one anyway (its XMLHttpRequest does), so an answer from another URL is refused too.
-import { hubOrigin, normalizeCode, type PairFailure } from "../desktop";
+import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../desktop";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -42,7 +42,7 @@ export const pair = async (fetch: Fetch, hub: string, typed: string, deviceName:
   const origin = hubOrigin(hub);
   if (!origin.ok) return { ok: false, failure: origin.failure };
   const code = normalizeCode(typed);
-  if (code === null) return failed("A pairing code is 8 letters and digits, like ABCD-2345.", NEW_CODE);
+  if (code === null) return failed(CODE_SHAPE, NEW_CODE);
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), PAIR_TIMEOUT_MS);
   let response: Response;

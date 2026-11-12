@@ -104,9 +104,9 @@ describe("a typed code", () => {
   it("catches a malformed code or address before sending anything", async () => {
     const { service, seen } = setup(() => json(200, paired));
     const bad = await service.redeem({ hub: "127.0.0.1:4790", code: "ABC" });
-    expect(bad.ok || bad.failure.message).toContain("8 letters");
+    expect(bad.ok || bad.failure.message).toBe("A pairing code is letters and digits in two or more groups of four, like ABCD-2345.");
     const partial = await service.redeem({ hub: "127.0.0.1:4790", code: "ABCD-2345-WX" });
-    expect(partial.ok || partial.failure.message).toBe("A pairing code is 8 letters and digits, like ABCD-2345.");
+    expect(partial.ok || partial.failure.message).toBe("A pairing code is letters and digits in two or more groups of four, like ABCD-2345.");
     expect((await service.redeem({ hub: "ftp://hub", code: "ABCD-2345" })).ok).toBe(false);
     expect(seen.requests).toEqual([]);
   });

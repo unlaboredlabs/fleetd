@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPairLink, pairLinkStep, parsePairLink } from "./pairLink";
+import { isPairLink, pairLinkStep, parsePairLink, pastedPair } from "./pairLink";
 
 describe("parsePairLink", () => {
   it("reads the hub's origin and the code from a QR code's link", () => {
@@ -28,6 +28,30 @@ describe("parsePairLink", () => {
     expect(parsePairLink("fleetd://pair?hub=ftp%3A%2F%2Fdevbox&code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "Use an http:// or https:// address." } });
     expect(parsePairLink("fleetd://pair?hub=devbox&code=nope")).toMatchObject({ ok: false, failure: { message: "This pairing QR code's code isn't a pairing code." } });
     expect(parsePairLink("fleetd://pair?hub=%E0%A4%A&code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "This pairing QR code is damaged." } });
+  });
+});
+
+describe("pastedPair", () => {
+  it("takes a pairing link, or a code of 8, 16 or 20 characters alone or in its line", () => {
+    expect(pastedPair("fleetd://pair?hub=devbox%3A4790&code=abcd-2345-wxyz-6789")).toEqual({ ok: true, hub: "http://devbox:4790", code: "ABCD-2345-WXYZ-6789" });
+    expect(pastedPair(" abcd-2345 ")).toEqual({ ok: true, code: "ABCD-2345" });
+    expect(pastedPair("Your code: ABCD-2345 (one use, 15 minutes)")).toEqual({ ok: true, code: "ABCD-2345" });
+    expect(pastedPair("Join with abcd-2345-wxyz-678o.")).toEqual({ ok: true, code: "ABCD-2345-WXYZ-6780" });
+    expect(pastedPair("ABCD2345WXYZ6789ABCD")).toEqual({ ok: true, code: "ABCD-2345-WXYZ-6789-ABCD" });
+  });
+
+  it("refuses a code-shaped run that isn't a code whole, never pasting the part before it", () => {
+    const shape = { ok: false, note: "A pairing code is letters and digits in two or more groups of four, like ABCD-2345." };
+    expect(pastedPair("ABCD-2345-U789")).toEqual(shape);
+    expect(pastedPair("ABCD-2345-WXYZ-U789")).toEqual(shape);
+  });
+
+  it("says when nothing on the clipboard can be a code", () => {
+    const none = { ok: false, note: "No pairing code on the clipboard." };
+    expect(pastedPair("")).toEqual(none);
+    expect(pastedPair("hello there")).toEqual(none);
+    expect(pastedPair("ABCD-2345-WX")).toEqual(none);
+    expect(pastedPair("ABCD".repeat(9))).toEqual(none);
   });
 });
 

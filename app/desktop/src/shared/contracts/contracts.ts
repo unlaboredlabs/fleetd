@@ -146,7 +146,7 @@ export type AccountsTeam = {
   id: string;
   /** The label in its address: `<name>.<base>`. */
   name: string;
-  /** A pairing code (`ABCD-2345`) for this person on this team: one use, 15 minutes. */
+  /** A pairing code (`ABCD-2345`, or a longer one in groups of four: `ABCD-2345-WXYZ-6789`) for this person on this team: one use, 15 minutes. */
   pairingCode: string;
   /** The team's hub address, an https origin with no path (http only on 127.0.0.1, for tests). */
   url: string;

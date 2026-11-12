@@ -1,7 +1,8 @@
 // A pairing QR code's link (D232): `fleetd://pair?hub=<url-encoded hub URL>&code=<one-time code>`, which the desktop
 // app and `fleetd pair` show. The app's scanner reads it, and so does iOS's Camera, which opens the app with it. Parsed
-// by hand: React Native's URL has no searchParams.
-import { hubOrigin, normalizeCode, type PairFailure } from "../desktop";
+// by hand: React Native's URL has no searchParams. It imports the desktop's pairing module itself, not the ../desktop
+// barrel, so it loads outside the phone too (the package's `fleetd/apps/pair_link`), with no React.
+import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../../desktop/src/shared/pairing";
 
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
 
@@ -34,6 +35,26 @@ export const parsePairLink = (text: string): PairLink | null => {
   const normal = normalizeCode(code);
   if (normal === null) return bad("This pairing QR code's code isn't a pairing code.");
   return { ok: true, hub: origin.origin, code: normal };
+};
+
+/** What the clipboard holds for pairing: a whole pairing link, or a code, alone or in the line it's printed in. */
+export type Pasted = { readonly ok: true; readonly hub?: string; readonly code: string } | { readonly ok: false; readonly note: string };
+
+/**
+ * The clipboard's pairing link or code. The code is the first run of letters and digits joined by dashes whose length
+ * could be a code's (8 to 32 in groups of four), taken whole: one that isn't a code is refused, never cut down to a
+ * shorter code the hub would refuse.
+ */
+export const pastedPair = (text: string): Pasted => {
+  const link = parsePairLink(text);
+  if (link?.ok === true) return { ok: true, hub: link.hub, code: link.code };
+  const run = (text.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/gu) ?? []).find((r) => {
+    const length = r.replace(/-/gu, "").length;
+    return length >= 8 && length <= 32 && length % 4 === 0;
+  });
+  if (run === undefined) return { ok: false, note: "No pairing code on the clipboard." };
+  const code = normalizeCode(run);
+  return code === null ? { ok: false, note: CODE_SHAPE } : { ok: true, code };
 };
 
 /** What a pairing link does, by where it came from. */

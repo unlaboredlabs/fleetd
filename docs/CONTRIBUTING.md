@@ -99,6 +99,7 @@ imported.
 | Entry | What |
 |---|---|
 | `fleetd/contracts`, `fleetd/contracts/schema/<Name>.json` | the wire contract: `contracts.ts` and its JSON Schemas |
+| `fleetd/apps/pairing`, `fleetd/apps/pair_link` | the apps' own reading of a pairing or invite code (`normalizeCode`, `hubOrigin`: `app/desktop/src/shared/pairing.ts`) and of a `fleetd://pair` link (`parsePairLink`, `pastedPair`: `app/mobile/src/hub/pairLink.ts`) |
 | `fleetd/shared/<module>` | `src/shared`'s pure modules: the node link's frames (`node_link`) and tags (`wire_tags`), `ToolError` (`errors`), the rest |
 | `fleetd/tools` | the MCP tools (`src/pkg/tools.ts`): `TOOL_LIST`, each with its description, role and schemas in tools/list's order, `SCHEMAS` (McpTools.json, parsed) and `decodeInput` |
 | `fleetd/fakes/app`, `fleetd/fakes/node` | the stand-in app and node the hub's tests drive (`test/fake-app.ts`, `test/fake-node.ts`) |

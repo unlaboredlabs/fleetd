@@ -81,6 +81,9 @@ export interface PairRequest {
  */
 const CODE_CHARS = /^(?:[0-9A-HJKMNP-TV-Z]{4}){2,8}$/u;
 
+/** What both apps say when a code can't be one, whatever its length. */
+export const CODE_SHAPE = "A pairing code is letters and digits in two or more groups of four, like ABCD-2345.";
+
 /**
  * A code as typed → `XXXX-XXXX` (`XXXX-XXXX-XXXX-XXXX` and so on for a long one), or null if it can't be one. Any
  * case, spaces and hyphens anywhere, and the look-alikes Crockford reads as digits (I and L as 1, O as 0), as the

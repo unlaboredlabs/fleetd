@@ -124,7 +124,7 @@ export function findings(entry: string, read: Read, options: Options = {}): Find
     const { imports, uses } = scan(text);
     for (const use of uses) out.push({ ...use, in: path, via: via(path) });
     for (const imp of imports) {
-      const to = posix.normalize(posix.join(posix.dirname(path), imp.spec));
+      const to = located(read, posix.normalize(posix.join(posix.dirname(path), imp.spec)));
       const handle = HANDLES.get(to);
       if (handle) out.push({ ...handle, what: `imports ${handle.what}`, in: path, via: via(path) });
       if ((imp.typeOnly && options.runtimeOnly) || from.has(to)) continue;
@@ -134,6 +134,10 @@ export function findings(entry: string, read: Read, options: Options = {}): Find
   }
   return out.filter((f) => !options.allow?.includes(f.taint));
 }
+
+/** A relative import with no extension, as the apps' modules write them: its `.ts`, else its folder's `index.ts`. */
+const located = (read: Read, to: string): string =>
+  posix.extname(to) !== "" ? to : ([`${to}.ts`, `${to}/index.ts`].find((p) => read(p) !== undefined) ?? to);
 
 /** A finding as one line: `database: src/hub/store/db.ts imports bun:sqlite (through a.ts > b.ts)`. */
 export function line(f: Finding): string {
