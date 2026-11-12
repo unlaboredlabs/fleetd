@@ -1,6 +1,6 @@
 // `chat_sections_get` and `chat_sections_set`: a person's own named sections of chats, the same on each of their
 // devices. A set announces `chat.sections`, which only that person's devices see.
-import type { ChatSection, ChatSectionsSetInput, ProjectRef } from "../../shared/contracts.ts";
+import type { ChatSectionsSetInput, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
@@ -8,11 +8,10 @@ import { allows, isoMs } from "../auth/index.ts";
 import { others, Refs } from "../navi/owner.ts";
 import { me } from "../sidebar_order/store.ts";
 import { events, type NewEvent } from "../store/events.ts";
-import { kept, putSections, sectionsOf } from "./store.ts";
+import { kept, named } from "./rules.ts";
+import { putSections, sectionsOf } from "./store.ts";
 
-export const MAX_SECTIONS = 50;
-/** A name's longest, in characters, after trimming. */
-export const MAX_NAME = 40;
+export { MAX_NAME, MAX_SECTIONS } from "./rules.ts";
 
 /** The chats `caller` has: every project still there on a machine the key reads, but another person's Only me ones. */
 function theirs(hub: Hub, caller: Caller): (r: ProjectRef) => boolean {
@@ -24,29 +23,6 @@ function theirs(hub: Hub, caller: Caller): (r: ProjectRef) => boolean {
       .map((p) => ({ machineId: p.machine_id, projectId: p.project_id })),
   );
   return (r) => allows(caller, "read", r.machineId) && there.has(r) && !navis.has(r);
-}
-
-/** The list as sent with its names trimmed, or the refusal for one a person can't keep. */
-function named(sections: ChatSection[]): ChatSection[] {
-  const refuse = (message: string, fix: string) => new ToolError("invalid", message, fix);
-  if (sections.length > MAX_SECTIONS) {
-    throw refuse(`At most ${MAX_SECTIONS} sections: this list has ${sections.length}.`, "Remove a section you no longer use, then try again.");
-  }
-  const ids = new Set<string>();
-  const names = new Set<string>();
-  return sections.map((s) => {
-    const name = s.name.trim();
-    const length = Array.from(name).length;
-    if (length === 0) throw refuse("A section needs a name.", "Type a name for the section.");
-    if (length > MAX_NAME) {
-      throw refuse(`A section's name is at most ${MAX_NAME} characters: “${name}” has ${length}.`, "Pick a shorter name.");
-    }
-    if (names.has(name)) throw refuse(`Two sections are named “${name}”.`, "Pick another name, or move the chat into the section that has it.");
-    if (ids.has(s.id)) throw refuse(`Two sections have the id ${s.id}.`, "Give each section an id of its own.");
-    names.add(name);
-    ids.add(s.id);
-    return { id: s.id, name, chats: s.chats };
-  });
 }
 
 export function register(tools: Registry): void {
