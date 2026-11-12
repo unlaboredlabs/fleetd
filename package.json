@@ -199,6 +199,7 @@
     "./hub/tasks/render": "./fleetd/src/hub/tasks/render.ts",
     "./hub/tasks/resolve": "./fleetd/src/hub/tasks/resolve.ts",
     "./hub/tasks/sweep": "./fleetd/src/hub/tasks/sweep.ts",
+    "./hub/tasks/worktree_rules": "./fleetd/src/hub/tasks/worktree_rules.ts",
     "./hub/time/digest": "./fleetd/src/hub/time/digest.ts",
     "./hub/time/kinds": "./fleetd/src/hub/time/kinds.ts",
     "./hub/time/model": "./fleetd/src/hub/time/model.ts",

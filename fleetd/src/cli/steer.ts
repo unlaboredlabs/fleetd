@@ -6,6 +6,7 @@ import { clientRequestId, eprintln, ioMessage, println, readSetup, resolveHome, 
 import { McpClient, McpError } from "./mcp_client.ts";
 import { readFileSync } from "node:fs";
 import { STEER_USAGE } from "./usages.ts";
+import { zoned as zonedIn } from "./zoned.ts";
 export { STEER_USAGE };
 
 
@@ -93,24 +94,7 @@ export function hubZone(): string {
 }
 
 /** The parts of `ms` in the hub's zone. */
-export function zoned(ms: number, zone = hubZone()) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: zone,
-      hourCycle: "h23",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      weekday: "short",
-    })
-      .formatToParts(new Date(ms))
-      .map((p) => [p.type, p.value]),
-  );
-  return parts as Record<"year" | "month" | "day" | "hour" | "minute" | "second" | "weekday", string>;
-}
+export const zoned = (ms: number, zone = hubZone()) => zonedIn(ms, zone);
 
 /** RFC 3339 → ms, or undefined. */
 export function parseRfc3339(iso: string): number | undefined {
