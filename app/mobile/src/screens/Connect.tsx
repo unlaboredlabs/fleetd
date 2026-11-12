@@ -32,7 +32,7 @@ const pasted = async (): Promise<{ hub?: string; code: string } | undefined> => 
     const text = await Clipboard.getStringAsync();
     const link = parsePairLink(text);
     if (link?.ok === true) return { hub: link.hub, code: link.code };
-    const match = /\b[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}\b/u.exec(text);
+    const match = /\b[A-Za-z0-9]{4}(?:-?[A-Za-z0-9]{4}){1,7}\b/u.exec(text);
     const code = match === null ? null : normalizeCode(match[0]);
     return code === null ? undefined : { code };
   } catch {

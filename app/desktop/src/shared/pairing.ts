@@ -75,12 +75,16 @@ export interface PairRequest {
   readonly target?: PairTarget | undefined;
 }
 
-/** Crockford base32 without I L O U, as `fleetd pair` mints them. */
-const CODE_CHARS = /^[0-9A-HJKMNP-TV-Z]{8}$/u;
+/**
+ * Crockford base32 without I L O U, as `fleetd pair` mints them: 8 characters, or up to 32 in whole groups of four for
+ * the long invite codes fleetd cloud sends by link or email.
+ */
+const CODE_CHARS = /^(?:[0-9A-HJKMNP-TV-Z]{4}){2,8}$/u;
 
 /**
- * A code as typed → `XXXX-XXXX`, or null if it can't be one. Any case, spaces and hyphens anywhere, and the
- * look-alikes Crockford reads as digits (I and L as 1, O as 0), as the hub's own `pair::normalize` accepts.
+ * A code as typed → `XXXX-XXXX` (`XXXX-XXXX-XXXX-XXXX` and so on for a long one), or null if it can't be one. Any
+ * case, spaces and hyphens anywhere, and the look-alikes Crockford reads as digits (I and L as 1, O as 0), as the
+ * hub's own `pair::normalize` accepts.
  */
 export const normalizeCode = (input: string): string | null => {
   const raw = input
@@ -88,7 +92,7 @@ export const normalizeCode = (input: string): string | null => {
     .toUpperCase()
     .replace(/[IL]/gu, "1")
     .replace(/O/gu, "0");
-  return CODE_CHARS.test(raw) ? `${raw.slice(0, 4)}-${raw.slice(4)}` : null;
+  return CODE_CHARS.test(raw) ? (raw.match(/.{4}/gu) ?? []).join("-") : null;
 };
 
 /**

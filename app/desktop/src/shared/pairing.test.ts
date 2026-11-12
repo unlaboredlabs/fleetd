@@ -9,8 +9,21 @@ describe("normalizeCode", () => {
     expect(normalizeCode("I0LO-ABCD")).toBe("1010-ABCD");
   });
 
+  it("takes a long invite code in whole groups of four, normalised the same way", () => {
+    expect(normalizeCode("abcd2345wxyz6789")).toBe("ABCD-2345-WXYZ-6789");
+    expect(normalizeCode(" abcd-2345 wxyz-678O ")).toBe("ABCD-2345-WXYZ-6780");
+    expect(normalizeCode("ab-cd-23-45-wx-yz-67-89-il0o")).toBe("ABCD-2345-WXYZ-6789-1100");
+    expect(normalizeCode("ABCD".repeat(8))).toBe(Array(8).fill("ABCD").join("-"));
+  });
+
   it("refuses what can't be a code", () => {
     expect(normalizeCode("ABCD-234")).toBeNull();
+    // Only whole groups of four, up to 32 characters.
+    expect(normalizeCode("ABCD-2345-WX")).toBeNull();
+    expect(normalizeCode("ABCD-2345-WXYZ-6789-ABC")).toBeNull();
+    expect(normalizeCode("ABCD")).toBeNull();
+    expect(normalizeCode("ABCD".repeat(9))).toBeNull();
+    expect(normalizeCode("ABCD-2345-WXYZ-U789")).toBeNull();
     expect(normalizeCode("ABCD-23!5")).toBeNull();
     expect(normalizeCode("ABCD-U345")).toBeNull();
     expect(normalizeCode("")).toBeNull();

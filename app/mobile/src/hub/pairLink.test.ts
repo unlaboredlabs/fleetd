@@ -9,6 +9,12 @@ describe("parsePairLink", () => {
     expect(parsePairLink("fleetd://pair?hub=100.104.0.1:4790&code=abcd-234O")).toEqual({ ok: true, hub: "http://100.104.0.1:4790", code: "ABCD-2340" });
   });
 
+  it("carries a long invite code of 16 or 20 characters", () => {
+    expect(parsePairLink("fleetd://pair?hub=https%3A%2F%2Fhub.example.com&code=abcd-2345-wxyz-6789")).toEqual({ ok: true, hub: "https://hub.example.com", code: "ABCD-2345-WXYZ-6789" });
+    expect(parsePairLink("fleetd://pair?hub=https%3A%2F%2Fhub.example.com&code=ABCD2345WXYZ6789ABCL")).toEqual({ ok: true, hub: "https://hub.example.com", code: "ABCD-2345-WXYZ-6789-ABC1" });
+    expect(parsePairLink("fleetd://pair?hub=devbox&code=ABCD-2345-WXYZ-67")).toMatchObject({ ok: false, failure: { message: "This pairing QR code's code isn't a pairing code." } });
+  });
+
   it("is null for anything but a pairing link", () => {
     for (const text of ["https://fleetd.sh", "fleetd://chat?key=a", "ABCD-2345", "", "fleetd://pairing?hub=x&code=y"]) {
       expect(parsePairLink(text)).toBeNull();

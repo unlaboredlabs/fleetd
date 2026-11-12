@@ -66,6 +66,13 @@ describe("a typed code", () => {
     expect(seen.connected).toEqual([["http://100.64.0.1:4790", "fld_test"]]);
   });
 
+  it("posts a long invite code in groups of four", async () => {
+    const { service, seen } = setup(() => json(200, paired));
+    const outcome = await service.redeem({ hub: "100.64.0.1:4790", code: "abcd-2345-wxyz-6789-abcl" });
+    expect(outcome).toEqual({ ok: true, hubName: "your console" });
+    expect(JSON.parse(seen.requests[0]?.init.body as string)).toEqual({ code: "ABCD-2345-WXYZ-6789-ABC1", deviceName: "devbox" });
+  });
+
   it("never touches app-pair.json, whatever the hub says", async () => {
     const file = { ok: true, text: appPair("http://127.0.0.1:4790") } as const;
     const { service, seen } = setup(() => json(401, { code: "pair_code_invalid", message: "Unknown code.", fix: "Run `fleetd pair`." }), { file });
@@ -98,6 +105,8 @@ describe("a typed code", () => {
     const { service, seen } = setup(() => json(200, paired));
     const bad = await service.redeem({ hub: "127.0.0.1:4790", code: "ABC" });
     expect(bad.ok || bad.failure.message).toContain("8 letters");
+    const partial = await service.redeem({ hub: "127.0.0.1:4790", code: "ABCD-2345-WX" });
+    expect(partial.ok || partial.failure.message).toBe("A pairing code is 8 letters and digits, like ABCD-2345.");
     expect((await service.redeem({ hub: "ftp://hub", code: "ABCD-2345" })).ok).toBe(false);
     expect(seen.requests).toEqual([]);
   });
