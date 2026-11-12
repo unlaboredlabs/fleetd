@@ -12,6 +12,7 @@ import type {
   SlotState,
   TaskId,
 } from "../../shared/contracts.ts";
+import { capRaisedText, fleetLine, machineLine, projectLine } from "../../shared/cap_lines.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
@@ -22,6 +23,8 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { slots } from "./index.ts";
+
+export { machineLine, pausedLine, pausedReason, raisedLine } from "../../shared/cap_lines.ts";
 
 export type CapChange = {
   cap?: number;
@@ -48,43 +51,6 @@ export type CapHooks = {
 /** What `setCaps` takes from the tasks area. Until it sets them, extras are never paused. */
 export const capHooks = (hub: Hub): CapHooks =>
   hub.area<CapHooks>("slots_cap", () => ({ pauseExtras: async () => [] }));
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** The chat line for a project cap that paused the extras: lowered, or kept where it was. */
-export function pausedLine(from: number, to: number, paused: number, running: number): string {
-  const push = paused === 1 ? "pushes its work and waits" : "push their work and wait";
-  const keep = running === 1 ? "keeps" : "keep";
-  // The app lowers the max first and offers the pause after it, at the same max.
-  const change = to < from ? `${from} → ${to}` : String(to);
-  return `Max agents ${change}: ${plural(paused, "agent", "agents")} ${push}; ${running} ${keep} running.`;
-}
-
-/** The chat line for a raised project cap: what started, if anything did. */
-export function raisedLine(from: number, to: number, started: number, free: number): string {
-  if (started === 0) return `Max agents ${from} → ${to}.`;
-  return `Max agents ${from} → ${to}: ${plural(started, "queued agent starts", "queued agents start")} now, ${plural(free, "slot", "slots")} free.`;
-}
-
-/** The line for a machine's max agents set, changed, or back to auto (`set` before, `setNow` after). */
-export function machineLine(machine: string, from: number, to: number, set: boolean, setNow: boolean): string {
-  const change = !set
-    ? `Max agents on ${machine} set to ${to} (auto was ${from})`
-    : setNow
-      ? `Max agents on ${machine} ${from} → ${to}`
-      : `Max agents on ${machine} back to auto: ${to}, was ${from}`;
-  if (to > from) return `${change}: queued agents start as slots allow.`;
-  if (to < from) return `${change}: running agents finish; new ones wait.`;
-  return `${change}.`;
-}
-
-/** A paused agent's reason, as its task shows it while it waits. */
-export const pausedReason = (maxAgents: number) =>
-  `paused: max agents lowered to ${maxAgents}; resumes when a slot frees`;
-
-/** The lead's line for a raised cap (`leads::events::Event::CapRaised`). */
-const capRaisedText = (maxAgents: number, free: number) =>
-  `- cap raised to ${maxAgents}: ${free} slot${free === 1 ? "" : "s"} free; queued agents already started`;
 
 function capEvent(
   hub: Hub,
@@ -151,12 +117,7 @@ export async function setCaps(hub: Hub, change: CapChange): Promise<CapOutcome> 
   if (change.cap !== undefined && change.cap !== capBefore) {
     const cap = change.cap;
     const after = board.state();
-    const what =
-      capBefore !== undefined
-        ? `Fleet cap ${capBefore} → ${cap}`
-        : `Fleet cap set to ${cap} (the machines fit ${totalBefore})`;
-    const line =
-      cap > totalBefore ? `${what}: queued agents start as slots allow.` : `${what}: running agents finish; new ones wait.`;
+    const line = fleetLine(capBefore, cap, totalBefore);
     capEvent(hub, undefined, undefined, capBefore ?? totalBefore, cap, after.used, after.queued, [], line);
     lines.push(line);
   }
@@ -178,15 +139,8 @@ export async function setCaps(hub: Hub, change: CapChange): Promise<CapOutcome> 
     if (to <= from && change.project.pauseExtras) paused = await capHooks(hub).pauseExtras(r, to);
     const after = board.agents(r);
     const free = board.room(r);
-    let line: string;
-    if (to > from) line = raisedLine(from, to, Math.max(after.running - before.running, 0), free);
-    else if (paused.length > 0) line = pausedLine(from, to, paused.length, Math.max(after.running - paused.length, 0));
-    else if (to < from && after.running > to) {
-      const finish = after.running === 1 ? "finishes its work" : "finish their work";
-      line = `Max agents ${from} → ${to}: ${after.running} running ${finish}; new agents wait.`;
-    } else if (back && to === from) line = `Max agents ${to}, the default now.`;
-    else line = `Max agents ${from} → ${to}.`;
-    if (back && to !== from) line = `${line} It follows the default now.`;
+    const started = Math.max(after.running - before.running, 0);
+    const line = projectLine({ from, to, started, free, paused: paused.length, running: after.running, back });
     if (to !== from || back || paused.length > 0) {
       capEvent(hub, r, undefined, from, to, after.running, after.queued, paused, line);
       lines.push(line);
