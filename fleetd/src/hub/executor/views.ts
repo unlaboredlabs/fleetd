@@ -8,6 +8,7 @@ import { clip } from "../api/refusals.ts";
 import { store } from "../store/hub_store.ts";
 import type { ExecutorError as ExecutorErrorType, Executors } from "./index.ts";
 import { ExecutorError, READ_TIMEOUT_MS, WATCH_IDLE_MS } from "./index.ts";
+import { skillRan } from "./rules.ts";
 import { fromThread, type Summary, withAssistantText } from "./shell_mapper.ts";
 import {
   type Action,
@@ -85,13 +86,7 @@ export function namesAPr(item: ThreadItem): boolean {
   return item.kind.type === "command" && item.status === "completed" && item.kind.output !== undefined && item.kind.output.includes("github.com/") && item.kind.output.includes("/pull/");
 }
 
-/** The skill a finished Skill call ran, as the session lists it. */
-export function skillRan(item: ThreadItem): string | undefined {
-  if (item.kind.type !== "tool" || item.kind.toolName !== "Skill" || item.status !== "completed") return undefined;
-  const input = item.kind.input as Record<string, unknown> | null;
-  for (const k of ["skill", "command"]) if (typeof input?.[k] === "string") return input[k] as string;
-  return undefined;
-}
+export { skillRan } from "./rules.ts";
 
 export class Views {
   private readonly watches = new Map<string, Watch>();

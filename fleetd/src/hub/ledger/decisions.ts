@@ -7,39 +7,9 @@ import type { Hub } from "../api/hub.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
 import * as repo from "./repo.ts";
+import { notActive, recordedEvent, retiredEvent } from "./rules.ts";
 
-/** An event's machine and project, for decisions that have one. */
-const projectFields = (r: ProjectRef | undefined) => (r ? { machineId: r.machineId, projectId: r.projectId } : {});
-
-/** The `decision.recorded` event; `project` names the project of a workstream-scoped decision. */
-export function recordedEvent(decision: Decision, project: ProjectRef | undefined): NewEvent {
-  const projectRef = decision.scope.kind === "project" ? decision.scope.projectRef : project;
-  const data: Record<string, unknown> = {
-    decisionId: decision.decisionId,
-    key: decision.key,
-    scope: decision.scope,
-    source: decision.source,
-  };
-  if (decision.supersedes !== undefined) data.supersedes = decision.supersedes;
-  return {
-    at: decision.at,
-    type: "decision.recorded",
-    ...projectFields(projectRef),
-    summary: `${decision.decisionId} ${decision.key} = ${decision.value}`,
-    data,
-  };
-}
-
-/** The `decision.retired` event: a person revoked the decision, and its key goes unanswered again. */
-export function retiredEvent(decision: Decision, project: ProjectRef | undefined): NewEvent {
-  return {
-    at: decision.retired?.at ?? decision.at,
-    type: "decision.retired",
-    ...projectFields(project),
-    summary: `${decision.decisionId} ${decision.key} revoked`,
-    data: { decisionId: decision.decisionId, key: decision.key, scope: decision.scope },
-  };
-}
+export { recordedEvent, retiredEvent } from "./rules.ts";
 
 /** What `overturn` did: the decision taken back, and the one that replaced it, if any. */
 export type Overturned = { overturned: Decision; replacement?: Decision };
@@ -76,9 +46,7 @@ export class Decisions {
     const done = this.hub.db.transaction((db): Overturned => {
       const old = repo.getDecision(db, decisionId);
       if (!old) throw new ToolError("not_found", `No decision ${decisionId}.`);
-      if (old.state !== "active") {
-        throw new ToolError("invalid", `${decisionId} is already ${old.state}.`, "Overturn the decision that answers its key now.");
-      }
+      if (old.state !== "active") throw notActive(decisionId, old.state);
       if (value === undefined) {
         const retired = { by: actor.by, ...(actor.person ? { person: actor.person } : {}), at: isoMs(now), why };
         return { overturned: repo.retireDecision(db, decisionId, retired) };

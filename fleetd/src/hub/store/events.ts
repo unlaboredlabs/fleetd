@@ -5,7 +5,7 @@ import type { Clock } from "../../shared/clock.ts";
 import type { HubEvent, HubEventType, MachineId, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "./db.ts";
-import type { NewEvent } from "./new_event.ts";
+import { type NewEvent, trim } from "./new_event.ts";
 
 const PAGE = 100;
 /**
@@ -13,8 +13,6 @@ const PAGE = 100;
  * yields, so the hub answers while it catches up, as the Rust hub's walks run on tasks of their own.
  */
 export const BATCH_MS = 20;
-const MAX_DATA_BYTES = 2048;
-const MAX_SUMMARY = 200;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
 
@@ -39,34 +37,6 @@ export type WaitResult = {
 
 /** The hub's one event log, `hub.area("events")`: `events(hub).append(…)`. Other areas name it the same way. */
 export const events = (hub: Hub) => hub.area("events", (h) => new EventLog(h.db, h.clock));
-
-/**
- * Trims `summary` to 200 UTF-16 units (199 plus "…", as older hubs cut it) and replaces a `data` over 2 KB of JSON
- * with `{"truncated": true}`. Keys in the Rust struct's order, so rows read the same.
- */
-function trim(event: NewEvent): NewEvent {
-  let summary = event.summary;
-  if (summary.length > MAX_SUMMARY) {
-    let units = 0;
-    let cut = "";
-    for (const c of summary) {
-      units += c.length;
-      if (units >= MAX_SUMMARY) break;
-      cut += c;
-    }
-    summary = `${cut}…`;
-  }
-  let data = event.data;
-  if (data !== undefined && Buffer.byteLength(JSON.stringify(data) ?? "") > MAX_DATA_BYTES) data = { truncated: true };
-  const out: Record<string, unknown> = { at: event.at, type: event.type };
-  if (event.machineId !== undefined) out.machineId = event.machineId;
-  if (event.projectId !== undefined) out.projectId = event.projectId;
-  if (event.threadId !== undefined) out.threadId = event.threadId;
-  out.summary = summary;
-  if (data !== undefined && data !== null) out.data = data;
-  if (event.attention !== undefined) out.attention = event.attention;
-  return out as NewEvent;
-}
 
 const withSeq = (event: NewEvent, seq: number): HubEvent => ({ ...event, seq });
 

@@ -29,7 +29,7 @@ import {
   secureInputFilled,
 } from "../approvals/purchases.ts";
 import { chat } from "../chat/index.ts";
-import { neverWhy, type Never } from "../integrations/policy.ts";
+import { neverWhy } from "../integrations/policy.ts";
 import { leadCalls } from "../lead_calls/index.ts";
 import type { LeadCall, LeadCaller } from "../lead_calls/types.ts";
 import { link } from "../link/server.ts";
@@ -37,14 +37,9 @@ import { store } from "../store/hub_store.ts";
 import { cardLabelOf, checkCardPick, purchaseSettled, sealedCardFor, vaultCardId } from "../vault/aliases.ts";
 import { isProject } from "./bridge.ts";
 import * as kept from "./store.ts";
+import { CARD_REF, LOG_MAX, refusedPurchase } from "./purchase_rules.ts";
 
 export const OPS = ["purchase_open", "purchase_claim", "purchase_filled", "secure_input_open", "secure_input_claim", "secure_input_filled"] as const;
-
-/** The most purchases `project_purchases` lists. */
-const LOG_MAX = 200;
-
-/** A card reference (fleetd-contracts purchase.rs `CardRef`): a vault card, or for one release an `op://<vault>/<item>`. */
-const CARD_REF = /^(vault:V[0-9a-f]{32}|op:\/\/[^/?\r\n]+\/[^/?\r\n]+)$/;
 
 /** The project's card, if a person picked one; a vault card with its label and last four digits. */
 export function card(hub: Hub, r: ProjectRef): PaymentCard | undefined {
@@ -54,29 +49,7 @@ export function card(hub: Hub, r: ProjectRef): PaymentCard | undefined {
   return { ref, ...(shown ?? {}) } as PaymentCard;
 }
 
-/** Exchanges and brokers: paying one buys holdings, which is trading (crypto included), whatever the basket says. */
-const TRADING_SITES = [
-  "coinbase.com", "binance.com", "kraken.com", "crypto.com", "bitstamp.net", "gemini.com", "bitpanda.com", "kucoin.com",
-  "okx.com", "bybit.com", "robinhood.com", "etrade.com", "schwab.com", "fidelity.com", "vanguard.com",
-  "interactivebrokers.com", "trading212.com", "etoro.com", "degiro.com", "webull.com",
-];
-/** Money-transfer services: paying one moves money to someone, not a purchase. */
-const MONEY_SITES = ["wise.com", "westernunion.com", "remitly.com", "moneygram.com", "xoom.com", "worldremit.com", "venmo.com", "cash.app", "revolut.com"];
-
-/** Whether `host` is `domain` or one of its subdomains (purchase.rs `on_domain`). */
-export function onDomain(host: string, domain: string): boolean {
-  const h = host.toLowerCase();
-  return h === domain || (h.endsWith(domain) && h.slice(0, h.length - domain.length).endsWith("."));
-}
-
-/**
- * What no purchase may be, even approved: a payment to an exchange or a broker (trading, crypto), or to a
- * money-transfer service (moving money). Decided by who is paid, never by words in the shop's or the items' names.
- */
-export function refusedPurchase(shopDomain: string): Never | undefined {
-  if (TRADING_SITES.some((s) => onDomain(shopDomain, s))) return "trading";
-  return MONEY_SITES.some((s) => onDomain(shopDomain, s)) ? "money" : undefined;
-}
+export { onDomain, refusedPurchase } from "./purchase_rules.ts";
 
 export function start(hub: Hub): void {
   for (const op of OPS) leadCalls(hub).register(op, (caller, call) => answer(hub, caller, call));

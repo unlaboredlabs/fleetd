@@ -45,3 +45,10 @@ export function changeNext(change: Change): string {
       return "don't merge it yourself or post the fleetd/train status; the train merges it and the outcome arrives in a wake.";
   }
 }
+
+/** A ready Change's `lastError` while its PR has the `hold` label. */
+export const HELD = "held: the PR has the `hold` label; the train takes it once the label is gone";
+/** The start of a ready Change's `lastError` while the batch forming left it out, followed by why. */
+export const LEFT_OUT = "not in this batch: ";
+/** A ready Change's `lastError` while its base requires an approving review it doesn't have. */
+export const APPROVAL = "held: waiting for a person's approval on GitHub; the train merges it once it is approved";

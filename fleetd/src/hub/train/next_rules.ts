@@ -1,8 +1,10 @@
 // What the train decides about the `fleetd:next` label, re-runs and merge order without GitHub or the database
 // (next.ts acts on it): which checks a repo's workflows gate on the label or skip on a batch, what proves a skip,
 // re-run budgets, the `after` PRs as keyed, and whether one waits back on a PR.
+import type { Change } from "../../shared/contracts.ts";
 import { parseMs } from "../store/time.ts";
 import { type CheckRun, workflowRun } from "./checks.ts";
+import { BLOCKED_PREFIX, timedOut } from "./notes.ts";
 import { parsePrUrl } from "./states.ts";
 import { NEXT_LABEL } from "./text.ts";
 
@@ -26,6 +28,38 @@ export type UpstreamPull = { kind: "merged" } | { kind: "open" } | { kind: "clos
 
 /** The first of a Change's `after` PRs that hasn't merged: the hold, and whether it failed (the lead hears). */
 export type Waiting = { note: string; failed: boolean };
+
+/** Whether where an upstream PR stands needs GitHub's read of it: its newest Change (`latest`) was refused or abandoned, or there is none. */
+export const asksGitHub = (latest: Change | undefined) => {
+  const s = latest?.state;
+  return s === "refused" || s === "abandoned" || s === undefined;
+};
+
+/**
+ * Where the upstream PR `repo`#`n` stands, from its newest Change on the train and, when `asksGitHub`, GitHub's read
+ * of it: undefined once it merged.
+ */
+export function upstreamOf(repo: string, n: number, latest: Change | undefined, read: UpstreamPull | undefined): Waiting | undefined {
+  let why: string;
+  let failed: boolean;
+  const s = latest?.state;
+  if (s === "merged") return undefined;
+  if (s === "ci_failed" && timedOut(latest!)) [why, failed] = ["its CI ran past the timeout", false];
+  else if (s === "ci_failed") [why, failed] = ["its CI failed", true];
+  else if (s === "needs_rebase") [why, failed] = ["it conflicts with its base and is back with its writer", false];
+  else if (s === "reviewing" && latest!.lastError?.startsWith(BLOCKED_PREFIX)) [why, failed] = ["its review found blocking issues", true];
+  else if (asksGitHub(latest)) {
+    if (read === undefined) throw new Error(`upstreamOf: ${repo}#${n} needs GitHub's read of it`);
+    if (read.kind === "merged") return undefined;
+    if (read.kind === "closed") [why, failed] = ["it was closed without merging", true];
+    else if (read.kind === "open") {
+      if (s === "refused") [why, failed] = ["the train refused it", true];
+      else if (s !== undefined) [why, failed] = ["it left the train unmerged", true];
+      else [why, failed] = ["it is not on the train yet", false];
+    } else [why, failed] = [`it could not be read: GitHub: ${read.message}`, false];
+  } else [why, failed] = ["it hasn't merged yet", false];
+  return { note: `${WAITING_ON}${repo}#${n}: ${why}`, failed };
+}
 
 /** `after` as the train keys it: each PR's URL with its repo lowercased, once. */
 export function upstreams(after: string[]): string[] {

@@ -4,70 +4,27 @@
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs, sha256 } from "./index.ts";
-import { REASON_MAX_BYTES } from "../../shared/node_link.ts";
+import {
+  anotherComputer,
+  codeRefusal,
+  ENROLL_PREFIX,
+  ENROLL_TTL_MS,
+  ENROLL_CODE_ID_LEN,
+  enrolledAs,
+  NAMELESS,
+  secret,
+  SPENT_CODE_KEPT_MS,
+  suffixed,
+} from "./node_rules.ts";
 
-const ENROLL_PREFIX = "fle_";
-const ENROLL_TTL_MS = 15 * 60_000;
-/** How long a used or expired enroll code's row stays, so a node trying it again hears why. */
-export const SPENT_CODE_KEPT_MS = 24 * 60 * 60_000;
-/** Hex digits of an enroll code's hash that name it in `fleetd pair --worker-codes` and `--worker-revoke`. */
-export const ENROLL_CODE_ID_LEN = 12;
-/** An enroll code's machine_id when it names no machine: never a valid machine id. */
-export const NAMELESS = "";
-const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
-
-/** RFC 4648 base32, lowercase, unpadded. */
-export function base32(bytes: Uint8Array): string {
-  let out = "";
-  let buffer = 0;
-  let bits = 0;
-  for (const byte of bytes) {
-    buffer = ((buffer << 8) | byte) & 0xffff;
-    bits += 8;
-    while (bits >= 5) {
-      out += BASE32[(buffer >> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) out += BASE32[(buffer << (5 - bits)) & 31];
-  return out;
-}
-
-/** `prefix` and 32 random bytes in base32. */
-export const secret = (prefix: string) => `${prefix}${base32(crypto.getRandomValues(new Uint8Array(32)))}`;
-
-/** A node's refusal, in the shape the MCP error has: the link's close reason is `reason()`. */
-export class Unauthorized extends Error {
-  readonly code = "forbidden";
-  constructor(
-    message: string,
-    readonly fix?: string,
-  ) {
-    super(message);
-    this.name = "Unauthorized";
-  }
-
-  /** "<message>. Fix: <fix>", as a node reads it in the link's close reason. */
-  reason(): string {
-    return this.fix === undefined ? this.message : `${this.message}. Fix: ${this.fix}`;
-  }
-}
-
-/** From `forms` of (message, fix), fullest first: the first that fits a close reason; else the last. */
-function refusal(forms: [string, string][]): Unauthorized {
-  const all = forms.map(([m, f]) => new Unauthorized(m, f));
-  return all.find((r) => Buffer.byteLength(r.reason()) <= REASON_MAX_BYTES) ?? (all[all.length - 1] as Unauthorized);
-}
-
-/** A node already enrolled as `theirs` asked to enroll under another id. */
-function enrolledAs(theirs: string): Unauthorized {
-  const message = `enrolled as ${theirs}`;
-  return refusal([
-    [message, `fleetd pair --worker ${theirs} and run its line, or fleetd machine remove ${theirs} first`],
-    [message, `fleetd pair --worker ${theirs}, or fleetd machine remove ${theirs}`],
-    [message, `fleetd pair --worker ${theirs}, or remove it`],
-  ]);
-}
+export {
+  base32,
+  ENROLL_CODE_ID_LEN,
+  NAMELESS,
+  secret,
+  SPENT_CODE_KEPT_MS,
+  Unauthorized,
+} from "./node_rules.ts";
 
 export type EnrollToken = { token: string; expiresAt: string };
 export type OpenEnrollCode = { id: string; machineId: string; createdAt: string; expiresAt: string };
@@ -163,26 +120,7 @@ export class NodeKeys {
         "SELECT machine_id, expires_ms, used_ms FROM enroll_tokens WHERE hash = ?",
       )
       .get(hash);
-    const m = machineId;
-    let why: string;
-    if (!row) why = "unknown, replaced or revoked enrollment token";
-    else if (row.used_ms !== null) why = "enrollment token was already used";
-    else if (row.expires_ms <= now) why = "enrollment token expired";
-    else {
-      // A name typed in by hand for a code made for another: the code still works.
-      const machine = row.machine_id;
-      const why = `enrollment token is for machine ${machine}, not ${m}`;
-      throw refusal([
-        [why, `join as ${machine} (--machine-id ${machine}), or on the hub run fleetd pair --worker ${m} for a code for ${m}`],
-        [why, `join as ${machine} (--machine-id ${machine})`],
-        [`the code is for ${machine}`, `--machine-id ${machine}`],
-      ]);
-    }
-    if (row?.machine_id === NAMELESS) throw refusal([[why, "ask the hub for a new join line"]]);
-    throw refusal([
-      [why, `on the hub, run fleetd pair --worker ${m} for a new code`],
-      [why, `fleetd pair --worker ${m} on the hub`],
-    ]);
+    throw codeRefusal(row ?? undefined, machineId, now);
   }
 
   nodePubKey(machineId: string): string | undefined {
@@ -205,10 +143,7 @@ export class NodeKeys {
     if (theirs) throw enrolledAs(theirs.machine_id);
     const ours = this.nodeFingerprint(machineId);
     if (fingerprint !== undefined && ours !== undefined && fingerprint !== ours) {
-      throw refusal([
-        [`${machineId} is another computer's machine id`, `use an id of its own, or fleetd machine remove ${machineId} first`],
-        ["this id is another computer's", `use another id, or fleetd machine remove ${machineId} first`],
-      ]);
+      throw anotherComputer(machineId);
     }
     this.consumeEnrollToken(token, machineId, pubKey);
     if (fingerprint !== undefined) this.setNodeFingerprint(machineId, fingerprint);
@@ -242,10 +177,7 @@ export class NodeKeys {
       );
     };
     let id = wish;
-    for (let k = 2; taken(id); k++) {
-      const suffix = `-${k}`;
-      id = `${wish.slice(0, 32 - suffix.length).replace(/-+$/, "")}${suffix}`;
-    }
+    for (let k = 2; taken(id); k++) id = suffixed(wish, k);
     return id;
   }
 

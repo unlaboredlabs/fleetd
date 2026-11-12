@@ -12,17 +12,10 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { every } from "../sweep/index.ts";
-
-/** No frame for this long outside a tool is a stall. Inside a tool: the tool's own timeout plus this again. */
-export const STALL_MS = 10 * 60_000;
+import { STALL_MS, stallWhy, thresholdMs } from "./rules.ts";
 
 export type { OpenTool };
-
-/** The threshold for a run in its current state. */
-export function thresholdMs(stallMs: number, tool: OpenTool | undefined): number {
-  if (!tool) return stallMs;
-  return Math.max(tool.statedTimeoutMs ?? 0, tool.unstated ? stallMs : 0) + stallMs;
-}
+export { STALL_MS, thresholdMs } from "./rules.ts";
 
 /** `machineId \0 threadId`. */
 export type Key = string;
@@ -47,10 +40,6 @@ export interface WatchPort {
   interrupt(k: Key): Promise<void>;
   /** Appends a thread event; the port fills in the thread's title and project from the store. */
   emit(k: Key, kind: string, detail: string, data: Record<string, unknown>): Promise<void> | void;
-}
-
-function minutes(ms: number): string {
-  return ms % 60_000 === 0 ? `${ms / 60_000} min` : `${Math.round(ms / 1000)} s`;
 }
 
 export class Watchdog {
@@ -102,8 +91,7 @@ export class Watchdog {
     const limit = thresholdMs(this.stallMs, progress.tool);
     const idle = Math.max(0, now - progress.lastFrameMs);
     if (idle < limit) return;
-    const where = progress.tool ? "inside a tool" : "outside a tool";
-    const why = `no progress for ${minutes(idle)} ${where}, so fleetd interrupted it`;
+    const why = stallWhy(idle, progress.tool !== undefined);
     const data = {
       status: "failed",
       runId,

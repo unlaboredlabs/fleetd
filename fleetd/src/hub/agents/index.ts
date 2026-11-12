@@ -1,7 +1,6 @@
 // The agents view: every agent of the projects a key may read (`agents_list`).
 // Reads the task, lead and train stores and the executor's sessions; owns no table.
-import type { AgentLane, AgentRow, Change, LaneStatus, ProjectRef, Task, TaskState } from "../../shared/contracts.ts";
-import { jsPrefix } from "../../shared/text.ts";
+import type { AgentRow, Change, ProjectRef, Task, TaskState } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
@@ -9,12 +8,9 @@ import { leadLane, lookups, prRef, projectChanges, taskLane } from "../orders/in
 import { leadGet, leadsList } from "../orders/sources.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
+import { ENDED_SCAN, row, sortRows, TASK_SCAN } from "./sort.ts";
 
-/** Tasks read per state: far above what a fleet runs at once. */
-const TASK_SCAN = 500;
-/** Finished tasks read per end state for `endedSince`. */
-const ENDED_SCAN = 100;
-export const AGENTS_MAX = 100;
+export { AGENTS_MAX, sortRows } from "./sort.ts";
 
 const keyOf = (r: ProjectRef) => `${r.machineId}\u0000${r.projectId}`;
 
@@ -53,40 +49,6 @@ export const leadProjects = (hub: Hub, readable: Map<string, { r: ProjectRef }>)
   leadsList(hub)
     .map((l) => l.projectRef)
     .filter((r) => readable.has(keyOf(r)));
-
-/** Where a status sits in the list: agents doing something first, then those waiting their turn, then the rest. */
-function rank(status: LaneStatus): number {
-  switch (status) {
-    case "waiting":
-      return 0;
-    case "working":
-    case "starting":
-      return 1;
-    case "stalled":
-      return 2;
-    case "queued":
-    case "parked":
-      return 3;
-    case "idle":
-      return 4;
-    case "failed":
-      return 5;
-    default:
-      return 6;
-  }
-}
-
-/** Options compare as Rust's: absent before present. */
-const cmpOpt = (a: string | undefined, b: string | undefined) =>
-  a === b ? 0 : a === undefined ? -1 : b === undefined ? 1 : a < b ? -1 : 1;
-
-/** Waiting on a person first, then working, then by most recent start; finished agents by most recent end. */
-export function sortRows(rows: AgentRow[]): void {
-  rows.sort((a, b) => rank(a.status) - rank(b.status) || cmpOpt(b.endedAt, a.endedAt) || cmpOpt(b.startedAt, a.startedAt) || (a.laneId < b.laneId ? -1 : a.laneId > b.laneId ? 1 : 0));
-}
-
-const row = (lane: AgentLane, project: ProjectRef, title: string, task: Task | undefined): AgentRow =>
-  ({ ...lane, projectRef: project, projectTitle: jsPrefix(title, 200), ...(task ? { workstreamId: task.workstreamId } : {}) }) as AgentRow;
 
 /** Every agent in scope as a row, sorted, and whether the list was cut to `max`. */
 export function rows(hub: Hub, caller: Caller, project: ProjectRef | undefined, endedSince: string | undefined, max: number): [AgentRow[], boolean] {

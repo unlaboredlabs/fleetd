@@ -17,14 +17,15 @@ import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
 
-export const HELD = "held: the PR has the `hold` label; the train takes it once the label is gone";
+import { HELD, LEFT_OUT } from "./notes.ts";
+
+export { HELD, LEFT_OUT } from "./notes.ts";
+
 export const NO_CI =
   "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions workflow that runs on pull " +
   "requests, or CI of another provider that reports on them; it goes on by itself once one does.";
 const MEMBER_LEFT = "a PR left the batch while it formed; the next pass forms it again";
 const NOT_CLOSED = "landed, but its PR is not closed yet";
-/** The start of a ready Change's `lastError` while the batch forming left it out, followed by why. */
-export const LEFT_OUT = "not in this batch: ";
 /** The trailer that names a Change on the squash that lands it (contracts `metrics::CHANGE_TRAILER`). */
 export const CHANGE_TRAILER = "Fleetd-Change";
 

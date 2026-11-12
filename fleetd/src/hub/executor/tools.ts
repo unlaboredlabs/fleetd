@@ -2,7 +2,6 @@
 // actions_list. Later areas add to fleetd_status and project_get through
 // `executorHooks` (slots, lead, workstreams, tasks, trains).
 import type { HubEvent, Machine, MachineId, ProjectChatState, ProjectRef, ProjectSummary, SlotState, ThreadRef } from "../../shared/contracts.ts";
-import { ToolError } from "../../shared/errors.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { canRead, cap, clip, LIMITS, offline, unknownMachine, unknownProject, unknownThread } from "../api/refusals.ts";
@@ -15,8 +14,9 @@ import { chat } from "../chat/index.ts";
 import { leadWorking } from "../chat/flow.ts";
 import { slots } from "../slots/index.ts";
 import { executorHooks } from "./hooks.ts";
-import { ExecutorError, executors } from "./index.ts";
+import { executors } from "./index.ts";
 import { toThread } from "./shell_mapper.ts";
+import { fromExecutor } from "./rules.ts";
 
 const ATTENTION_TYPES = [
   "thread.failed",
@@ -29,19 +29,7 @@ const ATTENTION_TYPES = [
 /** How far back fleetd_status looks for attention events. */
 const ATTENTION_LOOKBACK = 1000;
 
-/** An executor failure as the tools answer it. */
-export function fromExecutor(error: unknown): ToolError {
-  if (!(error instanceof ExecutorError)) throw error;
-  switch (error.kind) {
-    case "not_connected":
-      return offline(error.machineId);
-    case "thread_not_found":
-      return unknownThread({ machineId: error.machineId, threadId: error.extra.threadId ?? "" });
-    case "node_failed":
-      console.warn(`executor: node request failed: ${error.message}`);
-      return new ToolError("failed", error.message, error.extra.fix ?? "Retry; if it keeps failing, check the machine with fleetd_status.");
-  }
-}
+export { fromExecutor } from "./rules.ts";
 
 /** A machine's cache is fresh only while its node is online and its session stream is live. */
 function freshness(hub: Hub, machineId: MachineId): { machine: Machine; stale: boolean; asOf: string } {

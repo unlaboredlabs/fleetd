@@ -1,6 +1,6 @@
 // The slot board's rules, without I/O: the service in index.ts persists what
 // `takeOps` hands it and feeds it thread events, machine facts and the time.
-import type { MachineId, ProjectRef } from "../../shared/contracts.ts";
+import type { MachineId, ProjectRef, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
 /** An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet. */
@@ -576,4 +576,31 @@ export class Board {
     if (this.cap_ !== undefined) out.fleetCap = this.cap_;
     return out;
   }
+}
+
+/** The board's state as the apps and `cap_set` show it: no count below 0, and a machine's `why` of 1 to 200 characters, else "auto". */
+export function slotState(s: BoardState): SlotState {
+  const count = (n: number) => Math.max(n, 0);
+  const out: SlotState = { cap: count(s.cap), used: count(s.used), queued: count(s.queued), perProject: [] };
+  if (s.fleetCap !== undefined) out.fleetCap = count(s.fleetCap);
+  out.perProject = s.perProject.map(
+    (row): SlotStatePerProject => ({
+      projectRef: row.projectRef,
+      maxAgents: count(row.maxAgents),
+      own: row.own,
+      running: count(row.running),
+      queued: count(row.queued),
+    }),
+  );
+  out.perMachine = s.perMachine.map((row) => {
+    // Keys in the Rust struct's order.
+    const m: Record<string, unknown> = { machineId: row.machineId, cap: count(row.cap) };
+    if (row.maxAgents !== undefined) m.maxAgents = count(row.maxAgents);
+    m.auto = count(row.auto);
+    m.why = row.why.length >= 1 && row.why.length <= 200 ? row.why : "auto";
+    m.running = count(row.running);
+    if (row.diskRoom !== undefined) m.diskRoom = count(row.diskRoom);
+    return m as SlotStatePerMachine;
+  });
+  return out;
 }

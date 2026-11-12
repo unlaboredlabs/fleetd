@@ -1,90 +1,22 @@
 // Synchronous SQL over the ledger tables. Callers compose these inside one
 // write transaction and emit events after the commit; nothing here opens a transaction itself.
 import type { Database } from "bun:sqlite";
-import type {
-  Decision,
-  DecisionKey,
-  DecisionRetired,
-  DecisionScope,
-  DecisionSource,
-  DecisionState,
-  PersonRef,
-  ProjectRef,
-} from "../../shared/contracts.ts";
+import type { Decision, DecisionRetired, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isoMs } from "../store/time.ts";
+import { type Actor, type DecisionFilter, decisionN, ftsQuery, projectKey, type RecordInput, scopeColumns } from "./rules.ts";
 
-const MAX_SAFE_INT = 9007199254740991;
-
-/** Who is writing: filled by the hub from the caller (human device, agent key or lead-side call). */
-export type Actor = {
-  source: DecisionSource;
-  /** "human:<device>", the agent key name, or "lead:<machineId>/<projectId>". */
-  by: string;
-  /** A human key's person. */
-  person?: PersonRef;
-};
-
-/** Where a lookup starts: the workstream (when known), then its project, then global. */
-export type Chain = { projectRef: ProjectRef; workstreamId?: string };
-
-/** Stable text form of a project ref; machine ids cannot contain "/". */
-export const projectKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
-
-/** `D12` → 12; undefined for anything that isn't a decision id. */
-export function decisionN(id: string): number | undefined {
-  if (!/^D\d+$/.test(id)) return undefined;
-  const n = Number(id.slice(1));
-  return n > 0 && n <= MAX_SAFE_INT ? n : undefined;
-}
-
-const STOPWORDS = ["the", "and", "for", "should", "what", "which", "use", "with", "this", "that", "we", "do"];
-
-/** FTS5 query matching any of the words in `text`; undefined when there are none worth matching. */
-export function ftsQuery(text: string): string | undefined {
-  const words: string[] = [];
-  for (const word of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
-    if (word !== "" && !words.includes(word)) words.push(word);
-  }
-  const kept = words
-    .filter((w) => w.length >= 2 && !STOPWORDS.includes(w))
-    .slice(0, 24)
-    .map((w) => `"${w}"`);
-  return kept.length > 0 ? kept.join(" OR ") : undefined;
-}
-
-function scopeColumns(scope: DecisionScope): [kind: string, id: string] {
-  switch (scope.kind) {
-    case "global":
-      return ["global", ""];
-    case "project":
-      return ["project", projectKey(scope.projectRef)];
-    case "workstream":
-      return ["workstream", scope.workstreamId];
-  }
-}
-
-export const decisionStateText = (state: DecisionState) => state;
-
-export type RecordInput = {
-  key: DecisionKey;
-  scope: DecisionScope;
-  value: string;
-  why?: string;
-  /** The project a workstream-scoped decision belongs to, so project-wide lookups find it. */
-  projectRef?: ProjectRef;
-};
-
-export type DecisionFilter = {
-  /** Global decisions plus everything recorded in this project. */
-  chain?: Chain;
-  /** Exactly this scope. */
-  scope?: DecisionScope;
-  source?: DecisionSource;
-  /** Recorded at or after this time (ms). */
-  sinceMs?: number;
-  limit?: number;
-};
+export {
+  type Actor,
+  type Chain,
+  type DecisionFilter,
+  decisionN,
+  decisionStateText,
+  ftsQuery,
+  projectKey,
+  type RecordInput,
+  searchWords,
+} from "./rules.ts";
 
 const decode = (data: string) => JSON.parse(data) as Decision;
 

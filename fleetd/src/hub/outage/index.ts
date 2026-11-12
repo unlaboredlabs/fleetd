@@ -8,16 +8,13 @@
 // again each sweep. A removed machine has no row, so it never pages. The agents' Mac counts like any machine.
 import type { Machine } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { durationText } from "../link/server.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { updates } from "../update/tools.ts";
+import { backSummary, DOWN_AFTER_MS, downSummary, SWEEP_EVERY_MS } from "./rules.ts";
 
-/** How long a machine stays offline before its admins are paged. */
-export const DOWN_AFTER_MS = 10 * 60_000;
-/** How often the sweep looks. */
-export const SWEEP_EVERY_MS = 30_000;
+export { DOWN_AFTER_MS, SWEEP_EVERY_MS } from "./rules.ts";
 
 /** The newest of a machine's outage events: seqs (0 when none), and when it last linked. */
 type Marks = { linked: number; down: number; back: number; linkedMs?: number };
@@ -82,12 +79,12 @@ export function sweep(hub: Hub): void {
       const since = outageFrom(hub, m.machineId, Number.MAX_SAFE_INTEGER) ?? parseMs(m.lastSeenAt) ?? now;
       const away = now - since;
       if (away < DOWN_AFTER_MS || explained(hub, m)) continue;
-      append(hub, "machine.down", m, now, `${m.name} has been offline for ${durationText(away)}`, away);
+      append(hub, "machine.down", m, now, downSummary(m.name, away), away);
       console.warn(`outage: machine down, admins paged machine_id=${m.machineId} away_ms=${away}`);
     } else if (k.down > k.back && k.linked > k.down) {
       const from = outageFrom(hub, m.machineId, k.down);
       const away = k.linkedMs !== undefined && from !== undefined ? Math.max(0, k.linkedMs - from) : 0;
-      append(hub, "machine.back", m, now, `${m.name} is back online after ${durationText(away)}`, away);
+      append(hub, "machine.back", m, now, backSummary(m.name, away), away);
       console.info(`outage: machine back machine_id=${m.machineId}`);
     }
   }

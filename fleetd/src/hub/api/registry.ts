@@ -7,6 +7,7 @@ import { TOOLS, type ToolName } from "./tool_roles.ts";
 import { DecodeError, decodeInput } from "./decode.ts";
 import { isHuman, requireRole } from "./grants.ts";
 import type { Hub } from "./hub.ts";
+import type { CallError } from "../mcp/rpc.ts";
 
 /** The verified key behind a request, checked again on every MCP request and app `call`. */
 export type Caller = AgentKeyInfo;
@@ -18,7 +19,7 @@ export type Handler<N extends ToolName> = (
 ) => Promise<ToolMap[N]["output"]> | ToolMap[N]["output"];
 
 /** Why a call produced no output. The transports word `unknown` and `invalid` themselves (MCP and /app differ). */
-export type CallError = { kind: "unknown" } | { kind: "invalid"; message: string } | { kind: "tool"; error: ToolError };
+export type { CallError };
 
 /** Tools a release took out, by name prefix, with what an older app that still calls one is told. */
 const REMOVED: [prefix: string, gone: string][] = [["telegram_", "Telegram was removed from fleetd."]];
