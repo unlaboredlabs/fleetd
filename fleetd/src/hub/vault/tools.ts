@@ -10,7 +10,6 @@ import { unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { boxKey } from "../hub_links/store.ts";
-import { mayUse } from "../navi/owner.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries } from "./deliver.ts";
 import { FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";
@@ -61,17 +60,13 @@ export function listFor(
     const r: ProjectRef = { machineId: input.machineId, projectId: input.projectId };
     if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
     requireRole(v.caller, "read", r.machineId);
-    if (!mayUse(hub.db, v.caller, r)) throw unknownProject(r);
-    // Its own items; with `usable`, all its work can use: its own, shared with it, its Only me owner's, the hub's.
-    const owner = hub.db.conn
-      .query<{ owner_person: string | null }, [string, string]>("SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1")
-      .get(r.machineId, r.projectId)?.owner_person;
+    // Its own items; with `usable`, all its work can use: its own, shared with it, the hub's.
     rows =
       input.usable === true
         ? vt.store.select(
             `(machine_id = ? AND project_id = ? AND scope IN ('project', 'order')) OR scope = 'hub'
-              OR (scope = 'person' AND (person_id = ? OR item_id IN (SELECT item_id FROM vault_shares WHERE machine_id = ? AND project_id = ?)))`,
-            [r.machineId, r.projectId, owner ?? null, r.machineId, r.projectId],
+              OR (scope = 'person' AND item_id IN (SELECT item_id FROM vault_shares WHERE machine_id = ? AND project_id = ?))`,
+            [r.machineId, r.projectId, r.machineId, r.projectId],
             input.trash === true,
           )
         : vt.store.select("machine_id = ? AND project_id = ? AND scope IN ('project', 'order')", [r.machineId, r.projectId], input.trash === true);
@@ -221,7 +216,7 @@ export function register(tools: Registry): void {
     } else if (input.machineId !== undefined && input.projectId !== undefined) {
       const r = { machineId: input.machineId, projectId: input.projectId };
       requireRole(caller, "read", r.machineId);
-      if (!hubStore(hub).projectGet(r) || !mayUse(hub.db, caller, r)) throw unknownProject(r);
+      if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
       // The project's rows, but never another person's own items' (an admin doesn't see those either).
       where = `machine_id = ? AND project_id = ? AND (item_id = '' OR item_id NOT IN (SELECT item_id FROM vault_items WHERE scope = 'person' AND person_id <> ?))`;
       params = [r.machineId, r.projectId, v.person ?? ""];

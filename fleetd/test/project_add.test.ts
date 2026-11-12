@@ -20,7 +20,7 @@ import { AT, key, kit, workstream } from "./work-kit.ts";
 const operate = key("operate");
 const person = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const added = (k: ReturnType<typeof kit>) => events(k.hub).page(0, ["project.added"]).events;
-/** The approval mode `project_approvals` reports for a project on devbox, read by Ada (an Only me project is its owner's). */
+/** The approval mode `project_approvals` reports for a project on devbox, read by Ada. */
 const mode = async (k: ReturnType<typeof kit>, projectId: unknown) => (await k.ok(person, "project_approvals", { machineId: "devbox", projectId })).approvals.mode;
 
 test("a new project gets a folder under the projects root and no repo", async () => {
@@ -30,7 +30,8 @@ test("a new project gets a folder under the projects root and no repo", async ()
   const found = await k.ok(operate, "project_discover", { github: false });
   expect(found.machines).toEqual([{ machineId: "devbox", online: true, cloneRoot: "/home/me/src", projectsRoot: ROOT, repos: [] }]);
   expect(found.best).toBe("devbox");
-  const out = await k.ok(person, "project_add", { machineId: "devbox", create: true, title: "Field Notes" });
+  // An older app still sends onlyMe: it is ignored, without an error (D491).
+  const out = await k.ok(person, "project_add", { machineId: "devbox", create: true, title: "Field Notes", onlyMe: true });
   const path = `${ROOT}/field-notes`;
   expect([out.path, out.created, out.inspect.leadNeeds]).toEqual([path, true, FOLDER_NEEDS]);
   expect(out.next).toContain("project_repo_add");
@@ -44,8 +45,16 @@ test("a new project gets a folder under the projects root and no repo", async ()
   const r = { machineId: "devbox", projectId: out.projectId };
   expect(repos.of(k.hub.db.conn, r)).toEqual([]);
   expect(store(k.hub).projectGet(r)?.title).toBe("Field Notes");
-  // A plain folder is Only me, the caller's.
-  expect(k.hub.db.conn.query("SELECT only_me, owner_person FROM project_settings").get()).toEqual({ only_me: 1, owner_person: "p-ada" });
+  // A plain folder is open like any project (D491): another person and an agent's key list it, with no Only me or owner.
+  expect(k.hub.db.conn.query("SELECT 1 FROM project_settings WHERE only_me = 1").get()).toBeNull();
+  const bo = key("read", { human: true, person: { personId: "p-bo", name: "Bo" }, name: "bo" });
+  for (const reader of [bo, key("read")]) {
+    const listed = (await k.ok(reader, "project_get", {})).projects as Record<string, unknown>[];
+    const notes = listed.find((p) => p.projectId === out.projectId);
+    expect(notes).toMatchObject({ title: "Field Notes" });
+    expect(notes).not.toHaveProperty("onlyMe");
+    expect(notes).not.toHaveProperty("owner");
+  }
   // A new project starts in YOLO.
   expect(await mode(k, out.projectId)).toBe("yolo");
   const event = added(k).at(-1);
@@ -121,8 +130,8 @@ test("a checkout on GitHub is inspected through gh, bound to its repo and base, 
   const r = { machineId: "devbox", projectId: out.projectId };
   expect(k.hub.db.conn.query("SELECT repo_key, base FROM work_projects").get()).toEqual({ repo_key: "github.com/acme/shop", base: "main" });
   expect(repos.own(k.hub.db.conn, r)).toMatchObject({ name: "shop", repoKey: "github.com/acme/shop", base: "main" });
-  // A repo folder is not Only me unless asked.
-  expect(k.hub.db.conn.query("SELECT only_me FROM project_settings").get()).toEqual({ only_me: 0 });
+  // A repo folder is open like any project.
+  expect(k.hub.db.conn.query("SELECT 1 FROM project_settings WHERE only_me = 1").get()).toBeNull();
   await settle();
   expect(await mode(k, out.projectId)).toBe("yolo");
   // The same directory again is the same project; only a title other than its folder's name renames it.

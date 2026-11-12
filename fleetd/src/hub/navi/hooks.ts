@@ -5,7 +5,6 @@
 import type { NaviApprovals, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { ApprovalHooks, Checked } from "../approvals/ports.ts";
-import { getOn } from "../people/store.ts";
 import { isoMs } from "../store/time.ts";
 import * as checker from "./checker.ts";
 import { alwaysAsks, autoApproved, checkerSeams, judge, personMessages, reads, relayed, standing, type Context } from "./checker_turn.ts";
@@ -86,13 +85,11 @@ function hooks(hub: Hub): NaviHooks {
 async function check(hub: Hub, r: ProjectRef, threadId: string, action: Parameters<typeof judge>[5], settings: NaviApprovals): Promise<Checked> {
   try {
     const c = hub.db.conn;
-    const owner = navis.kept(c, r)?.owner;
     let said: string[] = [];
     let question: string | undefined;
     try {
       [said, question] = personMessages(hub, r);
     } catch {}
-    const name = owner !== undefined ? getOn(c, owner)?.name : undefined;
     let allowedSites: string[] = [];
     try {
       allowedSites = navis.sites(c, r).map((s) => s.site);
@@ -102,7 +99,8 @@ async function check(hub: Hub, r: ProjectRef, threadId: string, action: Paramete
       fromRelays = relayed(hub, r);
     } catch {}
     const context: Context = {
-      person: { name: name ?? null },
+      // A project is everyone's on the hub (D491): no one person's name.
+      person: { name: null },
       personMessages: said,
       ...(question !== undefined ? { leadLastQuestion: question } : {}),
       standing: standing(hub, r),
@@ -110,7 +108,7 @@ async function check(hub: Hub, r: ProjectRef, threadId: string, action: Paramete
       allowedSites,
       today: isoMs(hub.clock.now()).slice(0, 10),
     };
-    return await judge(hub, checkerSeams(hub).turn, r, owner, settings, action, context);
+    return await judge(hub, checkerSeams(hub).turn, r, undefined, settings, action, context);
   } catch (error) {
     return { note: { verdict: "ask", reason: clip(`the checker couldn't run: ${(error as Error).message}`, 300) } };
   }

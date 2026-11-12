@@ -4289,7 +4289,7 @@
       "oneOf": [
         {
           "const": "person",
-          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "description": "One person's: used by work they started, and projects it's shared with.",
           "type": "string"
         },
         {

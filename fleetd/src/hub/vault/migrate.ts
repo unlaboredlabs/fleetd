@@ -16,7 +16,7 @@ import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import { boxKey } from "../hub_links/store.ts";
-import { forLead, token } from "../onepassword/index.ts";
+import { token } from "../onepassword/index.ts";
 import { parseMs } from "../store/time.ts";
 import { fingerprintOf } from "./fields.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
@@ -270,7 +270,7 @@ export async function migrateCards(hub: Hub): Promise<number> {
   let n = 0;
   for (const row of rows) {
     const r = { machineId: row.machine_id, projectId: row.project_id };
-    const person = forLead(hub.db, r) ?? hubViewer(hub).person;
+    const person = hubViewer(hub).person;
     if (person === undefined) continue;
     const m = token(hub.db, person)?.sealedOn.map((s) => s.machineId).find((x) => linked(hub, x) && nodeCan(hub, x, CAP_VAULT));
     if (m === undefined) continue;

@@ -279,7 +279,6 @@ export function ensureOwner(db: HubDb): Person {
       owner = c.query<PersonRow, [string]>(`SELECT ${PEOPLE_COLUMNS} FROM people WHERE person_id = ?`).get(id)!;
     }
     c.query("UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL").run(owner.person_id);
-    c.query("UPDATE project_settings SET owner_person = ? WHERE only_me = 1 AND owner_person IS NULL").run(owner.person_id);
     return person(owner);
   });
 }
@@ -311,7 +310,7 @@ export function setPersonRole(db: HubDb, id: string, role: HubRole): Person | un
   });
 }
 
-/** Removes a person: devices revoked, open invites closed, Only-me projects archived. How many devices went. */
+/** Removes a person: devices revoked, open invites closed; their projects stay. How many devices went. */
 export function removePerson(db: HubDb, id: string): [Person, number] | undefined {
   writable(db, "Removing a person");
   const now = Date.now();
@@ -321,9 +320,6 @@ export function removePerson(db: HubDb, id: string): [Person, number] | undefine
       .changes;
     c.query(
       "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
-    ).run(id, now);
-    c.query(
-      "UPDATE project_settings SET archived_ms = ?2 WHERE only_me = 1 AND owner_person = ?1 AND archived_ms IS NULL",
     ).run(id, now);
     const p = getOn(c, id);
     return p ? ([p, revoked] as [Person, number]) : undefined;

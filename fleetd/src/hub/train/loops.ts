@@ -10,7 +10,7 @@ import { parsePrUrl } from "./records.ts";
 import { prsGithub } from "../prs/index.ts";
 import { openBlocking } from "../reviews/read.ts";
 import { type TaskHooks, taskHooks } from "../tasks/ports.ts";
-import { seesPr, upstream } from "./next.ts";
+import { upstream } from "./next.ts";
 
 /** Trains in a project_get outcome (api limits `TRAINS`). */
 const TRAINS = 10;
@@ -25,7 +25,7 @@ export function start(hub: Hub): void {
     train: {
       onTaskPr: (taskId: string) => void train.onTaskPr(taskId).catch((error) => console.warn(`train: ${taskId}'s PR not queued:`, error)),
       github: train.github,
-      merges: { seesPr: (by, url) => seesPr(train, by, url), upstream: (url) => upstream(train, url) },
+      merges: { upstream: (url) => upstream(train, url) },
     },
     reviews: { isReviewer: (taskId: string) => reviews.isReviewer(taskId), openBlocking: (pr: string) => openBlocking(hub.db, pr) },
   } satisfies Pick<TaskHooks, "train" | "reviews">);

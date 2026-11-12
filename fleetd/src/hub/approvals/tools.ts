@@ -7,7 +7,6 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { type ApprovalCaller, approvals } from "./index.ts";
-import { projectKey } from "./store.ts";
 
 export function register(tools: Registry): void {
   tools.add("secret_submit", async (hub, caller, input) => {
@@ -33,11 +32,7 @@ export function register(tools: Registry): void {
       states: input.state ? [input.state] : undefined,
       limit,
     });
-    // Another person's Navi's approvals are theirs alone (D215).
-    const navis = othersNavis(hub, caller);
-    const requests: HumanRequest[] = listed.filter(
-      (r) => allows(caller, "read", r.projectRef.machineId) && !navis.has(projectKey(r.projectRef)),
-    );
+    const requests: HumanRequest[] = listed.filter((r) => allows(caller, "read", r.projectRef.machineId));
     return { requests };
   });
 }
@@ -49,25 +44,3 @@ export const who = (caller: Caller): ApprovalCaller => ({
   ...(caller.person ? { person: caller.person } : {}),
   allowsOperate: (m) => allows(caller, "operate", m),
 });
-
-/**
- * The Navis `caller` may not see (navi/owner.rs `others`): every Only me project with an owner other than them. A key
- * with no person acts as the hub's first owner.
- */
-export function othersNavis(hub: Hub, caller: Caller): Set<string> {
-  const me =
-    caller.person?.personId ??
-    hub.db.conn
-      .query<{ person_id: string }, []>(
-        "SELECT person_id FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1",
-      )
-      .get()?.person_id ??
-    null;
-  const rows = hub.db.conn
-    .query<{ machine_id: string; project_id: string }, [string | null]>(
-      `SELECT machine_id, project_id FROM project_settings
-        WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
-    )
-    .all(me);
-  return new Set(rows.map((r) => `${r.machine_id}/${r.project_id}`));
-}

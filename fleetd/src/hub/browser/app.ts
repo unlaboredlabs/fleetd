@@ -8,7 +8,6 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { input, live, startWatch, type Watch } from "./live.ts";
 import { Pace, PING } from "./pace.ts";
-import { mayUse, screenProject } from "./reads.ts";
 import type { AppConn, AppWsArea } from "./app_seam.ts";
 import { forward } from "./thumbs.ts";
 
@@ -134,11 +133,8 @@ export function browserWatch(hub: Hub, conn: AppConn, msg: { session?: string; a
   c.stopWatch();
   const session = msg.session;
   if (session === undefined) return;
-  // Its project turned Only me since, by another person: theirs alone to watch.
-  const project = screenProject(hub.db, session);
   const onFrame = (frame: BrowserFrame) => {
     if (frame.sessionId !== session) return;
-    if (project && !mayUse(hub.db, caller, project)) return c.stopWatch();
     // The node sends its newest frame again for each `on`: not again to a connection that has it.
     if (c.last === frame.seq) return;
     c.last = frame.seq;

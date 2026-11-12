@@ -322,7 +322,6 @@ const ONLINE: Case[] = [
   { name: "project-profile-no-key", argv: ["project", "profile", "fast"] },
   { name: "project-stop-no-key", argv: ["project", "stop", "devbox/p"] },
   { name: "project-key-file-elsewhere", argv: ["project", "list", "--key-file", "k"] },
-  { name: "project-only-both", argv: ["project", "add", "--new", "x", "--only-me", "--no-only-me"] },
   { name: "project-new-relative-dest", argv: ["project", "add", "--new", "x", "--dest", "rel"] },
   { name: "project-repo-none", argv: ["project", "repo"] },
   { name: "project-repo-list-missing", argv: ["project", "repo", "list", "devbox/nope"] },

@@ -101,7 +101,7 @@ test("a merge wait wakes early when its PR closes unmerged or fails on the train
 
 test("the hub's merge read is the train's: merged there is merged, a hold's failure is a failure", async () => {
   const held = new Map([[PR2, { note: "held: waiting on acme/shop#8: its CI failed", failed: true }]]);
-  const train = { seesPr: (_: ProjectRef, url: string) => !url.endsWith("/9"), upstream: async (url: string) => held.get(url) };
+  const train = { upstream: async (url: string) => held.get(url) };
   const merge = (url: string) => mergeOf(train, P, { kind: "pr", repo: "acme/shop", number: Number(url.split("/").at(-1)) });
   expect(await merge(PR)).toEqual({ kind: "merged" });
   expect(await merge(PR2)).toEqual({ kind: "failed", why: "its CI failed" });
@@ -109,7 +109,6 @@ test("the hub's merge read is the train's: merged there is merged, a hold's fail
   expect(await merge(PR2)).toEqual({ kind: "over", why: "it was closed without merging" });
   held.set(PR2, { note: "held: waiting on acme/shop#8: in the train's line", failed: false });
   expect(await merge(PR2)).toEqual({ kind: "pending" });
-  expect(await merge("https://github.com/acme/shop/pull/9")).toEqual({ kind: "over", why: "it is in a project you don't see" });
   // Until the train sets its reads, a merge wait waits.
   expect(await mergeOf(undefined, P, { kind: "pr", repo: "acme/shop", number: 7 })).toEqual({ kind: "pending" });
 });

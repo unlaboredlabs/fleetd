@@ -5,8 +5,7 @@
 //
 // Who sees, changes and reveals an item (§3):
 // - person: its owner; agents doing their work, and projects it is shared with, use it but never reveal it;
-// - project: everyone who sees the project (Only me: its owner); operate on its machine changes it; its creator or an
-//   admin reveals it;
+// - project: everyone who sees the project; operate on its machine changes it; its creator or an admin reveals it;
 // - order (variables only): as its project; its creator changes and reveals it;
 // - hub (logins, cards, addresses): everyone lists and uses it; admins change and reveal it.
 import type { ProjectRef } from "../../shared/contracts.ts";
@@ -16,7 +15,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { ClaudeAccountStore, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
-import { mayUse, who } from "../navi/owner.ts";
+import { who } from "../navi/owner.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { type AuditEntry, type NewAudit, VaultAudit } from "./audit.ts";
@@ -114,7 +113,7 @@ export class Vault {
         return true;
       default: {
         const r = this.projectOf(row);
-        return r !== undefined && allows(v.caller, "read", r.machineId) && mayUse(this.hub.db, v.caller, r);
+        return r !== undefined && allows(v.caller, "read", r.machineId);
       }
     }
   }
@@ -142,17 +141,8 @@ export class Vault {
         return true;
       case "hub":
         return v.admin;
-      case "project": {
-        const r = this.projectOf(row)!;
-        // An Only me project is its owner's alone: they see it, so they reveal it.
-        const onlyMe = this.hub.db.conn
-          .query<{ owner_person: string | null }, [string, string]>(
-            "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
-          )
-          .get(r.machineId, r.projectId);
-        if (onlyMe) return true;
+      case "project":
         return row.createdBy === v.person || v.admin;
-      }
       case "order":
         return row.createdBy === v.person;
     }
@@ -175,7 +165,7 @@ export class Vault {
     const order = taskId !== undefined ? this.orderOfTask(taskId) : undefined;
     try {
       const setup = new ClaudeAccountStore(db).setup();
-      const whose = taskId !== undefined ? whoseForTask(db, setup, r, order) : whoseForLead(db, setup, r);
+      const whose = taskId !== undefined ? whoseForTask(db, setup, order) : whoseForLead();
       return { ...("person" in whose ? { personId: whose.person } : {}), ...(order !== undefined ? { workstreamId: order } : {}) };
     } catch {
       return order !== undefined ? { workstreamId: order } : {};

@@ -275,8 +275,7 @@ function looksLikeKey(name: string, raw: string): boolean {
 const plain = (v: { name: string; value: string }): EnvVarSet => ({ kind: "plain", name: v.name, value: v.value });
 
 /**
- * The key a lead's plain variables go into the vault under: operate on its project's machine and nothing more, as the
- * project's owner where it has one (an Only me project's variables are its owner's to write).
+ * The key a lead's plain variables go into the vault under: operate on its project's machine and nothing more.
  */
 function leadKey(caller: LeadCaller, project: ProjectSummary): Caller {
   return {
@@ -286,7 +285,6 @@ function leadKey(caller: LeadCaller, project: ProjectSummary): Caller {
     kind: "agent",
     grants: [{ role: "operate", machines: [project.machineId] }],
     createdAt: new Date(0).toISOString(),
-    ...(project.owner !== undefined ? { person: { personId: project.owner, name: caller.by } } : {}),
   } as unknown as Caller;
 }
 

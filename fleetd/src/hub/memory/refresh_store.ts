@@ -2,7 +2,7 @@
 // `line_items`, `put_line_items`, `listed`): table `memory_refreshes` per project, `memory_refresh_lines` per line.
 import type { MemoryRefreshRun, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
-import { naviOwner, type You, youOf } from "./index.ts";
+import { type You, youOf } from "./index.ts";
 
 export { listed, REFRESHED_LISTED } from "./refresh_rules.ts";
 
@@ -96,15 +96,13 @@ export function projectOfThread(db: HubDb, thread: { machineId: string; threadId
   return id === undefined ? undefined : { machineId: thread.machineId, projectId: id };
 }
 
-/** Whose user memory the running refresh of `r` adds to: a Navi's owner's, else the one person who wrote in its chat. */
+/** Whose user memory the running refresh of `r` adds to: the one person who wrote in its chat. */
 export function refreshYou(db: HubDb, r: ProjectRef): You {
   const run = getRun(db, r);
   return youOver(db, r, run.watermark, run.readTo ?? Number.MAX_SAFE_INTEGER);
 }
 
 export function youOver(db: HubDb, r: ProjectRef, watermark: number, readTo: number): You {
-  const owner = naviOwner(db, r);
-  if (owner !== undefined) return youOf(db, owner);
   const ids = db
     .all<{ id: string | null }>(
       `SELECT DISTINCT json_extract(data, '$.person.personId') AS id FROM chat_messages

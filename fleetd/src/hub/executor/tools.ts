@@ -8,7 +8,6 @@ import type { Hub } from "../api/hub.ts";
 import { canRead, cap, clip, LIMITS, offline, unknownMachine, unknownProject, unknownThread } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { notifyPolicy } from "../attention/index.ts";
-import { about, among, others } from "../navi/owner.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -60,10 +59,9 @@ function markStale<T extends object>(thread: T, stale: boolean, asOf: string): T
 function attention(hub: Hub, caller: Caller, head: number): HubEvent[] {
   let cursor = Math.max(0, head - ATTENTION_LOOKBACK);
   let latest: HubEvent[] = [];
-  const navis = others(hub.db, caller);
   for (;;) {
     const page = events(hub).page(cursor, ATTENTION_TYPES);
-    latest.push(...page.events.filter((e) => canRead(caller, e) && !about(hub.db, navis, e)));
+    latest.push(...page.events.filter((e) => canRead(caller, e)));
     if (latest.length > LIMITS.ATTENTION) latest = latest.slice(latest.length - LIMITS.ATTENTION);
     if (!page.more || page.cursor <= cursor) return latest;
     cursor = page.cursor;
@@ -81,11 +79,11 @@ function slotBoard(hub: Hub, caller: Caller): SlotState {
 }
 
 /** Each readable project's chat state, the first 50 projects shown (chat/flow.rs `states`, chat/tools.rs). */
-function chatStates(hub: Hub, caller: Caller, navis: ReturnType<typeof others>): ProjectChatState[] {
+function chatStates(hub: Hub, caller: Caller): ProjectChatState[] {
   const out: ProjectChatState[] = [];
   for (const p of store(hub).projectsShown().slice(0, 50)) {
     const r = { machineId: p.machineId, projectId: p.projectId };
-    if (!readable(caller, r.machineId) || navis.has(r)) continue;
+    if (!readable(caller, r.machineId)) continue;
     try {
       out.push(chat(hub).state(r, leadWorking(hub, r)));
     } catch (error) {
@@ -100,10 +98,9 @@ async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, un
   const machines = store(hub)
     .machinesList()
     .filter((m) => readable(caller, m.machineId));
-  const navis = others(hub.db, caller);
   const projects = store(hub)
     .projectsShown()
-    .filter((p) => readable(caller, p.machineId) && !among(navis, p))
+    .filter((p) => readable(caller, p.machineId))
     .sort((a, b) => (b.lastActivityAt > a.lastActivityAt ? 1 : b.lastActivityAt < a.lastActivityAt ? -1 : 0));
   const shown = cap(projects, LIMITS.PROJECTS);
   const out: Record<string, unknown> = {
@@ -115,7 +112,7 @@ async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, un
     next: `Call events_wait with cursor ${cursor} to wait for changes, or project_get for one project's outcome.`,
     // Rust's two status hooks (serve/wire.rs `extend_tools`, chat/tools.rs `extend_status`): always present.
     slots: slotBoard(hub, caller),
-    chats: chatStates(hub, caller, navis),
+    chats: chatStates(hub, caller),
   };
   for (const hook of executorHooks(hub).status) Object.assign(out, await hook(hub, caller));
   if (shown.truncated) out.truncated = true;
@@ -124,10 +121,9 @@ async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, un
 
 function projectsList(hub: Hub, caller: Caller, machineId: MachineId | undefined, query: string | undefined): Record<string, unknown> {
   if (machineId !== undefined) requireRole(caller, "read", machineId);
-  const navis = others(hub.db, caller);
   const projects = store(hub)
     .projectsShown(machineId, query)
-    .filter((p) => readable(caller, p.machineId) && !among(navis, p));
+    .filter((p) => readable(caller, p.machineId));
   const shown = cap(projects, LIMITS.PROJECTS);
   const out: Record<string, unknown> = { projects: shown.items };
   if (shown.truncated) {

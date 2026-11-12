@@ -142,17 +142,6 @@ export class ClaudeAccountStore {
   }
 }
 
-/** The person behind a Navi: its owner, else the hub's owner (a Navi from a hub without people yet). */
-function naviOwner(db: HubDb, r: ProjectRef, owner: string | undefined): string | undefined {
-  const row = db.conn
-    .query<{ owner_person: string | null }, [string, string]>(
-      "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
-    )
-    .get(r.machineId, r.projectId);
-  if (!row) return undefined;
-  return row.owner_person ?? owner;
-}
-
 /** The person who started order `id` (its workstream record's `startedBy`). */
 function startedBy(db: HubDb, id: string): string | undefined {
   const n = /^W([1-9][0-9]{0,9})$/.exec(id)?.[1];
@@ -162,21 +151,16 @@ function startedBy(db: HubDb, id: string): string | undefined {
 }
 
 /**
- * Whose work a task of `order` in project `r` is: a Navi's owner's in a Navi, else the person who started the order,
- * else nobody's (the hub's). A person since removed counts as nobody.
+ * Whose work a task of `order` is: the person who started the order, else nobody's (the hub's). A person since removed
+ * counts as nobody.
  */
-export function whoseForTask(db: HubDb, setup: Setup, r: ProjectRef, order?: string): Whose {
-  const navi = naviOwner(db, r, setup.owner);
-  if (navi !== undefined) return { person: navi };
+export function whoseForTask(db: HubDb, setup: Setup, order?: string): Whose {
   const started = order !== undefined ? startedBy(db, order) : undefined;
   return started !== undefined && setup.roles.has(started) ? { person: started } : { hub: true };
 }
 
-/** Whose work a lead is: a Navi's lead its owner's, a project's lead the hub's. */
-export function whoseForLead(db: HubDb, setup: Setup, r: ProjectRef): Whose {
-  const navi = naviOwner(db, r, setup.owner);
-  return navi !== undefined ? { person: navi } : { hub: true };
-}
+/** Whose work a lead is: every project's lead is the hub's (D491). */
+export const whoseForLead = (): Whose => ({ hub: true });
 
 const unread = (error: unknown): Refusal => ({
   message: `The hub could not read its Claude accounts: ${error instanceof Error ? error.message : String(error)}.`,
@@ -187,7 +171,7 @@ const unread = (error: unknown): Refusal => ({
 export function forTask(db: HubDb, node: (m: string) => NodeAccounts, r: ProjectRef, order: string | undefined, machine: string) {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    return launchAccount(setup, whoseForTask(db, setup, r, order), machine, () => node(machine));
+    return launchAccount(setup, whoseForTask(db, setup, order), machine, () => node(machine));
   } catch (e) {
     return unread(e);
   }
@@ -197,7 +181,7 @@ export function forTask(db: HubDb, node: (m: string) => NodeAccounts, r: Project
 export function forLead(db: HubDb, node: (m: string) => NodeAccounts, r: ProjectRef) {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    return launchAccount(setup, whoseForLead(db, setup, r), r.machineId, () => node(r.machineId));
+    return launchAccount(setup, whoseForLead(), r.machineId, () => node(r.machineId));
   } catch (e) {
     return unread(e);
   }
@@ -207,7 +191,7 @@ export function forLead(db: HubDb, node: (m: string) => NodeAccounts, r: Project
 export function orderRefusal(db: HubDb, r: ProjectRef, order: string): Refusal | undefined {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    const on = setup.runsOn(whoseForTask(db, setup, r, order));
+    const on = setup.runsOn(whoseForTask(db, setup, order));
     return on.kind === "refused" ? { message: on.message, fix: on.fix } : undefined;
   } catch (e) {
     return unread(e);
@@ -218,7 +202,7 @@ export function orderRefusal(db: HubDb, r: ProjectRef, order: string): Refusal |
 export function taskAccountKey(db: HubDb, r: ProjectRef, order: string | undefined, machine: string): string | undefined {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    const on = setup.runsOn(whoseForTask(db, setup, r, order), machine);
+    const on = setup.runsOn(whoseForTask(db, setup, order), machine);
     return on.kind === "account" ? accountKey(on.account) : undefined;
   } catch {
     return undefined;
@@ -229,7 +213,7 @@ export function taskAccountKey(db: HubDb, r: ProjectRef, order: string | undefin
 export function leadAccountKey(db: HubDb, r: ProjectRef): string | undefined {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    const on = setup.runsOn(whoseForLead(db, setup, r), r.machineId);
+    const on = setup.runsOn(whoseForLead(), r.machineId);
     return on.kind === "account" ? accountKey(on.account) : undefined;
   } catch {
     return undefined;

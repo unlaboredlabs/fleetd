@@ -25,7 +25,7 @@ import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { isoMs } from "../auth/index.ts";
 import { live } from "../browser/live.ts";
-import { ensureOwnerOn, isNavi, personOn, projectRepos } from "../browser/reads.ts";
+import { ensureOwnerOn, personOn, projectRepos } from "../browser/reads.ts";
 import { events } from "../store/events.ts";
 import { link } from "../link/index.ts";
 import { seal } from "../../shared/sealed_box.ts";
@@ -146,7 +146,7 @@ export function waitsOf(hub: Hub, caller: Caller, r: ProjectRef): ScreenWait[] {
 /** Whether a person's screen of `kind` on `runner` runs on the profile project `r` keeps (D221, D310). */
 function keptProfile(hub: Hub, r: ProjectRef, kind: SessionKind, runner: string): boolean {
   if (kind !== "browser" || runner !== r.machineId) return false;
-  return isNavi(hub.db, r) || link(hub).can(runner, CAP_PROJECT_SIGNINS);
+  return link(hub).can(runner, CAP_PROJECT_SIGNINS);
 }
 
 /** The person a screen is for, and their device: its action log names their steps by it. */

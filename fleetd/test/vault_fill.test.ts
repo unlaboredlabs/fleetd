@@ -4,7 +4,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chat } from "../src/hub/chat/index.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
-import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { onSite, registerLeadCalls } from "../src/hub/vault/calls.ts";
 import { totpCode } from "../src/hub/vault/fields.ts";
 import { ToolError } from "../src/shared/errors.ts";
@@ -97,21 +96,22 @@ test("a person's login: usable for their own work and Only me projects, or where
   expect((await refused(fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" }))).code).toBe("not_found");
   await k.call(k.memberDevice, "vault_share_set", { itemId: id, projects: [PROJECT] });
   expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" })).itemId).toBe(id);
-  // Bo's Only me project: theirs to use without sharing.
-  setOnlyMe(k.hub.db.conn, OTHER, true, k.member.personId);
+  // A project that was Bo's Only me one is everyone's now (D491): his own items reach it only by a share.
+  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
   const S2 = "B0123456789abcdef0123456789abcd02";
   browserSession(k, S2, OTHER);
-  await k.call(k.memberDevice, "vault_share_set", { itemId: id, projects: [] });
-  const out = await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, { ...lead, projectRef: OTHER });
-  expect(out.itemId).toBe(id);
+  const there = { ...lead, projectRef: OTHER };
+  expect((await refused(fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, there))).code).toBe("not_found");
+  await k.call(k.memberDevice, "vault_share_set", { itemId: id, projects: [OTHER] });
+  expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, there)).itemId).toBe(id);
 });
 
 test("an address fills on its own sites or where its owner has a vault login, and nowhere else", async () => {
-  await save({ kind: "address", scope: "person", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US" }) });
-  await save({ kind: "login", scope: "person", label: "Store", sites: ["store.example"], sealed: k.sealToHub({ password: "x" }) });
+  const home = await save({ kind: "address", scope: "person", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US" }) });
+  const login = await save({ kind: "login", scope: "person", label: "Store", sites: ["store.example"], sealed: k.sealToHub({ password: "x" }) });
   const owned = { ...lead };
-  // The owner's work: a Navi of theirs (Only me), so their person items are usable.
-  setOnlyMe(k.hub.db.conn, PROJECT, true, k.owner.personId);
+  // The owner's items, shared with the project, are usable by its lead.
+  for (const itemId of [home, login]) await k.call(k.ownerDevice, "vault_share_set", { itemId, projects: [PROJECT] });
   const out = await fill({ item: "Home", field: "address", page: "https://checkout.store.example/" }, owned);
   expect(JSON.parse(k.open(out.sealed))).toEqual({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US", sites: [] });
   expect((await refused(fill({ item: "Home", field: "address", page: "https://random.example/" }, owned))).code).toBe("forbidden");

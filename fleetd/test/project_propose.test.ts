@@ -19,8 +19,8 @@ const NOTES = { machineId: "devbox", projectId: "notes" };
 const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const grace = key("operate", { human: true, name: "phone", person: { personId: "p-grace", name: "Grace" } });
 const BILLING = { kind: "repo_facts" as const, exists: true, isGit: true, remote: "https://github.com/acme/billing", defaultBranch: "main", workflowFiles: [] };
-const WHAT = "A new project on devbox, once you approve. Only you will see it (Only me). Nothing is made before that.";
-const WHAT_CLONED = "A new project on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.";
+const WHAT = "A new project on devbox, once you approve. Everyone on this hub can use it. Nothing is made before that.";
+const WHAT_CLONED = "A new project on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it. Nothing is made before that.";
 
 /** Notes on devbox with its lead (th-lead) and a task of it (T4, th-task), the wakes its lead gets, and its prompts. */
 async function rig(answer: Answer = () => undefined) {
@@ -55,14 +55,14 @@ async function rig(answer: Answer = () => undefined) {
     return got?.op === "answer" ? [got.decision.behavior, "message" in got.decision ? got.decision.message : undefined] : undefined;
   };
   const tap = (by: typeof ada, requestId: string, decision: "approve" | "deny") => k.ok(by, "approval_answer", { requestId, decision });
-  /** Every project of the machine but Notes, with whose it is. */
+  /** Every project of the machine but Notes, and whether the hub marks it Only me (it never does since D491). */
   const made = () =>
     store(k.hub)
       .projectsList()
       .filter((p) => p.projectId !== "notes")
       .map((p) => {
-        const row = db.query<{ only_me: number; owner_person: string | null }, [string]>("SELECT only_me, owner_person FROM project_settings WHERE project_id = ?").get(p.projectId);
-        return { title: p.title, path: p.workspaceRoot, onlyMe: row?.only_me === 1, owner: row?.owner_person ?? undefined };
+        const row = db.query<{ only_me: number }, [string]>("SELECT only_me FROM project_settings WHERE project_id = ?").get(p.projectId);
+        return { title: p.title, path: p.workspaceRoot, onlyMe: row?.only_me === 1 };
       });
   const mode = (m: "ask" | "checker" | "yolo") => k.ok(ada, "project_approvals_set", { ...NOTES, mode: m });
   return { ...k, n, db, a, wakes, send, prompt, answered, tap, made, mode };
@@ -85,7 +85,7 @@ test("a proposal is one card in every approval mode, YOLO too, and nothing is ma
         tool: "project_propose",
         action: "write",
         title: `Create the project “Billing ${i}”`,
-        input: JSON.stringify({ machineId: "devbox", onlyMe: true, path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
+        input: JSON.stringify({ machineId: "devbox", path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
       });
     }
     expect(k.made()).toEqual([]);
@@ -109,14 +109,14 @@ test("a person's Approve makes the project, theirs; the lead's call then returns
     expect(k.made()).toEqual([]);
     await k.tap(grace, id, "approve");
     await settle();
-    // It is Grace's, who tapped, as a project she made herself: a plain folder is Only me, its owner's.
-    expect(k.made()).toEqual([{ title: "Billing", path: `${ROOT}/billing`, onlyMe: true, owner: "p-grace" }]);
+    // Made as a project Grace, who tapped, made herself: open to everyone on the hub, with no repo too (D491).
+    expect(k.made()).toEqual([{ title: "Billing", path: `${ROOT}/billing`, onlyMe: false }]);
     expect(k.a.get(id)?.state).toBe("approved");
     expect(k.answered("p-1")).toEqual(["allow", undefined]);
     // The call the prompt let through returns what was made, and only once.
     const out = result(await k.send("th-lead", { op: "project_propose", title: "Billing" }));
     expect(out).toMatchObject({ created: true, title: "Billing", path: `${ROOT}/billing` });
-    expect(out?.next).toBe(`Billing is a project now, at ${ROOT}/billing on devbox. It is Grace's alone (Only me), in their list of projects; its own lead starts with their first message there.`);
+    expect(out?.next).toBe(`Billing is a project now, at ${ROOT}/billing on devbox, in everyone's list of projects; its own lead starts with their first message there.`);
     expect(refusal(await k.send("th-lead", { op: "project_propose", title: "Billing" }))?.code).toBe("forbidden");
     expect(k.made()).toHaveLength(1);
     // The same card approved again (its answer undelivered) makes no second one.
@@ -241,7 +241,7 @@ test("a proposal with a repo clones it once approved: the project exists when th
     }) as typeof ex.call;
     await k.mode("yolo");
     const { card } = await k.prompt("p-1", { title: "Billing", url: "https://github.com/acme/billing" });
-    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", onlyMe: false, path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
+    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
     // Nothing is cloned for a card.
     expect(k.n.calls.filter((c) => c.op === "repo_clone")).toEqual([]);
     await k.tap(ada, card?.requestId as string, "approve");
@@ -258,8 +258,8 @@ test("a proposal with a repo clones it once approved: the project exists when th
     cloned?.();
     await settle();
     await settle();
-    // A project with a repo is as one Ada added herself: shared, with no owner to keep it to.
-    expect(k.made()).toEqual([{ title: "Billing", path: "/home/me/src/billing", onlyMe: false, owner: undefined }]);
+    // A project with a repo is as one Ada added herself: open to everyone on the hub.
+    expect(k.made()).toEqual([{ title: "Billing", path: "/home/me/src/billing", onlyMe: false }]);
     expect(k.wakes).toHaveLength(1);
     expect(k.wakes[0]).toMatchObject({ kind: "line", line: "request" });
     expect((k.wakes[0] as { text: string }).text).toMatch(

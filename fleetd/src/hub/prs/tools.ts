@@ -6,7 +6,7 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { intOr, optionalText, positive, projectRef, repo as repoInput, text } from "../train/input.ts";
-import { clip, isoMs, otherNavis, people, project as projectRow, refKey } from "../train/seams.ts";
+import { clip, isoMs, project as projectRow } from "../train/seams.ts";
 import {
   agentReview,
   count,
@@ -79,19 +79,11 @@ async function prList(hub: Hub, caller: Caller, input: Record<string, unknown>) 
   };
 }
 
-/** The project whose PRs `repo` holds, refused unless the key may read it, and not another person's Only me project. */
+/** The project whose PRs `repo` holds, refused unless the key may read it. */
 function owner(hub: Hub, caller: Caller, repo: string): ProjectRef {
   const project = ownerOf(hub, repo);
   if (!project) throw new ToolError("not_found", `No project of this fleet lands PRs on ${repo}.`, "pr_list shows a project's PRs.");
   requireRole(caller, "read", project.machineId);
-  const me = caller.person?.personId ?? people.owner(hub.db.conn)?.personId;
-  if (otherNavis(hub.db.conn, me).some((n) => refKey(n) === refKey(project))) {
-    throw new ToolError(
-      "forbidden",
-      `${project.projectId} on ${project.machineId} is another person's Only me project: only its owner uses and manages it.`,
-      "Your own projects are in your list; make one with project_add.",
-    );
-  }
   return project;
 }
 

@@ -5,7 +5,6 @@ import type { ProjectRef, ProjectStatusRow } from "../../shared/contracts.ts";
 import { readable } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
-import { others } from "../navi/owner.ts";
 import { events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
 import { type Flip, Fresh, fresh } from "./fresh.ts";
@@ -30,8 +29,7 @@ export class Status {
 
   /** One row per project the caller reads, by title. */
   projectRows(caller: Caller): ProjectStatusRow[] {
-    const navis = others(this.hub.db, caller);
-    return this.all().filter((r) => readable(caller, r.projectRef.machineId) && !navis.has(r.projectRef));
+    return this.all().filter((r) => readable(caller, r.projectRef.machineId));
   }
 
   /** One project's row; undefined when the caller reads no such project. */

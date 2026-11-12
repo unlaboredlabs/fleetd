@@ -9156,36 +9156,6 @@
       ],
       "type": "string"
     },
-    "LeftProject": {
-      "description": "An Only-me project its owner left behind when removed from the hub: archived then, so its lead and automations stop,\nand listed to an owner or admin by name alone, to delete it (`project_remove`). Its chat and contents stay its\nowner's.",
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "owner": {
-          "$ref": "#/$defs/PersonRef",
-          "description": "The removed person whose it was."
-        },
-        "path": {
-          "description": "Its folder on its machine, which a delete may remove too.",
-          "type": "string"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "title",
-        "path",
-        "owner"
-      ],
-      "type": "object"
-    },
     "LinkProject": {
       "description": "One project a link reaches.",
       "properties": {
@@ -15020,14 +14990,6 @@
           "maxItems": 500,
           "type": "array"
         },
-        "left": {
-          "description": "The Only-me projects of people removed from the hub, by name alone: for an owner's or admin's human key,\nabsent for anyone else's and from older hubs.",
-          "items": {
-            "$ref": "#/$defs/LeftProject"
-          },
-          "maxItems": 500,
-          "type": "array"
-        },
         "me": {
           "$ref": "#/$defs/PersonId",
           "description": "The caller's person; absent for an agent key."
@@ -16459,10 +16421,6 @@
           "$ref": "#/$defs/MachineId",
           "description": "Absent: the best worker (see `project_discover.best`)."
         },
-        "onlyMe": {
-          "description": "Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain\nfolder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an\nexisting project it changes only as `project_settings_set` changes it.",
-          "type": "boolean"
-        },
         "path": {
           "pattern": "^/.",
           "type": "string"
@@ -17549,10 +17507,6 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "onlyMe": {
-          "description": "Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on\nthe hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which\nbecomes theirs.",
-          "type": "boolean"
-        },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
@@ -17790,21 +17744,13 @@
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",
-          "description": "Deprecated: `assistant` for an Only me project (`only_me`), sent for one release so older apps still show it\nas a Navi. New apps read `only_me`. Absent otherwise, from a node, and from an older hub."
+          "description": "Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a\nformer Navi. Absent from a node."
         },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
-        },
-        "onlyMe": {
-          "description": "Only me (D310), from the hub: only its `owner` sees and uses it. On for every former Navi. Absent: off, and\nfrom a node.",
-          "type": "boolean"
-        },
-        "owner": {
-          "$ref": "#/$defs/PersonId",
-          "description": "The person it belongs to (D215), from the hub; an Only me project is theirs alone. Absent for a project with\nno owner, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -24824,7 +24770,7 @@
           "type": "boolean"
         },
         "usable": {
-          "description": "With projectId: every item that project's work may use instead (its own, its owner's shared with it or of\nan Only me project, and the hub's), as Payments' card picker lists them.",
+          "description": "With projectId: every item that project's work may use instead (its own, those shared with it, and the\nhub's), as Payments' card picker lists them.",
           "type": "boolean"
         }
       },
@@ -25162,7 +25108,7 @@
       "oneOf": [
         {
           "const": "person",
-          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "description": "One person's: used by work they started, and projects it's shared with.",
           "type": "string"
         },
         {

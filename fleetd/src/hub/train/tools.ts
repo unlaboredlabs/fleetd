@@ -5,7 +5,7 @@ import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
 import { intOr, optionalProjectRef, optionalRepo, optionalState } from "./input.ts";
 import { ChangeRecords } from "./records.ts";
-import { cap, otherNavis, people, refKey } from "./seams.ts";
+import { cap } from "./seams.ts";
 
 /** The train's `{ code, message, fix }` as a tool error. */
 export type TrainError = { code: string; message: string; fix?: string };
@@ -23,9 +23,6 @@ export function register(tools: Registry): void {
     const state = optionalState(input, "state");
     const limit = intOr(input, "limit", 1, 100, 50);
     if (projectRef) requireRole(caller, "read", projectRef.machineId);
-    // Another person's Only me project's changes are theirs alone (D310).
-    const me = caller.person?.personId ?? people.owner(hub.db.conn)?.personId;
-    const navis = new Set(otherNavis(hub.db.conn, me).map(refKey));
     const records = new ChangeRecords(hub.db);
     const all = records
       .positioned(records.list({
@@ -34,7 +31,7 @@ export function register(tools: Registry): void {
         ...(repo !== undefined ? { repo } : {}),
         ...(state !== undefined ? { state } : {}),
       }))
-      .filter((c) => allows(caller, "read", c.projectRef.machineId) && !navis.has(refKey(c.projectRef)));
+      .filter((c) => allows(caller, "read", c.projectRef.machineId));
     const shown = cap(all, limit);
     const next = shown.truncated ? "Narrow the list with projectRef, repo or state." : "Only the train merges; events_wait for pr.merged.";
     return { changes: shown.items, next, ...(shown.truncated ? { truncated: true } : {}) };

@@ -111,7 +111,7 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
       "Add it in one project's settings: its lead asks you before each send.",
     );
   }
-  if (project && input.integration && !nodeCan(hub, project.machineId, CAP_ONE_LEAD_MODE) && !isNavi(hub, project)) {
+  if (project && input.integration && !nodeCan(hub, project.machineId, CAP_ONE_LEAD_MODE)) {
     // An older node runs this project's lead with full access, which would send unasked.
     throw new ToolError(
       "invalid",
@@ -230,9 +230,6 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
   if (problems.length > 0) next = `${next} ${problems.join(" ")}`;
   return { server: s.get(scope, input.name) ?? server, ...(missingOn.length > 0 ? { missingOn } : {}), next };
 }
-
-const isNavi = (hub: Hub, r: ProjectRef) =>
-  hub.db.conn.query("SELECT 1 FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1").get(r.machineId, r.projectId) !== null;
 
 /** Has each online node forget the secrets queued for it; one offline, or too old, is asked again next round. */
 export async function forgetQueued(hub: Hub): Promise<void> {

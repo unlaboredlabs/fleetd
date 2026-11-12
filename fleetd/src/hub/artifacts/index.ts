@@ -9,7 +9,6 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
 import type { LeadCall, LeadCaller } from "../leads/seams.ts";
-import { kept } from "../navi/store.ts";
 import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -99,15 +98,14 @@ export function get(db: HubDb, r: ProjectRef, name: string, version?: number): {
 /** A project's title, as everything a person reads names it (skills/calls.rs `title_of`). */
 export const titleOf = (hub: Hub, r: ProjectRef) => store(hub).projectGet(r)?.title ?? r.projectId;
 
-/** Who a version names: a task by its title, a Navi by its name, a project's lead as "Lead". */
+/** Who a version names: a task by its title, a project's lead as "Lead". */
 function publisher(hub: Hub, caller: LeadCaller): string {
-  const r = caller.projectRef;
   if (caller.agent.kind === "task") {
     const n = Number.parseInt(caller.agent.taskId.slice(1), 10) || 0;
     const row = hub.db.all<{ title: string | null }>("SELECT json_extract(data, '$.title') AS title FROM tasks WHERE n = ?", [n])[0];
     if (row?.title) return row.title;
   }
-  return kept(hub.db.conn, r)?.onlyMe ? titleOf(hub, r) : "Lead";
+  return "Lead";
 }
 
 /** The contracts' checks on an `artifact_publish` call. */

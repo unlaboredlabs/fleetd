@@ -10,7 +10,6 @@ import { leadWakes } from "../api/leads.ts";
 import { allowsEverywhere, requireHuman, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { mayUse } from "../navi/owner.ts";
 import { openIn, projectOf, workstreamGet } from "../orders/workstreams.ts";
 import { store } from "../store/hub_store.ts";
 import { decisions } from "./decisions.ts";
@@ -49,8 +48,7 @@ function canReadDecision(hub: Hub, caller: Caller, decision: Decision): boolean 
   } catch {
     return false;
   }
-  // Another person's Only me project's decisions are theirs alone (D310).
-  return r === undefined || (allows(caller, "read", r.machineId) && mayUse(hub.db, caller, r));
+  return r === undefined || allows(caller, "read", r.machineId);
 }
 
 const GLOBAL_REFUSED = "A global decision applies to every machine; this key has no operate grant on all of them.";

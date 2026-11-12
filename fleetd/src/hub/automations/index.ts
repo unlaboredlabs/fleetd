@@ -3,9 +3,9 @@
 // run opens an order for the project's lead (channel `automation`), which starts the work without a person's message.
 // One run at a time per automation: a schedule or Run now while its order is open is skipped and recorded; a webhook
 // call is kept with its body (D279), and every call kept meanwhile goes in one follow-up order once the open run ends.
-// A Navi's run closes its order by itself once the Navi's turn for it ends (D277). The scheduler sleeps until the
-// earliest schedule is due; one missed while the hub was down runs once, late, on its return. A one-time schedule runs
-// once and its automation is done (`doneAt`); one that comes due while another run is open waits (`fireWaiting`).
+// A run closes its order by itself once the lead's turn for it ends with nothing of it in flight (D277, D491); else the
+// lead closes it. The scheduler sleeps until the earliest schedule is due; one missed while the hub was down runs once,
+// late, on its return. A one-time schedule runs once and its automation is done (`doneAt`); one that comes due while another run is open waits (`fireWaiting`).
 //
 // A webhook URL is `<hub url>/hooks/<automationId>/<secret>`. The hub keeps the secret's SHA-256 only, compares in
 // constant time, and never logs the secret or the body; the body is kept with its run and given to the lead.
@@ -31,7 +31,6 @@ import { leads } from "../leads/index.ts";
 import { unknownProject } from "../leads/seams.ts";
 import { intake, type IntakeInput } from "../leads/workstreams.ts";
 import { clip } from "../leads/text.ts";
-import { of as naviOf } from "../navi/store.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -119,15 +118,36 @@ const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId &&
 /** The thread statuses a turn is going or queued in. */
 const BUSY_THREAD = new Set(["running", "waiting"]);
 
-/** Live, not a reviewer's: the tasks still at work on a Navi run's order (tasks/wire.rs `leftovers`). */
-function leftovers(hub: Hub, r: ProjectRef, w: string): string[] {
-  return hub.db
-    .all<{ id: string }>(
-      `SELECT 'T' || n AS id FROM tasks WHERE machine_id = ? AND project_id = ? AND workstream_id = ?
-         AND state IN ('queued', 'running', 'idle') AND ('T' || n) NOT IN (SELECT task_id FROM review_tasks)`,
-      [r.machineId, r.projectId, w],
+/**
+ * Whether anything of a run's order is still in flight: an agent of it (not a reviewer) queued, running or waiting,
+ * one of its done agents still waiting on CI or a merge, an approval or secret request of it open, or a PR of it on
+ * the train.
+ */
+function inFlight(hub: Hub, r: ProjectRef, w: string): boolean {
+  const [m, p] = [r.machineId, r.projectId];
+  const any = (sql: string, params: (string | number)[]) => hub.db.all(sql, params).length > 0;
+  return (
+    any(
+      `SELECT 1 FROM tasks WHERE machine_id = ? AND project_id = ? AND workstream_id = ?
+         AND state IN ('queued', 'running', 'idle') AND ('T' || n) NOT IN (SELECT task_id FROM review_tasks) LIMIT 1`,
+      [m, p, w],
+    ) ||
+    any(
+      `SELECT 1 FROM ci_waits c JOIN tasks t ON ('T' || t.n) = c.task_id
+         WHERE t.machine_id = ? AND t.project_id = ? AND t.workstream_id = ? LIMIT 1`,
+      [m, p, w],
+    ) ||
+    any(
+      `SELECT 1 FROM requests WHERE project_key = ? AND state IN ('open', 'approved')
+         AND json_extract(data, '$.workstreamId') = ? LIMIT 1`,
+      [`${m}/${p}`, w],
+    ) ||
+    any(
+      `SELECT 1 FROM changes WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.workstreamId') = ?
+         AND state NOT IN ('merged', 'refused', 'abandoned') LIMIT 1`,
+      [m, p, w],
     )
-    .map((row) => row.id);
+  );
 }
 
 /** A wake's request id, which names its run on the node (leads/wakes.rs `wake_request_id`). */
@@ -716,12 +736,12 @@ export class Automations {
     }
   }
 
-  // ---- a Navi's runs -------------------------------------------------------------------------------------------------
+  // ---- runs that close themselves ------------------------------------------------------------------------------------
 
-  /** Runs each lead thread was seen running (`navi_turns`' `ran`), by `<machine>/<thread>`. */
+  /** Runs each lead thread was seen running, by `<machine>/<thread>`. */
   private readonly ran = new Map<string, string[]>();
 
-  /** One followed thread event: the run it names remembered, and at a turn's end the Navi's runs it dealt with closed. */
+  /** One followed thread event: the run it names remembered, and at a turn's end the runs it dealt with closed. */
   async threadEvent(event: HubEvent): Promise<void> {
     const data = (event.data ?? undefined) as Record<string, unknown> | undefined;
     const thread = event.threadId ?? (typeof data?.threadId === "string" ? data.threadId : undefined);
@@ -737,18 +757,18 @@ export class Automations {
       seen.push(run);
       if (seen.length > RUNS_SEEN) seen.shift();
     }
-    if (event.type !== "thread.started" && event.type !== "thread.waiting") await this.closeNaviRuns(lead.projectRef, [...seen]);
+    if (event.type !== "thread.started" && event.type !== "thread.waiting") await this.closeRuns(lead.projectRef, [...seen]);
   }
 
   /**
-   * A Navi's automation runs close themselves (D277), so one its lead never closed can't skip every later run. Once the
-   * lead's thread has no turn going or queued, a run closes whose order the lead was given in a message whose own run
-   * has been seen (`ran`, or the thread's latest run): its first message for an order opened by then, else its latest
-   * wake for one opened by that wake. A run whose order still has agents at work waits for a later turn end.
+   * An automation's run closes itself (D277, in every project since D491), so one its lead never closed can't skip
+   * every later run. Once the lead's thread has no turn going or queued, a run closes whose order the lead was given in
+   * a message whose own run has been seen (`ran`, or the thread's latest run): its first message for an order opened by
+   * then, else its latest wake for one opened by that wake. A run whose order still has anything in flight (`inFlight`)
+   * stays open: the lead closes it, or a later turn end does once nothing is left.
    */
-  async closeNaviRuns(r: ProjectRef, ran: string[]): Promise<void> {
+  async closeRuns(r: ProjectRef, ran: string[]): Promise<void> {
     const hub = this.hub;
-    if (!naviOf(hub.db.conn, r)) return;
     const lead = leads(hub).records.leadGet(r);
     if (!lead) return;
     const thread = { machineId: r.machineId, threadId: lead.threadId };
@@ -774,11 +794,11 @@ export class Automations {
       // One opened after the last message is the next turn's. The same millisecond counts as before.
       const order = this.workstream(ws);
       const seen = order?.state === "open" && order.createdAt <= sent;
-      if (!seen || leftovers(hub, r, ws).length > 0) continue;
+      if (!seen || inFlight(hub, r, ws)) continue;
       try {
         await intake(hub).close(r, ws, "the lead's turn for this run ended", `automation:${run.automationId}`);
       } catch (error) {
-        console.info(`Navi automation run left open (${ws}): ${(error as Error).message}`);
+        console.info(`automation run left open (${ws}): ${(error as Error).message}`);
         continue;
       }
       try {
@@ -786,7 +806,7 @@ export class Automations {
         const a = this.row(settled.automationId);
         if (a) this.runEvent(a, settled, `closed ${ws} once the lead's turn ended`);
       } catch (error) {
-        console.warn("Navi automation run not settled:", (error as Error).message);
+        console.warn("automation run not settled:", (error as Error).message);
       }
     }
   }
@@ -939,7 +959,7 @@ export class Automations {
 
   /**
    * Deletes the automations of projects removed while the hub was down, recovers runs a stop left without their order,
-   * then runs the scheduler and follows project removals, Navi turn ends and closed orders, until the hub stops.
+   * then runs the scheduler and follows project removals, leads' turn ends and closed orders, until the hub stops.
    */
   start(): void {
     if (this.started) return;
@@ -963,7 +983,7 @@ export class Automations {
         case "thread.failed":
         case "thread.interrupted":
         case "thread.usage_limited":
-          void this.then("a Navi's turn", () => this.threadEvent(event));
+          void this.then("a lead's turn", () => this.threadEvent(event));
           break;
       }
     });
@@ -977,7 +997,7 @@ export class Automations {
       await this.recoverAll();
       await this.deliverAll();
       await this.fireWaiting();
-      for (const lead of leads(this.hub).records.leadsList()) await this.closeNaviRuns(lead.projectRef, []);
+      for (const lead of leads(this.hub).records.leadsList()) await this.closeRuns(lead.projectRef, []);
     }).then(() => this.scheduler());
   }
 }

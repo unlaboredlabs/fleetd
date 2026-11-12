@@ -11,13 +11,11 @@ import { publicKeyOf } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
 import { allows } from "../auth/index.ts";
-import { mayUse } from "../navi/owner.ts";
 import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.ts";
-import { forLead, token } from "../onepassword/index.ts";
-import { ClaudeAccountStore, whoseForLead } from "../claude_accounts/index.ts";
+import { token } from "../onepassword/index.ts";
 import { cleanSites, FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";
 import { isScope, vault, type Viewer } from "./index.ts";
 import { openToHub, saveItem, summary } from "./items.ts";
@@ -83,14 +81,8 @@ function rememberCandidates(hub: Hub, person: string, items: Candidate[]): void 
   seen(hub).set(person, mine);
 }
 
-/** The person whose 1Password a lead imports from: a Navi's owner, else the hub's owner. */
-function leadPerson(hub: Hub, r: ProjectRef): string | undefined {
-  const owner = forLead(hub.db, r);
-  if (owner !== undefined) return owner;
-  try {
-    const whose = whoseForLead(hub.db, new ClaudeAccountStore(hub.db).setup(), r);
-    if ("person" in whose) return whose.person;
-  } catch {}
+/** The person whose 1Password a lead imports from: the hub's owner, as for any project's lead (D491). */
+function leadPerson(hub: Hub): string | undefined {
   return (
     hub.db.conn.query<{ person_id: string }, []>("SELECT person_id FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms LIMIT 1").get()
       ?.person_id ?? undefined
@@ -107,7 +99,7 @@ const leadOnly = (caller: LeadCaller) => {
 export async function propose(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Record<string, unknown>> {
   leadOnly(caller);
   const r = caller.projectRef;
-  const person = leadPerson(hub, r);
+  const person = leadPerson(hub);
   if (person === undefined) throw new ToolError("failed", "Nobody's 1Password to import from on this hub.");
   const refs = Array.isArray(call.refs) ? [...new Set(call.refs.map(String))] : [];
   if (refs.length === 0 || refs.length > 50 || refs.some((x) => !OP_ITEM.test(x))) {
@@ -153,7 +145,7 @@ export async function importItems(hub: Hub, v: Viewer, input: ImportInput): Prom
       )
       .get(input.proposalId);
     const r = row ? { machineId: row.machine_id, projectId: row.project_id } : undefined;
-    if (!row || !r || !allows(v.caller, "operate", r.machineId) || !mayUse(hub.db, v.caller, r)) {
+    if (!row || !r || !allows(v.caller, "operate", r.machineId)) {
       throw new ToolError("not_found", `No import ${input.proposalId}.`);
     }
     if (row.state !== "open") throw new ToolError("invalid", `That import is ${row.state} already.`);
@@ -230,7 +222,7 @@ export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);
   calls.register("vault_import_search", async (caller, call) => {
     leadOnly(caller);
-    const person = leadPerson(hub, caller.projectRef);
+    const person = leadPerson(hub);
     if (person === undefined) return { items: [], error: "Nobody's 1Password to search on this hub." };
     const kinds = Array.isArray(call.kinds) ? (call.kinds as VaultKind[]) : undefined;
     return await search(hub, person, typeof call.query === "string" ? call.query : "", kinds);

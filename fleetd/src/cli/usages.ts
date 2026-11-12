@@ -86,18 +86,15 @@ export const GITHUB_APP_USAGE = `  github-app
 `;
 
 export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-         [--use-existing] [--only-me | --no-only-me] [--yes] [--hub <url>]
+         [--use-existing] [--yes] [--hub <url>]
              add a project: a checkout or a plain folder on a machine (this one by default),
              or a GitHub repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one.
-             --only-me: only you see and use it; without it or --no-only-me, on for a plain
-             folder, off for a clone or a repo folder
-  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init]
-         [--only-me | --no-only-me] [--hub <url>]
+             Everyone on the hub sees and uses it, as every project
+  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
              start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
-             repo, unless --git-init; add a repo later with project repo add. Only me unless
-             --git-init or --no-only-me
+             repo, unless --git-init; add a repo later with project repo add
   project list [--archived] [--machine <id>] [--hub <url>]
   project archive <machine>/<project> [--hub <url>]
              its lead stops and doesn't start again; its chat, memory and folder stay
@@ -140,10 +137,10 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
              next start. Deleting the lead's puts leads back on the default
 `;
 
-export const NAVI_USAGE = `  navi ...   the old name of fleetd project (project add --new <name> --only-me,
+export const NAVI_USAGE = `  navi ...   the old name of fleetd project (project add --new <name>,
              project list, project archive, project unarchive), kept for one release
   navi create <name> [--machine <id>] [--hub <url>]
-             the old project add --new <name> --only-me: a project only you see, in its own
+             the old project add --new <name>: a new project, in its own
              folder (navi/<name> under the machine's fleetd home; the least busy worker by default)
   navi list [--archived] [--machine <id>] [--hub <url>]
   navi rename <machine>/<project> <name> [--hub <url>]

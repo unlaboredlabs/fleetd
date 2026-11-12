@@ -5,7 +5,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows, isoMs } from "../auth/index.ts";
-import { others, Refs } from "../navi/owner.ts";
+import { Refs } from "../navi/owner.ts";
 import { me } from "../sidebar_order/store.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { kept, named } from "./rules.ts";
@@ -13,16 +13,15 @@ import { putSections, sectionsOf } from "./store.ts";
 
 export { MAX_NAME, MAX_SECTIONS } from "./rules.ts";
 
-/** The chats `caller` has: every project still there on a machine the key reads, but another person's Only me ones. */
+/** The chats `caller` has: every project still there on a machine the key reads. */
 function theirs(hub: Hub, caller: Caller): (r: ProjectRef) => boolean {
-  const navis = others(hub.db, caller);
   const there = new Refs(
     hub.db.conn
       .query<{ machine_id: string; project_id: string }, []>("SELECT machine_id, project_id FROM projects")
       .all()
       .map((p) => ({ machineId: p.machine_id, projectId: p.project_id })),
   );
-  return (r) => allows(caller, "read", r.machineId) && there.has(r) && !navis.has(r);
+  return (r) => allows(caller, "read", r.machineId) && there.has(r);
 }
 
 export function register(tools: Registry): void {

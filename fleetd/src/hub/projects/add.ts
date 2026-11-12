@@ -6,7 +6,6 @@ import type {
   GitHubRepo,
   HubEventType,
   MachineId,
-  PersonId,
   ProjectAddInput,
   ProjectAddOutput,
   ProjectId,
@@ -27,8 +26,6 @@ import { projectUpsert } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/index.ts";
 import { startNew as startApprovals } from "../navi/checker.ts";
-import { who } from "../navi/owner.ts";
-import { setOnlyMe as storeOnlyMe } from "../navi/store.ts";
 import * as repos from "../repos/store.ts";
 import { type EventLog, events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -50,7 +47,6 @@ import {
   targetMachine,
 } from "./discover.ts";
 import { build, cutPath, fitAdded, fitFailed, folder, noAnswers, cloneProblem, repoKeyOf } from "./inspect.ts";
-import { setOnlyMe } from "./settings.ts";
 import { type Last, namesFolder, progressDue, slugOr } from "./adding.ts";
 
 export { namesFolder, progressDue, slugOr } from "./adding.ts";
@@ -59,35 +55,6 @@ export const now = (hub: Hub) => isoMs(hub.clock.now());
 
 const stripSlash = (p: string) => (p.endsWith("/") ? p.slice(0, -1) : p);
 const lastPart = (p: string) => p.split("/").pop() ?? p;
-
-/** Only me as `project_add` sets it (D310): what the call asked, and whose the project becomes when it is on. */
-export class OnlyMe {
-  constructor(
-    readonly asked: boolean | undefined,
-    readonly owner: PersonId | undefined,
-    readonly caller: Caller,
-  ) {}
-
-  static of(hub: Hub, caller: Caller, asked: boolean | undefined): OnlyMe {
-    return new OnlyMe(asked, who(hub.db.conn, caller), caller);
-  }
-
-  /**
-   * Sets it on a project just added (`created`): as asked, else on for one with no repo, and the caller's. An existing
-   * project keeps its own unless asked, and then changes only as `project_settings_set` changes it: by its owner or an
-   * admin, from a person's own device.
-   */
-  apply(hub: Hub, r: ProjectRef, created: boolean, git: boolean): void {
-    if (!created) {
-      if (this.asked === undefined) return;
-      const project = store(hub).projectGet(r);
-      if (!project) throw unknownProject(r);
-      setOnlyMe(hub, this.caller, project, this.asked);
-      return;
-    }
-    storeOnlyMe(hub.db.conn, r, this.asked ?? !git, this.owner);
-  }
-}
 
 /** A branch name as the contracts take one (`Line<1, 250>`). */
 const isLine = (s: string) => s.length >= 1 && s.length <= 250 && !/[\r\n]/.test(s);
@@ -146,7 +113,6 @@ async function registerAt(
   facts: RepoFacts,
   inspect: ProjectInspect,
   addId: string | undefined,
-  onlyMe: OnlyMe,
 ): Promise<{ projectId: ProjectId; created: boolean; inspect: ProjectInspect }> {
   const path = stripSlash(given);
   const name = lastPart(path);
@@ -155,8 +121,6 @@ async function registerAt(
   const projectId = existing ?? newUuid();
   const named = title ?? name;
   const project = { machineId: m, projectId };
-  // An existing project's Only me first: refused, the add changes nothing, its name included.
-  if (!created) onlyMe.apply(hub, project, false, facts.isGit);
   if (created || named !== name) {
     await projectUpsert(hub, m, projectId, named, path).catch((e) => {
       throw fromExecutor(e);
@@ -165,10 +129,7 @@ async function registerAt(
   bindScope(hub, m, projectId, facts);
   // A git checkout is the project's own repo, with a remote or without; a plain folder holds none.
   if (facts.isGit) ensureOwn(hub, project, path, "the project's own repo");
-  if (created) {
-    onlyMe.apply(hub, project, true, facts.isGit);
-    startApprovals(hub.db.conn, project);
-  }
+  if (created) startApprovals(hub.db.conn, project);
   // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
   const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title: named, path, created, inspect });
   appendAdded(hub, m, projectId, `${named} added on ${m}: ${inspect.leadNeeds}`, data);
@@ -212,14 +173,13 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
   const trimmed = input.title?.trim();
   const title = trimmed === undefined || trimmed === "" ? undefined : trimmed;
   const dryRun = input.dryRun === true;
-  const onlyMe = OnlyMe.of(hub, caller, input.onlyMe);
-  if (input.create === true) return create(hub, m, input, dryRun, onlyMe);
+  if (input.create === true) return create(hub, m, input, dryRun);
   if (input.path !== undefined) {
     const path = stripSlash(input.path);
     const facts = await checkout(hub, m, path);
     const inspect = await inspectCheckout(hub, facts);
     if (dryRun) return dry(m, path, inspect);
-    const added = await registerAt(hub, m, path, title, facts, inspect, undefined, onlyMe);
+    const added = await registerAt(hub, m, path, title, facts, inspect, undefined);
     return {
       next: `${added.inspect.leadNeeds}. Write to its lead with chat_send; the lead starts with the first message.`,
       machineId: m,
@@ -238,7 +198,7 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
     if (target.sameRemote && input.useExisting === true) {
       const facts = await checkout(hub, m, target.path);
       const inspect = await inspectCheckout(hub, facts);
-      const added = await registerAt(hub, m, target.path, title, facts, inspect, undefined, onlyMe);
+      const added = await registerAt(hub, m, target.path, title, facts, inspect, undefined);
       return {
         next: added.inspect.leadNeeds,
         machineId: m,
@@ -252,7 +212,7 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
   }
   const run = clones(hub).start();
   const path = target.path;
-  void cloneAndRegister(hub, m, repo, path, intoProject(hub, m, title, onlyMe, end), run);
+  void cloneAndRegister(hub, m, repo, path, intoProject(hub, m, title, end), run);
   return {
     next: `Cloning into ${path} on ${m}. Follow events_wait for project.clone_progress, then project.added or project.add_failed with data.addId ${run.addId}.`,
     machineId: m,
@@ -286,7 +246,7 @@ function folderRefused(m: MachineId, path: string) {
  * `project_add` with `create`: the node makes the folder (`path`, else `<projectsRoot>/<name>`), empty or new, and
  * `git init`s it when asked; then it is added as a `path` is, a plain folder with no repo unless it was.
  */
-async function create(hub: Hub, m: MachineId, input: ProjectAddInput, dryRun: boolean, onlyMe: OnlyMe): Promise<ProjectAddOutput> {
+async function create(hub: Hub, m: MachineId, input: ProjectAddInput, dryRun: boolean): Promise<ProjectAddOutput> {
   if (!link(hub).can(m, CAP_FOLDER_MAKE)) throw cantMake(m);
   const title = input.title?.trim();
   let path: string;
@@ -310,7 +270,7 @@ async function create(hub: Hub, m: MachineId, input: ProjectAddInput, dryRun: bo
   path = await folderMake(hub, m, path, gitInit, false).catch(folderRefused(m, path));
   const facts = await checkout(hub, m, path);
   const inspect = await inspectCheckout(hub, facts);
-  const added = await registerAt(hub, m, path, title, facts, inspect, undefined, onlyMe);
+  const added = await registerAt(hub, m, path, title, facts, inspect, undefined);
   return {
     next: `${added.inspect.leadNeeds}. Write to its lead with chat_send; project_repo_add adds a repo later.`,
     machineId: m,
@@ -350,10 +310,10 @@ export type CloneInto = {
   failed?(problem: ProjectProblem): void;
 };
 
-function intoProject(hub: Hub, m: MachineId, title: string | undefined, onlyMe: OnlyMe, end?: CloneEnd): (path: string) => CloneInto {
+function intoProject(hub: Hub, m: MachineId, title: string | undefined, end?: CloneEnd): (path: string) => CloneInto {
   return (path) => ({
     add: async (p, facts, inspect, addId) => {
-      const added = await registerAt(hub, m, p, title, facts, inspect, addId, onlyMe);
+      const added = await registerAt(hub, m, p, title, facts, inspect, addId);
       try {
         end?.added(added.projectId, p);
       } catch (error) {

@@ -19,7 +19,6 @@ import { isHuman, readable, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { cap, unknownProject } from "../api/refusals.ts";
-import { mayUse, others } from "../navi/owner.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { bindWith, type NodeGit, nodeGit, within } from "./bind.ts";
 import { matcherKeys, matcherScope, matchesIn } from "./check.ts";
@@ -43,7 +42,7 @@ export function register(tools: Registry): void {
     const notFound = () => new ToolError("not_found", `There is no claim ${id}.`, "work_list lists the claims in flight.");
     const claim = work(hub).get(id);
     if (!claim) throw notFound();
-    if (claim.projectRef && (!readable(caller, claim.projectRef.machineId) || !mayUse(hub.db, caller, claim.projectRef))) throw notFound();
+    if (claim.projectRef && (!readable(caller, claim.projectRef.machineId))) throw notFound();
     if (claim.owner.keyId !== caller.keyId && !isHuman(caller)) {
       throw new ToolError("forbidden", `${id} is held by another key.`, "Only its owner, or a person's human key, can end it.");
     }
@@ -159,7 +158,6 @@ export async function claimOn(hub: Hub, caller: Caller, input: WorkClaimInput, n
 export function settle(hub: Hub, caller: Caller, input: WorkClaimInput, scope: WorkScope, items: WorkItem[]): WorkClaimOutput {
   const owner = ownerOf(caller);
   const person = owner.kind === "human_session";
-  const navis = others(hub.db, caller);
   const w = work(hub);
   const intent = intentOf(owner, input, scope);
   const now = hub.clock.now();
@@ -184,7 +182,6 @@ export function settle(hub: Hub, caller: Caller, input: WorkClaimInput, scope: W
       const id = task.taskId ?? task.id;
       return answer(
         caller,
-        navis,
         found.filter((m) => m.item.id !== task.id),
         "yours",
         undefined,
@@ -203,24 +200,24 @@ export function settle(hub: Hub, caller: Caller, input: WorkClaimInput, scope: W
     if (addedKeys.length > 0 || addedPaths.length > 0) {
       const ms = matcherScope(scope);
       const added: Intent = { owner: owner.keyId, title: "", keys: addedKeys.flatMap((k) => matcherKeys(k, ms)).map(declared), paths: addedPaths };
-      const decided = decide(caller, navis, person, input, matchesIn(items, added, scope));
+      const decided = decide(caller, person, input, matchesIn(items, added, scope));
       if ("refused" in decided) return decided.refused;
     }
     const claim = revise(hub, w, own.claimId, next, observedOf(input, now)) ?? own;
-    return answer(caller, navis, found, "renewed", claim, `renewed ${claim.claimId}`, nextDone(claim.claimId));
+    return answer(caller, found, "renewed", claim, `renewed ${claim.claimId}`, nextDone(claim.claimId));
   }
-  const decided = decide(caller, navis, person, input, found);
+  const decided = decide(caller, person, input, found);
   if ("refused" in decided) return decided.refused;
   const saved = w.claimIf(next, observedOf(input, now), (claims) => {
     const again = matchesIn(withClaims(items, claims), intent, scope);
-    const d = decide(caller, navis, person, input, again);
+    const d = decide(caller, person, input, again);
     if ("refused" in d) return d;
     return { ok: [d.note, { note: d.note, found: again }] as const };
   });
   if ("refused" in saved) return saved.refused;
   const id = saved.claim.claimId;
   const message = saved.out.note !== undefined ? `claimed ${id} (${saved.out.note})` : `claimed ${id}`;
-  return answer(caller, navis, saved.out.found, "claimed", saved.claim, message, nextDone(id));
+  return answer(caller, saved.out.found, "claimed", saved.claim, message, nextDone(id));
 }
 
 /** work_list, reading unbound projects through `node`. */
@@ -229,9 +226,8 @@ export async function listOn(hub: Hub, caller: Caller, input: WorkListInput, nod
   const [scope, warning] = await scopeFor(hub, caller, node, input.repo, input.projectRef, input.base);
   const w = work(hub);
   const all = input.paths === false ? w.inFlightStored(scope) : await w.inFlight(scope);
-  const navis = others(hub.db, caller);
   const items = cap(
-    all.filter((i) => visible(caller, navis, i)),
+    all.filter((i) => visible(caller, i)),
     ITEMS_MAX,
   );
   const next =

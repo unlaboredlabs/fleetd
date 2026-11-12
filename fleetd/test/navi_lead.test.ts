@@ -167,7 +167,7 @@ test("a purchase is recorded with no ask, filled once, and its fill is a quiet l
   const caps = (link(hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities;
   caps.set("devbox", new Set([CAP_NO_ASK_FILL]));
   // The card is kept in the project's settings row, which a Navi has (store.rs `set_card` only updates it).
-  navis.put(hub.db.conn, navi, { keyId: "k1", name: "desk" }, undefined, 0);
+  navis.put(hub.db.conn, navi, { keyId: "k1", name: "desk" }, 0);
   const buy = (c: Record<string, unknown>) => call(() => purchases.answer(hub, lead(navi), c as never));
   expect(await buy(shopping("www.coinbase.com"))).toEqual([
     "forbidden",
@@ -234,7 +234,7 @@ test("a deleted Navi is erased once the hub sees it gone, its removal kept witho
     const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => Date.parse(AT) });
     const r = ref("p-secret-diary");
     project(hub, r, { title: "Secret diary" });
-    navis.put(hub.db.conn, r, { keyId: "k1", name: "desk" }, undefined, 0);
+    navis.put(hub.db.conn, r, { keyId: "k1", name: "desk" }, 0);
     chat(hub).add(r, { author: "human", text: "my dentist is Dr Lee" });
     const memory = join(home.dir, "memory", "devbox", "p-secret-diary");
     mkdirSync(memory, { recursive: true });

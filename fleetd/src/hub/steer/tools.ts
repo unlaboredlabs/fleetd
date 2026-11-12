@@ -12,7 +12,6 @@ import { oneLine } from "../leads/text.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { ChangeRecords, parsePrUrl } from "../train/records.ts";
 import { unknownProject } from "../api/refusals.ts";
-import { mayUse } from "../navi/owner.ts";
 import { list } from "./dm.ts";
 import { send, withdraw } from "./index.ts";
 
@@ -72,11 +71,10 @@ export function register(tools: Registry): void {
     return { ...steer, ...(n === undefined ? {} : { next: n }) };
   });
 
-  // What a project's agents wrote to each other: any key that reads its machine, but another person's Only me project
-  // is theirs alone (D310).
+  // What a project's agents wrote to each other: any key that reads its machine.
   tools.add("agent_messages", async (hub, caller, input) => {
     const r = input.projectRef;
-    if (!allows(caller, "read", r.machineId) || !mayUse(hub.db, caller, r)) throw unknownProject(r);
+    if (!allows(caller, "read", r.machineId)) throw unknownProject(r);
     const page = list(hub.db, r, input.taskId, input.before, input.limit ?? 50);
     return { ...page, ...(page.more ? { next: "Older ones remain: call again with before, the id of the oldest here." } : {}) };
   });

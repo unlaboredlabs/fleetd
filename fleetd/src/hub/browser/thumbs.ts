@@ -9,7 +9,6 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows, isoMs } from "../auth/index.ts";
 import { live, runsOn } from "./live.ts";
-import { mayUse } from "./reads.ts";
 import { link } from "../link/index.ts";
 import { appWs } from "./app.ts";
 import type { AppConn } from "./app_seam.ts";
@@ -91,9 +90,8 @@ export async function shrink(frame: BrowserFrame): Promise<{ jpeg: Uint8Array; w
   }
 }
 
-/** Whether `caller` may see a screen of `project`'s: it reads the project's machine, and it isn't another's Navi. */
-export const maySee = (hub: Hub, caller: Caller, project: ProjectRef) =>
-  allows(caller, "read", project.machineId) && mayUse(hub.db, caller, project);
+/** Whether `caller` may see a screen of `project`'s: it reads the project's machine. */
+export const maySee = (caller: Caller, project: ProjectRef) => allows(caller, "read", project.machineId);
 
 /**
  * One round: a short watch of each live screen whose node can send its frames, each ended by its frame or by
@@ -154,7 +152,7 @@ export function forward(hub: Hub, thumbs: Thumbs, caller: Caller, conn: AppConn)
     const key = `${p.projectRef.machineId}\u0000${p.projectRef.projectId}`;
     let ok = seen.get(key);
     if (ok === undefined) {
-      ok = maySee(hub, caller, p.projectRef);
+      ok = maySee(caller, p.projectRef);
       seen.set(key, ok);
     }
     if (ok) appWs(hub).sendTo(conn, { ...p.thumb, t: "screen_thumb" });

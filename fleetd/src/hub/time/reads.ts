@@ -20,8 +20,6 @@ import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
-import { Refs, who } from "../navi/owner.ts";
-import * as navis from "../navi/store.ts";
 import { isoMs } from "../store/time.ts";
 import { type Digest, runsOf } from "./digest.ts";
 import { ANY_ROLE, built, digestRead, type Merged, type Selection } from "./hours.ts";
@@ -381,15 +379,14 @@ function coverage(c: Database, scope: TimeScope, l: Loaded, path: CriticalPath |
   };
 }
 
-/** Whether the key may read `r`: on a machine it has a grant on, and not of another person's Only me project. */
-function mayRead(caller: Caller, others: Refs, r: Row): boolean {
-  const ofNavi = r.machineId !== undefined && r.projectId !== undefined && others.has({ machineId: r.machineId, projectId: r.projectId });
-  return !ofNavi && (r.machineId === undefined || allows(caller, "read", r.machineId));
+/** Whether the key may read `r`: on a machine it has a grant on. */
+function mayRead(caller: Caller, r: Row): boolean {
+  return r.machineId === undefined || allows(caller, "read", r.machineId);
 }
 
 function readable(j: Reading, l: Loaded): Loaded {
-  if (j.others.size === 0 && allowsEverywhere(j.caller, "read")) return l;
-  const keep = l.rows.map((r) => mayRead(j.caller, j.others, r));
+  if (allowsEverywhere(j.caller, "read")) return l;
+  const keep = l.rows.map((r) => mayRead(j.caller, r));
   return {
     rows: l.rows.filter((_, i) => keep[i]),
     metas: l.metas.filter((_, i) => keep[i]),
@@ -433,9 +430,7 @@ function periodBreakdown(j: Reading, scope: TimeScope, since: number, until: num
 
 /** The digests and spans a breakdown of `scope` reads (hours.ts); none for an order, a task or a thread. */
 function selectionOf(j: Reading, scope: TimeScope, role: string | undefined): Selection | undefined {
-  const mayRead = (machineId: string | undefined, projectId: string | undefined) =>
-    !(machineId !== undefined && projectId !== undefined && j.others.has({ machineId, projectId })) &&
-    (machineId === undefined || allows(j.caller, "read", machineId));
+  const mayRead = (machineId: string | undefined) => machineId === undefined || allows(j.caller, "read", machineId);
   let s: Selection;
   switch (scope.kind) {
     case "fleet":
@@ -595,15 +590,15 @@ export type TimeJob =
   | { tool: "time_breakdown"; input: ToolMap["time_breakdown"]["input"]; caller: Caller; now: number }
   | { tool: "time_insights"; input: ToolMap["time_insights"]["input"]; caller: Caller; now: number };
 
-/** What a read has to hand: its connection, its key, the Only me projects that key may not see, and now. */
-type Reading = { c: Database; caller: Caller; others: Refs; now: number; spansOnly: boolean };
+/** What a read has to hand: its connection, its key, and now. */
+type Reading = { c: Database; caller: Caller; now: number; spansOnly: boolean };
 
 /**
  * The job's answer, read on `c`; throws the ToolError the tool answers with. `spansOnly` reads every span instead of
  * the hourly digests, as the test that holds the two answers equal does.
  */
 export function answer(c: Database, job: TimeJob, spansOnly = false): unknown {
-  const j: Reading = { c, caller: job.caller, others: new Refs(navis.others(c, who(c, job.caller))), now: job.now, spansOnly };
+  const j: Reading = { c, caller: job.caller, now: job.now, spansOnly };
   switch (job.tool) {
     case "time_spans":
       return spans(j, job.input);
@@ -630,7 +625,7 @@ function spans(j: Reading, input: ToolMap["time_spans"]["input"]): ToolMap["time
     const wanted = new Set(ruleSpans(ri, input.rule).filter((i) => i > after));
     rows = ri.rows.map((r, i): [Row, Meta] => [r, metas[i] as Meta]).filter(([r]) => wanted.has(r.id)).slice(0, limit + 1);
   } else rows = readMeta(c, f, limit + 1);
-  rows = rows.filter(([r]) => mayRead(caller, j.others, r));
+  rows = rows.filter(([r]) => mayRead(caller, r));
   const cov = coverage(c, input.scope, { rows: rows.map(([r]) => r), metas: rows.map(([, m]) => m), weights: rows.map(() => 1), truncated: false }, undefined, since, now);
   const more = rows.length > limit;
   const shown = rows.slice(0, limit);

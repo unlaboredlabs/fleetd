@@ -12,7 +12,6 @@ export type PeopleOnly =
   | "vault"
   | "mcp_servers"
   | "prompts"
-  | "only_me"
   | "hub_links"
   | "delete"
   | "create"
@@ -28,7 +27,6 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   vault: "Only a person adds, changes or removes vault items: Settings › You › Vault or the project's Vault in the app. For a secret you need, call request_secret.",
   mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Every project › Tools & skills, or the project's own settings, in the app.",
   prompts: "Only a person edits prompts: the project's settings › Prompts in the desktop app. The project's Instructions are yours to write: project_setup with instructions.",
-  only_me: "Only the project's owner or an admin turns Only me on or off: the project's settings in the app.",
   hub_links: "Only a person links hubs: Settings › You › Hubs in the app.",
   delete: "Only a person deletes a project: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
   create:
@@ -46,7 +44,6 @@ const NAMES: Record<PeopleOnly, string[]> = {
   vault: ["vault", "vaultitem", "vaultitems", "secret", "secrets", "login", "logins"],
   mcp_servers: ["mcp", "mcpserver", "mcpservers"],
   prompts: ["prompt", "prompts"],
-  only_me: ["onlyme", "visibility", "private"],
   hub_links: ["hublink", "hublinks", "linkedhub", "linkedhubs", "hubs"],
   delete: ["delete", "deleted", "remove", "destroy"],
   create: ["create", "new", "createproject", "newproject"],

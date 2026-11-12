@@ -2,7 +2,6 @@
 // hub), sharing, the trash, the limits, and that the database holds no value in the clear.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
-import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { OTHER, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
 import { refusal } from "./people-kit.ts";
 
@@ -67,11 +66,11 @@ test("project items: everyone who sees the project lists them; operate changes t
   expect((await list(k.ownerDevice, { ...OTHER })).map((i) => i.itemId)).toEqual([]);
 });
 
-test("an Only me project's items are its owner's alone", async () => {
-  setOnlyMe(k.hub.db.conn, OTHER, true, k.member.personId);
+test("a project that was Only me: its items are everyone's who sees the project (D491)", async () => {
+  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
   const item = await save(k.memberDevice, { kind: "env", scope: "project", ...OTHER, envName: "API_KEY", sealed: k.sealToHub({ value: "planted-env-7q" }) });
   expect((await list(k.memberDevice)).some((i) => i.itemId === item.itemId)).toBe(true);
-  expect((await list(k.ownerDevice)).some((i) => i.itemId === item.itemId)).toBe(false);
+  expect((await list(k.ownerDevice)).some((i) => i.itemId === item.itemId)).toBe(true);
   expect((await reveal(k.memberDevice, item.itemId, ["value"])).value).toBe("planted-env-7q");
 });
 

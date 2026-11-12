@@ -1,8 +1,8 @@
 // Environment variables from the vault to the nodes (vault-design §4.4). The vault is the source of truth; the hub
 // works out each project's and each order's variables and writes them through today's node operations, sealed to that
 // machine per delivery, so the node's spawn, masking and the Rust node stay as they are:
-// - a project's file (`project_env`): its project variables, then its Only me owner's person variables under other
-//   names, and the variables of every project whose repo checkout it is (W79);
+// - a project's file (`project_env`): its project variables, then the variables of every project whose repo checkout
+//   it is (W79);
 // - an order's file (`secret_deliver` to `order:<machine>:<W>`): its order variables, then the person variables of
 //   whoever started it, under names neither the order nor the project has;
 // - a `request_secret` env:/file: sink: the item's value, written where the sink says.
@@ -62,17 +62,6 @@ function layered(...layers: ItemRow[][]): Map<string, ItemRow> {
   return out;
 }
 
-/** The Only me owner of `r`, whose person variables its sessions get. */
-function onlyMeOwner(hub: Hub, r: ProjectRef): string | undefined {
-  return (
-    hub.db.conn
-      .query<{ owner_person: string | null }, [string, string]>(
-        "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
-      )
-      .get(r.machineId, r.projectId)?.owner_person ?? undefined
-  );
-}
-
 function startedBy(hub: Hub, order: string): string | undefined {
   const n = /^W([1-9][0-9]{0,9})$/.exec(order)?.[1];
   if (n === undefined) return undefined;
@@ -88,14 +77,14 @@ const envOf = (v: Vault, where: string, params: (string | null)[]) => v.store.se
 const projectVars = (v: Vault, r: ProjectRef) => envOf(v, "scope = 'project' AND machine_id = ? AND project_id = ? AND json_extract(meta, '$.sink') IS NULL", [r.machineId, r.projectId]);
 const personVars = (v: Vault, person: string | undefined) => (person === undefined ? [] : envOf(v, "scope = 'person' AND person_id = ?", [person]));
 
-/** Each project's variables as its sessions get them: its own, its repo holders', then its Only me owner's. */
+/** Each project's variables as its sessions get them: its own, then its repo holders'. */
 export function projectSet(hub: Hub, r: ProjectRef): Map<string, ItemRow> {
   const v = vault(hub);
   const holders = store(hub)
     .projectsList(r.machineId)
     .map((p) => ({ machineId: p.machineId, projectId: p.projectId }))
     .filter((h) => h.projectId !== r.projectId && otherCheckouts(hub, h).some((c) => c.projectId === r.projectId));
-  return layered(projectVars(v, r), ...holders.map((h) => projectVars(v, h)), personVars(v, onlyMeOwner(hub, r)));
+  return layered(projectVars(v, r), ...holders.map((h) => projectVars(v, h)));
 }
 
 /** An order's own variables, then its starter's person variables under names the project doesn't set. */
@@ -105,9 +94,7 @@ export function orderSet(hub: Hub, r: ProjectRef, order: string): Map<string, It
   const project = projectSet(hub, r);
   // A person variable the project already gives under that name stays the project's.
   const person = personVars(v, startedBy(hub, order)).filter((row) => !project.has(row.envName ?? ""));
-  // An Only me project's owner already has theirs in the project's file.
-  const fromFile = onlyMeOwner(hub, r) !== undefined;
-  return layered(own, fromFile ? [] : person);
+  return layered(own, person);
 }
 
 export class Deliveries {

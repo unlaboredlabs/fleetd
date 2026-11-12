@@ -2,7 +2,6 @@
 // project's over a person's; caught up when an offline machine is back; taken back when deleted; the Rust mirror rows
 // kept; one inject row per launch with names only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { beforeLaunch, dropClosed, injected } from "../src/hub/vault/loops.ts";
 import { M, OTHER, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
@@ -62,14 +61,13 @@ test("an offline machine catches up once it's back; a deleted variable is taken 
   expect(mirror()).toEqual([]);
 });
 
-test("an Only me project gets its owner's person variables under names it doesn't set itself", async () => {
-  setOnlyMe(k.hub.db.conn, OTHER, true, k.member.personId);
+test("a project that was Only me gets no person's variables, its former owner's neither (D491)", async () => {
+  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
   await save({ kind: "env", scope: "person", envName: "OPENAI_KEY", sealed: k.sealToHub({ value: "bo-1" }) }, k.memberDevice);
   await save({ kind: "env", scope: "person", envName: "REGION", secret: false, sealed: k.sealToHub({ value: "us" }) }, k.memberDevice);
   await save({ kind: "env", scope: "project", ...OTHER, envName: "REGION", secret: false, sealed: k.sealToHub({ value: "eu" }) }, k.memberDevice);
   await sync();
-  expect(file("p2")).toEqual({ OPENAI_KEY: "bo-1", REGION: "eu" });
-  // Another project never gets them.
+  expect(file("p2")).toEqual({ REGION: "eu" });
   expect(file("p1")).toEqual({});
 });
 

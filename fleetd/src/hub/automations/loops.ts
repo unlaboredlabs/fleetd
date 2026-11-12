@@ -7,7 +7,7 @@ import { automations } from "./index.ts";
 
 /**
  * Starts automations (Rust: automations.start): the lead calls, the scheduler and the followers of removed projects,
- * closed orders and Navi turns, until `hub.shutdown`. Fills approvals' automation hooks (D348): the card
+ * closed orders and leads' turns, until `hub.shutdown`. Fills approvals' automation hooks (D348): the card
  * `automation_confirm` brings shows the automation as the hub has it, and its approval marks it confirmed. Gives the
  * Navi checker the project's automations with a run open now, whose confirmed prompts are the person's standing word.
  */

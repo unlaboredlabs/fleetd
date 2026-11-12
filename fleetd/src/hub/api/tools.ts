@@ -2,7 +2,7 @@
 // back through one project's events. Both leave out what the key may not read (src/hub/app_ws/visible.ts).
 import type { EventsListInput, EventsListOutput, EventsWaitInput, EventsWaitOutput } from "../../shared/contracts.ts";
 import type { Registry } from "../api/registry.ts";
-import { others, someoneElses, visible } from "../app_ws/visible.ts";
+import { someoneElses, visible } from "../app_ws/visible.ts";
 import { events } from "../store/events.ts";
 import { requireRole } from "./grants.ts";
 
@@ -26,9 +26,7 @@ export function register(tools: Registry): void {
         hub.shutdown.signal,
       );
       cursor = Math.max(cursor, page.cursor);
-      // Another person's Only me project's events are theirs alone, read again as each page comes.
-      const navis = others(hub.db, caller);
-      const shown = page.events.filter((e) => visible(hub.db, caller, navis, e));
+      const shown = page.events.filter((e) => visible(caller, e));
       if (shown.length > 0 || page.events.length === 0 || (remaining === 0 && !page.more) || hub.shutdown.signal.aborted) {
         const next = page.more
           ? `More events are ready: call events_wait with cursor ${cursor} now.`

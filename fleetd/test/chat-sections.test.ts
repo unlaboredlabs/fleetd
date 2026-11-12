@@ -5,8 +5,7 @@ import { register as apiTools } from "../src/hub/api/tools.ts";
 import { visible } from "../src/hub/app_ws/visible.ts";
 import { kept, putSections, sectionsOf } from "../src/hub/chat_sections/store.ts";
 import { register as sectionTools } from "../src/hub/chat_sections/tools.ts";
-import { others } from "../src/hub/navi/owner.ts";
-import { setArchived, setOnlyMe } from "../src/hub/navi/store.ts";
+import { setArchived } from "../src/hub/navi/store.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { AgentKeyInfo, ChatSection, HubEvent, ProjectRef, ProjectSummary } from "../src/shared/contracts.ts";
@@ -167,11 +166,11 @@ test("a set announces chat.sections to that person's devices only", async () => 
     const sees = ok(await tools.call(hub, other, "events_wait", { cursor: 0, timeoutSec: 0 }));
     expect(sees.events).toEqual([]);
     expect(sees.cursor).toBe(1);
-    expect(visible(hub.db, other, others(hub.db, other), event)).toBe(false);
+    expect(visible(other, event)).toBe(false);
   }
-  expect(visible(hub.db, ada, others(hub.db, ada), event)).toBe(true);
+  expect(visible(ada, event)).toBe(true);
   // A second device of Ada's is hers too.
-  expect(visible(hub.db, { ...ada, keyId: "k_phone" }, others(hub.db, ada), event)).toBe(true);
+  expect(visible({ ...ada, keyId: "k_phone" }, event)).toBe(true);
 
   // A refused set announces nothing.
   refusal(await set(ada, [{ id: "s1", name: "", chats: [ref("shop")] }]));
@@ -201,20 +200,19 @@ test("a deleted project leaves its section at the next read, and an archived one
   expect(sectionsOf(hub.db.conn, "p_adaadaad")).toEqual([{ id: "s1", name: "Work", chats: [ref("site"), ref("notes")] }]);
 });
 
-test("a chat that is not the person's to see is left out, not refused", async () => {
+test("a chat on a machine the key can't read is left out, not refused", async () => {
   const { hub, key, get, set, ada, bo } = setup();
   const sections = [
     { id: "s1", name: "Work", chats: [ref("shop"), ref("notes")] },
     { id: "s2", name: "Laptop", chats: [ref("shop", "laptop")] },
   ];
+  // Every project is everyone's on the hub (D491): a former Only me project of Ada's is in Bo's sections too.
+  hub.db.conn.run("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'notes', 1, 'p_adaadaad')");
   ok(await set(bo, sections));
-  // Ada makes notes hers alone: Bo's list no longer shows it, and his next save goes through without it.
-  setOnlyMe(hub.db.conn, ref("notes"), true, "p_adaadaad");
-  expect(await get(bo)).toEqual([{ id: "s1", name: "Work", chats: [ref("shop")] }, sections[1]!]);
-  expect(ok(await set(bo, sections)).sections).toEqual([{ id: "s1", name: "Work", chats: [ref("shop")] }, sections[1]!]);
+  expect(await get(bo)).toEqual(sections);
   expect(ok(await set(ada, sections)).sections).toEqual(sections);
 
   // A device that reads only devbox keeps nothing of another machine's chats.
   const narrow = key("p_bobobobo", [{ role: "operate", machines: ["devbox"] }]);
-  expect(ok(await set(narrow, sections)).sections).toEqual([{ id: "s1", name: "Work", chats: [ref("shop")] }]);
+  expect(ok(await set(narrow, sections)).sections).toEqual([sections[0]!]);
 });

@@ -122,11 +122,14 @@ test("navi_create makes an Only me project in a free folder under its node's hom
   expect("error" in old && old.error.kind === "tool" && old.error.error.message).toBe("devbox's node is too old to hold a project");
   caps([CAP_REPOS, CAP_ASSISTANT]);
   const made = await ok(ada, "navi_create", { name: "Home", machineId: "devbox" });
-  expect(made.navi).toMatchObject({ title: "Home", workspaceRoot: "/home/me/.fleetd/node/navi/home-3", onlyMe: true, owner: "p-ada" });
+  // An ordinary project, everyone's on the hub (D491): no Only me, no owner.
+  expect(made.navi).toMatchObject({ title: "Home", workspaceRoot: "/home/me/.fleetd/node/navi/home-3", createdBy: { keyId: "key_phone", name: "phone" } });
+  expect(made.navi).not.toHaveProperty("onlyMe");
+  expect(made.navi).not.toHaveProperty("owner");
   expect(made.next).toBe("Write to it with chat_send; its lead starts with the first message.");
   expect(calls.map((c) => c.op === "project_upsert" && c.workspaceRoot)).toEqual(["navi/home-2", "navi/home-3"]);
   const r = { machineId: "devbox", projectId: made.navi.projectId };
-  expect(navis.of(hub.db.conn, r)).toMatchObject({ createdBy: { keyId: "key_phone", name: "phone" }, owner: "p-ada" });
+  expect(navis.kept(hub.db.conn, r)).toEqual({ createdBy: { keyId: "key_phone", name: "phone" } });
   // A new project starts in YOLO; the one that was there has no stored mode, so it still asks its checker.
   expect((await ok(ada, "project_approvals", r)).approvals.mode).toBe("yolo");
   expect((await ok(key("read"), "project_approvals", { machineId: "devbox", projectId: "old" })).approvals.mode).toBe("checker");
@@ -136,5 +139,5 @@ test("navi_create makes an Only me project in a free folder under its node's hom
   allTaken = true;
   const full = await call(ada, "navi_create", { name: "Work", machineId: "devbox" });
   expect("error" in full && full.error.kind === "tool" && full.error.error.message).toBe("every free folder name for Work on devbox is taken");
-  expect(navis.all(hub.db.conn).length).toBe(1);
+  expect(hub.db.conn.query("SELECT COUNT(*) AS n FROM project_settings WHERE created_by_key IS NOT NULL").get()).toEqual({ n: 1 });
 });

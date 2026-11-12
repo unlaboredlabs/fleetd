@@ -562,11 +562,7 @@ The PRs can be in the same repo or any other. Enqueuing a PR that is already in 
 ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the `hold` label to keep it
 from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.
 
-A lead holds its PR only behind PRs of projects its person can see: one of another person's Only me project is refused
-("You can't hold on a PR of a project you can't see"). An Only me project's lead sees what its owner sees, any other
-project's lead what every person on the hub sees. A PR on the train belongs to the project whose train holds it, any
-other PR to the projects that have its repo. A PR of a repo no project has still goes, as the train reads only its
-state on GitHub; a stacked PR (below) never waits on one of an unseen project.
+An `after` PR of a repo no project has counts too: the train reads only its state on GitHub.
 
 A PR stacked on an agent's open PR waits for it without an `after`: one whose commits hold that PR's latest commit, as
 when it is based on that PR's branch or built on top of it. Only a PR of the same repo from an agent's branch (under the

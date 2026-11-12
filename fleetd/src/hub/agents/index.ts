@@ -5,7 +5,6 @@ import { jsPrefix } from "../../shared/text.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { others, type Refs } from "../navi/owner.ts";
 import { leadLane, lookups, prRef, projectChanges, taskLane } from "../orders/index.ts";
 import { leadGet, leadsList } from "../orders/sources.ts";
 import { store } from "../store/hub_store.ts";
@@ -21,12 +20,10 @@ const keyOf = (r: ProjectRef) => `${r.machineId}\u0000${r.projectId}`;
 
 /** The projects the key may read, with their titles, optionally one of them. */
 export function readableProjects(hub: Hub, caller: Caller, only: ProjectRef | undefined): Map<string, { r: ProjectRef; title: string }> {
-  // Another person's Navi isn't the key's to read (D215).
-  const navis = others(hub.db, caller);
   const out = new Map<string, { r: ProjectRef; title: string }>();
   for (const p of store(hub).projectsList(only?.machineId)) {
     const r = { machineId: p.machineId, projectId: p.projectId };
-    if (!allows(caller, "read", p.machineId) || navis.has(r)) continue;
+    if (!allows(caller, "read", p.machineId)) continue;
     if (only && (only.machineId !== r.machineId || only.projectId !== r.projectId)) continue;
     out.set(keyOf(r), { r, title: p.title });
   }
@@ -36,21 +33,19 @@ export function readableProjects(hub: Hub, caller: Caller, only: ProjectRef | un
 const tasksIn = (hub: Hub, project: ProjectRef | undefined, state: TaskState, limit: number) =>
   TaskRecords.list(hub.db.conn, { ...(project ? { projectRef: project } : {}), state, limit });
 
-/** Whether the key may read `task`: a grant on its machine, and its project not another person's Only me one. */
-const taskReadable = (caller: Caller, navis: Refs, task: Task) => allows(caller, "read", task.projectRef.machineId) && !navis.has(task.projectRef);
+/** Whether the key may read `task`: a grant on its machine. */
+const taskReadable = (caller: Caller, task: Task) => allows(caller, "read", task.projectRef.machineId);
 
 /** Every queued, running or idle task the key may read. */
 export function liveTasks(hub: Hub, caller: Caller, project: ProjectRef | undefined): Task[] {
-  const navis = others(hub.db, caller);
-  return (["running", "queued", "idle"] as const).flatMap((s) => tasksIn(hub, project, s, TASK_SCAN)).filter((t) => taskReadable(caller, navis, t));
+  return (["running", "queued", "idle"] as const).flatMap((s) => tasksIn(hub, project, s, TASK_SCAN)).filter((t) => taskReadable(caller, t));
 }
 
 /** Tasks that ended at or after `since`, newest first per end state, that the key may read. */
 export function endedTasks(hub: Hub, caller: Caller, project: ProjectRef | undefined, since: string, scan: number): Task[] {
-  const navis = others(hub.db, caller);
   return (["done", "failed", "cancelled"] as const)
     .flatMap((s) => tasksIn(hub, project, s, scan))
-    .filter((t) => t.endedAt !== undefined && t.endedAt >= since && taskReadable(caller, navis, t));
+    .filter((t) => t.endedAt !== undefined && t.endedAt >= since && taskReadable(caller, t));
 }
 
 /** The readable projects that have a lead. */

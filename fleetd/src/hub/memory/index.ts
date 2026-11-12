@@ -18,7 +18,6 @@ import type {
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
-import { kept } from "../navi/store.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
 import { redact } from "./redact.ts";
@@ -371,20 +370,11 @@ export function youOf(db: HubDb, person: PersonId | undefined): You {
   return { kind: "nobody" };
 }
 
-/** A Navi's owner, else the hub owner for one with none (claude_accounts `navi_owner`). */
-export function naviOwner(db: HubDb, r: ProjectRef): PersonId | undefined {
-  const navi = kept(db.conn, r);
-  if (!navi?.onlyMe) return undefined;
-  return navi.owner ?? activePeople(db).find((p) => p.role === "owner")?.personId;
-}
+/** A lead's, for its whole session: only on a one-person hub. */
+export const youForLead = (db: HubDb) => youOf(db, undefined);
 
-/** A lead's, for its whole session: a Navi's owner's; else only on a one-person hub. */
-export const youForLead = (db: HubDb, r: ProjectRef) => youOf(db, naviOwner(db, r));
-
-/** A task's, in project `r` for `order`: its Navi's owner's, else that of whoever started the order. */
-export function youForTask(db: HubDb, r: ProjectRef, order: string): You {
-  const owner = naviOwner(db, r);
-  if (owner !== undefined) return youOf(db, owner);
+/** A task's, for `order`: that of whoever started the order. */
+export function youForTask(db: HubDb, order: string): You {
   const n = Number.parseInt(order.slice(1), 10) || 0;
   const started = db.all<{ p: string | null }>("SELECT json_extract(data, '$.startedBy.personId') AS p FROM workstreams WHERE n = ?", [n])[0]?.p;
   const known = started && activePeople(db).some((p) => p.personId === started) ? started : undefined;

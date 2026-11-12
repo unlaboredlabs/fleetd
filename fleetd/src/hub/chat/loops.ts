@@ -8,7 +8,6 @@ import type { Hub } from "../api/hub.ts";
 import { type AppConn, appWs, errorFrame } from "../app_ws/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { found } from "../navi/bridge.ts";
-import { mayUse, others, refused } from "../navi/owner.ts";
 import { registerLeadCalls } from "./calls.ts";
 import { run, states } from "./flow.ts";
 import { chat, chatState, sendAsAgent } from "./index.ts";
@@ -21,8 +20,7 @@ export function start(hub: Hub): void {
   registerLeadCalls(hub);
   // fleetd_status (and so the app's snapshot) carries each readable project's chat state.
   executorHooks(hub).extendStatus((h, caller) => {
-    const navis = others(h.db, caller);
-    return { chats: states(h).filter((s) => allows(caller, "read", s.projectRef.machineId) && !navis.has(s.projectRef)) };
+    return { chats: states(h).filter((s) => allows(caller, "read", s.projectRef.machineId)) };
   });
   void run(hub).catch((error) => {
     if (!hub.shutdown.signal.aborted) console.error("chat: the flow stopped:", error);
@@ -41,20 +39,9 @@ export function start(hub: Hub): void {
       ws.sendTo(conn, errorFrame(forbidden("read", project.machineId)));
       return;
     }
-    // Another person's Navi's chat is theirs alone (D215).
-    if (!mayUse(hub.db, caller, project)) {
-      ws.sendTo(conn, errorFrame(refused(project)));
-      return;
-    }
     let stop: () => void = () => {};
     const off = chat(hub).subscribe((delta) => {
       if (delta.projectRef.machineId !== project.machineId || delta.projectRef.projectId !== project.projectId) return;
-      // Turned Only me since by another person: its chat streams to them alone.
-      if (!mayUse(hub.db, caller, project)) {
-        ws.sendTo(conn, errorFrame(refused(project)));
-        stop();
-        return;
-      }
       if (!ws.sendTo(conn, { ...delta, t: "chat_delta" })) stop();
     });
     const offClose = ws.onClose(conn, () => stop());
