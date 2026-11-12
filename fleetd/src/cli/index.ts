@@ -18,6 +18,8 @@ commands:
 ${U.UPDATE_USAGE}
 setting up (on the hub machine):
 ${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_APP_USAGE}
+moving a hub:
+${U.EXPORT_USAGE}
 projects:
 ${U.PROJECT_USAGE}${U.NAVI_USAGE}
 running by hand:
@@ -82,6 +84,9 @@ export function helpFor(argv: string[]): string | undefined {
         return U.WORK_USAGE;
       case "vault":
         return U.VAULT_USAGE;
+      case "export":
+      case "import":
+        return U.EXPORT_USAGE;
       default:
         return undefined;
     }
@@ -183,6 +188,10 @@ export async function main(argv: string[]): Promise<number> {
         return emit(await (await import("./prompts.ts")).instructionsCommand(rest));
       case "vault":
         return emit(await (await import("./vault.ts")).vaultCommand(rest));
+      case "export":
+        return emit(await (await import("./transfer.ts")).exportCommand(rest));
+      case "import":
+        return emit(await (await import("./transfer.ts")).importCommand(rest));
       case "hub":
         if (sub === "key") return emit((await import("./hub_key.ts")).hubKey(argv.slice(2)));
         process.stderr.write(`fleetd: unknown hub command '${sub ?? ""}'\n\n${usageText()}`);

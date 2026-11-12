@@ -239,6 +239,25 @@ fleetd github-app remove
 forget it; the hub's gh goes back to this machine's own login
 
 
+## Moving a hub {#moving-a-hub}
+
+### fleetd export {#export}
+
+```text
+fleetd export [--out <file>] [--no-secrets] [--passphrase-file <file|->]
+```
+
+write this hub's data to one file (default fleetd-export-\<time\>.tar here), beside the running hub: projects, chats, orders, tasks, decisions, checklists, memory, skills, artifacts, attachments, recordings, automations, people and settings. The vault and the other secrets go in sealed under a passphrase you type (12 characters or more; for a script, `--passphrase-file` or FLEETD\_EXPORT\_PASSPHRASE), or stay out with `--no-secrets`. Machines' keys and device sign-ins are never in it
+
+### fleetd import {#import}
+
+```text
+fleetd import <file> [--no-secrets] [--passphrase-file <file|->]
+```
+
+load an export into this hub, which must be fresh (no projects yet) and stopped. The whole file is checked first and it loads all or nothing. Afterwards machines join again under their ids and people sign in again; it prints the commands. An export from a newer fleetd is refused: update fleetd first
+
+
 ## Projects {#projects}
 
 ### fleetd project add {#project-add}

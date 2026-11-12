@@ -1,0 +1,413 @@
+{
+  "$defs": {
+    "HubExportArea": {
+      "description": "Which folder of the hub's home a carried file belongs to: `recordings` is `browser/`, the others their own name.",
+      "enum": [
+        "attachments",
+        "recordings",
+        "memory",
+        "skills",
+        "prompts"
+      ],
+      "type": "string"
+    },
+    "HubExportBytes": {
+      "description": "A BLOB in a row of a hub's export.",
+      "properties": {
+        "$bytes": {
+          "description": "Standard base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "$bytes"
+      ],
+      "type": "object"
+    },
+    "HubExportFile": {
+      "description": "A file of the hub's home in a hub's export.",
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "modifiedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the file last changed, which is when a memory or a skill says it was last written. Absent: when it is imported."
+        },
+        "name": {
+          "description": "Its path inside its area's folder, with `/` between its parts.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "description": "The entry that holds it: `files/<n>`.",
+          "pattern": "^files/[0-9]{8}$",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Of the file's bytes, in hex.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "name",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "HubExportFiles": {
+      "description": "One area's files in a hub's export.",
+      "properties": {
+        "area": {
+          "$ref": "#/$defs/HubExportArea"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/HubExportFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "area",
+        "files"
+      ],
+      "type": "object"
+    },
+    "HubExportHeader": {
+      "description": "The first entry of a hub's export (`fleetd-export.json`): what a reader needs before the rest. The file is one uncompressed tar, read front to back: this header, each table's rows (`tables/<table>/<n>.jsonl.gz`, one HubExportRow a line), the hub's files (`files/<n>`), then HubExportManifest (`manifest.json`) and the manifest's SHA-256 in hex (`manifest.sha256`).",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the export's snapshot of the hub was taken."
+        },
+        "fleetd": {
+          "description": "The fleetd version that wrote it.",
+          "type": "string"
+        },
+        "format": {
+          "const": "fleetd-export",
+          "description": "Always `fleetd-export`.",
+          "type": "string"
+        },
+        "secrets": {
+          "$ref": "#/$defs/HubExportSecrets",
+          "description": "The key its secrets are sealed under, wrapped under the passphrase. Absent: it carries no secrets."
+        },
+        "version": {
+          "description": "The format's version, 1 today. A reader refuses a version newer than it knows and says to update fleetd.",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAt",
+        "fleetd",
+        "format",
+        "version"
+      ],
+      "type": "object"
+    },
+    "HubExportKdf": {
+      "description": "How an export's passphrase becomes a key: scrypt.",
+      "properties": {
+        "N": {
+          "minimum": 2,
+          "type": "integer"
+        },
+        "alg": {
+          "const": "scrypt",
+          "description": "Always `scrypt`.",
+          "type": "string"
+        },
+        "p": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "r": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "salt": {
+          "description": "16 random bytes, base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "N",
+        "alg",
+        "p",
+        "r",
+        "salt"
+      ],
+      "type": "object"
+    },
+    "HubExportMachine": {
+      "description": "A machine the exported hub had. Machines aren't carried: each joins the new hub again under its id.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "HubExportManifest": {
+      "description": "What a hub's export holds (`manifest.json`, after everything it names): every part with its size and checksum. A reader checks them all, and the manifest against `manifest.sha256`, before it changes anything.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "files": {
+          "description": "The carried files of the hub's home, by area.",
+          "items": {
+            "$ref": "#/$defs/HubExportFiles"
+          },
+          "type": "array"
+        },
+        "fleetd": {
+          "description": "The fleetd version that wrote it.",
+          "type": "string"
+        },
+        "format": {
+          "const": "fleetd-export",
+          "description": "Always `fleetd-export`.",
+          "type": "string"
+        },
+        "header": {
+          "$ref": "#/$defs/HubExportPart",
+          "description": "The header entry."
+        },
+        "machines": {
+          "description": "The machines to join again.",
+          "items": {
+            "$ref": "#/$defs/HubExportMachine"
+          },
+          "type": "array"
+        },
+        "schema": {
+          "description": "The hub migrations the rows are at, in the order fleetd runs them. A reader that lacks one refuses the file and says to update fleetd; it runs the ones it has after them.",
+          "items": {
+            "$ref": "#/$defs/HubExportMigration"
+          },
+          "type": "array"
+        },
+        "secretsLeftOut": {
+          "description": "True when the export was written without secrets: the tables that hold them aren't in it.",
+          "type": "boolean"
+        },
+        "tables": {
+          "description": "One per carried table, a table with no rows too.",
+          "items": {
+            "$ref": "#/$defs/HubExportTable"
+          },
+          "type": "array"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAt",
+        "files",
+        "fleetd",
+        "format",
+        "header",
+        "machines",
+        "schema",
+        "tables",
+        "version"
+      ],
+      "type": "object"
+    },
+    "HubExportMigration": {
+      "description": "A hub migration, as `migrations_applied` records it.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Of the migration's SQL, in hex.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "HubExportPart": {
+      "description": "An entry of a hub's export under the manifest's checksum.",
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Of the entry's bytes, in hex.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "HubExportRow": {
+      "additionalProperties": {
+        "$ref": "#/$defs/HubExportValue"
+      },
+      "description": "A row of a carried table: each column by its name.",
+      "type": "object"
+    },
+    "HubExportSealed": {
+      "description": "A secret in a row of a hub's export, in place of a value the hub held sealed to its own key: sealed under the export's key (HubExportSecrets), never in the clear.",
+      "properties": {
+        "$sealed": {
+          "description": "Standard base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "$sealed"
+      ],
+      "type": "object"
+    },
+    "HubExportSecrets": {
+      "description": "The export's own key, as the header keeps it.",
+      "properties": {
+        "kdf": {
+          "$ref": "#/$defs/HubExportKdf"
+        },
+        "wrapped": {
+          "description": "The 32-byte key under AES-256-GCM with the passphrase's key: nonce, ciphertext and tag, base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kdf",
+        "wrapped"
+      ],
+      "type": "object"
+    },
+    "HubExportTable": {
+      "description": "One table's rows in a hub's export.",
+      "properties": {
+        "columns": {
+          "description": "The table's columns, as each row names them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/HubExportTablePart"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sequence": {
+          "description": "The table's AUTOINCREMENT counter, so the numbers the new hub gives go on after it.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "columns",
+        "name",
+        "parts",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "HubExportTablePart": {
+      "description": "One part of a table's rows: gzip of one JSON object a line.",
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "pattern": "^tables/[a-z][a-z0-9_]*/[0-9]{6}\\.jsonl\\.gz$",
+          "type": "string"
+        },
+        "rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sha256": {
+          "description": "Of the part's bytes as stored, in hex.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "path",
+        "rows",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "HubExportValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/HubExportBytes"
+        },
+        {
+          "$ref": "#/$defs/HubExportSealed"
+        }
+      ],
+      "description": "A database value in a row of a hub's export: NULL, INTEGER or REAL, TEXT, a BLOB, or a secret."
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/HubExportManifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

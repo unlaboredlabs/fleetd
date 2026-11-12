@@ -358,6 +358,20 @@ $FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent; pod (C
 Homebrew commands are on the PATH there. None of your secrets go to the Mac unless you name them with --env NAME. Every mac run lands in your action log.
 `;
 
+export const EXPORT_USAGE = `  export [--out <file>] [--no-secrets] [--passphrase-file <file|->]
+             write this hub's data to one file (default fleetd-export-<time>.tar here), beside
+             the running hub: projects, chats, orders, tasks, decisions, checklists, memory,
+             skills, artifacts, attachments, recordings, automations, people and settings. The
+             vault and the other secrets go in sealed under a passphrase you type (12 characters
+             or more; for a script, --passphrase-file or FLEETD_EXPORT_PASSPHRASE), or stay out
+             with --no-secrets. Machines' keys and device sign-ins are never in it
+  import <file> [--no-secrets] [--passphrase-file <file|->]
+             load an export into this hub, which must be fresh (no projects yet) and stopped.
+             The whole file is checked first and it loads all or nothing. Afterwards machines
+             join again under their ids and people sign in again; it prints the commands. An
+             export from a newer fleetd is refused: update fleetd first
+`;
+
 export const VAULT_USAGE = `  vault key --store <file|keyring|passphrase>
              move the vault's root key: a file beside the hub (the default), this machine's
              keychain, or a file locked with a passphrase (read from stdin; the vault then stays
