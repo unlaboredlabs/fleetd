@@ -16,7 +16,7 @@
 // qa-results/index.html.
 
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
-import { AGENT_ROUTE, ELSEWHERE_IDLE_ROUTE } from "../fixtures/agents/route.ts";
+import { AGENT, AGENT_ROUTE, ELSEWHERE_IDLE_ROUTE } from "../fixtures/agents/route.ts";
 import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
@@ -65,6 +65,10 @@ export const fixtures = [
   "admin-hubs",
   // Teams step 8 (fixtures/admin): Bob on a hub that keeps its Claude API key for leads, with no subscription of his own.
   "admin-claude-member",
+  // The Vault (fixtures/vault): the team's items with two of Sam's set aside, as a member, and on a hub from before it.
+  "vault-team",
+  "vault-team-member",
+  "vault-old-hub",
   // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -3247,6 +3251,22 @@ export const screens: readonly Screen[] = [
   // Agents (at Tools & skills, which was a page once) and Instructions (the hub-wide built-in prompts open from its
   // foot); Setup, which holds the hub's accounts (Hub accounts once); and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  // The Vault: the team's logins, cards and addresses with the set-aside section under them; as a member; and one
+  // list on a hub from before the team vault. A team card only its creator or an admin may show or change, opened.
+  // A project's variables and its order's; and Every project › Vault, the vault key alone.
+  { id: "settings.vault", route: "#/settings/vault", fixtures: ["vault-team", "vault-team-member", "vault-old-hub"] },
+  {
+    id: "settings.vault",
+    variant: "creator-or-admin",
+    route: "#/settings/vault",
+    fixtures: ["vault-team-member"],
+    open: async (page) => {
+      await page.getByRole("listitem", { name: "Team Visa" }).getByRole("button").click();
+      await expect(page.getByText("Only its creator or an admin can show it. Agents still fill it.")).toBeVisible();
+    },
+  },
+  { id: "settings.project-vault", route: `#/settings/project-vault?for=${AGENT.machineId}/${AGENT.projectId}`, fixtures: ["vault-team"] },
+  { id: "settings.hub.vault", route: "#/settings/hub/vault", fixtures: ["vault-team"] },
   // Hub accounts is a part of Setup: its old link lands on Setup's accounts, each a row. A hub too old to serve its
   // steps says so and still lists its own two accounts.
   { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-owner", "admin-admin"] },

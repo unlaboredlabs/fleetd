@@ -1,35 +1,34 @@
 // One vault item, beside the list: its mark, title and line on top; then its fields, each as dots until the person
 // asks. Show asks for Touch ID (or a confirm where there is none, main/vault.ts) and shows every field for 30 seconds;
 // the window losing focus, another item or leaving the page hides them at once. Copy never brings a value here: main
-// copies it and empties the clipboard a minute later. A plain variable shows as it is. Then the sites it fills on,
-// who uses it (a person's item can be shared with projects, whose agents fill it but never see it), its last 20 uses
-// (vault_get's activity) with All activity, and Edit and Delete for whoever may change it. An item in the trash says
-// until when, with Restore and Delete now.
+// copies it and empties the clipboard a minute later. A plain variable shows as it is. Then the sites it fills on, its
+// last 20 uses (vault_get's activity) with All activity, and Edit and Delete for whoever may change it (a team item's
+// creator or an admin); anyone else reads why they're not there. An item in the trash says until when, with Restore
+// and Delete now.
 import { Copy, Eye, EyeOff, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProjectRef, VaultAuditEntry, VaultItemSummary } from "../../../shared/contracts";
-import { Button, Checkbox, Dialog, InlineCode, Text, toast } from "../../ui";
+import type { VaultAuditEntry, VaultItemSummary } from "../../../shared/contracts";
+import { Button, Dialog, InlineCode, Text, toast } from "../../ui";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { when } from "../live/when";
 import { useHubCall, useLive, useRefetch } from "./hub";
-import { DangerButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { DangerButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import { useProjectName, VAULT_READS, vaultError } from "./vaultParts";
 import { VaultEditor } from "./VaultForms";
 import {
   auditLine,
   fieldsOf,
   isSecretEnv,
+  orderTag,
   presentFields,
   REVEAL_MS,
   rowLine,
-  SCOPE_WORDS,
   sealedFields,
   shownFields,
   sitesMeta,
   titleOf,
   vaultErrorWords,
   type FieldSpec,
-  type Whose,
 } from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
@@ -51,7 +50,7 @@ function useHideOnBlur(hide: () => void) {
   }, [hide]);
 }
 
-export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: VaultItemSummary; whose: Whose; onGone: () => void; onClose: () => void }) {
+export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemSummary; onGone: () => void; onClose: () => void }) {
   const live = useLive();
   const { hub } = useDataLayer();
   const read = useToolQuery("vault_get", { itemId: listed.itemId }, { enabled: live });
@@ -59,7 +58,6 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
   const projectName = useProjectName();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [allActivity, setAllActivity] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -107,7 +105,8 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
   };
 
   const valueOf = (f: FieldSpec) => (plain ? (item.value ?? "") : shown?.[f.key]);
-  const line = [item.kind === "env" ? (isSecretEnv(item) ? "Secret variable" : "Plain variable") : rowLine(item), SCOPE_WORDS[item.scope]].filter(Boolean).join(" · ");
+  const order = orderTag(item);
+  const line = [item.kind === "env" ? (isSecretEnv(item) ? "Secret variable" : "Plain variable") : rowLine(item), order === undefined ? undefined : `Order ${order}`].filter(Boolean).join(" · ");
   const sink = item.kind === "env" ? item.meta.sink : undefined;
   return (
     <SettingsSection
@@ -155,8 +154,8 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
           />
         );
       })}
-      {!item.canReveal && !plain ? (
-        <GroupNote>{item.scope === "hub" ? "Only owners and admins can show it. Agents still fill it." : "Only its creator or an admin can show it. Agents still fill it."}</GroupNote>
+      {!item.canReveal && !plain && !trashed ? (
+        <GroupNote>{item.kind === "env" ? "Only its creator or an admin can show it. Agents still get it." : "Only its creator or an admin can show it. Agents still fill it."}</GroupNote>
       ) : null}
       {problem === null ? null : (
         <div role="alert">
@@ -181,7 +180,6 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
           }
         />
       )}
-      {trashed ? null : <UsedByRow item={item} whose={whose} onChange={() => setSharing(true)} />}
       <SourceRow item={item} />
       <ActivityRow entries={read.data?.activity} projectName={projectName} onAll={() => setAllActivity(true)} />
       {item.canEdit && !trashed ? (
@@ -195,12 +193,11 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
           }
         />
       ) : !item.canEdit && !trashed ? (
-        <GroupNote>{item.scope === "hub" ? "Only the hub's owners and admins change it." : item.scope === "person" ? "Only its owner changes it." : "Changing it needs operate on the project."}</GroupNote>
+        <GroupNote>{item.kind === "env" ? "Changing it needs operate on the project." : "Only its creator or an admin can change or delete it."}</GroupNote>
       ) : null}
 
-      {editing ? <VaultEditor whose={whose} kind={item.kind} item={item} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} /> : null}
+      {editing ? <VaultEditor kind={item.kind} item={item} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} /> : null}
       {deleting ? <DeleteDialog item={item} onClose={() => setDeleting(false)} onDeleted={onGone} /> : null}
-      {sharing ? <ShareDialog item={item} onClose={() => setSharing(false)} /> : null}
       {allActivity ? <ActivityDialog item={item} onClose={() => setAllActivity(false)} /> : null}
     </SettingsSection>
   );
@@ -215,39 +212,8 @@ function SitesRow({ item }: { item: VaultItemSummary }) {
         sites.length === 0
           ? item.kind === "login"
             ? "No site: agents can't fill it anywhere. Edit it to add the site it signs in to."
-            : "Fills at checkouts in a session, and on sites where you have a login in the vault."
+            : "Fills at checkouts, and on sites the vault has a login for."
           : `${sites.join(", ")}, and their subdomains.`
-      }
-    />
-  );
-}
-
-/** Whose work uses it: a person's item can be shared with projects; a project's and the hub's are said as they are. */
-function UsedByRow({ item, whose, onChange }: { item: VaultItemSummary; whose: Whose; onChange: () => void }) {
-  const projectName = useProjectName();
-  const shared = item.sharedWith ?? [];
-  const words =
-    item.scope === "hub"
-      ? "Every project's agents."
-      : item.scope === "order"
-        ? `The agents of ${item.workstreamId ?? "its order"}, until it closes.`
-        : item.scope === "project"
-          ? whose.kind === "project"
-            ? "This project's agents."
-            : `${(item.machineId !== undefined && item.projectId !== undefined ? projectName(item.machineId, item.projectId) : undefined) ?? "Its project"}'s agents.`
-          : shared.length === 0
-            ? "Only the work you start."
-            : `The work you start, and ${shared.map((p) => projectName(p.machineId, p.projectId) ?? p.projectId).join(", ")}: their agents fill it but never see it.`;
-  return (
-    <SettingsRow
-      title="Used by"
-      line={words}
-      control={
-        item.scope === "person" && item.canEdit && item.kind !== "env" ? (
-          <Button size="sm" variant="secondary" onClick={onChange}>
-            Change…
-          </Button>
-        ) : undefined
       }
     />
   );
@@ -343,7 +309,7 @@ function ActivityDialog({ item, onClose }: { item: VaultItemSummary; onClose: ()
   );
 }
 
-function DeleteDialog({ item, onClose, onDeleted }: { item: VaultItemSummary; onClose: () => void; onDeleted: () => void }) {
+export function DeleteDialog({ item, onClose, onDeleted }: { item: VaultItemSummary; onClose: () => void; onDeleted: () => void }) {
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
@@ -434,83 +400,5 @@ function TrashPart({ item, onGone }: { item: VaultItemSummary; onGone: () => voi
         </Text>
       )}
     </SettingsRow>
-  );
-}
-
-/** Which projects' agents may fill a person's item, besides their own work: ticked, then one sentence says what that means. */
-export function ShareDialog({ item, onClose }: { item: VaultItemSummary; onClose: () => void }) {
-  // Until the projects are in, Save would send none of them and drop every share: it waits for them.
-  const loaded = useProjects();
-  const projects = loaded ?? [];
-  const call = useHubCall();
-  const refetch = useRefetch();
-  const key = (p: ProjectRef) => `${p.machineId}/${p.projectId}`;
-  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set((item.sharedWith ?? []).map(key)));
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const save = () => {
-    setBusy(true);
-    const refs = projects.filter((p) => picked.has(key(p))).map((p) => ({ machineId: p.machineId, projectId: p.projectId }));
-    call("vault_share_set", { itemId: item.itemId, projects: refs }).then(
-      () => {
-        refetch([...VAULT_READS]);
-        onClose();
-      },
-      (e: unknown) => {
-        setBusy(false);
-        setProblem(vaultError(e));
-      },
-    );
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => (o ? undefined : onClose())}
-      title={`Use ${titleOf(item)} in`}
-      description="Your own work always can. The agents of the projects you tick can fill it on its sites too; nobody there can see it."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" disabled={busy || loaded === undefined} onClick={save}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
-        </>
-      }
-    >
-      <div className={v.picks} role="group" aria-label="Projects">
-        {loaded === undefined ? (
-          <Text size="sm" tone="quiet">
-            Loading your projects… Save waits for them, so no share is dropped.
-          </Text>
-        ) : projects.length === 0 ? (
-          <Text size="sm" tone="quiet">
-            No projects yet.
-          </Text>
-        ) : (
-          projects.map((p) => (
-            <Checkbox
-              key={key(p)}
-              label={p.title}
-              checked={picked.has(key(p))}
-              onCheckedChange={(c) =>
-                setPicked((was) => {
-                  const next = new Set(was);
-                  if (c === true) next.add(key(p));
-                  else next.delete(key(p));
-                  return next;
-                })
-              }
-            />
-          ))
-        )}
-      </div>
-      {problem === null ? null : (
-        <Text size="sm" tone="danger">
-          {problem}
-        </Text>
-      )}
-    </Dialog>
   );
 }

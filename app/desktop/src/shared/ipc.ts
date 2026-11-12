@@ -254,12 +254,13 @@ const VAULT_LABEL_MAX = 120;
 
 /**
  * A vault item to save (Settings › Vault): its readable part as vault_save takes it, and the fields as typed, which
- * main seals to the hub's own key (main/vault.ts). An edit sends only the fields typed; the hub merges them.
+ * main seals to the hub's own key (main/vault.ts). An edit sends only the fields typed; the hub merges them. A new
+ * login, card or address names no scope: the team vault takes it (D492); only a variable names its project or order.
  */
 export const VaultSaveRequest = z.strictObject({
   itemId: VaultId.optional(),
   kind: z.enum(["login", "card", "address", "env"]).optional(),
-  scope: z.enum(["person", "project", "order", "hub"]).optional(),
+  scope: z.enum(["project", "order"]).optional(),
   machineId: z.string().min(1).max(64).optional(),
   projectId: z.string().min(1).max(200).optional(),
   workstreamId: z.string().min(1).max(64).optional(),

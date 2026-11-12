@@ -1,6 +1,6 @@
 // Settings (⌘, or the app menu), one window in three groups (D211), its sidebar one flat list of pages. You: General
 // (appearance, time in the app, notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs
-// on), Vault (the logins, cards, addresses and variables your agents use), Your memory (and Import memory) and Hubs &
+// on), Vault (the team's logins, cards and addresses, which every project's agents use), Your memory (and Import memory) and Hubs &
 // devices (this app's hubs, the devices signed in as you with Pair a phone, and the hub links). Projects: the list of
 // projects, each opening its Project, Agents, Instructions & memory, Automations and Vault pages under tabs
 // (Frames.tsx), and its built-in prompts from the foot of its Instructions. Hub, for the hub's owners and admins only
@@ -27,7 +27,7 @@ import { PageHead, useProjects } from "./parts";
 import { ProjectList } from "./ProjectList";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
-import { ProjectVault, YourVault } from "./Vault";
+import { ProjectVault, TeamVault } from "./Vault";
 import { revealNext } from "./reveal";
 import { isHubTab, isProjectTab, pageOf, projectFor, useSettingsRoute } from "./route";
 import s from "./settings.module.css";
@@ -57,7 +57,7 @@ export function SettingsScreen() {
       ) : tab === "accounts" ? (
         <YourAccounts />
       ) : tab === "vault" ? (
-        <YourVault />
+        <TeamVault />
       ) : tab === "your-memory" ? (
         <YourMemoryPage />
       ) : tab === "hubs" ? (

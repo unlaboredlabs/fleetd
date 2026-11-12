@@ -12,15 +12,9 @@ import { navigate } from "../shell/navigation";
 import { useHubCall, useRefetch } from "./hub";
 import { parseDotEnv, withKind, type EnvKind } from "./projectModel";
 import { VAULT_READS, vaultError } from "./vaultParts";
-import { brandName, brandOf, check, clearable, draftOf, emptyDraft, fieldsOf, kindWords, PLACE_WORDS, scopeFor, titleOf, vaultErrorWords, type Draft, type Whose } from "./vaultModel";
+import { brandName, brandOf, check, clearable, draftOf, emptyDraft, fieldsOf, kindWords, placeOf, titleOf, vaultErrorWords, type Draft, type Whose } from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
-
-/** Where a page's new item goes, as vault_save takes it. */
-const placeOf = (whose: Whose) => ({
-  scope: scopeFor(whose),
-  ...(whose.kind === "project" ? { machineId: whose.machineId, projectId: whose.projectId } : {}),
-});
 
 /** Searching 1Password and reading items from it may install its SDK on a machine first. */
 const ONEPASSWORD_MS = 240_000;
@@ -71,8 +65,8 @@ function SecretInput(props: {
   );
 }
 
-/** Add an item of `kind`, or edit `item` without revealing it. */
-export function VaultEditor({ whose, kind, item, onClose, onSaved }: { whose: Whose; kind: VaultKind; item?: VaultItemSummary; onClose: () => void; onSaved: (item: VaultItemSummary) => void }) {
+/** Add an item of `kind` to the page `whose` (the team's when absent), or edit `item` without revealing it. */
+export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onSaved }: { whose?: Whose; kind: VaultKind; item?: VaultItemSummary; onClose: () => void; onSaved: (item: VaultItemSummary) => void }) {
   const { hub } = useDataLayer();
   const refetch = useRefetch();
   const editing = item !== undefined;
@@ -128,7 +122,7 @@ export function VaultEditor({ whose, kind, item, onClose, onSaved }: { whose: Wh
       open
       onOpenChange={(o) => (o ? undefined : onClose())}
       title={editing ? `Edit ${titleOf(item)}` : `New ${words.one.toLowerCase()}`}
-      description={editing ? "Its saved values aren't shown here. Type a new one to replace it; leave a field empty to keep it." : `${PLACE_WORDS[whose.kind].used} Sealed on this computer before it goes to the hub.`}
+      description={editing ? "Its saved values aren't shown here. Type a new one to replace it; leave a field empty to keep it." : "Sealed on this computer before it goes to the hub."}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -173,7 +167,7 @@ export function VaultEditor({ whose, kind, item, onClose, onSaved }: { whose: Wh
             {kind === "login" || kind === "address" ? (
               <Field
                 label={kind === "login" ? "Websites" : "Websites (optional)"}
-                description={kind === "login" ? "Where it signs in, one per line. A pasted address is cut to its site." : "Where else it may fill besides your checkouts and the sites you have logins for."}
+                description={kind === "login" ? "Where it signs in, one per line. A pasted address is cut to its site." : "Where else it may fill, besides checkouts and the sites the vault has logins for."}
               >
                 <Textarea value={draft.sites} minRows={1} maxRows={5} placeholder="amazon.com" onChange={(e) => setDraft((d) => ({ ...d, sites: e.target.value }))} />
               </Field>
@@ -217,7 +211,7 @@ export function VaultEditor({ whose, kind, item, onClose, onSaved }: { whose: Wh
   );
 }
 
-/** A pasted .env, each variable plain or secret, saved as the page's variables. */
+/** A pasted .env, each variable plain or secret, saved as the project's variables. */
 export function PasteEnvDialog({ whose, onClose }: { whose: Whose; onClose: () => void }) {
   const { hub } = useDataLayer();
   const refetch = useRefetch();
@@ -308,10 +302,11 @@ export function PasteEnvDialog({ whose, onClose }: { whose: Whose; onClose: () =
 const noInput = {};
 
 /**
- * Import from 1Password: search the person's 1Password (titles and sites, never values), tick, Import. The items are
- * read on a machine holding their token and sealed to the hub there. Without a token saved, it says where to add one.
+ * Import from 1Password into the team vault: search the person's 1Password (titles and sites, never values), tick,
+ * Import. The items are read on a machine holding their token and sealed to the hub there; they name no place, as a
+ * new item doesn't (vaultModel's placeOf). Without a token saved, it says where to add one.
  */
-export function ImportDialog({ whose, onClose }: { whose: Whose; onClose: () => void }) {
+export function ImportDialog({ onClose }: { onClose: () => void }) {
   const token = useToolQuery("onepassword_get", noInput);
   const call = useHubCall();
   const refetch = useRefetch();
@@ -320,13 +315,13 @@ export function ImportDialog({ whose, onClose }: { whose: Whose; onClose: () => 
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const kinds: VaultKind[] | undefined = whose.kind === "hub" ? ["login", "card", "address"] : undefined;
+  const kinds: VaultKind[] = ["login", "card", "address"];
 
   const search = () => {
     if (query.trim() === "") return;
     setFound("searching");
     setProblem(null);
-    call("vault_import_search", { query: query.trim(), ...(kinds === undefined ? {} : { kinds }) }, { timeoutMs: ONEPASSWORD_MS }).then(
+    call("vault_import_search", { query: query.trim(), kinds }, { timeoutMs: ONEPASSWORD_MS }).then(
       (out) => {
         setFound({ items: out.items, ...(out.error === undefined ? {} : { error: out.error }) });
         setPicked(new Set(out.items.filter((i) => i.imported === undefined).map((i) => i.ref)));
@@ -338,7 +333,7 @@ export function ImportDialog({ whose, onClose }: { whose: Whose; onClose: () => 
   const importNow = () => {
     setBusy(true);
     setProblem(null);
-    call("vault_import", { refs: [...picked], ...placeOf(whose) }, { timeoutMs: ONEPASSWORD_MS }).then(
+    call("vault_import", { refs: [...picked] }, { timeoutMs: ONEPASSWORD_MS }).then(
       (out) => {
         setBusy(false);
         refetch([...VAULT_READS]);
@@ -365,7 +360,7 @@ export function ImportDialog({ whose, onClose }: { whose: Whose; onClose: () => 
       wide
       onOpenChange={(o) => (o ? undefined : onClose())}
       title="Import from 1Password"
-      description={`Into ${PLACE_WORDS[whose.kind].into}. Read on your machine and sealed there; no value passes through this app or any agent.`}
+      description="Read on your machine and sealed there; no value passes through this app or any agent."
       footer={
         noToken ? (
           <>

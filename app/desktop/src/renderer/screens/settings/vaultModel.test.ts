@@ -11,16 +11,20 @@ import {
   importOutcome,
   listInput,
   luhn,
+  isSetAside,
   onPage,
+  orderTag,
+  pageKinds,
   parseExpiry,
+  placeOf,
   presentFields,
   rowLine,
-  scopeTag,
   shownFields,
   shownItems,
   sitesOf,
   titleOf,
   vaultErrorWords,
+  teamServed,
   vaultServed,
 } from "./vaultModel";
 
@@ -157,13 +161,11 @@ describe("rows", () => {
     expect(rowLine(item({ kind: "env", value: "eu-west", meta: { source: { kind: "typed" }, secret: false } }))).toBe("eu-west");
   });
 
-  it("tags an item that isn't only yours: Everyone for the hub's, the project's name, its order, and what it's shared with", () => {
-    expect(scopeTag(item({}), names)).toBeUndefined();
-    expect(scopeTag(item({ scope: "hub" }), names)).toBe("Everyone");
-    expect(scopeTag(item({ scope: "project", machineId: "devbox", projectId: "shop" }), names)).toBe("Shop");
-    expect(scopeTag(item({ scope: "order", machineId: "devbox", projectId: "shop", workstreamId: "W12" }), names)).toBe("Shop · W12");
-    expect(scopeTag(item({ sharedWith: [{ machineId: "devbox", projectId: "shop" }] }), names)).toBe("Shop");
-    expect(scopeTag(item({ sharedWith: [{ machineId: "devbox", projectId: "shop" }, { machineId: "devbox", projectId: "b" }] }), names)).toBe("2 projects");
+  it("tags an order's variable with its order, and nothing else", () => {
+    expect(orderTag(item({}))).toBeUndefined();
+    expect(orderTag(item({ scope: "hub" }))).toBeUndefined();
+    expect(orderTag(item({ scope: "project", machineId: "devbox", projectId: "shop" }))).toBeUndefined();
+    expect(orderTag(item({ scope: "order", machineId: "devbox", projectId: "shop", workstreamId: "W12" }))).toBe("W12");
   });
 
   it("names a request_secret sink's variable by its label, never the hub's internal sink: name", () => {
@@ -190,14 +192,35 @@ describe("rows", () => {
     expect(shownItems(list, "all", "alpha.io").map((i) => i.itemId)).toEqual(["V3"]);
   });
 
-  it("puts each item on its page: yours and the hub's, a project's own and its orders', the hub's own", () => {
+  it("puts the team's logins, cards and addresses on the Vault page, and a project's variables on its tab", () => {
+    const project = { kind: "project", machineId: "devbox", projectId: "shop" } as const;
+    const kinds = ["login", "card", "address", "env"] as const;
     const scopes = ["person", "project", "order", "hub"] as const;
-    const on = (whose: Parameters<typeof onPage>[0]) => scopes.filter((scope) => onPage(whose, { scope }));
-    expect(on({ kind: "mine" })).toEqual(["person", "hub"]);
-    expect(on({ kind: "project", machineId: "devbox", projectId: "shop" })).toEqual(["project", "order"]);
-    expect(on({ kind: "hub" })).toEqual(["hub"]);
+    const on = (whose: Parameters<typeof onPage>[0], team: boolean) => kinds.flatMap((kind) => scopes.filter((scope) => onPage(whose, { kind, scope }, team)).map((scope) => `${kind}:${scope}`));
+    // A hub with the team vault: its items are "hub"; a "person" one is set aside, in its own section.
+    expect(on({ kind: "team" }, true)).toEqual(["login:project", "login:order", "login:hub", "card:project", "card:order", "card:hub", "address:project", "address:order", "address:hub", "env:hub"]);
+    expect(on(project, true)).toEqual(["env:project", "env:order"]);
+    // An older hub: one list of what it gives, the person's own included, so nothing they had goes missing.
+    expect(on({ kind: "team" }, false)).toContain("login:person");
+    expect(on({ kind: "team" }, false)).toContain("env:person");
+    expect(on(project, false)).toEqual(["env:project", "env:order"]);
     expect(listInput({ kind: "project", machineId: "devbox", projectId: "shop" }, true)).toEqual({ machineId: "devbox", projectId: "shop", trash: true });
-    expect(listInput({ kind: "hub" })).toEqual({ scope: "hub" });
+    expect(listInput({ kind: "team" })).toEqual({});
+  });
+
+  it("sets aside a person's own item only on a hub with the team vault", () => {
+    expect(isSetAside({ scope: "person" }, true)).toBe(true);
+    expect(isSetAside({ scope: "person" }, false)).toBe(false);
+    expect(isSetAside({ scope: "hub" }, true)).toBe(false);
+    expect(teamServed(["vault"])).toBe(false);
+    expect(teamServed(["vault", "vault_team"])).toBe(true);
+  });
+
+  it("never names the personal or hub scope for a new item: the team's names none, a project's variable its project", () => {
+    expect(placeOf({ kind: "team" })).toEqual({});
+    expect(placeOf({ kind: "project", machineId: "devbox", projectId: "shop" })).toEqual({ scope: "project", machineId: "devbox", projectId: "shop" });
+    expect(pageKinds({ kind: "team" })).toEqual(["login", "card", "address"]);
+    expect(pageKinds({ kind: "project", machineId: "devbox", projectId: "shop" })).toEqual(["env"]);
   });
 
   it("shows a card's revealed fields grouped and its expiry as MM/YY, and only the fields an item has", () => {
@@ -229,7 +252,7 @@ describe("activity and errors", () => {
   it("says how an import card went, and the vault's own refusals in the person's words", () => {
     expect(importOutcome({ state: "open" })).toBeUndefined();
     expect(importOutcome({ state: "dismissed" })).toBe("Not imported");
-    expect(importOutcome({ state: "imported", imported: 1 })).toBe("Imported 1 item into your vault");
+    expect(importOutcome({ state: "imported", imported: 1 })).toBe("Imported 1 item into the vault");
     expect(vaultErrorWords({ reason: "vault_locked" })).toMatch(/locked/u);
     expect(vaultErrorWords({ reason: "other" })).toBeUndefined();
   });

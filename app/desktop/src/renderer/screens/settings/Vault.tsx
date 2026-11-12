@@ -1,60 +1,69 @@
-// Settings › You › Vault, a project's Vault tab and Hub › Every project › Vault (vault-design §8): the logins, cards, addresses and
-// variables agents fill and get without ever seeing them, as Passwords lays them out. A search field and a filter by
-// kind above the list; the open item beside it (VaultItem.tsx); one plus menu to add each kind, paste a .env or import
-// from 1Password (VaultImport.tsx); the trash under the list. Yours lists your own items and the hub's; a project's,
-// its own and its orders'; the hub's, those every project uses, with the vault key's state for its owners and admins.
-// The lists hold metadata alone (vault_list): a value reaches this page only when the person reveals it, and leaves
-// it on a timer or as soon as the window loses focus.
+// Settings › Vault, a project's Vault tab and Hub › Every project › Vault (vault-design §8, D492). The Vault page holds
+// the team's logins, cards and addresses, which everyone on the hub lists and every project's agents fill without
+// seeing them, as Passwords lays them out: a search field and a filter by kind above the list, the open item above it
+// (VaultItem.tsx), one plus menu to add each kind or import from 1Password (VaultForms.tsx), the trash under the list,
+// and under that the items set aside for this person, only when there are some. A project's Vault tab holds its
+// variables and its orders', with a plus for a variable or a pasted .env. Hub › Every project › Vault is the vault
+// key alone. The lists hold metadata alone (vault_list): a value reaches this page only when the person reveals it,
+// and leaves it on a timer or as soon as the window loses focus.
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { VaultItemSummary, VaultKind, VaultStatusOutput } from "../../../shared/contracts";
-import { Button, Dialog, Field, InlineCode, Input, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Text, toast } from "../../ui";
+import { Button, Dialog, Field, InlineCode, Input, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Select, Text, toast } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import { useHubCall, useLive, useRefetch } from "./hub";
-import { AddButton, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, DangerButton, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useReveal } from "./reveal";
-import { VaultItemPanel } from "./VaultItem";
-import { KIND_ICON, useProjectName, VAULT_READS, vaultError } from "./vaultParts";
+import { DeleteDialog, VaultItemPanel } from "./VaultItem";
+import { KIND_ICON, useMoveSetAside, VAULT_READS, vaultError } from "./vaultParts";
 import { ImportDialog, PasteEnvDialog, VaultEditor } from "./VaultForms";
-import { FILTERS, kindWords, listInput, onPage, rowLine, scopeTag, shownItems, titleOf, vaultErrorWords, vaultServed, type Filter, type Whose } from "./vaultModel";
+import {
+  FILTERS,
+  isSetAside,
+  kindWords,
+  listInput,
+  onPage,
+  orderTag,
+  pageKinds,
+  rowLine,
+  shownItems,
+  teamServed,
+  titleOf,
+  vaultErrorWords,
+  vaultServed,
+  type Filter,
+  type Whose,
+} from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
 
 /** What the plus menu opened. */
 type Adding = { readonly kind: "item"; readonly item: VaultKind } | { readonly kind: "paste" } | { readonly kind: "import" };
 
-const PAGE_WORDS: Readonly<Record<Whose["kind"], { screen: string }>> = {
-  mine: {
-    screen: "settings.vault",
-  },
-  project: {
-    screen: "settings.project-vault",
-  },
-  hub: {
-    screen: "settings.hub.vault",
-  },
-};
+const SCREEN: Readonly<Record<Whose["kind"], string>> = { team: "settings.vault", project: "settings.project-vault" };
+
+/** The page an older hub shows in place of the vault. */
+function NoVault({ screen }: { screen: string }) {
+  return (
+    <div className={s.scroll} data-screen={screen}>
+      <div className={s.column}>
+        <PageHead title="Vault" />
+        <Text tone="quiet">This hub has no vault yet. It comes with fleetd&apos;s Bun build: an owner updates the hub with fleetd update.</Text>
+      </div>
+    </div>
+  );
+}
 
 export function VaultPage({ whose }: { whose: Whose }) {
   const served = useData((st) => vaultServed(st.features));
-  if (!served) {
-    return (
-      <div className={s.scroll} data-screen={PAGE_WORDS[whose.kind].screen}>
-        <div className={s.column}>
-          <PageHead title="Vault" />
-          <Text tone="quiet">This hub has no vault yet. It comes with fleetd&apos;s Bun build: an owner updates the hub with fleetd update.</Text>
-        </div>
-      </div>
-    );
-  }
-  return <VaultList whose={whose} />;
+  return served ? <VaultList whose={whose} /> : <NoVault screen={SCREEN[whose.kind]} />;
 }
 
 function VaultList({ whose }: { whose: Whose }) {
   const live = useLive();
-  const projectName = useProjectName();
+  const team = useData((st) => teamServed(st.features));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [trash, setTrash] = useState(false);
@@ -62,8 +71,13 @@ function VaultList({ whose }: { whose: Whose }) {
   const [adding, setAdding] = useState<Adding | null>(null);
   const list = useToolQuery("vault_list", listInput(whose, trash), { enabled: live, keepPrevious: true });
   const status = useToolQuery("vault_status", {}, { enabled: live });
-  const words = PAGE_WORDS[whose.kind];
-  const items = shownItems((list.data?.items ?? []).filter((i) => onPage(whose, i)), filter, query);
+  const listed = list.data?.items ?? [];
+  const items = shownItems(
+    listed.filter((i) => onPage(whose, i, team)),
+    filter,
+    query,
+  );
+  const setAside = whose.kind === "team" && !trash ? listed.filter((i) => isSetAside(i, team)) : [];
   const opened = items.find((i) => i.itemId === open) ?? null;
   const ref = useReveal<HTMLDivElement>("vault.import");
 
@@ -74,18 +88,18 @@ function VaultList({ whose }: { whose: Whose }) {
   }, [opened?.itemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={s.scroll} data-screen={words.screen}>
+    <div className={s.scroll} data-screen={SCREEN[whose.kind]}>
       <div className={s.column}>
         <PageHead title="Vault" />
         {status.data === undefined ? null : <StatusNote status={status.data} whose={whose} />}
         <div className={v.bar} ref={ref}>
           <Input className={v.search} type="search" aria-label="Search the vault" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <Segmented label="Kind" options={whose.kind === "hub" ? FILTERS.filter((f) => f.value !== "env") : FILTERS} value={filter} onChange={setFilter} />
+          {whose.kind === "team" ? <Segmented label="Kind" options={FILTERS} value={filter} onChange={setFilter} /> : null}
           <AddMenu whose={whose} live={live} onPick={setAdding} />
         </div>
         {opened === null ? null : (
           <div ref={openRef}>
-            <VaultItemPanel key={opened.itemId} listed={opened} whose={whose} onGone={() => setOpen(null)} onClose={() => setOpen(null)} />
+            <VaultItemPanel key={opened.itemId} listed={opened} onGone={() => setOpen(null)} onClose={() => setOpen(null)} />
           </div>
         )}
         <SettingsSection title={trash ? "Trash" : undefined}>
@@ -104,7 +118,7 @@ function VaultList({ whose }: { whose: Whose }) {
             <SettingsList label={trash ? "Trash" : "Vault items"}>
               {items.length === 0 ? <GroupNote>{emptyLine(trash, query, filter, whose)}</GroupNote> : null}
               {items.map((item) => (
-                <Row key={item.itemId} item={item} tag={scopeTag(item, projectName)} current={item.itemId === open} onOpen={() => setOpen(item.itemId === open ? null : item.itemId)} />
+                <Row key={item.itemId} item={item} tag={orderTag(item)} current={item.itemId === open} onOpen={() => setOpen(item.itemId === open ? null : item.itemId)} />
               ))}
               <SettingsListRow
                 name={trash ? "Back to the vault" : "Trash"}
@@ -116,11 +130,11 @@ function VaultList({ whose }: { whose: Whose }) {
             </SettingsList>
           )}
         </SettingsSection>
-        {whose.kind === "hub" && status.data !== undefined ? <KeyPart status={status.data} /> : null}
+        {setAside.length === 0 ? null : <SetAsidePart items={setAside} />}
       </div>
       {adding?.kind === "item" ? <VaultEditor whose={whose} kind={adding.item} onClose={() => setAdding(null)} onSaved={(item) => (setAdding(null), setTrash(false), setOpen(item.itemId))} /> : null}
       {adding?.kind === "paste" ? <PasteEnvDialog whose={whose} onClose={() => setAdding(null)} /> : null}
-      {adding?.kind === "import" ? <ImportDialog whose={whose} onClose={() => setAdding(null)} /> : null}
+      {adding?.kind === "import" ? <ImportDialog onClose={() => setAdding(null)} /> : null}
     </div>
   );
 }
@@ -132,9 +146,9 @@ const emptyLine = (trash: boolean, query: string, filter: Filter, whose: Whose):
       ? "Nothing matches."
       : filter !== "all"
         ? `No ${kindWords(filter).plural.toLowerCase()} yet.`
-        : whose.kind === "hub"
-          ? "Nothing here yet. Add a login, a card or an address with +."
-          : "Nothing here yet. Add a login, a card, an address or a variable with +.";
+        : whose.kind === "project"
+          ? "No variables yet. Add one with +."
+          : "Nothing here yet. Add a login, a card or an address with +.";
 
 function Row({ item, tag, current, onOpen }: { item: VaultItemSummary; tag: string | undefined; current: boolean; onOpen: () => void }) {
   return (
@@ -154,31 +168,165 @@ function Row({ item, tag, current, onOpen }: { item: VaultItemSummary; tag: stri
   );
 }
 
-/** The plus menu: each kind the page takes, a pasted .env where variables go, and an import from 1Password. */
+/** The plus menu: each kind the page takes; a pasted .env on a project's, an import from 1Password on the team's. */
 function AddMenu({ whose, live, onPick }: { whose: Whose; live: boolean; onPick: (a: Adding) => void }) {
-  // The hub's items are for every project's fills: a variable is always a person's, a project's or an order's.
-  const kinds: VaultKind[] = whose.kind === "hub" ? ["login", "card", "address"] : ["login", "card", "address", "env"];
   return (
     <Menu>
       <MenuTrigger asChild disabled={!live}>
         <AddButton label={live ? "Add to the vault" : "Add to the vault (connect to the hub first)"} disabled={!live} />
       </MenuTrigger>
       <MenuContent align="end">
-        {kinds.map((k) => (
+        {pageKinds(whose).map((k) => (
           <MenuItem key={k} icon={KIND_ICON[k]} onSelect={() => onPick({ kind: "item", item: k })}>
             {kindWords(k).one}
           </MenuItem>
         ))}
         <MenuSeparator />
-        {whose.kind === "hub" ? null : <MenuItem onSelect={() => onPick({ kind: "paste" })}>Paste .env…</MenuItem>}
-        <MenuItem onSelect={() => onPick({ kind: "import" })}>Import from 1Password…</MenuItem>
+        {whose.kind === "project" ? (
+          <MenuItem onSelect={() => onPick({ kind: "paste" })}>Paste .env…</MenuItem>
+        ) : (
+          <MenuItem onSelect={() => onPick({ kind: "import" })}>Import from 1Password…</MenuItem>
+        )}
       </MenuContent>
     </Menu>
   );
 }
 
+/**
+ * The person's own items from before the team vault that they never shared, on a hub with several people: nothing
+ * uses them until they move one to the team vault (a variable, to a project they pick) or delete it.
+ */
+function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
+  const move = useMoveSetAside();
+  const refetch = useRefetch();
+  const [picking, setPicking] = useState<VaultItemSummary | null>(null);
+  const [deleting, setDeleting] = useState<VaultItemSummary | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const toTeam = (item: VaultItemSummary) => {
+    setProblem(null);
+    move({ itemId: item.itemId }).then(
+      () => {
+        refetch([...VAULT_READS]);
+        toast({ title: `Moved ${titleOf(item)} to the team vault` });
+      },
+      (e: unknown) => setProblem(vaultError(e)),
+    );
+  };
+  return (
+    <SettingsSection title="Set aside" intro="Yours from before the team vault. Nothing uses them until you move them." data={{ "data-vault-set-aside": "" }}>
+      <SettingsList label="Set aside">
+        {shownItems(items, "all", "").map((item) => (
+          <SettingsListRow
+            key={item.itemId}
+            name={item.kind === "env" ? <span className={v.mono}>{titleOf(item)}</span> : titleOf(item)}
+            label={titleOf(item)}
+            icon={KIND_ICON[item.kind]}
+            data={{ "data-vault-row": item.itemId }}
+            controls={
+              <>
+                {item.kind === "env" ? (
+                  <Button size="sm" variant="secondary" onClick={() => setPicking(item)}>
+                    Add to a project…
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="secondary" onClick={() => toTeam(item)}>
+                    Move to team vault
+                  </Button>
+                )}
+                <DangerButton size="sm" onClick={() => setDeleting(item)}>
+                  Delete
+                </DangerButton>
+              </>
+            }
+          >
+            <Text size="sm" tone="quiet">
+              {rowLine(item) || "Empty"}
+            </Text>
+          </SettingsListRow>
+        ))}
+      </SettingsList>
+      {problem === null ? null : (
+        <div role="alert">
+          <GroupNote tone="danger">{problem}</GroupNote>
+        </div>
+      )}
+      {picking === null ? null : <ToProjectDialog item={picking} onClose={() => setPicking(null)} />}
+      {deleting === null ? null : <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}
+    </SettingsSection>
+  );
+}
+
+/** A set-aside variable made a project's, with the project picked here. */
+function ToProjectDialog({ item, onClose }: { item: VaultItemSummary; onClose: () => void }) {
+  const projects = useProjects();
+  const move = useMoveSetAside();
+  const refetch = useRefetch();
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const target = projects?.find((p) => `${p.machineId}/${p.projectId}` === picked);
+  const save = () => {
+    if (target === undefined) return;
+    setBusy(true);
+    setProblem(null);
+    move({ itemId: item.itemId, machineId: target.machineId, projectId: target.projectId }).then(
+      () => {
+        refetch([...VAULT_READS]);
+        toast({ title: `Added ${titleOf(item)} to ${target.title}`, description: "Its agents get it from their next start." });
+        onClose();
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setProblem(vaultError(e));
+      },
+    );
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => (o ? undefined : onClose())}
+      title={`Add ${titleOf(item)} to a project`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={busy || target === undefined} onClick={save}>
+            {busy ? "Adding…" : "Add"}
+          </Button>
+        </>
+      }
+    >
+      {projects === undefined ? (
+        <Text size="sm" tone="quiet">
+          Loading the projects…
+        </Text>
+      ) : projects.length === 0 ? (
+        <Text size="sm" tone="quiet">
+          No projects yet.
+        </Text>
+      ) : (
+        <Select
+          aria-label="Project"
+          placeholder="Pick a project"
+          value={picked}
+          options={projects.map((p) => ({ value: `${p.machineId}/${p.projectId}`, label: p.title }))}
+          onValueChange={setPicked}
+        />
+      )}
+      {problem === null ? null : (
+        <div role="alert">
+          <Text size="sm" tone="danger">
+            {problem}
+          </Text>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
 /** A vault that can't be used now, said at the top: locked after a restart, or its key missing. */
-function StatusNote({ status, whose }: { status: VaultStatusOutput; whose: Whose }) {
+function StatusNote({ status, whose }: { status: VaultStatusOutput; whose: Whose | "key" }) {
   const administers = useAdministers();
   const [unlocking, setUnlocking] = useState(false);
   if (status.keyMissing) {
@@ -207,7 +355,7 @@ function StatusNote({ status, whose }: { status: VaultStatusOutput; whose: Whose
               : "Since the hub restarted, agents can't fill anything until an owner or admin unlocks it."
           }
           control={
-            administers && whose.kind !== "project" ? (
+            administers && (whose === "key" || whose.kind !== "project") ? (
               <Button size="sm" variant="secondary" onClick={() => setUnlocking(true)}>
                 Unlock…
               </Button>
@@ -269,7 +417,7 @@ const KEY_WHERE: Readonly<Record<string, string>> = {
   passphrase: "a passphrase, typed after each restart",
 };
 
-/** Hub › Every project › Vault's foot: where the root key is, the recovery code, Rotate, and how moving the variables in goes. */
+/** Hub › Every project › Vault: where the root key is, the recovery code, Rotate, and how moving the variables in goes. */
 function KeyPart({ status }: { status: VaultStatusOutput }) {
   const call = useHubCall();
   const refetch = useRefetch();
@@ -356,8 +504,8 @@ function KeyPart({ status }: { status: VaultStatusOutput }) {
   );
 }
 
-/** Settings › You › Vault. */
-export const YourVault = () => <VaultPage whose={{ kind: "mine" }} />;
+/** Settings › Vault: the team's logins, cards and addresses. */
+export const TeamVault = () => <VaultPage whose={{ kind: "team" }} />;
 
 /** A project's Vault tab, of the project its pages show. */
 export function ProjectVault({ project }: { project: string | null }) {
@@ -378,5 +526,29 @@ export function ProjectVault({ project }: { project: string | null }) {
   return <VaultPage key={project} whose={{ kind: "project", machineId: project.slice(0, slash), projectId: project.slice(slash + 1) }} />;
 }
 
-/** Hub › Every project › Vault. */
-export const HubVault = () => <VaultPage whose={{ kind: "hub" }} />;
+/** Hub › Every project › Vault: the vault key, and the vault's state when it can't be used. */
+export function HubVault() {
+  const served = useData((st) => vaultServed(st.features));
+  const live = useLive();
+  const status = useToolQuery("vault_status", {}, { enabled: live && served });
+  if (!served) return <NoVault screen="settings.hub.vault" />;
+  return (
+    <div className={s.scroll} data-screen="settings.hub.vault">
+      <div className={s.column}>
+        <PageHead title="Vault" />
+        {!live ? (
+          <GroupNote>Not connected. Connect to a hub to see its vault.</GroupNote>
+        ) : status.isLoadingError ? (
+          <Text tone="danger">{vaultError(status.error)}</Text>
+        ) : status.data === undefined ? (
+          <GroupNote>Loading…</GroupNote>
+        ) : (
+          <>
+            <StatusNote status={status.data} whose="key" />
+            <KeyPart status={status.data} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
