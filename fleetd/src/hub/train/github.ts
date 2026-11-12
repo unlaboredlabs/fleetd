@@ -5,12 +5,12 @@
 import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
-import { TRAIN_CONTEXT } from "./text.ts";
+import { TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
 import { Budget, limitNote, limitReset, limitText, rateLimited } from "./budget.ts";
 
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
-export { NEXT_LABEL, TRAIN_CONTEXT } from "./text.ts";
+export { NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
 
 export const GH_AUTH_FIX = "run `gh auth login` on the hub machine";
 /** How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST_MS`. */
@@ -93,8 +93,6 @@ export const conflicts = (pull: Pull) => pull.mergeable === false || pull.mergea
 
 /** The machine-readable line in a batch PR's body naming each member and the head it was built from. */
 export const BATCH_MARKER = "fleetd-batch:";
-/** A hidden line on every comment the train posts. */
-export const TRAIN_MARK = "<!-- fleetd:train -->";
 
 /** Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from. */
 export function batchHeads(body: string): [number, string | undefined][] {
