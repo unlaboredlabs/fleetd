@@ -559,6 +559,14 @@ test("a missing binary, a command's exit and a dead URL are what the hub checks 
   expect(await health(`http://127.0.0.1:${server.port}`)).toEqual({ ok: false, why: "ECONNREFUSED" });
 });
 
+test("a test hub whose doctor has no stand-ins never starts the real gh: its run fails at once (test/preload.ts)", async () => {
+  const t = testHub();
+  cleanup = t.done;
+  const d = doctor(t.hub);
+  d.health = async () => ({ ok: true });
+  await expect(d.list(false)).rejects.toThrow("a test started the real gh: give this hub's doctor stand-ins");
+});
+
 test("the hub's own sources read a fresh hub as nothing set up", async () => {
   const t = testHub();
   cleanup = t.done;
