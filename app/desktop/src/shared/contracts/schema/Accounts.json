@@ -4,7 +4,7 @@
       "description": "A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written.",
       "properties": {
         "code": {
-          "description": "invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429).",
+          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
           "minLength": 1,
           "type": "string"
         },
@@ -21,6 +21,98 @@
       "required": [
         "code",
         "message"
+      ],
+      "type": "object"
+    },
+    "AccountsInvite": {
+      "description": "An open invite by email: sent, not yet used, revoked or run out.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "email": {
+          "description": "Lowercased by the service.",
+          "maxLength": 254,
+          "minLength": 3,
+          "type": "string"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "inviteId": {
+          "description": "`inv_` and ten hex digits.",
+          "pattern": "^inv_[0-9a-f]{10}$",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "required": [
+        "inviteId",
+        "email",
+        "role",
+        "createdAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "AccountsInviteCreateInput": {
+      "additionalProperties": false,
+      "description": "POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, who joins at their next sign-in with that email. Only an owner names an owner.",
+      "properties": {
+        "email": {
+          "maxLength": 254,
+          "minLength": 3,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole",
+          "description": "Absent: member."
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "type": "object"
+    },
+    "AccountsInviteCreateOutput": {
+      "description": "200: the invite made; WorkOS has sent the email.",
+      "properties": {
+        "invite": {
+          "$ref": "#/$defs/AccountsInvite"
+        }
+      },
+      "required": [
+        "invite"
+      ],
+      "type": "object"
+    },
+    "AccountsInviteListOutput": {
+      "description": "GET /accounts/v1/invites, with an owner's or admin's device key: the team's open invites by email, newest first.",
+      "properties": {
+        "invites": {
+          "items": {
+            "$ref": "#/$defs/AccountsInvite"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "invites"
+      ],
+      "type": "object"
+    },
+    "AccountsInviteRevokeOutput": {
+      "description": "POST /accounts/v1/invites/{inviteId}/revoke, no body, with an owner's or admin's device key: the invite taken back, here and at WorkOS.",
+      "properties": {
+        "revoked": {
+          "pattern": "^inv_[0-9a-f]{10}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revoked"
       ],
       "type": "object"
     },
@@ -141,9 +233,23 @@
         "pairingCode"
       ],
       "type": "object"
+    },
+    "HubRole": {
+      "description": "What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;\nmembers work in projects. Each device is still capped by its own grants.",
+      "enum": [
+        "owner",
+        "admin",
+        "member"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
     }
   },
   "$ref": "#/$defs/AccountsSignInOutput",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "fleetd cloud's accounts service, the one call an app makes to sign in (and the one to sign out). Each definition is one body: compile `Accounts.json#/$defs/<Name>`."
+  "description": "fleetd cloud's accounts service: the one call an app makes to sign in (and the one to sign out), and a team's invites by email on its own address. Each definition is one body: compile `Accounts.json#/$defs/<Name>`."
 }

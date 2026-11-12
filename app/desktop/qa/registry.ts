@@ -140,6 +140,12 @@ export const fixtures = [
   "cloud-connect-no-terminal",
   "cloud-account",
   "cloud-account-signed-out",
+  // ...and People on a team: its owner and an admin invite by email, a member sees no People page, and a team at its
+  // limit refuses an invite.
+  "cloud-people-owner",
+  "cloud-people-admin",
+  "cloud-people-member",
+  "cloud-people-limit",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -3470,7 +3476,45 @@ export const screens: readonly Screen[] = [
       await page.getByRole("article", { name: "People" }).waitFor();
     },
   },
-  { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },
+  { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member", "cloud-people-member"] },
+  // People on a fleetd cloud team (fixtures/cloud): the plus invites by email, and who is invited is listed with
+  // Revoke; the form open; an invite sent, which says the person gets an email and signs in with it; and one the team
+  // refuses (its limit of people), one line by the field. A self-hosted hub's People above is today's.
+  { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["cloud-people-owner", "cloud-people-admin"], variant: "cloud" },
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
+    fixtures: ["cloud-people-owner"],
+    variant: "cloud-form",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Invite by email" }).click();
+      await page.getByRole("form", { name: "Invite by email" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
+    fixtures: ["cloud-people-owner"],
+    variant: "cloud-sent",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Invite by email" }).click();
+      await page.getByRole("textbox", { name: "Email" }).fill("eve@example.com");
+      await page.getByRole("button", { name: "Invite", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "Invite sent to eve@example.com" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
+    fixtures: ["cloud-people-limit"],
+    variant: "cloud-refused",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Invite by email" }).click();
+      await page.getByRole("textbox", { name: "Email" }).fill("eve@example.com");
+      await page.getByRole("button", { name: "Invite", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "limit of people" }).waitFor();
+    },
+  },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
   { id: "settings.hub.offline", route: "#/settings/hub/people", fixtures: ["hub-unreachable"] },
   // A machine's page, under what is wrong with it: its role, its screens and its max agents, devbox's auto 22 and where it

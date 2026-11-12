@@ -1,6 +1,8 @@
 // fleetd cloud's Sign in, on a build that has it (src/main/cloud/fixture.ts reads each fixture's `cloud` section):
 // the first screen's two ways in, the wait for the browser and how a sign-in fails; Connect a computer on a team with
-// no machine yet; and the account's row in Settings. Without a `cloud` section every other fixture is today's app.
+// no machine yet; the account's row in Settings; and People on a team, where owners and admins invite by email. Without
+// a `cloud` section every other fixture is today's app.
+import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
@@ -34,6 +36,21 @@ const team = (base: Fixture, name: string, note: string, cloud: JsonObject): Fix
   return f;
 };
 
+/** Two invites by email waiting on the team: Kai's as a member, Lee's as an admin, newest first. */
+const INVITES: JsonObject[] = [
+  { inviteId: "inv_2b7c90d1e4", email: "lee@example.com", role: "admin", createdAt: "2026-10-18T15:40:00.000Z", expiresAt: "2026-10-25T15:40:00.000Z" },
+  { inviteId: "inv_0a91f3c2b8", email: "kai@example.com", role: "member", createdAt: "2026-10-14T09:10:00.000Z", expiresAt: "2026-10-21T09:10:00.000Z" },
+];
+
+/** Settings › Hub › People on the team acme, as `me`, with its invites by email. */
+const people = (base: Fixture, name: string, note: string, me: JsonObject, cloud: JsonObject = {}): Fixture => {
+  const f = answerHub(Fixture.from(base, `cloud-people-${name}`, note), me, me !== bob);
+  f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+  f.label = "acme";
+  f.cloud = { email: EMAIL, hub: true, invites: INVITES, ...cloud };
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => [
     unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own hub under it.", {}),
@@ -53,6 +70,12 @@ export default defineGroup({
       f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
       return f;
     })(),
+    people(base("chat-empty"), "owner", "People on a cloud team, as its owner: Invite by email, and two invites waiting.", sam),
+    people(base("chat-empty"), "admin", "People on a cloud team, as an admin: the same field and list.", alice),
+    people(base("chat-empty"), "member", "A member of a cloud team: no People page, so no field and no invites.", bob),
+    people(base("chat-empty"), "limit", "People on a cloud team at its limit of people: the invite is refused by the field.", sam, {
+      inviteFailure: { code: "failed", message: "This team has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
+    }),
     (() => {
       const f = Fixture.from(base("typical"), "cloud-account-signed-out", "Settings on a build with fleetd cloud, not signed in.");
       f.cloud = {};

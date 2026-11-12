@@ -65,6 +65,9 @@ export const ACCOUNTS_SIGN_IN_PATH = "/v1/app/sign-in";
 /** The accounts service's sign-out: POST, JSON, always 204. */
 export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 
+/** A team's invites by email, on the team's own address (not the accounts service's), with an owner's or admin's device key: GET lists, POST makes one, `<this>/<inviteId>/revoke` (POST) takes one back. */
+export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
+
 /** Where WorkOS sends the browser back on the desktop: `http://127.0.0.1:<any port>` then this path. */
 export const ACCOUNTS_LOOPBACK_PATH = "/signin/callback";
 
@@ -73,10 +76,43 @@ export const ACCOUNTS_APP_REDIRECT = "fleetd://signin/callback";
 
 /** A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written. */
 export type AccountsFailure = {
-  /** invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). */
+  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
   code: string;
   fix?: string;
   message: string;
+};
+
+/** An open invite by email: sent, not yet used, revoked or run out. */
+export type AccountsInvite = {
+  createdAt: Timestamp;
+  /** Lowercased by the service. */
+  email: string;
+  expiresAt: Timestamp;
+  /** `inv_` and ten hex digits. */
+  inviteId: string;
+  role: HubRole;
+};
+
+/** POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, who joins at their next sign-in with that email. Only an owner names an owner. */
+export type AccountsInviteCreateInput = {
+  email: string;
+  /** Absent: member. */
+  role?: HubRole;
+};
+
+/** 200: the invite made; WorkOS has sent the email. */
+export type AccountsInviteCreateOutput = {
+  invite: AccountsInvite;
+};
+
+/** GET /accounts/v1/invites, with an owner's or admin's device key: the team's open invites by email, newest first. */
+export type AccountsInviteListOutput = {
+  invites: AccountsInvite[];
+};
+
+/** POST /accounts/v1/invites/{inviteId}/revoke, no body, with an owner's or admin's device key: the invite taken back, here and at WorkOS. */
+export type AccountsInviteRevokeOutput = {
+  revoked: string;
 };
 
 /** POST /v1/app/sign-in: what WorkOS sent the browser back with, and this device's name. The service redeems the code with WorkOS itself and keeps no token it got; no auth header. */
