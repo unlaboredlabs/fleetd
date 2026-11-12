@@ -203,3 +203,114 @@ test("the people tools: a new person is seeded, and what takes away runs last on
     await target.close();
   }
 });
+
+/**
+ * The project tools under the hub's own rules, with no node linked (projects/discover.ts, repos.ts, remove.ts):
+ * project_add answers not_found for a machine the team has no row for and machine_offline for one it has;
+ * project_repo_add answers machine_offline; project_remove forgets a project whose machine has no row, erasing its
+ * decisions, and answers machine_offline while the machine is known. The target's seed (`seeded`) puts project m1/p1,
+ * with a decision of its own, on machine m1, which has a row (`machine`) or not. project_remove is listed first.
+ * `calls` is every call, in order.
+ */
+function projectTools(seeded: "none" | "machine" | "gone") {
+  const at = "2026-01-01T00:00:00.000Z";
+  const calls: Array<string> = [];
+  const machines = new Set<string>();
+  const projects: Array<{ machineId: string; projectId: string }> = [];
+  const decisions: Array<Record<string, any>> = [];
+  const project = (given: { machineId: string; projectId: string }) => {
+    const found = projects.find((p) => p.machineId === given.machineId && p.projectId === given.projectId);
+    if (found === undefined) throw new Refusal("not_found", `No project ${given.machineId}/${given.projectId}.`);
+    return found;
+  };
+  const offline = (machineId: string) => new Refusal("machine_offline", `Machine ${machineId} is offline.`);
+  const tool = (name: string, readOnly: boolean, type: string, run: (given: any) => unknown): StandInTool => ({
+    name,
+    readOnly,
+    input: input(`${type}Input`),
+    output: {},
+    run: (_team, given) => {
+      calls.push(name);
+      return run(given);
+    },
+  });
+  const tools = [
+    tool("project_remove", false, "ProjectRemove", (given) => {
+      const removed = project(given);
+      if (machines.has(removed.machineId)) throw offline(removed.machineId);
+      projects.splice(projects.indexOf(removed), 1);
+      decisions.splice(0, decisions.length, ...decisions.filter((d) => d.scope.kind === "global"));
+      return { ok: true };
+    }),
+    tool("project_add", false, "ProjectAdd", (given) => {
+      if (!machines.has(given.machineId)) throw new Refusal("not_found", `No machine ${given.machineId}.`);
+      throw offline(given.machineId);
+    }),
+    tool("project_repo_add", false, "ProjectRepoAdd", (given) => {
+      throw offline(project(given).machineId);
+    }),
+    tool("decisions_record", false, "DecisionsRecord", (given) => {
+      const decision = { decisionId: `D${decisions.length + 1}`, key: given.key, scope: given.scope, value: given.value, why: given.why, source: "human", state: "active", at };
+      decisions.push(decision);
+      return { decision };
+    }),
+    tool("decisions_overturn", false, "DecisionsOverturn", (given) => {
+      const decision = decisions.find((d) => d.decisionId === given.decisionId);
+      if (decision === undefined) throw new Refusal("not_found", `No decision ${given.decisionId}.`);
+      decision.state = "overturned";
+      return { overturned: decision };
+    }),
+    tool("project_get", true, "ProjectGet", () => ({ projects: projects.map((p) => ({ ...p, title: "areas", workspaceRoot: "/srv/areas", threads: [], lastActivityAt: at })) })),
+  ];
+  const seed = async () => {
+    if (seeded === "none") return;
+    if (seeded === "machine") machines.add("m1");
+    projects.push({ machineId: "m1", projectId: "p1" });
+    decisions.unshift({ decisionId: "D0", key: "areas.project", scope: { kind: "project", projectRef: { machineId: "m1", projectId: "p1" } }, value: "the project's", why: "seeded", source: "human", state: "active", at });
+  };
+  return { tools, calls, seed };
+}
+
+test("the project tools under the hub's rules: project_remove runs last, and what a machine does answers machine_offline", async () => {
+  const run = async (seeded: "none" | "machine" | "gone") => {
+    const { tools, calls, seed } = projectTools(seeded);
+    const target = await standIn({ only: tools });
+    try {
+      const team = await target.team("");
+      const checks = await areasContract({ ...team, seed }, doc, required);
+      return { rows: checks.map((c) => `${c.skipped !== undefined ? "skip" : c.ok ? "pass" : "FAIL"} ${c.name}${c.ok ? "" : `: ${c.detail}`}`), calls };
+    } finally {
+      await target.close();
+    }
+  };
+  // The project on a machine that joined once and is offline now: every project tool has its answer.
+  const onMachine = await run("machine");
+  expect(onMachine.rows).toEqual([
+    "pass GET /healthz is 200",
+    "pass MCP tools/list answers",
+    "pass MCP decisions_record decodes as decisions_record.output",
+    "pass MCP project_get decodes as project_get.output",
+    "pass MCP project_add answers machine_offline, as no node joins",
+    "pass MCP project_repo_add answers machine_offline, as no node joins",
+    "pass MCP decisions_overturn decodes as decisions_overturn.output",
+    "pass MCP project_remove answers machine_offline, as no node joins",
+  ]);
+  expect(onMachine.calls.at(-1)).toBe("project_remove");
+
+  // A project whose machine the team has no row for can be removed, but nothing can be added on that machine: a
+  // target's seed puts its project on a machine it knows.
+  expect((await run("gone")).rows.filter((r) => r.includes("project_"))).toEqual([
+    "pass MCP project_get decodes as project_get.output",
+    'FAIL MCP project_add: {"code":"not_found","message":"No machine m1."}',
+    "pass MCP project_repo_add answers machine_offline, as no node joins",
+    "pass MCP project_remove decodes as project_remove.output",
+  ]);
+
+  // No machine and no project: nothing to call them on, and nothing is taken away.
+  expect((await run("none")).rows.filter((r) => r.includes("project_"))).toEqual([
+    "pass MCP project_get decodes as project_get.output",
+    "skip MCP project_add",
+    "skip MCP project_repo_add",
+    "skip MCP project_remove",
+  ]);
+});
