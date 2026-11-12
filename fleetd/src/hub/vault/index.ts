@@ -20,38 +20,14 @@ import { mayUse, who } from "../navi/owner.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { type AuditEntry, type NewAudit, VaultAudit } from "./audit.ts";
-import { BRAND_NAMES, type Meta, type VaultKind, type VaultScope } from "./fields.ts";
+import type { UseContext, Viewer } from "./item.ts";
 import { keyDir, VaultKeyError, VaultKeys, type Secrets } from "./keys.ts";
 import { type ItemRow, keyMissing, locked, VaultStore } from "./store.ts";
 
+export { FEATURE_VAULT, isScope, quietLine, type UseContext, type Viewer } from "./item.ts";
 export type { ItemRow } from "./store.ts";
 
-/** The app feature the hub announces once it has a vault: apps show their Vault screens only then. */
-export const FEATURE_VAULT = "vault";
-
 export type VaultOptions = { dir?: string; secrets?: Secrets; scryptN?: number };
-
-/** Who is asking, as the access rules read them. */
-export type Viewer = {
-  caller: Caller;
-  /** The person the key acts as: its own, or the hub's owner for a key with no person. */
-  person?: string;
-  /** Admin on every machine: changes and reveals hub items and shared project items. */
-  admin: boolean;
-  human: boolean;
-  /** The hub itself (the migration): it keeps a removed project's variables too, so nothing is lost. */
-  system?: boolean;
-};
-
-/** The work an agent's session does, from the hub's own records: what it may use. */
-export type UseContext = {
-  projectRef: ProjectRef;
-  taskId?: string;
-  workstreamId?: string;
-  /** Whose work it is: their person items are usable. */
-  personId?: string;
-  threadId?: string;
-};
 
 export class Vault {
   readonly keys: VaultKeys;
@@ -294,18 +270,3 @@ export function vaultFacts(hub: Hub) {
   };
 }
 
-/** One quiet line about an item, for lists and chat: "Visa ••4242", "amazon.com", "Berlin, DE". Never a value. */
-export function quietLine(kind: VaultKind, meta: Meta, envName?: string): string {
-  switch (kind) {
-    case "login":
-      return meta.sites?.[0] ?? "";
-    case "card":
-      return `${BRAND_NAMES[meta.brand ?? "other"]} ••${meta.last4 ?? ""}`;
-    case "address":
-      return meta.country ?? "";
-    case "env":
-      return `${envName ?? ""}${meta.secret ? " · secret" : ""}`;
-  }
-}
-
-export const isScope = (s: unknown): s is VaultScope => s === "person" || s === "project" || s === "order" || s === "hub";

@@ -15,45 +15,20 @@ import type { MacHealth, NodeDisk, NodeProbe, ScreenHealth } from "../../shared/
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
 import { doctorAlert, fetchFailedText, fixLabel, start } from "./base.ts";
 import { addCommand, type HubSetup, type MachineSetup, restartCommand } from "./config.ts";
+import { clip, machineEntry, manual, placed, settingsFile } from "./entry.ts";
 import { guide } from "./guide.ts";
+
+export { claudeAccountOverride, clip } from "./entry.ts";
 
 /** 1Password's service accounts page, where a new one is made and the old one revoked (hub/setup ONEPASSWORD_ACCOUNTS). */
 export const ONEPASSWORD_ACCOUNTS = "https://start.1password.com/developer-tools/active";
 
-/** At most `max` characters, the last one an ellipsis when cut (hub/usage/time.rs `clip`). */
-export function clip(text: string, max: number): string {
-  const chars = [...text];
-  return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join("")}…` : text;
-}
-
-function manual(label: string, command?: string): DoctorFix {
-  return { kind: "manual", label: clip(label, 200), ...(command === undefined ? {} : { command }) };
-}
-
 /** A fix whose command runs on the hub's machine, though its check is a machine's. */
 const onHub = (fix: DoctorFix): DoctorFix => ({ ...fix, on: "hub" });
-
-/** The fix with where its command runs: where the fix says, else where its check is. */
-function placed(fix: DoctorFix | undefined, scope: "hub" | "machine"): DoctorFix | undefined {
-  if (!fix) return undefined;
-  return fix.command !== undefined && fix.on === undefined ? { ...fix, on: scope } : fix;
-}
 
 function hubEntry(name: string, status: DoctorStatus, message: string, fix?: DoctorFix): DoctorCheck {
   const f = placed(fix, "hub");
   return { id: `hub/${name}`, scope: "hub", status, message: clip(message, 500), ...(f ? { fix: f } : {}) };
-}
-
-function machineEntry(machineId: string, name: string, status: DoctorStatus, message: string, fix?: DoctorFix): DoctorCheck {
-  const f = placed(fix, "machine");
-  return {
-    id: `${machineId}/${name}`,
-    scope: "machine",
-    machineId,
-    status,
-    message: clip(message, 500),
-    ...(f ? { fix: f } : {}),
-  };
 }
 
 const trimDots = (s: string) => s.replace(/\.+$/, "");
@@ -462,8 +437,6 @@ export function runnerChecks(machineId: string, info: RunnerInfo): DoctorCheck[]
   return out;
 }
 
-const settingsFile = (info: RunnerInfo) => (info.configDir === undefined ? "~/.claude/settings.json" : `${info.configDir}/settings.json`);
-
 /** `<runner>_self_update`: the runner's own background update is off. Undefined from a node that doesn't say. */
 function selfUpdateEntry(machineId: string, name: string, info: RunnerInfo): DoctorCheck | undefined {
   const check = `${name}_self_update`;
@@ -562,31 +535,6 @@ export function claudeOwner(setup: ClaudeSetupView): DoctorCheck {
     sub.lastTest ?? undefined,
     setup.machines,
     `${name} runs \`claude setup-token\` again and pastes the new token in Settings › Your accounts › Claude`,
-  );
-}
-
-/** `claude_account_override`: the machine's claude user settings set a credential or gateway in their `env`. */
-export function claudeAccountOverride(machineId: string, info: RunnerInfo, configured: boolean): DoctorCheck | undefined {
-  const names = configured ? info.accountOverrides : undefined;
-  if (!names) return undefined;
-  const settings = settingsFile(info);
-  if (names.length === 0) {
-    return machineEntry(
-      machineId,
-      "claude_account_override",
-      "ok",
-      `${machineId}'s claude settings set no credential of their own: its sessions run on the account fleetd gives them.`,
-    );
-  }
-  const list = names.join(", ");
-  return machineEntry(
-    machineId,
-    "claude_account_override",
-    "warn",
-    `${settings} on ${machineId} sets ${list} in its "env", which claude applies over the Claude account fleetd gives each session there.`,
-    manual(
-      `On ${machineId}, move ${list} out of the "env" of ${settings} (into ~/.fleetd/claude.env for the machine's own login), then restart its node`,
-    ),
   );
 }
 

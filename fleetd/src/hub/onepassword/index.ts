@@ -10,9 +10,9 @@ import type { Hub } from "../api/hub.ts";
 import { ClaudeAccountStore, type Whose, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import type { HubDb } from "../store/db.ts";
+import { CAP_ONEPASSWORD } from "./caps.ts";
 
-export const CAP_ONEPASSWORD = "onepassword";
-export const CAP_ONEPASSWORD_CARDS = "onepassword_cards";
+export { CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS } from "./caps.ts";
 
 /** The person's saved token, as the tools show it. */
 export function token(db: HubDb, person: string): OnePasswordToken | undefined {
