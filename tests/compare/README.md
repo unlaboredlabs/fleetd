@@ -63,32 +63,36 @@ module at a time). It is a flag, not read from a short tool list, so a hub that 
 full run. With it, `isolation.ts` and `contract.ts` start no node and add no project (`areas.ts`):
 
 - each team is seeded through the tools the target lists (`areas.ts`'s SEEDS: a global decision, an invited person, a
-  file and the caller's picture made of it, the caller's name, a prompt's hub-wide text, a claim on a repo, the
-  agents cap, an env item in the vault and the vault's unlock, each sealed to `vault_status`'s `hubBoxKey`, and a
-  phone after pushes are turned off), then by the team's own `seed(mark, times)`, if it has one, for rows no listed
-  tool makes (a task, whose start is a lead call; a project, on a machine the team knows that is offline, as one that
-  joined once is). Team A once, team B twice with the canary as `mark`;
+  file and the caller's picture made of it, the caller's name, a prompt's hub-wide text, a claim on a repo, the agents
+  cap, an env item in the vault and the vault's unlock, each sealed to `vault_status`'s `hubBoxKey`, and a phone after
+  pushes are turned off, and a profile on the first model `profiles_list` offers), then by the team's own `seed(mark,
+  times)`, if it has one, for rows no listed tool makes (a task, whose start is a lead call; a project, on a machine
+  the team knows that is offline, as one that joined once is). Team A once, team B twice with the canary as `mark`;
 - the two-team cases are made of exactly the tools the target lists, and reads that take words besides ids
   (`decisions_search` for "decision", `work_list` for the seeded repo, the time reads for the day before the run's
   clock, which the caller may inject) are made beside the generated ones;
 - the contract checks `/healthz`, that every listed tool is in `McpTools.json`, and each listed tool's answer as its
   `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it (a tool a seed calls is a
   write, whatever its annotation), then the other writes with the team's own ids, then the ones that take away what
-  others need (`automation_delete`, `push_device_remove`, `project_remove`, `person_remove`, `invite_revoke`,
-  `device_revoke`, and last of all `machine_remove`), each only on what the run made: what the target seeded, the
-  phone, the invited person and invite, and a spare device key (`areas-spare`: `key` makes the same person more than
-  one), never the caller or the key it calls with. A write a machine does (`project_add`, `project_repo_add`, and
-  `project_remove` while the machine is known) is called on the machine the reads turn up and may answer
-  `machine_offline`, or is skipped when there is none; `skill_install` is called on a source at a host that never
-  resolves, and must refuse the fetch (`failed` or `invalid`); `vault_reveal` reveals the seeded env item's `value` to
-  a 32-byte reply key; `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello
-  first) and `skill_update` (it fetches from outside) are skipped, saying why, as is a tool whose seed needs a tool
-  the team doesn't list (`vault_status` for the vault's, `push_relay_set` for the phone). The vault's seeds seal with
-  fleetd's sealed box, from this checkout or from the fleetd package installed in a node_modules directory above a
-  copy of tests/compare (not one in the system's temp directory). Then `/app` on that team, with no machine: `ready`
-  and `snapshot`, every event the hub keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only
-  tool (`fleetd_status`, `hub_info` or `people_list` first), and a call of a name the team doesn't list, which must
-  come back as an `error` with the call's id; each frame decoded as `AppServerMessage`. The CLI's rows are skipped.
+  others need (`automation_delete`, `push_device_remove`, `profile_delete` on the seed's profile, never the default,
+  `project_remove`, `person_remove`, `invite_revoke`, `device_revoke`, and last of all `machine_remove`), each only on
+  what the run made: what the target seeded, the phone, the invited person and invite, and a spare device key
+  (`areas-spare`: `key` makes the same person more than one), never the caller or the key it calls with. A write a
+  machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is known, and
+  `claude_subscription_set` and `onepassword_set` with a real sealed box, whose answer may be the hub's failed "No
+  machine took it.") is called on the machine the reads turn up and may answer `machine_offline`, or is skipped when
+  there is none; `skill_install` is called on a source at a host that never resolves, and must refuse the fetch
+  (`failed` or `invalid`); `vault_reveal` reveals the seeded env item's `value` to a 32-byte reply key;
+  `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello first),
+  `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the account or
+  token does their work) and `skill_update` (it fetches from outside) are skipped, saying why, as is a tool whose seed
+  needs a tool the team doesn't list (`vault_status` for the vault's, `push_relay_set` for the phone). The vault's
+  seeds seal with fleetd's sealed box, from this checkout or from the fleetd package installed in a node_modules
+  directory above a copy of tests/compare (not one in the system's temp directory). Then `/app` on that team, with no
+  machine: `ready` and `snapshot`, every event the hub keeps (asked from cursor 0, up to the snapshot's), a call of a
+  listed read-only tool (`fleetd_status`, `hub_info` or `people_list` first), and a call of a name the team doesn't
+  list, which must come back as an `error` with the call's id; each frame decoded as `AppServerMessage`. The CLI's
+  rows are skipped.
 
 A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
 unless `--bin` gives one:
@@ -114,6 +118,8 @@ A case calls the tool three times with team A's key: with an id nobody holds, wi
 holds. B's must get the answer the unknown ones get, once the ids sent are masked: the same error, the same shape, the
 same message. What differs between the two unknown ids (a time, a number the call drew) is not held against it. And
 nothing team A is told, in the cases or in its own reads, may hold a canary: a string the run puts in team B's rows.
+What A sent itself is not held against it: a canary inside an id of B's that the call sent (a profile renamed to one
+of B's names), in the call after that one wrote it, or in an id of B's that a write of A's kept.
 
 An id is team B's while team A doesn't hold it too, and what A holds is not taken from its reads on trust: a list that
 shows A team B's rows would make every id in it look shared. So team A's ids are read before team B is made

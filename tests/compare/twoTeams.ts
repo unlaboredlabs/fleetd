@@ -461,7 +461,7 @@ const show = (leaf: string | undefined) => (leaf === undefined ? "nothing" : lea
 export async function runTwoTeams(opts: { readonly a: Session; readonly b: Session; readonly contract: Contract; readonly own: Ids; readonly canaries?: ReadonlyArray<string>; readonly reads?: Reads }): Promise<Report> {
   const tools = await opts.a.tools();
   const others = (await harvest(opts.b, tools, opts.contract, opts.reads)).bag;
-  const holds = (answer: Answer) => (opts.canaries ?? []).some((c) => JSON.stringify(answer.body ?? null).includes(c));
+  const holds = (seen: unknown) => (opts.canaries ?? []).some((c) => JSON.stringify(seen).includes(c));
 
   /** What team A holds: what it held before team B had rows, and what its own writes here have made since. */
   const mine: Bag = new Map([...opts.own].map(([kind, values]) => [kind, [...values]]));
@@ -481,7 +481,6 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
     const now = await harvest(opts.a, tools, opts.contract, opts.reads);
     reads += now.answers.length;
     const blame = (tool: string, what: string) => shown.set(tool, new Set([...(shown.get(tool) ?? []), what]));
-    for (const r of now.answers) if (holds(r.answer)) blame(r.tool, "its canary");
     for (const [kind, values] of now.bag) {
       const sentBack = strangers.get(kind)?.some((v) => values.includes(v)) === true;
       for (const value of values) {
@@ -497,6 +496,9 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
         }
       }
     }
+    // A canary inside an id of B's that A's own write kept (a note A named after one of B's) is A's own text now.
+    const ownText = new Map([...kept].map((id) => [id.slice(id.indexOf(" ") + 1), id.slice(0, id.indexOf(" "))] as const));
+    for (const r of now.answers) if (holds(masked(r.answer, ownText))) blame(r.tool, "its canary");
   };
   /** Two ids of the kind that nobody holds, the same two all run: of its pattern, or team B's own with its characters moved. */
   const strangers = new Map<string, [string, string] | undefined>();
@@ -550,7 +552,9 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
         return value;
       });
       const answer = await opts.a.call(c.tool, input);
-      return { answer, leaves: leaves(masked(answer, sent)) };
+      const seen = masked(answer, sent);
+      // A's own input echoed back (a name it set to team B's) is no leak; the canary anywhere else is.
+      return { answer, leaves: leaves(seen), leaks: holds(seen) };
     };
     // Team B's between the two unknown ones.
     const unknown = await ask((s) => strangersOf(s)![0]);
@@ -562,7 +566,8 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
     const code = (unknown.answer.body as { code?: unknown } | null)?.code;
     if (differs.length > 0) {
       cases.push({ tool: c.tool, ids: label, verdict: "fail", detail: differs.slice(0, 3).map((p) => `${p} is ${show(got.leaves.get(p))} where an unknown id gets ${show(unknown.leaves.get(p))}`).join("; ") });
-    } else if ([unknown, got, other].some((r) => holds(r.answer))) {
+    } else if (unknown.leaks || got.leaks || (got.answer.isError && other.leaks)) {
+      // After B's id was written into A's own rows (a profile renamed to B's name), the next call may rightly say so.
       cases.push({ tool: c.tool, ids: label, verdict: "fail", detail: "the answer holds team B's data (its canary)" });
     } else if (unknown.answer.isError && typeof code === "string" && REFUSED.has(code)) {
       cases.push({ tool: c.tool, ids: label, verdict: "weak", detail: code === "no_answer" ? "no answer in time" : "the unknown id was refused as invalid input, before any lookup" });

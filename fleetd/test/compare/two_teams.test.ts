@@ -150,6 +150,50 @@ test("a number team A counts up to itself during the run is no longer team B's i
   expect(failed(report)).toEqual([]);
 });
 
+test("a write that sets team A's own name to one of team B's may say so after; one that shows B's rows still fails", async () => {
+  // note_rename renames the team's last-renamed note (welcome at first) and says from what, as the hub's renames do.
+  const rename = (leaks: boolean): StandInTool => {
+    const last = new Map<unknown, string>();
+    return {
+      name: "note_rename",
+      readOnly: false,
+      input: { type: "object", properties: { name: { $ref: "#/$defs/NoteName" } }, required: ["name"] },
+      output: { type: "object", properties: { note: { $ref: "#/$defs/Note" } }, required: ["note"] },
+      run: (team, input, all) => {
+        const from = last.get(team) ?? "welcome";
+        const text = team.notes.get(from) ?? "";
+        team.notes.delete(from);
+        team.notes.set(input.name, text);
+        last.set(team, input.name);
+        return { note: { name: input.name, text }, next: `renamed ${from} to ${input.name}`, ...(leaks ? { everyone: all.flatMap((t) => [...t.notes.keys()]) } : {}) };
+      },
+    };
+  };
+  const cases = async (leaks: boolean) => {
+    const target = await standIn({ tools: [rename(leaks)] });
+    try {
+      const session = async (team: Awaited<ReturnType<typeof target.team>>) => openSession(team.url, await team.key({ name: "cases", role: "admin" }));
+      const a = await session(await target.team(""));
+      const own = await readIds(a, target.contract);
+      const b = await target.team("");
+      // A name of team B's that carries its canary, as a seed's would: the first of B's that A lacks.
+      const notes = target.data(b).notes;
+      const kept = [...notes];
+      notes.clear();
+      notes.set(`${target.data(b).canary}-1`, "theirs");
+      for (const [name, text] of kept) notes.set(name, text);
+      return await runTwoTeams({ a, b: await session(b), contract: target.contract, own, canaries: [target.data(b).canary] });
+    } finally {
+      await target.close();
+    }
+  };
+  const apart = await cases(false);
+  expect(apart.cases.filter((c) => c.tool === "note_rename")).toEqual([{ tool: "note_rename", ids: "NoteName: B's", verdict: "pass" }]);
+  expect(failed(apart)).toEqual([]);
+  // One that also lists every team's names shows B's: its case fails.
+  expect(failed(await cases(true)).filter((c) => c.tool === "note_rename").map((c) => c.verdict)).toEqual(["fail"]);
+});
+
 const doc = JSON.parse(mcpToolsText) as { $defs: Record<string, any> };
 const names = Object.keys(doc.$defs.McpTools.properties).filter((k) => k.endsWith(".input")).map((k) => k.slice(0, -".input".length));
 const hubTools: Array<Tool> = names.map((name) => ({ name, inputSchema: inputSchema(doc, name) }));
