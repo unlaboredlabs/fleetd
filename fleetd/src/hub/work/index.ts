@@ -12,7 +12,6 @@ import type {
   ClaimId,
   ClaimObserved,
   ClaimOwner,
-  ClaimState,
   HubEventType,
   MachineId,
   ProjectRef,
@@ -41,13 +40,12 @@ import * as matcher from "./matcher.ts";
 import * as store from "./store.ts";
 import type { WorkScope } from "./store.ts";
 import * as view from "./view.ts";
+import { CLAIM_TTL_MS, ended, EXPIRED_SHOWN_MS, onRepo } from "./claims.ts";
+
+export { CLAIM_TTL_MS, ended, EXPIRED_SHOWN_MS, onRepo } from "./claims.ts";
 
 export type { WorkScope };
 
-/** A claim lasts this long from its last renewal (fleetd-contracts work.rs). */
-export const CLAIM_TTL_MS = 12 * 3_600_000;
-/** An expired claim stays in the view, as weak, this long. */
-export const EXPIRED_SHOWN_MS = 24 * 3_600_000;
 /** Tasks and Changes read per project for the view. */
 const PROJECT_ROWS = 200;
 /** A failure after this long without one is a new outage, told to the lead again. */
@@ -92,24 +90,6 @@ function taskPaths(hub: Hub): WorkPorts {
         return undefined;
       }
     },
-  };
-}
-
-/**
- * Whether a Change's `owner/name` is the repo the key names, on whatever host it is: the key's path after its host
- * (`github.com`, a GitHub Enterprise or GitLab host, `host:port` of an ssh remote).
- */
-export function onRepo(key: string, repo: string): boolean {
-  const slash = key.indexOf("/");
-  return slash > 0 && key.slice(slash + 1) === repo.toLowerCase();
-}
-
-function ended(claim: Claim, state: ClaimState, now: number, reason: string, landing?: string): Claim {
-  const cut = [...reason].slice(0, 200).join("");
-  return {
-    ...claim,
-    state,
-    end: { at: isoMs(now), reason: view.isLine(cut, 200) ? cut : "ended", ...(landing !== undefined ? { landing } : {}) },
   };
 }
 

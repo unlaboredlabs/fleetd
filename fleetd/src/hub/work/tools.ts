@@ -8,42 +8,30 @@ import type {
   ClaimObserved,
   ClaimOwner,
   ProjectRef,
-  RecentLanding,
   WorkClaimInput,
   WorkClaimOutput,
-  WorkClaimStatus,
   WorkItem,
-  WorkKey,
   WorkListInput,
   WorkListOutput,
-  WorkMatch,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isHuman, readable, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { cap, unknownProject } from "../api/refusals.ts";
-import { mayUse, others, type Refs } from "../navi/owner.ts";
+import { mayUse, others } from "../navi/owner.ts";
 import { store as hubStore } from "../store/hub_store.ts";
-import { isoMs } from "../store/time.ts";
 import { bindWith, type NodeGit, nodeGit, within } from "./bind.ts";
-import { addDeclared, matcherKeys, matcherScope, matchesIn } from "./check.ts";
-import type { Landed } from "./elsewhere.ts";
+import { matcherKeys, matcherScope, matchesIn } from "./check.ts";
 import { type NewClaim, type Work, work } from "./index.ts";
-import { declared, readWork, type Work as Intent } from "./matcher.ts";
+import { declared, type Work as Intent } from "./matcher.ts";
 import { repoKeyOf } from "./repo_key.ts";
 import { basesOf, inScope, getClaim, putClaim, type WorkScope } from "./store.ts";
-import * as view from "./view.ts";
+import { answer, asciiLower, checkInput, decide, DEFAULT_BASE, intentOf, ITEMS_MAX, LANDINGS_MAX, observedOf, ownerOf, recentLanding, visible, withClaims } from "./claim_rules.ts";
+
+export { describe } from "./claim_rules.ts";
 import { isLine, keyEquals } from "./view.ts";
 
-/** Matches a claim's answer shows. */
-const MATCHES_MAX = 10;
-/** Items work_list shows. */
-const ITEMS_MAX = 100;
-/** Landings outside the train work_list shows. */
-const LANDINGS_MAX = 10;
-/** The base when nothing says otherwise. */
-const DEFAULT_BASE = "main";
 /** How long a call waits on the nodes to read unbound projects' remotes before it answers without them. */
 const BIND_WAIT_MS = 3000;
 
@@ -67,14 +55,6 @@ export function register(tools: Registry): void {
     if (!ended) throw new ToolError("invalid", `${id} has already ended.`, "Nothing to do; work_claim makes a new one.");
     return { claim: ended };
   });
-}
-
-/** The contracts' `checked!` rules on work_claim's and work_list's input, with their words. */
-function checkInput(input: { repo?: string; projectRef?: ProjectRef; notDuplicateOf?: string[]; notDuplicateWhy?: string }): void {
-  if (input.repo === undefined && input.projectRef === undefined) throw new ToolError("invalid", "give repo (its origin remote) or projectRef");
-  if (input.notDuplicateOf !== undefined && input.notDuplicateWhy === undefined) {
-    throw new ToolError("invalid", "notDuplicateOf needs notDuplicateWhy: one line on why it is different work");
-  }
 }
 
 /**
@@ -131,54 +111,6 @@ async function scopeFor(
   return [{ repoKey, base: chosen }, warning];
 }
 
-/**
- * A person's own session only with a human key. Any other key may be a fleetd agent that loaded the person's MCP
- * config, so its claims are an agent key's, and it never claims taken work.
- */
-function ownerOf(caller: Caller): ClaimOwner {
-  const label = [...caller.name].slice(0, 120).join("");
-  return {
-    kind: isHuman(caller) ? "human_session" : "agent_key",
-    keyId: isLine(caller.keyId, 200) ? caller.keyId : [...caller.keyId].slice(0, 200).join(""),
-    ...(isLine(label, 120) ? { label } : {}),
-  };
-}
-
-/** Items on machines the key can't read, and those of another person's Only me project, are left out of what it is shown. */
-const visible = (caller: Caller, navis: Refs, item: WorkItem) =>
-  !item.projectRef || (readable(caller, item.projectRef.machineId) && !navis.has(item.projectRef));
-
-const isMine = (caller: Caller, item: WorkItem) => item.owner?.keyId === caller.keyId;
-
-/** "T12 (an agent of devbox/shop): dark mode toggle". */
-export function describe(item: WorkItem): string {
-  const project = item.projectRef ? `${item.projectRef.machineId}/${item.projectRef.projectId}` : "";
-  let who: string;
-  if (item.kind === "task") who = `an agent of ${project}`;
-  else if (item.kind === "change") who = `a PR on ${project}'s merge train`;
-  else if (item.kind === "claim" && item.owner) {
-    const name = item.owner.label ?? item.owner.keyId;
-    who = item.owner.kind === "human_session" ? `${name}'s session` : item.owner.kind === "agent_key" ? `a session on key ${name}` : `the lead of ${name}`;
-  } else if (item.kind === "claim") who = "a claim";
-  else who = "an open PR";
-  return `${item.id} (${who}${item.state === "expired" ? ", expired" : ""}): ${item.title}`;
-}
-
-/** What the claim is, as the matcher reads it: its title's own keys and paths, and the ones declared. */
-function intentOf(owner: ClaimOwner, input: WorkClaimInput, scope: WorkScope): Intent {
-  const ms = matcherScope(scope);
-  const intent = readWork(owner.keyId, input.title, "", ms);
-  const keys: WorkKey[] = [...(input.keys ?? []), ...(input.branch !== undefined ? [{ branch: input.branch }] : [])];
-  addDeclared(intent, keys.flatMap((k) => matcherKeys(k, ms)));
-  intent.paths.push(...(input.paths ?? []), ...(input.changed ?? []));
-  return intent;
-}
-
-function observedOf(input: WorkClaimInput, now: number): ClaimObserved | undefined {
-  if (!input.changed) return undefined;
-  return { paths: input.changed, ...(input.headSha !== undefined ? { headSha: input.headSha } : {}), at: isoMs(now) };
-}
-
 /** The owner's active claim in the scope on the same branch (or, with no branch, the same title). */
 function ownClaim(hub: Hub, scope: WorkScope, owner: ClaimOwner, branch: string | undefined, title: string): Claim | undefined {
   return inScope(hub.db.conn, scope, Number.MAX_SAFE_INTEGER).find(
@@ -188,8 +120,6 @@ function ownClaim(hub: Hub, scope: WorkScope, owner: ClaimOwner, branch: string 
       (branch !== undefined ? c.branch === branch : c.branch === undefined && asciiLower(c.title) === asciiLower(title)),
   );
 }
-
-const asciiLower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 
 /** Renews the claim and replaces what it says with `next`'s; the observed paths only when given. */
 function revise(hub: Hub, w: Work, claimId: string, next: NewClaim, observed: ClaimObserved | undefined): Claim | undefined {
@@ -210,12 +140,6 @@ function revise(hub: Hub, w: Work, claimId: string, next: NewClaim, observed: Cl
   });
 }
 
-/** `items` with its claims replaced by `claims`, as read where the claim is saved. */
-const withClaims = (items: WorkItem[], claims: Claim[]): WorkItem[] => [
-  ...items.filter((i) => i.kind !== "claim"),
-  ...view.items({ ...view.emptySources(), claims }),
-];
-
 /** work_claim, reading unbound projects through `node`. */
 export async function claimOn(hub: Hub, caller: Caller, input: WorkClaimInput, node: NodeGit): Promise<WorkClaimOutput> {
   checkInput(input);
@@ -226,63 +150,6 @@ export async function claimOn(hub: Hub, caller: Caller, input: WorkClaimInput, n
   const items = await work(hub).inFlight(scope);
   const out = settle(hub, caller, input, scope, items);
   return warning !== undefined ? { ...out, warning } : out;
-}
-
-type Refusal = { refused: WorkClaimOutput };
-
-/** What `found` says about the claim: go ahead, with a note for `work.claimed` when it overrides one; or the answer that refuses it. */
-function decide(caller: Caller, navis: Refs, person: boolean, input: WorkClaimInput, found: WorkMatch[]): { note?: string } | Refusal {
-  const theirs = found.filter((m) => !isMine(caller, m.item));
-  const nameOf = (m: WorkMatch) => (visible(caller, navis, m.item) ? describe(m.item) : `${m.item.id} (on a machine or project this key can't read)`);
-  const refuse = (status: WorkClaimStatus, message: string, next: string): Refusal => ({
-    refused: answer(caller, navis, found, status, undefined, message, next),
-  });
-  const exact = theirs.find((m) => m.strength === "exact");
-  if (exact) {
-    const held = nameOf(exact);
-    if (person && input.anyway === true) return { note: `anyway, though ${exact.item.id} holds it: ${exact.why}` };
-    const next = person
-      ? `Tell the user before going on: ${held}. To claim it anyway, call again with anyway: true.`
-      : `Tell the user before going on: ${held}. Only a person can claim taken work, with a human key: \`fleetd work claim --anyway\`.`;
-    return refuse("taken", `taken by ${held} (${exact.why})`, next);
-  }
-  const acknowledged = input.notDuplicateOf;
-  const unacknowledged = theirs.filter((m) => m.strength === "strong" && !(acknowledged ?? []).includes(m.item.id));
-  const first = unacknowledged[0];
-  if (first) {
-    const ids = unacknowledged.map((m) => `"${m.item.id}"`);
-    return refuse(
-      "possible_duplicate",
-      `may repeat ${nameOf(first)} (${first.why})`,
-      `Tell the user before going on. If it is different work, call again with notDuplicateOf: [${ids.join(", ")}] and notDuplicateWhy.`,
-    );
-  }
-  if (acknowledged && input.notDuplicateWhy !== undefined) return { note: `not a duplicate of ${acknowledged.join(", ")}: ${input.notDuplicateWhy}` };
-  return {};
-}
-
-/** The answer, with the matches the caller may see (not its own), strongest first. */
-function answer(
-  caller: Caller,
-  navis: Refs,
-  found: WorkMatch[],
-  status: WorkClaimStatus,
-  claim: Claim | undefined,
-  message: string,
-  next: string,
-): WorkClaimOutput {
-  const shown = cap(
-    found.filter((m) => visible(caller, navis, m.item) && !isMine(caller, m.item)),
-    MATCHES_MAX,
-  );
-  return {
-    status,
-    ...(claim ? { claim } : {}),
-    matches: shown.items,
-    message,
-    next,
-    ...(shown.truncated ? { truncated: true } : {}),
-  };
 }
 
 /**
@@ -381,14 +248,3 @@ export async function listOn(hub: Hub, caller: Caller, input: WorkListInput, nod
   };
 }
 
-function recentLanding(l: Landed): RecentLanding {
-  return {
-    sha: l.sha,
-    at: isoMs(l.atMs),
-    route: l.route,
-    ...(l.pr !== undefined ? { pr: l.pr } : {}),
-    subject: l.subject,
-    ...(l.authorEmail !== undefined ? { authorEmail: l.authorEmail } : {}),
-    covers: l.covers,
-  };
-}

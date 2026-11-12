@@ -6,7 +6,7 @@
 // lead splitting its own item is not a duplicate; a claim by its owner's key. Expired claims match as weak only.
 import type { MatchStrength, ProjectRef, WorkItem, WorkKey, WorkMatch } from "../../shared/contracts.ts";
 import { type Candidate, declared, keysIn, type MatchKey, matches, readWork, type Scope, sameKey, Strength, type Work } from "./matcher.ts";
-import type { WorkScope } from "./store.ts";
+import type { WorkScope } from "./repo_key.ts";
 
 /** Who holds a project's tasks and Changes, as the matcher compares owners: `<machineId>/<projectId>`. */
 export const projectOwner = (project: ProjectRef) => `${project.machineId}/${project.projectId}`;

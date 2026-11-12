@@ -3,7 +3,7 @@
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { matcherKeys, matcherScope, projectOwner } from "./check.ts";
 import { declared, From, readWork, sameKey, type Work } from "./matcher.ts";
-import type { WorkScope } from "./store.ts";
+import type { WorkScope } from "./repo_key.ts";
 
 export function intent(project: ProjectRef, scope: WorkScope, title: string, prompt: string, pr: string | undefined, paths: Iterable<string>): Work {
   const ms = matcherScope(scope);
