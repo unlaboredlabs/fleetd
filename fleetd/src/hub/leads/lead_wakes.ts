@@ -247,7 +247,7 @@ export class LeadWakes {
         return elsewhere ? { elsewhere } : {};
       })(),
       ...(() => {
-        const checklist = checklistLines(this.hub.db, r);
+        const checklist = checklistLines(this.hub, r, nowMs(this.hub.clock));
         return checklist ? { checklist } : {};
       })(),
       facts: this.workstreamFacts(workstreams),

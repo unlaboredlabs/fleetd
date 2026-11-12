@@ -6,9 +6,13 @@ import type { Database } from "bun:sqlite";
 import type { PersonRef, ProjectRef, TodoItem } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
+import { readWorkstream } from "../leads/records.ts";
 import { events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
-import { type Checklist, type ChecklistCall, digestOf, doneCount, edited, item } from "./list.ts";
+import { TaskRecords } from "../tasks/records.ts";
+import { changeRecords } from "../train/index.ts";
+import { parsePrUrl } from "../train/states.ts";
+import { type Checklist, type ChecklistCall, digestOf, doneCount, edited, item, type Liveness } from "./list.ts";
 
 export { type Checklist, CHECKLIST_MAX, type ChecklistCall, doneCount, edited, type TodoEdit } from "./list.ts";
 
@@ -72,16 +76,31 @@ export function changed(hub: Hub, r: ProjectRef, list: Checklist, by: string, pe
   });
 }
 
-/** The digest's Checklist section: how far along it is, then every item not done, in order. Undefined while empty. */
-export function digestLines(db: HubDb, r: ProjectRef): string[] | undefined {
-  let list: Checklist;
+/**
+ * What runs behind the project's links now: an open order with a queued, running or idle agent, such a task itself,
+ * and a PR whose Change is still on the train (not merged, refused or abandoned).
+ */
+export function liveness(hub: Hub, r: ProjectRef): Liveness {
+  const tasks = TaskRecords.live(hub.db.conn, r, 500);
+  const trains = changeRecords(hub);
+  return {
+    order: (id) => readWorkstream(hub.db.conn, id)?.state === "open" && tasks.some((t) => t.workstreamId === id),
+    task: (id) => tasks.some((t) => t.taskId === id),
+    pr: (url) => {
+      const pr = parsePrUrl(url);
+      return pr !== undefined && trains.openFor(pr.repo, pr.number) !== undefined;
+    },
+  };
+}
+
+/** The digest's Checklist section at `nowMs`: how far along it is, stale items first, then the rest not done. Undefined while empty. */
+export function digestLines(hub: Hub, r: ProjectRef, nowMs: number): string[] | undefined {
   try {
-    list = read(db, r);
+    return digestOf(read(hub.db, r), nowMs, liveness(hub, r));
   } catch (error) {
     console.warn("checklist read for the digest:", error);
     return undefined;
   }
-  return digestOf(list);
 }
 
 /** A project's list, for other areas (the project bridge). */

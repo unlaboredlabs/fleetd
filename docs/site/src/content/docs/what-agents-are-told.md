@@ -360,6 +360,10 @@ mode"; leave it off unless they ask again`), its digest shows the list as it is 
 never to add those back unless you ask. Writers can't change the list, and nothing is worked out from it: no
 figure, no estimate.
 
+An item still to do or doing, unchanged for 3 days with nothing live behind its link (no running or queued agent
+on its order, its agent ended, its pull request merged, closed or off the train, or no link), is stale: the wake lists
+it first, with how long it has sat, and the lead ticks it, removes it, restarts its work or asks you about it once.
+
 ## Skills {#skills}
 
 Every agent gets the [skills](/docs/skills) of its repo (`.agents/skills`, `.claude/skills`), its project and the hub,
