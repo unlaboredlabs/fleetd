@@ -5,7 +5,7 @@
 // head and squash-merges the batch PR pinned to it; each member is then closed with a link. Red, timed out or refused,
 // every member goes alone. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 import type { Change, ChangeState } from "../../shared/contracts.ts";
-import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, held, labelled, NEXT_LABEL, type Pull } from "./github.ts";
+import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { DRAFT, errorText } from "./records.ts";
@@ -484,7 +484,7 @@ async function takeBatch(t: Train, repo: string, base: string, members: Candidat
     [sha, kept] = await buildBatch(t, repo, base, branch, building);
   } catch (error) {
     if (!(error instanceof GhError)) throw error;
-    return release(t, building, `GitHub: ${error.message}`);
+    return release(t, building, githubWhy(error));
   }
   if (kept.length < 2) return alone(t, kept, "the batch's other PRs conflict or are already in its base");
   const title = batchTitle(kept);
@@ -493,7 +493,7 @@ async function takeBatch(t: Train, repo: string, base: string, members: Candidat
     pr = await t.github.openPull(repo, branch, base, title, batchBody(base, kept), false);
   } catch (error) {
     if (!(error instanceof GhError)) throw error;
-    return release(t, kept, `GitHub: ${error.message}`);
+    return release(t, kept, githubWhy(error));
   }
   // Its branch already gets the expensive jobs; the label shows it is next.
   await next.label(t, repo, pr, false);
@@ -541,7 +541,7 @@ async function follower(t: Train, repo: string, base: string, ahead: Stage, k: n
       } else release(t, [m], `left out of the batch: ${base} already has its head`);
     }
   } catch (error) {
-    release(t, building, `GitHub: ${(error as Error).message}`);
+    release(t, building, githubWhy(error));
     return undefined;
   }
   if (kept.length === 0) return undefined;
@@ -551,7 +551,7 @@ async function follower(t: Train, repo: string, base: string, ahead: Stage, k: n
   try {
     pr = await t.github.openPull(repo, branch, base, title, batchBody(base, all), false);
   } catch (error) {
-    release(t, kept, `GitHub: ${(error as Error).message}`);
+    release(t, kept, githubWhy(error));
     return undefined;
   }
   await next.label(t, repo, pr, false);
@@ -682,7 +682,7 @@ async function mergeAloneStage(t: Train, stage: Stage, base: string): Promise<vo
     await t.mergeAlone(change, m.pull, base);
   } catch (error) {
     if (!(error instanceof GhError)) throw error;
-    t.putBack(change, `GitHub: ${error.message}`);
+    t.putBack(change, githubWhy(error));
   }
 }
 
@@ -744,7 +744,7 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
       why ??= `#${m.change.prNumber} was pushed to, held or closed while batch #${pr} was in CI`;
     } catch (error) {
       moved.push(m.change.changeId);
-      why ??= `GitHub: ${(error as Error).message}`;
+      why ??= githubWhy(error);
     }
   }
   if (why !== undefined) return { kind: "members", ids: moved, why };
@@ -757,7 +757,7 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
   try {
     await t.github.postTrainStatus(repo, sha, `batch of ${merging.length}: merged onto ${base}, CI green`);
   } catch (error) {
-    return back({ kind: "failed", why: `GitHub: ${(error as Error).message}` });
+    return back({ kind: "failed", why: githubWhy(error) });
   }
   const commitBody = withTrailers(memberLines(merging), merging.map((m) => m.change));
   let out;
@@ -765,7 +765,7 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
     out = await t.github.merge(repo, pr, sha, [`${title} (#${pr})`, commitBody]);
   } catch (error) {
     // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
-    return back({ kind: "unknown", why: `GitHub: ${(error as Error).message}` });
+    return back({ kind: "unknown", why: githubWhy(error) });
   }
   if (out.kind === "refused") {
     console.info(`train: batch #${pr} refused (HTTP ${out.status}): ${out.message}; each member goes alone`);

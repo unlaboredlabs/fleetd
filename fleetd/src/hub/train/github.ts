@@ -7,6 +7,7 @@ import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
 import { TRAIN_CONTEXT } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
+import { Budget, limitNote, limitReset, limitText, rateLimited } from "./budget.ts";
 
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
 export { NEXT_LABEL, TRAIN_CONTEXT } from "./text.ts";
@@ -22,6 +23,8 @@ export class GhError extends Error {
   constructor(
     readonly kind: GhErrorKind,
     message: string,
+    /** GitHub's rate limit is used up until then: unavailable, and nothing is wrong with what was asked. */
+    readonly resetMs?: number,
   ) {
     super(message);
     this.name = "GhError";
@@ -30,6 +33,14 @@ export class GhError extends Error {
   static failed(message: string): GhError {
     return new GhError("failed", message);
   }
+}
+
+export { limitReset } from "./budget.ts";
+
+/** A GitHub error as a Change's state line: the wait in plain words for a used-up rate limit, else GitHub's words. */
+export function githubWhy(error: unknown): string {
+  const reset = limitReset(error);
+  return reset !== undefined ? limitNote(reset) : `GitHub: ${(error as Error).message}`;
 }
 
 export type PullHead = { ref: string; sha: string; repo?: { full_name: string } | null };
@@ -266,20 +277,45 @@ export function httpStatus(stderr: string): number {
   return 0;
 }
 
-/** Whether a failed answer may well be different a moment later: a 5xx, a timeout, or a secondary rate limit. */
+/** Whether a failed answer may well be different a moment later: a 5xx, a timeout, or a rate limit. */
 export function transient(status: number, message: string): boolean {
-  const m = message.toLowerCase();
-  if (status >= 500 || status === 429) return true;
-  if (status === 403) return m.includes("secondary rate limit");
-  if (status === 0) return ["timed out", "timeout", "deadline exceeded"].some((t) => m.includes(t));
+  if (status >= 500 || rateLimited(status, message)) return true;
+  if (status === 0) return ["timed out", "timeout", "deadline exceeded"].some((t) => message.toLowerCase().includes(t));
   return false;
 }
+
+/** `gh api -i`'s answer: its status line and headers (names lowercased), then its body; all body when it has none. */
+export function httpAnswer(stdout: string): { status?: number; headers: Map<string, string>; body: string } {
+  const headers = new Map<string, string>();
+  const line = /^HTTP\/[\d.]+ (\d{3})/.exec(stdout);
+  if (!line) return { headers, body: stdout };
+  const end = /\r?\n\r?\n/.exec(stdout);
+  const head = end ? stdout.slice(0, end.index) : stdout;
+  for (const h of head.split(/\r?\n/).slice(1)) {
+    const colon = h.indexOf(":");
+    if (colon > 0) headers.set(h.slice(0, colon).trim().toLowerCase(), h.slice(colon + 1).trim());
+  }
+  return { status: Number(line[1]), headers, body: end ? stdout.slice(end.index + end[0].length) : "" };
+}
+
+/**
+ * The text of GETs' answers kept with their ETags, to ask again conditionally: an unchanged answer (304) costs no API
+ * call. The oldest go past it; an answer longer than `KEPT_ANSWER` isn't kept.
+ */
+const KEPT_TEXT = 32 * 1024 * 1024;
+const KEPT_ANSWER = 1024 * 1024;
 
 /** `owner/name` of a `repos/<owner>/<name>/...` path, lowercased: the `github:<repo>` freshness source. */
 function repoOfPath(path: string): string | undefined {
   if (!path.startsWith("repos/")) return undefined;
   const [owner, name] = path.slice(6).split(/[/?]/);
   return owner !== undefined && name !== undefined ? `${owner}/${name}`.toLowerCase() : undefined;
+}
+
+/** The account whose budget a call spends: a `repos/<owner>/...` path's owner, or GraphQL's `owner` field. */
+function ownerOf(path: string, fields: [string, string][]): string {
+  if (path.startsWith("repos/")) return path.slice(6).split(/[/?]/)[0] ?? "";
+  return fields.find(([k]) => k === "owner")?.[1] ?? "";
 }
 
 /** `s` percent-encoded for a URL path (`/` kept when `path`) or query value. */
@@ -386,12 +422,20 @@ const CLASSIC_RULE =
   "branchProtectionRule { requiresApprovingReviews requiredApprovingReviewCount requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
 
 export class TrainGitHub {
+  /** What GitHub's answers say is left of each account's budget. */
+  private readonly budget: Budget;
+  /** Answers to GETs with their ETags, oldest first. */
+  private readonly answers = new Map<string, { etag: string; text: string }>();
+  private keptText = 0;
+
   constructor(
     readonly gh: GhRunner,
     private readonly fresh: FreshLike,
     private readonly now: () => number,
     private readonly sleep: Sleep,
-  ) {}
+  ) {
+    this.budget = new Budget(now);
+  }
 
   private reached(path: string): void {
     const repo = repoOfPath(path);
@@ -421,6 +465,16 @@ export class TrainGitHub {
     return out;
   }
 
+  /** When `repo`'s owner's REST budget, used up, resets. */
+  limitedUntil(repo: string): number | undefined {
+    return this.budget.until(repo.split("/")[0] ?? "");
+  }
+
+  /** `ms`, or longer while GitHub's budget for `repo`'s owner (any, without one) is low or used up. */
+  spread(ms: number, repo?: string): number {
+    return this.budget.spread(ms, repo?.split("/")[0]);
+  }
+
   /** `gh api` with `accept`: the answer's text, or `[status, message]` for a non-2xx answer. */
   async exchange(
     method: string,
@@ -428,36 +482,56 @@ export class TrainGitHub {
     accept: string,
     fields: [string, string][] = [],
   ): Promise<{ ok: true; text: string } | { ok: false; status: number; message: string }> {
-    const args = ["api", "-X", method, "-H", accept, path];
+    const owner = ownerOf(path, fields);
+    const resource = path === "graphql" ? "graphql" : "core";
+    const until = this.budget.until(owner, resource);
+    // GitHub would refuse it: nothing is asked until the limit resets.
+    if (until !== undefined) throw new GhError("unavailable", `gh api ${path}: ${limitText(until)}`, until);
+    const args = ["api", "-i", "-X", method, "-H", accept, path];
     for (const [k, v] of fields) {
       // `draft` is a JSON boolean; -f would send the string "true".
       args.push(k === "draft" ? "-F" : "-f", `${k}=${v}`);
     }
-    // A read GitHub fails transiently is asked again, `READ_TRIES` times in all; a write could have landed.
+    const key = method === "GET" && fields.length === 0 ? `${accept}\u0000${path}` : undefined;
+    const kept = key !== undefined ? this.answers.get(key) : undefined;
+    if (kept) args.push("-H", `If-None-Match: ${kept.etag}`);
+    // A read GitHub fails transiently is asked again, `READ_TRIES` times in all; a write could have landed. A rate
+    // limit is not asked again: it is waited out.
     let tries = 1;
     let wait = READ_RETRY_FIRST_MS;
     let reply: { ok: true; text: string } | { ok: false; status: number; message: string } | undefined;
     let thrown: GhError | undefined;
+    let headers = new Map<string, string>();
     for (;;) {
       reply = undefined;
       thrown = undefined;
       try {
         const out = await this.run(args);
+        const answer = httpAnswer(out.stdout);
+        headers = answer.headers;
+        this.budget.seen(owner, headers.get("x-ratelimit-resource") ?? resource, headers);
         if (out.exitCode === 0) {
-          reply = { ok: true, text: out.stdout };
+          reply = { ok: true, text: answer.body };
+          const etag = headers.get("etag");
+          if (key !== undefined && etag !== undefined) this.keep(key, etag, answer.body);
+        } else if (answer.status === 304 && kept) {
+          // Unchanged since it was read: GitHub counts no call for it.
+          reply = { ok: true, text: kept.text };
+          this.keep(key!, kept.etag, kept.text);
         } else {
           // gh prints GitHub's error body on stdout; its message is the plainest reason.
           let message: string | undefined;
           try {
-            const m = (JSON.parse(out.stdout) as { message?: unknown }).message;
+            const m = (JSON.parse(answer.body) as { message?: unknown }).message;
             if (typeof m === "string") message = m;
           } catch {}
-          reply = { ok: false, status: httpStatus(out.stderr), message: message ?? lastLine(out.stderr) };
+          reply = { ok: false, status: answer.status ?? httpStatus(out.stderr), message: message ?? lastLine(out.stderr) };
         }
       } catch (error) {
         if (!(error instanceof GhError)) throw error;
         thrown = error;
       }
+      if (reply && !reply.ok && rateLimited(reply.status, reply.message)) break;
       const why =
         reply && !reply.ok && transient(reply.status, reply.message)
           ? reply.message
@@ -479,7 +553,28 @@ export class TrainGitHub {
       if (thrown.kind === "failed" && transient(0, thrown.message)) throw new GhError("unavailable", thrown.message);
       throw thrown;
     }
+    if (!reply!.ok && rateLimited(reply!.status, reply!.message)) {
+      const reset = this.budget.usedUp(owner, headers.get("x-ratelimit-resource") ?? resource, headers);
+      throw new GhError("unavailable", `gh api ${path}: ${limitText(reset)} (${reply!.message})`, reset);
+    }
     return reply!;
+  }
+
+  /** Keeps `key`'s answer with its ETag, the newest last; the oldest go past `KEPT_TEXT`. */
+  private keep(key: string, etag: string, text: string): void {
+    const old = this.answers.get(key);
+    if (old) {
+      this.answers.delete(key);
+      this.keptText -= old.text.length;
+    }
+    if (text.length > KEPT_ANSWER) return;
+    this.answers.set(key, { etag, text });
+    this.keptText += text.length;
+    for (const [k, a] of this.answers) {
+      if (this.keptText <= KEPT_TEXT) break;
+      this.answers.delete(k);
+      this.keptText -= a.text.length;
+    }
   }
 
   /** `gh api {path} failed: {message}`, unavailable when GitHub failed transiently. */
@@ -661,6 +756,10 @@ export class TrainGitHub {
    */
   async updateBranch(repo: string, n: number, rebase = true): Promise<BranchUpdate> {
     const path = `repos/${repo}/pulls/${n}`;
+    // gh asks GitHub's GraphQL API for it.
+    const owner = repo.split("/")[0] ?? "";
+    const until = this.budget.until(owner, "graphql");
+    if (until !== undefined) throw new GhError("unavailable", `rebasing ${repo}#${n}: ${limitText(until)}`, until);
     let out: GhOut;
     try {
       out = await this.run(["pr", "update-branch", String(n), ...(rebase ? ["--rebase"] : []), "--repo", repo]);
@@ -671,6 +770,10 @@ export class TrainGitHub {
     const conflict = out.stderr.toLowerCase().includes("conflict");
     if (out.exitCode !== 0 && !conflict) {
       const why = lastLine(out.stderr);
+      if (why.toLowerCase().includes("rate limit")) {
+        const reset = this.budget.usedUp(owner, "graphql", new Map());
+        throw new GhError("unavailable", `rebasing ${repo}#${n}: ${limitText(reset)} (${why})`, reset);
+      }
       this.missed(path, why);
       throw GhError.failed(`rebasing ${repo}#${n} on GitHub failed: ${why}`);
     }
