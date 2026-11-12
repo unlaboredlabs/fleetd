@@ -206,6 +206,7 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   pr_diff: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
   vault_move: "not called: it moves an item set aside at the upgrade, which no tool makes",
+  hub_restart: "not called: it restarts the hub the run is calling, which drops every connection the run holds",
 };
 
 /**
@@ -214,6 +215,32 @@ const NOT_HERE: Readonly<Record<string, string>> = {
  */
 const OUTSIDE: Readonly<Record<string, unknown>> = {
   skill_install: { scope: "global", source: "https://areas.invalid/skills.git" },
+};
+
+/**
+ * Tools whose input is not made of ids, called with this one instead: machine_add_plan and machine_add on an SSH host
+ * that never resolves, never without a host, which plans or adds the hub's own computer as a machine. A hub set up
+ * with `fleetd init` plans nothing there and starts a run that fails in the background; a run's hub refuses first
+ * (REFUSALS).
+ */
+const GIVEN: Readonly<Record<string, unknown>> = {
+  machine_add_plan: { host: "areas.invalid" },
+  machine_add: { host: "areas.invalid" },
+};
+
+/**
+ * Refusals that are the tool's answer on a run's hub, by why: an answer with one of the codes passes, as
+ * OFFLINE_ANSWERS' do, and any other answer is decoded as usual.
+ */
+const REFUSALS: Readonly<Record<string, readonly [codes: ReadonlyArray<string>, why: string]>> = {
+  pair_code_create: [["failed"], "a hub that listens only on loopback, as a run's does, has no address a phone reaches"],
+  github_app_create: [["failed"], "GitHub refuses a code it never gave, and a run's code is made up"],
+  github_connect: [["failed"], "the hub has no GitHub App to sign a person in with, and GitHub refuses a code it never gave"],
+  github_app_test: [["not_found"], "the hub has no GitHub App, which only github_app_create makes, with a code from GitHub"],
+  github_app_remove: [["not_found"], "the hub has no GitHub App, which only github_app_create makes, with a code from GitHub"],
+  doctor_fix: [["invalid"], "the hub fixes nothing itself: each check's fix is a command a person runs"],
+  machine_add_plan: [["failed", "invalid"], "a hub not set up with `fleetd init`, as a run's, plans no machine, and one that is reaches no SSH host that never resolves"],
+  machine_add: [["failed", "invalid"], "a hub not set up with `fleetd init`, as a run's, adds no machine"],
 };
 
 /**
@@ -313,6 +340,8 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
       .map((a) => (a.isError ? (a.body as { code?: unknown; message?: unknown } | null) : null))
       .find((body) => body?.code === "machine_offline" || (body?.code === "failed" && String(body?.message).startsWith("No machine took it")));
     if (ok.length === 0 && offline && OFFLINE_ANSWERS.includes(tool)) return checks.push({ name: `MCP ${tool} answers ${String(offline.code)}, as no node joins`, ok: true });
+    const refused = REFUSALS[tool] && answers.map((a) => (a.isError ? (a.body as { code?: unknown } | null)?.code : undefined)).find((code) => REFUSALS[tool]![0].includes(String(code)));
+    if (ok.length === 0 && refused !== undefined) return checks.push({ name: `MCP ${tool} answers ${String(refused)}: ${REFUSALS[tool]![1]}`, ok: true });
     if (ok.length === 0) return checks.push({ name: `MCP ${tool}`, ok: false, detail: JSON.stringify(answers[0]?.body) });
     const why = ok.map((a) => valid(tool, a.body)).find((w) => w !== undefined);
     checks.push({ name: `MCP ${tool} decodes as ${tool}.output`, ok: why === undefined, ...(why === undefined ? {} : { detail: why }) });
@@ -350,6 +379,10 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
       const code = (answer.body as { code?: unknown } | null)?.code;
       if (answer.isError && (code === "failed" || code === "invalid")) checks.push({ name: `MCP ${tool.name} answers ${code}: the fetch from outside is refused, as a run reaches nothing outside`, ok: true });
       else checks.push({ name: `MCP ${tool.name}`, ok: false, detail: `a source at a host that never resolves was answered: ${JSON.stringify(answer.body)}` });
+      continue;
+    }
+    if (tool.name in GIVEN) {
+      decoded(tool.name, [await as.call(tool.name, GIVEN[tool.name])]);
       continue;
     }
     if (onMachine !== undefined) {

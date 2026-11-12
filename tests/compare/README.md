@@ -84,11 +84,17 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   be the hub's failed "No machine took it.") is called on the machine the reads turn up and may answer
   `machine_offline`, or is skipped when there is none; `skill_install` is called on a source at a host that never
   resolves, and must refuse the fetch (`failed` or `invalid`); `vault_reveal` reveals the seeded login's `password` to
-  a 32-byte reply key; `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello
-  first), `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the
-  account or token does their work), `screen_open` and `screen_end` (a node hosts screens), the reads `pr_get`,
-  `pr_files` and `pr_diff` (GitHub, which a run doesn't reach), `skill_update` (it fetches from outside) and
-  `vault_move` (it moves an item set aside at the upgrade, which no tool makes) are skipped, saying why, as is a tool whose seed needs a tool the team doesn't list (`vault_status` for the vault's,
+  a 32-byte reply key; `machine_add_plan` and `machine_add` are given an SSH host that never resolves, never no host
+  (that is the hub's own computer), and may answer `failed` or `invalid` (a hub not set up with `fleetd init` adds no
+  machine); `pair_code_create` may answer `failed` (a hub only on loopback has no address a phone reaches),
+  `github_app_create` and `github_connect` `failed` (GitHub refuses a made-up code), `github_app_test` and
+  `github_app_remove` `not_found` (only `github_app_create` makes an App), and `doctor_fix` `invalid` (the hub fixes
+  nothing itself); `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello first),
+  `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the account or
+  token does their work), `screen_open` and `screen_end` (a node hosts screens), the reads `pr_get`, `pr_files` and
+  `pr_diff` (GitHub, which a run doesn't reach), `skill_update` (it fetches from outside), `vault_move` (it moves an
+  item set aside at the upgrade, which no tool makes) and `hub_restart` (it drops every connection the run holds) are
+  skipped, saying why, as is a tool whose seed needs a tool the team doesn't list (`vault_status` for the vault's,
   `push_relay_set` for the phone). The vault's seeds seal with fleetd's sealed box, from this checkout or from the
   fleetd package installed in a node_modules directory above a copy of tests/compare (not one in the system's temp
   directory). Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub keeps (asked from
@@ -107,8 +113,9 @@ node contract.ts --target ../../../service/target.ts --areas
 
 `behaviour.ts --areas` passes the flag on and skips the factory rows; it still wants a binary.
 `fleetd/test/compare/areas.test.ts` proves the mode on stand-ins listing only the decisions tools, and only the people tools.
-`fleetd/test/compare/areas_hub.test.ts` runs the seeds on the open hub itself (every module's tools over `/mcp`, in
-fleetd's own test run), so a seed the hub refuses fails CI, and checks the vault seed's mark shows only in a reveal.
+`fleetd/test/compare/areas_hub.test.ts` runs the seeds and the whole contract on the open hub itself (every module's
+tools over `/mcp`, in fleetd's own test run, with stand-ins for the hub's own `gh` and for GitHub), so a seed the hub refuses, a tool
+the run calls wrongly or an answer that doesn't decode fails CI, and checks the vault seed's mark shows only in a reveal.
 
 ## Two-team cases
 
