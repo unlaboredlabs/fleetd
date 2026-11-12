@@ -1975,12 +1975,17 @@ export class Tasks {
     return next;
   }
 
-  /** A writer's PR merged: its worktree goes, unless its agent is still at work. */
+  /** A writer's PR merged: its worktree goes, unless its agent is still at work or something of its own will continue
+   * it: a wait_ci (often this very merge's), or an ask_lead question not answered yet (a Monitor's the node refuses
+   * for). The worktree, and the scratch dir that goes with it, are where it goes on. Such a task's worktree goes at
+   * its next PR's merge, else with the nightly sweep's, `policy.worktree_days` after it ends. */
   private merged(event: HubEvent): void {
     const taskId = (event.data as Record<string, unknown> | undefined)?.taskId;
     if (typeof taskId !== "string" || !/^T[1-9][0-9]*$/.test(taskId)) return;
     const task = this.get(taskId);
-    if (task && task.kind === "write" && (task.state === "done" || task.state === "failed")) this.removeWorktree(task);
+    if (!task || task.kind !== "write" || (task.state !== "done" && task.state !== "failed")) return;
+    if (this.asked.has(taskId) || openCiWaits(this.db).has(taskId)) return;
+    this.removeWorktree(task);
   }
 
   /** Has the node stop a task's agent and delete its worktree, off the lock; one it can't is left for the nightly sweep. */

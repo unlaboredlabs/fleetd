@@ -36,7 +36,7 @@ export function briefNote(set: [string, string][], n: number): string {
     const w = testWorkers(n);
     note += `- Test runners get ${w} workers: ${TEST_WORKERS_VAR} is set to it. Keep any other test runner to ${w} workers too.\n`;
   }
-  return `${note}- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.\n`;
+  return `${note}- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory. Its files last until you can no longer be continued (they go with your worktree: once your PR merges with nothing of yours waiting (a wait_ci, a Monitor, a question to your lead), else 3 days after your task ends), but what you started there (a database, a server) ends when your session is reaped idle, 10 minutes after a turn ends: after a wait, start it again from the data you kept there.\n`;
 }
 
 /** One compile cache for every session on the machine, when sccache is installed and the environment names no

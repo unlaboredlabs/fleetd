@@ -471,7 +471,7 @@ The node that starts a task adds a short section to the end of its brief, after 
 ## This machine
 - Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build to 2 jobs too.
 - Test runners get 4 workers: VITEST_MAX_WORKERS is set to it. Keep any other test runner to 4 workers too.
-- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.
+- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory. Its files last until you can no longer be continued (they go with your worktree: once your PR merges with nothing of yours waiting (a wait_ci, a Monitor, a question to your lead), else 3 days after your task ends), but what you started there (a database, a server) ends when your session is reaped idle, 10 minutes after a turn ends: after a wait, start it again from the data you kept there.
 - Cargo builds, tests, checks and clippy runs take turns for this machine's 3 build slots, one each; a `cargo test` takes two (a lib's tests beside the lib) unless it builds only `--lib` of one package or only named targets (`--test <name>`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.
 ```
 
