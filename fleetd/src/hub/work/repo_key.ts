@@ -1,5 +1,9 @@
 // A repo on any git host as its origin remote shortened and lowercased (crates/fleetd-contracts/src/projects.rs
-// `short_remote`, work.rs `RepoKey::of`).
+// `short_remote`, work.rs `RepoKey::of`), and the repo and base a project's work lands on.
+import type { RepoKey } from "../../shared/contracts.ts";
+
+/** The repo and base a project's work lands on. */
+export type WorkScope = { repoKey: RepoKey; base: string };
 
 /** `git@github.com:acme/shop.git`, `https://user@github.com/acme/shop/` → `github.com/acme/shop`. */
 export function shortRemote(url: string): string {
