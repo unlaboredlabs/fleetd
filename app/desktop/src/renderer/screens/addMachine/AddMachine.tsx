@@ -734,13 +734,18 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
       {mac ? (
         <>
           <Text size="sm" tone="quiet">
-            Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents).
+            {guided
+              ? "Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents)."
+              : "Agents act as this Mac account. To keep them out of yours, give them their own user."}
           </Text>
-          <span>
-            <Button size="sm" variant="link" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.setup" }))}>
-              Open Setup
-            </Button>
-          </span>
+          {/* fleetd cloud has no Setup step for the Mac to point at. */}
+          {guided ? (
+            <span>
+              <Button size="sm" variant="link" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.setup" }))}>
+                Open Setup
+              </Button>
+            </span>
+          ) : null}
         </>
       ) : null}
       {state === undefined ? null : (
@@ -752,7 +757,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
         </div>
       )}
       <div className={s.actions}>
-        {state === "joined" && mac ? (
+        {state === "joined" && mac && guided ? (
           <Button variant="primary" onClick={() => (window.location.hash = "#/setup/mac")}>
             {"Open the Mac's checks"}
           </Button>

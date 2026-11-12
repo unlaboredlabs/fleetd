@@ -601,6 +601,32 @@ it("shows A Mac for agents' 6-digit code, made once, with the hub's address, and
   expect(window.location.hash).toBe("#/setup/mac");
 });
 
+it("sends a Mac that joined fleetd cloud, which has no Setup step for it, to its own page, by code or by line", async () => {
+  hubInfo = Promise.resolve({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: CLOUD_LEFT_OUT } });
+  await render();
+  await click("Set up…");
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  expect(button("Open the Mac's checks")).toBeUndefined();
+  await click("Open mac");
+  expect(window.location.hash).toBe("#/settings/hub/machines/mac");
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render();
+  await click("Set up…");
+  await click("Use Terminal instead");
+  // No hub's guide, and no Setup step to point at: the user of its own is only said.
+  expect(host.textContent).toContain("give them their own user.");
+  expect(host.textContent).not.toContain("see Setup");
+  expect(button("Open Setup")).toBeUndefined();
+  await click("Make the line");
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  expect(button("Open the Mac's checks")).toBeUndefined();
+  await click("Open mac");
+  expect(window.location.hash).toBe("#/settings/hub/machines/mac");
+  expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
+});
+
 it("says when A Mac for agents' code closed after ten wrong codes, or the Mac took it, from the hub's word", async () => {
   macStatus = "closed";
   await render();
