@@ -1,10 +1,10 @@
 // Whether this app's person sees Settings' Hub group: its sidebar rows, the palette's commands and the pages ask
 // here. Small and in the shell's chunk; the page is its own.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { serves } from "../../../shared/hub";
 import { administers } from "./model";
 
@@ -52,16 +52,25 @@ export function useSettledAdministers(): boolean {
   return role.pending ? settled : role.administers;
 }
 
+/** Each hub's last word on what it leaves out, by the hub's id: kept through a refetch and a remount, never another's. */
+const lastLeftOut = new Map<string, readonly string[]>();
+const NONE: readonly string[] = [];
+
+/** Forgets every hub's last word (tests). */
+export const resetServes = (): void => lastLeftOut.clear();
+
 /**
  * Whether the hub in scope serves `tool` (shared/hub.ts `serves`): fleetd cloud leaves out self-update, restart,
- * doctor, setup and the SSH machine add, and their controls are absent there. No until hub_info first answers, then
- * held at the last answer while it is asked again, as useSettledAdministers; yes on a hub too old to have hub_info.
+ * doctor, setup and the SSH machine add, and their controls are absent there. Only a hub_info answer with `leftOut`
+ * hides one: while hub_info hasn't answered or keeps failing, the hub's last answer holds, and a hub never seen (or
+ * too old to have hub_info) serves everything, so a self-run hub never looks like a cloud team.
  */
 export function useServes(tool: string): boolean {
+  const { hub } = useDataLayer();
   const info = useToolQuery("hub_info", noInput);
-  const old = info.error instanceof CallError && lacksTool(info.error.error);
-  const now = old ? true : info.data === undefined ? undefined : serves(info.data, tool);
-  const [settled, setSettled] = useState(now);
-  if (now !== undefined && settled !== now) setSettled(now);
-  return now ?? settled ?? false;
+  const leftOut = info.data === undefined ? undefined : (info.data.leftOut ?? NONE);
+  useEffect(() => {
+    if (leftOut !== undefined) lastLeftOut.set(hub, leftOut);
+  }, [hub, leftOut]);
+  return serves({ leftOut: leftOut ?? lastLeftOut.get(hub) }, tool);
 }

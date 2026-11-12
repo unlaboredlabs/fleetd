@@ -55,6 +55,19 @@ describe("up to date", () => {
   });
 });
 
+describe("fleetd cloud, which updates itself (updates: false)", () => {
+  it("says only this app's own update: never the hub's build, its machines or a run, and no Update for the hub", () => {
+    const cloud = { updates: false, version: "4f2a91c", cli: NEXT, ready: NEXT, machines: [machine("devbox", OLDER)], run: runOf([hubPart({ state: "downloading" })]) };
+    expect(status(cloud)).toEqual(status({ updates: false, version: "4f2a91c" }));
+    expect(status(cloud).action).toBeUndefined();
+    expect(status({ ...cloud, app: { kind: "ready", version: NEXT } }).action).toEqual({ label: "Restart to update", act: "app" });
+    // With nothing from this app to say (the phone), the one line why.
+    expect(status({ updates: false, app: null })).toEqual({ kind: "current", title: "Up to date", detail: "fleetd cloud updates itself.", rows: [] });
+    // A self-run hub, which serves hub_update, as before.
+    expect(status({ updates: true, cli: NEXT }).action).toEqual({ label: "Update", act: "update" });
+  });
+});
+
 describe("an update to take", () => {
   it("is one line and one button: the channel's newer build", () => {
     expect(status({ cli: NEXT })).toEqual({ kind: "available", title: "Update available", detail: "fleetd Edge · Oct 23, 10:30", action: { label: "Update", act: "update" }, rows: [] });

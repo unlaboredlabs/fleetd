@@ -14,6 +14,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
+import { resetServes } from "./role";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -76,6 +77,7 @@ let frame: (frame: HubFrame) => void;
 const MACHINES = [machine("devbox"), machine("builder-1"), machine("laptop", "offline")];
 
 beforeEach(() => {
+  resetServes();
   calls = [];
   leftOut = undefined;
   checks = LOGGED_OUT;
@@ -314,6 +316,12 @@ it("shows nothing about a machine's checks while they all pass, or before the hu
 
 it("reads no checks and no hosts on fleetd cloud, which leaves its doctor and SSH out: no problems, no error, Remove stays", async () => {
   leftOut = ["doctor_list", "doctor_fix", "machine_add_plan", "machine_add", "machine_add_status", "machine_hosts"];
+  // The app knows the hub's answer before it opens the page (Settings' Hub group waits for hub_info): a first mount
+  // learns it, and the page that opens next asks nothing left out.
+  await render(<MachinePage machineId="laptop" />);
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
   await render(<MachinePage machineId="laptop" />);
   expect(problems()).toEqual([]);
   expect(host.textContent).not.toContain("Couldn't read");

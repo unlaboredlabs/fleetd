@@ -11,6 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddMachine, type View } from "./AddMachine";
+import { resetServes } from "../admin/role";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -119,6 +120,7 @@ let send: (frame: HubFrame) => void = () => undefined;
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code K7Q2-M4XP --machine-id laptop";
 
 beforeEach(() => {
+  resetServes();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -258,6 +260,12 @@ const CLOUD_LEFT_OUT = ["hub_update", "hub_update_settings", "hub_update_status"
 
 it("offers no SSH way on fleetd cloud, says how machines join there, and adds this computer with a line", async () => {
   hubInfo = Promise.resolve({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: CLOUD_LEFT_OUT } });
+  // The app knows the hub's answer before it opens the page (Settings' Hub group waits for hub_info): a first mount
+  // learns it, and the page that opens next asks nothing left out.
+  await render();
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
   await render();
   expect(state()).toBe("choose");
   expect(host.textContent).not.toContain("A machine the hub can reach");

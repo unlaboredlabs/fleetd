@@ -21,7 +21,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
-import { administers, type CallOutcome } from "../shared/hub";
+import { administers, serves, type CallOutcome } from "../shared/hub";
 import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
 import type { MacActivity, MacBehind, MacDisk, MacMenuBarRead } from "../shared/macMenuBar";
 import { compareVersions, isEdge } from "../shared/pairing";
@@ -547,6 +547,9 @@ export const signedInPorts = (signedIn: () => ReadonlyArray<SignedIn>): Pick<Mac
     updateHub: async (hubUrl) => {
       const hub = at(hubUrl);
       if (hub === undefined) return { ok: false, failure: { message: "This app isn't signed in to your hub on this Mac.", fix: HUB_UPDATE_WHERE } };
+      // fleetd cloud leaves hub_update out (hub_info's leftOut): nothing to ask it.
+      const info = await hub.call("hub_info", {});
+      if (info.ok && !serves(info.output as { leftOut?: readonly string[] } | undefined, "hub_update")) return { ok: false, failure: { message: "fleetd cloud updates itself." } };
       const out = await hub.call("hub_update", {});
       if (out.ok) return { ok: true };
       const { message, fix } = out.error;

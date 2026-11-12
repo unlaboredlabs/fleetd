@@ -12,6 +12,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { HubsSettings } from "./Hubs";
 import { RESTART_WAIT_MS } from "./hubRestart";
+import { resetServes } from "../admin/role";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -28,6 +29,7 @@ let restart: () => Promise<CallOutcome>;
 let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
+  resetServes();
   calls = [];
   restart = () => Promise.resolve({ ok: true, output: { leads: 0, next: "The hub restarts now." } });
   vi.stubGlobal("fleetd", { platform: "linux", fixture: null, pair: { store: () => Promise.resolve({ kind: "os" }) } });
