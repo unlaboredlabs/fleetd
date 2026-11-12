@@ -142,6 +142,20 @@ test("a proxy cooldown names no reset and its model", () => {
   expect([f.class, f.resetAt, f.model]).toEqual(["usage_limit", iso(NOW + 90_000), "claude-opus-5-5"]);
 });
 
+/** 2026-11-12 00:17 UTC: the gateway named the reset, and claude tagged the gateway's model as one it doesn't know.
+ * Classed invalid_request then, so 3 writers and 16 reviewers failed for good instead of parking. */
+test("a proxy cooldown that names its reset is a rate limit until then, whatever claude says of the model", () => {
+  const e = evidence("claude-2.1.310-proxy-cooldown-429.jsonl");
+  e.text =
+    "API Error: Request rejected (429) · All credentials for model claude-fable-5-2 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.) (reset after 4m15s)";
+  e.stderr = '[claude-code:unrecognized_model] {"model":"claude-fable-5-2","query_source":"sdk"}\n';
+  const f = classify(e)!;
+  expect([f.class, f.resetAt, f.model]).toEqual(["rate_limit", iso(NOW + 4 * MIN + 15_000), "claude-fable-5-2"]);
+  // The same without status or assistant error, as only the text says it.
+  const bare = classify(make({ isError: true, text: e.text, stderr: e.stderr, nowMs: NOW }))!;
+  expect([bare.class, bare.resetAt]).toEqual(["rate_limit", iso(NOW + 4 * MIN + 15_000)]);
+});
+
 test("auth failures are auth with claude's words", () => {
   let f = classify(evidence("not-logged-in"))!;
   expect([f.class, f.message, f.resetAt]).toEqual(["auth", "Not logged in · Please run /login", undefined]);

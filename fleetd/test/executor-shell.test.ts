@@ -14,6 +14,10 @@ import {
   transitionEvent,
 } from "../src/hub/executor/shell_mapper.ts";
 import { backoffMs } from "../src/hub/executor/index.ts";
+import { parkedOf } from "../src/hub/usage/classify.ts";
+import { type ParkedKind, UsageState } from "../src/hub/usage/state.ts";
+import { classify, evidence } from "../src/node/runner/host/failure.ts";
+import type { HubEvent } from "../src/shared/contracts.ts";
 import type { MachineEvent, SessionSummary } from "../src/shared/sessions.ts";
 
 const MACHINE = "lab-b";
@@ -260,4 +264,44 @@ test("a usage limit is its own event, with the reset", () => {
   expect(event.type).toBe("thread.usage_limited");
   expect(event.summary).toBe(`"fixtures: d" on lab-b hit the usage limit (resets 2026-10-17T15:00:00.000Z)`);
   expect(event.data).toMatchObject({ usageClass: "usage_limit", resumeAt: "2026-10-17T15:00:00.000Z", usageLimitResetAt: "2026-10-17T15:00:00.000Z" });
+});
+
+/** 2026-11-12 00:17 UTC, verbatim: classed invalid_request then, so writers and reviewers failed instead of parking. */
+test("a gateway cooldown with its reset parks a lead, a reviewer and a writer, and each is continued at the reset", () => {
+  const text =
+    "API Error: Request rejected (429) · All credentials for model claude-fable-5-2 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.) (reset after 4m15s)";
+  const failedAt = Date.parse(at(8));
+  const failure = classify(
+    evidence({
+      isError: true,
+      assistantError: "rate_limit",
+      apiErrorStatus: 429,
+      text,
+      stderr: '[claude-code:unrecognized_model] {"model":"claude-fable-5-2","query_source":"sdk"}\n',
+      nowMs: failedAt,
+    }),
+  )!;
+  const resetAt = "2026-10-17T10:12:15.000Z";
+  const state = beforeTurns();
+  feed(
+    [
+      [11, updated(running("d", 7, "d1", 1))],
+      [12, updated(dFailed(failure))],
+    ],
+    state,
+  );
+  const d = state.threads.get("s-d")!;
+  expect(phase(d.summary)).toBe("usage_limited");
+  const event = transitionEvent({ kind: "usage_limited", threadId: "s-d", late: false }, d, MACHINE);
+  expect(event.data).toMatchObject({ usageClass: "rate_limit", resumeAt: resetAt, model: "claude-fable-5-2" });
+  const usage = new UsageState();
+  const kinds: ParkedKind[] = ["write", "review", "lead"];
+  kinds.forEach((kind, i) => {
+    const e = { ...event, seq: i + 1, at: at(8), threadId: `s-${kind}` } as HubEvent;
+    expect(parkedOf(e)).toEqual({ class: "rate_limit", since: at(8), resumeAt: resetAt, proxy: true });
+    usage.apply(e, { kind, ...(kind !== "lead" ? { taskId: `T${i}` } : {}) }, undefined);
+  });
+  expect(usage.due(Date.parse(resetAt) - 1)).toEqual([]);
+  const due = usage.due(Date.parse(resetAt));
+  expect(usage.takeInOrder(due.flatMap((x) => x.threads)).map((p) => p.thread.threadId)).toEqual(["s-lead", "s-review", "s-write"]);
 });

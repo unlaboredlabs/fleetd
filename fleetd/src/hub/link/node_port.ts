@@ -2,11 +2,13 @@
 // `nodePort(hub)`, over `link(hub)` (D346) and the executor's session calls (crates/fleetd/src/hub/executor/mod.rs
 // `mcp_secrets`, `claude_account_secret`, `onepassword_token`, `answer`, `pending_permission`, …), with their
 // operations, waits and errors' words. Tests set `hub.area("node_port")` to a fake.
-import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors, type NodeOperation } from "../executor/index.ts";
 import { link } from "./index.ts";
 import type { PendingPermission } from "../approvals/ports.ts";
+import { fromExecutor } from "./node_errors.ts";
+
+export { fromExecutor, offline } from "./node_errors.ts";
 
 export type NodePort = {
   /** The machine's node is linked and its session stream live (executor `is_connected`). */
@@ -36,10 +38,6 @@ export const nodePort = (hub: Hub): NodePort =>
 export const linked = (hub: Hub, m: string) => nodePort(hub).linked(m);
 export const nodeCan = (hub: Hub, m: string, cap: string) => nodePort(hub).can(m, cap);
 
-/** api/grants.rs `offline`. */
-export const offline = (m: string) =>
-  new ToolError("machine_offline", `Machine ${m} is offline.`, `Start the node on ${m} or check its network, then retry.`);
-
 /** Each session call this area sends: the executor's operation it reports under, and how long it waits. */
 const CALLS: Record<string, [NodeOperation, number]> = {
   mcp_secrets: ["project", 15_000],
@@ -55,14 +53,6 @@ const CALLS: Record<string, [NodeOperation, number]> = {
   repo_inspect: ["read", 10_000],
   repo_clone: ["project", 60 * 60_000],
 };
-
-/** executor/tools.rs `from_executor`: an executor failure as the tool's error. */
-export function fromExecutor(e: unknown): ToolError {
-  if (e instanceof ToolError) return e;
-  const fix = "Retry; if it keeps failing, check the machine with fleetd_status.";
-  if (e instanceof ExecutorError) return e.kind === "not_connected" ? offline(e.machineId) : new ToolError("failed", e.message, e.extra.fix ?? fix);
-  return new ToolError("failed", e instanceof Error ? e.message : String(e), fix);
-}
 
 /** One session call to `m`'s node: its output, or a ToolError in the executor's words. */
 export async function sessionCall(hub: Hub, m: string, call: { op: string } & Record<string, unknown>): Promise<Record<string, unknown>> {

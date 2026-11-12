@@ -20,10 +20,10 @@ import type {
   Task,
 } from "../../shared/contracts.ts";
 import { redact } from "../../shared/redact.ts";
-import { TRAIN_CONTEXT } from "../train/github.ts";
-import { TERMINAL_STATES } from "../train/records.ts";
-import { clip, isoMs, parseMs } from "../train/seams.ts";
-import type { GhCheck, GhFile, GhPull } from "./github.ts";
+import { isoMs, parseMs } from "../store/time.ts";
+import { TERMINAL_STATES } from "../train/states.ts";
+import { clip, TRAIN_CONTEXT } from "../train/text.ts";
+import type { GhCheck, GhFile, GhPull } from "./shapes.ts";
 
 /** One file's diff line is cut past this many characters (contracts `PR_DIFF_LINE_MAX`). */
 export const PR_DIFF_LINE_MAX = 400;

@@ -67,8 +67,11 @@ export interface ReviewGate {
   again(change: Change): Promise<Verdict>;
   /** Whether a reviewer is at work on the Change's current patch and nothing blocks it. */
   rereview(change: Change): boolean;
-  /** The lead enqueued the Change again while blocking findings hold its current patch: a fresh full review starts. */
-  resolved(change: Change): Promise<boolean>;
+  /**
+   * The lead enqueued the Change again while blocking findings hold its current patch, or after its reviewers stalled
+   * without a verdict: a fresh full review starts, and this is the Change's note. Undefined when neither holds it.
+   */
+  resolved(change: Change): Promise<string | undefined>;
 }
 
 /** A gate that approves nothing, for a train without reviews. */
@@ -76,7 +79,7 @@ export const NO_GATE: ReviewGate = {
   review: async () => ({ kind: "pending" }),
   again: async () => ({ kind: "pending" }),
   rereview: () => false,
-  resolved: async () => false,
+  resolved: async () => undefined,
 };
 
 export type TrainOptions = {
@@ -143,6 +146,8 @@ export const CI_SUPERSEDED = "a push to the PR replaced the head its CI ran on; 
 export const CI_CANCELLED = "its CI timed out, then was cancelled, and re-running it didn't finish it";
 export const RESOLVED =
   "enqueued again while its review's findings blocked it: they count no more, and a fresh full review of its patch runs";
+export const RESTARTED =
+  "enqueued again after its reviewers ended without a verdict: they count no more, and a fresh full review of its patch runs";
 export const CI_FINISHED_LATE = "CI finished after the timeout; back in the queue";
 /** The reviews' note on a Change its findings block (reviews/service.rs `BLOCKED`). */
 export const BLOCKED_PREFIX = "waiting for a new head: ";
@@ -1864,9 +1869,11 @@ export class Train {
             });
           }
           const existing = next.addAfter(this, existing0, after);
-          // Enqueued again while its review's findings block it: the lead resolved them without a new patch.
-          if (!result && existing.state === "reviewing" && (await this.gate.resolved(existing))) {
-            this.note(existing.changeId, RESOLVED);
+          // Enqueued again while its review's findings block it, or after its reviewers stalled: the lead resolved them
+          // without a new patch.
+          const resolved = !result && existing.state === "reviewing" ? await this.gate.resolved(existing) : undefined;
+          if (resolved !== undefined) {
+            this.note(existing.changeId, resolved);
             this.records.endWait(existing.changeId, WAIT_BLOCKED);
           }
           // Enqueued again after a merge GitHub refused by a rule: the rule or the PR has changed, so it is tried again.

@@ -23,6 +23,7 @@ import { executorHooks } from "./hooks.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { type StoredThread as StoreThread, store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { ExecutorError, type NodeOperation } from "./error.ts";
 import {
   applyMachineEvent,
   fromThread,
@@ -36,6 +37,8 @@ import {
 } from "./shell_mapper.ts";
 import { type SendOpts, sendWith as sendThread } from "./sessions.ts";
 import { Views } from "./views.ts";
+
+export { ExecutorError, type NodeOperation } from "./error.ts";
 
 /** The activity tracker (T2253's src/hub/executor/activity.ts, `hub.area("activity")`), once its area exists. */
 type ActivityArea = { onThreadEvent(machineId: MachineId, frame: ThreadEventFrame): void };
@@ -80,38 +83,6 @@ export const PATIENCE_MS = 120_000;
 export const STOP_TIMEOUT_MS = 40_000;
 /** The node keeps the last 2000 characters of the assistant's text on the summary. */
 export const SUMMARY_TAIL_MAX = 2000;
-
-export type NodeOperation = "launch" | "send" | "interrupt" | "stop" | "answer" | "read" | "project";
-
-/** Why a node request produced no answer (executor/mod.rs `ExecutorError`). */
-export class ExecutorError extends Error {
-  constructor(
-    readonly kind: "not_connected" | "thread_not_found" | "node_failed",
-    readonly machineId: MachineId,
-    message: string,
-    readonly extra: { threadId?: ThreadId; operation?: NodeOperation; nodeMessage?: string; fix?: string } = {},
-  ) {
-    super(message);
-    this.name = "ExecutorError";
-  }
-
-  static notConnected(machineId: MachineId): ExecutorError {
-    return new ExecutorError("not_connected", machineId, `machine ${machineId} has no live node link`);
-  }
-
-  static threadNotFound(machineId: MachineId, threadId: ThreadId): ExecutorError {
-    return new ExecutorError("thread_not_found", machineId, `thread ${threadId} is not known on machine ${machineId}`, { threadId });
-  }
-
-  /** `message` is the node's own words (or why no answer came); safe to show. */
-  static failed(machineId: MachineId, operation: NodeOperation, message: string, fix?: string): ExecutorError {
-    return new ExecutorError("node_failed", machineId, `the node on ${machineId} refused or failed the ${operation} request: ${message}`, {
-      operation,
-      nodeMessage: message,
-      ...(fix !== undefined ? { fix } : {}),
-    });
-  }
-}
 
 function fromSessionError(machineId: MachineId, operation: NodeOperation, session: ThreadId | undefined, error: SessionError): ExecutorError {
   if (error.code === "not_found" && session !== undefined && operation !== "answer" && operation !== "launch") {
