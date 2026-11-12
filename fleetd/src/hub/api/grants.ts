@@ -1,8 +1,7 @@
 // The grant checks handlers share, with the same words.
-import type { MachineId, Role } from "../../shared/contracts.ts";
+import type { AgentKeyInfo as Caller, MachineId, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { allows } from "../auth/index.ts";
-import type { Caller } from "./registry.ts";
+import { allows } from "../auth/allows.ts";
 
 /** The fix for a person's device refused an admin write. */
 export const REPAIR_FIX =

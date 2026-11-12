@@ -17,40 +17,12 @@ import {
   type ProjectMessageCall,
   type ProjectMessageResult,
 } from "./bridge.ts";
+import { BODY_MAX, CallFailed, failedReads, type Failure, FEED_MARGIN_MS, noLongerWorks, readAnswer, reason, retryDelayMs, unreachable } from "./answers.ts";
 import { boxKey, failed, FEED_WAIT_MAX_SEC, type Kept, kept, keptGet, type LinkHello, setCursor, setHello, setState } from "./store.ts";
 
+export { CallFailed, failedReads, type Failure, retryDelayMs, unreachable } from "./answers.ts";
+
 const CALL_MS = 20_000;
-/** How long a feed read waits past the other hub's own wait. */
-const FEED_MARGIN_MS = 10_000;
-/** The most a call there reads back. */
-const BODY_MAX = 1024 * 1024;
-
-/** What one call there came to, when not an answer. */
-export type Failure =
-  | { kind: "unreachable"; why: string }
-  /** It refused the key: the link is dead. */
-  | { kind: "dead"; error: ToolError }
-  /** It refused this request. */
-  | { kind: "refused"; error: ToolError };
-
-export class CallFailed extends Error {
-  constructor(readonly failure: Failure) {
-    super(failure.kind === "unreachable" ? failure.why : failure.error.message);
-  }
-}
-
-function reason(error: unknown): string {
-  const e = error as { name?: string; code?: string };
-  if (e.name === "TimeoutError" || e.name === "AbortError") return "it didn't answer in time";
-  if (e.code === "ConnectionRefused" || e.code === "ECONNREFUSED" || e.code === "ConnectionClosed" || e.code === "FailedToOpenSocket") {
-    return "the connection failed";
-  }
-  return "the request failed";
-}
-
-const toolError = (v: { code?: unknown; message?: unknown; fix?: unknown }) =>
-  new ToolError(v.code as never, String(v.message ?? ""), typeof v.fix === "string" ? v.fix : undefined);
-
 /** One call to `/link/v1/<path>` on `url` with `key`; throws a CallFailed. */
 export async function call<T>(url: string, key: string, post: unknown, path: string, timeoutMs: number): Promise<T> {
   const target = `${url.replace(/\/+$/, "")}/link/v1/${path}`;
@@ -76,50 +48,8 @@ export async function call<T>(url: string, key: string, post: unknown, path: str
     if (error instanceof CallFailed) throw error;
     throw new CallFailed({ kind: "unreachable", why: reason(error) });
   }
-  if (bytes.length > BODY_MAX) throw new CallFailed({ kind: "unreachable", why: `it answered with more than ${BODY_MAX} bytes` });
-  const status = `${response.status} ${response.statusText}`.trim();
-  let body: unknown;
-  try {
-    body = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    body = undefined;
-  }
-  if (response.ok) {
-    if (body === undefined) throw new CallFailed({ kind: "unreachable", why: `it answered ${status} with something that isn't fleetd's` });
-    return body as T;
-  }
-  const refusal = body as { code?: unknown; message?: unknown; dead?: unknown } | undefined;
-  if (!refusal || typeof refusal.code !== "string" || typeof refusal.message !== "string") {
-    throw new CallFailed({
-      kind: "unreachable",
-      why:
-        `it answered ${status} without fleetd's own words (a proxy in the way, or no fleetd hub of this ` +
-        "version or newer at that URL)",
-    });
-  }
-  // Only the hub's own word that the key is dead for good revokes the link here; any other 401 is a refusal.
-  throw new CallFailed(
-    response.status === 401 && refusal.dead === true
-      ? { kind: "dead", error: toolError(refusal) }
-      : { kind: "refused", error: toolError(refusal) },
-  );
+  return readAnswer<T>(response, bytes);
 }
-
-/** The plain words for a hub this one can't reach, for the Navi and the app alike. */
-export const unreachable = (label: string, url: string, why: string) =>
-  new ToolError(
-    "failed",
-    `Can't reach ${label} at ${url}: ${why}.`,
-    `A hub link needs ${label}'s hub reachable from this hub, over a tailnet or HTTPS. Check it is up and its URL ` +
-      "in the Navi's Linked hubs; nothing was sent.",
-  );
-
-const noLongerWorks = (label: string, message: string) =>
-  new ToolError(
-    "forbidden",
-    `The link to ${label} no longer works: ${message}`,
-    `Ask the person to make a new link on ${label} and add it in the project's Linked hubs.`,
-  );
 
 export function openKey(hub: Hub, link: Kept): string {
   let opened: string | undefined;
@@ -291,13 +221,6 @@ export async function refresh(hub: Hub, linkId: string): Promise<void> {
     // Left as it was: the feed read that follows records how the other hub answered.
   }
 }
-
-/** The wait before calling a hub again after failed read `attempt` (0 first) in a row, `jitter` in 0.8..1.2. */
-export const retryDelayMs = (attempt: number, jitter: number) =>
-  Math.round(Math.min(30_000, 1000 * 2 ** Math.min(attempt, 16)) * jitter);
-
-/** The failed reads in a row once one more, which took `tookMs`, failed: one that failed after waiting starts again. */
-export const failedReads = (before: number, tookMs: number) => (tookMs >= FEED_MARGIN_MS ? 1 : before + 1);
 
 /** Follows one kept link until it is removed here, dead there, its project archived, or the hub stops. */
 export async function follow(hub: Hub, linkId: string, hello: boolean): Promise<void> {

@@ -1,48 +1,20 @@
 // Key checking, as crates/fleetd/src/hub/auth/mod.rs does it: a key is `fld_` and 52 base32 characters, stored as its
 // SHA-256; a revoked key, or one whose person was removed, is refused on its next call. Creating, listing and revoking
 // keys, enroll tokens and node keys are hub-core's to port here (PORT_MAP.md).
-import type { AgentKeyInfo, Grant, MachineId, Role } from "../../shared/contracts.ts";
+import type { AgentKeyInfo, Grant } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { HubDb } from "../store/db.ts";
 import { capped, cleanName, OWNER_FALLBACK, roleCap, roleOf } from "../people/roles.ts";
+import { allows, isAgentKey, sha256, stripBearer } from "./allows.ts";
 import { Keys } from "./keys.ts";
 import { NodeKeys } from "./nodes.ts";
+
+export { allows, isAgentKey, sha256, stripBearer } from "./allows.ts";
 
 const CREATE_KEY_FIX = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
 const KEY_PREFIX = "fld_";
 const LAST_USED_EVERY_MS = 60_000;
-
-export const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex");
-
-/** `^fld_[a-z2-7]{52}$` */
-export const isAgentKey = (key: string) => /^fld_[a-z2-7]{52}$/.test(key);
-
-/** Drops a leading `Bearer ` (any case, any run of whitespace), then trims. */
-export function stripBearer(bearer: string): string {
-  const scheme = bearer.slice(0, 6);
-  if (scheme.toLowerCase() === "bearer") {
-    const after = bearer.slice(6);
-    const stripped = after.trimStart();
-    if (stripped.length < after.length) return stripped.trim();
-  }
-  return bearer.trim();
-}
-
-const RANK: Record<Role, number> = { read: 0, operate: 1, admin: 2 };
-
-/**
- * Whether some grant gives at least `role` on `machine`. Without a machine (fleet-wide reads) any grant of that role
- * is enough; the caller then filters results per machine.
- */
-export function allows(info: AgentKeyInfo, role: Role, machine?: MachineId): boolean {
-  return (
-    info.revokedAt === undefined &&
-    info.grants.some(
-      (g) => RANK[g.role] >= RANK[role] && (machine === undefined || g.machines === "*" || g.machines.includes(machine)),
-    )
-  );
-}
 
 export type KeyRow = {
   key_id: string;
