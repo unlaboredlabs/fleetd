@@ -105,6 +105,7 @@ imported.
 | `fleetd/fakes/accounts` | a stand-in for fleetd cloud's accounts service and WorkOS's sign-in page, with a `/pair` and the invites by email per team: the apps' Sign in and People tests (`test/fake-accounts.ts`, its calls in `schema/Accounts.json`) |
 | `fleetd/gen/migrations` | the hub's migrations in order, each with its SQL |
 | `fleetd/hub/<area>/<module>` | the hub's pure modules, each at its own path under `src/hub` |
+| `fleetd/node/<area>/<module>` | a node module the service shares, pure as the hub's are (`screens/settings`) |
 
 An exported module is pure: neither it nor anything it imports, a type included, touches the database, the
 filesystem, a process, the network, the machine's environment, the `Hub` or an npm package (the fakes open sockets,

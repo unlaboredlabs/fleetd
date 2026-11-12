@@ -35,3 +35,6 @@ export function allows(info: AgentKeyInfo, role: Role, machine?: MachineId): boo
 /** Some grant of the caller's gives `role` on every machine (api/grants.rs `allows_everywhere`). */
 export const allowsEverywhere = (caller: AgentKeyInfo, role: "admin" | "operate" | "read") =>
   caller.grants.some((g) => g.machines === "*" && allows({ ...caller, grants: [g] }, role));
+
+/** Milliseconds as the hub writes timestamps: `2026-11-08T14:00:00.000Z`. */
+export const isoMs = (ms: number) => new Date(ms).toISOString();

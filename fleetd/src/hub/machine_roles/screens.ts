@@ -13,14 +13,11 @@ import type {
   ScreenPr,
   ScreenStage,
   ScreenWait,
-  SessionHost,
   SessionKind,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import {
   CAP_PROJECT_SIGNINS,
-  HOST_NOUN,
-  SCREEN_WAIT_MINUTES,
   type BrowserCallFrame,
 } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
@@ -37,7 +34,7 @@ import { changeControl, unknownMachine, unknownProject } from "../browser/tools.
 import { get } from "../browser/store.ts";
 import { sleep } from "../browser/thumbs.ts";
 import { type Build, builds, type Found, openDone, PIECE, sealCall } from "./builds.ts";
-import { CALL_WAIT, cancel, DEVICE_WAIT, hostSession, START_WAIT } from "./calls.ts";
+import { cancel, hostSession } from "./calls.ts";
 import { isAgentsMac } from "./mac.ts";
 import {
   endPlace,
@@ -49,46 +46,30 @@ import {
   PLACE_COLUMNS,
   type Place,
   placeOf,
-  ready,
-  type Runner,
   runners,
 } from "./places.ts";
-
-/** How long a person's wait for a slot lasts. */
-const WAIT_MS = SCREEN_WAIT_MINUTES * 60_000;
-/** How long a start's answer waits for the runner's report of the screen live, which races it over the link. */
-const RECORD_WAIT = 5_000;
-/** How long a PR's build may take to install, the screen's runner starting first included. */
-const INSTALL_WAIT = 300_000;
-/** Between tries while the screen's machine holds a command back. */
-const INSTALL_RETRY = 1_000;
+import {
+  asWait,
+  CALL_WAIT,
+  clip,
+  DEVICE_WAIT,
+  hostOf,
+  INSTALL_RETRY,
+  INSTALL_WAIT,
+  purpose,
+  RECORD_WAIT,
+  START_WAIT,
+  unable,
+  type Wait,
+  WAIT_COLUMNS,
+  WAIT_MS,
+  waitOf,
+  type WaitRow,
+} from "./screen_rules.ts";
 
 export function register(tools: Registry): void {
   tools.add("screen_open", screenOpen);
   tools.add("screen_end", screenEnd);
-}
-
-const HOSTS: Record<string, SessionHost> = {
-  android: "android",
-  ios: "ios",
-  linux_desktop: "desktop",
-  mac: "mac",
-  browser: "browser",
-};
-const hostOf = (kind: SessionKind): SessionHost => HOSTS[kind] ?? "browser";
-
-const WHAT: Record<string, string> = {
-  browser: "Browser",
-  android: "Android emulator",
-  ios: "iOS simulator",
-  linux_desktop: "Linux desktop",
-  mac: "Agents' Mac",
-};
-
-/** What a person's screen is called in the list, in their name, with the PR whose build it has. */
-function purpose(kind: SessionKind, person: PersonRef, pr: ScreenPr | undefined): string {
-  const what = WHAT[kind] ?? "Browser";
-  return pr ? `${what} opened by ${person.name}, with PR #${pr.number}` : `${what} opened by ${person.name}`;
 }
 
 /** The person `caller` is. A key with no person acts as the hub's owner, made on a hub that has no people yet. */
@@ -119,81 +100,12 @@ export function heldOn(c: Database, runner: string, now: number): number {
   );
 }
 
-type Wait = {
-  id: string;
-  person: string;
-  device: string;
-  project: ProjectRef;
-  runner: string;
-  kind: SessionKind;
-  sinceMs: number;
-  pr: ScreenPr | undefined;
-  stage: ScreenStage;
-  thread: string | undefined;
-  error: string | undefined;
-};
-
-type WaitRow = {
-  wait_id: string;
-  person_id: string;
-  device: string;
-  machine_id: string;
-  project_id: string;
-  runner_id: string;
-  kind: string;
-  since_ms: number;
-  pr_repo: string | null;
-  pr_number: number | null;
-  stage: string;
-  thread_id: string | null;
-  error: string | null;
-};
-
-const WAIT_COLUMNS =
-  "wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms, pr_repo, pr_number, stage, thread_id, error";
-
-const waitOf = (r: WaitRow): Wait => ({
-  id: r.wait_id,
-  person: r.person_id,
-  device: r.device,
-  project: { machineId: r.machine_id, projectId: r.project_id },
-  runner: r.runner_id,
-  kind: r.kind as SessionKind,
-  sinceMs: r.since_ms,
-  pr: r.pr_repo !== null && r.pr_number !== null ? { repo: r.pr_repo, number: r.pr_number } : undefined,
-  stage: r.stage as ScreenStage,
-  thread: r.thread_id ?? undefined,
-  error: r.error ?? undefined,
-});
-
 /** Every wait still in time, oldest first. */
 const waitsOn = (c: Database, now: number): Wait[] =>
   c
     .query<WaitRow, [number]>(`SELECT ${WAIT_COLUMNS} FROM screen_waits WHERE since_ms > ?1 ORDER BY since_ms, wait_id`)
     .all(now - WAIT_MS)
     .map(waitOf);
-
-const clip = (text: string, max: number) => ([...text].length <= max ? text : `${[...text].slice(0, max - 1).join("")}…`);
-
-function asWait(w: Wait, all: Wait[]): ScreenWait {
-  let ahead = 0;
-  for (const o of all) {
-    if (o.id === w.id) break;
-    if (o.runner === w.runner && o.stage === "waiting") ahead += 1;
-  }
-  return {
-    waitId: w.id,
-    projectRef: w.project,
-    kind: w.kind,
-    machineId: w.runner,
-    since: isoMs(w.sinceMs),
-    ahead,
-    ...(w.pr ? { pr: w.pr } : {}),
-    stage: w.stage,
-    ...(w.thread === undefined ? {} : { threadId: w.thread }),
-    ...(w.error === undefined ? {} : { error: clip(w.error, 500) }),
-  };
-}
 
 /** `screen.wait` for wait `id` of project `r`, now at `stage` (undefined: gone). */
 function announce(hub: Hub, r: ProjectRef, id: string, stage: ScreenStage | undefined): void {
@@ -235,17 +147,6 @@ export function waitsOf(hub: Hub, caller: Caller, r: ProjectRef): ScreenWait[] {
 function keptProfile(hub: Hub, r: ProjectRef, kind: SessionKind, runner: string): boolean {
   if (kind !== "browser" || runner !== r.machineId) return false;
   return isNavi(hub.db, r) || link(hub).can(runner, CAP_PROJECT_SIGNINS);
-}
-
-/** Why `runner` can't host a person's screen of `kind` at all, slots aside; undefined when it can. */
-function unable(r: Runner, host: SessionHost): string | undefined {
-  const name = r.name;
-  if (!r.sessions) return `${name} hosts no screens: its role is agents only.`;
-  if (!r.online) return `${name} is offline.`;
-  if (r.othersNote !== undefined) return `${name} can't host it yet. ${r.othersNote}`;
-  if (ready(r, host) === true) return undefined;
-  const why = r.hosts?.find((h) => h.host === host)?.detail ?? "it hasn't said what it can host";
-  return `${name} can't host ${HOST_NOUN[host] ?? host} screen: ${why}.`;
 }
 
 /** The person a screen is for, and their device: its action log names their steps by it. */

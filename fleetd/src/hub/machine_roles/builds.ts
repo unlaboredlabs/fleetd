@@ -6,31 +6,16 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionKind } from "../../shared/contracts.ts";
-import { secretbox, secretboxOpen } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { AppGh } from "../github_app/gh.ts";
 import { githubApps } from "../github_app/index.ts";
 import type { GhRunner } from "../train/gh.ts";
+import { type Build, FILE_MAX, type Found, namedFor, noun } from "./device_steps.ts";
+
+export { type Build, FILE_MAX, type Found, namedFor, noun, openDone, PIECE, sealCall } from "./device_steps.ts";
 
 /** The head's runs looked through. */
 const RUNS = 10;
-/** The most a screen takes of a file (node/device/remote.rs `FILE_MAX`). */
-export const FILE_MAX = 64 << 20;
-/** A device step's piece (remote.rs `PIECE`). */
-export const PIECE = 4 << 20;
-
-export type Found = { runId: number; artifact: string; sha: string };
-export type Build = { name: string; bytes: Uint8Array };
-
-export const noun = (kind: SessionKind) => (kind === "ios" ? "iOS simulator build" : "Android build");
-
-function namedFor(name: string, kind: SessionKind): boolean {
-  const n = name.toLowerCase();
-  if (kind === "ios") return n.includes("ios");
-  if (kind === "android") return n.includes("android") || n.includes("apk");
-  return false;
-}
-
 /** The build file in a downloaded artifact: the first by path, links not followed. */
 function theFile(dir: string, kind: SessionKind): string | undefined {
   const suffix = kind === "ios" ? ".zip" : ".apk";
@@ -162,36 +147,3 @@ export class Builds {
 export const builds = (hub: Hub) =>
   hub.area("machine_roles.builds", (h) => new Builds(new AppGh(githubApps(h)), join(h.config.home, "builds")));
 
-// ---- the hub's own sealed device steps (remote.rs) ----
-
-type Way = "call" | "answer";
-
-function wayKey(relayKey: Uint8Array, way: Way): Uint8Array {
-  const label = way === "call" ? "fleetd device 1: agent to runner" : "fleetd device 1: runner to agent";
-  return new Uint8Array(new Bun.CryptoHasher("sha256").update(label).update(relayKey).digest());
-}
-
-function nonce(count: number): Uint8Array {
-  const out = new Uint8Array(24);
-  new DataView(out.buffer).setBigUint64(0, BigInt(count), true);
-  return out;
-}
-
-/** A device step, sealed with the screen's relay key under its count: `{ step: "sealed", count, dataB64 }`. */
-export function sealCall(relayKey: Uint8Array, count: number, call: Record<string, unknown>): Record<string, unknown> {
-  const sealed = secretbox(wayKey(relayKey, "call"), nonce(count), new TextEncoder().encode(JSON.stringify(call)));
-  return { step: "sealed", count, dataB64: Buffer.from(sealed).toString("base64") };
-}
-
-/** The screen's machine's answer to step `count`, opened; undefined for one that doesn't open with the key. */
-export function openDone(relayKey: Uint8Array, count: number, done: Record<string, unknown>): Record<string, unknown> | undefined {
-  if (done.step !== "sealed" || typeof done.dataB64 !== "string") return undefined;
-  const plain = secretboxOpen(wayKey(relayKey, "answer"), nonce(count), Buffer.from(done.dataB64, "base64"));
-  if (!plain) return undefined;
-  try {
-    const opened = JSON.parse(new TextDecoder().decode(plain)) as Record<string, unknown>;
-    return opened.step === "sealed" ? undefined : opened;
-  } catch {
-    return undefined;
-  }
-}
