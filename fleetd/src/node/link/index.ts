@@ -8,6 +8,8 @@
 // QUIET_DEAD (30 s), where the Rust node waits for it.
 import { HUB_TO_NODE } from "../../shared/wire_tags.ts";
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";
+import { systemClock, type Clock } from "../../shared/clock.ts";
+import { isUpgradeProofMessage, makeUpgradeProof } from "../../shared/upgrade_proof.ts";
 import type { NodeIdentity } from "../identity.ts";
 import {
   CAP,
@@ -145,6 +147,8 @@ export type RunNodeOptions = {
   /** Resolves when the machine woke from sleep: the link ends at once, and the next one reports the sleep. */
   woke?: (signal: AbortSignal) => Promise<void>;
   log?: (level: "info" | "warn" | "debug", message: string, fields?: Record<string, unknown>) => void;
+  /** The upgrade proof's time; tests pass their own. */
+  clock?: Clock;
   /** Bounds, for tests. */
   quiet?: { probeMs: number; deadMs: number };
   heartbeatMs?: number;
@@ -220,7 +224,18 @@ function runLinkOnce(
     } catch (error) {
       return resolve({ kind: "lost", why: (error as Error).message });
     }
-    const ws = new WebSocket(url);
+    // An enrolled node proves itself in the upgrade too (../../shared/upgrade_proof.ts); a first join, with its code,
+    // sends nothing there. Never logged.
+    const proof = enrollToken
+      ? undefined
+      : makeUpgradeProof({
+          url,
+          machineId: options.settings.machineId,
+          pubKey: options.identity.pubKey(),
+          now: (options.clock ?? systemClock).now(),
+          sign: (message) => options.identity.signUpgrade(message),
+        });
+    const ws = proof ? new WebSocket(url, { headers: proof }) : new WebSocket(url);
     ws.binaryType = "arraybuffer";
     const linkAbort = new AbortController();
     const inflater = new Inflater(LINK_MAX_FRAME_BYTES);
@@ -315,6 +330,7 @@ function runLinkOnce(
         case "challenge": {
           if (frame.t !== "challenge") return finish({ kind: "lost", why: `expected a challenge, got ${frame.t}` });
           const nonce = String(frame.nonce ?? "");
+          if (isUpgradeProofMessage(nonce)) return finish({ kind: "lost", why: "the hub's challenge is not a nonce" });
           hello = options.capabilities();
           const helloFrame: NodeFrame = {
             t: "hello",

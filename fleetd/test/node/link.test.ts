@@ -7,6 +7,7 @@ import { compresses, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
 import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
+import { readUpgradeProof, UPGRADE_PROOF_HEADERS, verifyUpgradeProof } from "../../src/shared/upgrade_proof.ts";
 import { tempHome } from "../helpers.ts";
 
 type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
@@ -14,10 +15,11 @@ type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
 /** A hub: answers each hello with `welcome` (or closes with `refuse`), and keeps every frame its nodes send. */
 function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string } = {}) {
   const conns: Conn[] = [];
+  const upgrades: Headers[] = [];
   const inflaters = new Map<unknown, Inflater>();
   const server = Bun.serve({
     port: 0,
-    fetch: (req, s) => (s.upgrade(req) ? undefined : new Response("no", { status: 400 })),
+    fetch: (req, s) => (upgrades.push(req.headers), s.upgrade(req) ? undefined : new Response("no", { status: 400 })),
     websocket: {
       open(ws) {
         conns.push({ frames: [], ws });
@@ -41,7 +43,7 @@ function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId
         if (opts.refuse) return ws.close(opts.refuse[0], opts.refuse[1]);
         ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
   };
-  return { url: `http://127.0.0.1:${server.port}`, conns, server };
+  return { url: `http://127.0.0.1:${server.port}`, conns, upgrades, server };
 }
 
 const until = async (what: string, fn: () => boolean, ms = 5000) => {
@@ -85,6 +87,55 @@ test("the hello is signed over the hub's nonce and carries the enroll token unti
   expect(enrolled).toBe(1);
   stop.abort();
   hub.server.stop(true);
+  home.done();
+});
+
+test("an enrolled node's upgrade carries its proof; a first join's carries none, nor its code", async () => {
+  const home = tempHome();
+  const hub = fakeHub();
+  const stop = new AbortController();
+  const NOW = 1_800_000_000_000;
+  const linked: LinkContext[] = [];
+  const opts = options(hub.url, home.dir, { enrollToken: "fle_token", clock: { now: () => NOW }, attach: (l) => (linked.push(l), () => {}), signal: stop.signal });
+  void runNode(opts);
+  await until("the welcome", () => linked.length === 1);
+  const first = hub.upgrades[0]!;
+  for (const name of Object.values(UPGRADE_PROOF_HEADERS)) expect(first.get(name)).toBeNull();
+  expect([...first.values()].some((v) => v.includes("fle_token"))).toBe(false);
+  // Enrolled now: the next dial proves itself, signed for the host and path it dials, at the node's clock.
+  linked[0]!.relink("test");
+  await until("the second link", () => linked.length === 2);
+  const proof = readUpgradeProof(hub.upgrades[1]!)!;
+  expect(proof).toMatchObject({ machineId: "devbox", pubKey: opts.identity.pubKey(), at: NOW, host: `127.0.0.1:${hub.server.port}`, path: "/node/link" });
+  const expected = { machineId: "devbox", pubKey: opts.identity.pubKey(), host: `127.0.0.1:${hub.server.port}`, path: "/node/link", now: NOW, skewMs: 60_000 };
+  expect(verifyUpgradeProof(proof, expected)).toEqual({ ok: true });
+  // The hello is as before: signed over the hub's nonce.
+  expect(hub.conns[1]!.frames[0]).toMatchObject({ t: "hello", machineId: "devbox" });
+  expect(hub.conns[1]!.frames[0]!.enrollToken).toBeUndefined();
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
+});
+
+test("a challenge shaped as an upgrade proof gets no hello", async () => {
+  const home = tempHome();
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req, s) => (s.upgrade(req) ? undefined : new Response("no", { status: 400 })),
+    websocket: {
+      open: (ws) => void ws.send(JSON.stringify({ t: "challenge", nonce: "fleetd node link upgrade v1\ndevbox\n/node/link\ndevbox\n0" })),
+      message: (_ws, data) => void heard.push(String(data)),
+    },
+  });
+  const heard: string[] = [];
+  const stop = new AbortController();
+  const why: string[] = [];
+  void runNode(options(`http://127.0.0.1:${server.port}`, home.dir, { signal: stop.signal, log: (_l, _m, f) => void (f?.why && why.push(String(f.why))) }));
+  await until("the link given up", () => why.length > 0);
+  expect(why[0]).toBe("the hub's challenge is not a nonce");
+  expect(heard).toEqual([]);
+  stop.abort();
+  server.stop(true);
   home.done();
 });
 
