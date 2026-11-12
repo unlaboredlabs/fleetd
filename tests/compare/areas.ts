@@ -21,13 +21,13 @@ const REPO = "https://github.com/example/areas";
 interface Seeding {
   readonly made: Ids;
   readonly as: Session;
-  readonly listed: ReadonlyArray<Tool>;
 }
 
 /**
- * fleetd's `crypto_box_seal`: from this checkout, else from the fleetd package installed beside a copy of tests/ (a
- * service's suite runs a copy of tests/compare, with the pinned package, which exports it). Node strips no types under
- * node_modules, so the package's file is read, stripped and loaded as it is: it imports nothing but node:crypto.
+ * fleetd's `crypto_box_seal`: from this checkout, else from the fleetd package installed in a node_modules directory
+ * above a copy of tests/compare (a service's suite runs such a copy, with the pinned package, which exports it; a copy
+ * in the system's temp directory reaches no package). Node strips no types under node_modules, so the package's file
+ * is read, stripped and loaded as it is: it imports nothing but node:crypto.
  */
 const sealing = async (): Promise<(publicKey: Uint8Array, plain: Uint8Array) => Uint8Array> => {
   type Core = { seal: (publicKey: Uint8Array, plain: Uint8Array) => Uint8Array };
@@ -59,9 +59,10 @@ async function sealedToHub(as: Session, fields: unknown): Promise<string | undef
 /**
  * The writes that seed a team, made when the target lists their tool: the `n`th of each, `mark` in every text
  * (undefined: not made, for want of what it needs). Each is a write the hub refuses with only its required fields, or
- * makes something a read has nothing to show without.
+ * makes something a read has nothing to show without. `needs`: tools it can't be made without, which the target must
+ * list too; when it doesn't, the tool isn't called at all, and says so.
  */
-const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: number, seeding: Seeding) => unknown]> = [
+const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: number, seeding: Seeding) => unknown, needs?: ReadonlyArray<string>]> = [
   // Global: with no node there is no project to scope it to.
   ["decisions_record", (mark, n) => ({ key: `isolation.seed-${n}`, value: `${mark} decision ${n}`, why: mark, scope: { kind: "global" } })],
   // A person and their invite: a new person needs a name.
@@ -79,32 +80,50 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
   ["work_claim", (mark, n) => ({ title: `${mark} work ${n}`, repo: REPO })],
   // The team's cap on agents at once: setting nothing is refused.
   ["cap_set", (_mark, n) => ({ cap: 10 + n })],
-  // A value sealed to the hub: an env item in the caller's vault, and the vault's unlock (any passphrase opens one that
-  // has none). Undefined when vault_status isn't listed, so the hub's key can't be read.
-  ["vault_save", async (mark, n, { as }) => {
-    const sealed = await sealedToHub(as, { value: `${mark} value ${n}` });
-    return sealed === undefined ? undefined : { kind: "env", scope: "person", envName: `AREAS_SEED_${n}`, label: `${mark} env ${n}`, sealed };
-  }],
-  ["vault_unlock", async (mark, _n, { as }) => {
-    const sealed = await sealedToHub(as, { passphrase: mark });
-    return sealed === undefined ? undefined : { sealed };
-  }],
+  // A value sealed to the hub's key, which vault_status gives: an env item in the caller's vault (an env item's label is
+  // its name, so the mark is in its value, which only a reveal shows), and the vault's unlock (any passphrase opens one
+  // that has none).
+  [
+    "vault_save",
+    async (mark, n, { as }) => {
+      const sealed = await sealedToHub(as, { value: `${mark} value ${n}` });
+      return sealed === undefined ? undefined : { kind: "env", scope: "person", envName: `AREAS_SEED_${n}`, sealed };
+    },
+    ["vault_status"],
+  ],
+  [
+    "vault_unlock",
+    async (mark, _n, { as }) => {
+      const sealed = await sealedToHub(as, { passphrase: mark });
+      return sealed === undefined ? undefined : { sealed };
+    },
+    ["vault_status"],
+  ],
   // A phone, after pushes are turned off (an empty relay URL), and only then: nothing the run makes may reach a real
   // relay. Its key is any 32 bytes, as an X25519 public key is.
   ["push_relay_set", () => ({ url: "" })],
-  ["push_device_register", (mark, n, { listed }) =>
-    listed.some((t) => t.name === "push_relay_set") ? { platform: "ios", token: `areas-${n}`, name: `${mark} phone ${n}`, publicKey: randomBytes(32).toString("base64") } : undefined],
+  ["push_device_register", (mark, n) => ({ platform: "ios", token: `areas-${n}`, name: `${mark} phone ${n}`, publicKey: randomBytes(32).toString("base64") }), ["push_relay_set"]],
 ];
+
+/** The tools whose seed `listed` can't make, with what it lacks: never called with a made-up input in its stead. */
+const unseedable = (listed: ReadonlyArray<Tool>) =>
+  new Map(
+    SEEDS.filter(([tool]) => listed.some((t) => t.name === tool)).flatMap(([tool, , needs]) => {
+      const lacks = (needs ?? []).filter((need) => !listed.some((t) => t.name === need));
+      return lacks.length === 0 ? [] : [[tool, lacks] as const];
+    }),
+  );
 
 /**
  * The writes that take away what other calls need, called after every other write and in this order: an automation
  * (automation_delete), a phone (push_device_remove), a project and all it holds, its decisions among them
  * (project_remove), a person (person_remove), an invite and the person it brought who never joined (invite_revoke), a
- * device (device_revoke). Each is given only ids the run made, never one the team held before it seeded (the caller,
- * the device it calls from): what the target seeded (the automation, the project), the phone and the person and invite
- * the seeds made, and a spare device of the caller's, made for device_revoke.
+ * device (device_revoke), and last of all a machine and all it holds, its projects among them (machine_remove). Each
+ * is given only ids the run made, never one the team held before it seeded (the caller, the device it calls from):
+ * what the target seeded (the automation, the project, its machine), the phone and the person and invite the seeds
+ * made, and a spare device of the caller's, made for device_revoke.
  */
-const LAST = ["automation_delete", "push_device_remove", "project_remove", "person_remove", "invite_revoke", "device_revoke"];
+const LAST = ["automation_delete", "push_device_remove", "project_remove", "person_remove", "invite_revoke", "device_revoke", "machine_remove"];
 
 /**
  * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer: the
@@ -123,6 +142,15 @@ const ON_MACHINE: ReadonlyArray<readonly [tool: string, input: (ids: Ids, tool: 
 const NOT_HERE: Readonly<Record<string, string>> = {
   claude_hub_api_set: "not called: it seals the key to each machine, which takes it only while online, and no node joins",
   hub_link_add: "not called: the other hub must answer a hello before the link is kept, and the run has no second hub to link to",
+  skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
+};
+
+/**
+ * Writes that fetch from outside, which a run never reaches: each is called well-formed on a source at a host that
+ * never resolves (.invalid), and its refusal of the fetch, `failed` or `invalid`, is its answer.
+ */
+const OUTSIDE: Readonly<Record<string, unknown>> = {
+  skill_install: { scope: "global", source: "https://areas.invalid/skills.git" },
 };
 
 /**
@@ -146,8 +174,9 @@ export const session = async (team: Team): Promise<Session> => openSession(team.
 export async function seed(team: Team, as: Session, listed: ReadonlyArray<Tool>, contract: Contract, mark: string, times: number): Promise<Array<{ tool: string; answer: Answer }>> {
   const made: Array<{ tool: string; answer: Answer }> = [];
   for (let n = 1; n <= times; n++) {
-    for (const [tool, input] of SEEDS.filter(([tool]) => listed.some((t) => t.name === tool))) {
-      const given = await input(mark, n, { made: idsIn(made, contract), as, listed });
+    const lacking = unseedable(listed);
+    for (const [tool, input] of SEEDS.filter(([tool]) => listed.some((t) => t.name === tool) && !lacking.has(tool))) {
+      const given = await input(mark, n, { made: idsIn(made, contract), as });
       if (given === undefined) continue;
       const answer = await as.call(tool, given);
       if (answer.isError) throw new Error(`${tool}: ${JSON.stringify(answer.body)}`);
@@ -217,6 +246,10 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
   if (known.some((t) => t.name === "device_revoke")) await team.key({ name: "areas-spare", role: "admin", human: true });
   const done = new Set(seeded.map((s) => s.tool));
   for (const tool of done) decoded(tool, seeded.filter((s) => s.tool === tool).map((s) => s.answer));
+  for (const [tool, lacks] of unseedable(known)) {
+    done.add(tool);
+    checks.push({ name: `MCP ${tool}`, ok: true, skipped: `not called: its seed needs ${lacks.join(", ")}, which the team doesn't list` });
+  }
   // A tool a seed calls is a write, read-only as it may be listed (a picture is set with a read key): called among the
   // reads, with nothing, it would undo its seed.
   const read = await harvest(as, known.filter((t) => !done.has(t.name)), contract, READS, idsIn(seeded, contract));
@@ -230,6 +263,13 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
     const onMachine = ON_MACHINE.find(([name]) => name === tool.name);
     if (tool.name in NOT_HERE) {
       checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: NOT_HERE[tool.name]! });
+      continue;
+    }
+    if (tool.name in OUTSIDE) {
+      const answer = await as.call(tool.name, OUTSIDE[tool.name]);
+      const code = (answer.body as { code?: unknown } | null)?.code;
+      if (answer.isError && (code === "failed" || code === "invalid")) checks.push({ name: `MCP ${tool.name} answers ${code}: the fetch from outside is refused, as a run reaches nothing outside`, ok: true });
+      else checks.push({ name: `MCP ${tool.name}`, ok: false, detail: `a source at a host that never resolves was answered: ${JSON.stringify(answer.body)}` });
       continue;
     }
     if (onMachine !== undefined) {
