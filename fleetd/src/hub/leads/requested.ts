@@ -5,12 +5,12 @@ import type { PersonRef, ProjectRef, Workstream } from "../../shared/contracts.t
 import type { HubDb } from "../store/db.ts";
 import { parseMs } from "../store/time.ts";
 import { workstreamNumber } from "./records.ts";
+import type { Requested, RequestedBasis } from "./stored.ts";
+
+export type { Requested, RequestedBasis } from "./stored.ts";
 
 /** The event log keeps 30 days: a run that ended before then left no event, and no message it took in is newer. */
 const LOG_KEPT_MS = 30 * 24 * 60 * 60 * 1000;
-
-export type RequestedBasis = "source" | "chat" | "opened";
-export type Requested = { atMs: number; basis: RequestedBasis };
 
 /**
  * The `created_ms` and person of the earliest human chat message the lead's running turn took in: one written since

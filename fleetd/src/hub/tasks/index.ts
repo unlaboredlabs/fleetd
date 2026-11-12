@@ -46,11 +46,9 @@ import {
   hubTaskPorts,
   type HeldSteer,
   type Observed,
-  PortError,
   portError,
   type Rebuilt,
   type TaskPorts,
-  type WakeKind,
 } from "./ports.ts";
 import { type StoredTask, type TaskFilter, TaskRecords } from "./records.ts";
 import * as recovery from "./recovery.ts";
@@ -77,6 +75,7 @@ import {
 } from "./render.ts";
 import { resolveProfile } from "./resolve.ts";
 import { clockTime, END_EVENTS, list, ORPHAN_MS, pausedLines, renderSummary, storedEvent, syntheticEnd, type Unowned } from "./sweep.ts";
+import { requestId, StartError, withPending } from "./launch.ts";
 
 /** Who asks: the project's lead, as the lead-call handler attributes it. */
 export type TaskCaller = { projectRef: ProjectRef; by: string };
@@ -156,23 +155,6 @@ function storeError(error: unknown): ToolError {
 /** The node's answer to a start, as `go` records it. */
 type Launched = { thread: ThreadRef; branch?: string; base?: WorktreeBase };
 
-/** Why a launch or continuation did not go out: the machine went offline (the task queues), or anything else. */
-class StartError extends Error {
-  constructor(
-    readonly offline: boolean,
-    message: string,
-  ) {
-    super(message);
-  }
-  static of(error: unknown): StartError {
-    if (error instanceof StartError) return error;
-    if (error instanceof PortError) return new StartError(error.offline, error.message);
-    // The policy read at launch: a node gone since the start's check queues the task, like the launch itself.
-    if (error instanceof ToolError) return new StartError(error.code === "machine_offline", error.message);
-    return new StartError(false, error instanceof Error ? error.message : String(error));
-  }
-}
-
 /** A start `reserve` took the slot for, which `go` sends to the node off the lock. */
 type Start = {
   stored: StoredTask;
@@ -196,12 +178,6 @@ type Lookup = { pr?: string; skipped?: string };
 
 /** Where a writer's spawn checks for duplicates. */
 type SpawnScope = { kind: "bound"; scope: WorkScope } | { kind: "no_repo" } | { kind: "binding" };
-
-/** A request id for one of the task's writes; it carries the task's creation time (a fresh database numbers from T1). */
-function requestId(task: Task, parts: string[]): string {
-  const created = parseMs(task.createdAt);
-  return ["fleetd-task", task.taskId, created === undefined ? "NaN" : String(created), ...parts].join(":");
-}
 
 const queuedReasonText = (reason: string) => jsPrefix(reason, 200);
 
@@ -725,16 +701,16 @@ export class Tasks {
       rebuiltBefore = this.ports.recreatedFrom(task.threadRef);
     }
     // What the recovery says goes first, then anything sent into the gap.
-    const withPending = (text: string | undefined) => [text, stored.pendingMessage].filter((t): t is string => t !== undefined).join("\n\n");
+    const pending = (text: string | undefined) => withPending(text, stored.pendingMessage);
     let started: Launched | StartError;
     try {
-      if (start.handoff !== undefined) started = await this.launch(task, withPending(start.handoff));
+      if (start.handoff !== undefined) started = await this.launch(task, pending(start.handoff));
       else if (start.continuing) {
         const thread = task.threadRef as ThreadRef;
         // A full context compacts first; the note and anything sent meanwhile follow once that run completed.
         const message = start.compact
           ? COMPACT
-          : withPending(start.recovering && task.recovery ? this.recoverNote(thread, task.recovery, doing) : undefined);
+          : pending(start.recovering && task.recovery ? this.recoverNote(thread, task.recovery, doing) : undefined);
         const id = requestId(task, [String(task.attempt)]);
         const steer = this.ports.takeHeld(task.taskId, thread, id);
         try {

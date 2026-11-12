@@ -4,7 +4,7 @@
 // through the offline write queue like any other.
 import type { HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
 import { oneLine } from "./text.ts";
-import type { StoredLead } from "./records.ts";
+import type { StoredLead } from "./stored.ts";
 
 /** How a run died (tasks/recovery.rs `Kind`), the kinds the lead's wake reads. */
 export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "context_full" | "cut" | "not_dead" | "fatal";
