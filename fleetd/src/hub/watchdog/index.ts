@@ -1,8 +1,13 @@
 // The stall watchdog. Every running thread gets a persistent thread stream; a
 // run with no frame for longer than its threshold is stalled. The hub emits thread.failed{reason:"stalled"} and
-// interrupts the run, once. Deterministic, no LLM.
+// interrupts the run, once. Its task is then resumed (`tasks/recovery.ts`), or failed for its lead to decide when it
+// stalled the same way twice or ran out of recoveries; a lead's own stalled turn carries on once by itself
+// (`leads/cut_off.ts`). Deterministic, no LLM.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
+import { interrupt, latestRun } from "../executor/sessions.ts";
+import type { OpenTool } from "../executor/thread_view.ts";
+import type { Progress } from "../executor/views.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -11,8 +16,7 @@ import { every } from "../sweep/index.ts";
 /** No frame for this long outside a tool is a stall. Inside a tool: the tool's own timeout plus this again. */
 export const STALL_MS = 10 * 60_000;
 
-/** A tool call still open in a run's stream (executor `OpenTool`). */
-export type OpenTool = { statedTimeoutMs?: number; unstated: boolean };
+export type { OpenTool };
 
 /** The threshold for a run in its current state. */
 export function thresholdMs(stallMs: number, tool: OpenTool | undefined): number {
@@ -28,15 +32,18 @@ const parts = (k: Key) => k.split("\0") as [string, string];
 /** What the watchdog reads and drives: the executor's thread watch and interrupt, and the event log. */
 export interface WatchPort {
   nowMs(): number;
-  /** `[key, runId]` of threads whose shell row says running, on machines with a live node link. */
+  /**
+   * `[key, runId]` of threads whose shell row says running, on machines with a live node link. Not one waiting on a
+   * person (a tool prompt): its node sends nothing until they answer.
+   */
   running(): [Key, string][];
-  /** `{ runId, running }` as last seen; undefined for an unknown thread. */
+  /** `{ runId, running }` as last seen, running while its run is on (waiting on a person too); undefined for an unknown thread. */
   latestRun(k: Key): { runId?: string; running: boolean } | undefined;
   /** Opens the thread's stream if needed and keeps it open; false when it could not. */
   follow(k: Key): Promise<boolean>;
   release(k: Key): void;
   /** `{ lastFrameMs, tool }`; undefined when no stream is open. */
-  progress(k: Key): { lastFrameMs: number; tool?: OpenTool } | undefined;
+  progress(k: Key): Progress | undefined;
   interrupt(k: Key): Promise<void>;
   /** Appends a thread event; the port fills in the thread's title and project from the store. */
   emit(k: Key, kind: string, detail: string, data: Record<string, unknown>): Promise<void> | void;
@@ -143,52 +150,41 @@ export class Watchdog {
   }
 }
 
-/**
- * The executor's side of the watch. Its methods (`running`, `latestRun`, `follow`, `release`, `progress`,
- * `interrupt`) come with hub-work's executor; until it has them, the watchdog sees no running threads.
- */
-type ExecutorWatch = {
-  running?(): { thread: { machineId: string; threadId: string }; runId?: string }[];
-  latestRun?(r: { machineId: string; threadId: string }): { runId?: string; running: boolean } | undefined;
-  follow?(r: { machineId: string; threadId: string }): Promise<unknown>;
-  release?(r: { machineId: string; threadId: string }): void;
-  progress?(r: { machineId: string; threadId: string }): { lastFrameMs: number; tool?: OpenTool } | undefined;
-  interrupt?(r: { machineId: string; threadId: string }, by: string): Promise<unknown>;
-};
-
-/** The watch over the hub's own executor, store and event log (`HubWatch`). */
+/** The watch over the hub's own executor, its followed sessions, the store and the event log (`HubWatch`). */
 export function hubWatch(hub: Hub): WatchPort {
   // A static import (D355): a variable-path import() finds nothing in the compiled binary.
-  const ex = () => executors(hub) as unknown as ExecutorWatch;
+  const ex = () => executors(hub);
   const ref = (k: Key) => {
     const [machineId, threadId] = parts(k);
     return { machineId, threadId };
   };
   return {
     nowMs: () => Math.max(0, hub.clock.now()),
-    running: () => {
-      const e = ex();
-      if (!e?.running || !e.follow) return [];
-      return e.running().flatMap((r) => (r.runId === undefined ? [] : [[key(r.thread.machineId, r.thread.threadId), r.runId]]));
+    running: () =>
+      ex()
+        .running()
+        .flatMap(({ thread }) => {
+          // `running()` lists a waiting thread too, which the watchdog leaves to the person it waits on.
+          const run = latestRun(hub, thread);
+          return run?.running && run.runId !== undefined ? [[key(thread.machineId, thread.threadId), run.runId] as [Key, string]] : [];
+        }),
+    latestRun: (k) => {
+      const r = ref(k);
+      const run = latestRun(hub, r);
+      // A run waiting on a person is still on: its follow stays, so the live lanes keep it too.
+      return run && { ...run, running: run.running || ex().tracked(r)?.summary.status === "waiting" };
     },
-    latestRun: (k) => ex()?.latestRun?.(ref(k)),
     follow: async (k) => {
       try {
-        const e = ex();
-        if (!e?.follow) return false;
-        await e.follow(ref(k));
+        await ex().views.follow(ref(k));
         return true;
       } catch {
         return false;
       }
     },
-    release: (k) => ex()?.release?.(ref(k)),
-    progress: (k) => ex()?.progress?.(ref(k)),
-    interrupt: async (k) => {
-      const e = ex();
-      if (!e?.interrupt) throw new Error("the executor can't interrupt yet");
-      await e.interrupt(ref(k), "watchdog");
-    },
+    release: (k) => ex().views.release(ref(k)),
+    progress: (k) => ex().views.progress(ref(k)),
+    interrupt: (k) => interrupt(hub, ref(k)),
     emit: (k, kind, detail, data) => {
       const [machineId, threadId] = parts(k);
       const stored = store(hub).threadGet({ machineId, threadId });

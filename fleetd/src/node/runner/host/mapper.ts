@@ -21,6 +21,12 @@ export type Classify = (e: FailureEvidence) => RunFailure | undefined;
 const STDERR_TAIL = 4000;
 const MESSAGE_MAX = 4000;
 const THINKING_TITLE_MAX = 120;
+/**
+ * The most often a run's usage goes out just because claude wrote a line. A line that maps to nothing (a subagent's
+ * step, a thinking or tool-input delta, a retry notice) is still claude at work, and the hub's stall watchdog counts
+ * only what reaches it.
+ */
+export const ALIVE_MS = 60_000;
 
 /** The time a line was read. */
 export type Now = { at: string; ms: number };
@@ -61,6 +67,8 @@ export class StreamMapper {
   /** The active run's usage: the messages it finished, and the one streaming now. */
   #usageDone = emptyUsage();
   #usageNow = emptyUsage();
+  /** When the active run started or its usage last went out (`ALIVE_MS`). */
+  #usageSentMs = 0;
   /** Text blocks already emitted per complete message id: claude sends one `assistant` line per block. */
   #textBlocks: [string, number] | undefined;
   #assistantError: AssistantError | undefined;
@@ -289,6 +297,10 @@ export class StreamMapper {
         this.#lifecycle(line, now, out);
         break;
     }
+    if (this.#activeRun !== undefined && !out.events.some((e) => "Usage" in e) && now.ms - this.#usageSentMs >= ALIVE_MS) {
+      out.events.push({ Usage: { run_id: this.#activeRun, usage: this.#usageTotal() } });
+    }
+    if (out.events.some((e) => "Usage" in e)) this.#usageSentMs = now.ms;
     return out;
   }
 
@@ -433,6 +445,7 @@ export class StreamMapper {
     this.#assistantError = undefined;
     this.#usageDone = emptyUsage();
     this.#usageNow = emptyUsage();
+    this.#usageSentMs = now.ms;
     this.#spans.runStarted(runId, now.ms);
     events.push({ RunStarted: { run_id: runId } });
   }
@@ -484,9 +497,14 @@ export class StreamMapper {
     now.cacheReadInputTokens = n("cache_read_input_tokens") ?? now.cacheReadInputTokens;
     now.cacheCreationInputTokens = n("cache_creation_input_tokens") ?? now.cacheCreationInputTokens;
     if (this.#activeRun === undefined) return;
+    events.push({ Usage: { run_id: this.#activeRun, usage: this.#usageTotal() } });
+  }
+
+  /** The active run's usage so far. */
+  #usageTotal(): RunUsage {
     const total = { ...this.#usageDone };
-    addUsage(total, now);
-    events.push({ Usage: { run_id: this.#activeRun, usage: total } });
+    addUsage(total, this.#usageNow);
+    return total;
   }
 
   #assistant(assistant: Assistant, now: Now, events: RunnerEvent[]): void {

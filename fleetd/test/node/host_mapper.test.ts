@@ -709,3 +709,22 @@ test("every fixture line decodes", () => {
   }
   expect(lines).toBeGreaterThan(100);
 });
+
+test("lines that map to nothing still send the run's usage once a minute, so the hub sees claude at work", () => {
+  const mapper = new StreamMapper("s", none);
+  mapper.feed(line({ type: "command_lifecycle", command_uuid: "r1", state: "started" }), nowAt(0));
+  const usage = (event: RunnerEvent) => typeof event === "object" && "Usage" in event;
+  // A subagent's steps and a long thinking block: nothing of the run's own, a line every 20 s for three minutes.
+  const subagent = line({ type: "assistant", parent_tool_use_id: "toolu_agent", message: { id: "sub1", content: [{ type: "text", text: "reading" }] } });
+  const thinking = line({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "…" } }, parent_tool_use_id: null });
+  const sent: number[] = [];
+  for (let s = 20; s <= 180; s += 20) {
+    const out = mapper.feed(s % 40 === 0 ? subagent : thinking, nowAt(s * 1000)).events;
+    expect(out.filter((e) => !usage(e))).toEqual([]);
+    if (out.some(usage)) sent.push(s);
+  }
+  expect(sent).toEqual([60, 120, 180]);
+  // Between runs nothing goes out.
+  mapper.feed(line({ type: "command_lifecycle", command_uuid: "r1", state: "completed" }), nowAt(181_000));
+  expect(mapper.feed(thinking, nowAt(400_000)).events.filter(usage)).toEqual([]);
+});

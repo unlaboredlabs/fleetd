@@ -92,7 +92,7 @@ test("the hub's watch reads the executor through a static import, so the compile
   const { executors } = await import("../src/hub/executor/index.ts");
   const { hub } = testHub();
   const watch = hubWatch(hub);
-  // The executor answers, though it can't follow a thread's stream yet: nothing to watch, nothing thrown.
+  // No machine linked: nothing to watch, nothing thrown (watchdog-hub.test.ts watches a stand-in node's threads).
   expect(typeof executors(hub).running).toBe("function");
   expect(watch.running()).toEqual([]);
   expect(await new Watchdog(600_000, watch).resubscribe()).toBe(0);
