@@ -55,6 +55,3 @@ seen on this project
 
 # Try it (previews of a PR, W58) is gone.
 \bpreviews?_(start|end|list|suggest|feedback|config_propose)\b
-
-# Only me is gone (D491): every project is open to everyone on its hub.
-\bonly me\b
