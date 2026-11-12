@@ -3,12 +3,14 @@
 // seeded through them and the target's own hook, and catch a search that leaks; the contract's output check runs on
 // exactly the listed tools and fails one the contract lacks and an answer that doesn't decode. And on one that lists
 // only the people tools: the contract calls each, and the ones that take away run last on what the run made.
+import { randomBytes } from "node:crypto";
 import { expect, test } from "bun:test";
 import mcpToolsText from "../../../app/desktop/src/shared/contracts/schema/McpTools.json" with { type: "text" };
 import { areasContract, areasTwoTeams } from "../../../tests/compare/areas.ts";
 import { Refusal, standIn, type StandInTeam, type StandInTool } from "../../../tests/compare/standIn.ts";
 import type { Team } from "../../../tests/compare/target.ts";
 import { reportLines } from "../../../tests/compare/twoTeams.ts";
+import { openSealed, publicKeyOf } from "../../src/shared/sealed_box_core.ts";
 
 const doc = JSON.parse(mcpToolsText) as { $defs: Record<string, any> };
 const input = (type: string) => ({ ...doc.$defs[type], $defs: doc.$defs });
@@ -208,8 +210,9 @@ test("the people tools: a new person is seeded, and what takes away runs last on
  * The project tools under the hub's own rules, with no node linked (projects/discover.ts, repos.ts, remove.ts):
  * project_add answers not_found for a machine the team has no row for and machine_offline for one it has;
  * project_repo_add answers machine_offline; project_remove forgets a project whose machine has no row, erasing its
- * decisions, and answers machine_offline while the machine is known. The target's seed (`seeded`) puts project m1/p1,
- * with a decision of its own, on machine m1, which has a row (`machine`) or not. project_remove is listed first.
+ * decisions, and answers machine_offline while the machine is known; machine_remove removes a known machine and its
+ * projects, offline as it is. The target's seed (`seeded`) puts project m1/p1, with a decision of its own, on machine
+ * m1, which has a row (`machine`) or not. The two removals are listed first.
  * `calls` is every call, in order.
  */
 function projectTools(seeded: "none" | "machine" | "gone") {
@@ -235,6 +238,11 @@ function projectTools(seeded: "none" | "machine" | "gone") {
     },
   });
   const tools = [
+    tool("machine_remove", false, "MachineRemove", (given) => {
+      if (!machines.delete(given.machineId)) throw new Refusal("not_found", `No machine ${given.machineId}.`);
+      projects.splice(0, projects.length, ...projects.filter((p) => p.machineId !== given.machineId));
+      return { machineId: given.machineId, steps: [], revoked: 0 };
+    }),
     tool("project_remove", false, "ProjectRemove", (given) => {
       const removed = project(given);
       if (machines.has(removed.machineId)) throw offline(removed.machineId);
@@ -294,8 +302,9 @@ test("the project tools under the hub's rules: project_remove runs last, and wha
     "pass MCP project_repo_add answers machine_offline, as no node joins",
     "pass MCP decisions_overturn decodes as decisions_overturn.output",
     "pass MCP project_remove answers machine_offline, as no node joins",
+    "pass MCP machine_remove decodes as machine_remove.output",
   ]);
-  expect(onMachine.calls.at(-1)).toBe("project_remove");
+  expect(onMachine.calls.slice(-2)).toEqual(["project_remove", "machine_remove"]);
 
   // A project whose machine the team has no row for can be removed, but nothing can be added on that machine: a
   // target's seed puts its project on a machine it knows.
@@ -313,4 +322,96 @@ test("the project tools under the hub's rules: project_remove runs last, and wha
     "skip MCP project_repo_add",
     "skip MCP project_remove",
   ]);
+});
+
+/**
+ * The vault, push, time and skill tools as the hub answers them, with no node: vault_status gives the hub's box key and
+ * vault_save and vault_unlock open what is sealed to it; push_device_register takes a 32-byte key and remembers whether
+ * pushes were on; time_spans keeps the `since` it was asked; skill_install's fetch from outside fails. `opened` is what
+ * the vault opened, `calls` every call in order (with whether pushes were on, for a register).
+ */
+function outsideTools(opts: { relayListed: boolean }) {
+  const at = "2026-01-01T00:00:00.000Z";
+  const secret = new Uint8Array(randomBytes(32));
+  const calls: Array<string> = [];
+  const opened: Array<unknown> = [];
+  const since: Array<string> = [];
+  let relayOn = true;
+  const phones: Array<Record<string, unknown>> = [];
+  const open = (sealed: string) => {
+    const plain = openSealed(secret, new Uint8Array(Buffer.from(sealed, "base64")));
+    if (plain === null) throw new Refusal("invalid", "The value wasn't sealed to this hub's key.");
+    const fields = JSON.parse(Buffer.from(plain).toString("utf8")) as unknown;
+    opened.push(fields);
+    return fields;
+  };
+  const status = { hubBoxKey: Buffer.from(publicKeyOf(secret)).toString("base64"), keyMode: "file", locked: false, keyMissing: false, recoverySaved: false, migration: "none" };
+  const tool = (name: string, readOnly: boolean, type: string, run: (given: any) => unknown): StandInTool => ({
+    name,
+    readOnly,
+    input: input(`${type}Input`),
+    output: {},
+    run: (_team, given) => {
+      calls.push(name);
+      return run(given);
+    },
+  });
+  const tools = [
+    tool("vault_status", true, "VaultStatus", () => status),
+    tool("vault_save", false, "VaultSave", (given) => {
+      open(given.sealed);
+      return { item: { itemId: "v1", kind: given.kind, label: given.envName } };
+    }),
+    tool("vault_unlock", false, "VaultUnlock", (given) => (open(given.sealed), status)),
+    ...(opts.relayListed ? [tool("push_relay_set", false, "PushRelaySet", (given) => ((relayOn = given.url !== ""), { key: false, default: false }))] : []),
+    tool("push_device_register", false, "PushDeviceRegister", (given) => {
+      if (Buffer.from(given.publicKey, "base64").length !== 32) throw new Refusal("invalid", "publicKey isn't an X25519 public key.");
+      calls.push(`relay ${relayOn ? "on" : "off"}`);
+      const device = { deviceId: `pd_aaaaaaa${"bcdefgh"[phones.length]}`, platform: given.platform, name: given.name, createdAt: at };
+      phones.push(device);
+      return { device, relay: relayOn };
+    }),
+    tool("push_devices_list", true, "PushDevicesList", () => ({ devices: phones, relay: relayOn })),
+    tool("push_device_remove", false, "PushDeviceRemove", (given) => {
+      const device = phones.find((p) => p.deviceId === given.deviceId);
+      if (device === undefined) throw new Refusal("not_found", `No phone ${given.deviceId}.`);
+      phones.splice(phones.indexOf(device), 1);
+      return { device };
+    }),
+    tool("time_spans", true, "TimeSpans", (given) => (since.push(given.since), { spans: [], coverage: {} })),
+    tool("skill_install", false, "SkillInstall", (given) => {
+      if (String(given.source).includes(".invalid")) throw new Refusal("failed", "git fetch: could not resolve host");
+      return { installed: [] };
+    }),
+    tool("skill_update", false, "SkillUpdate", () => ({ updated: false })),
+  ];
+  return { tools, calls, opened, since };
+}
+
+test("sealed vault seeds, a phone only after pushes are off and removed last, time from the given clock, and fetches from outside", async () => {
+  const run = async (relayListed: boolean) => {
+    const made = outsideTools({ relayListed });
+    const target = await standIn({ only: made.tools });
+    try {
+      const checks = await areasContract(await target.team(""), doc, required, () => Date.parse("2026-01-02T00:00:00.000Z"));
+      return { ...made, rows: checks.map((c) => `${c.skipped !== undefined ? "skip" : c.ok ? "pass" : "FAIL"} ${c.name}${c.ok ? "" : `: ${c.detail}`}`) };
+    } finally {
+      await target.close();
+    }
+  };
+  const on = await run(true);
+  expect(on.rows.filter((r) => !r.startsWith("pass")).map((r) => r.split(":")[0])).toEqual(["skip MCP skill_update"]);
+  expect(on.rows).toContain("pass MCP skill_install answers failed: the fetch from outside is refused, as a run reaches nothing outside");
+  // Sealed to the hub's key, as the vault opens it: an env item's value and a passphrase, each with the run's mark.
+  expect(on.opened).toEqual([{ value: "contract value 1" }, { passphrase: "contract" }]);
+  // The phone is registered once pushes are off, and the phone the run made goes last.
+  expect(on.calls.slice(on.calls.indexOf("push_relay_set"), on.calls.indexOf("push_relay_set") + 3)).toEqual(["push_relay_set", "push_device_register", "relay off"]);
+  expect(on.calls.at(-1)).toBe("push_device_remove");
+  // The time reads cover the day before the clock the run is given.
+  expect([...new Set(on.since)]).toEqual(["2026-01-01T00:00:00.000Z"]);
+
+  // With no way to turn pushes off, no phone is registered, and no made-up one is sent in its stead.
+  const off = await run(false);
+  expect(off.calls).not.toContain("push_device_register");
+  expect(off.rows).toContain("skip MCP push_device_register");
 });
