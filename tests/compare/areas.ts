@@ -2,10 +2,10 @@
 // time), and joins no machine. No node joins and no project is added: a team is seeded through the tools the target
 // lists (SEEDS) and the target's own `seed` (target.ts) for what no listed tool makes, and every check is made of
 // exactly the tools it lists. isolation.ts runs the two-team cases this way, contract.ts the output-schema check.
-// Imports nothing but ./mcp.ts, ./twoTeams.ts and fleetd's sealed boxes: fleetd's own tests run it against the
-// stand-in (standIn.ts).
+// Imports nothing but ./mcp.ts and ./twoTeams.ts, and fleetd's sealed boxes when a seed needs them: fleetd's own tests
+// run it against the stand-in (standIn.ts).
+import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { seal } from "../../fleetd/src/shared/sealed_box_core.ts";
 import { type Answer, openSession, type Session, type Tool } from "./mcp.ts";
 import type { Target, Team } from "./target.ts";
 import { type Contract, harvest, type Ids, idsIn, inputFrom, type Reads, readIds, type Report, runTwoTeams } from "./twoTeams.ts";
@@ -21,11 +21,23 @@ interface Seeding {
   readonly as: Session;
 }
 
+/**
+ * fleetd's `crypto_box_seal`: from this checkout, else from the fleetd package beside a copy of tests/ (a service's
+ * suite runs a copy of tests/compare, with the pinned package installed, which exports it).
+ */
+const sealing = async (): Promise<(publicKey: Uint8Array, plain: Uint8Array) => Uint8Array> => {
+  type Core = { seal: (publicKey: Uint8Array, plain: Uint8Array) => Uint8Array };
+  const here = "../../fleetd/src/shared/sealed_box_core.ts";
+  const packaged = "fleetd/shared/sealed_box_core";
+  return ((await import(here).catch(() => import(packaged))) as Core).seal;
+};
+
 /** `fields` as JSON sealed to the hub's box key (vault_status's hubBoxKey), in base64; undefined when it isn't read. */
 async function sealedToHub(as: Session, fields: unknown): Promise<string | undefined> {
   const status = await as.call("vault_status", {});
   const key = (status.body as { hubBoxKey?: unknown } | null)?.hubBoxKey;
   if (status.isError || typeof key !== "string") return undefined;
+  const seal = await sealing();
   return Buffer.from(seal(new Uint8Array(Buffer.from(key, "base64")), new TextEncoder().encode(JSON.stringify(fields)))).toString("base64");
 }
 
@@ -62,22 +74,30 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
     const sealed = await sealedToHub(as, { passphrase: mark });
     return sealed === undefined ? undefined : { sealed };
   }],
+  // A phone, after pushes are turned off (an empty relay URL): nothing the run makes may reach a real relay. Its key is
+  // any 32 bytes, as an X25519 public key is.
+  ["push_relay_set", () => ({ url: "" })],
+  ["push_device_register", (mark, n) => ({ platform: "ios", token: `areas-${n}`, name: `${mark} phone ${n}`, publicKey: randomBytes(32).toString("base64") })],
 ];
 
 /**
- * The writes that take away what other calls need, called after every other write and in this order: a project and
- * all it holds, its decisions among them (project_remove), a person (person_remove), an invite and the person it
- * brought who never joined (invite_revoke), a device (device_revoke). Each is given only ids the run made, never one
- * the team held before it seeded (the caller, the device it calls from): the project the target seeded, the person and
- * invite a seed invited, and a spare device of the caller's, made for device_revoke.
+ * The writes that take away what other calls need, called after every other write and in this order: an automation
+ * (automation_delete), a phone (push_device_remove), a project and all it holds, its decisions among them
+ * (project_remove), a person (person_remove), an invite and the person it brought who never joined (invite_revoke), a
+ * device (device_revoke). Each is given only ids the run made, never one the team held before it seeded (the caller,
+ * the device it calls from): what the target seeded (the automation, the project), the phone and the person and invite
+ * the seeds made, and a spare device of the caller's, made for device_revoke.
  */
-const LAST = ["project_remove", "person_remove", "invite_revoke", "device_revoke"];
+const LAST = ["automation_delete", "push_device_remove", "project_remove", "person_remove", "invite_revoke", "device_revoke"];
 
 /**
- * Writes whose work is done on a machine, which no node is here to do: each is called on the machine (and project) the
- * team's reads turn up, from the target's seed, with what else it needs, and `machine_offline` is a meaningful answer.
- * With no machine to name, it isn't called.
+ * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer: the
+ * ones below, each called on the machine (and project) the team's reads turn up with what else it needs, and
+ * project_remove (LAST), which the hub refuses so while the project's machine is known and offline. A target's seed
+ * puts its project on such a machine: one that joined once and is offline now. With no machine to name they aren't
+ * called.
  */
+const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove"];
 const ON_MACHINE: ReadonlyArray<readonly [tool: string, input: (ids: Ids, tool: Tool) => unknown]> = [
   ["project_add", (ids) => (ids.has("MachineId") ? { machineId: ids.get("MachineId")![0], path: "/srv/areas/added" } : undefined)],
   ["project_repo_add", (ids, tool) => ((input) => (input === undefined ? undefined : { ...(input as object), path: "/srv/areas/repo" }))(inputFrom(tool, ids))],
@@ -170,6 +190,8 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
 
   const decoded = (tool: string, answers: ReadonlyArray<Answer>) => {
     const ok = answers.filter((a) => !a.isError);
+    const offline = answers.some((a) => a.isError && (a.body as { code?: unknown } | null)?.code === "machine_offline");
+    if (ok.length === 0 && offline && OFFLINE_ANSWERS.includes(tool)) return checks.push({ name: `MCP ${tool} answers machine_offline, as no node joins`, ok: true });
     if (ok.length === 0) return checks.push({ name: `MCP ${tool}`, ok: false, detail: JSON.stringify(answers[0]?.body) });
     const why = ok.map((a) => valid(tool, a.body)).find((w) => w !== undefined);
     checks.push({ name: `MCP ${tool} decodes as ${tool}.output`, ok: why === undefined, ...(why === undefined ? {} : { detail: why }) });
@@ -200,10 +222,7 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
         checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: "not called: it needs a machine, no node joins, and the target seeded none" });
         continue;
       }
-      const answer = await as.call(tool.name, input);
-      const code = (answer.body as { code?: unknown } | null)?.code;
-      if (answer.isError && code === "machine_offline") checks.push({ name: `MCP ${tool.name} answers machine_offline, as no node joins`, ok: true });
-      else decoded(tool.name, [answer]);
+      decoded(tool.name, [await as.call(tool.name, input)]);
       continue;
     }
     const input = inputFrom(tool, read.bag);

@@ -64,20 +64,21 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
 
 - each team is seeded through the tools the target lists (`areas.ts`'s SEEDS: a global decision, an invited person, a
   file and the caller's picture made of it, the caller's name, a prompt's hub-wide text, a claim on a repo, the
-  agents cap, an env item in the vault and the vault's unlock, each sealed to `vault_status`'s `hubBoxKey`), then by
-  the team's own `seed(mark, times)`, if it has one, for rows no listed tool makes (a task, whose start is a lead
-  call; a project on a machine that never links). Team A once, team B twice with the canary as `mark`;
+  agents cap, an env item in the vault and the vault's unlock, each sealed to `vault_status`'s `hubBoxKey`, and a
+  phone after pushes are turned off), then by the team's own `seed(mark, times)`, if it has one, for rows no listed
+  tool makes (a task, whose start is a lead call; a project, on a machine the team knows that is offline, as one that
+  joined once is). Team A once, team B twice with the canary as `mark`;
 - the two-team cases are made of exactly the tools the target lists, and reads that take words besides ids
   (`decisions_search` for "decision", `work_list` for the seeded repo, the time reads for the day before the run's
   clock, which the caller may inject) are made beside the generated ones;
 - the contract checks `/healthz`, that every listed tool is in `McpTools.json`, and each listed tool's answer as its
   `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it (a tool a seed calls is a
   write, whatever its annotation), then the other writes with the team's own ids, then the ones that take away what
-  others need (`project_remove`, `person_remove`, `invite_revoke`, `device_revoke`), each only on what the run made:
-  the target's seeded project, the invited person and invite, and a spare device key (`areas-spare`: `key` makes the
-  same person more than one), never the caller or the key it calls with. A write a machine does (`project_add`,
-  `project_repo_add`) is called on the machine the reads turn up and must answer `machine_offline`, or is skipped when
-  there is none; `claude_hub_api_set` (machines take the key) and `hub_link_add` (another hub answers a hello first)
+  others need (`automation_delete`, `push_device_remove`, `project_remove`, `person_remove`, `invite_revoke`,
+  `device_revoke`), each only on what the run made: what the target seeded, the phone, the invited person and invite,
+  and a spare device key (`areas-spare`: `key` makes the same person more than one), never the caller or the key it
+  calls with. A write a machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is
+  known) is called on the machine the reads turn up and may answer `machine_offline`, or is skipped when there is none; `claude_hub_api_set` (machines take the key) and `hub_link_add` (another hub answers a hello first)
   are skipped, saying why. Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub
   keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`, `hub_info` or
   `people_list` first), and a call of a name the team doesn't list, which must come back as an `error` with the call's
