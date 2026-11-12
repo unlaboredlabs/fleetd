@@ -207,7 +207,7 @@ export function noticeShape(event: HubEvent): NoticeShape | undefined {
     return typeof data.seq === "number" ? { kind: "message", project, seq: data.seq } : undefined;
   }
   if (event.type === "workstream.done") {
-    // A Navi's automation run closed by itself (D277): its reply was the notification.
+    // An automation run closed by itself (D277): its reply was the notification.
     if (text("by")?.startsWith("automation:")) return undefined;
     return { kind: "order", ...(project ? { project } : {}) };
   }

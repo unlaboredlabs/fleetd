@@ -12,7 +12,7 @@ import { DataProvider } from "../../src/data/react";
 import { live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { addUi, closeAddProject } from "../projects/store";
-import { ImportMemory, NO_ONLY_ME, NO_PROJECT_TEXT } from "./ImportMemory";
+import { ImportMemory, NO_PROJECT, NO_PROJECT_TEXT } from "./ImportMemory";
 import { YourMemory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -125,6 +125,7 @@ it("shows the two steps with the hub's prompt, and copies it whole", async () =>
   const text = host.textContent;
   expect(text).toContain("1. Copy this prompt into a chat with your other AI assistant");
   expect(text).toContain("2. Paste the answer below to add it to your memory");
+  expect(text).toContain("Everyone on this hub can read what it writes.");
   expect(text).toContain("Export everything you have stored about me in memory.");
   await act(async () => {
     button("Copy prompt").click();
@@ -213,22 +214,17 @@ it("never says your memory already has it when nothing fit, or only secrets were
   expect(status()).toBe("Nothing was added. Skipped 1 holding a secret.");
 });
 
-it.each([
-  ["this hub's reason", { code: "invalid", reason: NO_ONLY_ME, message: "Import memory runs in a project of yours with Only me on.", fix: "Create a Navi first, then import again." }],
-  ["an older hub's fix", { code: "invalid", message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.", fix: "Create a Navi first, then import again." }],
-])("offers someone with no Only-me project to make one, since imports run only there (%s)", async (_, refusal) => {
-  await mount(undefined, refusal);
+it("offers New project on a hub with no project, since the import runs in one", async () => {
+  await mount(undefined, { code: "invalid", reason: NO_PROJECT, message: "This hub has no project to run the import in.", fix: "Add a project first, then import again." });
   const box = paste("[2024-03-02] - Keep answers short.");
   await act(async () => {
     button("Add to Memory").click();
     await Promise.resolve();
   });
   await settle();
-  // In the app's words, whatever the hub said.
-  expect(status()).toBe(`${NO_PROJECT_TEXT} Make a project with Only me on, then import again.`);
-  expect(status()).not.toMatch(/Navi/u);
-  act(() => button("Make a project with Only me on").click());
-  expect(addUi()).toMatchObject({ open: true, onlyMe: true });
+  expect(status()).toBe(`${NO_PROJECT_TEXT} Add a project, then import again.`);
+  act(() => button("Add a project").click());
+  expect(addUi()).toMatchObject({ open: true });
   // What was pasted stays for after.
   expect(box.value).toBe("[2024-03-02] - Keep answers short.");
 });

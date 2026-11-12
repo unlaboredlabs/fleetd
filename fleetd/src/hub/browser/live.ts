@@ -11,7 +11,6 @@ import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { runnerOf } from "../machine_roles/places.ts";
-import { mayUse, ownerRefused } from "./reads.ts";
 import { link } from "../link/index.ts";
 import { get } from "./store.ts";
 import { Thumbs } from "./thumbs.ts";
@@ -218,16 +217,10 @@ const noSession = (id: string) =>
 /** The machine a session runs on: the one hosting it for an agent elsewhere, else its agent's (its project's). */
 export const runsOn = (hub: Hub, s: BrowserSession) => runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;
 
-/** Refuses another person's Navi's screen (D215): only its owner watches it, drives it or takes it over. */
-function theirs(hub: Hub, caller: Caller, s: BrowserSession): void {
-  if (!mayUse(hub.db, caller, s.projectRef)) throw ownerRefused(s.projectRef);
-}
-
-/** The app's `browser_watch` of a live session: any key that can read its project's machine, a Navi's only its owner's. */
+/** The app's `browser_watch` of a live session: any key that can read its project's machine. */
 export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame: BrowserFrame) => void): Watch {
   const s = get(hub, id);
   if (!s || !allows(caller, "read", s.projectRef.machineId)) throw noSession(id);
-  theirs(hub, caller, s);
   if (s.state !== "live") {
     throw new ToolError(
       "invalid",
@@ -247,7 +240,6 @@ export function input(hub: Hub, caller: Caller, id: string, input: BrowserInput)
   const s = get(hub, id);
   const machine = s?.projectRef.machineId;
   if (!s || !machine || !allows(caller, "read", machine)) throw noSession(id);
-  theirs(hub, caller, s);
   if (!isHuman(caller)) {
     throw new ToolError("forbidden", "Only a person's device drives a screen.", "Use the fleetd app, on a computer or a phone.");
   }

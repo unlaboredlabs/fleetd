@@ -65,8 +65,8 @@ describe("HubClient", () => {
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden", message: "Not yours" } });
     // The hub's reason, where it gives one, comes with its fix.
     const why = client.call("memory_import", { text: "Ada" });
-    hub.fail("memory_import", "invalid", "No project of yours.", { fix: "Make one.", reason: "no_only_me_project" });
-    await expect(why).resolves.toEqual({ ok: false, error: { code: "invalid", message: "No project of yours.", fix: "Make one.", reason: "no_only_me_project" } });
+    hub.fail("memory_import", "invalid", "No project yet.", { fix: "Make one.", reason: "no_project" });
+    await expect(why).resolves.toEqual({ ok: false, error: { code: "invalid", message: "No project yet.", fix: "Make one.", reason: "no_project" } });
     const cut = client.call("chat_send", { projectRef: { machineId: "m", projectId: "p" }, text: "hi", clientRequestId: "x" });
     hub.link.close(1006);
     await expect(cut).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });

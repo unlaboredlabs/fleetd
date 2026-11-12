@@ -29,8 +29,6 @@ export interface AddUi {
   readonly folder?: string;
   /** Run git init in a new project's folder. */
   readonly gitInit?: boolean;
-  /** Only me, as the person set it; absent: on for a project with no repo (onlyMeFirst). */
-  readonly onlyMe?: boolean;
   /** The modal is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
@@ -182,7 +180,7 @@ export const closeAddProject = (): void => {
   if (!ui.open) return;
   // A finished or untouched modal starts fresh next time; one still adding keeps going out of sight.
   const fresh = ui.add.phase.kind !== "working";
-  const rest = omit(ui, "note", "machine", "folder", "gitInit", "onlyMe");
+  const rest = omit(ui, "note", "machine", "folder", "gitInit");
   set(fresh ? { ...rest, open: false, text: "", add: step(ui.add, { t: "reset" }, machineName)[0] } : { ...ui, open: false });
   if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "New project… shows its progress." });
 };
@@ -209,14 +207,12 @@ export const setFolder = (folder: string): void => set({ ...ui, folder });
 
 export const setGitInit = (gitInit: boolean): void => set({ ...ui, gitInit });
 
-export const setOnlyMe = (onlyMe: boolean): void => set({ ...ui, onlyMe });
-
 export const startAdd = (request: Request, path: string): void => dispatch({ t: "start", request, path });
 
 export const back = (): void => dispatch({ t: "back" });
 
 export const addAnother = (): void => {
-  const rest = omit(ui, "note", "folder", "gitInit", "onlyMe");
+  const rest = omit(ui, "note", "folder", "gitInit");
   set({ ...rest, text: "" });
   dispatch({ t: "reset" });
 };

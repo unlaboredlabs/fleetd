@@ -15,7 +15,6 @@ import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { LeadRecords } from "../src/hub/leads/records.ts";
 import { intake } from "../src/hub/leads/workstreams.ts";
 import { standing } from "../src/hub/navi/checker_turn.ts";
-import { put as putNavi } from "../src/hub/navi/store.ts";
 import { workstreamGet, workstreamsList } from "../src/hub/orders/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -496,9 +495,8 @@ test("the tools: grants, the webhook URL shown once, rotate", async () => {
   expect(rotated.next).toContain("The old URL no longer works.");
 });
 
-test("a Navi's run closes once its turn ends, and the next scheduled run starts; a code project's stays open", async () => {
+test("a run closes once its turn ends with nothing in flight, in every project; else its order stays for the lead", async () => {
   const { hub, clock, advance } = setup();
-  putNavi(hub.db.conn, PROJECT, { keyId: "key_h", name: "Ada's phone" }, undefined, START);
   const records = new LeadRecords(hub.db);
   records.leadPut({ projectRef: PROJECT, threadId: "th-lead", startedAt: isoMs(START + 31 * MIN), sessionGeneration: 1 });
   const thread = (status: string) =>
@@ -532,11 +530,41 @@ test("a Navi's run closes once its turn ends, and the next scheduled run starts;
   await advance(29 * MIN);
   expect(autos.runs(a.automationId, 10).map((r) => r.state)).toEqual(["running", "done"]);
 
-  // Not a Navi: its lead closes its own orders.
-  hub.db.conn.query("UPDATE project_settings SET only_me = 0").run();
+  // The next run's order, given to the lead: each thing of it still in flight keeps it open at a turn's end.
+  const second = autos.runs(a.automationId, 1)[0]!;
+  const w = second.workstreamId!;
+  records.leadPut({ projectRef: PROJECT, threadId: "th-lead", startedAt: isoMs(clock.now()), sessionGeneration: 2 });
+  const db = hub.db.conn;
+  const stillOpen = async (why: string) => {
+    ended("completed");
+    await settle(hub);
+    expect([why, autos.runs(a.automationId, 1)[0]!.state]).toEqual([why, "running"]);
+  };
+  const task = db
+    .query<{ n: number }, [string, string, string]>("INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES (?, ?, ?, 'queued', '{}') RETURNING n")
+    .get(PROJECT.machineId, PROJECT.projectId, w)!.n;
+  await stillOpen("an agent queued");
+  db.run(`UPDATE tasks SET state = 'idle' WHERE n = ${task}`);
+  await stillOpen("an agent waiting");
+  db.run(`UPDATE tasks SET state = 'done' WHERE n = ${task}`);
+  db.run(`INSERT INTO ci_waits (task_id, url, created_ms) VALUES ('T${task}', 'https://github.com/acme/shop/pull/7', 0)`);
+  await stillOpen("a done agent waiting on CI");
+  db.run("DELETE FROM ci_waits");
+  db.run(
+    `INSERT INTO requests (project_key, kind, state, created_ms, data) VALUES ('${PROJECT.machineId}/${PROJECT.projectId}', 'approval', 'open', 0, json_object('workstreamId', '${w}'))`,
+  );
+  await stillOpen("an approval open");
+  db.run("UPDATE requests SET state = 'denied'");
+  db.run(
+    `INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data) VALUES ('acme/shop', 7, 'ci', '${PROJECT.machineId}', '${PROJECT.projectId}', 0, json_object('workstreamId', '${w}'))`,
+  );
+  await stillOpen("its PR on the train");
+  // Merged: nothing is left, and the next turn's end closes it.
+  db.run("UPDATE changes SET state = 'merged'");
   ended("completed");
   await settle(hub);
-  expect(autos.runs(a.automationId, 1)[0]!.state).toBe("running");
+  expect(workstreamGet(db, w)!.state).toBe("done");
+  expect(autos.runs(a.automationId, 1)[0]!.state).toBe("done");
 });
 
 test("the Navi checker's standing word is the confirmed automations with a run open", async () => {

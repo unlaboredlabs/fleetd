@@ -199,8 +199,8 @@ struct ChatTarget: Identifiable, Equatable {
     }
     let chats = (s["projects"] as? [[String: Any]] ?? []).compactMap { p -> ChatTarget? in
       guard let m = p["machineId"] as? String, let id = p["projectId"] as? String, let title = p["title"] as? String else { return nil }
-      // Only me (an older hub says `kind: assistant` alone).
-      let navi = p["onlyMe"] as? Bool == true || p["kind"] as? String == "assistant"
+      // An older hub's Navi.
+      let navi = p["kind"] as? String == "assistant"
       if navi && p["archivedAt"] != nil { return nil }
       return ChatTarget(
         machineId: m, projectId: id, title: title, navi: navi, machine: navi ? nil : machines[m],

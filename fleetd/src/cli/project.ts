@@ -39,8 +39,6 @@ const SPEC = {
     name: "str",
     new: "str",
     "git-init": "bool",
-    "only-me": "bool",
-    "no-only-me": "bool",
     archived: "bool",
   },
   positionals: true,
@@ -256,19 +254,11 @@ async function list(client: McpClient, v: Parsed) {
   if (projects.length === 0) println("No projects yet: fleetd project add <path|github-url>");
   else if (shown.length === 0) println("Every project is archived: fleetd project list --archived shows them");
   for (const p of shown) {
-    const onlyMe = p.onlyMe === true ? "  (only me)" : "";
     const arch = p.archivedAt !== undefined ? "  (archived)" : "";
     println(
-      `${s(p, "/machineId")}/${s(p, "/projectId")}  ${s(p, "/title")}  ${tilde(s(p, "/workspaceRoot"))}${onlyMe}${arch}`,
+      `${s(p, "/machineId")}/${s(p, "/projectId")}  ${s(p, "/title")}  ${tilde(s(p, "/workspaceRoot"))}${arch}`,
     );
   }
-}
-
-/** `--only-me` or `--no-only-me`, as project_add's `onlyMe`; undefined: the hub's default. */
-function onlyMe(v: Parsed): boolean | undefined {
-  const [on, off] = [v.flag("only-me"), v.flag("no-only-me")];
-  if (on && off) throw new Stop(2, "give --only-me or --no-only-me, not both");
-  return on ? true : off ? false : undefined;
 }
 
 /** project_archive, else navi_archive, its old name, on a hub from before it. */
@@ -740,8 +730,6 @@ async function add(client: McpClient, out: Out, v: Parsed, home: string) {
       if (!go) return;
     }
   }
-  const only = onlyMe(v);
-  if (only !== undefined) input.onlyMe = only;
   const head = await call(client, "events_wait", { timeoutSec: 0 });
   const cursor = head?.cursor ?? 0;
   const added = await call(client, "project_add", input);
@@ -772,8 +760,6 @@ async function addNew(client: McpClient, out: Out, v: Parsed, name: string, mach
     input.path = dest;
   }
   if (v.flag("git-init")) input.gitInit = true;
-  const only = onlyMe(v);
-  if (only !== undefined) input.onlyMe = only;
   const added = await call(client, "project_add", input);
   out.success(`${name} made at ${tilde(s(added, "/path"))} on ${s(added, "/machineId")}`);
   out.info(describe(added?.inspect ?? null));

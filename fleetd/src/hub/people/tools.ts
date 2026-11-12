@@ -1,7 +1,7 @@
 // The app's people tools: people_list for everyone; invite_create,
 // invite_revoke, person_set and person_remove for an owner's or admin's device; device_revoke for a person's own
 // devices, or anyone's for an owner or admin. A person's own picture and name are avatar.ts's and name.ts's.
-import type { AgentKeyInfo, Grant, HubRole, LeftProject, Person, Role } from "../../shared/contracts.ts";
+import type { AgentKeyInfo, Grant, HubRole, Person, Role } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import { isHuman } from "../api/grants.ts";
@@ -9,15 +9,11 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { pairCodes } from "../pair/codes.ts";
 import { deepLink } from "../pair/urls.ts";
-import { store } from "../store/hub_store.ts";
 import * as avatar from "./avatar.ts";
 import { announce, change, forgetPerson } from "./events.ts";
 import * as name from "./name.ts";
 import { administers, cleanName } from "./roles.ts";
 import { people, refOf } from "./store.ts";
-
-/** `PEOPLE_MAX`: the most items a people list holds. */
-const PEOPLE_MAX = 500;
 
 /** Whether some grant on every machine (`*`) gives at least `role` (grants.rs `allows_everywhere`). */
 export const allowsEverywhere = (caller: Caller, role: Role) =>
@@ -53,30 +49,6 @@ function mayGrant(by: Person, role: HubRole): void {
   }
 }
 
-/** The Only-me projects removed people left, by name alone: what an owner or admin needs to delete them. */
-function left(hub: Hub): LeftProject[] {
-  // crates/fleetd/src/hub/navi/store.rs `left`.
-  const rows = hub.db.all<{ machine_id: string; project_id: string; owner_person: string }>(
-    `SELECT s.machine_id, s.project_id, s.owner_person FROM project_settings s
-     JOIN people p ON p.person_id = s.owner_person
-     WHERE s.only_me = 1 AND p.removed_ms IS NOT NULL ORDER BY s.created_ms, s.rowid`,
-  );
-  const out: LeftProject[] = [];
-  for (const row of rows.slice(0, PEOPLE_MAX)) {
-    const project = store(hub).projectGet({ machineId: row.machine_id, projectId: row.project_id });
-    const owner = people(hub).personRef(row.owner_person);
-    if (!project || !owner) continue;
-    out.push({
-      machineId: row.machine_id,
-      owner,
-      path: project.workspaceRoot,
-      projectId: row.project_id,
-      title: project.title,
-    });
-  }
-  return out;
-}
-
 const humanDevices = (hub: Hub): AgentKeyInfo[] =>
   hub.auth.keys.list().filter((key) => key.kind === "human" && key.revokedAt === undefined);
 
@@ -91,7 +63,6 @@ export function register(tools: Registry): void {
     return {
       devices,
       invites: admin ? pairCodes(hub).invites(false) : [],
-      ...(admin ? { left: left(hub) } : {}),
       ...(me === undefined ? {} : { me }),
       people: list,
       ...(isHuman(caller) ? { thisDevice: caller.keyId } : {}),
@@ -207,7 +178,7 @@ export function register(tools: Registry): void {
     const { person, revoked } = removed;
     // Their devices' open app connections close now, not at their next call.
     hub.auth.revokedSome();
-    // Their archived Only-me projects' leads, Claude subscription, 1Password token and GitHub connection go too.
+    // Their Claude subscription, 1Password token and GitHub connection go too.
     await forgetPerson(hub, person.personId);
     announce(hub, change("removed", refOf(person), refOf(by)), `${by.name} removed ${person.name} from the hub`);
     return { person, revoked };

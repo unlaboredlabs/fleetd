@@ -226,8 +226,8 @@ export function notice(hub: Hub, event: HubEvent): Notice | undefined {
 }
 
 /**
- * Who an event about `project` (undefined: about no project) is for: a Navi's, its owner; another project's, the
- * person who last wrote in its chat, else the hub's owner; about no project, the hub's owners and admins.
+ * Who an event about `project` (undefined: about no project) is for: a project's, the person who last wrote in its
+ * chat, else the hub's owner; about no project, the hub's owners and admins.
  */
 export function recipients(c: Database, project: ProjectRef | undefined): PersonId[] {
   if (!project) {
@@ -239,26 +239,15 @@ export function recipients(c: Database, project: ProjectRef | undefined): Person
       .all()
       .map((r) => r.person_id);
   }
-  const navi = c
-    .query<{ owner_person: string | null }, [string, string]>(
-      "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
+  const writer = c
+    .query<{ p: string }, [string, string]>(
+      `SELECT json_extract(data, '$.person.personId') AS p FROM chat_messages
+       WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.author') = 'human'
+         AND json_extract(data, '$.person.personId') IS NOT NULL
+       ORDER BY seq DESC LIMIT 1`,
     )
     .get(project.machineId, project.projectId);
-  let person: string | undefined;
-  if (navi) {
-    // A Navi is its owner's alone.
-    person = navi.owner_person ?? undefined;
-  } else {
-    const writer = c
-      .query<{ p: string }, [string, string]>(
-        `SELECT json_extract(data, '$.person.personId') AS p FROM chat_messages
-         WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.author') = 'human'
-           AND json_extract(data, '$.person.personId') IS NOT NULL
-         ORDER BY seq DESC LIMIT 1`,
-      )
-      .get(project.machineId, project.projectId);
-    person = writer?.p ?? ownerOn(c)?.personId;
-  }
+  const person = writer?.p ?? ownerOn(c)?.personId;
   if (person === undefined) return [];
   const on = c.query<{ person_id: string }, [string]>("SELECT person_id FROM people WHERE person_id = ? AND removed_ms IS NULL").get(person);
   return on ? [on.person_id] : [];

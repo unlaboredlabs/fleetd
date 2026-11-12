@@ -45,7 +45,6 @@ export const screensPage = (preview: Fixture): Fixture => {
     workspaceRoot: "/home/dev/projects/home",
     lastActivityAt: iso(60_000),
     threads: { failed: 0, idle: 0, running: 1, waiting: 0 },
-    onlyMe: true,
     createdBy: { keyId: "k-laptop", name: "laptop" },
   });
   const machines = snapshot["machines"];

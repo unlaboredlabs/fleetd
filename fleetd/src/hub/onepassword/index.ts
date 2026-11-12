@@ -5,9 +5,9 @@
 // At a launch the hub names the person whose work it is (`forTask`, `forLead`: the Claude accounts' rule) when they
 // saved a token; the node gives their token to the session's fill_credential when its project and order have no
 // `OP_SERVICE_ACCOUNT_TOKEN` of their own.
-import type { OnePasswordToken, ProjectRef } from "../../shared/contracts.ts";
+import type { OnePasswordToken } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { ClaudeAccountStore, type Whose, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
+import { ClaudeAccountStore, type Whose, whoseForTask } from "../claude_accounts/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import type { HubDb } from "../store/db.ts";
 import { CAP_ONEPASSWORD } from "./caps.ts";
@@ -45,21 +45,11 @@ function theirs(db: HubDb, whose: Whose, machine: string): string | undefined {
   return held?.sealedOn.some((s) => s.machineId === machine) ? whose.person : undefined;
 }
 
-/** The person whose token a task of `order` in project `r`, launched on `machine`, falls back on. */
-export function forTask(db: HubDb, r: ProjectRef, order: string | undefined, machine: string): string | undefined {
+/** The person whose token a task of `order`, launched on `machine`, falls back on: whoever started the order. */
+export function forTask(db: HubDb, order: string | undefined, machine: string): string | undefined {
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    return theirs(db, whoseForTask(db, setup, r, order), machine);
-  } catch {
-    return undefined;
-  }
-}
-
-/** The person whose token the lead of project `r` falls back on: a Navi's owner; a project's lead has none. */
-export function forLead(db: HubDb, r: ProjectRef): string | undefined {
-  try {
-    const setup = new ClaudeAccountStore(db).setup();
-    return theirs(db, whoseForLead(db, setup, r), r.machineId);
+    return theirs(db, whoseForTask(db, setup, order), machine);
   } catch {
     return undefined;
   }

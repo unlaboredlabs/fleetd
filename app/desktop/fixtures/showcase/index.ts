@@ -6,7 +6,7 @@
 // code and the lead asks you to take over (QA takes over, types the code and hands back), the browser's recording lands
 // as the second PR's proof, and the train merges four PRs as one batch. Then QA
 // shows what else the app does (more.ts): the night's memory refresh in this chat and the Automations page, Ada (a
-// Only-me project) with a reply to approve, and Hub › People, with a second hub beside this one in the sidebar.
+// project with no repo) with a reply to approve, and Hub › People, with a second hub beside this one in the sidebar.
 //
 // The board, the PR list and the merge line move in STEPS: each step's rows carry its own updatedAt, and a "rows" frame
 // swaps one step's rows for the next one's (src/main/hub/fixture.ts) before the event that makes the app read them again.

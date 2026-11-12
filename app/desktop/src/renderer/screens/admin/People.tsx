@@ -1,15 +1,13 @@
 // Settings › Hub › People: everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on
 // (claude_accounts_get and github_app_get answer an admin with everyone's), any usage pause on their account included. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
-// offers comes from model.ts; the hub checks it all again. A removed person's Only-me projects, archived with them,
-// are listed below by name alone, each with Delete (people_list `left`; nobody else opens them). Invite someone is the
-// plus beside the page's line (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke.
-// Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx). On a fleetd cloud team (a hub that
+// offers comes from model.ts; the hub checks it all again. Invite someone is the plus beside the page's line
+// (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke. Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx). On a fleetd cloud team (a hub that
 // came with the account) the plus invites by email instead, and who is invited so is listed under People
 // (EmailInvites.tsx); a self-hosted hub's page is the one above, with nothing of the cloud on it.
-import { FolderArchive, Mail, User } from "lucide-react";
+import { Mail, User } from "lucide-react";
 import { useState } from "react";
-import type { HubRole, Invite, LeftProject, PeopleListOutput, Person } from "../../../shared/contracts";
+import type { HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { Button, Dialog, Select, Text } from "../../ui";
@@ -23,7 +21,6 @@ import { EmailInviteList, EmailInviteSection, useEmailInvites } from "./EmailInv
 import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { RemoveProjectDialog } from "../projects/RemoveProjectDialog";
 import { pauseLine } from "../settings/claudeModel";
 import { accountsLine, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
@@ -136,45 +133,7 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
         </SettingsSection>
       )}
       <RemoveDialog row={removing} onClose={() => setRemoving(null)} />
-      <LeftProjects left={list.left ?? []} />
     </>
-  );
-}
-
-/** The Only-me projects removed people left, archived: by name and whose, each with Delete, never opened. */
-function LeftProjects({ left }: { left: ReadonlyArray<LeftProject> }) {
-  const live = useLive();
-  const refetch = useRefetch();
-  const [deleting, setDeleting] = useState<LeftProject | null>(null);
-  if (left.length === 0) return null;
-  return (
-    <SettingsSection
-      title="Left by removed people"
-      hint="Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them."
-    >
-      <SettingsList label="Left by removed people">
-        {left.map((p) => (
-          <SettingsListRow
-            key={`${p.machineId}/${p.projectId}`}
-            label={p.title}
-            icon={<FolderArchive />}
-            name={p.title}
-            controls={
-              <Button variant="ghost" disabled={!live} onClick={() => setDeleting(p)}>
-                Delete
-              </Button>
-            }
-          >
-            <Text size="sm" tone="quiet">{`${p.owner.name}'s`}</Text>
-          </SettingsListRow>
-        ))}
-      </SettingsList>
-      <RemoveProjectDialog
-        project={deleting === null ? null : { machineId: deleting.machineId, projectId: deleting.projectId, title: deleting.title, path: deleting.path }}
-        onClose={() => setDeleting(null)}
-        onRemoved={() => refetch(["people_list"])}
-      />
-    </SettingsSection>
   );
 }
 
@@ -307,7 +266,7 @@ function RemoveDialog({ row, onClose }: { row: PersonRow | null; onClose: () => 
       open={row !== null}
       onOpenChange={(open) => !open && close()}
       title={`Remove ${name}?`}
-      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did keeps their name, and their own projects are archived.`}
+      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did and the projects they made stay.`}
       footer={
         <>
           {error === undefined ? null : (

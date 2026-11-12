@@ -3,7 +3,7 @@
 // one quiet line in the chat and an entry in the Navi's auto-approved log; `ask` brings the card, with the checker's
 // reason; `block` refuses it, tells the person why, and lets them approve it anyway.
 //
-// The checker is a tool-less turn on the Navi owner's own Claude, in the Navi's own project, on the hub's model and
+// The checker is a tool-less turn on the account its project's lead runs on, in that project, on the hub's model and
 // effort for it. Its input is built here, not by the Navi: the action exactly as it runs, where each of its parts came
 // from (review.ts), and the person's recent messages. The content the Navi read is only searched for those parts; it
 // never reaches the checker. Its answer is one JSON verdict; anything else, a failure or a timeout asks the person.

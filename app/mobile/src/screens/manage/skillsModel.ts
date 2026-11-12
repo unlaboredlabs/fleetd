@@ -128,11 +128,10 @@ export interface SkillOffers {
   readonly turnOff: boolean;
 }
 
-/** `own`: the person manages the project (the hub refuses others). A skill in its folder is the folder's: the hub can't
- * turn it off, only taking it out of the folder does. */
-export const offers = (s: Pick<Skill, "origin" | "install">, own: boolean): SkillOffers => {
-  const mine = own && kindOf(s) === "own";
-  return { edit: mine, delete: mine, history: hubKept(s.origin), turnOff: own && kindOf(s) !== "folder" };
+/** A skill in its folder is the folder's: the hub can't turn it off, only taking it out of the folder does. */
+export const offers = (s: Pick<Skill, "origin" | "install">): SkillOffers => {
+  const mine = kindOf(s) === "own";
+  return { edit: mine, delete: mine, history: hubKept(s.origin), turnOff: kindOf(s) !== "folder" };
 };
 
 /** Off for the project: a folder's skill never is, whatever an older hub said. */

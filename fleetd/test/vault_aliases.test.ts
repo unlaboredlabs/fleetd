@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { answer, start as startPurchases } from "../src/hub/navi/purchases.ts";
-import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { start as startVault } from "../src/hub/vault/loops.ts";
 import { seal } from "../src/shared/sealed_box.ts";
@@ -94,7 +93,6 @@ test("an order: sink's value becomes an order variable", async () => {
 
 test("a vault card: picked for the project, claimed once, sealed to the hosting node; its fill closes the audit row", async () => {
   startPurchases(k.hub);
-  setOnlyMe(k.hub.db.conn, PROJECT, true, k.owner.personId);
   const card = await k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", {
     kind: "card",
     scope: "person",
@@ -102,6 +100,7 @@ test("a vault card: picked for the project, claimed once, sealed to the hosting 
     sealed: k.sealToHub({ number: "4242424242424242", month: "04", year: "2031", cvc: "123", name: "Ada" }),
   });
   const ref = `vault:${card.item.itemId}`;
+  await k.call(k.ownerDevice, "vault_share_set", { itemId: card.item.itemId, projects: [PROJECT] });
   // Another person's card can't be picked for a project they can't share it with.
   const bos = await k.call<{ item: { itemId: string } }>(k.memberDevice, "vault_save", { kind: "card", scope: "person", label: "Bo", sealed: k.sealToHub({ number: "4242424242424242" }) });
   expect((await refusal(k.call(k.ownerDevice, "project_card_set", { ...PROJECT, card: `vault:${bos.item.itemId}` }))).code).toBe("invalid");

@@ -255,11 +255,14 @@ test("1Password: a person's token is kept as fingerprints, tested, listed and fo
   await expect(call(bob, "onepassword_cards", { project: { machineId: "lab", projectId: "p1" } })).rejects.toMatchObject({
     code: "invalid",
   });
-  // Bob's Navi on lab falls back on his token; a task of nobody's order doesn't.
+  // No project's lead falls back on a person's token (D491), a former Only me one's neither; a task of nobody's order
+  // doesn't, and one of Bob's order does.
   hub.db.conn.run("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('lab', 'p1', 1, 'p_bbbbbbbb')");
-  expect(opForTask(hub.db, { machineId: "lab", projectId: "p1" }, undefined, "lab")).toBe("p_bbbbbbbb");
-  expect(opForTask(hub.db, { machineId: "lab", projectId: "p2" }, undefined, "lab")).toBeUndefined();
-  expect(whoseForLead(hub.db, setupOf(hub), { machineId: "lab", projectId: "p1" })).toEqual({ person: "p_bbbbbbbb" });
+  expect(whoseForLead()).toEqual({ hub: true });
+  expect(opForTask(hub.db, undefined, "lab")).toBeUndefined();
+  hub.db.conn.run(`INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (5, 'lab', 'p1', 'open', '{"startedBy":{"personId":"p_bbbbbbbb","name":"Bob"}}')`);
+  expect(opForTask(hub.db, "W5", "lab")).toBe("p_bbbbbbbb");
+  await expect(call(bob, "onepassword_cards", { project: { machineId: "lab", projectId: "p1" } })).rejects.toMatchObject({ code: "invalid" });
   await call(bob, "onepassword_remove", {});
   expect(link.calls.at(-1)).toEqual(["lab", { op: "onepassword_token", personId: "p_bbbbbbbb" }]);
   expect(await call(bob, "onepassword_get", {})).toEqual({});
@@ -270,8 +273,8 @@ test("whose work a task is: its order's starter, while they are on the hub", () 
   hub.db.conn.run(`INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (3, 'lab', 'p2', 'open', '{"startedBy":{"personId":"p_bbbbbbbb","name":"Bob"}}')`);
   hub.db.conn.run(`INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (4, 'lab', 'p2', 'open', '{"startedBy":{"personId":"p_zzzzzzzz","name":"Gone"}}')`);
   const s = setupOf(hub);
-  expect(whoseForTask(hub.db, s, { machineId: "lab", projectId: "p2" }, "W3")).toEqual({ person: "p_bbbbbbbb" });
-  expect(whoseForTask(hub.db, s, { machineId: "lab", projectId: "p2" }, "W4")).toEqual({ hub: true });
+  expect(whoseForTask(hub.db, s, "W3")).toEqual({ person: "p_bbbbbbbb" });
+  expect(whoseForTask(hub.db, s, "W4")).toEqual({ hub: true });
 });
 
 import { ClaudeAccountStore } from "../src/hub/claude_accounts/index.ts";

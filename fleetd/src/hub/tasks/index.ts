@@ -373,7 +373,7 @@ export class Tasks {
     let memory = "";
     if (write) {
       try {
-        memory = Memory.of(this.hub).injected(r, false, youForTask(this.hub.db, r, task.workstreamId));
+        memory = Memory.of(this.hub).injected(r, false, youForTask(this.hub.db, task.workstreamId));
       } catch (error) {
         console.warn("tasks: memory not read for the brief:", error);
       }

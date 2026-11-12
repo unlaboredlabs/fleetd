@@ -37,7 +37,7 @@ const snapshot: HubFrame = {
     cursor: 1,
     attention: [],
     machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [], boxPubKey: BOX }],
-    projects: [{ ...ref, title: "Ada", workspaceRoot: "/home/dev/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, onlyMe: true }],
+    projects: [{ ...ref, title: "Ada", workspaceRoot: "/home/dev/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 } }],
   },
 };
 

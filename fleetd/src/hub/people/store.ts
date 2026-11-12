@@ -74,8 +74,6 @@ export function ensureOwnerOn(c: Database, name: string, now: number): Person {
     owner = getOn(c, id) as Person;
   }
   c.query("UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL").run(owner.personId);
-  // A Navi from before people is the owner's too (D215).
-  c.query("UPDATE project_settings SET owner_person = ? WHERE only_me = 1 AND owner_person IS NULL").run(owner.personId);
   return owner;
 }
 
@@ -153,8 +151,8 @@ export class People {
   }
 
   /**
-   * Removes a person: their devices are revoked, their open invites closed, their picture forgotten, and their Only-me
-   * projects archived.
+   * Removes a person: their devices are revoked, their open invites closed and their picture forgotten. Their projects
+   * stay as they are, everyone's on the hub (D491).
    * Returns the person and how many devices it revoked; undefined when there is no such person.
    */
   remove(id: PersonId): { person: Person; revoked: number } | undefined {
@@ -168,9 +166,6 @@ export class People {
         "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
       ).run(id, now);
       c.query("DELETE FROM person_avatars WHERE person_id = ?1").run(id);
-      c.query(
-        "UPDATE project_settings SET archived_ms = ?2 WHERE only_me = 1 AND owner_person = ?1 AND archived_ms IS NULL",
-      ).run(id, now);
       const person = getOn(c, id);
       return person ? { person, revoked } : undefined;
     });

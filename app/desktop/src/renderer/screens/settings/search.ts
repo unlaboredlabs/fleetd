@@ -87,7 +87,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.picture", label: "Project icon", tab: "projects", keywords: ["avatar", "photo", "image", "picture", "face"] },
   { key: "projects.color", label: "Bot color", tab: "projects", keywords: ["avatar", "colour", "bot", "pebble", "palette"] },
   { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
-  { key: "projects.only-me", label: "Only me", tab: "projects", keywords: ["private", "personal", "share", "shared", "who sees", "owner", "everyone"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.setup", label: "Setup", tab: "projects", keywords: ["setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },

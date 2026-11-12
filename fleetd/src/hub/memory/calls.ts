@@ -10,7 +10,7 @@ import { runHuman } from "../leads/requested.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs } from "../store/time.ts";
-import { type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, naviOwner, projectTarget, type RememberCall, type You, youOf } from "./index.ts";
+import { type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, type You, youOf } from "./index.ts";
 import { record, refreshYou } from "./refresh_store.ts";
 
 export const OPS = ["remember", "forget", "memory_read"] as const;
@@ -32,10 +32,8 @@ function scopeOf(call: LeadCall): MemoryScope {
 
 const entryOk = (s: unknown): s is string => typeof s === "string" && s.length >= 1 && s.length <= 1000 && !/[\r\n]/.test(s);
 
-/** A lead's `remember` or `forget` in user scope: a Navi's owner's, else that of the person whose message the turn answers. */
+/** A lead's `remember` or `forget` in user scope: that of the person whose message the turn answers. */
 export function youForTurn(hub: Hub, r: ProjectRef, now: number): You {
-  const owner = naviOwner(hub.db, r);
-  if (owner !== undefined) return youOf(hub.db, owner);
   const lead = new LeadRecords(hub.db).leadGet(r);
   const person = lead ? runHuman(hub.db, r, lead.threadId, now)?.person : undefined;
   return youOf(hub.db, person?.personId);

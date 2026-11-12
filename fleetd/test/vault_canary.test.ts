@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { answer, start as startPurchases } from "../src/hub/navi/purchases.ts";
-import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { putToken } from "../src/hub/onepassword/index.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { injected, start as startVault } from "../src/hub/vault/loops.ts";
@@ -51,11 +50,12 @@ test("no planted value reaches logs, events, chat, audit, answers or the databas
     answers.push(x);
     return x;
   };
-  setOnlyMe(k.hub.db.conn, PROJECT, true, k.owner.personId);
   const save = (input: Record<string, unknown>) => k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", input).then(keep);
   const login = await save({ kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ username: "ada", password: CANARIES.password }) });
   const card = await save({ kind: "card", scope: "person", label: "Visa", sealed: k.sealToHub({ number: CANARIES.card, month: "01", year: "2030", cvc: "917" }) });
-  await save({ kind: "address", scope: "person", label: "Home", sites: ["shop.example"], sealed: k.sealToHub({ line1: CANARIES.address, country: "US" }) });
+  const home = await save({ kind: "address", scope: "person", label: "Home", sites: ["shop.example"], sealed: k.sealToHub({ line1: CANARIES.address, country: "US" }) });
+  // The project's lead uses the owner's own items once they are shared with it.
+  for (const item of [login, card, home]) keep(await k.call(k.ownerDevice, "vault_share_set", { itemId: item.item.itemId, projects: [PROJECT] }));
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "API_KEY", sealed: k.sealToHub({ value: CANARIES.env }) });
   keep(await k.call(k.ownerDevice, "vault_list", {}));
   keep(await k.call(k.ownerDevice, "vault_get", { itemId: login.item.itemId }));

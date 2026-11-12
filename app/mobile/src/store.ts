@@ -68,7 +68,7 @@ export interface State {
   readonly machines: readonly Machine[];
   /** Whether this phone's person is the hub's admin (hub_info), who can update it; undefined until read. */
   readonly admin: boolean | undefined;
-  /** This phone's person (hub_info's `me`), whose Only-me projects are theirs; undefined until read, and on a hub before people. */
+  /** This phone's person (hub_info's `me`); undefined until read, and on a hub before people. */
   readonly me: string | undefined;
   /** That person's name, which the chats list's avatar shows the initial of; undefined as `me` is. */
   readonly meName: string | undefined;

@@ -49,7 +49,7 @@ describe("an integration's approval card", () => {
 });
 
 describe("a lead's proposal for a new project", () => {
-  const shown = { machineId: "devbox", onlyMe: false, path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
+  const shown = { machineId: "devbox", path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
   const card = (input: unknown, more: Partial<ToolPreview> = {}): ToolPreview => ({
     server: "fleetd",
     tool: "project_propose",
@@ -58,9 +58,9 @@ describe("a lead's proposal for a new project", () => {
     input: typeof input === "string" ? input : JSON.stringify(input),
     ...more,
   });
-  it("reads what approving it makes from the card: the name, the repo or none, the folder and who sees it", () => {
-    expect(proposal(card(shown))).toEqual({ title: "Pricing page", repo: "acme/pricing-page", machineId: "devbox", path: "/home/dev/src/pricing-page", onlyMe: false });
-    expect(proposal(card({ ...shown, repo: null, onlyMe: true }))).toEqual({ title: "Pricing page", repo: undefined, machineId: "devbox", path: "/home/dev/src/pricing-page", onlyMe: true });
+  it("reads what approving it makes from the card: the name, the repo or none and the folder", () => {
+    expect(proposal(card(shown))).toEqual({ title: "Pricing page", repo: "acme/pricing-page", machineId: "devbox", path: "/home/dev/src/pricing-page" });
+    expect(proposal(card({ ...shown, repo: null }))).toEqual({ title: "Pricing page", repo: undefined, machineId: "devbox", path: "/home/dev/src/pricing-page" });
     expect(proposalWords).toEqual({ yes: "Create it", no: "Don't create" });
   });
   it("is no proposal from another server's tool of that name, or with a card it can't read", () => {

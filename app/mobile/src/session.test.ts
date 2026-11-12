@@ -11,14 +11,13 @@ const REF = { machineId: "m1", projectId: "navi" };
 const KEY = "m1/navi";
 const AT = "2026-10-28T10:00:00Z";
 
-const project = (projectId: string, title: string, onlyMe?: true) => ({
+const project = (projectId: string, title: string) => ({
   machineId: "m1",
   projectId,
   title,
   workspaceRoot: `/home/devbox/${projectId}`,
   lastActivityAt: AT,
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
-  ...(onlyMe === undefined ? {} : { onlyMe }),
 });
 
 const snapshot = {
@@ -26,7 +25,7 @@ const snapshot = {
   cursor: 1,
   attention: [],
   machines: [],
-  projects: [project("navi", "Ada", true), project("shop", "storefront")],
+  projects: [project("navi", "Ada"), project("shop", "storefront")],
   chats: [{ projectRef: REF, lastSeq: 2, leadWorking: false, needsYou: false }],
 };
 
@@ -425,7 +424,7 @@ describe("Session", () => {
     const before = hub.sentOf("snapshot").length;
     hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
     expect(hub.sentOf("snapshot").length).toBe(before + 1);
-    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", true), project("shop", "Shop")] });
+    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada"), project("shop", "Shop")] });
     expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.project.title).toEqual("Shop");
   });
 

@@ -20,8 +20,6 @@ import { read as readChecklist } from "../checklist/index.ts";
 import { workstreamGet, workstreamsList } from "../orders/workstreams.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
-import * as navis from "./store.ts";
-import { othersOf, type Refs } from "./owner.ts";
 import { askFooter, RETRY_MS } from "./asks.ts";
 
 export { askFooter, RETRY_MS } from "./asks.ts";
@@ -146,22 +144,15 @@ export function mayUse(db: Database, r: ProjectRef): void {
 /** The asker sees the project at all: a Navi every project here, a link those its device reads. */
 const sees = (asker: Asker, p: ProjectRef) => asker.kind === "navi" || linkAllows(asker.link, "read", p.machineId);
 
-/** The Navis that aren't the asker's person's (D215): it neither sees nor reaches them. */
-function othersOfAsker(hub: Hub, asker: Asker): Refs {
-  if (asker.kind === "navi") return othersOf(hub.db, navis.of(hub.db.conn, asker.navi)?.owner, false);
-  return othersOf(hub.db, asker.link.person?.personId, true);
-}
-
 /** The asker reaches the project: not a Navi's own, and one of a link's projects. */
 const reaches = (asker: Asker, p: ProjectRef) =>
   asker.kind === "navi" ? !same(asker.navi, p) : sees(asker, p) && linkLimits(asker.link, p);
 
 /** The project `name` names, by project id or title, other than the caller's own. */
 function target(hub: Hub, asker: Asker, name: string): ProjectSummary {
-  const hidden = othersOfAsker(hub, asker);
   const all = store(hub)
     .projectsShown()
-    .filter((p) => sees(asker, refOf(p)) && !hidden.has(refOf(p)));
+    .filter((p) => sees(asker, refOf(p)));
   const byId = all.filter((p) => p.projectId === name);
   const found = byId.length > 0 ? byId : all.filter((p) => p.title.trim().toLowerCase() === name.trim().toLowerCase());
   if (found.length === 0) {
@@ -334,11 +325,10 @@ export function factoryStatus(hub: Hub, asker: Asker, call: FactoryStatusCall): 
   if (!found.statusRows) throw new NotImplemented("src/hub/status (statusRows, for factory_status)");
   const rows = found.statusRows(hub, hub.clock.now());
   const asks = asksOf(hub.db.conn, asker);
-  const hidden = othersOfAsker(hub, asker);
   const projects: FactoryProject[] = [];
   for (const row of rows) {
     const r = row.projectRef;
-    if (!reaches(asker, r) || hidden.has(r) || (only && !same(only, r))) continue;
+    if (!reaches(asker, r) || (only && !same(only, r))) continue;
     const orders = workstreamsList(hub.db.conn, { projectRef: r, state: "open", limit: 20 });
     const checklist = readChecklist(hub.db, r).items;
     const toIt = asks.filter((a) => same(a.to, r) && a.toHub === undefined);

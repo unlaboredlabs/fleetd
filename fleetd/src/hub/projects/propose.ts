@@ -57,9 +57,9 @@ function keyFor(m: MachineId, by?: ProposalApprover): Caller {
 const words = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/\.+$/u, "");
 
 function preview(shown: Shown): ToolPreview {
-  // As `project_add` from a person's own device: one with no repo is Only me, its maker's; one with a repo is shared.
-  const whose = shown.repo === null ? "once you approve. Only you will see it (Only me)" : `cloned from ${shown.repo} once you approve. Everyone on this hub can use it, as with a repo you add yourself`;
-  const card = { ...shown, onlyMe: shown.repo === null, what: `A new project on ${shown.machineId}, ${whose}. Nothing is made before that.` };
+  // As `project_add` from a person's own device: everyone on the hub can use it, with a repo or without (D491).
+  const whose = shown.repo === null ? "once you approve" : `cloned from ${shown.repo} once you approve`;
+  const card = { ...shown, what: `A new project on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
   return {
     server: "fleetd",
     tool: "project_propose",
@@ -134,7 +134,7 @@ export async function make(hub: Hub, project: ProjectRef, shown: unknown, by: Pr
   try {
     if (repo === null) {
       const out = await add(hub, keyFor(m, by), { create: true, title, path, machineId: m });
-      done({ created: true, projectId: out.projectId, title, path: out.path, next: `${title} is a project now, at ${out.path} on ${m}. It is ${who}'s alone (Only me), in their list of projects; ${LEAD}.` });
+      done({ created: true, projectId: out.projectId, title, path: out.path, next: `${title} is a project now, at ${out.path} on ${m}, in everyone's list of projects; ${LEAD}.` });
       return undefined;
     }
     // A clone can end before `add` returns: its row is written only while it still runs.

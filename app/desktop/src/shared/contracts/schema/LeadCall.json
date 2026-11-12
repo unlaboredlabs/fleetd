@@ -727,7 +727,7 @@
       "description": "`fleetd change enqueue <PR URL> [--task T1] [--workstream W1]`. The workstream defaults to the task's.",
       "properties": {
         "after": {
-          "description": "PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.\nEnqueuing a PR already on the train adds these to it, unless it is already being merged. Only PRs of projects\nyour person can see: one of another person's Only me project is refused.",
+          "description": "PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.\nEnqueuing a PR already on the train adds these to it, unless it is already being merged.",
           "items": {
             "$ref": "#/$defs/GitHubPrUrl"
           },
@@ -2890,7 +2890,7 @@
       "type": "object"
     },
     "ProjectSetupCall": {
-      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\nOnly me, linked hubs, delete) has no field here.",
+      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\nlinked hubs, delete) has no field here.",
       "properties": {
         "archive": {
           "description": "True archives the project: its chat leaves the list and its lead stops. A person brings it back.",
@@ -4331,7 +4331,7 @@
       "oneOf": [
         {
           "const": "person",
-          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "description": "One person's: used by work they started, and projects it's shared with.",
           "type": "string"
         },
         {

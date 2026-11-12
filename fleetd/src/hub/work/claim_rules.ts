@@ -26,9 +26,6 @@ import type { WorkScope } from "./repo_key.ts";
 import * as view from "./view.ts";
 import { isLine } from "./view.ts";
 
-/** The projects whose items a key isn't shown: another person's Only me ones (navi/owner.ts `Refs`). */
-export type Navis = { has(r: ProjectRef): boolean };
-
 /** Matches a claim's answer shows. */
 export const MATCHES_MAX = 10;
 /** Items work_list shows. */
@@ -58,9 +55,8 @@ export function ownerOf(caller: AgentKeyInfo): ClaimOwner {
   };
 }
 
-/** Items on machines the key can't read, and those of another person's Only me project, are left out of what it is shown. */
-export const visible = (caller: AgentKeyInfo, navis: Navis, item: WorkItem) =>
-  !item.projectRef || (readable(caller, item.projectRef.machineId) && !navis.has(item.projectRef));
+/** Items on machines the key can't read are left out of what it is shown. */
+export const visible = (caller: AgentKeyInfo, item: WorkItem) => !item.projectRef || readable(caller, item.projectRef.machineId);
 
 export const isMine = (caller: AgentKeyInfo, item: WorkItem) => item.owner?.keyId === caller.keyId;
 
@@ -104,11 +100,11 @@ export const withClaims = (items: WorkItem[], claims: Claim[]): WorkItem[] => [
 export type Refusal = { refused: WorkClaimOutput };
 
 /** What `found` says about the claim: go ahead, with a note for `work.claimed` when it overrides one; or the answer that refuses it. */
-export function decide(caller: AgentKeyInfo, navis: Navis, person: boolean, input: WorkClaimInput, found: WorkMatch[]): { note?: string } | Refusal {
+export function decide(caller: AgentKeyInfo, person: boolean, input: WorkClaimInput, found: WorkMatch[]): { note?: string } | Refusal {
   const theirs = found.filter((m) => !isMine(caller, m.item));
-  const nameOf = (m: WorkMatch) => (visible(caller, navis, m.item) ? describe(m.item) : `${m.item.id} (on a machine or project this key can't read)`);
+  const nameOf = (m: WorkMatch) => (visible(caller, m.item) ? describe(m.item) : `${m.item.id} (on a machine this key can't read)`);
   const refuse = (status: WorkClaimStatus, message: string, next: string): Refusal => ({
-    refused: answer(caller, navis, found, status, undefined, message, next),
+    refused: answer(caller, found, status, undefined, message, next),
   });
   const exact = theirs.find((m) => m.strength === "exact");
   if (exact) {
@@ -137,7 +133,6 @@ export function decide(caller: AgentKeyInfo, navis: Navis, person: boolean, inpu
 /** The answer, with the matches the caller may see (not its own), strongest first. */
 export function answer(
   caller: AgentKeyInfo,
-  navis: Navis,
   found: WorkMatch[],
   status: WorkClaimStatus,
   claim: Claim | undefined,
@@ -145,7 +140,7 @@ export function answer(
   next: string,
 ): WorkClaimOutput {
   const shown = cap(
-    found.filter((m) => visible(caller, navis, m.item) && !isMine(caller, m.item)),
+    found.filter((m) => visible(caller, m.item) && !isMine(caller, m.item)),
     MATCHES_MAX,
   );
   return {

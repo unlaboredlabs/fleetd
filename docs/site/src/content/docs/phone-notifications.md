@@ -133,8 +133,7 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-- An [Only me](/docs/projects#only-me) project's messages and approvals go to its owner only.
-- A shared project's messages go to the person who last wrote in that project's chat, else the hub's owner.
+- A project's messages go to the person who last wrote in that project's chat, else the hub's owner.
 - Approvals, failed fetches, machines down under running work and usage limits: what the hub already marks as
   needing you. Money and irreversible commands are urgent.
 - Orders that landed or stopped.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, manages, merges, orderLines, profileLines, profilesValue, subtitle, suggestions } from "./model";
+import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, subtitle, suggestions } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -14,7 +14,7 @@ const project = (extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
   ...extra,
 });
-const own = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/navi/ada", onlyMe: true, ...extra });
+const own = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/navi/ada", ...extra });
 
 const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
   machineId: "devbox",
@@ -25,22 +25,6 @@ const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
   setup: { commands: [] } as unknown as ProjectSettings["setup"],
   worktrees: { dir: "/home/ada/.fleetd/worktrees/shop", worktrees: [] },
   ...extra,
-});
-
-describe("what the person may do", () => {
-  it("lets anyone who operates manage a shared project", () => {
-    expect(manages(project(), "p_ada")).toBe(true);
-    expect(manages(project({ owner: "p_bob" }), "p_ada")).toBe(true);
-    expect(manages(project(), undefined)).toBe(true);
-  });
-
-  it("lets only an Only-me project's owner manage it", () => {
-    expect(manages(own({ owner: "p_ada" }), "p_ada")).toBe(true);
-    expect(manages(own({ owner: "p_ada" }), "p_bob")).toBe(false);
-    // Before people, or before hub_info answered: an unowned one is everyone's, an owned one nobody's here.
-    expect(manages(own(), undefined)).toBe(true);
-    expect(manages(own({ owner: "p_ada" }), undefined)).toBe(false);
-  });
 });
 
 describe("its screen", () => {

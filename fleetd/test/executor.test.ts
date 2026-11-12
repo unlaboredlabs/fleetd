@@ -231,13 +231,14 @@ test("project_get offline is the cache as of the last sighting; hooks add their 
   expect(await k.refused(key("read"), "actions_list", { machineId: "devbox", threadId: "s1" })).toBe("machine_offline");
   expect(await k.refused(key("read"), "project_get", { machineId: "nope", projectId: "app" })).toBe("not_found");
   expect(await k.refused(key("read", { machines: ["laptop"] }), "project_get", { machineId: "devbox", projectId: "app" })).toBe("forbidden");
-  // Another person's Only me project is out of the lists and refused by name.
+  // A project that was another person's Only me one is listed and read by anyone who reads its machine (D491).
   k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-owner', 'Owner', 'owner', 0), ('p-ada', 'Ada', 'member', 1)");
   k.hub.db.conn.run("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'app', 1, 'p-ada')");
-  expect((await k.ok(key("read"), "project_get", {})).projects).toEqual([]);
-  expect(await k.refused(key("read"), "project_get", { machineId: "devbox", projectId: "app" })).toBe("forbidden");
-  const ada = key("read", { human: true, person: { personId: "p-ada", name: "Ada" } });
-  expect((await k.ok(ada, "project_get", {})).projects.map((p: { projectId: string }) => p.projectId)).toEqual(["app"]);
+  const bo = key("read", { human: true, person: { personId: "p-bo", name: "Bo" } });
+  for (const reader of [key("read"), bo]) {
+    expect((await k.ok(reader, "project_get", {})).projects.map((p: { projectId: string }) => p.projectId)).toEqual(["app"]);
+    expect((await k.ok(reader, "project_get", { machineId: "devbox", projectId: "app" })).project).toMatchObject({ projectId: "app" });
+  }
 });
 
 test("quiet hours end at the next local end, across midnight and in the policy's zone", () => {

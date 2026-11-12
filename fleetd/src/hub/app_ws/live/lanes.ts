@@ -19,7 +19,6 @@ import { activity, jsTake, type LiveParts } from "../../executor/activity.ts";
 import { executors } from "../../executor/index.ts";
 import { leads } from "../../leads/index.ts";
 import { link } from "../../link/server.ts";
-import { among, mayUse, others } from "../../navi/owner.ts";
 import { workstreamGet } from "../../orders/workstreams.ts";
 import { state as slotState } from "../../slots/index.ts";
 import { store } from "../../store/hub_store.ts";
@@ -135,7 +134,7 @@ export function focusLanes(hub: Hub, caller: Caller, id: WorkstreamId): LaneNow[
   const w = workstreamGet(hub.db.conn, id);
   if (!w) return [];
   const project = w.projectRef;
-  if (!allows(caller, "read", project.machineId) || !mayUse(hub.db, caller, project)) return [];
+  if (!allows(caller, "read", project.machineId)) return [];
   const cutoff = isoMs(hub.clock.now() - ENDED_GRACE_MS);
   const lanes = tasksList(hub, { workstreamId: id, limit: ORDER_TASKS })
     .filter((t) => t.state === "queued" || t.state === "running" || t.state === "idle" || (t.endedAt !== undefined && t.endedAt >= cutoff))
@@ -146,18 +145,16 @@ export function focusLanes(hub: Hub, caller: Caller, id: WorkstreamId): LaneNow[
 
 const refKey = (r: ProjectRef) => `${r.machineId}\u0000${r.projectId}`;
 
-/** agents/mod.rs `readable_projects`: every project the key reads, but another person's Only me ones. */
+/** agents/mod.rs `readable_projects`: every project the key reads. */
 function readableProjects(hub: Hub, caller: Caller): ProjectRef[] {
-  const navis = others(hub.db, caller);
   return store(hub)
     .projectsList()
-    .filter((p) => allows(caller, "read", p.machineId) && !among(navis, p))
+    .filter((p) => allows(caller, "read", p.machineId))
     .map((p) => ({ machineId: p.machineId, projectId: p.projectId }));
 }
 
 function readableTasks(hub: Hub, caller: Caller, tasks: Task[]): Task[] {
-  const navis = others(hub.db, caller);
-  return tasks.filter((t) => allows(caller, "read", t.projectRef.machineId) && !navis.has(t.projectRef));
+  return tasks.filter((t) => allows(caller, "read", t.projectRef.machineId));
 }
 
 /**
@@ -190,12 +187,11 @@ export function agentLanes(hub: Hub, caller: Caller, laneId: string): LaneNow[] 
     if (slash < 0) return [];
     const project = { machineId: rest.slice(0, slash), projectId: rest.slice(slash + 1) };
     if (!/^[a-z0-9-]{1,32}$/.test(project.machineId) || project.projectId === "") return [];
-    if (!allows(caller, "read", project.machineId) || !mayUse(hub.db, caller, project)) return [];
+    if (!allows(caller, "read", project.machineId)) return [];
     return leadLanes(hub, [project], true);
   }
   const task = taskGet(hub, laneId);
-  // Another person's Only me project's agents are theirs alone (D310).
-  if (!task || !allows(caller, "read", task.projectRef.machineId) || !mayUse(hub.db, caller, task.projectRef)) return [];
+  if (!task || !allows(caller, "read", task.projectRef.machineId)) return [];
   return [taskLane(hub, task, true)];
 }
 
@@ -225,15 +221,13 @@ export function machines(hub: Hub, caller: Caller): MachineLive[] {
 }
 
 /**
- * The slot board, its per-project and per-machine rows cut to the machines the key may read, and its per-project
- * rows to the projects it may see (another person's Only me project is theirs alone, D310).
+ * The slot board, its per-project and per-machine rows cut to the machines the key may read.
  */
 export function slots(hub: Hub, caller: Caller): SlotState | undefined {
   const board = slotState(hub);
-  const navis = others(hub.db, caller);
   return {
     ...board,
-    perProject: board.perProject.filter((p) => allows(caller, "read", p.projectRef.machineId) && !navis.has(p.projectRef)),
+    perProject: board.perProject.filter((p) => allows(caller, "read", p.projectRef.machineId)),
     ...(board.perMachine ? { perMachine: board.perMachine.filter((m) => allows(caller, "read", m.machineId)) } : {}),
   };
 }

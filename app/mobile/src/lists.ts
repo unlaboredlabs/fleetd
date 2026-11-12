@@ -3,7 +3,7 @@
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, openTo, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -269,7 +269,6 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
       add("Repo", made.repo ?? "None", made.repo === undefined ? {} : { mono: true });
       add("Folder", made.path, { mono: true });
       add("On", made.machineId);
-      add("Open to", openTo(made));
     }
     add("Input", preview.input, { mono: true, more: true, lines: true });
   } else if (r.permission !== undefined) {

@@ -87,7 +87,7 @@ export type Merge =
   | { kind: "merged" }
   /** It failed on the train, why ("its CI failed"): its writer fixes it, so the wait goes on. */
   | { kind: "failed"; why: string }
-  /** It won't merge, why: closed unmerged, or of a project the task's person doesn't see (D338). */
+  /** It won't merge, why: closed unmerged. */
   | { kind: "over"; why: string };
 
 /** GitHub's reads, and the train's for `merged`; the hub's go through the train and its GitHub reader, tests fake them. */
@@ -333,9 +333,8 @@ export const CLOSED = "it was closed without merging";
 /** Where an upstream PR stands on the train (train/next.rs `Waiting`): undefined once it merged. */
 export type Waiting = { note: string; failed: boolean };
 
-/** The train's reads a merge wait needs (train/next.rs `sees_pr`, `upstream`). */
+/** The train's reads a merge wait needs (train/next.rs `upstream`). */
 export type MergeReads = {
-  seesPr(by: ProjectRef, url: string): boolean;
   upstream(url: string): Promise<Waiting | undefined>;
 };
 
@@ -344,7 +343,6 @@ export async function mergeOf(train: MergeReads | undefined, by: ProjectRef, tar
   // Until the train sets its reads, a merge wait waits (and is given up on after MERGE_GIVE_UP_MS).
   if (!train) return { kind: "pending" };
   const url = targetUrl(target);
-  if (!train.seesPr(by, url)) return { kind: "over", why: "it is in a project you don't see" };
   const waiting = await train.upstream(url);
   if (!waiting) return { kind: "merged" };
   // The train's hold: "held: waiting on owner/name#n: why".

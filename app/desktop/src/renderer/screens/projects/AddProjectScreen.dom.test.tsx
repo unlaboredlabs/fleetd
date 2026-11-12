@@ -138,7 +138,6 @@ describe("Add project's new project", () => {
     expect(options()).toEqual([expect.stringContaining("New project “Field notes”")]);
     expect(field("Folder").value).toBe(`${ROOT}/field-notes`);
     expect(summary()).toContain("Creates an empty folder");
-    expect(summary()).toContain("Only you will see it.");
     expect(button("Create")?.disabled).toBe(false);
     // Edited, it stays as typed; a path that isn't full can't be created, and the line says why.
     await type(field("Folder"), "notes");
@@ -167,23 +166,6 @@ describe("Add project's new project", () => {
     expect(calls.some((c) => c.tool === "project_add")).toBe(false);
   });
 
-  it("starts Only me on for a new folder, and sends it off when the person turns it off", async () => {
-    await render();
-    await type(field(NAME), "Field notes");
-    const only = check("Only me");
-    expect(only?.getAttribute("aria-checked")).toBe("true");
-    await act(async () => {
-      only?.click();
-      await Promise.resolve();
-    });
-    await act(async () => {
-      button("Create")?.click();
-      await Promise.resolve();
-    });
-    await settle();
-    expect(calls.find((c) => c.tool === "project_add")?.input).toMatchObject({ create: true, onlyMe: false });
-  });
-
   it("creates it where the folder says, git init only when ticked, and opens it once the hub lists it", async () => {
     const send = await render();
     await type(field(NAME), "Field notes");
@@ -197,7 +179,7 @@ describe("Add project's new project", () => {
     });
     await settle();
     const add = calls.find((c) => c.tool === "project_add");
-    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true, onlyMe: true });
+    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true });
     // Not before the hub's snapshot has it, so its chat never shows as missing.
     expect(window.location.hash).toBe("#/projects/add");
     const made = { machineId: "devbox", projectId: "p9", title: "Field notes", workspaceRoot: `${ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };

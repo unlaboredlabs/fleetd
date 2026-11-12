@@ -609,9 +609,6 @@ export class FakeHost implements TrainHost {
   repoProjects(): ProjectRef[] {
     return [];
   }
-  sees() {
-    return true;
-  }
   async nodeRun(_checkout: ProjectRef, _cwd: string, argv: string[]): Promise<NodeRun> {
     this.nodeRuns.push(argv);
     throw new Error("no checkout");

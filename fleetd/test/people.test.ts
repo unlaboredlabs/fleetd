@@ -56,7 +56,8 @@ test("an invite redeemed binds the device to its person, capped by their role, a
   expect(listed.devices.map((d) => d.keyId)).toEqual([owner.keyId, laptop.keyId].sort());
   expect(listed.invites).toEqual([]);
   expect(listed.me).toBe(owner.person?.personId as string);
-  expect(listed.left).toEqual([]);
+  // A removed person's projects stay as they are (D491): no list of what they left.
+  expect(listed.left).toBeUndefined();
 
   // Alice sees everyone, but only her own devices and no invites.
   const hers = await call<{ people: unknown[]; devices: unknown[]; invites: unknown[]; thisDevice: string; left?: unknown }>(laptop, "people_list");

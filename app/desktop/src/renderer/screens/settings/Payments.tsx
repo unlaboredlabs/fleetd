@@ -203,8 +203,8 @@ function VaultCards(props: { projectRef: Ref; picked: string | undefined; picked
   const { projectRef } = props;
   const live = useLive();
   const projectName = useProjectName();
-  // usable: what the project's work may pay with (its own, yours shared with it or of an Only me project, the hub's),
-  // not only its own.
+  // usable: what the project's work may pay with (its own, yours shared with it, the hub's), not
+  // only its own.
   const list = useToolQuery("vault_list", { ...projectRef, kind: "card", usable: true }, { enabled: live });
   const [adding, setAdding] = useState<"card" | "import" | null>(null);
   const whose = { kind: "project", ...projectRef } as const;

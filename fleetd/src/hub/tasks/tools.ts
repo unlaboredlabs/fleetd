@@ -5,7 +5,6 @@ import { requireRole } from "../api/grants.ts";
 import { cap } from "../api/refusals.ts";
 import type { Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { others } from "../navi/owner.ts";
 import { capSet } from "../slots/cap.ts";
 import { TaskRecords } from "./records.ts";
 
@@ -21,11 +20,7 @@ export function register(tools: Registry): void {
       ...(input.state !== undefined ? { state: input.state } : {}),
       limit: input.projectRef ? limit + 1 : 1000,
     };
-    // Another person's Only me project's tasks are theirs alone (D310).
-    const navis = others(hub.db, caller);
-    const listed = TaskRecords.list(hub.db.conn, filter).filter(
-      (t) => allows(caller, "read", t.projectRef.machineId) && !navis.has(t.projectRef),
-    );
+    const listed = TaskRecords.list(hub.db.conn, filter).filter((t) => allows(caller, "read", t.projectRef.machineId));
     const shown = cap(listed, limit);
     return {
       tasks: shown.items,

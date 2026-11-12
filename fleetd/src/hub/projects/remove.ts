@@ -3,7 +3,7 @@
 // link. A project whose machine the hub no longer has is only forgotten in the hub.
 import type { ProjectRef, ProjectRemoveInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { CAP_NAVI_ERASE, CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS } from "../../shared/node_link.ts";
+import { CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS } from "../../shared/node_link.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
@@ -15,7 +15,6 @@ import { revokeAllThere } from "../hub_links/client.ts";
 import { kept } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
 import { asked, erase } from "../navi/erase.ts";
-import { of as naviOf } from "../navi/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -45,10 +44,9 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
   // project holds it, so one left on the node would show as a project once this one is gone. One another project
   // also holds stays.
   // Every project is erased (D287, one rule since D310), on its node too, which must know how; its folder goes only
-  // if asked. A node before that erases a Navi alone.
-  const navi = naviOf(hub.db.conn, r) !== undefined;
+  // if asked.
   const removeFolder = input.removeFolder === true;
-  const erases = link(hub).can(m, CAP_PROJECT_ERASE) || (navi && link(hub).can(m, CAP_NAVI_ERASE));
+  const erases = link(hub).can(m, CAP_PROJECT_ERASE);
   if (!erases) {
     throw new ToolError(
       "invalid",

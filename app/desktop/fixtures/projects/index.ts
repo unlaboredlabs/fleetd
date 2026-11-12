@@ -284,7 +284,7 @@ export default defineGroup({
       // A new project made from the sheet: the hub's next snapshot lists it, a plain folder with no repo, and Settings
       // says so. Timed past the QA step's Enter, as projects-cloning's progress is.
       const f = Fixture.from(base("typical"), "projects-new", "Add project: a new, empty project made in a folder the hub makes, then opened");
-      const made: JsonObject = { machineId: "devbox", projectId: "field-notes", title: "Field notes", workspaceRoot: `${PROJECTS_ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: f.now, repos: [], onlyMe: true };
+      const made: JsonObject = { machineId: "devbox", projectId: "field-notes", title: "Field notes", workspaceRoot: `${PROJECTS_ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: f.now, repos: [] };
       if (f.snapshot !== undefined) f.later(6_000, "snapshot", { ...f.snapshot, projects: [...projectsOf(f), made] });
       f.answer("project_settings_get", { machineId: "devbox", projectId: "field-notes" }, {
         settings: {

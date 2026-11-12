@@ -160,7 +160,7 @@ function held(hub: Hub, r: ProjectRef): string | undefined {
 function leadAccountKey(hub: Hub, r: ProjectRef): string | undefined {
   try {
     const setup = new ClaudeAccountStore(hub.db).setup();
-    const on = setup.runsOn(whoseForLead(hub.db, setup, r), r.machineId);
+    const on = setup.runsOn(whoseForLead(), r.machineId);
     return on.kind === "account" ? accountKey(on.account) : undefined;
   } catch {
     return undefined;

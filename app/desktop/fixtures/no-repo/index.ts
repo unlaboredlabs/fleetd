@@ -1,10 +1,9 @@
-// Only-me projects in the app: a chat with a lead and no repo, first in the sidebar, as former Navis are. only-me-chats: Ada
-// and Home, Only me, above the projects, and Taxes archived; Ada asks to book a table through its MCP server (the
-// approval card, with its preview), has asked storefront and billing for work (Asked work, project_asks) and keeps
-// skills it learned (Skills, with weekly-invoices' history). only-me-links: Ada's Linked hubs and Sam's links to this
-// hub (hubLinks/); only-me-links-none: neither yet. only-me-files: files both ways in Home's chat: the person sends a
+// Projects with no repo in the app: a chat with a lead in a folder. no-repo-chats: Ada and Home beside the projects, and
+// Taxes archived; Ada asks to book a table through its MCP server (the approval card, with its preview), has asked
+// storefront and billing for work (Asked work, project_asks) and keeps skills it learned (Skills, with weekly-invoices' history). no-repo-links: Ada's Linked hubs and Sam's links to this
+// hub (hubLinks/); no-repo-links-none: neither yet. no-repo-files: files both ways in Home's chat: the person sends a
 // lease (.docx) and a bank export (.csv), and Home sends back the trip as a PDF and the receipts as a CSV, each a card
-// that opens or saves. only-me-pictures: pictures both ways there: the person sends two screenshots side by side, and
+// that opens or saves. no-repo-pictures: pictures both ways there: the person sends two screenshots side by side, and
 // Home answers with a picture of its own, each with a download button and Save image… and Copy image on right-click.
 import fs from "node:fs";
 import { writeChat, type Ref } from "../kit/chat.ts";
@@ -20,7 +19,7 @@ import { projectSections, yourDevices } from "../kit/sections.ts";
 
 const CREATOR = { keyId: "k-laptop", name: "laptop" };
 
-/** An Only-me project with no repo, as the snapshot lists it beside the others (the showcase's too). */
+/** A project with no repo, as the snapshot lists it beside the others (the showcase's too). */
 export const ownProject = (f: Fixture, ref: Ref, title: string, folder: string, archivedAgoMs?: number): JsonObject => ({
   machineId: ref.machineId,
   projectId: ref.projectId,
@@ -28,7 +27,6 @@ export const ownProject = (f: Fixture, ref: Ref, title: string, folder: string, 
   workspaceRoot: `/home/dev/projects/${folder}`,
   lastActivityAt: at(f.now, -600_000),
   threads: { failed: 0, idle: 1, running: 0, waiting: 0 },
-  onlyMe: true,
   createdBy: CREATOR,
   ...(archivedAgoMs === undefined ? {} : { archivedAt: at(f.now, -archivedAgoMs) }),
 });
@@ -82,8 +80,8 @@ export const toolApproval = (project: Ref, name: string, call: ToolCall = BOOKIN
 });
 
 const two = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "only-me-chats", "Only me: Ada and Home above the projects, Taxes archived; Ada asks to book a table and follows work it asked for.");
-  if (f.snapshot === undefined) throw new Error("only-me-chats needs a snapshot");
+  const f = Fixture.from(base, "no-repo-chats", "No repo: Ada and Home beside the projects, Taxes archived; Ada asks to book a table and follows work it asked for.");
+  if (f.snapshot === undefined) throw new Error("no-repo-chats needs a snapshot");
   f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home"), ownProject(f, TAXES, "Taxes", "taxes", 3 * 86_400_000)];
   const storefront = refOf(f, "storefront");
   const billing = refOf(f, "billing");
@@ -257,7 +255,7 @@ const SAM = { personId: "p_aaaaaaaa", name: "Sam" };
  * revoked a third. A new key Sam makes is answered too.
  */
 const links = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "only-me-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
+  const f = Fixture.from(from, "no-repo-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
   adaSettings(f);
   projectSections(f, ADA);
   const storefront = refOf(f, "storefront");
@@ -317,7 +315,7 @@ const links = (from: Fixture): Fixture => {
 };
 
 const linksNone = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "only-me-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
+  const f = Fixture.from(from, "no-repo-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
   for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
   return f;
 };
@@ -329,7 +327,7 @@ const madeFile = (f: Fixture, ref: Ref, attachmentId: string, name: string, mime
 };
 
 const files = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "only-me-files", "Only me: files both ways in Home's chat, a lease and a bank export in, a trip PDF and a receipts CSV out as cards.");
+  const f = Fixture.from(from, "no-repo-files", "No repo: files both ways in Home's chat, a lease and a bank export in, a trip PDF and a receipts CSV out as cards.");
   const docx = { name: "lease-2027.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: Buffer.alloc(48_640, "PK") };
   const csv = { name: "bank-october.csv", mime: "text/csv", data: Buffer.from("date,description,amount\n2026-10-01,Rent,-1450.00\n".repeat(120)) };
   const blocks = [
@@ -362,7 +360,7 @@ const files = (from: Fixture): Fixture => {
 const shot = (name: string) => fs.readFileSync(new URL(`../sessions/media/${name}.jpg`, import.meta.url));
 
 const pictures = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "only-me-pictures", "Only me: pictures both ways in Home's chat, two screenshots in and a picture out, each one saved in a click.");
+  const f = Fixture.from(from, "no-repo-pictures", "No repo: pictures both ways in Home's chat, two screenshots in and a picture out, each one saved in a click.");
   const applied = shot("checkoutApplied");
   const block = { v: 1, kind: "image", attachmentId: "F21", caption: "The checkout with the code applied" };
   const intro = "The code works on the lamp. Here's the checkout with it applied.";

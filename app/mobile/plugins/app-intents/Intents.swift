@@ -100,13 +100,13 @@ struct ChatEntity: AppEntity {
   /// "machineId/projectId".
   let id: String
   let title: String
-  /// Its machine, or "Only me" for a project of the person's own.
+  /// Its machine's name.
   let subtitle: String
 
   init(_ chat: ChatTarget) {
     id = chat.id
     title = chat.title
-    subtitle = chat.navi ? "Only me" : chat.machine ?? "Project"
+    subtitle = chat.machine ?? "Project"
   }
 
   var displayRepresentation: DisplayRepresentation {

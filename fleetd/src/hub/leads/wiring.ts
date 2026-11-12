@@ -10,7 +10,6 @@ import { ExecutorError } from "../executor/index.ts";
 import { launch } from "../executor/sessions.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { forLead as onepasswordForLead } from "../onepassword/index.ts";
 import { WriteError, writeQueue } from "../queue/index.ts";
 import { leadWiring } from "./ports.ts";
 
@@ -36,13 +35,11 @@ export function wire(hub: Hub): void {
       const r = { machineId, projectId: input.projectId };
       const account = accountForLead(hub.db, (m) => nodeAccounts(hub, m), r);
       if (isRefusal(account)) throw new ToolError("invalid", account.message, account.fix);
-      const onepassword = onepasswordForLead(hub.db, r);
       try {
         const out = await launch(hub, machineId, input, {
           role,
           mcpRole: "lead",
           ...(account === undefined ? {} : { claudeAccount: account }),
-          ...(onepassword === undefined ? {} : { onepassword }),
         });
         return out.threadId;
       } catch (error) {

@@ -1862,13 +1862,6 @@ export class Train {
     }
     const after = next.upstreams(input.after ?? []);
     if (after.includes(prUrl)) throw this.refuse(projectRef, prUrl, { message: "It names itself in `after`.", fix: "drop it from `after`" });
-    const unseen = after.find((u) => !next.seesPr(this, projectRef, u));
-    if (unseen !== undefined) {
-      throw this.refuse(projectRef, prUrl, {
-        message: `You can't hold on a PR of a project you can't see, and ${unseen} is one.`,
-        fix: `drop ${unseen} from \`after\`; that project's own lead orders its PRs`,
-      });
-    }
     // One enqueue with `after` at a time, from the loop check until its Change records them.
     const releaseOrder = after.length === 0 ? undefined : await this.afterLock.lock();
     try {

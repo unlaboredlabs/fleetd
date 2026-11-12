@@ -25,7 +25,6 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
-import { others, who } from "./owner.ts";
 import { register as registerPurchases } from "./purchases.ts";
 import { pasted, siteOf } from "./sites.ts";
 import * as navis from "./store.ts";
@@ -68,15 +67,10 @@ async function stopLead(hub: Hub, r: ProjectRef): Promise<void> {
   }
 }
 
-/** Ends the leads of `person`'s Only-me projects, archived as they were removed from the hub. */
-export async function stopLeft(hub: Hub, person: string): Promise<void> {
-  for (const [r, owner] of navis.left(hub.db.conn)) if (owner === person) await stopLead(hub, r);
-}
-
-/** A person's own chat message to a Navi allows the site of each link in it (D208). */
+/** A person's own chat message to a project allows the site of each link in it (D208), in every project (D491). */
 export function allowPasted(hub: Hub, r: ProjectRef, text: string, by: string): void {
   const sites = pasted(text);
-  if (sites.length === 0 || !navis.of(hub.db.conn, r)) return;
+  if (sites.length === 0) return;
   const at = hub.clock.now();
   for (const site of sites) navis.allowSite(hub.db.conn, r, site, by, at);
 }
@@ -109,8 +103,8 @@ function freeFolders(hub: Hub, m: string, base: string): string[] {
 }
 
 /**
- * `navi_create` (navi/mod.rs `create`): a new Only me project in a folder of its own under its node's home, its
- * owner the person whose key made it. Marked first, so the node's report of it already reads as a Navi.
+ * `navi_create` (navi/mod.rs `create`), the old way for one release: a new project in a folder of its own under its
+ * node's home, open to everyone on the hub like any other (D491). Its maker is recorded first.
  */
 async function create(hub: Hub, caller: Caller, input: { name: string; machineId?: string }): Promise<{ navi: ProjectSummary; next: string }> {
   if (input.machineId !== undefined) requireRole(caller, "operate", input.machineId);
@@ -123,7 +117,7 @@ async function create(hub: Hub, caller: Caller, input: { name: string; machineId
   const folders = freeFolders(hub, m, slug(name));
   const r = { machineId: m, projectId: newUuid() };
   const atMs = hub.clock.now();
-  navis.put(hub.db.conn, r, { keyId: caller.keyId, name: caller.name }, who(hub.db.conn, caller), atMs);
+  navis.put(hub.db.conn, r, { keyId: caller.keyId, name: caller.name }, atMs);
   let path: string | undefined;
   let failed: ToolError | undefined;
   for (const folder of folders) {
@@ -211,14 +205,11 @@ export function register(tools: Registry): void {
 
   tools.add("navi_list", (hub, caller, input) => {
     const archived = input.archived === true;
-    const hidden = others(hub.db, caller);
-    const list: ProjectSummary[] = [];
-    for (const r of navis.all(hub.db.conn)) {
-      if ((input.machineId !== undefined && input.machineId !== r.machineId) || !allows(caller, "read", r.machineId) || hidden.has(r)) continue;
-      const navi = store(hub).projectGet(r);
-      if (navi && (archived || navi.archivedAt === undefined)) list.push(navi);
-    }
-    return { navis: list, ...(list.length === 0 ? { next: "No Only me projects yet: project_add with onlyMe makes one." } : {}) };
+    // The old way for one release: every project the key reads (D491).
+    const list = store(hub)
+      .projectsShown(input.machineId)
+      .filter((p) => allows(caller, "read", p.machineId) && (archived || p.archivedAt === undefined));
+    return { navis: list, ...(list.length === 0 ? { next: "No projects yet: project_add makes one." } : {}) };
   });
 
   tools.add("navi_rename", async (hub, caller, input) => {

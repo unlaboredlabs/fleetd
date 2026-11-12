@@ -390,7 +390,7 @@ export class Leads {
       project.title,
       allowed,
       digest,
-      Memory.of(this.hub).injected(r, true, youForLead(this.hub.db, r)),
+      Memory.of(this.hub).injected(r, true, youForLead(this.hub.db)),
       leadPeople(this.hub.db),
       ownWork ? project.workspaceRoot : undefined,
     );

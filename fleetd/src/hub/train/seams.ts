@@ -125,28 +125,6 @@ export function workstream(db: Database, id: WorkstreamId): Workstream | undefin
   return row ? (JSON.parse(row.data) as Workstream) : undefined;
 }
 
-/** A Navi (an Only me project) and its owner. */
-export function navi(db: Database, r: ProjectRef): { owner?: PersonId } | undefined {
-  const row = db
-    .query<{ owner_person: string | null }, [string, string]>(
-      "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
-    )
-    .get(r.machineId, r.projectId);
-  if (!row) return undefined;
-  return row.owner_person === null ? {} : { owner: row.owner_person };
-}
-
-/** The Navis `person` may not see or use: every one with an owner other than them (navi/store.rs `others`). */
-export function otherNavis(db: Database, me: PersonId | undefined): ProjectRef[] {
-  return db
-    .query<{ machine_id: string; project_id: string }, [string | null]>(
-      `SELECT machine_id, project_id FROM project_settings
-         WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
-    )
-    .all(me ?? null)
-    .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
-}
-
 /** The project's repos, oldest first, its own made first when it has none (repos/mod.rs `repos_of`). */
 export function reposOf(db: Database, project: ProjectRef): ProjectRepo[] {
   return db.transaction(() => {

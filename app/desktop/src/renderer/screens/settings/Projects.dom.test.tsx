@@ -45,7 +45,7 @@ const settings: Settings = {
   },
 };
 
-const snapshotWith = (repos: ProjectRepo[], onlyMe = false): HubFrame => ({
+const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor: 1,
@@ -60,7 +60,6 @@ const snapshotWith = (repos: ProjectRepo[], onlyMe = false): HubFrame => ({
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
         ...(repos.length > 0 ? { repos } : {}),
-        ...(onlyMe ? { onlyMe: true as const } : {}),
       },
     ],
   },
@@ -93,8 +92,6 @@ const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "de
 let repos: ProjectRepo[];
 /** What project_settings_get answers for a repo; a repo not here is refused, as a hub before per-repo settings does. */
 let repoAnswers: Record<string, Settings>;
-/** The project is Only me. */
-let onlyMe: boolean;
 /** The approvals read fails this many more times. */
 let approvalsFail: number;
 /** The hub's app features: "vault" moves the variables into the project's Vault tab. */
@@ -114,7 +111,6 @@ beforeEach(() => {
   envRequests = [];
   repos = [];
   repoAnswers = {};
-  onlyMe = false;
   approvalsFail = 0;
   readMs = 0;
   features = [];
@@ -194,7 +190,7 @@ const render = async (page: "project" | "instructions" = "project") => {
     subscribe: (l) => ((listener = l), () => undefined),
     // As main's hub client: a resync asks for a snapshot, which comes on the same link.
     resync: () => {
-      setTimeout(() => listener(snapshotWith(repos, onlyMe)), 0);
+      setTimeout(() => listener(snapshotWith(repos)), 0);
       return Promise.resolve();
     },
     focus: () => Promise.resolve(),
@@ -218,7 +214,7 @@ const render = async (page: "project" | "instructions" = "project") => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1, features } });
-    listener(snapshotWith(repos, onlyMe));
+    listener(snapshotWith(repos));
     await new Promise((r) => setTimeout(r, 0));
   });
   // project_settings_get's answer.
@@ -407,8 +403,7 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
 
-  it("erases an Only-me project as any other, saying what goes, and deletes its folder only when that is ticked", async () => {
-    onlyMe = true;
+  it("erases a project with no repo as any other, saying what goes, and deletes its folder only when that is ticked", async () => {
     const folder = "/home/w/.fleetd/node/projects/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
@@ -460,7 +455,6 @@ describe("Settings → Projects", () => {
   });
 
   it("sets a project's approval mode and lists what ran without asking, each with its chat line", async () => {
-    onlyMe = true;
     answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
     await settle();
@@ -487,7 +481,6 @@ describe("Settings → Projects", () => {
   });
 
   it("says plainly when a project's approvals can't be read, never the lookup's error, and tries again", async () => {
-    onlyMe = true;
     approvalsFail = 1;
     answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
@@ -502,34 +495,12 @@ describe("Settings → Projects", () => {
     expect(part()?.textContent).not.toContain("couldn't be loaded");
   });
 
-  it("shares a project or keeps it to its owner with Only me, saved on the project", async () => {
-    await render();
-    const part = document.querySelector('section[aria-label="Only me"]');
-    expect(part?.querySelector("[data-hint]")?.textContent).toBe("On: only you see this project. Off: everyone on this hub sees it.");
-    const toggle = part?.querySelector<HTMLElement>('[role="switch"]');
-    if (!toggle) throw new Error("no Only me switch");
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    await click(toggle);
-    await settle();
-    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", onlyMe: true });
-    act(() => root.unmount());
-    root = createRoot(host);
-    calls = [];
-    onlyMe = true;
-    await render();
-    const again = document.querySelector('section[aria-label="Only me"]');
-    expect(again?.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
-    await click(again?.querySelector<HTMLElement>('[role="switch"]') as HTMLElement);
-    await settle();
-    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", onlyMe: false });
-  });
-
   it("archives a project, and brings an archived one back", async () => {
     await render();
     await click(button("Archive"));
     await settle();
     expect(calls.find((c) => c.tool === PROJECT_TOOLS.archive)?.input).toEqual({ machineId: "devbox", projectId: "p1", archived: true });
-    const archived = snapshotWith(repos, onlyMe);
+    const archived = snapshotWith(repos);
     if (archived.t !== "snapshot") throw new Error("not a snapshot");
     await act(async () => {
       send({ ...archived, snapshot: { ...archived.snapshot, projects: archived.snapshot.projects.map((p) => ({ ...p, archivedAt: AT })) } });

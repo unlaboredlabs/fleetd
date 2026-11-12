@@ -91,7 +91,7 @@ export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type Transfer
 export { advanceRig, BODY, BOT_COLORS, BOT_PAINT, botColorLabel, botStateOf, CROP, DIMMED, drawnAt, frameOf, LARGE, listRest, moment, newRig, paintOf, random, setRigState, type BotColorName, type BotIn, type BotState, type Frame, type Rig } from "../../desktop/src/shared/bot";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
-export { deleteWords, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
+export { deleteWords, isArchived, NAME_MAX, nameProblem, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
 export {
   discovery,
@@ -113,7 +113,7 @@ export { addPage as addApprovedPage, FIRST_PAGE as APPROVED_FIRST_PAGE, fold as 
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
-export { openTo, proposal, type Proposal } from "../../desktop/src/shared/proposal";
+export { proposal, type Proposal } from "../../desktop/src/shared/proposal";
 export { clockAt, CLOUD_UPDATES, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";

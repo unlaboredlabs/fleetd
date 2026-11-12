@@ -20,7 +20,7 @@ beforeEach(() => {
   act(() =>
     root.render(
       <SettingsSection title="Agents" hint="How many run at once, and on what.">
-        <SwitchRow title="Only me" hint="On: only you see this project." line={null} checked={false} onCheckedChange={() => undefined} />
+        <SwitchRow title="Sounds" hint="On: a sound plays when a reply lands." line={null} checked={false} onCheckedChange={() => undefined} />
         <SettingsRow title="Skills" hint="What agents can do here." line="None." />
         <SettingsRow title="Archive" control={<Button>Archive…</Button>} />
         <SettingsRow
@@ -78,33 +78,33 @@ it("at rest a row is its title and its control: no hint showing, no question mar
   expect(tip()).toBeNull();
   expect(host.querySelector("svg")).toBeNull();
   // The hint's words are in the page, out of sight, never in the row's visible line.
-  const hint = named("Only me").querySelector("[data-hint]");
-  expect(hint?.textContent).toBe("On: only you see this project.");
+  const hint = named("Sounds").querySelector("[data-hint]");
+  expect(hint?.textContent).toBe("On: a sound plays when a reply lands.");
   expect(hint?.className).toContain("srOnly");
 });
 
 it("shows a row's hint while the pointer rests on its title, until Escape", () => {
-  const row = named("Only me");
+  const row = named("Sounds");
   const title = row.querySelector("label") as HTMLElement;
   hover(title);
-  expect(tip()?.textContent).toBe("On: only you see this project.");
+  expect(tip()?.textContent).toBe("On: a sound plays when a reply lands.");
   escape();
   expect(tip()).toBeNull();
 });
 
 it("shows the same hint from the row's control: the whole head of the row is where it rests", () => {
-  hover(named("Only me").querySelector('[role="switch"]') as HTMLElement);
-  expect(tip()?.textContent).toBe("On: only you see this project.");
+  hover(named("Sounds").querySelector('[role="switch"]') as HTMLElement);
+  expect(tip()?.textContent).toBe("On: a sound plays when a reply lands.");
 });
 
 it("shows it on keyboard focus of the row's control, which a screen reader hears described by it", () => {
-  const toggle = named("Only me").querySelector<HTMLElement>('[role="switch"]');
+  const toggle = named("Sounds").querySelector<HTMLElement>('[role="switch"]');
   if (!toggle) throw new Error("no switch");
   act(() => toggle.focus());
   settle();
-  expect(tip()?.textContent).toBe("On: only you see this project.");
-  expect(described(toggle)).toBe("On: only you see this project.");
-  expect(described(named("Only me"))).toBe("On: only you see this project.");
+  expect(tip()?.textContent).toBe("On: a sound plays when a reply lands.");
+  expect(described(toggle)).toBe("On: a sound plays when a reply lands.");
+  expect(described(named("Sounds"))).toBe("On: a sound plays when a reply lands.");
   act(() => toggle.blur());
   settle();
   expect(tip()).toBeNull();

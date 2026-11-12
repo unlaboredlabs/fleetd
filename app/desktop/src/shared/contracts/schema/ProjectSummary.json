@@ -180,21 +180,13 @@
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",
-          "description": "Deprecated: `assistant` for an Only me project (`only_me`), sent for one release so older apps still show it\nas a Navi. New apps read `only_me`. Absent otherwise, from a node, and from an older hub."
+          "description": "Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a\nformer Navi. Absent from a node."
         },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
-        },
-        "onlyMe": {
-          "description": "Only me (D310), from the hub: only its `owner` sees and uses it. On for every former Navi. Absent: off, and\nfrom a node.",
-          "type": "boolean"
-        },
-        "owner": {
-          "$ref": "#/$defs/PersonId",
-          "description": "The person it belongs to (D215), from the hub; an Only me project is theirs alone. Absent for a project with\nno owner, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

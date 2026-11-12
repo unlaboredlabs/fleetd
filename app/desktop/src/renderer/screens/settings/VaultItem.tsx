@@ -236,7 +236,7 @@ function UsedByRow({ item, whose, onChange }: { item: VaultItemSummary; whose: W
             ? "This project's agents."
             : `${(item.machineId !== undefined && item.projectId !== undefined ? projectName(item.machineId, item.projectId) : undefined) ?? "Its project"}'s agents.`
           : shared.length === 0
-            ? "Only the work you start, and your Only me projects."
+            ? "Only the work you start."
             : `The work you start, and ${shared.map((p) => projectName(p.machineId, p.projectId) ?? p.projectId).join(", ")}: their agents fill it but never see it.`;
   return (
     <SettingsRow

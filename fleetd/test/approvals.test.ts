@@ -573,12 +573,12 @@ test("the tools and lead calls go through the hub's registries", async () => {
   expect((denied as { output: { request: HumanRequest } }).output.request.state).toBe("denied");
   await leadCalls(hub).handler("request_withdraw")!(lead, { op: "request_withdraw", requestId: "Q2" });
   expect(approvals(hub).get("Q2")!.state).toBe("withdrawn");
-  // Another person's Navi's requests are theirs alone.
+  // A project that was another person's Only me one is everyone's now (D491): its requests are listed too.
   hub.db.conn.run(
     "INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('lab-a', 'p1', 1, 'P9')",
   );
-  const hidden = await tools.call(hub, { ...human, person: { personId: "P1", name: "Ada" } }, "requests_list", {});
-  expect((hidden as { output: { requests: HumanRequest[] } }).output.requests).toEqual([]);
+  const shown = await tools.call(hub, { ...human, person: { personId: "P1", name: "Ada" } }, "requests_list", {});
+  expect((shown as { output: { requests: HumanRequest[] } }).output.requests.map((r) => r.requestId)).toEqual(["Q2", "Q1"]);
 });
 
 test("openRequests lists the open ones, newest first", async () => {

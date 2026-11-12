@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-// Your own project with no repo: its empty chat offers everyday first asks and the box names it; one with a repo asks
-// what the lead should do in it. Every project's panel has the same sections, Asked work under Plan and Skills of its own.
+// An empty chat asks what the lead should do in the project, with its starters. Every project's panel has the same sections, Asked work under Plan and Skills of its own.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -11,7 +10,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, live } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { ChatScreen } from ".";
-import { PLAIN_STARTERS, STARTERS } from "./EmptyChat";
+import { STARTERS } from "./EmptyChat";
 import { ProjectPanel } from "../panel/ProjectPanel";
 import { forgetViews } from "../panel/Sections";
 
@@ -29,7 +28,7 @@ const snapshot: HubFrame = {
     attention: [],
     machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }],
     projects: [
-      { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 }, onlyMe: true },
+      { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 } },
       {
         ...SHOP,
         title: "shop",
@@ -85,15 +84,7 @@ const mount = async (ui: ReactNode, features?: string[], open: string = "devbox/
   for (let i = 0; i < 6; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-it("asks what your own project with no repo can do for you, with everyday starters, and the box names it", async () => {
-  await mount(<ChatScreen project={ADA} />);
-  expect(host.querySelector("h2")?.textContent).toBe("What can Ada do for you?");
-  const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);
-  expect(starters).toEqual([...PLAIN_STARTERS]);
-  expect(host.querySelector("textarea")?.getAttribute("placeholder")).toBe("Message Ada");
-});
-
-it("asks what the lead should do in a project with a repo, with a codebase's starters", async () => {
+it("asks what the lead should do in the project, with its starters", async () => {
   await mount(<ChatScreen project={SHOP} />, undefined, "devbox/shop");
   expect(host.querySelector("h2")?.textContent).toBe("What should the lead do in shop?");
   const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);

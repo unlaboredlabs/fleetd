@@ -218,17 +218,6 @@ export class HubHost implements TrainHost {
     }
   }
 
-  sees(by: ProjectRef, other: ProjectRef): boolean {
-    try {
-      const owner = seams.navi(this.hub.db.conn, by)?.owner;
-      const unseen = seams.otherNavis(this.hub.db.conn, owner);
-      return seams.sameRef(by, other) || !unseen.some((u) => seams.sameRef(u, other));
-    } catch (error) {
-      console.warn(`train: the projects a lead's person sees not read: ${error}`);
-      return false;
-    }
-  }
-
   landingsWatched(repo: string, base: string): boolean {
     return this.hub.peek<WorkPort>("work")?.watches({ repoKey: `github.com/${repo}`, base }) ?? false;
   }

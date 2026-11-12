@@ -14,7 +14,6 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { executors, peek } from "../executor/index.ts";
-import { others } from "../navi/owner.ts";
 import { profiles } from "../projects/profiles.ts";
 import { isoMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
@@ -87,9 +86,7 @@ export function ordersInScope(hub: Hub, caller: Caller, project: ProjectRef | un
       ...workstreamsList(hub.db.conn, { ...(project ? { projectRef: project } : {}), state: "done", limit: 100 }).filter((w) => w.updatedAt >= doneSince),
     );
   }
-  // Another person's Only me project's orders are theirs alone (D310).
-  const navis = others(hub.db, caller);
-  return out.filter((w) => allows(caller, "read", w.projectRef.machineId) && !navis.has(w.projectRef));
+  return out.filter((w) => allows(caller, "read", w.projectRef.machineId));
 }
 
 export const orderTasks = (hub: Hub, id: WorkstreamId) => TaskRecords.list(hub.db.conn, { workstreamId: id, limit: ORDER_TASKS });

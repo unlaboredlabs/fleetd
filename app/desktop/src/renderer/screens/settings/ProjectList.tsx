@@ -3,7 +3,7 @@
 // is out of the app's sidebar, and its page is where it comes back.
 import { Button, Text } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
-import { isArchived, isOnlyMe } from "../projects/model";
+import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectSummary } from "./contracts";
 import { useLive } from "./hub";
@@ -51,14 +51,13 @@ export function ProjectList() {
             <SettingsList label="Projects">
               {shown.map((p) => {
                 const key = `${p.machineId}/${p.projectId}`;
-                const marks = [isOnlyMe(p) ? "Only me" : null, isArchived(p) ? "Archived" : null].filter((m) => m !== null);
                 return (
                   <SettingsListRow
                     key={key}
                     name={p.title}
                     label={p.title}
                     icon={<ProjectAvatar project={p} size={20} />}
-                    meta={marks.length === 0 ? undefined : marks.join(" · ")}
+                    meta={isArchived(p) ? "Archived" : undefined}
                     open={{ onClick: () => (window.location.hash = formatRoute({ tab: "projects", for: key })) }}
                   >
                     <Text size="sm" tone="quiet">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { deleteWords, isYours, nameProblem, sidebarOrder } from "./model";
+import { deleteWords, nameProblem, sidebarOrder } from "./model";
 
 const project = (title: string, extra: Partial<ProjectSummary> = {}): { project: ProjectSummary } => ({
   project: {
@@ -15,31 +15,17 @@ const project = (title: string, extra: Partial<ProjectSummary> = {}): { project:
 });
 
 describe("the sidebar's default order", () => {
-  it("puts Only-me projects first, keeps each part's order, and leaves archived ones out", () => {
+  it("keeps the order they came in and leaves archived ones out", () => {
     const rows = [
       project("billing"),
-      project("Ada", { onlyMe: true }),
+      project("Ada"),
       project("storefront"),
-      project("Home", { onlyMe: true }),
-      project("Taxes", { onlyMe: true, archivedAt: "2026-10-20T09:00:00.000Z" }),
       project("legacy", { archivedAt: "2026-10-20T09:00:00.000Z" }),
     ];
-    expect(sidebarOrder(rows).map((r) => r.project.title)).toEqual(["Ada", "Home", "billing", "storefront"]);
+    expect(sidebarOrder(rows).map((r) => r.project.title)).toEqual(["billing", "Ada", "storefront"]);
   });
   it("never reads the old kind", () => {
     expect(sidebarOrder([project("billing"), project("Ada", { kind: "assistant" })]).map((r) => r.project.title)).toEqual(["billing", "Ada"]);
-  });
-});
-
-describe("whose project it is", () => {
-  const me = "p_aaaaaaaa";
-  it("is yours with your owner, or with none (a hub without people); a teammate's never is", () => {
-    expect(isYours({ owner: me }, me)).toBe(true);
-    expect(isYours({}, me)).toBe(true);
-    expect(isYours({}, undefined)).toBe(true);
-    expect(isYours({ owner: "p_bbbbbbbb" }, me)).toBe(false);
-    // Until the hub says who you are, one with an owner waits.
-    expect(isYours({ owner: me }, undefined)).toBe(false);
   });
 });
 

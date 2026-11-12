@@ -1,5 +1,5 @@
 // The train's records and `changes_list`: Changes numbered per hub and lined
-// up per repo, drafts at the back, the newest open one per PR, and the list filtered by grant and Only me project.
+// up per repo, drafts at the back, the newest open one per PR, and the list filtered by grant.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
@@ -56,7 +56,7 @@ test("Changes are numbered, lined up per repo with drafts at the back, and store
   expect(records.get("X3")!.lastError!.length).toBe(2000);
 });
 
-test("changes_list filters by grant and leaves out another person's Only me project", async () => {
+test("changes_list filters by grant, and lists a project that was another person's Only me one (D491)", async () => {
   const { hub, tools, records } = lab();
   records.create(change("web", 7));
   records.create(change("navi", 8));
@@ -64,10 +64,10 @@ test("changes_list filters by grant and leaves out another person's Only me proj
   hub.db.conn.query("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'navi', 1, 'P2')").run();
   const owner: Caller = { keyId: "k", name: "k", prefix: "fld_aaaaaa", grants: [{ role: "read", machines: "*" }], createdAt: AT };
   const out = await tools.call(hub, owner, "changes_list", {});
-  expect("output" in out && (out.output as any).changes.map((c: Change) => c.changeId)).toEqual(["X1"]);
+  expect("output" in out && (out.output as any).changes.map((c: Change) => c.changeId).sort()).toEqual(["X1", "X2"]);
   const sam: Caller = { ...owner, kind: "human", person: { personId: "P2", name: "Sam" } };
   const theirs = await tools.call(hub, sam, "changes_list", { limit: 1 });
-  expect("output" in theirs && (theirs.output as any)).toMatchObject({ changes: [{ changeId: "X2", position: 1 }], truncated: true });
+  expect("output" in theirs && (theirs.output as any)).toMatchObject({ changes: [{}], truncated: true });
   const elsewhere: Caller = { ...owner, grants: [{ role: "read", machines: ["other"] }] };
   const none = await tools.call(hub, elsewhere, "changes_list", { projectRef: { machineId: "devbox", projectId: "web" } });
   expect("error" in none && none.error.kind === "tool" && none.error.error.code).toBe("forbidden");

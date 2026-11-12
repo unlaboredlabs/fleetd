@@ -21,7 +21,7 @@ import { record as recordPresence } from "../metrics/presence.ts";
 import { register as registerLive } from "./live/index.ts";
 import { events } from "../store/events.ts";
 import type { Updates } from "../update/index.ts";
-import { type Others, others, visible } from "./visible.ts";
+import { visible } from "./visible.ts";
 
 /** Close code for a connection whose key was refused. */
 export const CLOSE_UNAUTHORIZED = 4401;
@@ -90,7 +90,7 @@ export class AppConn {
   deflate = false;
   closed = false;
   /** The event stream: where it is, and whether it rides the push or reads its backlog. */
-  stream: { cursor: number; live: boolean; generation: number; navis?: { at: number; set: Others } } | undefined;
+  stream: { cursor: number; live: boolean; generation: number } | undefined;
   calls = 0;
   lastSent = 0;
   /** What the upgrade's auth answered before the frames came. */
@@ -557,28 +557,15 @@ export class AppWs {
     this.unsubscribe = events(this.hub).subscribe((event) => this.push(event));
   }
 
-  /** The Only me projects the connection may not see, read again at most once a second (Rust reads each page). */
-  private navis(conn: AppConn, caller: Caller): Others {
-    const stream = conn.stream;
-    const now = this.hub.clock.now();
-    if (stream?.navis && now - stream.navis.at < 1000) return stream.navis.set;
-    const set = others(this.hub.db, caller);
-    if (stream) stream.navis = { at: now, set };
-    return set;
-  }
-
   /** One appended event to every streaming connection riding the push, serialized once. */
   private push(event: HubEvent): void {
     let text: string | undefined;
-    // A project's settings changing may change who sees which Only me project.
-    const reread = event.type.startsWith("project.") || event.type.startsWith("navi.");
     for (const conn of this.conns) {
       const stream = conn.stream;
       const caller = conn.caller;
       if (!stream?.live || !caller || conn.closed || event.seq <= stream.cursor) continue;
-      if (reread && stream.navis) stream.navis = undefined;
       stream.cursor = event.seq;
-      if (!visible(this.hub.db, caller, this.navis(conn, caller), event)) continue;
+      if (!visible(caller, event)) continue;
       if (conn.buffered() > MAX_QUEUED_BYTES) {
         // Behind: off the push, and back to its backlog once the socket drains.
         stream.cursor = event.seq - 1;
@@ -604,9 +591,8 @@ export class AppWs {
       const caller = conn.caller as Caller;
       const page = log.page(stream.cursor);
       if (page.events.length > 0) {
-        const navis = others(this.hub.db, caller);
         for (const event of page.events) {
-          if (visible(this.hub.db, caller, navis, event)) this.write(conn, eventFrame(event));
+          if (visible(caller, event)) this.write(conn, eventFrame(event));
         }
       }
       stream.cursor = page.cursor;

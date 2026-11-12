@@ -2,7 +2,6 @@
 import { allows } from "../auth/index.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
-import { others } from "../navi/owner.ts";
 import { store } from "../store/hub_store.ts";
 import { leads } from "./index.ts";
 import { unknownProject } from "./seams.ts";
@@ -35,14 +34,11 @@ export function register(tools: Registry): void {
     if (input.machineId !== undefined) requireRole(caller, "read", input.machineId);
     const limit = input.limit ?? 50;
     const r = input.machineId !== undefined && input.projectId !== undefined ? { machineId: input.machineId, projectId: input.projectId } : undefined;
-    // Another person's Only me project's orders are theirs alone.
-    const navis = others(hub.db, caller);
     const all = leads(hub)
       .records.workstreamsList({ limit: r ? limit + 1 : 1000, ...(r ? { projectRef: r } : {}), ...(input.state ? { state: input.state } : {}) })
       .filter(
         (w) =>
           allows(caller, "read", w.projectRef.machineId) &&
-          !navis.has(w.projectRef) &&
           (input.machineId === undefined || input.machineId === w.projectRef.machineId) &&
           (input.projectId === undefined || input.projectId === w.projectRef.projectId),
       );

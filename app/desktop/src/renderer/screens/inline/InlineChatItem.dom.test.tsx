@@ -486,7 +486,7 @@ describe("a lead's proposal for a new project", () => {
     const text = host.textContent;
     expect(text).toContain("New project");
     expect(text).toContain("The lead wants to create the project “Pricing page”");
-    expect(one("[data-proposal]").textContent).toBe("Repoacme/pricing-pageFolder/home/dev/src/pricing-pageOpen toEveryone on this hub");
+    expect(one("[data-proposal]").textContent).toBe("Repoacme/pricing-pageFolder/home/dev/src/pricing-page");
     expect(text).toContain("on devbox");
     // Never as any tool's use, and its whole input stays one click away.
     expect(text).not.toContain("wants to use");
@@ -497,9 +497,9 @@ describe("a lead's proposal for a new project", () => {
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q41", decision: "approve" }]);
   });
-  it("says a project with no repo is the person's alone, and No is one tap too", async () => {
+  it("says when a project has no repo, and No is one tap too", async () => {
     const hub = await render("Q42");
-    expect(one("[data-proposal]").textContent).toBe("RepoNoneFolder/home/dev/fleetd/projects/release-notesOpen toOnly you");
+    expect(one("[data-proposal]").textContent).toBe("RepoNoneFolder/home/dev/fleetd/projects/release-notes");
     await click(button("Don't create"));
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q42", decision: "deny" }]);

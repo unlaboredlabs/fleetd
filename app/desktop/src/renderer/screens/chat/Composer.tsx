@@ -49,13 +49,11 @@ export interface ChatComposerProps {
   /** The bubble your next message answers. */
   replyTo?: ReplyTarget | undefined;
   onCancelReply?: () => void;
-  /** Who reads it, when not "the lead": a project's name, in one with no repo. */
-  who?: string | undefined;
   /** Docked to the box's top, inside its outline (and its focus ring), over the words. */
   top?: ReactNode;
 }
 
-export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, who, top }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, top }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -320,8 +318,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
         <textarea
           ref={box}
           className={c.input}
-          aria-label={`Message ${who ?? "the lead"}`}
-          placeholder={placeholder(working, who, away)}
+          aria-label="Message the lead"
+          placeholder={placeholder(working, away)}
           rows={1}
           value={draft.text}
           autoFocus={autoFocus}

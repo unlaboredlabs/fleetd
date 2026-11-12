@@ -67,8 +67,6 @@ export interface TrainHost {
   githubRepos(projectRef: ProjectRef): [string, ProjectRef][];
   /** The projects still on their machines that have `repo` as one of their repos. */
   repoProjects(repo: string): ProjectRef[];
-  /** Whether the person behind `by` sees `other` (D338). */
-  sees(by: ProjectRef, other: ProjectRef): boolean;
   /** Runs `argv` in `cwd` on the machine of `checkout`, at most `timeoutSec`; throws why it can't run there now. */
   nodeRun(checkout: ProjectRef, cwd: string, argv: string[], timeoutSec: number): Promise<NodeRun>;
   /** LeadWakes.trigger(ref, { kind: "train", line }). */
@@ -87,7 +85,6 @@ export interface TrainHost {
 export const HOST_DEFAULTS = {
   githubRepos: (): [string, ProjectRef][] => [],
   repoProjects: (): ProjectRef[] => [],
-  sees: () => true,
   nodeRun: async (): Promise<NodeRun> => {
     throw new Error("this hub runs nothing on its nodes for the train");
   },

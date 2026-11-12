@@ -1,7 +1,7 @@
 // You › Your memory › Import memory (W229): bring what another assistant knows about you. Two steps, as plain as the
 // phone's: copy the hub's export prompt (memory_import without text) into ChatGPT, Claude or Grok, paste its answer
 // back, and Add to Memory sends it (memory_import with text). The hub reads it in a model turn on your own Claude, in
-// a project of yours with Only me on (someone with none is offered New project with it on), and writes the entries to your memory itself; this
+// one of the hub's projects (a hub with none offers New project), and writes the entries to your memory itself; this
 // says how many went in, and names any that didn't fit.
 import { useState } from "react";
 import type { MemoryImportOutput } from "../../../shared/contracts";
@@ -10,27 +10,17 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { openAddProject, setOnlyMe } from "../projects/store";
+import { openAddProject } from "../projects/store";
 import { SettingsRow, SettingsSection } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
 
-/**
- * The hub's refusal for someone with no Only-me project, where every import runs so nobody else reads the paste
- * (import.rs): its `reason`, or on an older hub its fix alone.
- */
-export const NO_ONLY_ME = "no_only_me_project";
-const OLD_FIX = "Create a Navi first, then import again.";
+/** The hub's refusal when it has no live project to run the import in. */
+export const NO_PROJECT = "no_project";
 
-const needsOwnProject = (e: unknown): e is CallError => e instanceof CallError && (e.error.reason === NO_ONLY_ME || e.error.fix === OLD_FIX);
+const needsProject = (e: unknown): e is CallError => e instanceof CallError && e.error.reason === NO_PROJECT;
 
-export const NO_PROJECT_TEXT = "Import memory runs only in a project of yours with Only me on, so nobody else can read what you paste, and you have none yet.";
-
-/** New project, with Only me on. */
-const newOwnProject = () => {
-  openAddProject();
-  setOnlyMe(true);
-};
+export const NO_PROJECT_TEXT = "Import memory runs in a project, and this hub has none yet.";
 
 /** The model turn can take a minute or two; the hub stops it at four. */
 const IMPORT_TIMEOUT_MS = 300_000;
@@ -94,8 +84,7 @@ export function ImportMemory() {
       },
       (e: unknown) => {
         setBusy(false);
-        const noProject = needsOwnProject(e);
-        // In the app's own words: an older hub's names a Navi.
+        const noProject = needsProject(e);
         setError({ text: noProject ? NO_PROJECT_TEXT : errorText(e), noProject });
       },
     );
@@ -131,11 +120,9 @@ export function ImportMemory() {
           <Button variant="primary" disabled={text.trim() === "" || busy} onClick={add}>
             {busy ? "Adding to Memory…" : "Add to Memory"}
           </Button>
-          {busy ? (
-            <Text size="xs" tone="quiet">
-              Reading it on your Claude; this can take a minute.
-            </Text>
-          ) : null}
+          <Text size="xs" tone="quiet">
+            {busy ? "Reading it on your Claude; this can take a minute." : "Everyone on this hub can read what it writes."}
+          </Text>
         </div>
         <div role="status">
           {error ? (
@@ -144,8 +131,8 @@ export function ImportMemory() {
               {error.noProject ? (
                 <>
                   {" "}
-                  <Button variant="link" size="sm" onClick={newOwnProject}>
-                    Make a project with Only me on
+                  <Button variant="link" size="sm" onClick={() => openAddProject()}>
+                    Add a project
                   </Button>
                   , then import again.
                 </>

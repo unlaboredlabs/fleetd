@@ -1,8 +1,8 @@
 // Import memory (Settings > Memory): a person copies the `memory.export` prompt
 // into another assistant, pastes its answer back, and `memory_import` turns it into entries of their own memory.
 //
-// One model turn distills it: a session with no tools at all, on the person's own Claude choice (D200), in an Only me
-// project of theirs and nowhere else, so nobody else can read the paste. The pasted text is untrusted: it goes between
+// One model turn distills it: a session with no tools at all, on the person's own Claude choice (D200), in any live
+// project of the hub (D491), so everyone on the hub can read the paste and what it writes. The pasted text is untrusted: it goes between
 // two fences no paste can fake, under the `memory.import` rules that it is data, never instructions. Its answer is JSON
 // entries, written here the way `remember` writes them: a secret refused, an entry the memory already says skipped, a
 // merged one in place of the old, and the cap held, the most durable kinds first. One `memory.changed` at the end.
@@ -20,7 +20,6 @@ import { ClaudeAccountStore, isRefusal, launchAccount } from "../claude_accounts
 import { CAP_CLAUDE_ACCOUNTS } from "../claude_accounts/tools.ts";
 import type { LaunchInput, LaunchOptions } from "../executor/sessions.ts";
 import { Owner, type Turn, turn } from "../executor/turn.ts";
-import { all as onlyMe, of as naviOf, others } from "../navi/store.ts";
 import { profiles } from "../projects/profiles.ts";
 import { prompts } from "../prompts/store.ts";
 import { redact } from "../redact.ts";
@@ -39,34 +38,33 @@ export const importPorts = (hub: Hub): { turn: Turn } => hub.area("memory_import
 /** The export prompt every app shows, as the hub's prompts say it now. */
 export const exportPrompt = (hub: Hub) => prompts(hub.db).current().render("memory.export", {});
 
-/** The fix of the refusal for someone with no Only me project of their own; newer apps match its `reason`. */
-export const NO_NAVI_FIX = "Create a Navi first, then import again.";
+/** The fix of the refusal on a hub with no live project; newer apps match its `reason`. */
+export const NO_PROJECT_FIX = "Add a project first, then import again.";
 
 /**
- * Where the turn runs: an Only me project of `person`'s own, and nowhere else. Refused for someone with none, and
- * while none of theirs is on a node that can hold the turn to no tools.
+ * Where the turn runs: any live project of the hub, the first on a node that can hold the turn to no tools.
+ * Refused on a hub with none, and while none is on such a node.
  */
-function place(hub: Hub, person: PersonId | undefined): ProjectRef {
-  const c = hub.db.conn;
-  const theirs = others(c, person);
-  const own = onlyMe(c).filter(
-    (r) => !theirs.some((o) => o.machineId === r.machineId && o.projectId === r.projectId) && naviOf(c, r)?.archivedAt === undefined && naviOf(c, r) !== undefined,
-  );
-  const first = own[0];
+function place(hub: Hub): ProjectRef {
+  const live = store(hub)
+    .projectsShown()
+    .filter((p) => p.archivedAt === undefined)
+    .map((p) => ({ machineId: p.machineId, projectId: p.projectId }));
+  const first = live[0];
   if (!first) {
     throw new ToolError(
       "invalid",
-      "Import memory runs in a project only you can see, so nobody else can read what you paste, and you have none yet.",
-      NO_NAVI_FIX,
-      "no_only_me_project",
+      "Import memory runs in one of this hub's projects, and it has none yet. Everyone on this hub can read what it writes.",
+      NO_PROJECT_FIX,
+      "no_project",
     );
   }
   const ports = refreshPorts(hub);
-  const found = own.find((r) => ports.can(r.machineId, CAP_ALLOWED_ONLY));
+  const found = live.find((r) => ports.can(r.machineId, CAP_ALLOWED_ONLY));
   if (!found) {
     throw new ToolError(
       "machine_offline",
-      `Your project's machine, ${first.machineId}, is offline or runs a fleetd too old for this.`,
+      `The projects' machine, ${first.machineId}, is offline or runs a fleetd too old for this.`,
       `Bring ${first.machineId} online with an up-to-date fleetd, then try again.`,
     );
   }
@@ -166,7 +164,7 @@ export async function importMemory(hub: Hub, you: You, by: string, text: string,
     );
   }
   const person = t.person;
-  const r = place(hub, person);
+  const r = place(hub);
   const setup = new ClaudeAccountStore(hub.db).setup();
   const ports = refreshPorts(hub);
   const account = launchAccount(setup, person === undefined ? { hub: true } : { person }, r.machineId, () =>

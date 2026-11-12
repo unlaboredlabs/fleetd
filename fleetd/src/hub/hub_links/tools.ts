@@ -9,8 +9,6 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
-import { mayUse as ownerMayUse, refused as ownerRefused } from "../navi/owner.ts";
-import { kept as naviKept } from "../navi/store.ts";
 import { announce, change } from "../people/events.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
@@ -22,30 +20,6 @@ import { personOnly } from "./links.ts";
 import { boxKey, checkUrl, forget, issued, issuedGet, keep, kept, keptGet, keptInfo, mint, revokeIssued, setHello } from "./store.ts";
 
 const B64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
-
-/**
- * Who changes a project's links: an Only me project's are its owner's alone (D215), admins included; one with no
- * owner, the device that made it or an admin; a shared project's, anyone who operates on its machine.
- */
-function mayManage(hub: Hub, caller: Caller, navi: ProjectRef): void {
-  requireRole(caller, "operate", navi.machineId);
-  const k = naviKept(hub.db.conn, navi);
-  if (k?.owner !== undefined) {
-    if (ownerMayUse(hub.db, caller, navi)) return;
-    throw ownerRefused(navi);
-  }
-  if (!k) return;
-  if (allowsEverywhere(caller, "admin")) return;
-  const maker = k.createdBy?.keyId;
-  let own = false;
-  if (maker !== undefined && maker === caller.keyId) own = true;
-  else if (maker !== undefined) {
-    const theirs = hub.auth.keys.get(maker)?.person?.personId;
-    own = theirs !== undefined && theirs === caller.person?.personId;
-  }
-  if (own) return;
-  throw new ToolError("forbidden", "Only the project's owner, or an admin, changes its linked hubs.", "Ask the person whose project it is.");
-}
 
 function boxFailed(error: unknown): ToolError {
   console.error("hub box key:", error);
@@ -126,7 +100,6 @@ export function register(tools: Registry): void {
     requireRole(caller, "operate", navi.machineId);
     if (!store(hub).projectGet(navi)) throw unknownProject(navi);
     naviBridge(hub).mayUse(navi);
-    mayManage(hub, caller, navi);
     const url = checkUrl(input.url).href.replace(/\/+$/, "");
     if (!isBase64(input.sealed)) throw new ToolError("invalid", "sealed is not base64.");
     const sealedIn = Buffer.from(input.sealed, "base64");
@@ -174,7 +147,8 @@ export function register(tools: Registry): void {
     if (!link) {
       throw new ToolError("not_found", `No linked hub ${input.linkId} here.`, "hub_links_get with the project lists its links.");
     }
-    mayManage(hub, caller, link.navi);
+    // Anyone who operates on the project's machine changes its links (D491).
+    requireRole(caller, "operate", link.navi.machineId);
     // The key goes first, so nothing more goes through it; then the other hub is asked to revoke it too.
     forget(hub.db, link.linkId);
     // crates/fleetd/src/hub/projects/settings.rs `announce`.

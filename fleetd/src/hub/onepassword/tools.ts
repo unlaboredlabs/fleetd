@@ -1,5 +1,5 @@
 // The 1Password tools: onepassword_get, onepassword_set,
-// onepassword_remove, onepassword_test and onepassword_cards (the Credit Card items a token reads, for a Navi's card
+// onepassword_remove, onepassword_test and onepassword_cards (the Credit Card items a token reads, for a project's card
 // picker), a person's own, from their own devices.
 import type { ClaudeSealedOn, OnePasswordCard, OnePasswordTest, OnePasswordToken, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -85,7 +85,7 @@ export function register(tools: Registry): void {
       .map((m) => m.machineId)
       .filter((m) => !saved.sealedOn.some((s) => s.machineId === m));
     let next =
-      "Agents started from now on in your orders and your Navi fill logins with it, unless their project has its own " +
+      "Agents started from now on in your orders fill logins with it, unless their project has its own " +
       "OP_SERVICE_ACCOUNT_TOKEN. Press Test to list the vaults it reads.";
     if (problems.length > 0) next = `${next} ${problems.join(" ")}`;
     return { token: saved, missingOn, next };
@@ -118,11 +118,11 @@ export function register(tools: Registry): void {
           "project_get shows the projects and their ids.",
         );
       }
-      // A shared project's lead fills with its own token only: a member's own token's cards are never offered.
-      if (!isNavi(hub, project) && !hasOwnToken(hub, project)) {
+      // A project's lead fills with its own token only: a member's own token's cards are never offered.
+      if (!hasOwnToken(hub, project)) {
         throw new ToolError(
           "invalid",
-          "A shared project pays only with a 1Password token of its own: your own token's cards can't fill at its checkout.",
+          "A project pays only with a 1Password token of its own: your own token's cards can't fill at its checkout.",
           "Add OP_SERVICE_ACCOUNT_TOKEN as a secret in the project's Settings › Environment variables, then pick a card.",
         );
       }
@@ -208,12 +208,6 @@ const isProject = (hub: Hub, r: ProjectRef) =>
       `SELECT 1 FROM projects p WHERE p.machine_id = ?1 AND p.project_id = ?2 AND NOT EXISTS (
          SELECT 1 FROM project_settings s WHERE s.machine_id = ?1 AND s.project_id = ?2 AND s.archived_ms IS NOT NULL)`,
     )
-    .get(r.machineId, r.projectId) !== null;
-
-/** The project is a Navi, an Only me project (navi/store.rs `of`). */
-const isNavi = (hub: Hub, r: ProjectRef) =>
-  hub.db.conn
-    .query("SELECT 1 FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1")
     .get(r.machineId, r.projectId) !== null;
 
 /** Whether project `r` has its own `OP_SERVICE_ACCOUNT_TOKEN` secret, which its node's fills and card list use first. */

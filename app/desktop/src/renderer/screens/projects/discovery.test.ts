@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDiscoverOutput, ProjectInspect } from "./contracts";
-import { discovery, newPath, onlyMeFirst, plan, projectHome, progress, ready, rows, target } from "./discovery";
+import { discovery, newPath, plan, projectHome, progress, ready, rows, target } from "./discovery";
 import { prefillMachine } from "./store";
 import { addSource, folderName, githubRepo, linkUrl, machineIdFromHost, otherHost, tilde } from "./source";
 
@@ -266,14 +266,5 @@ describe("what people paste and drop", () => {
     expect(prefillMachine("/home/dev/src/billing", "buildbox", "devbox")).toBe("buildbox");
     expect(prefillMachine("~/src/x", undefined, "devbox")).toBe("devbox");
     expect(prefillMachine("acme/x", undefined, "devbox")).toBeUndefined();
-  });
-});
-
-describe("where Only me starts", () => {
-  it("is on for a project with no repo, and off for a clone or a checkout fleetd found", () => {
-    expect(onlyMeFirst({ kind: "new", name: "Taxes", machineId: "devbox" })).toBe(true);
-    expect(onlyMeFirst({ kind: "folder", machineId: "devbox", path: "/home/dev/notes", fixed: false })).toBe(true);
-    expect(onlyMeFirst({ kind: "folder", machineId: "devbox", path: "/home/dev/src/storefront", fixed: true })).toBe(false);
-    expect(onlyMeFirst({ kind: "clone", repo: "acme/ledger" })).toBe(false);
   });
 });

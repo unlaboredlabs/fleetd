@@ -62,13 +62,12 @@ describe("the Skills list", () => {
 });
 
 describe("a skill's view", () => {
-  it("offers edit and delete for the project's own alone, and turning off to whoever manages it", () => {
-    expect(offers(skill("a"), true)).toEqual({ edit: true, delete: true, history: true, turnOff: true });
-    expect(offers(skill("a", { install }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
-    expect(offers(skill("a", { origin: "global" }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
-    expect(offers(skill("a", { origin: "repo_agents" }), true)).toEqual({ edit: false, delete: false, history: false, turnOff: false });
-    expect(offers(skill("a", { origin: "repo_claude" }), true)).toEqual({ edit: false, delete: false, history: false, turnOff: false });
-    expect(offers(skill("a"), false)).toEqual({ edit: false, delete: false, history: true, turnOff: false });
+  it("offers edit and delete for the project's own alone, and turning off for all but a folder's", () => {
+    expect(offers(skill("a"))).toEqual({ edit: true, delete: true, history: true, turnOff: true });
+    expect(offers(skill("a", { install }))).toEqual({ edit: false, delete: false, history: true, turnOff: true });
+    expect(offers(skill("a", { origin: "global" }))).toEqual({ edit: false, delete: false, history: true, turnOff: true });
+    expect(offers(skill("a", { origin: "repo_agents" }))).toEqual({ edit: false, delete: false, history: false, turnOff: false });
+    expect(offers(skill("a", { origin: "repo_claude" }))).toEqual({ edit: false, delete: false, history: false, turnOff: false });
   });
 
   it("never shows a skill from its folder as off: the hub can't turn one off", () => {

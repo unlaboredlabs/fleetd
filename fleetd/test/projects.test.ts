@@ -164,7 +164,7 @@ test("a project's bot color: slate until picked, kept with the project, announce
   expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarColor: "blue" })).toBe("forbidden");
 });
 
-test("a project's settings: setup per repo, Only me's rules, and what env_set refuses", async () => {
+test("a project's settings: setup per repo, an older app's onlyMe ignored, and what env_set refuses", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -205,15 +205,19 @@ test("a project's settings: setup per repo, Only me's rules, and what env_set re
   // A rename needs the node.
   expect(await k.refused(key("operate"), "project_settings_set", { ...r, title: "Renamed" })).toBe("machine_offline");
 
-  // Only me: a person's device only; nobody owns it, so only an admin turns it on, and it becomes theirs.
+  // An older app's onlyMe, on or off, from anyone: taken without an error and ignored (D491).
   k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'member', 0), ('p-bo', 'Bo', 'admin', 1)");
   const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
   const bo = key("admin", { human: true, person: { personId: "p-bo", name: "Bo" } });
-  expect(await k.refused(key("admin"), "project_settings_set", { ...r, onlyMe: true })).toBe("forbidden");
-  expect(await k.refused(ada, "project_settings_set", { ...r, onlyMe: true })).toBe("forbidden");
-  await k.ok(bo, "project_settings_set", { ...r, onlyMe: true });
-  expect(store(k.hub).projectGet(r)).toMatchObject({ onlyMe: true, owner: "p-bo" });
-  expect(events(k.hub).page(0).events.at(-1)?.summary).toBe("App: Only me on");
+  const before = events(k.hub).head();
+  for (const [who, on] of [[ada, true], [key("operate"), false], [ada, false]] as const) {
+    const out = await k.ok(who, "project_settings_set", { ...r, onlyMe: on });
+    expect(out.settings).toBeDefined();
+  }
+  expect(store(k.hub).projectGet(r)).not.toHaveProperty("onlyMe");
+  expect(store(k.hub).projectGet(r)).not.toHaveProperty("owner");
+  expect(k.hub.db.conn.query("SELECT 1 FROM project_settings WHERE only_me = 1").get()).toBeNull();
+  expect(events(k.hub).head()).toBe(before);
 
   // env_set: a person's, within the limits, and only with the node there.
   const set = (vars: unknown[]) => ({ ...r, set: vars, remove: [] });

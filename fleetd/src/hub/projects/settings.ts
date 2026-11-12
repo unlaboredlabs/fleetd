@@ -34,8 +34,7 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { who } from "../navi/owner.ts";
-import { setAvatarColor, setOnlyMe as storeOnlyMe } from "../navi/store.ts";
+import { setAvatarColor } from "../navi/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -260,30 +259,6 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
 }
 
 /**
- * Only me (D310), from a person's own device: its owner or an admin changes it, and only an admin turns it on for a
- * project nobody owns, which then becomes theirs; off, everyone on the hub sees and uses it.
- */
-export function setOnlyMe(hub: Hub, caller: Caller, project: ProjectSummary, on: boolean): void {
-  const r = { machineId: project.machineId, projectId: project.projectId };
-  // As it is already: nothing to change, nothing to refuse.
-  if (on === (project.onlyMe ?? false)) return;
-  if (!isHuman(caller)) {
-    throw new ToolError("forbidden", "Only a person turns Only me on or off, from one of their own devices.", "Change it in the app: the project's settings.");
-  }
-  const me = who(hub.db.conn, caller);
-  const owns = project.owner !== undefined && project.owner === me;
-  if (!owns && !allows(caller, "admin", r.machineId)) {
-    const why =
-      project.owner !== undefined
-        ? "Only this project's owner, or an admin, turns Only me on or off."
-        : "Nobody owns this project yet: only an admin turns Only me on for it, and it becomes theirs.";
-    throw new ToolError("forbidden", why, "Ask the person whose project it is, or an admin.");
-  }
-  storeOnlyMe(hub.db.conn, r, on, me);
-  announce(hub, r, `${project.title}: Only me ${on ? "on" : "off"}`, { onlyMe: on });
-}
-
-/**
  * Renames the project. The name lives on the node, which renames it in place; the hub's cache takes it at once, and
  * project.settings tells every open app to read its projects again.
  */
@@ -328,7 +303,7 @@ export function register(tools: Registry): void {
     if (!project) throw unknownProject(r);
     const repo = repoNamed(hub, r, input.repo);
     if (input.title !== undefined && input.title !== project.title) await rename(hub, project, input.title);
-    if (input.onlyMe !== undefined) setOnlyMe(hub, caller, project, input.onlyMe);
+    // An older app's onlyMe is dropped as the call is decoded: every project is everyone's on the hub (D491).
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     const settings = await settingsOf(hub, r, repo);

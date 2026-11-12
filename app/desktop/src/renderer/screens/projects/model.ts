@@ -1,6 +1,5 @@
-// Projects as plain view data, shared with the phone: whose a project is (Only me), whether it is archived, the
-// sidebar's default order (Only-me projects first, so former Navis stay where they were), a name the hub would take,
-// a delete's words, and the hub tools the project calls go by. Pure, so it is unit-tested.
+// Projects as plain view data, shared with the phone: whether it is archived, the sidebar's default rows, a name the
+// hub would take, a delete's words, and the hub tools the project calls go by. Pure, so it is unit-tested.
 import type { ProjectSummary } from "../../../shared/contracts";
 
 /**
@@ -17,30 +16,14 @@ export const PROJECT_TOOLS = {
   asks: "navi_asks",
 } as const;
 
-/** Only its owner sees and uses it: on for a former Navi and, unless turned off, a new project with no repo. */
-export const isOnlyMe = (p: Pick<ProjectSummary, "onlyMe"> | undefined): boolean => p?.onlyMe === true;
-
-/**
- * Yours: an Only-me project is its owner's alone. The hub already lists no one else's; this keeps another's out of
- * your lists all the same. One with no owner (a hub without people, or an older hub) is yours, as before; one with an
- * owner shows once the hub has said who you are.
- */
-export const isYours = (p: Pick<ProjectSummary, "owner">, me: string | undefined): boolean => p.owner === undefined || p.owner === me;
-
-/** It holds a git repo: its chat starts on code. Without one it is a chat with a lead in a folder (a former Navi's too). */
-export const hasRepos = (p: Pick<ProjectSummary, "repos"> | undefined): boolean => (p?.repos?.length ?? 0) > 0;
-
 /** An archived project keeps its chat, memory and folder; its lead doesn't start until it is brought back. */
 export const isArchived = (p: Pick<ProjectSummary, "archivedAt">): boolean => p.archivedAt !== undefined;
 
 /**
- * The sidebar's rows: archived ones left out, Only-me projects first, each part in the order it came. The sidebar's
- * order (shell/pins.ts: your pins, then by activity) goes over this.
+ * The sidebar's rows: archived ones left out, the rest in the order they came. The sidebar's order (shell/pins.ts:
+ * your pins, then by activity) goes over this.
  */
-export const sidebarOrder = <R extends { readonly project: ProjectSummary }>(rows: ReadonlyArray<R>): R[] => {
-  const shown = rows.filter((r) => !isArchived(r.project));
-  return [...shown.filter((r) => isOnlyMe(r.project)), ...shown.filter((r) => !isOnlyMe(r.project))];
-};
+export const sidebarOrder = <R extends { readonly project: ProjectSummary }>(rows: ReadonlyArray<R>): R[] => rows.filter((r) => !isArchived(r.project));
 
 /** As the hub takes a project's name: 1 to 80 characters on one line. */
 export const NAME_MAX = 80;

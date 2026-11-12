@@ -11,7 +11,6 @@ import { allows } from "../auth/index.ts";
 import { runnerOf } from "../machine_roles/places.ts";
 import { waitsOf } from "../machine_roles/screens.ts";
 import { live, runsOn } from "./live.ts";
-import { mayUse } from "./reads.ts";
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
 import { get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
@@ -186,7 +185,7 @@ function screensCount(hub: Hub, caller: Caller) {
     const key = `${s.projectRef.machineId}\u0000${s.projectRef.projectId}`;
     let sees = seen.get(key);
     if (sees === undefined) {
-      sees = allows(caller, "read", s.projectRef.machineId) && mayUse(hub.db, caller, s.projectRef);
+      sees = allows(caller, "read", s.projectRef.machineId);
       seen.set(key, sees);
     }
     if (!sees) continue;

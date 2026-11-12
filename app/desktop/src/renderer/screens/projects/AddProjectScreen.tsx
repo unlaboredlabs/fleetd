@@ -2,7 +2,7 @@
 // stay as they were). One field: type a name for a new, empty project, or find a repo to add, one of the checkouts on
 // your machines or of your GitHub repos, or paste a URL or a folder's path. Below it the list, grouped by where each
 // repo is (repos already a project only once the field matches them), and a footer that says in one line what the
-// button will do, with Only me beside it. Then the clone's progress, the ready state with what the lead will need (a new
+// button will do. Then the clone's progress, the ready state with what the lead will need (a new
 // project opens at once), or the error and its fix. Type to filter, Up/Down pick, Enter adds, Esc closes (a clone
 // carries on). The agents' Mac is never offered: no project lives there (projectHome). With
 // several hubs a line beside the title says which hub it adds to, and picks another.
@@ -11,7 +11,7 @@ import { Dialog as D } from "radix-ui";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Button, Checkbox, Dot, Select, Text, Truncate, copyText, cx } from "../../ui";
-import { clonePath, discovery as discoveryOf, newPath, onlyMeFirst, orList, plan, projectHome, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
+import { clonePath, discovery as discoveryOf, newPath, orList, plan, projectHome, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
@@ -27,7 +27,6 @@ import {
   pickMachine,
   setFolder,
   setGitInit,
-  setOnlyMe,
   setText,
   startAdd,
   useAddUi,
@@ -153,15 +152,7 @@ const usePick = () => {
 const newFolder = (p: Extract<Plan, { kind: "new" }>, d: Discovery | null, ui: AddUi): string | null =>
   ui.folder ?? newPath(d?.workers.find((w) => w.machineId === p.machineId), p.name);
 
-/** Only me for this add: as the person set it, else where it starts for this kind of add. */
-const onlyMeOf = (p: Plan, ui: AddUi): boolean => ui.onlyMe ?? onlyMeFirst(p);
-
 const requestFor = (p: Plan, to: Worker | null, folder: string | null, ui: AddUi): { request: Request; path: string } | null => {
-  const r = kindRequest(p, to, folder, ui);
-  return r === null ? null : { ...r, request: { ...r.request, onlyMe: onlyMeOf(p, ui) } };
-};
-
-const kindRequest = (p: Plan, to: Worker | null, folder: string | null, ui: AddUi): { request: Request; path: string } | null => {
   switch (p.kind) {
     case "new": {
       const name = p.name.trim();
@@ -488,8 +479,6 @@ function PickFooter({ pick, go }: { pick: PickData; go: () => void }) {
   const { d, rows, selected, planFor, ui } = pick;
   const p = planFor(rows[selected]);
   const sum = summaryOf(p, pick);
-  const adds = p.kind === "new" || p.kind === "folder" || p.kind === "clone";
-  const onlyMe = adds && onlyMeOf(p, ui);
   // A checkout or a project is where it is; anything else goes to the machine picked.
   const online = (d?.workers ?? []).filter((w) => w.online);
   const picks = sum.on !== undefined && online.length > 1 && (p.kind === "clone" || p.kind === "new" || (p.kind === "folder" && !p.fixed)) && online.some((w) => w.machineId === sum.on);
@@ -502,17 +491,8 @@ function PickFooter({ pick, go }: { pick: PickData; go: () => void }) {
         ) : (
           <> {nameOf(pick, sum.on)}.</>
         )}
-        {sum.enabled && adds ? <span>{onlyMe ? "Only you will see it." : "Everyone on this hub can use it."}</span> : null}
       </Text>
       <div className={s.actions}>
-        {adds ? (
-          <Checkbox
-            label="Only me"
-            title="Only you see and use it: its chat, its agents and its settings. Off, everyone on this hub can."
-            checked={onlyMe}
-            onCheckedChange={(on) => setOnlyMe(on === true)}
-          />
-        ) : null}
         {p.kind === "new" && sum.enabled ? <Checkbox label="Start a git repo" checked={ui.gitInit === true} onCheckedChange={(on) => setGitInit(on === true)} /> : null}
         <span className={s.spacer} />
         {localMachine() ? <BrowseButton /> : null}

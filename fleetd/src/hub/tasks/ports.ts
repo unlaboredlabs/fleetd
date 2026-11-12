@@ -260,7 +260,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
             console.warn(`github: no token for the order's agents (${request.orderId}): ${why}`);
           }
         }
-        const onepassword = onepasswordForTask(hub.db, request.projectRef, request.orderId, m);
+        const onepassword = onepasswordForTask(hub.db, request.orderId, m);
         return executorLaunch(
           hub,
           m,

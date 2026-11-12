@@ -146,16 +146,11 @@ export function repoAt(hub: Hub, r: ProjectRef, repoId?: RepoId): { repo: string
 export const repoOf = (hub: Hub, r: ProjectRef, repoId?: RepoId) => repoAt(hub, r, repoId)?.repo;
 
 /**
- * Whose work a task of `order` in `r` is (claude_accounts `whose_for_task`): a Navi's owner's in a Navi, else the
- * person who started the order (while on the hub), else nobody's: the hub's.
+ * Whose work a task of `order` is (claude_accounts `whose_for_task`): the person who started the order (while on the
+ * hub), else nobody's: the hub's.
  */
-function whoseForTask(hub: Hub, r: ProjectRef, order?: WorkstreamId): PersonId | undefined {
+function whoseForTask(hub: Hub, order?: WorkstreamId): PersonId | undefined {
   const active = seams.people.active(hub.db.conn);
-  const navi = seams.navi(hub.db.conn, r);
-  if (navi) {
-    const owner = navi.owner ?? active.find((p) => p.role === "owner")?.personId;
-    if (owner !== undefined) return owner;
-  }
   const started = order === undefined ? undefined : seams.workstream(hub.db.conn, order)?.startedBy;
   return started && active.some((p) => p.personId === started.personId) ? started.personId : undefined;
 }
@@ -164,7 +159,7 @@ function whoseForTask(hub: Hub, r: ProjectRef, order?: WorkstreamId): PersonId |
 export function githubAs(hub: Hub, r: ProjectRef, order: WorkstreamId | undefined, repo: string): GithubAs | undefined {
   if (!githubApps(hub).reaches(repo)) return undefined;
   try {
-    const person = whoseForTask(hub, r, order);
+    const person = whoseForTask(hub, order);
     return person === undefined ? { kind: "app" } : { kind: "person", person };
   } catch {
     return undefined;

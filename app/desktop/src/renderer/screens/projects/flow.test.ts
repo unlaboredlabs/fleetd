@@ -47,12 +47,10 @@ const ok = (c: Call, output: unknown): AddMsg => ({ t: "answer", call: c, outcom
 const err = (c: Call, code: string, message: string): AddMsg => ({ t: "answer", call: c, outcome: { ok: false, error: { code, message, fix: "" } } });
 
 describe("the add flow", () => {
-  it("sends Only me either way on any kind of add, so turning it off is heard", () => {
-    expect(only(run(live(), start({ ...cloneReq, onlyMe: true }))[1], "add").input).toEqual({ machineId: "devbox", url: "acme/ledger", onlyMe: true });
-    const folder: Request = { kind: "folder", machineId: "devbox", path: "/home/dev/notes", onlyMe: false };
-    expect(only(run(live(), start(folder))[1], "add").input).toEqual({ machineId: "devbox", path: "/home/dev/notes", onlyMe: false });
-    // A request from before the switch (the phone's) leaves it to the hub.
+  it("sends each kind of add as it is", () => {
     expect(only(run(live(), start(cloneReq))[1], "add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    const folder: Request = { kind: "folder", machineId: "devbox", path: "/home/dev/notes" };
+    expect(only(run(live(), start(folder))[1], "add").input).toEqual({ machineId: "devbox", path: "/home/dev/notes" });
   });
 
   it("holds a failure that comes before the answer, then ends the add with it", () => {

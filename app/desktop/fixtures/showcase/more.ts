@@ -1,6 +1,7 @@
 // The showcase's scenes past the storefront's request (qa/showcase.spec.ts moves through them as the batch merges),
-// each made of another group's fixture rather than data of its own: Ada and Home, Only me, above the projects, Ada's
-// lease renewal waiting on your approval and the order it asked storefront for (fixtures/only-me), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
+// each made of another group's fixture rather than data of its own: Ada and Home, with no repo, beside the projects,
+// Ada's lease renewal waiting on your approval and the order it asked storefront for (fixtures/no-repo), and a second
+// hub, Personal, beside this one in the sidebar (fixtures/sidebar).
 // Hub › People's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
 // the team shares: Sam writes from this app, Alice and Bob from theirs, and the lead answers them together. The nightly
 // memory refresh's line is in storefront's chat (index.ts), and its built-in row on the Automations page comes with
@@ -10,8 +11,8 @@ import { writeChat, type Ref } from "../kit/chat.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { PEOPLE } from "../admin/index.ts";
-import { ownProject, toolApproval, type ToolCall } from "../only-me/index.ts";
-import { ADA, HOME } from "../only-me/ids.ts";
+import { ownProject, toolApproval, type ToolCall } from "../no-repo/index.ts";
+import { ADA, HOME } from "../no-repo/ids.ts";
 import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
 import { retitle } from "../sidebar/index.ts";
 

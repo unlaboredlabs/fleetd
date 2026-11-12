@@ -113,9 +113,8 @@ invite people, change roles and change hub-wide settings, and the hub always kee
 revokes all their devices at once, and with them the [hub links](#hub-links) they made.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
-before. A shared project is open to everyone on the hub, so give a hub only to people you trust with every shared project
-on it. An [Only me](/docs/projects#only-me) project is the exception: the hub shows and serves it only to its owner,
-admins included. An admin may only turn its Only me off, or delete one of a person since removed. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
+before. Every project is open to everyone on the hub, so give a hub only to people you trust with every project on it;
+work only you should see goes on a hub of your own. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
 but it keeps nothing private from them.
 
 ## Claude accounts {#claude}
@@ -129,7 +128,7 @@ every other secret:
 - A session on an account drops the machine's own key, token and gateway variables, so they can't outrank it. One
   whose account the node no longer holds fails to start; it never falls back to the machine's own login. A node too
   old to run accounts gets no work on one.
-- One person's subscription runs only work they started, or their Only me projects. Removing a person forgets their token on
+- One person's subscription runs only work they started. Removing a person forgets their token on
   every machine.
 
 Like project secrets, the value is in the claude process's environment. Any process of the node's OS user can read
@@ -188,8 +187,8 @@ the node's directory), with what it installed there first on their `PATH`; its a
 project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 
-A machine whose node is older starts leads the old way: an Only me project's in a sandbox, any other's with full
-access. Those other projects take no integration until that machine runs `fleetd update`.
+A machine whose node is older starts leads the old way, and its projects take no integration until that machine runs
+`fleetd update`.
 
 ## The agents' Mac's screen {#mac-screen}
 
@@ -218,7 +217,7 @@ hub into a team hub. You make it on the hub it reaches and add it to the project
 | Its messages are never your answer | They go into the project's chat as "*you* via *label*", an agent's input, like any message from another project's lead. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the project that asks, its chat or its title. |
 | The key stays sealed | The app seals it to the asking project's hub, which opens it only to call the other hub. Nothing shows it again. |
-| A person names the host it calls | `hub_link_add` makes the project's hub contact the URL that a person with operate gives it. On an Only me project, only its owner adds or removes its links. |
+| A person names the host it calls | `hub_link_add` makes the project's hub contact the URL that a person with operate gives it. Anyone who operates on the project's machine adds or removes its links. |
 | Only the project's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the lead and the link say "Can't reach *label*" with the reason. |
 | Revoke from either side | Removing it on the project's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 

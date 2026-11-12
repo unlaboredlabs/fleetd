@@ -130,13 +130,13 @@ test("projects keep the node's report and wear what the hub keeps of them", () =
   const store = new HubStore(db);
   // The hub's own fields in a node's report are dropped: the hub serves them from its tables.
   store.projectsUpsertMany("devbox", [
-    project("app", "2026-10-17T10:00:00.000Z", { onlyMe: true, owner: "p1", avatar: "x" }),
+    project("app", "2026-10-17T10:00:00.000Z", { kind: "assistant", avatar: "x" }),
     project("site", "2026-10-18T10:00:00.000Z"),
   ]);
   const stored = JSON.parse(
     db.conn.query<{ data: string }, []>("SELECT data FROM projects WHERE project_id = 'app'").get()?.data ?? "",
   );
-  expect(stored.onlyMe).toBeUndefined();
+  expect(stored.kind).toBeUndefined();
   expect(store.projectsList().map((p) => p.projectId)).toEqual(["site", "app"]);
   expect(store.projectsList(undefined, "SITE").map((p) => p.projectId)).toEqual(["site"]);
   expect(store.projectsList(undefined, "%")).toEqual([]);
@@ -145,17 +145,15 @@ test("projects keep the node's report and wear what the hub keeps of them", () =
   const app = { machineId: "devbox", projectId: "app" };
   expect(store.projectGet(app)).toEqual({ ...project("app", "2026-10-17T10:00:00.000Z"), icon: derived(app) });
 
-  // Only me, its maker, owner, archive, picture and icon come from the hub's rows.
+  // Its maker, archive, picture and icon come from the hub's rows; a former Only me project's mark and owner are no
+  // longer read (D491).
   db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, created_by_key, created_by_name, owner_person, archived_ms)
                VALUES ('devbox', 'app', 1, 'key_1', 'phone', 'p1', 0)`);
   db.conn.run("INSERT INTO project_avatars (machine_id, project_id, avatar, jpeg, set_ms) VALUES ('devbox', 'app', 'abc', x'00', 0)");
   db.conn.run("INSERT INTO project_icons (machine_id, project_id, face, color, set_ms) VALUES ('devbox', 'app', 'joy', 'sun', 0)");
   expect(store.projectGet(app)).toEqual({
     ...project("app", "2026-10-17T10:00:00.000Z"),
-    onlyMe: true,
-    kind: "assistant",
     createdBy: { keyId: "key_1", name: "phone" },
-    owner: "p1",
     archivedAt: "1970-01-01T00:00:00.000Z",
     avatar: "abc",
     icon: { face: "joy", color: "sun" },

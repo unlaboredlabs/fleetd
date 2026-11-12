@@ -1,9 +1,7 @@
-// What screens read of other areas' tables, by the Rust tree's own queries: people (hub/people), Only-me projects
-// (hub/navi/owner.rs, store.rs) and tasks' ends (hub/machine_roles `task_ended`). Reads only; their owners write them.
+// What screens read of other areas' tables, by the Rust tree's own queries: people (hub/people), projects' repos and
+// tasks' ends (hub/machine_roles `task_ended`). Reads only; their owners write them.
 import type { Database } from "bun:sqlite";
 import type { PersonRef, ProjectRef } from "../../shared/contracts.ts";
-import { ToolError } from "../../shared/errors.ts";
-import type { Caller } from "../api/registry.ts";
 import type { HubDb } from "../store/db.ts";
 
 type PersonRow = { person_id: string; name: string };
@@ -56,54 +54,6 @@ export function ensureOwnerOn(c: Database, name: string, now: number): PersonRef
   c.query("INSERT INTO people (person_id, name, role, created_ms) VALUES (?, ?, 'owner', ?)").run(id, clean, now);
   c.query("UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL").run(id);
   return { personId: id, name: clean };
-}
-
-/** The person a caller acts as: its key's, else the hub's owner (navi/owner.rs `who`). */
-export function who(c: Database, caller: Caller): string | undefined {
-  return caller.person?.personId ?? ownerOn(c)?.personId;
-}
-
-/** Other people's Only-me projects (navi/store.rs `others`). */
-export function others(db: HubDb, caller: Caller): ProjectRef[] {
-  const me = who(db.conn, caller) ?? null;
-  return db
-    .all<{ machine_id: string; project_id: string }>(
-      `SELECT machine_id, project_id FROM project_settings
-       WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
-      [me],
-    )
-    .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
-}
-
-/** Whether `caller` may use project `r`: it isn't another person's Only-me project (navi/owner.rs `may_use`). */
-export function mayUse(db: HubDb, caller: Caller, r: ProjectRef): boolean {
-  return !others(db, caller).some((o) => o.machineId === r.machineId && o.projectId === r.projectId);
-}
-
-/** navi/owner.rs `refused`. */
-export function ownerRefused(r: ProjectRef): ToolError {
-  return new ToolError(
-    "forbidden",
-    `${r.projectId} on ${r.machineId} is another person's Only me project: only its owner uses and manages it.`,
-    "Your own projects are in your list; make one with project_add.",
-  );
-}
-
-/** The project a screen is for, by its session id (navi/owner.rs `screen_project`). */
-export function screenProject(db: HubDb, sessionId: string): ProjectRef | undefined {
-  const row = db.all<{ machine_id: string; project_id: string }>(
-    "SELECT machine_id, project_id FROM browser_sessions WHERE session_id = ?",
-    [sessionId],
-  )[0];
-  return row ? { machineId: row.machine_id, projectId: row.project_id } : undefined;
-}
-
-/** Whether project `r` is a Navi (navi/store.rs `of`): an Only-me project. */
-export function isNavi(db: HubDb, r: ProjectRef): boolean {
-  return (
-    db.all("SELECT 1 FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1", [r.machineId, r.projectId])
-      .length > 0
-  );
 }
 
 /** The project's GitHub repos (`owner/name`) from its attached repos (hub/projects repos_of). */

@@ -117,8 +117,8 @@ The fleetd process on a worker. It connects out to the hub and starts the Claude
 
 ## Only me {#only-me}
 
-A project's switch that keeps it to its owner: only they see it and use it, admins included. On by default for a
-project with no repo. See [Only me](/docs/projects#only-me).
+A switch earlier fleetd had that kept a project to one person. It is gone: every project is open to everyone on its
+hub. See [Former Only me projects](/docs/projects#only-me).
 
 ## Order {#order}
 

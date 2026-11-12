@@ -1,11 +1,10 @@
 // The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
-// desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
-// orders_board, checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title), Only me
-// (its onlyMe), Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), the
-// person's own picture and name (person_avatar_set, person_name_set), Agent
-// Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
-// Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
-// by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
+// desktop's add flow over project_add, a new folder or a repo), its screen's reads (agents_list, orders_board,
+// checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title),
+// Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
+// and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, Linked hubs (hub_links_get,
+// hub_link_remove), Forget Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
+// A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
 import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
@@ -33,14 +32,10 @@ export const discover = async (hub: Hub, name: (machineId: string) => string, ho
   return r.ok ? { ok: true, value: discovery(r.output, name, home) } : r;
 };
 
-/**
- * One of the add flow's project_add calls, the add itself named as the person typed (a clone's too) and with Only me
- * as they left it, on or off: left out, the hub would pick its own default (on for a folder with no git repo). A dry
- * run only inspects, so it takes neither.
- */
-export const addCall = async (hub: Hub, call: AddCall, title: string, onlyMe: boolean): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
+/** One of the add flow's project_add calls, the add itself named as the person typed (a clone's too). A dry run only inspects, so it isn't named. */
+export const addCall = async (hub: Hub, call: AddCall, title: string): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
   if (call.purpose !== "add") return hub.call("project_add", call.input);
-  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }), onlyMe });
+  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }) });
 };
 
 /** Its settings' title. Its folder keeps its name. */
@@ -52,12 +47,6 @@ export const rename = async (hub: Hub, p: ProjectRef, name: string): Promise<Res
 /** Its bot's color, from the palette (BOT_COLORS). */
 export const setBotColor = async (hub: Hub, p: ProjectRef, avatarColor: string): Promise<Result<null>> => {
   const r = await hub.call("project_settings_set", { ...ref(p), avatarColor });
-  return r.ok ? { ok: true, value: null } : r;
-};
-
-/** Only me: only its owner sees and uses it, the person turning it on becoming its owner; off, everyone on the hub again. */
-export const setOnlyMe = async (hub: Hub, p: ProjectRef, onlyMe: boolean): Promise<Result<null>> => {
-  const r = await hub.call("project_settings_set", { ...ref(p), onlyMe });
   return r.ok ? { ok: true, value: null } : r;
 };
 

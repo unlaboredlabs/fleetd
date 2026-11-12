@@ -51,7 +51,6 @@ one for taxes. Every project has the same abilities: memory, [automations](/docs
 | `--machine <id>` | Clone to, or look for the path on, that worker. |
 | `--dest <dir>` | Clone into that folder, or make a new project's folder there. |
 | `--git-init` | With `--new`: run `git init` in the new folder. |
-| `--only-me`, `--no-only-me` | Keep it to yourself, or share it with everyone on the hub. By default a project with no repo is [Only me](#only-me) and one with a repo is shared. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
 fleetd reads GitHub through `gh` on the hub machine, as the hub's [GitHub App](/docs/github/) where it is installed. A private repo clones on any worker where `gh auth login` was run.
@@ -61,8 +60,7 @@ When something is in the way, such as an offline worker or a folder that exists,
 
 A project can start as a plain folder, with no repo. In the app, click **+** at the top of the sidebar
 (**New project**) and type its name: the same box takes a GitHub URL to clone or a folder's path. The line above the
-button names the folder and the machine (pick another there when you have several); check it and **Only me**, and
-click **Create**. From a terminal:
+button names the folder and the machine (pick another there when you have several); check it and click **Create**. From a terminal:
 
 ```sh
 fleetd project add --new "Field notes" --machine devbox
@@ -128,7 +126,6 @@ right-click menu. Its **Project** page has these, in order:
 | Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the project is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
 | Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the project. On the phone it's in the project's info, under **Edit** on its icon. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Only me | Who sees and uses it. See [Only me](#only-me). |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Setup**: what runs in its new worktrees. See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
@@ -169,8 +166,7 @@ A value is sealed in the app to the hub's own key. The hub keeps it encrypted in
 project's machine, sealed to that machine's key, whenever it changes or the machine comes back online. The node keeps
 the project's variables in a file of its own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every
 claude it starts for the project from then on. An agent already running gets a change at its next start. Your own
-variables (Settings › You › Vault) reach your Only me projects and the orders you start, unless the project or the
-order has the same name. Every start of an agent is in the vault's activity, by variable name.
+variables (Settings › You › Vault) reach the orders you start, unless the project or the order has the same name. Every start of an agent is in the vault's activity, by variable name.
 
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
 the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
@@ -236,25 +232,25 @@ first that fails, or runs past 10 minutes, stops the rest.
 - Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 
-### Only me {#only-me}
+### Who sees a project {#who-sees}
 
-An Only me project is its owner's alone: only they see it and use it, in the sidebar, chats, approvals, screens,
-**Hub links** and tools. Nobody else on the hub does, an admin neither. A shared one (Only me off) is open to everyone
-on the hub, as every project with a repo is by default.
+Every project is open to everyone on its hub: its chat, orders, approvals, screens, vault items and settings, as
+each person's role allows on its machine. There is no private project; work only you should see goes on a hub of
+your own ([Several hubs](/docs/several-hubs)).
 
-- **On by default** for a new project with no repo, and for every personal assistant an earlier fleetd made; off for
-  a clone or a repo folder. The **Only me** switch in New project sets it as the project is made.
-- **Who changes it:** its owner, or an admin, who may turn it off and share it with everyone on the hub (decision
-  `projects.one-model`, D310). Only an admin turns it on for a project nobody owns, which then becomes theirs. On a
-  hub from before people, a project made earlier belongs to the person whose device made it, else the hub's owner.
-- **Your private life stays in it.** Keep family, health, money and accounts in an Only me project's memory, never in
-  your user memory: every piece of work you start reads your user memory, so it holds only how you like to work.
-  [Memory import](/docs/what-agents-are-told#memory-import) runs only in an Only me project of yours.
-- **Its lead uses its owner's.** An Only me project's lead and agents run on its owner's Claude, and its lead's
-  1Password fills ([purchases](#purchases), [secure input](#secure-input), logins) fall back on its owner's token. A
-  shared project's lead has only the project's own `OP_SERVICE_ACCOUNT_TOKEN` variable.
-- **Its automations' runs close themselves.** In an Only me project, an [automation](/docs/automations)'s run closes its
-  order once the lead's turn for it ends; in a shared one, the lead closes it.
+- **Leads run on the hub's account.** Every project's lead runs on the Claude account [Claude accounts](/docs/people#claude)
+  sets for leads, and its 1Password fills ([purchases](#purchases), [secure input](#secure-input), logins) use only
+  the project's own `OP_SERVICE_ACCOUNT_TOKEN`. An order's agents run on the account of whoever started it.
+- **A removed person's projects stay.** Removing someone from the hub changes none of their projects.
+- **Your user memory is how you work.** Every piece of work you start reads it, so keep it to that; anything about a
+  project goes in the project's memory, which everyone on the hub can read.
+
+#### Former Only me projects {#only-me}
+
+Earlier fleetd had an **Only me** switch that kept a project to one person. It is gone. At the update, each project
+that had it on becomes an ordinary one, open to everyone on the hub. On a hub with more than one person, those
+projects are also archived, so they don't turn up in teammates' sidebars uninvited: their owner (or anyone) brings one
+back from the archive. On a hub of one person, nothing you can see changes.
 
 Your sidebar lists projects newest first, your pinned ones on top; pin one from its right-click menu. ⌘1–9 (Ctrl on
 Linux and Windows) open the first nine.
@@ -393,7 +389,7 @@ that is gone, says so under the line.
 
 What stays yours, whatever the lead is asked or told: the approval mode, [allowed sites](#sites) (the card on a first
 visit stays), profiles, models and [max agents](#max-agents), the project's [card](#purchases), vault items, MCP
-servers, the built-in prompts, [Only me](#only-me), [linked hubs](#hub-links), deleting a project, creating one
+servers, the built-in prompts, [linked hubs](#hub-links), deleting a project, creating one
 (the lead can only [propose it](#lead-propose)), and
 adding by path a folder that is a project of its own (adding it would archive that project). The lead's calls have no
 field for any of these, and one that names any of them is refused with a line that says who can do it and where. A
@@ -408,12 +404,11 @@ agent says so.
 
 A lead never creates a project. Ask it for one in its chat and it proposes it (`project_propose`), with a name and a
 GitHub repo to clone, or none. The chat shows one card, **New project**, with exactly what would be made: the name,
-the repo, the folder on the lead's own machine, and who it is open to. On the phone it is the same card, among your
+the repo and the folder on the lead's own machine. On the phone it is the same card, among your
 approvals.
 
 - **Create it** makes the project, and nothing exists before that. It is made as if you had used **New project**
-  yourself: one with no repo is yours alone ([Only me](#only-me)), and one cloned from a repo is open to everyone on
-  the hub. Turn **Only me** on or off in its settings afterwards.
+  yourself, open to everyone on the hub like every project.
 - **Don't create**, or no answer, makes nothing.
 - The card shows in every approval mode, YOLO included, and the checker never answers it for you.
 - A repo is cloned after your tap, as **New project** does it. The project appears when the clone ends, and the lead
@@ -564,7 +559,7 @@ checkout, the lead never sees it, and the chat says what was paid. Any project's
 Make it a virtual card with a monthly limit or a low-limit card ([why](/docs/security#agent-reach)).
 
 1. **Pick a card.** In the project's settings, **Payments › Pick a card…** lists the vault's cards the project's work
-   can use: its own, yours shared with it (or any of yours, in an [Only me](#only-me) project), and the hub's. **Add a
+   can use: its own, yours shared with it, and the hub's. **Add a
    card…** and **Import from 1Password…** are beside the list, and pick the card they add. fleetd keeps `vault:<id>`.
    On a hub without the vault, Payments lists the Credit Card items the project's 1Password token reads instead, and
    keeps their `op://vault/item` reference; a hub with the vault imports that card once.
@@ -738,11 +733,11 @@ acme/skills@0123456789ab*.
 
 ## For the app and other clients {#clients}
 
-A new project is `project_add {create: true, title, machineId?, gitInit?, onlyMe?}`; `project_settings_set
-{machineId, projectId, title?, onlyMe?}` renames it or changes [Only me](#only-me); `project_archive {machineId,
-projectId, archived?}` archives it or brings it back. A project summary says `onlyMe`, its `owner`, `createdBy` (the id and name of the key that made it)
-and, once archived, `archivedAt`; for one more release a former Navi's also says `kind: "assistant"`, which older apps
-read, and the `navi_*` tools still answer as aliases. Its bot's color is `project_settings_set {machineId, projectId,
+A new project is `project_add {create: true, title, machineId?, gitInit?}`; `project_settings_set {machineId,
+projectId, title?}` renames it; `project_archive {machineId, projectId, archived?}` archives it or brings it back. A
+project summary says `createdBy` (the id and name of the key that made it) and, once archived, `archivedAt`. An older
+app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored, and the `navi_*` tools still answer as
+aliases. Its bot's color is `project_settings_set {machineId, projectId,
 avatarColor}`, one of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage` and `teal`; a summary's `avatarColor`
 says which it wears, and has none for slate. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
 crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and

@@ -302,16 +302,6 @@ export async function waitingOn(t: Train, change: Change): Promise<Waiting | und
   return undefined;
 }
 
-/** Whether `projectRef`'s person sees the project `url`'s PR belongs to (D338). */
-export function seesPr(t: Train, projectRef: ProjectRef, url: string): boolean {
-  const p = parsePrUrl(url);
-  if (!p) return true;
-  const repo = p.repo.toLowerCase();
-  const latest = t.records.latestFor(repo, p.number);
-  const projects = latest ? [latest.projectRef] : t.host.repoProjects(repo);
-  return projects.length === 0 || projects.some((x) => t.host.sees(projectRef, x));
-}
-
 /** Where the upstream PR stands: undefined once it merged. Its Change on the train says, else GitHub. */
 export async function upstream(t: Train, url: string): Promise<Waiting | undefined> {
   const p = parsePrUrl(url);
@@ -400,7 +390,6 @@ export async function stack(t: Train, change: Change, pull: Pull): Promise<Chang
       other.head.ref !== base &&
       commits.includes(other.head.sha.toLowerCase()) &&
       !(change.after ?? []).includes(url) &&
-      seesPr(t, change.projectRef, url) &&
       loopsBack(t, change.prUrl, [url]) === undefined
     ) {
       console.info(`train: ${change.changeId} stacked on another open PR ${url}`);

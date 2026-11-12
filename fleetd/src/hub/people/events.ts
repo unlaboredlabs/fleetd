@@ -34,9 +34,8 @@ export const accountRemoved = (hub: Hub, person: PersonRef, what: string) =>
   announce(hub, change("account_removed", person, person), `${person.name} removed their ${what}`);
 
 /**
- * What else goes with a removed person, in the Rust hub's order: the leads of their archived Only-me projects stop
- * (navi `stop_left`), their Claude subscription, 1Password token and GitHub connection are forgotten. Each owning area
- * adds its own with `onPersonRemoved(hub, fn)`; until it does, nothing more happens.
+ * What else goes with a removed person, in the Rust hub's order: their Claude subscription, 1Password token and GitHub
+ * connection are forgotten. Each owning area adds its own with `onPersonRemoved(hub, fn)`; until it does, nothing more happens.
  */
 type Forget = (personId: PersonId) => Promise<void> | void;
 

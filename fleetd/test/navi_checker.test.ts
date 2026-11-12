@@ -61,7 +61,7 @@ function setup() {
   project(k.hub, NAVI, { title: "Ada", workspaceRoot: "/navi/ada", kind: "assistant" });
   caps(k.hub, [CAP_ISOLATED]);
   const sam = ensureOwnerOn(k.hub.db.conn, "Sam", 0).personId;
-  navis.put(k.hub.db.conn, NAVI, { keyId: "k1", name: "desk" }, sam, 0);
+  navis.put(k.hub.db.conn, NAVI, { keyId: "k1", name: "desk" }, 0);
   return { ...k, sam };
 }
 

@@ -8,7 +8,6 @@ import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import { allows } from "../auth/index.ts";
 import { boxKey } from "../hub_links/store.ts";
-import { mayUse } from "../navi/owner.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { ENV_TOTAL_MAX_BYTES, envTotalOver, PROJECT_ENV_MAX } from "../projects/settings.ts";
 import { store as hubStore } from "../store/hub_store.ts";
@@ -64,7 +63,7 @@ function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDr
     const r = { machineId: s.machineId, projectId: s.projectId };
     if (v.system) return r;
     if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
-    if (!allows(v.caller, "operate", r.machineId) || !mayUse(hub.db, v.caller, r)) {
+    if (!allows(v.caller, "operate", r.machineId)) {
       throw new ToolError("forbidden", `You can't change ${r.projectId}'s items.`, "Ask someone who operates the project.");
     }
     return r;
@@ -260,7 +259,7 @@ export function shareItem(hub: Hub, v: Viewer, itemId: string, projects: Project
   }
   for (const r of projects) {
     if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
-    if (!allows(v.caller, "read", r.machineId) || !mayUse(hub.db, v.caller, r)) throw unknownProject(r);
+    if (!allows(v.caller, "read", r.machineId)) throw unknownProject(r);
   }
   const now = hub.clock.now();
   vt.store.setShares(itemId, projects, v.person!, now);

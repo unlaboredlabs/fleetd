@@ -1,13 +1,12 @@
 // New Project, a sheet from the Chats list's +, as the desktop's New project: what to call it, and optionally a GitHub
 // repo to clone (owner/repo or its URL) or a folder already on a machine; with none, the hub makes a new folder of its
-// own. Then which machine, and Only me, on for a project with no repo until the person says otherwise. Under it all,
-// what the hub found (project_discover: checkouts on the machines, the person's GitHub repos), filtered as you type;
-// one already a project opens its chat. The add runs the desktop's own flow (flow.ts) over project_add and the clone's
-// events: its progress, what the hub read of the repo once added, or why it failed, with adding the folder that's
-// already there when that is the same repo. A new folder opens its chat at once.
+// own. Then which machine. Under it all, what the hub found (project_discover: checkouts on the machines, the person's
+// GitHub repos), filtered as you type; one already a project opens its chat. The add runs the desktop's own flow
+// (flow.ts) over project_add and the clone's events: its progress, what the hub read of the repo once added, or why it
+// failed, with adding the folder that's already there when that is the same repo. A new folder opens its chat at once.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { addSource, addStep, baseName, initialAdd, NAME_MAX, nameProblem, newPath, otherHost, projectHome, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
@@ -35,14 +34,11 @@ export function NewProject({ navigation, route }: Props) {
   const [fixed, setFixed] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
-  // Only me as the person set it; till then, on for a new folder and off for a repo.
-  const [onlyMeSet, setOnlyMe] = useState<boolean | null>(null);
 
   // The add, as the desktop runs it: messages in, its project_add calls out.
   const flow = useRef<AddState>({ ...initialAdd, live: state.hub.phase === "live" });
   const [phase, setPhase] = useState(flow.current.phase);
   const title = useRef("");
-  const onlyMeSent = useRef(false);
   // A new folder of its own, which opens its chat once made: the flow forgets its request by then.
   const startedNew = useRef(false);
   const send = useCallback(
@@ -50,7 +46,7 @@ export function NewProject({ navigation, route }: Props) {
       const [next, calls] = addStep(flow.current, msg, names);
       flow.current = next;
       setPhase(next.phase);
-      for (const call of calls) void addCall(session, call, title.current, onlyMeSent.current).then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of calls) void addCall(session, call, title.current).then((outcome) => send({ t: "answer", call, outcome }));
     },
     [session, names],
   );
@@ -81,12 +77,10 @@ export function NewProject({ navigation, route }: Props) {
           : source.kind === "github"
             ? { kind: "clone", repo: source.repo, machineId, useExisting: false }
             : { kind: "folder", machineId, path: source.path };
-  const onlyMe = onlyMeSet ?? fresh;
   const nameIssue = nameProblem(name);
   const ready = request !== null && nameIssue === undefined && live;
   const start = (r: Request) => {
     title.current = name.trim();
-    onlyMeSent.current = onlyMe;
     startedNew.current = r.kind === "new";
     haptics.tap();
     send({ t: "start", request: r, path: r.kind === "clone" ? "" : r.path });
@@ -116,7 +110,7 @@ export function NewProject({ navigation, route }: Props) {
       ),
     });
     // `start` and `openChat` read what these are.
-  }, [navigation, t, phase, ready, request?.kind, text, name, machineId, onlyMe]);
+  }, [navigation, t, phase, ready, request?.kind, text, name, machineId]);
 
   const list = useMemo(() => suggestions(text, d), [text, d]);
 
@@ -230,9 +224,6 @@ export function NewProject({ navigation, route }: Props) {
           ))}
         </ListSection>
       ) : null}
-      <ListSection footer={onlyMe ? "Only you see it and use it." : "Everyone on this hub sees it and can use it."}>
-        <ListRow title="Only Me" accessory={<Switch value={onlyMe} onValueChange={(on) => setOnlyMe(on)} accessibilityLabel="Only me" />} />
-      </ListSection>
       {list.length > 0 ? (
         <ListSection header={text.trim() === "" ? "Found" : "Matches"}>
           {list.map((f) => (

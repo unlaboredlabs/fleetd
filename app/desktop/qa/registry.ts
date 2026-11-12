@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/only-me/ids.ts";
+import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/no-repo/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -250,7 +250,7 @@ export const fixtures = [
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
-  // D305: the Screens page, across projects, an Only-me one among them, and three machines (fixtures/sessions).
+  // D305: the Screens page, across projects, one with no repo among them, and three machines (fixtures/sessions).
   "sessions-page",
   // W96: what there is to look at, two of the lead's nudges, with nothing waiting (fixtures/look).
   "look-two",
@@ -299,17 +299,17 @@ export const fixtures = [
   "updates-auto-current",
   "updates-put-back",
   "updates-updated",
-  // Only-me projects (fixtures/only-me): Ada and Home first in the sidebar and Taxes archived, Ada asking to book a
+  // Projects with no repo (fixtures/no-repo): Ada and Home in the sidebar and Taxes archived, Ada asking to book a
   // table and following work it asked for.
-  "only-me-chats",
-  // Hub links (fixtures/only-me): Ada's Linked hubs and Sam's links to this hub; and neither yet.
-  "only-me-links",
-  "only-me-links-none",
-  // Files both ways in an Only-me project's chat (fixtures/only-me): a lease and a bank export in, a trip PDF and
+  "no-repo-chats",
+  // Hub links (fixtures/no-repo): Ada's Linked hubs and Sam's links to this hub; and neither yet.
+  "no-repo-links",
+  "no-repo-links-none",
+  // Files both ways in a no-repo project's chat (fixtures/no-repo): a lease and a bank export in, a trip PDF and
   // receipts out.
-  "only-me-files",
-  // Pictures both ways there (fixtures/only-me): two screenshots in, a picture out.
-  "only-me-pictures",
+  "no-repo-files",
+  // Pictures both ways there (fixtures/no-repo): two screenshots in, a picture out.
+  "no-repo-pictures",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
   // The showcase with storefront, billing and Ada pinned: the sidebar's pinned grid (W565).
@@ -1231,17 +1231,17 @@ export const screens: readonly Screen[] = [
       }, `${CHAT}/decisions`);
     }, (page) => page.getByLabel("Loading the decisions")),
   },
-  // Only-me projects (fixtures/only-me): Ada and Home first in the one Projects list, Taxes archived and out of it;
+  // Projects with no repo (fixtures/no-repo): Ada and Home in the one Projects list, Taxes archived and out of it;
   // Ada's chat with its booking to approve, beside the work it asked other projects for (under its plan).
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,
-    fixtures: ["only-me-chats"],
-    variant: "only-me",
+    fixtures: ["no-repo-chats"],
+    variant: "no-repo",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.locator('[data-screen="asked"]').waitFor();
-      await expect(page.getByRole("textbox", { name: /Message Ada/u })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Message the lead" })).toBeVisible();
       await expect(page.getByRole("navigation", { name: "Sidebar" })).not.toContainText("Taxes");
     },
   },
@@ -1249,7 +1249,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,
-    fixtures: ["only-me-chats"],
+    fixtures: ["no-repo-chats"],
     variant: "asked-open",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
@@ -1266,7 +1266,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,
-    fixtures: ["only-me-chats"],
+    fixtures: ["no-repo-chats"],
     variant: "skill",
     open: async (page) => {
       await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skill"]').waitFor();
@@ -1275,7 +1275,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,
-    fixtures: ["only-me-chats"],
+    fixtures: ["no-repo-chats"],
     variant: "skill-history",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
@@ -1287,7 +1287,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: HOME_ROUTE,
-    fixtures: ["only-me-files"],
+    fixtures: ["no-repo-files"],
     variant: "files",
     open: async (page) => {
       await expect(page.getByRole("button", { name: "Save lisbon-itinerary.pdf" })).toBeVisible();
@@ -1298,7 +1298,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: HOME_ROUTE,
-    fixtures: ["only-me-pictures"],
+    fixtures: ["no-repo-pictures"],
     variant: "picture-save",
     open: async (page) => {
       await expect(page.getByRole("button", { name: "Open The checkout with the code applied" })).toBeVisible();
@@ -1329,7 +1329,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: HOME_ROUTE,
-    fixtures: ["only-me-pictures"],
+    fixtures: ["no-repo-pictures"],
     variant: "picture-viewer",
     open: async (page) => {
       await page.getByRole("button", { name: "Open The checkout with the code applied" }).click();
@@ -1340,7 +1340,7 @@ export const screens: readonly Screen[] = [
   {
     id: "palette",
     route: TAXES_ROUTE,
-    fixtures: ["only-me-chats"],
+    fixtures: ["no-repo-chats"],
     variant: "archived",
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
@@ -1348,23 +1348,12 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("option", { name: /Checklist/u }).first()).toBeVisible();
     },
   },
-  // Settings › Projects for an Only-me project: who sees it, then its linked hubs, approvals, integrations, sign-ins,
-  // skills and payments, and Archive and Delete at the end.
-  {
-    id: "settings.projects",
-    variant: "only-me",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["only-me-links"],
-    open: async (page) => {
-      await expect(page.getByRole("region", { name: "Only me" }).getByRole("switch")).toBeChecked();
-      await page.getByRole("region", { name: "Linked hubs" }).waitFor();
-    },
-  },
+  // Settings › Projects for a project with no repo: Archive and Delete at the end.
   {
     id: "settings.projects",
     variant: "archive",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["only-me-links"],
+    fixtures: ["no-repo-links"],
     open: async (page) => {
       await page.getByRole("region", { name: "Archive", exact: true }).scrollIntoViewIfNeeded();
       await page.getByRole("region", { name: "Delete project" }).waitFor();
@@ -2167,7 +2156,7 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.projects",
     route: `${ADA_ROUTE}/agents`,
-    fixtures: ["only-me-links"],
+    fixtures: ["no-repo-links"],
     variant: "from-panel",
     open: async (page) => {
       await page.getByRole("complementary", { name: "Project panel" }).getByRole("button", { name: "Project settings" }).click();
@@ -3701,14 +3690,14 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.projects",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["only-me-links", "only-me-links-none"],
+    fixtures: ["no-repo-links", "no-repo-links-none"],
     variant: "linked-hubs",
     open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
   },
   {
     id: "settings.projects",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["only-me-links-none"],
+    fixtures: ["no-repo-links-none"],
     variant: "link-a-hub",
     open: async (page) => {
       const region = page.getByRole("region", { name: "Linked hubs" });
@@ -3719,14 +3708,14 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.hubs",
     route: "#/settings/hubs",
-    fixtures: ["only-me-links", "only-me-links-none"],
+    fixtures: ["no-repo-links", "no-repo-links-none"],
     variant: "hubs-hub-links",
     open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
   },
   {
     id: "settings.hubs",
     route: "#/settings/hubs",
-    fixtures: ["only-me-links"],
+    fixtures: ["no-repo-links"],
     variant: "hubs-hub-link-made",
     open: async (page) => {
       const region = page.getByRole("region", { name: "Links to this hub" });

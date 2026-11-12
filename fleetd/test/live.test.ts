@@ -191,7 +191,8 @@ test("live frames carry the slot board, cut to what the key may see", async () =
   const reader = { keyId: "k", name: "r", prefix: "fld_aaaaaa", createdAt: "2026-11-08T00:00:00.000Z", grants: [{ role: "read" as const, machines: ["devbox"] }] };
   const cut = slots(hub, reader);
   area.state = real;
-  expect(cut?.perProject as unknown).toEqual([{ projectRef: { machineId: "devbox", projectId: "p1" } }]);
+  // A project that was another person's Only me one is everyone's now (D491): only the machine cuts.
+  expect(cut?.perProject as unknown).toEqual([rows[0], rows[1]]);
   expect(cut?.perMachine as unknown).toEqual([{ machineId: "devbox" }]);
 });
 

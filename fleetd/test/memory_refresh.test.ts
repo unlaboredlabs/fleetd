@@ -14,7 +14,8 @@ import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts
 import { ExecutorTurn } from "../src/hub/executor/turn.ts";
 import { register as registerAutomationTools } from "../src/hub/automations/tools.ts";
 import { job, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
-import { put as putNavi } from "../src/hub/navi/store.ts";
+import { put as putNavi, setArchived } from "../src/hub/navi/store.ts";
+import type { ToolError } from "../src/shared/errors.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { isoMs } from "../src/hub/store/time.ts";
@@ -258,12 +259,12 @@ test("a launch that fails is the row's failed run, tried again the next night", 
 
 // ---- import ----
 
-/** A person with an Only me project of their own on the test machine, and the import's turn as `reply`. */
+/** A person on a hub with one project on the test machine, and the import's turn as `reply`. */
 function importSetup(reply: (input: LaunchInput) => string) {
   const t = setup();
   const hub = t.hub;
   hub.db.conn.query("INSERT INTO people (person_id, name, role, created_ms) VALUES ('pe_ada00001', 'Ada', 'owner', 0)").run();
-  putNavi(hub.db.conn, PROJECT, { keyId: "key_h", name: "Ada's phone" }, "pe_ada00001", NIGHT_MS);
+  putNavi(hub.db.conn, PROJECT, { keyId: "key_h", name: "Ada's phone" }, NIGHT_MS);
   const turns: LaunchInput[] = [];
   const turn: Turn = {
     async run(_r, person, input, options) {
@@ -375,13 +376,19 @@ test("an answer that isn't entries adds nothing; a failed turn says so", async (
   expect(mine()).toBe("");
 });
 
-test("it runs only in the person's own Only me project", async () => {
+test("it runs in any live project of the hub, another person's former Only me one too; with none it is refused", async () => {
   const { hub, imported } = importSetup(() => '{"entries":[]}');
-  hub.db.conn.query("UPDATE project_settings SET owner_person = 'pe_someone1'").run();
-  await expect(imported("stuff")).rejects.toThrow("you have none yet");
-  hub.db.conn.query("UPDATE project_settings SET owner_person = 'pe_ada00001'").run();
+  hub.db.conn.query("UPDATE project_settings SET only_me = 1, owner_person = 'pe_someone1'").run();
   const out = await imported("stuff");
   expect(out.next).toBe("Nothing new to add: your memory already says it all.");
+  // Archived, the hub has no live project left.
+  setArchived(hub.db.conn, PROJECT, NIGHT_MS);
+  const refused = await (imported("stuff") as Promise<unknown>).then(
+    () => undefined,
+    (e: ToolError) => e,
+  );
+  expect(refused).toMatchObject({ code: "invalid", reason: "no_project", fix: "Add a project first, then import again." });
+  expect(refused?.message).toContain("Everyone on this hub can read what it writes.");
 });
 
 test("clean and parse read what other assistants write", () => {

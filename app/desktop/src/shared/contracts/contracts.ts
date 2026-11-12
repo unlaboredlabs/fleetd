@@ -2515,7 +2515,7 @@ export type EnvVarSet = {
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
 
 /** A refusal an app acts on. */
-export type KnownErrorReason = "no_only_me_project";
+export type KnownErrorReason = "no_project";
 /** KnownErrorReason, or a value from a newer hub. */
 export type ErrorReason = KnownErrorReason | (string & {});
 
@@ -3786,21 +3786,6 @@ export type LeadStartOutput = {
 };
 
 export type LeadState = "starting" | "idle" | "working" | "stalled" | "stopped";
-
-/**
- * An Only-me project its owner left behind when removed from the hub: archived then, so its lead and automations stop,
- * and listed to an owner or admin by name alone, to delete it (`project_remove`). Its chat and contents stay its
- * owner's.
- */
-export type LeftProject = {
-  machineId: MachineId;
-  /** The removed person whose it was. */
-  owner: PersonRef;
-  /** Its folder on its machine, which a delete may remove too. */
-  path: string;
-  projectId: ProjectId;
-  title: string;
-};
 
 /** One project a link reaches. */
 export type LinkProject = {
@@ -5520,11 +5505,6 @@ export type PeopleListOutput = {
   devices: AgentKeyInfo[];
   /** Open invites, newest first. */
   invites: Invite[];
-  /**
-   * The Only-me projects of people removed from the hub, by name alone: for an owner's or admin's human key,
-   * absent for anyone else's and from older hubs.
-   */
-  left?: LeftProject[];
   /** The caller's person; absent for an agent key. */
   me?: PersonId;
   next?: string;
@@ -6023,12 +6003,6 @@ export type ProjectAddInput = {
   gitInit?: boolean;
   /** Absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
-  /**
-   * Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain
-   * folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an
-   * existing project it changes only as `project_settings_set` changes it.
-   */
-  onlyMe?: boolean;
   path?: string;
   /** Absent means the directory's name. */
   title?: string;
@@ -6459,12 +6433,6 @@ export type ProjectSettingsSetInput = {
   /** Its bot's color, from the palette; slate is the default. */
   avatarColor?: BotColor;
   machineId: MachineId;
-  /**
-   * Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on
-   * the hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which
-   * becomes theirs.
-   */
-  onlyMe?: boolean;
   projectId: ProjectId;
   /**
    * The repo whose own setup to set, no commands turning it off; absent, or the project's own directory: the
@@ -6572,22 +6540,12 @@ export type ProjectSummary = {
    */
   icon?: ProjectIcon;
   /**
-   * Deprecated: `assistant` for an Only me project (`only_me`), sent for one release so older apps still show it
-   * as a Navi. New apps read `only_me`. Absent otherwise, from a node, and from an older hub.
+   * Deprecated: never sent since every project is everyone's on the hub (D491); an older hub sends `assistant` for a
+   * former Navi. Absent from a node.
    */
   kind?: ProjectKind;
   lastActivityAt: Timestamp;
   machineId: MachineId;
-  /**
-   * Only me (D310), from the hub: only its `owner` sees and uses it. On for every former Navi. Absent: off, and
-   * from a node.
-   */
-  onlyMe?: boolean;
-  /**
-   * The person it belongs to (D215), from the hub; an Only me project is theirs alone. Absent for a project with
-   * no owner, on a hub without people, and from an older hub.
-   */
-  owner?: PersonId;
   projectId: ProjectId;
   /** The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub. */
   repos?: ProjectRepo[];
@@ -9221,8 +9179,8 @@ export type VaultListInput = {
   /** The trash instead: items deleted in the last 30 days. */
   trash?: boolean;
   /**
-   * With projectId: every item that project's work may use instead (its own, its owner's shared with it or of
-   * an Only me project, and the hub's), as Payments' card picker lists them.
+   * With projectId: every item that project's work may use instead (its own, those shared with it, and the
+   * hub's), as Payments' card picker lists them.
    */
   usable?: boolean;
 };
