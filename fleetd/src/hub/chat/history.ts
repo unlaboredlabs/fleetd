@@ -3,7 +3,7 @@
 // in time order. Each message names its record (`source`), so reading again adds nothing. Texts carry no internal ids.
 import type { ChatAuthor, ChatHistorySource, Workstream } from "../../shared/contracts.ts";
 import { parseMs } from "../store/time.ts";
-import type { NewMessage } from "./index.ts";
+import type { NewMessage } from "./rules.ts";
 
 const entry = (author: ChatAuthor, history: ChatHistorySource, source: string, text: string, atMs: number): NewMessage => ({
   author,

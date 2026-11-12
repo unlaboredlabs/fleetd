@@ -1,6 +1,7 @@
 // The hub's release channel, what it is doing now to the Change at the head of a queue, and how many busy items it
-// lists (index.ts reads the rest).
-import type { Change } from "../../shared/contracts.ts";
+// lists, and a busy item's line (index.ts reads the rest).
+import type { Change, HubBusyItem, HubBusyKind, ProjectRef } from "../../shared/contracts.ts";
+import { jsTake } from "../chat/rules.ts";
 import { edgeStamp } from "../../update/version.ts";
 
 /** `HubInfoOutput.busy`'s cap. */
@@ -18,3 +19,17 @@ export function hubStep(change: Change): string | undefined {
   if (change.state === "merging") return `merging PR #${change.prNumber} into ${change.repo}`;
   return undefined;
 }
+
+/** One line of at most 280 UTF-16 units, its whitespace collapsed. */
+export function text(s: string): string {
+  const flat = jsTake(s.split(/\s+/u).filter((w) => w !== "").join(" "), 280);
+  return flat === "" ? "something is running" : flat;
+}
+
+export const item = (kind: HubBusyKind, t: string, r: ProjectRef, since?: string): HubBusyItem => ({
+  kind,
+  machineId: r.machineId,
+  projectRef: r,
+  ...(since === undefined ? {} : { since }),
+  text: text(t),
+});
