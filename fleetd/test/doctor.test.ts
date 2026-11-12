@@ -11,6 +11,10 @@ import { hubSources } from "../src/hub/doctor/sources.ts";
 import { doctor, DOCTOR_EVERY_MS, health, runCmd, selfUrl } from "../src/hub/doctor/index.ts";
 import type { ClaudeSealedOn, ClaudeTest, DoctorCheck, DoctorFix, GithubApp, OnePasswordTest } from "../src/shared/contracts.ts";
 import type { RunnerInfo, WorktreeBase } from "../src/shared/sessions.ts";
+import { events } from "../src/hub/store/events.ts";
+import { isoMs } from "../src/hub/store/time.ts";
+import { start as startTasks } from "../src/hub/tasks/loops.ts";
+import { clockTime } from "../src/hub/tasks/sweep.ts";
 import { caller, testHub } from "./hub-helpers.ts";
 
 const NO_SETUP = { machines: {} };
@@ -588,4 +592,27 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   const results = await d.list(false);
   expect(results.checks.map((x) => x.id)).toEqual(["hub/reachable", "hub/gh_auth", "hub/https", "hub/repo_ci", "hub/claude_key", "hub/claude_owner"]);
   expect(results.checks[1]!.status).toBe("fail");
+});
+
+test("the recovery breaker check reads the breaker the tasks area holds once it starts", async () => {
+  const { hub, clock, done } = testHub();
+  const until = clock.ms + 20 * 60_000;
+  // The breaker devbox's last machine.recovery_paused left open: tasks rebuild it at start.
+  events(hub).append({
+    at: isoMs(clock.ms),
+    type: "machine.recovery_paused",
+    machineId: "devbox",
+    summary: "automatic recovery paused on devbox",
+    data: { paused: true, taskIds: ["T1", "T2", "T3"], until: isoMs(until) },
+  });
+  expect(doctor(hub).sources.recoveryPaused("devbox")).toBeUndefined();
+  startTasks(hub);
+  await Bun.sleep(0);
+  expect(doctor(hub).sources.recoveryPaused("devbox")).toEqual({ openedBy: ["T1", "T2", "T3"], waiting: [], until: clockTime(until) });
+  expect(c.recoveryBreaker("devbox", doctor(hub).sources.recoveryPaused("devbox")).status).not.toBe("ok");
+  expect(doctor(hub).sources.recoveryPaused("lab-b")).toBeUndefined();
+  expect(doctor(hub).sources.unownedSessions("devbox")).toEqual([]);
+  hub.shutdown.abort();
+  await Bun.sleep(10);
+  done();
 });

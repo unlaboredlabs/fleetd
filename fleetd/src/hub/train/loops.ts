@@ -9,6 +9,7 @@ import { trainArea } from "./index.ts";
 import { parsePrUrl } from "./records.ts";
 import { prsGithub } from "../prs/index.ts";
 import { openBlocking } from "../reviews/read.ts";
+import { statusInputs } from "../status/rows.ts";
 import { type TaskHooks, taskHooks } from "../tasks/ports.ts";
 import { upstream } from "./next.ts";
 
@@ -18,6 +19,8 @@ const TRAINS = 10;
 export function start(hub: Hub): void {
   const { train, reviews } = trainArea(hub);
   registerLeadCalls(hub);
+  // A status row's warning while main's CI is red (rows.rs `hub.train.main_ci_note`).
+  statusInputs(hub).mainCiNote = (repo) => train.mainCiNote(repo);
   // What tasks reach the train and its review gate by, as the Rust hub's `hub.train` and `hub.reviews`: a finished
   // writer's PR found after its result, the train's GitHub reader (agents' `wait_ci` polls and branch PR reads), where
   // an upstream PR stands (`wait_ci` with `merged`), and the reviewers and a PR's still-open blocking findings.
