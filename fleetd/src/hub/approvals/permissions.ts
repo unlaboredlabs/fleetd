@@ -10,10 +10,10 @@
 // prompt files a card for the person.
 import type { CheckerNote, HubEvent, HumanRequest, ProjectRef, ToolPermission, ToolPreview } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
-import { AUTOMATION_CONFIRM_TOOL, type Approvals, PROJECT_PROPOSE_TOOL, projectOf } from "./index.ts";
 import { verdict as policyVerdict } from "../integrations/policy.ts";
-import type { Action, Checked, PendingPermission, PermissionDecision, PromptVerdict } from "./ports.ts";
-import { personOnly } from "./purchases.ts";
+import { AUTOMATION_CONFIRM_TOOL, PROJECT_PROPOSE_TOOL, projectOf } from "./names.ts";
+import { personOnly } from "./person_only.ts";
+import type { Action, Checked, PendingPermission, PermissionDecision, PromptApprovals as Approvals, PromptVerdict } from "./ports.ts";
 import { clip } from "./text.ts";
 
 /** A prompt whose input the node didn't send (over 64 KiB): an approval couldn't show what approving it runs. */

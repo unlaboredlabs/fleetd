@@ -1,6 +1,7 @@
 // What approvals reaches outside its own table (crates/fleetd/src/hub/approvals/mod.rs `ApprovalNodes`,
 // `ApprovalHub`; the real hub's side is usage/wire_approvals.rs). Nodes go over the node link; the rest is the hub's
 // store, or a hook (D348) the area that owns it sets: navi, orders and intake are T2246's, automations T2255's.
+import type { Clock } from "../../shared/clock.ts";
 import type {
   Automation,
   CheckerNote,
@@ -10,8 +11,10 @@ import type {
   NaviApprovals,
   PersonRef,
   ProjectRef,
+  RequestState,
   ToolPreview,
 } from "../../shared/contracts.ts";
+import type { NewRequest, RequestFilter } from "./request.ts";
 
 /** A node command's failure: "offline", "lost", "no_reply", "invalid", "not_found", "old" or "failed". */
 export class NodeCommandError extends Error {
@@ -197,4 +200,36 @@ export interface ApprovalEvents {
     input: { cursor?: number; types?: string[]; timeoutSec: number },
     signal?: AbortSignal,
   ): Promise<{ events: HubEvent[]; cursor: number }>;
+}
+
+/**
+ * What the tool prompt relay (permissions.ts) reaches of approvals: the hub's `Approvals` is one, and another server
+ * may hold its own over its store. Every request read and write is synchronous.
+ */
+export interface PromptApprovals {
+  readonly deps: {
+    hooks: ApprovalHooks;
+    hub: Pick<ApprovalHub, "mcpServers" | "wakeRequest">;
+    nodes: Pick<ApprovalNodes, "answerPermission" | "pendingPermission">;
+    clock: Clock;
+    events: ApprovalEvents;
+    signal?: AbortSignal;
+  };
+  /** The prompts a Navi's checker is judging now (machine, thread, prompt): each is judged once. */
+  readonly checking: Set<string>;
+  /** Called whenever a checker's verdict landed. */
+  readonly idle: Set<() => void>;
+  now(): string;
+  /** Every request in `states` of `kind`, or none when the store fails. */
+  listQuiet(filter: Omit<RequestFilter, "limit">): HumanRequest[];
+  /** Opens a request and announces it. */
+  create(add: NewRequest): HumanRequest;
+  /** Saves a change to a request while it is still `from`, and announces it; a request no longer `from` throws. */
+  changeFrom(id: string, from: RequestState, f: (r: HumanRequest) => void): HumanRequest;
+  /** An approved request back to open, with why. */
+  reopen(id: string, why: string): HumanRequest;
+  /** Records `evidence` on a request. */
+  note(id: string, evidence: string): HumanRequest;
+  /** Runs `f`, logging instead of throwing: a background step's write that may lose to another. */
+  quietly<T>(f: () => T): T | undefined;
 }
