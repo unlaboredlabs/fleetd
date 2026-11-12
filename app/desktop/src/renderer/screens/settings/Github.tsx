@@ -7,7 +7,7 @@ import { useState } from "react";
 import type { GithubAccount, GithubAppGetOutput } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button } from "../../ui";
 import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
@@ -18,6 +18,7 @@ const noInput = {};
 
 export function GithubSettings() {
   const live = useLive();
+  const cloud = useHub().cloud === true;
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   return (
     <SettingsSection title="GitHub" reveal="github" hint="The pull requests agents open for the orders you start open as this account.">
@@ -30,7 +31,7 @@ export function GithubSettings() {
       ) : read.data === undefined ? (
         <GroupNote>Loading…</GroupNote>
       ) : read.data.app === undefined ? (
-        <GroupNote>This hub has no GitHub App yet. An admin creates it in Hub › Setup.</GroupNote>
+        <GroupNote>{cloud ? "GitHub isn't set up on this service." : "This hub has no GitHub App yet. An admin creates it in Hub › Setup."}</GroupNote>
       ) : (
         <Account info={read.data} />
       )}

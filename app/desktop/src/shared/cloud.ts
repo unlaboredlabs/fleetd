@@ -62,5 +62,12 @@ export type InvitesOutcome = { readonly ok: true; readonly invites: ReadonlyArra
 /** An invite sent: fleetd cloud had WorkOS email the person. Or the team's refusal, in its words. */
 export type InviteOutcome = { readonly ok: true; readonly invite: AccountsInvite } | { readonly ok: false; readonly failure: PairFailure };
 
+/**
+ * Install fleetd's GitHub App on a cloud team: GitHub's install page, as the team answered it, opened in the browser;
+ * or why not. `connectFirst`: the person's own GitHub isn't connected yet, which the team needs before it hands out the
+ * page.
+ */
+export type InstallGithubOutcome = { readonly ok: true } | { readonly ok: false; readonly connectFirst?: true; readonly failure: PairFailure };
+
 /** An invite taken back, or why not. */
 export type RevokeInviteOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

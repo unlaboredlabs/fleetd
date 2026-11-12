@@ -28,7 +28,8 @@ const Listed = z.object({ invites: z.array(Invite).max(1000) });
 const Made = z.object({ invite: Invite });
 const Refusal = z.object({ code: z.string(), message: z.string().min(1).max(500), fix: z.string().max(500).optional() });
 
-type Answer = { ok: true; body: unknown } | { ok: false; failure: PairFailure };
+/** The team's answer; a refusal keeps its HTTP status, which a caller may tell apart. */
+export type Answer = { ok: true; body: unknown } | { ok: false; failure: PairFailure; status?: number };
 
 const failure = (code: string, message: string, fix?: string): { ok: false; failure: PairFailure } => ({
   ok: false,
@@ -43,7 +44,8 @@ const readJson = async (response: Response): Promise<unknown> => {
   }
 };
 
-const call = async (fetch: Fetch, team: KeyedTeam, method: "GET" | "POST", path: string, body?: unknown): Promise<Answer> => {
+/** One call to the team's own address with this device's key; its refusal in the team's words. */
+export const call = async (fetch: Fetch, team: KeyedTeam, method: "GET" | "POST", path: string, body?: unknown): Promise<Answer> => {
   let response: Response;
   try {
     response = await fetch(`${team.origin}${path}`, {
@@ -59,27 +61,28 @@ const call = async (fetch: Fetch, team: KeyedTeam, method: "GET" | "POST", path:
   const answer = await readJson(response);
   if (response.ok) return { ok: true, body: answer };
   const refused = Refusal.safeParse(answer);
-  if (refused.success) return failure(refused.data.code, refused.data.message, refused.data.fix);
-  return failure("", `${team.name} answered ${String(response.status)}.`, "Try again in a minute.");
+  const status = response.status;
+  if (refused.success) return { ...failure(refused.data.code, refused.data.message, refused.data.fix), status };
+  return { ...failure("", `${team.name} answered ${String(status)}.`, "Try again in a minute."), status };
 };
 
-const odd = (team: KeyedTeam) => failure("", `${team.name} answered in a way this app doesn't read.`, "Update fleetd, then try again.");
+export const odd = (team: KeyedTeam) => failure("", `${team.name} answered in a way this app doesn't read.`, "Update fleetd, then try again.");
 
 export const listInvites = async (fetch: Fetch, team: KeyedTeam): Promise<InvitesOutcome> => {
   const answer = await call(fetch, team, "GET", ACCOUNTS_INVITES_PATH);
-  if (!answer.ok) return answer;
+  if (!answer.ok) return { ok: false, failure: answer.failure };
   const listed = Listed.safeParse(answer.body);
   return listed.success ? { ok: true, invites: listed.data.invites } : odd(team);
 };
 
 export const sendInvite = async (fetch: Fetch, team: KeyedTeam, request: InviteRequest): Promise<InviteOutcome> => {
   const answer = await call(fetch, team, "POST", ACCOUNTS_INVITES_PATH, { email: request.email.trim(), role: request.role });
-  if (!answer.ok) return answer;
+  if (!answer.ok) return { ok: false, failure: answer.failure };
   const made = Made.safeParse(answer.body);
   return made.success ? { ok: true, invite: made.data.invite } : odd(team);
 };
 
 export const revokeInvite = async (fetch: Fetch, team: KeyedTeam, inviteId: string): Promise<RevokeInviteOutcome> => {
   const answer = await call(fetch, team, "POST", `${ACCOUNTS_INVITES_PATH}/${encodeURIComponent(inviteId)}/revoke`);
-  return answer.ok ? { ok: true } : answer;
+  return answer.ok ? { ok: true } : { ok: false, failure: answer.failure };
 };

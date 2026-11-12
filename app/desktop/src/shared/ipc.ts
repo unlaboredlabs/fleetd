@@ -400,6 +400,7 @@ export const REQUESTS = {
   [IPC.cloudInvites]: z.tuple([HubId]),
   [IPC.cloudInvite]: z.tuple([HubId, z.object({ email: z.string().max(320), role: z.enum(["member", "admin"]) }).strict()]),
   [IPC.cloudRevokeInvite]: z.tuple([HubId, z.string().regex(/^inv_[0-9a-f]{10}$/u)]),
+  [IPC.cloudInstallGithub]: z.tuple([HubId]),
   [IPC.secretSubmit]: z.tuple([HubId, SecretRequest]),
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),

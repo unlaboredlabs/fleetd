@@ -243,6 +243,7 @@ export const registerIpc = (
   handle(IPC.cloudInvites, (_event, id) => cloud.invites(id));
   handle(IPC.cloudInvite, (_event, id, request) => cloud.invite(id, request));
   handle(IPC.cloudRevokeInvite, (_event, id, inviteId) => cloud.revokeInvite(id, inviteId));
+  handle(IPC.cloudInstallGithub, (_event, id) => cloud.installGithub(id));
   handle(IPC.appSessionWindow, (_event, request) => frame.sessionWindows.show(request));
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);

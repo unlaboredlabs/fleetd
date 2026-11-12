@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GithubAccount, GithubApp } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { GithubSettings } from "./Github";
 
@@ -31,6 +31,7 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: string[];
 let hasApp: boolean;
+let cloud: boolean;
 let me: GithubAccount | undefined;
 let connects: number;
 let connectAnswer: CallOutcome;
@@ -41,6 +42,7 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   hasApp = true;
+  cloud = false;
   me = undefined;
   connects = 0;
   connectAnswer = { ok: true, output: { me: sam } };
@@ -78,6 +80,16 @@ const answer = (tool: string): CallOutcome => {
   }
 };
 
+/** The one hub: a team of fleetd cloud's while `cloud`, else a self-hosted one. */
+function Hub() {
+  const layer = useDataLayer();
+  return (
+    <HubScope hub={{ id: layer.hub, label: "", layer, ...(cloud ? { cloud: true as const } : {}) }}>
+      <GithubSettings />
+    </HubScope>
+  );
+}
+
 const render = async () => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -91,7 +103,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <GithubSettings />
+          <Hub />
         </DataProvider>
       </UiProvider>,
     );
@@ -156,5 +168,13 @@ describe("Settings › Your accounts › GitHub", () => {
     await render();
     expect(document.body.textContent).toContain("This hub has no GitHub App yet");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Connect GitHub")).toBe(false);
+  });
+
+  it("says GitHub isn't set up on a fleetd cloud team whose service has no App", async () => {
+    hasApp = false;
+    cloud = true;
+    await render();
+    expect(document.body.textContent).toContain("GitHub isn't set up on this service.");
+    expect(document.body.textContent).not.toContain("This hub has no GitHub App yet");
   });
 });
