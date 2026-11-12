@@ -11,7 +11,8 @@ import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared
 import * as batch from "./batch.ts";
 import { prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
-import { type BaseConfig, type BaseRules, type CheckRun, GhError, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
+import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
+import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
 import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
@@ -758,6 +759,16 @@ export class Train {
         all = await this.github.allCheckRuns(repo, sha);
         runsRead = all.length > 0 ? latest(all) : await this.statusRuns(repo, sha, base);
       } catch (error) {
+        const reset = limitReset(error);
+        if (reset !== undefined) {
+          // GitHub's rate limit is used up: waited out, said on the state line, and none of CI's time.
+          next.runnerNote(this, noted, limitNote(reset), earlier);
+          const waited = Math.max(reset - this.nowMs(), 0);
+          await this.options.sleep(waited);
+          start += waited;
+          refreshed += waited;
+          continue;
+        }
         this.warnHourly([`train: check runs not read (${repo}@${sha})`], ghMessage(error), `train: check runs not read (${repo}@${sha}): ${ghMessage(error)}`);
       }
       const fast = await this.fast(repo, base);
@@ -886,7 +897,7 @@ export class Train {
         return { kind: "timeout", stall };
       }
       // A push while the train waits on CI: the PRs waiting in line take their new heads now.
-      if (now - refreshed >= this.options.pollIntervalMs) {
+      if (now - refreshed >= this.github.spread(this.options.pollIntervalMs, repo)) {
         refreshed = now;
         if (alone && (await this.headMoved(change, repo, sha))) return { kind: "moved" };
         await this.refresh(repo);
@@ -1153,7 +1164,7 @@ export class Train {
   /** The wait before the next read of a Change the train holds: `first`, then an eighth of the time waited so far. */
   private busyWait(sinceMs: number, first: number): number {
     const waited = Math.max(this.nowMs() - sinceMs, 0);
-    return Math.min(Math.max(Math.floor(waited / 8), first), this.options.pollIntervalMs);
+    return Math.min(Math.max(Math.floor(waited / 8), first), this.github.spread(this.options.pollIntervalMs));
   }
 
   /** The PR after `update-branch` rebased it, once GitHub shows its new head. */
@@ -1175,7 +1186,7 @@ export class Train {
       await this.takeInner(change);
     } catch (error) {
       if (!(error instanceof GhError)) throw error;
-      this.putBack(change, `GitHub: ${error.message}`);
+      this.putBack(change, githubWhy(error));
     }
   }
 
@@ -1387,7 +1398,7 @@ export class Train {
           await this.admit(change, pull);
         } catch (error) {
           if (!(error instanceof GhError)) throw error;
-          const why = errorText(`GitHub: ${error.message}`);
+          const why = errorText(githubWhy(error));
           this.update(change.changeId, [change.state], (c) => ({ ...c, lastError: why }));
         }
       } else if (change.state === "reviewing") {
@@ -1551,6 +1562,11 @@ export class Train {
         console.info(`train: a writer's ready PR is a slice: ${change.changeId} ${prUrl}`);
       } catch (error) {
         const e = error as TrainError;
+        // GitHub didn't answer: nothing is wrong with the PR, and a later pass slices it.
+        if (e.code === "unavailable") {
+          this.readyHeads.delete(key);
+          continue;
+        }
         await this.wakeLead(projectRef, prRefused(prUrl, writer[0], e.message, e.fix));
       }
     }
@@ -1606,7 +1622,7 @@ export class Train {
       await this.ciAndMerge(change, pull, pull.base.ref, label);
     } catch (error) {
       if (!(error instanceof GhError)) throw error;
-      this.putBack(change, `GitHub: ${error.message}`);
+      this.putBack(change, githubWhy(error));
     }
     return true;
   }
@@ -1728,7 +1744,10 @@ export class Train {
           this.options.fresh.forget(freshTrain(repo));
           return;
         }
-        if (!took) await Promise.race([this.options.sleep(this.options.pollIntervalMs), kick.notified()]);
+        // GitHub's rate limit used up: the next pass runs once it resets, holding nothing meanwhile.
+        const reset = this.github.limitedUntil(repo);
+        if (reset !== undefined) await this.options.sleep(reset - this.nowMs());
+        else if (!took) await Promise.race([this.options.sleep(this.github.spread(this.options.pollIntervalMs, repo)), kick.notified()]);
       }
     })();
   }
@@ -1910,9 +1929,23 @@ export class Train {
           pull = await this.github.pull(repo, prNumber);
         } catch (error) {
           if (error instanceof GhError && error.kind === "unavailable") {
+            const reset = limitReset(error);
+            // GitHub's rate limit is waited out: the PR is kept for the pass after its reset, on a repo new to the
+            // train too, whose loop starts for it.
+            if (reset !== undefined && !this.records.train(repo)) {
+              this.records.ensureTrain(repo, projectRef, this.nowMs());
+              this.ensureLoop(repo);
+            }
             // Nothing is wrong with the PR: its repo's next pass reads it again, or the caller does.
             const again = this.records.train(repo) !== undefined;
             if (again) this.unread.set(prUrl, [projectRef, input, result]);
+            if (reset !== undefined) {
+              throw err(
+                "unavailable",
+                `${limitText(reset)}, so ${prUrl} isn't read yet. Nothing is wrong with the PR.`,
+                "nothing: the train reads it once the limit resets, and it goes to review then",
+              );
+            }
             throw err(
               "unavailable",
               `GitHub was unavailable for ${prUrl} through ${READ_TRIES} reads: ${error.message}. Nothing is wrong with the PR.`,
@@ -1966,7 +1999,7 @@ export class Train {
             await this.admit(change, pull);
           } catch (error) {
             if (!(error instanceof GhError)) throw error;
-            const why = errorText(`GitHub: ${error.message}`);
+            const why = errorText(githubWhy(error));
             this.update(change.changeId, ["queued"], (c) => ({ ...c, lastError: why }));
           }
         }
@@ -2013,6 +2046,11 @@ export class Train {
     } catch (error) {
       const e = error as TrainError;
       if (e.code === MERGED) return;
+      // Kept for the train's next pass (`unread`): no refusal.
+      if (e.code === "unavailable" && this.unread.has(prUrl)) {
+        console.info(`train: ${prUrl} of ${task.taskId} is read on a later pass: ${e.message}`);
+        return;
+      }
       await this.wakeLead(task.projectRef, prRefused(prUrl, task.taskId, e.message, e.fix));
     }
   }

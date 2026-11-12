@@ -10,6 +10,7 @@ import type { ProjectRef, TaskId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { parseMs } from "../store/time.ts";
+import { limitReset } from "../train/budget.ts";
 import type { Tasks } from "./index.ts";
 import { taskHooks } from "./ports.ts";
 import { holdsPr } from "./pr.ts";
@@ -255,6 +256,8 @@ export async function pollCiWaits(
         line = summary(target, read);
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error);
+        // GitHub's rate limit is used up: no failure of the wait, which reads again once it resets.
+        if (limitReset(error) !== undefined) continue;
         if (errors + 1 < READ_TRIES) {
           console.warn(`ci wait: GitHub not read (${url}): ${why}`);
           setErrors(db, taskId, url, errors + 1);
@@ -316,6 +319,8 @@ export type CiGitHub = {
   get(path: string): Promise<{ ok: true; value: unknown } | { ok: false; status: number; message: string }>;
   pull(repo: string, n: number): Promise<{ state: string; merged?: boolean; merged_at?: string | null; head: { sha: string } }>;
   checkRuns(repo: string, sha: string): Promise<{ name: string; status: string; conclusion?: string | null; completed_at?: string | null }[]>;
+  /** `ms`, or longer while GitHub's budget is low or used up. */
+  spread?(ms: number): number;
 };
 
 const statusText = (r: { status: number; message: string }) => `${r.status}: ${r.message}`;
@@ -398,12 +403,15 @@ export function hubReads(hub: Hub, gh: CiGitHub, train?: MergeReads): CiReads {
 /** Every POLL_EVERY_MS: reads GitHub for each open wait and wakes the tasks whose CI finished. */
 export async function run(hub: Hub, tasks: Tasks, sleep: (ms: number) => Promise<void>): Promise<void> {
   const signal = hub.shutdown.signal;
+  let every = POLL_EVERY_MS;
   while (!signal.aborted) {
-    await sleep(POLL_EVERY_MS);
+    await sleep(every);
     if (signal.aborted) return;
     // GitHub is read through the train's reader; until the train sets it, waits stay open.
     const train = taskHooks(hub).train;
     if (!train) continue;
+    // Spread out while GitHub's budget is low, until it resets.
+    every = train.github.spread?.(POLL_EVERY_MS) ?? POLL_EVERY_MS;
     const reviews = taskHooks(hub).reviews;
     const n = await pollCiWaits(tasks, hub.db.conn, hub.clock.now(), hubReads(hub, train.github, train.merges), (pr) => reviews?.openBlocking(pr) ?? "");
     if (n > 0) console.info(`${n} tasks woken by the CI they waited on`);

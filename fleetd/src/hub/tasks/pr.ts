@@ -3,6 +3,7 @@
 // remote. A URL is never taken for being the last one in the text. Also the remote forms of fleetd-contracts'
 // projects.rs (`short_remote`, `github_repo`) that the lookup reads.
 import type { ProjectRepo } from "../../shared/contracts.ts";
+import { rateLimited } from "../train/budget.ts";
 import { prUrls } from "./render.ts";
 
 /** Why the host gave no answer for a branch's PR (ports.rs `BranchPrError`). */
@@ -66,9 +67,8 @@ export function taskPrUrl(host: string | undefined | Error, remote: string | und
 
 /** A host's non-2xx answer to a branch's PR lookup: a 5xx, a rate limit or no status is worth asking again. */
 export function hostError(status: number, message: string): BranchPrError {
-  const rateLimited = status === 429 || (status === 403 && message.toLowerCase().includes("rate limit"));
   const why = `GitHub answered ${status}: ${message}`;
-  return status >= 400 && status < 500 && !rateLimited ? { kind: "refused", why } : { kind: "unread", why };
+  return status >= 400 && status < 500 && !rateLimited(status, message) ? { kind: "refused", why } : { kind: "unread", why };
 }
 
 /** Whether `url` is on `remote`: the same host and the same repo path. A port on either side is ignored. */
