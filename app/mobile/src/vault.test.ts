@@ -79,6 +79,10 @@ describe("the hubs kept, and the fleetd account", () => {
     expect(access.get("/fleetd.hubs")).toBe(0);
     expect(access.get("/fleetd.account")).toBe(0);
     expect(await loadHubs(own)).toEqual([own, team]);
+    // A team joined by invitation stays marked across launches.
+    const joined = { hub: "https://side.fleetd.dev", key: "fleetd_c", hubName: "side", cloud: true as const, invited: true as const };
+    await saveHubs([own, team, joined]);
+    expect(await loadHubs(own)).toEqual([own, team, joined]);
     expect(await loadAccount()).toEqual({ email: "ada@example.com", sessionId: "session_1" });
     // Only the email and the session id: nothing else of WorkOS.
     expect(Object.keys(JSON.parse(store.get("/fleetd.account")!) as object).sort()).toEqual(["email", "sessionId"]);

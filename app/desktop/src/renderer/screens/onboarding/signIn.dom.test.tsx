@@ -8,6 +8,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, useData } from "../../src/data/react";
 import { AT } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
+import { CloudAccountSettings } from "../settings/CloudAccount";
 import { ConnectComputer } from "../setup/ConnectComputer";
 import { resetCloud } from "./cloud";
 import { OnboardingScreen } from "./OnboardingScreen";
@@ -220,6 +221,29 @@ it("a pairing link to a team of fleetd cloud says anyone can make one; a link to
   host.remove();
   await mount(<OnboardingScreen hub="https://hub.example:4790" code="ABCD-2345" />, unpaired);
   expect(host.textContent).not.toContain("fleetd cloud team");
+});
+
+it("Settings: Sign in and Sign out are off while a sign-in's teams connect, so no second sign-in starts under it", async () => {
+  let connected: (out: FinishOutcome) => void = () => undefined;
+  cloud.finish.mockImplementationOnce(() => new Promise<FinishOutcome>((resolve) => (connected = resolve)));
+  await mount(<CloudAccountSettings />, unpaired);
+  await settle();
+  click("Sign in");
+  await act(async () => {
+    cloud.arrive({ ok: true, arrival: { email: "sam@example.com", invitations: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  const anywhere = (name: string) => [...document.querySelectorAll("button")].find((b) => b.textContent === name);
+  act(() => anywhere("Continue")?.click());
+  await settle();
+  expect(cloud.finish).toHaveBeenCalledWith([]);
+  expect(host.textContent).toContain("Connecting your teams…");
+  expect(button("Sign in")?.disabled).toBe(true);
+  await act(async () => {
+    connected({ ok: true, email: "sam@example.com", teams: [] });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  expect(button("Sign in")?.disabled ?? button("Sign out…")?.disabled).toBe(false);
 });
 
 it("Connect a computer: makes a line with no machine name, opens this computer's terminal, and moves on when a machine joins", async () => {

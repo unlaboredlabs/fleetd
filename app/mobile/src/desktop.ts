@@ -80,7 +80,7 @@ export {
   type AccountsSignInInput,
   type AccountsTeam,
 } from "../../desktop/src/shared/contracts";
-export { cloudDomain, invitationLine, invitationTitle, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../desktop/src/shared/accounts";
+export { cloudDomain, madeTeam, invitationLine, invitationTitle, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../desktop/src/shared/accounts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { serves } from "../../desktop/src/shared/hub";
 export { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";

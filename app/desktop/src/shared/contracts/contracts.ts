@@ -171,6 +171,8 @@ export type AccountsSignOutInput = {
 export type AccountsTeam = {
   /** The team's id in the service. */
   id: string;
+  /** True: the person made this team, at their own first sign-in. False: they joined it (an invitation accepted, here or on another device). The apps open a team on Connect a computer only when it is true; absent, as an older service answers, only a team not joined through POST /v1/app/accept at this sign-in. */
+  made?: boolean;
   /** The label in its address: `<name>.<base>`. */
   name: string;
   /** A pairing code (`ABCD-2345`, or a longer one in groups of four: `ABCD-2345-WXYZ-6789`) for this person on this team: one use, 15 minutes. */

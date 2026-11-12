@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloudDomain, inCloud, readAccepted, readSignIn, teamOrigin } from "./accounts";
+import { cloudDomain, inCloud, madeTeam, readAccepted, readSignIn, teamOrigin } from "./accounts";
 
 const TEAM = { id: "team_1", name: "acme", url: "https://acme.fleetd.dev", pairingCode: "ABCD-2345" };
 const INVITATION = { name: "side", invitedBy: "eve@other.example", role: "admin", accept: "a".repeat(24) };
@@ -21,10 +21,21 @@ describe("the accounts service's answers", () => {
     expect(readSignIn({ email: "new@acme.example", sessionId: "s1", teams: [], invitations: [INVITATION] })).toMatchObject({ teams: [], invitations: [INVITATION] });
   });
 
-  it("refuses an answer it can't trust: a short accept value, an inviter with no email's length, a bad code", () => {
+  it("leaves out an invitation it can't trust and keeps the rest, so one bad invitation never stops a sign-in", () => {
     const base = { email: "sam@acme.example", sessionId: "s1", teams: [TEAM] };
-    expect(readSignIn({ ...base, invitations: [{ ...INVITATION, accept: "short" }] })).toBeNull();
-    expect(readSignIn({ ...base, invitations: [{ ...INVITATION, invitedBy: "" }] })).toBeNull();
+    const bad = [{ ...INVITATION, accept: "short" }, { ...INVITATION, invitedBy: "" }, { ...INVITATION, role: "r".repeat(33) }, "nope"];
+    expect(readSignIn({ ...base, invitations: [...bad, INVITATION] })?.invitations).toEqual([INVITATION]);
+    expect(readSignIn({ ...base, invitations: bad })).toMatchObject({ teams: [TEAM], invitations: [] });
+  });
+
+  it("reads whether the person made each team, and an older answer without it by how the team was joined", () => {
+    expect(readSignIn({ email: "sam@acme.example", sessionId: "s1", teams: [{ ...TEAM, made: true }, { ...TEAM, made: false }, { ...TEAM, made: "yes" }] })?.teams.map((t) => t.made)).toEqual([true, false, undefined]);
+    expect(readAccepted({ team: { ...TEAM, made: false } })?.made).toBe(false);
+    expect([madeTeam({ made: true }, true), madeTeam({ made: false }, false), madeTeam({}, false), madeTeam({}, true)]).toEqual([true, false, true, false]);
+  });
+
+  it("refuses an answer it can't trust: a bad code, too many teams", () => {
+    const base = { email: "sam@acme.example", sessionId: "s1", teams: [TEAM] };
     expect(readSignIn({ ...base, invitations: {} })).toBeNull();
     expect(readSignIn({ ...base, teams: [{ ...TEAM, pairingCode: "nope" }] })).toBeNull();
     expect(readSignIn({ ...base, teams: Array.from({ length: 51 }, () => TEAM) })).toBeNull();

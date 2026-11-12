@@ -22,10 +22,17 @@ const record = (v: unknown): Record<string, unknown> | null => (typeof v === "ob
 const team = (v: unknown): AccountsTeam | null => {
   const t = record(v);
   if (t === null) return null;
-  const { id, name, url, pairingCode } = t;
+  const { id, name, url, pairingCode, made } = t;
   if (!text(id, 1, 64) || !text(name, 1, 63) || !text(url, 1, 253) || typeof pairingCode !== "string" || !PAIRING_CODE.test(pairingCode)) return null;
-  return { id, name, url, pairingCode };
+  // `made` that isn't a boolean reads as absent, as an older service answers.
+  return { id, name, url, pairingCode, ...(typeof made === "boolean" ? { made } : {}) };
 };
+
+/**
+ * The person made this team (its `made`), so an app may open it on Connect a computer. Absent, as an older service
+ * answers: a team joined through the accept call at this sign-in wasn't, and any other was.
+ */
+export const madeTeam = (team: Pick<AccountsTeam, "made">, accepted: boolean): boolean => team.made ?? !accepted;
 
 const invitation = (v: unknown): AccountsInvitation | null => {
   const i = record(v);
@@ -36,7 +43,10 @@ const invitation = (v: unknown): AccountsInvitation | null => {
   return { name, invitedBy, role, accept };
 };
 
-/** The accounts service's sign-in answer, checked; null when it isn't one. */
+/**
+ * The accounts service's sign-in answer, checked; null when it isn't one. An invitation that fails its check is left
+ * out, the rest kept: one bad invitation never stops the person signing in.
+ */
 export const readSignIn = (json: unknown): SignedIn | null => {
   const o = record(json);
   if (o === null) return null;
@@ -49,12 +59,7 @@ export const readSignIn = (json: unknown): SignedIn | null => {
     if (read === null) return null;
     outTeams.push(read);
   }
-  const outInvitations: AccountsInvitation[] = [];
-  for (const i of (invitations ?? []) as unknown[]) {
-    const read = invitation(i);
-    if (read === null) return null;
-    outInvitations.push(read);
-  }
+  const outInvitations = ((invitations ?? []) as unknown[]).flatMap((i) => invitation(i) ?? []);
   return { email, sessionId, teams: outTeams, invitations: outInvitations };
 };
 

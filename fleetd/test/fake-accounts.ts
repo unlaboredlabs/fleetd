@@ -7,7 +7,8 @@
 // its limit of people. The email WorkOS would send is a line in `sent`. An open invite joins nothing at sign-in: the
 // answer lists it apart, with its inviter's email and a one-use accept value, and only POST ACCOUNTS_ACCEPT_PATH with
 // that value makes the person one of the team (decision hosted.invites-need-accept). A person with no team and an
-// invitation pending gets no team of their own made.
+// invitation pending gets no team of their own made. Each team entry says whether the person made it (`made`): the
+// first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -45,6 +46,8 @@ type Team = {
   invites: AccountsInvite[];
   /** Who sent each invite, by its id. */
   invitedBy: Map<string, string>;
+  /** Who made the team: the first person named. */
+  maker: string | undefined;
   limit: number;
 };
 
@@ -144,6 +147,7 @@ export class FakeAccounts {
       roles,
       invites: [],
       invitedBy: new Map(),
+      maker: emails[0],
       limit: options.peopleLimit ?? 50,
     });
     for (const email of emails) this.#people.set(email, [...(this.#people.get(email) ?? []), name]);
@@ -228,11 +232,11 @@ export class FakeAccounts {
     );
   }
 
-  /** A pairing code for `email` on `team`, as an answer's team entry. */
+  /** A pairing code for `email` on `team`, as an answer's team entry, saying whether `email` made the team. */
   #entry(team: Team, email: string): AccountsSignInOutput["teams"][number] {
     const code = pairingCode();
     team.codes.set(code, email);
-    return { id: team.id, name: team.name, url: team.url, pairingCode: code };
+    return { id: team.id, name: team.name, url: team.url, pairingCode: code, made: team.maker === email };
   }
 
   /** A team's open invites by email, newest first. */

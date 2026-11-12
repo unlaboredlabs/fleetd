@@ -165,6 +165,18 @@ describe("Sign In", () => {
     expect(again).toMatchObject({ ok: true, teams: [{ name: "ada", ok: true }, { name: "acme", ok: true }] });
     expect(fake.accepted).toEqual(["acme ada@example.com"]);
     expect(fake.keys.map((k) => k.team)).toEqual(["ada", "ada", "acme"]);
+    // Someone else's fresh team, joined by invitation (the service's made: false): its chats list never says to connect a
+    // computer to it.
+    if (!again.ok) throw new Error("not signed in");
+    const [own, joined] = again.teams.map((t) => (t.ok ? t.hub : null));
+    if (own === null || own === undefined || joined === null || joined === undefined) throw new Error("both teams should have paired");
+    expect([own.invited, joined.invited]).toEqual([undefined, true]);
+    const empty = { projects: {}, machines: [] };
+    expect(needsComputer(own, empty)).toBe(true);
+    expect(needsComputer(joined, empty)).toBe(false);
+    // A later sign-in brings it among the person's teams, and the service still says they didn't make it.
+    const third = await signInAsking(ports("ada@example.com"), answering());
+    expect(third.ok && third.teams.map((t) => t.ok && [t.name, t.hub.invited])).toEqual([["ada", undefined], ["acme", true]]);
   });
 
   it("no team of their own and one invitation: still asked, and Not Now pairs nothing and ends the session", async () => {

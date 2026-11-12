@@ -279,6 +279,10 @@
           "minLength": 1,
           "type": "string"
         },
+        "made": {
+          "description": "True: the person made this team, at their own first sign-in. False: they joined it (an invitation accepted, here or on another device). The apps open a team on Connect a computer only when it is true; absent, as an older service answers, only a team not joined through POST /v1/app/accept at this sign-in.",
+          "type": "boolean"
+        },
         "name": {
           "description": "The label in its address: `<name>.<base>`.",
           "maxLength": 63,

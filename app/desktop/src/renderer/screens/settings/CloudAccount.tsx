@@ -44,11 +44,12 @@ export function CloudAccountSettings() {
               Cancel
             </Button>
           ) : state.email === null ? (
-            <Button variant="primary" onClick={signIn.start}>
+            // Not while a sign-in's teams connect: a second one would start under it.
+            <Button variant="primary" disabled={step.at !== "start"} onClick={signIn.start}>
               Sign in
             </Button>
           ) : (
-            <Button disabled={busy} onClick={() => setConfirm(true)}>
+            <Button disabled={busy || step.at !== "start"} onClick={() => setConfirm(true)}>
               {busy ? "Signing out…" : "Sign out…"}
             </Button>
           )

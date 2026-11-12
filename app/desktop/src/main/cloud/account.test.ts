@@ -29,7 +29,7 @@ let made = 0;
 
 /**
  * The app's side, over `hubs` (a list a test may share between two sign-ins, as one app's): a hub already listed at an
- * address takes the new key, as Hubs does, and keeps having been joined by invitation.
+ * address takes the new key and the new mark, as Hubs does.
  */
 const setup = (fake: FakeAccounts, over: Partial<CloudPorts> & { email?: string; deny?: boolean; hubs?: Hub[] } = {}) => {
   const hubs: Hub[] = over.hubs ?? [];
@@ -68,7 +68,7 @@ const setup = (fake: FakeAccounts, over: Partial<CloudPorts> & { email?: string;
     connect: (url, key, label, invited) => {
       const at = hubs.find((h) => h.url === url);
       if (at === undefined) hubs.push({ id: `h${String(++made)}`, url, key, label, invited, calls: [] });
-      else Object.assign(at, { key, invited: at.invited || invited, refused: false });
+      else Object.assign(at, { key, invited, refused: false });
       return { ok: true };
     },
     cloudHubs: () => hubs.map(cloudHub),
@@ -268,6 +268,32 @@ describe("signing in to fleetd cloud", () => {
     await expect.poll(() => fake.sessions.size).toBe(0);
     expect(await signInAll(account, [0])).toEqual({ ok: true, email: "new@acme.example", teams: [{ name: "acme", ok: true }] });
     expect(hubs.map((h) => [h.label, h.invited])).toEqual([["acme", true]]);
+  });
+
+  it("a team the person didn't make never opens on Connect a computer, even joined on another device", async () => {
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "sam@acme.example", "eve@other.example");
+    // Joined on the phone: the desktop's next sign-in gets it as one of the person's teams, with made: false.
+    expect((await signInAll(setup(fake).account, [0])).ok).toBe(true);
+    const { account, hubs } = setup(fake);
+    expect(await account.signIn()).toEqual({ ok: true, arrival: { email: "sam@acme.example", invitations: [] } });
+    expect(await account.finish([])).toEqual({ ok: true, email: "sam@acme.example", teams: [{ name: "acme", ok: true }] });
+    expect(hubs.map((h) => [h.label, h.invited])).toEqual([["acme", true]]);
+  });
+
+  it("an older service with no `made`: a team joined through accept here is still not the person's", async () => {
+    await fake.team("sam", ["sam@acme.example"]);
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "sam@acme.example", "eve@other.example");
+    const strip = (json: unknown): unknown => JSON.parse(JSON.stringify(json).replace(/,"made":(true|false)/gu, ""));
+    const { account, hubs } = setup(fake, {
+      fetch: async (url, init) => {
+        const r = await fetch(url, init);
+        return url.startsWith(fake.url) && r.ok ? Response.json(strip(await r.json())) : r;
+      },
+    });
+    expect((await signInAll(account, [0])).ok).toBe(true);
+    expect(hubs.map((h) => [h.label, h.invited])).toEqual([["sam", false], ["acme", true]]);
   });
 
   it("an accept value is good once: a second finish with it joins nothing", async () => {

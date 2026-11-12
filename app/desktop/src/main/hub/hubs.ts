@@ -30,7 +30,7 @@ const Stored = z.object({
   color: z.enum(HUB_COLORS).optional(),
   /** It came with the fleetd cloud account (src/main/cloud): signing out drops it. */
   cloud: z.literal(true).optional(),
-  /** This device joined it by an invitation: it never opens on Connect a computer. */
+  /** The person didn't make this team (the service's word at the last sign-in): it never opens on Connect a computer. */
   invited: z.literal(true).optional(),
 });
 type Stored = z.infer<typeof Stored>;
@@ -257,14 +257,18 @@ export class Hubs {
 
   /**
    * A team's key from signing in to fleetd cloud: connected as any hub is (a hub already listed at its address takes
-   * it), and marked as the account's, for sign-out; `invited`, joined by an invitation, which stays marked.
+   * it), and marked as the account's, for sign-out; `invited`, a team the person didn't make, as each sign-in says.
    */
   connectCloud(request: { readonly url: string; readonly key: string }, label: string, invited = false): ConnectOutcome {
     const outcome = this.connect(request, { label });
     if (!outcome.ok) return outcome;
     const entry = this.#at(request.url);
-    if (entry === undefined || (entry.cloud === true && (!invited || entry.invited === true))) return outcome;
-    this.#entries = this.#entries.map((e) => (e === entry ? { ...e, cloud: true, ...(invited ? { invited: true as const } : {}) } : e));
+    if (entry === undefined || (entry.cloud === true && (entry.invited === true) === invited)) return outcome;
+    this.#entries = this.#entries.map((e) => {
+      if (e !== entry) return e;
+      const { invited: _was, ...rest } = e;
+      return { ...rest, cloud: true, ...(invited ? { invited: true as const } : {}) };
+    });
     return this.#save();
   }
 

@@ -18,6 +18,7 @@ import {
   ACCOUNTS_APP_REDIRECT,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
+  madeTeam,
   readAccepted,
   readSignIn,
   teamOrigin,
@@ -34,8 +35,11 @@ import type { CloudConfig } from "./config";
 
 const CALL_TIMEOUT_MS = 20_000;
 
-/** A hub this phone keeps a key for; `cloud`, one of the account's teams, which sign-out drops. */
-export type KeptHub = Paired & { readonly cloud?: true };
+/**
+ * A hub this phone keeps a key for; `cloud`, one of the account's teams, which sign-out drops; `invited`, a team the
+ * person didn't make (the service's word at the last sign-in), whose chats list never says to connect a computer to it.
+ */
+export type KeptHub = Paired & { readonly cloud?: true; readonly invited?: true };
 
 /** What the app keeps of a sign-in. */
 export interface SavedAccount {
@@ -218,12 +222,12 @@ const exchange = async (ports: SignInPorts, body: AccountsSignInInput): Promise<
  */
 export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonly number[]): Promise<SignInOutcome> => {
   const teams: TeamOutcome[] = [];
-  for (const team of answer.teams) teams.push(await pairTeam(ports, team));
+  for (const team of answer.teams) teams.push(await pairTeam(ports, team, !madeTeam(team, false)));
   for (const at of join) {
     const invitation = answer.invitations[at];
     if (invitation === undefined) continue;
     const joined = await accept(ports, invitation.accept);
-    teams.push(joined.ok ? await pairTeam(ports, joined.team) : { name: invitation.name, ok: false, failure: joined.failure });
+    teams.push(joined.ok ? await pairTeam(ports, joined.team, !madeTeam(joined.team, true)) : { name: invitation.name, ok: false, failure: joined.failure });
   }
   if (!teams.some((t) => t.ok)) {
     void endSession(ports.fetch, ports.config, answer.sessionId);
@@ -248,7 +252,7 @@ const accept = async (ports: SignInPorts, value: string): Promise<{ ok: true; te
   return team === null ? { ok: false, failure: UNREADABLE } : { ok: true, team };
 };
 
-const pairTeam = async (ports: SignInPorts, team: AccountsTeam): Promise<TeamOutcome> => {
+const pairTeam = async (ports: SignInPorts, team: AccountsTeam, invited: boolean): Promise<TeamOutcome> => {
   const name = team.name;
   const origin = teamOrigin(team.url, ports.config.accountsUrl, ports.local);
   if (origin === null) return { name, ok: false, failure: { code: "", message: `${name}'s address isn't one this app connects to.`, fix: "Update the app, then sign in again." } };
@@ -261,7 +265,8 @@ const pairTeam = async (ports: SignInPorts, team: AccountsTeam): Promise<TeamOut
         : { code: paired.failure.code, message: `${name} refused this phone's code.`, fix: "Sign in again for a new code." };
     return { name, ok: false, failure };
   }
-  return { name, ok: true, hub: { ...paired.paired, hubName: paired.paired.hubName === "" ? name : paired.paired.hubName, cloud: true } };
+  const hubName = paired.paired.hubName === "" ? name : paired.paired.hubName;
+  return { name, ok: true, hub: { ...paired.paired, hubName, cloud: true, ...(invited ? { invited: true as const } : {}) } };
 };
 
 /** Ends WorkOS's session; the service answers 204 whatever it was, and a phone offline leaves it to run out. */
@@ -321,4 +326,4 @@ export const revokeOver = async (link: HubLink): Promise<boolean> => {
  * a computer joins from the desktop app or with the join line on it. Machines stay a desktop job.
  */
 export const needsComputer = (hub: KeptHub, s: { readonly projects: Readonly<Record<string, unknown>> | undefined; readonly machines: readonly unknown[] }): boolean =>
-  hub.cloud === true && s.projects !== undefined && Object.keys(s.projects).length === 0 && s.machines.length === 0;
+  hub.cloud === true && hub.invited !== true && s.projects !== undefined && Object.keys(s.projects).length === 0 && s.machines.length === 0;

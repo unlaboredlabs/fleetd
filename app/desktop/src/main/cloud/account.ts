@@ -5,7 +5,8 @@
 // here, nothing connected, until the page has shown "Signed in as <email>" and asked about each invitation
 // (decision hosted.invites-need-accept): finish then sends each team's code to its own POST /pair, as a typed one
 // does, joins each invitation the person chose (POST ACCOUNTS_ACCEPT_PATH) and pairs it the same way, and keeps each
-// key in the keychain beside any other hub's; Not you drops the answer and ends its session. A key this replaces on a
+// key in the keychain beside any other hub's; Not you drops the answer and ends its session. Only a team the service
+// says the person made (`made`) may open on Connect a computer, which each sign-in says again. A key this replaces on a
 // team, and a previous account's teams, are revoked there first, as Sign out does. The app keeps the email and
 // WorkOS's session id, never a WorkOS token. Sign out drops this device's key on each of the account's hubs, then ends
 // the session. One sign-in at a time: a new one, or Cancel, ends the one waiting.
@@ -13,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { z } from "zod";
-import { readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../shared/accounts";
+import { madeTeam, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../shared/accounts";
 import type { FinishOutcome, SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
 import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, type AccountsTeam } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome } from "../../shared/hub";
@@ -57,8 +58,8 @@ export interface CloudPorts {
   readonly open: (url: string) => Promise<void>;
   readonly deviceName: () => string;
   /**
-   * Saves a team's key and connects to it, listed as one of the account's hubs under `label`; `invited`, joined by an
-   * invitation on this device, which never opens on Connect a computer.
+   * Saves a team's key and connects to it, listed as one of the account's hubs under `label`; `invited`, a team the
+   * person didn't make (the service's word at this sign-in), which never opens on Connect a computer.
    */
   readonly connect: (url: string, key: string, label: string, invited: boolean) => ConnectOutcome;
   readonly cloudHubs: () => ReadonlyArray<CloudHub>;
@@ -276,8 +277,8 @@ export class CloudAccount {
     const { config, answer, deviceName } = held;
     const outcomes: TeamOutcome[] = [];
     const paired = new Set<string>();
-    const pairOne = async (team: AccountsTeam, invited: boolean) => {
-      const out = await this.#pairTeam(config, team, deviceName, invited);
+    const pairOne = async (team: AccountsTeam, accepted: boolean) => {
+      const out = await this.#pairTeam(config, team, deviceName, !madeTeam(team, accepted));
       outcomes.push(out.outcome);
       if (out.origin !== null) paired.add(out.origin);
     };
