@@ -72,7 +72,7 @@ export type {
 export { ACCOUNTS_APP_REDIRECT, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, type AccountsSignInInput } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { serves } from "../../desktop/src/shared/hub";
-export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
+export { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
 export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";

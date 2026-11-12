@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ConnectOutcome } from "../../shared/hub";
 import type { PairTarget } from "../../shared/hubs";
 import {
+  CODE_SHAPE,
   hubOrigin,
   LOCAL_HUB,
   normalizeCode,
@@ -136,7 +137,7 @@ export class PairingService {
         ok: false,
         failure: {
           code: "",
-          message: "A pairing code is 8 letters and digits, like ABCD-2345.",
+          message: CODE_SHAPE,
           fix: "Run `fleetd pair` on the hub and type the code it prints.",
         },
       };

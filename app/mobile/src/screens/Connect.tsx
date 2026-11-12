@@ -12,11 +12,11 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { normalizeCode, type PairFailure } from "../desktop";
+import type { PairFailure } from "../desktop";
 import type { PairParams } from "../hubContext";
 import { deviceName } from "../hub/deviceName";
 import { pair, type Paired } from "../hub/pair";
-import { pairLinkStep, parsePairLink } from "../hub/pairLink";
+import { pairLinkStep, pastedPair, type Pasted } from "../hub/pairLink";
 import { mono, space, TOUCH, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
@@ -26,17 +26,12 @@ import { ListSection } from "../ui/List";
 import { cloud, Ways, type OnSignedIn } from "./Cloud";
 import { firstScreen } from "../cloud/config";
 
-/** What the clipboard holds for pairing: a whole pairing link, or a code ("ABCD-2345", or the line it's printed in). */
-const pasted = async (): Promise<{ hub?: string; code: string } | undefined> => {
+/** What the clipboard holds for pairing (`pastedPair`); nothing when it can't be read. */
+const pasted = async (): Promise<Pasted> => {
   try {
-    const text = await Clipboard.getStringAsync();
-    const link = parsePairLink(text);
-    if (link?.ok === true) return { hub: link.hub, code: link.code };
-    const match = /\b[A-Za-z0-9]{4}(?:-?[A-Za-z0-9]{4}){1,7}\b/u.exec(text);
-    const code = match === null ? null : normalizeCode(match[0]);
-    return code === null ? undefined : { code };
+    return pastedPair(await Clipboard.getStringAsync());
   } catch {
-    return undefined;
+    return { ok: false, note: "No pairing code on the clipboard." };
   }
 };
 
@@ -209,8 +204,8 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
 
   const paste = () =>
     void pasted().then((p) => {
-      setPasteNote(p === undefined ? "No pairing code on the clipboard." : undefined);
-      if (p === undefined) return;
+      setPasteNote(p.ok ? undefined : p.note);
+      if (!p.ok) return;
       haptics.select();
       setCode(p.code);
       if (p.hub !== undefined) setHub(p.hub);
