@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { appWs } from "../src/hub/app_ws/index.ts";
+import { doctor } from "../src/hub/doctor/index.ts";
 import { updates } from "../src/hub/update/tools.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { build } from "../src/hub/serve/index.ts";
@@ -11,6 +12,10 @@ import { hubHome, insertKey } from "./helpers.ts";
 const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 tools.add("fleetd_status", () => ({ machines: [], projects: [], attention: [], cursor: events(hub).head() }) as never);
+// setup_list runs the doctor's first pass: its probes are stand-ins, so the answer never waits on the runner's own gh.
+const probes = doctor(hub);
+probes.health = async () => ({ ok: true });
+probes.runCmd = async () => ({ ran: false, error: "ENOENT" });
 const server = serve(hub, tools, 0);
 const url = `ws://127.0.0.1:${server.port}/app`;
 afterAll(async () => {

@@ -24,6 +24,14 @@ const until = async <T>(what: string, fn: () => T | undefined | false, ms = 10_0
     await Bun.sleep(20);
   }
 };
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const scratchName = (id: string) => createHash("sha256").update(id).digest("hex").slice(0, 16);
 
 /** A node over a repo with an origin, its project p1 upserted. */
@@ -59,6 +67,10 @@ async function nodeKit() {
       const pid = k.service.store.session(id)!.local.pid!;
       await k.service.shutdown();
       process.kill(pid, "SIGKILL");
+      // The kill takes a while to land on a loaded machine: a node started before the host's last thread is gone
+      // still reaches its socket and re-adopts it. Its main thread shows as a zombie before then, so the wait is for
+      // the host to be reaped (this process started it), when the pid is no more.
+      await until("its process's exit", () => !alive(pid));
       k.service = await SessionService.start(config);
     },
   };
