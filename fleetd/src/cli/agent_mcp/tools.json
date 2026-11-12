@@ -1953,7 +1953,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.",
+   "description": "Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site the team vault has a login for. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.",
    "inputSchema": {
     "properties": {
      "item": {
@@ -1985,7 +1985,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.",
+   "description": "The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.",
    "inputSchema": {
     "properties": {
      "kind": {
@@ -2023,7 +2023,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.",
+   "description": "Search the person's 1Password for logins, cards and addresses to import into fleetd's team vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.",
    "inputSchema": {
     "properties": {
      "kinds": {
@@ -2065,7 +2065,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope where they go (the person's own by default). The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, fill them from the vault.",
+   "description": "Propose importing 1Password items into fleetd's team vault: refs from vault_import_search, why one line. The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, any project's agents fill them from the vault.",
    "inputSchema": {
     "properties": {
      "refs": {
@@ -2077,31 +2077,6 @@
       "minItems": 1,
       "type": "array",
       "uniqueItems": true
-     },
-     "scope": {
-      "description": "Where they go; absent: the person's own.",
-      "oneOf": [
-       {
-        "const": "person",
-        "description": "One person's: used by work they started, and projects it's shared with.",
-        "type": "string"
-       },
-       {
-        "const": "project",
-        "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
-        "type": "string"
-       },
-       {
-        "const": "order",
-        "description": "One order's variable (`workstreamId` too): that order's agents. Gone when the order closes.",
-        "type": "string"
-       },
-       {
-        "const": "hub",
-        "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
-        "type": "string"
-       }
-      ]
      },
      "why": {
       "maxLength": 500,
@@ -3105,15 +3080,6 @@
    "/refs/*": {
     "expected": "a string",
     "pattern": "expected a string matching ^op://[^/?\\r\\n]+/[^/?\\r\\n]+$, got {got}"
-   },
-   "/scope": {
-    "variants": [
-     "person",
-     "project",
-     "order",
-     "hub"
-    ],
-    "expected": "string or map"
    },
    "/why": {
     "expected": "a string"

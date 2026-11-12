@@ -1,6 +1,6 @@
 // An agent's `fill_address` (vault-design §4.3): a vault address typed into the page's address form, the way a card
 // fills (cards.ts). The hub decides where an address may fill (a checkout recorded in this session, the item's own
-// sites, a site of one of its owner's vault logins) and sends its parts sealed to this node (vault.ts). The node finds
+// sites, a site the team vault has a login for) and sends its parts sealed to this node (vault.ts). The node finds
 // the form's fields by their `autocomplete` tokens, then by what their name, id, placeholder or label says, in the
 // page's own documents only, and types each part over its own connection: each field blurred, the session sealed
 // first so the parts never come back to the agent.

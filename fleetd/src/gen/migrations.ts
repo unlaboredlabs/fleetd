@@ -162,6 +162,7 @@ import m158 from "../hub/store/migrations/202611111201_cloud_machines_removed.sq
 import m159 from "../hub/store/migrations/202611111541_project_setup_changes.sql" with { type: "text" };
 import m160 from "../hub/store/migrations/202611111730_project_proposed_clones.sql" with { type: "text" };
 import m161 from "../hub/store/migrations/202611121228_only_me_gone.sql" with { type: "text" };
+import m162 from "../hub/store/migrations/202611121235_one_team_vault.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -326,4 +327,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611111541_project_setup_changes", sql: m159 },
   { name: "202611111730_project_proposed_clones", sql: m160 },
   { name: "202611121228_only_me_gone", sql: m161 },
+  { name: "202611121235_one_team_vault", sql: m162 },
 ];

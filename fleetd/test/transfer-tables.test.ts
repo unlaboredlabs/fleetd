@@ -59,4 +59,7 @@ describe("the export's table mapping", () => {
 });
 
 /** Carried as they are, each checked by hand: none holds a secret's value. */
-const PLAIN: string[] = [];
+const PLAIN: string[] = [
+  // The scope part of a moved item's AAD (`project:<m>/<p>`, `person:<id>`): a name, not a value.
+  "vault_items.sealed_scope",
+];

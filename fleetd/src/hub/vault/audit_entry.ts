@@ -10,12 +10,14 @@ export type AuditAction =
   | "update"
   | "delete"
   | "restore"
+  // Rows from before the team vault, when a person's item was shared with projects.
   | "share"
   | "import"
   | "rotate"
   | "unlock"
   | "purchase"
-  | "adopt";
+  | "adopt"
+  | "move";
 export type AuditOutcome = "pending" | "ok" | "failed" | "refused";
 
 export type AuditData = {

@@ -51,11 +51,9 @@ test("no planted value reaches logs, events, chat, audit, answers or the databas
     return x;
   };
   const save = (input: Record<string, unknown>) => k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", input).then(keep);
-  const login = await save({ kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ username: "ada", password: CANARIES.password }) });
-  const card = await save({ kind: "card", scope: "person", label: "Visa", sealed: k.sealToHub({ number: CANARIES.card, month: "01", year: "2030", cvc: "917" }) });
-  const home = await save({ kind: "address", scope: "person", label: "Home", sites: ["shop.example"], sealed: k.sealToHub({ line1: CANARIES.address, country: "US" }) });
-  // The project's lead uses the owner's own items once they are shared with it.
-  for (const item of [login, card, home]) keep(await k.call(k.ownerDevice, "vault_share_set", { itemId: item.item.itemId, projects: [PROJECT] }));
+  const login = await save({ kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ username: "ada", password: CANARIES.password }) });
+  const card = await save({ kind: "card", label: "Visa", sealed: k.sealToHub({ number: CANARIES.card, month: "01", year: "2030", cvc: "917" }) });
+  await save({ kind: "address", label: "Home", sites: ["shop.example"], sealed: k.sealToHub({ line1: CANARIES.address, country: "US" }) });
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "API_KEY", sealed: k.sealToHub({ value: CANARIES.env }) });
   keep(await k.call(k.ownerDevice, "vault_list", {}));
   keep(await k.call(k.ownerDevice, "vault_get", { itemId: login.item.itemId }));

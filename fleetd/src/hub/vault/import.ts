@@ -2,7 +2,7 @@
 // 1Password (titles, kinds and sites, never values) and proposes items; the import card in the chat is the one confirm
 // in the vault. On Import, a node holding the person's token reads the items and seals their fields to the hub's box
 // key, so no value crosses the hub in the clear or reaches the agent; the hub stores each with its `op://` reference
-// as the source and never asks 1Password for it again.
+// as the source and never asks 1Password for it again. Logins, cards and addresses always go in the team vault.
 import { randomBytes } from "node:crypto";
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -17,11 +17,13 @@ import { boxKey } from "../hub_links/store.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.ts";
 import { token } from "../onepassword/index.ts";
 import { cleanSites, FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";
-import { isScope, vault, type Viewer } from "./index.ts";
+import { vault, type Viewer } from "./index.ts";
+import { updateApp } from "./item.ts";
 import { openToHub, saveItem, summary } from "./items.ts";
 
 export type Candidate = { ref: string; title: string; kind: VaultKind; vault: string; sites?: string[]; imported?: string };
 type CardItem = { ref: string; title: string; kind: VaultKind; site?: string };
+/** `scope` is always the team vault's (`hub`): an older app reads it. */
 type Card = { proposalId: string; why: string; scope: VaultScope; items: CardItem[]; state: "open" | "imported" | "dismissed"; imported?: number; answeredMs?: number };
 
 const OP_ITEM = /^op:\/\/[^/?\r\n]+\/[^/?\r\n]+$/;
@@ -107,7 +109,6 @@ export async function propose(hub: Hub, caller: LeadCaller, call: LeadCall): Pro
   }
   const why = typeof call.why === "string" ? call.why.trim().slice(0, 500) : "";
   if (why === "") throw new ToolError("invalid", "why: say in a line why these items are needed.");
-  const scope: VaultScope = isScope(call.scope) && call.scope !== "order" ? call.scope : "person";
   let known = seen(hub).get(person);
   if (!known || refs.some((x) => !known!.has(x))) {
     await search(hub, person, "");
@@ -119,7 +120,7 @@ export async function propose(hub: Hub, caller: LeadCaller, call: LeadCall): Pro
     return { ref, title: c.title, kind: c.kind, ...(c.sites?.[0] ? { site: c.sites[0] } : {}) };
   });
   const proposalId = `VP${randomBytes(16).toString("hex")}`;
-  const card: Card = { proposalId, why, scope, items, state: "open" };
+  const card: Card = { proposalId, why, scope: "hub", items, state: "open" };
   const now = hub.clock.now();
   const message = chat(hub).add(r, { author: "lead", text: `Import ${items.length === 1 ? items[0]!.title : `${items.length} items`} from 1Password?`, vaultImport: card as never, source: `vault_import:${proposalId}` }).message;
   hub.db.conn
@@ -131,6 +132,7 @@ export async function propose(hub: Hub, caller: LeadCaller, call: LeadCall): Pro
   return { proposalId, next: "The person imports or dismisses it in the chat; you're woken when they answer." };
 }
 
+/** `scope`, `machineId` and `projectId` only an older app sends: it is refused, saying to update. */
 type ImportInput = { proposalId?: string; refs?: string[]; scope?: VaultScope; machineId?: string; projectId?: string; dismiss?: boolean };
 
 /** `vault_import`: a proposal's items (or the person's own pick) read from 1Password into the vault. */
@@ -173,11 +175,7 @@ export async function importItems(hub: Hub, v: Viewer, input: ImportInput): Prom
   if (proposal && refs.some((x) => !proposal!.card.items.some((i) => i.ref === x))) {
     throw new ToolError("invalid", "Import only the items the card lists.");
   }
-  const scope: VaultScope = input.scope ?? proposal?.card.scope ?? "person";
-  const where =
-    scope === "project"
-      ? { machineId: input.machineId ?? proposal?.row.machine_id, projectId: input.projectId ?? proposal?.row.project_id }
-      : {};
+  if (input.scope !== undefined || input.machineId !== undefined || input.projectId !== undefined) throw updateApp();
   const m = holder(hub, v.person);
   if (m === undefined) throw new ToolError("machine_offline", noToken(hub, v.person), "Try again once a machine holding your token is online.");
   const out = await sessionCall(hub, m, { op: "vault_import_read", personId: v.person, refs, to: b64(publicKeyOf(boxKey(hub))) });
@@ -196,12 +194,10 @@ export async function importItems(hub: Hub, v: Viewer, input: ImportInput): Prom
       const row = saveItem(
         hub,
         v,
-        existing !== undefined && vt.store.get(existing)?.scope === scope && vt.canEdit(v, vt.store.get(existing)!)
+        existing !== undefined && vt.store.get(existing)?.scope === "hub" && vt.canEdit(v, vt.store.get(existing)!)
           ? { itemId: existing, fields, sites, label: String(f.title ?? "Imported").slice(0, 120) }
           : {
               kind,
-              scope,
-              ...where,
               label: String(f.title ?? "Imported").slice(0, 120) || "Imported",
               sites,
               fields,

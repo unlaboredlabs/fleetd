@@ -15,8 +15,8 @@ import { deliveries } from "./deliver.ts";
 import { FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";
 import { importItems, search } from "./import.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
-import { deleteItem, openToHub, restoreItem, saveItem, shareItem, summary } from "./items.ts";
-import { migrationStatus } from "./migrate.ts";
+import { deleteItem, moveItem, openToHub, restoreItem, saveItem, summary } from "./items.ts";
+import { copyTeamVars, migrationStatus } from "./migrate.ts";
 
 /** Reveals one person may make in an hour. */
 export const REVEALS_PER_HOUR = 30;
@@ -48,7 +48,10 @@ export function status(hub: Hub): Record<string, unknown> {
   };
 }
 
-/** The items `v` sees that `input` picks. */
+/**
+ * The items `v` sees that `input` picks: with a project, its variables and its orders' (with `usable`, the team
+ * vault's items too); without, the team vault and `v`'s own items set aside. An older app's `scope` filter still works.
+ */
 export function listFor(
   hub: Hub,
   v: Viewer,
@@ -60,22 +63,13 @@ export function listFor(
     const r: ProjectRef = { machineId: input.machineId, projectId: input.projectId };
     if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
     requireRole(v.caller, "read", r.machineId);
-    // Its own items; with `usable`, all its work can use: its own, shared with it, the hub's.
-    rows =
-      input.usable === true
-        ? vt.store.select(
-            `(machine_id = ? AND project_id = ? AND scope IN ('project', 'order')) OR scope = 'hub'
-              OR (scope = 'person' AND item_id IN (SELECT item_id FROM vault_shares WHERE machine_id = ? AND project_id = ?))`,
-            [r.machineId, r.projectId, r.machineId, r.projectId],
-            input.trash === true,
-          )
-        : vt.store.select("machine_id = ? AND project_id = ? AND scope IN ('project', 'order')", [r.machineId, r.projectId], input.trash === true);
-  } else {
     rows = vt.store.select(
-      "scope IN ('hub', 'project', 'order') OR (scope = 'person' AND person_id = ?)",
-      [v.person ?? null],
+      `(machine_id = ? AND project_id = ? AND scope IN ('project', 'order'))${input.usable === true ? " OR scope = 'hub'" : ""}`,
+      [r.machineId, r.projectId],
       input.trash === true,
     );
+  } else {
+    rows = vt.store.select("scope = 'hub' OR (scope = 'person' AND person_id = ?)", [v.person ?? null], input.trash === true);
   }
   const q = input.query?.trim().toLowerCase();
   return rows.filter(
@@ -148,10 +142,13 @@ export function register(tools: Registry): void {
     return { item: summary(hub, v, restoreItem(hub, v, input.itemId)) } as never;
   });
 
-  tools.add("vault_share_set", async (hub, caller, input) => {
+  tools.add("vault_move", async (hub, caller, input) => {
     const v = person(hub, caller);
     await vault(hub).load();
-    const row = shareItem(hub, v, input.itemId, input.projects as ProjectRef[]);
+    const row = moveItem(hub, v, input.itemId, {
+      ...(input.machineId !== undefined ? { machineId: input.machineId } : {}),
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    });
     return { item: summary(hub, v, row) } as never;
   });
 
@@ -217,11 +214,11 @@ export function register(tools: Registry): void {
       const r = { machineId: input.machineId, projectId: input.projectId };
       requireRole(caller, "read", r.machineId);
       if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
-      // The project's rows, but never another person's own items' (an admin doesn't see those either).
+      // The project's rows, but never another person's items set aside (an admin doesn't see those either).
       where = `machine_id = ? AND project_id = ? AND (item_id = '' OR item_id NOT IN (SELECT item_id FROM vault_items WHERE scope = 'person' AND person_id <> ?))`;
       params = [r.machineId, r.projectId, v.person ?? ""];
     } else {
-      where = `item_id IN (SELECT item_id FROM vault_items WHERE (scope = 'person' AND person_id = ?)${v.admin ? " OR scope = 'hub'" : ""})`;
+      where = "item_id IN (SELECT item_id FROM vault_items WHERE scope = 'hub' OR (scope = 'person' AND person_id = ?))";
       params = [v.person ?? ""];
     }
     const entries = vt.audit.list(where, params, input.before, limit + 1);
@@ -249,6 +246,7 @@ export function register(tools: Registry): void {
     });
     if (!ok) throw new ToolError("forbidden", "That passphrase doesn't open the vault.", "Type it again.");
     vt.store.recordKeys(hub.clock.now());
+    copyTeamVars(hub);
     void deliveries(hub).reconcileAll();
     return status(hub) as never;
   });

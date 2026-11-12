@@ -3,8 +3,7 @@
 // machine per delivery, so the node's spawn, masking and the Rust node stay as they are:
 // - a project's file (`project_env`): its project variables, then the variables of every project whose repo checkout
 //   it is (W79);
-// - an order's file (`secret_deliver` to `order:<machine>:<W>`): its order variables, then the person variables of
-//   whoever started it, under names neither the order nor the project has;
+// - an order's file (`secret_deliver` to `order:<machine>:<W>`): its order variables;
 // - a `request_secret` env:/file: sink: the item's value, written where the sink says.
 // `vault_deliveries` records which version each machine holds. `reconcile` sends what's missing or older and takes back
 // what went, on each change and each time a node links, so setting a variable no longer needs its machine online.
@@ -62,20 +61,8 @@ function layered(...layers: ItemRow[][]): Map<string, ItemRow> {
   return out;
 }
 
-function startedBy(hub: Hub, order: string): string | undefined {
-  const n = /^W([1-9][0-9]{0,9})$/.exec(order)?.[1];
-  if (n === undefined) return undefined;
-  const row = hub.db.conn.query<{ data: string }, [number]>("SELECT data FROM workstreams WHERE n = ?").get(Number(n));
-  try {
-    return (JSON.parse(row?.data ?? "{}") as { startedBy?: { personId?: string } }).startedBy?.personId;
-  } catch {
-    return undefined;
-  }
-}
-
 const envOf = (v: Vault, where: string, params: (string | null)[]) => v.store.select(`kind = 'env' AND ${where}`, params);
 const projectVars = (v: Vault, r: ProjectRef) => envOf(v, "scope = 'project' AND machine_id = ? AND project_id = ? AND json_extract(meta, '$.sink') IS NULL", [r.machineId, r.projectId]);
-const personVars = (v: Vault, person: string | undefined) => (person === undefined ? [] : envOf(v, "scope = 'person' AND person_id = ?", [person]));
 
 /** Each project's variables as its sessions get them: its own, then its repo holders'. */
 export function projectSet(hub: Hub, r: ProjectRef): Map<string, ItemRow> {
@@ -87,14 +74,9 @@ export function projectSet(hub: Hub, r: ProjectRef): Map<string, ItemRow> {
   return layered(projectVars(v, r), ...holders.map((h) => projectVars(v, h)));
 }
 
-/** An order's own variables, then its starter's person variables under names the project doesn't set. */
+/** An order's own variables. */
 export function orderSet(hub: Hub, r: ProjectRef, order: string): Map<string, ItemRow> {
-  const v = vault(hub);
-  const own = envOf(v, "scope = 'order' AND machine_id = ? AND project_id = ? AND workstream_id = ?", [r.machineId, r.projectId, order]);
-  const project = projectSet(hub, r);
-  // A person variable the project already gives under that name stays the project's.
-  const person = personVars(v, startedBy(hub, order)).filter((row) => !project.has(row.envName ?? ""));
-  return layered(own, person);
+  return layered(envOf(vault(hub), "scope = 'order' AND machine_id = ? AND project_id = ? AND workstream_id = ?", [r.machineId, r.projectId, order]));
 }
 
 export class Deliveries {

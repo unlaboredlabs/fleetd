@@ -3,11 +3,14 @@
 // to seal it to the one machine that uses it (a fill, a delivery) or the one device that reveals it; every use is a
 // `vault_audit` row. `vault(hub)` is the area: its keys, its rows, its audit, and who may see and use what.
 //
-// Who sees, changes and reveals an item (§3):
-// - person: its owner; agents doing their work, and projects it is shared with, use it but never reveal it;
-// - project: everyone who sees the project; operate on its machine changes it; its creator or an admin reveals it;
-// - order (variables only): as its project; its creator changes and reveals it;
-// - hub (logins, cards, addresses): everyone lists and uses it; admins change and reveal it.
+// Who sees, changes and reveals an item (§3, decision vault.one-team-vault):
+// - hub, the team vault (logins, cards, addresses): everyone lists it and every project's work fills it; its creator
+//   (`person_id`) or an admin changes, deletes and reveals it;
+// - project (variables): everyone who sees the project; operate on its machine changes it; its creator or an admin
+//   reveals it, and makes a secret one plain;
+// - order (variables): as its project; its creator or an admin changes it, its creator reveals it;
+// - person: an item set aside by the one-team-vault migration. Only its owner lists, reveals, moves or deletes it;
+//   nothing fills or delivers it.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isHuman } from "../api/grants.ts";
@@ -19,11 +22,11 @@ import { who } from "../navi/owner.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { type AuditEntry, type NewAudit, VaultAudit } from "./audit.ts";
-import type { UseContext, Viewer } from "./item.ts";
+import type { Viewer } from "./item.ts";
 import { keyDir, VaultKeyError, VaultKeys, type Secrets } from "./keys.ts";
 import { type ItemRow, keyMissing, locked, VaultStore } from "./store.ts";
 
-export { FEATURE_VAULT, isScope, quietLine, type UseContext, type Viewer } from "./item.ts";
+export { FEATURE_VAULT, FEATURE_VAULT_TEAM, isScope, quietLine, type UseContext, type Viewer } from "./item.ts";
 export type { ItemRow } from "./store.ts";
 
 export type VaultOptions = { dir?: string; secrets?: Secrets; scryptN?: number };
@@ -118,34 +121,47 @@ export class Vault {
     }
   }
 
-  /** Whether `v` changes, deletes and shares `row`. */
+  /** Whether `v` made `row` (a team item's `person_id` is its creator). */
+  private made(v: Viewer, row: ItemRow): boolean {
+    return v.person !== undefined && (row.createdBy === v.person || (row.scope === "hub" && row.personId === v.person));
+  }
+
+  /**
+   * Whether `v` changes and deletes `row`. A team item only its creator or an admin: a change of a login's or an
+   * address's sites that keeps its fields would fill them where the changer picks.
+   */
   canEdit(v: Viewer, row: ItemRow): boolean {
     if (!this.canSee(v, row)) return false;
     switch (row.scope) {
       case "person":
         return true;
       case "hub":
-        return v.admin;
+        return this.made(v, row) || v.admin;
       case "project":
         return allows(v.caller, "operate", row.machineId);
       case "order":
-        return row.createdBy === v.person || v.admin;
+        return this.made(v, row) || v.admin;
+    }
+  }
+
+  /** Whether `v` may show `row`'s values (reveal, or make a secret variable plain), on any device. */
+  canShow(v: Viewer, row: ItemRow): boolean {
+    if (!this.canSee(v, row)) return false;
+    switch (row.scope) {
+      case "person":
+        return true;
+      case "hub":
+        return this.made(v, row) || v.admin;
+      case "project":
+        return this.made(v, row) || v.admin;
+      case "order":
+        return this.made(v, row);
     }
   }
 
   /** Whether `v` reveals `row`'s values: a person's own device only. */
   canReveal(v: Viewer, row: ItemRow): boolean {
-    if (!v.human || !this.canSee(v, row)) return false;
-    switch (row.scope) {
-      case "person":
-        return true;
-      case "hub":
-        return v.admin;
-      case "project":
-        return row.createdBy === v.person || v.admin;
-      case "order":
-        return row.createdBy === v.person;
-    }
+    return v.human && this.canShow(v, row);
   }
 
   /** The row, when `v` may see it; refused as not found otherwise, so ids don't tell anything. */
@@ -178,15 +194,9 @@ export class Vault {
     return this.hub.db.conn.query<{ workstream_id: string }, [number]>("SELECT workstream_id FROM tasks WHERE n = ?").get(Number(n))?.workstream_id;
   }
 
-  /** The items (no variables) a session doing `ctx`'s work may fill. */
-  usable(ctx: UseContext): ItemRow[] {
-    const r = ctx.projectRef;
-    return this.store.select(
-      `kind <> 'env' AND (scope = 'hub'
-         OR (scope = 'project' AND machine_id = ? AND project_id = ?)
-         OR (scope = 'person' AND (person_id = ? OR item_id IN (SELECT item_id FROM vault_shares WHERE machine_id = ? AND project_id = ?))))`,
-      [r.machineId, r.projectId, ctx.personId ?? null, r.machineId, r.projectId],
-    );
+  /** The items (no variables) any session on the hub may fill: the team vault's. */
+  usable(): ItemRow[] {
+    return this.store.select("kind <> 'env' AND scope = 'hub'", []);
   }
 
   // --- audit and events ---
@@ -220,7 +230,7 @@ export class Vault {
     }
   }
 
-  /** `vault.changed` for an item's metadata: open screens list again. Never a label of a person's item, never a value. */
+  /** `vault.changed` for an item's metadata: open screens list again. Never a label, never a value. */
   changed(row: Pick<ItemRow, "itemId" | "scope" | "personId" | "machineId" | "projectId">): void {
     try {
       events(this.hub).append({

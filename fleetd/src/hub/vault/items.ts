@@ -1,4 +1,4 @@
-// Writing items (vault_save, vault_delete, vault_restore, vault_share_set) and reading them as the apps list them.
+// Writing items (vault_save, vault_delete, vault_restore, vault_move) and reading them as the apps list them.
 // The tools and the old APIs' aliases (env vars, secret sinks, imports) all write through here, so every write checks
 // the same scope rules and limits, keeps the Rust mirror, delivers variables and leaves its audit row.
 import type { ProjectRef } from "../../shared/contracts.ts";
@@ -14,7 +14,7 @@ import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries, mirrorProjectRow } from "./deliver.ts";
 import { checkEnvName, cleanSecret, cleanSites, LABEL_MAX, merge, type Meta, metaOf, type Secret, type VaultKind } from "./fields.ts";
 import { type ItemRow, type Viewer, vault } from "./index.ts";
-import { type SaveSpec, sinkEnvName } from "./item.ts";
+import { type SaveSpec, sinkEnvName, updateApp } from "./item.ts";
 import { type ItemDraft, ITEMS_MAX } from "./store.ts";
 
 export { type SaveSpec, sinkEnvName } from "./item.ts";
@@ -55,39 +55,45 @@ function checkLabel(label: string | undefined): string {
   return l;
 }
 
-/** The scope fields of a new item, checked against who asks. */
+/** A project `v` may put a variable in. */
+function projectFor(hub: Hub, v: Viewer, machineId: string | undefined, projectId: string | undefined): ProjectRef {
+  if (machineId === undefined || projectId === undefined) throw new ToolError("invalid", "A variable names its machineId and projectId.");
+  const r = { machineId, projectId };
+  if (v.system) return r;
+  if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
+  if (!allows(v.caller, "operate", r.machineId)) {
+    throw new ToolError("forbidden", `You can't change ${r.projectId}'s variables.`, "Ask someone who operates the project.");
+  }
+  return r;
+}
+
+/**
+ * The scope fields of a new item, checked against who asks. A login, card or address names no scope: it goes in the
+ * team vault. One that names a person's, the hub's or a project's level comes from an app older than the hub.
+ */
 function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDraft, "scope" | "personId" | "machineId" | "projectId" | "workstreamId"> {
-  const scope = s.scope ?? "person";
-  const project = (): ProjectRef => {
-    if (s.machineId === undefined || s.projectId === undefined) throw new ToolError("invalid", `A ${scope} item names its machineId and projectId.`);
-    const r = { machineId: s.machineId, projectId: s.projectId };
-    if (v.system) return r;
-    if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
-    if (!allows(v.caller, "operate", r.machineId)) {
-      throw new ToolError("forbidden", `You can't change ${r.projectId}'s items.`, "Ask someone who operates the project.");
-    }
-    return r;
-  };
-  switch (scope) {
+  if (kind !== "env") {
+    if (s.scope !== undefined) throw updateApp();
+    return { scope: "hub", ...(v.person !== undefined ? { personId: v.person } : {}) };
+  }
+  switch (s.scope) {
+    case undefined:
+      throw new ToolError("invalid", "A variable names its project: scope project, machineId and projectId.");
     case "person":
-      if (v.person === undefined) throw new ToolError("forbidden", "A key with no person keeps no person items.", "Use a person's own device.");
-      return { scope, personId: v.person };
+      throw updateApp();
+    case "hub":
+      throw new ToolError("invalid", "Variables belong to a project or an order, not the team vault.");
     case "project":
-      return { scope, ...project() };
+      return { scope: "project", ...projectFor(hub, v, s.machineId, s.projectId) };
     case "order": {
-      if (kind !== "env") throw new ToolError("invalid", "An order keeps only variables.", "Save it to the project or to yourself instead.");
-      const r = project();
+      const r = projectFor(hub, v, s.machineId, s.projectId);
       const w = s.workstreamId;
       const order = w !== undefined && /^W[1-9][0-9]{0,9}$/.test(w) ? workstreamGet(hub.db.conn, w) : undefined;
       if (!v.system && (!order || order.projectRef.machineId !== r.machineId || order.projectRef.projectId !== r.projectId || order.state !== "open")) {
         throw new ToolError("invalid", `${w ?? "That"} is no open order of ${r.projectId}.`, "Name an open order of the project.");
       }
-      return { scope, ...r, workstreamId: w! };
+      return { scope: "order", ...r, workstreamId: w! };
     }
-    case "hub":
-      if (kind === "env") throw new ToolError("invalid", "Variables belong to a person, a project or an order, not the whole hub.");
-      if (!v.admin) throw new ToolError("forbidden", "Only an admin adds an item for everyone.", "Ask a hub admin.");
-      return { scope, ...(v.person !== undefined ? { personId: v.person } : {}) };
   }
 }
 
@@ -112,8 +118,8 @@ function checkEnvLimits(hub: Hub, row: Pick<ItemDraft, "scope" | "machineId" | "
 function checkBilling(hub: Hub, v: Viewer, id: string | undefined): void {
   if (id === undefined) return;
   const a = vault(hub).store.get(id);
-  if (!a || a.kind !== "address" || a.deletedMs !== undefined || !vault(hub).canSee(v, a)) {
-    throw new ToolError("invalid", `${id} isn't an address you have.`, "Pick one of your addresses.");
+  if (!a || a.kind !== "address" || a.scope !== "hub" || a.deletedMs !== undefined) {
+    throw new ToolError("invalid", `${id} isn't an address in the team vault.`, "Pick one of the team vault's addresses.");
   }
 }
 
@@ -125,7 +131,12 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
   if (s.sites !== undefined) s.sites = cleanSites(s.sites);
   if (s.itemId !== undefined) {
     const row = vt.visible(v, s.itemId);
-    if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't change ${row.label}.`, "Ask its owner or an admin.");
+    if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't change ${row.label}.`, "Ask its creator or an admin.");
+    // Making a secret variable plain shows its value in every list: only who may reveal it does.
+    const newValue = typeof s.fields === "object" && s.fields !== null && "value" in s.fields;
+    if (row.meta.secret === true && s.secret === false && !newValue && !vt.canShow(v, row)) {
+      throw new ToolError("forbidden", `You can't make ${row.label} plain: its value would show.`, "Its creator or an admin can; or give it a new value.");
+    }
     const secret: Secret = s.fields === undefined ? vt.store.open(row) : merge(row.kind, vt.store.open(row), s.fields);
     let envName = row.envName;
     if (row.kind === "env" && !row.meta.sink && s.envName !== undefined && s.envName !== row.envName) {
@@ -180,7 +191,7 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
   const label = s.sink ? checkLabel(s.sink.envName ?? s.sink.secretKey ?? s.sink.path) : kind === "env" ? s.envName! : checkLabel(s.label);
   const draft: ItemDraft = { kind, ...scope, ...(kind === "env" ? { envName: s.envName! } : {}), label, meta };
   if (kind === "env") checkEnvLimits(hub, draft, meta.bytes ?? 0);
-  const cap = scope.scope === "person" ? vt.store.count({ personId: scope.personId! }) : scope.machineId ? vt.store.count({ machineId: scope.machineId, projectId: scope.projectId! }) : 0;
+  const cap = scope.machineId ? vt.store.count({ machineId: scope.machineId, projectId: scope.projectId! }) : vt.store.count("team");
   if (cap >= ITEMS_MAX) throw new ToolError("invalid", `At most ${ITEMS_MAX} items fit here.`, "Delete some first.");
   const saved = vt.store.insert(draft, secret, by(v), now);
   after(hub, v, saved, secret, action, s.held);
@@ -188,7 +199,7 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
 }
 
 /** What every write does after it: the audit row, the event, the Rust mirror and the variables' delivery. */
-function after(hub: Hub, v: Viewer, row: ItemRow, secret: Secret | undefined, action: "create" | "update" | "import" | "adopt" | "delete" | "restore", held = false): void {
+function after(hub: Hub, v: Viewer, row: ItemRow, secret: Secret | undefined, action: "create" | "update" | "import" | "adopt" | "delete" | "restore" | "move", held = false): void {
   const vt = vault(hub);
   vt.used({
     atMs: hub.clock.now(),
@@ -209,9 +220,9 @@ function after(hub: Hub, v: Viewer, row: ItemRow, secret: Secret | undefined, ac
 }
 
 /** Sends the variable's machines what changed, in the background: an offline one catches up when it links. */
-export function redeliver(hub: Hub, row: Pick<ItemRow, "scope" | "machineId" | "meta">): void {
+export function redeliver(hub: Hub, row: Pick<ItemRow, "machineId" | "meta">): void {
   const d = deliveries(hub);
-  const run = row.scope === "person" ? d.reconcileAll() : Promise.all([row.machineId, row.meta.sink?.machineId].filter((m): m is string => m !== undefined).map((m) => d.reconcile(m)));
+  const run = Promise.all([row.machineId, row.meta.sink?.machineId].filter((m): m is string => m !== undefined).map((m) => d.reconcile(m)));
   void run.catch((e) => console.warn("vault: a delivery failed:", (e as Error).message));
 }
 
@@ -220,13 +231,13 @@ export function deleteItem(hub: Hub, v: Viewer, itemId: string, purge: boolean):
   const now = hub.clock.now();
   if (purge) {
     const row = vt.visible(v, itemId, true);
-    if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't delete ${row.label}.`, "Ask its owner or an admin.");
+    if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't delete ${row.label}.`, "Ask its creator or an admin.");
     vt.store.purge(itemId);
     vt.changed(row);
     return undefined;
   }
   const row = vt.visible(v, itemId);
-  if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't delete ${row.label}.`, "Ask its owner or an admin.");
+  if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't delete ${row.label}.`, "Ask its creator or an admin.");
   vt.store.setDeleted(itemId, now, by(v), now);
   after(hub, v, { ...row, deletedMs: now }, undefined, "delete");
   if (hub.db.conn.query("SELECT 1 FROM project_settings WHERE card_ref = ?").get(`vault:${itemId}`)) {
@@ -238,7 +249,7 @@ export function deleteItem(hub: Hub, v: Viewer, itemId: string, purge: boolean):
 export function restoreItem(hub: Hub, v: Viewer, itemId: string): ItemRow {
   const vt = vault(hub);
   const row = vt.visible(v, itemId, true);
-  if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't restore ${row.label}.`, "Ask its owner or an admin.");
+  if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't restore ${row.label}.`, "Ask its creator or an admin.");
   const now = hub.clock.now();
   try {
     vt.store.setDeleted(itemId, null, by(v), now);
@@ -251,36 +262,37 @@ export function restoreItem(hub: Hub, v: Viewer, itemId: string): ItemRow {
   return restored;
 }
 
-export function shareItem(hub: Hub, v: Viewer, itemId: string, projects: ProjectRef[]): ItemRow {
+/**
+ * `vault_move`: an item set aside by the one-team-vault migration, by its owner, into the team vault (a login, card or
+ * address) or into a project as its variable. Sealed again under its new scope.
+ */
+export function moveItem(hub: Hub, v: Viewer, itemId: string, to: { machineId?: string; projectId?: string }): ItemRow {
   const vt = vault(hub);
+  vt.requireOpen();
   const row = vt.visible(v, itemId);
   if (row.scope !== "person" || row.personId !== v.person) {
-    throw new ToolError("invalid", "Only your own items are shared with projects.", "A project's items are its own already.");
+    throw new ToolError("invalid", `${row.label} isn't set aside.`, "Only an item set aside at the upgrade moves.");
   }
-  for (const r of projects) {
-    if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
-    if (!allows(v.caller, "read", r.machineId)) throw unknownProject(r);
+  let scope: Pick<ItemDraft, "scope" | "personId" | "machineId" | "projectId">;
+  if (row.kind === "env") {
+    scope = { scope: "project", ...projectFor(hub, v, to.machineId, to.projectId) };
+  } else {
+    if (to.machineId !== undefined || to.projectId !== undefined) throw new ToolError("invalid", "A login, card or address moves to the team vault, not to a project.");
+    scope = { scope: "hub", personId: v.person! };
   }
-  const now = hub.clock.now();
-  vt.store.setShares(itemId, projects, v.person!, now);
-  vt.used({
-    atMs: now,
-    itemId,
-    action: "share",
-    outcome: "ok",
-    personId: v.person!,
-    ...(v.human ? { deviceId: v.caller.keyId } : {}),
-    data: { label: row.label, kind: row.kind, to: projects.map((r) => `${r.machineId}/${r.projectId}`) },
-  });
-  vt.changed(row);
-  if (row.kind === "env") redeliver(hub, row);
-  return row;
+  const draft: ItemDraft = { kind: row.kind, ...scope, ...(row.envName !== undefined ? { envName: row.envName } : {}), label: row.label, meta: row.meta };
+  if (row.kind === "env") checkEnvLimits(hub, draft, row.meta.bytes ?? 0, row.itemId);
+  const cap = scope.machineId ? vt.store.count({ machineId: scope.machineId, projectId: scope.projectId! }) : vt.store.count("team");
+  if (cap >= ITEMS_MAX) throw new ToolError("invalid", `At most ${ITEMS_MAX} items fit here.`, "Delete some first.");
+  const secret = vt.store.open(row);
+  const moved = vt.store.update(row, draft, secret, by(v), hub.clock.now());
+  after(hub, v, moved, secret, "move");
+  return moved;
 }
 
 /** An item as the apps list it: metadata only, a plain variable's value, and what the caller may do with it. */
 export function summary(hub: Hub, v: Viewer, row: ItemRow): Record<string, unknown> {
   const vt = vault(hub);
-  const shared = row.scope === "person" ? vt.store.shares(row.itemId) : [];
   let value: string | undefined;
   if (row.kind === "env" && row.meta.secret === false && !vt.keys.locked) {
     try {
@@ -298,7 +310,6 @@ export function summary(hub: Hub, v: Viewer, row: ItemRow): Record<string, unkno
     ...(row.machineId !== undefined ? { machineId: row.machineId } : {}),
     ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
     ...(row.workstreamId !== undefined ? { workstreamId: row.workstreamId } : {}),
-    ...(shared.length > 0 ? { sharedWith: shared } : {}),
     ...(value !== undefined ? { value } : {}),
     version: row.version,
     createdMs: row.createdMs,

@@ -7570,7 +7570,7 @@
         },
         {
           "const": "vault.changed",
-          "description": "A vault item was made, changed, deleted, restored or shared; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
+          "description": "A vault item was made, changed, deleted, restored or moved; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
           "type": "string"
         },
         {
@@ -11942,6 +11942,12 @@
         "vault_list.output": {
           "$ref": "#/$defs/VaultListOutput"
         },
+        "vault_move.input": {
+          "$ref": "#/$defs/VaultMoveInput"
+        },
+        "vault_move.output": {
+          "$ref": "#/$defs/VaultMoveOutput"
+        },
         "vault_restore.input": {
           "$ref": "#/$defs/VaultRestoreInput"
         },
@@ -11965,12 +11971,6 @@
         },
         "vault_save.output": {
           "$ref": "#/$defs/VaultSaveOutput"
-        },
-        "vault_share_set.input": {
-          "$ref": "#/$defs/VaultShareSetInput"
-        },
-        "vault_share_set.output": {
-          "$ref": "#/$defs/VaultShareSetOutput"
         },
         "vault_status.input": {
           "$ref": "#/$defs/VaultStatusInput"
@@ -12426,6 +12426,8 @@
         "vault_import_search.output",
         "vault_list.input",
         "vault_list.output",
+        "vault_move.input",
+        "vault_move.output",
         "vault_restore.input",
         "vault_restore.output",
         "vault_reveal.input",
@@ -12434,8 +12436,6 @@
         "vault_rotate.output",
         "vault_save.input",
         "vault_save.output",
-        "vault_share_set.input",
-        "vault_share_set.output",
         "vault_status.input",
         "vault_status.output",
         "vault_unlock.input",
@@ -24048,6 +24048,11 @@
           "const": "adopt",
           "description": "The migration took it in (`vault_adopt`), or found the node's value differs from the hub's record.",
           "type": "string"
+        },
+        {
+          "const": "move",
+          "description": "An item set aside at the upgrade went into the team vault or a project (`vault_move`).",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -24422,7 +24427,7 @@
         },
         "scope": {
           "$ref": "#/$defs/VaultScope",
-          "description": "Where the items go unless the person picks another: the person's own by default."
+          "description": "Always `hub`: imported items go in the team vault."
         },
         "state": {
           "$ref": "#/$defs/VaultImportState"
@@ -24512,7 +24517,7 @@
         },
         "scope": {
           "$ref": "#/$defs/VaultScope",
-          "description": "Where they go; default: the proposal's, else the caller's own."
+          "description": "Only an older app sends it, with machineId and projectId: refused with `vault_update_app`. Imports go in\nthe team vault."
         }
       },
       "type": "object"
@@ -24607,7 +24612,7 @@
       "description": "One item as a person's app lists it: metadata only, never a value (a plain variable's `value` aside).",
       "properties": {
         "canEdit": {
-          "description": "What the caller may do, by the scope table: change (edit, delete, share) and reveal.",
+          "description": "What the caller may do: change (edit, delete) and reveal. A team item: its creator or an admin.",
           "type": "boolean"
         },
         "canReveal": {
@@ -24648,20 +24653,13 @@
         },
         "personId": {
           "$ref": "#/$defs/PersonId",
-          "description": "A person item's owner; for other scopes its creator."
+          "description": "A team item's creator; a set-aside item's owner."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
         "scope": {
           "$ref": "#/$defs/VaultScope"
-        },
-        "sharedWith": {
-          "description": "The projects a person item is shared with: their agents fill it, never reveal it.",
-          "items": {
-            "$ref": "#/$defs/ProjectRef"
-          },
-          "type": "array"
         },
         "updatedBy": {
           "description": "Who changed it last: `human:<device>`, or `system` for the migration.",
@@ -24750,7 +24748,7 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId",
-          "description": "A project's items: with projectId."
+          "description": "A project's variables and its orders': with projectId. Absent: the team vault and your items set aside."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -24763,14 +24761,14 @@
         },
         "scope": {
           "$ref": "#/$defs/VaultScope",
-          "description": "Only this scope's items; absent: every item the caller sees."
+          "description": "Only this scope's items; absent: every item the call lists."
         },
         "trash": {
           "description": "The trash instead: items deleted in the last 30 days.",
           "type": "boolean"
         },
         "usable": {
-          "description": "With projectId: every item that project's work may use instead (its own, those shared with it, and the\nhub's), as Payments' card picker lists them.",
+          "description": "With projectId: the team vault's items too, as Payments' card picker lists them.",
           "type": "boolean"
         }
       },
@@ -24929,6 +24927,42 @@
       ],
       "type": "object"
     },
+    "VaultMoveInput": {
+      "description": "An item set aside at the upgrade, by its owner: a login, card or address into the team vault (no project),\na variable into a project as its variable.",
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "A variable's project: with projectId."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "VaultMoveOutput": {
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/VaultItemSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
     "VaultRestoreInput": {
       "properties": {
         "itemId": {
@@ -25056,13 +25090,14 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId",
-          "description": "A project's or an order's item."
+          "description": "A variable's project."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
         "scope": {
-          "$ref": "#/$defs/VaultScope"
+          "$ref": "#/$defs/VaultScope",
+          "description": "A new variable's: `project` or `order`. A new login, card or address names none: it goes in the team\nvault (`person` or `hub` there is an older app's, refused with `vault_update_app`)."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -25104,16 +25139,16 @@
       "type": "object"
     },
     "VaultScope": {
-      "description": "Whose an item is, and so who lists, changes and reveals it, and which work uses it.",
+      "description": "Where an item is, and so who lists, changes and reveals it, and which work uses it.",
       "oneOf": [
         {
           "const": "person",
-          "description": "One person's: used by work they started, and projects it's shared with.",
+          "description": "Set aside at the upgrade to one team vault: only its owner lists it, and nothing fills or delivers it\nuntil they move it (`vault_move`) or delete it.",
           "type": "string"
         },
         {
           "const": "project",
-          "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
+          "description": "One project's variable (`machineId`, `projectId`): its leads and agents get it.",
           "type": "string"
         },
         {
@@ -25123,48 +25158,10 @@
         },
         {
           "const": "hub",
-          "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
+          "description": "The team vault's login, card or address: everyone on the hub lists it and every project's work fills it;\nits creator or an admin changes it. Never a variable.",
           "type": "string"
         }
       ]
-    },
-    "VaultShareSetInput": {
-      "properties": {
-        "itemId": {
-          "$ref": "#/$defs/VaultItemId"
-        },
-        "projects": {
-          "description": "A person item's projects, replacing those before; empty: only its owner's own work.",
-          "items": {
-            "$ref": "#/$defs/ProjectRef"
-          },
-          "maxItems": 200,
-          "type": "array",
-          "uniqueItems": true
-        }
-      },
-      "required": [
-        "itemId",
-        "projects"
-      ],
-      "type": "object"
-    },
-    "VaultShareSetOutput": {
-      "properties": {
-        "item": {
-          "$ref": "#/$defs/VaultItemSummary"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "item"
-      ],
-      "type": "object"
     },
     "VaultSource": {
       "description": "Where an item came from.",

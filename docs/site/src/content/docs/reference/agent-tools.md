@@ -90,9 +90,9 @@ Every lead gets these.
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. | No |
 | [`fill_address`](#fill_address) | Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. | No |
-| [`vault_items`](#vault_items) | The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). | No |
-| [`vault_import_search`](#vault_import_search) | Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, vaults and sites, never a value. | No |
-| [`vault_import_propose`](#vault_import_propose) | Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope where they go (the person's own by default). | The person taps Import on the card in chat. |
+| [`vault_items`](#vault_items) | The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). | No |
+| [`vault_import_search`](#vault_import_search) | Search the person's 1Password for logins, cards and addresses to import into fleetd's team vault: titles, kinds, vaults and sites, never a value. | No |
+| [`vault_import_propose`](#vault_import_propose) | Propose importing 1Password items into fleetd's team vault: refs from vault_import_search, why one line. | The person taps Import on the card in chat. |
 | [`purchase_request`](#purchase_request) | A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. | No |
 | [`purchase_fill`](#purchase_fill) | A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
 | [`request_secure_input`](#request_secure_input) | A lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. | The person enters the value in a sealed field; a 1Password field fills with no ask. |
@@ -1187,7 +1187,7 @@ Fill a login field of your browser session from fleetd's vault without seeing th
 
 ### fill_address
 
-Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
+Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site the team vault has a login for. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1209,7 +1209,7 @@ Fill a vault address into the address form of your browser session's page withou
 
 ### vault_items
 
-The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
+The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1229,7 +1229,7 @@ The vault items your session may use: logins (label, sites, fields present), add
 
 ### vault_import_search
 
-Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.
+Search the person's 1Password for logins, cards and addresses to import into fleetd's team vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1252,12 +1252,11 @@ Search the person's 1Password for logins, cards and addresses to import into fle
 
 ### vault_import_propose
 
-Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope where they go (the person's own by default). The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, fill them from the vault.
+Propose importing 1Password items into fleetd's team vault: refs from vault_import_search, why one line. The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, any project's agents fill them from the vault.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `refs` | string[] | yes | At most 50 items. |
-| `scope` | string | no | Where they go; absent: the person's own. One of `person` (One person's: used by work they started, and projects it's shared with), `project` (One project's (`machineId`, `projectId`): its leads and agents use it), `order` (One order's variable (`workstreamId` too): that order's agents. Gone when the order closes), `hub` (Everyone's on the hub, every project's work; only admins change it. Never a variable). |
 | `why` | string | yes | One line. At most 500 characters. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** The person taps Import on the card in chat.
@@ -1408,7 +1407,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. | No |
 | [`fill_address`](#fill_address-task) | Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. | No |
-| [`vault_items`](#vault_items-task) | The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). | No |
+| [`vault_items`](#vault_items-task) | The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). | No |
 
 ### agents (task)
 
@@ -1744,7 +1743,7 @@ Fill a login field of your browser session from fleetd's vault without seeing th
 
 ### fill_address (task)
 
-Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
+Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site the team vault has a login for. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1766,7 +1765,7 @@ Fill a vault address into the address form of your browser session's page withou
 
 ### vault_items (task)
 
-The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
+The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

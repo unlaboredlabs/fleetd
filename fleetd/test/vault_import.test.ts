@@ -37,12 +37,12 @@ test("a lead searches metadata only, proposes, and the person's one tap imports 
   expect(JSON.stringify(found)).not.toContain("planted-op-1");
   const { proposalId } = (await call("vault_import_propose", { refs: ["op://Fleet/Shop", "op://Fleet/Visa"], why: "to sign in and pay" })) as { proposalId: string };
   const card = chat(k.hub).bySource(PROJECT, `vault_import:${proposalId}`)!;
-  expect(card.vaultImport).toMatchObject({ proposalId, state: "open", scope: "person", items: [{ ref: "op://Fleet/Shop", title: "Shop", kind: "login", site: "shop.example" }, { ref: "op://Fleet/Visa", kind: "card" }] });
+  expect(card.vaultImport).toMatchObject({ proposalId, state: "open", scope: "hub", items: [{ ref: "op://Fleet/Shop", title: "Shop", kind: "login", site: "shop.example" }, { ref: "op://Fleet/Visa", kind: "card" }] });
   // A task's agent can't search or propose.
   const task: LeadCaller = { ...lead, agent: { kind: "task", taskId: "T1" } };
   await expect(call("vault_import_propose", { refs: ["op://Fleet/Shop"], why: "x" }, task)).rejects.toBeInstanceOf(ToolError);
-  const out = await k.call<{ items: { label: string; kind: string; meta: Record<string, unknown> }[]; errors: unknown[] }>(k.ownerDevice, "vault_import", { proposalId, refs: ["op://Fleet/Shop"] });
-  expect(out.items.map((i) => [i.label, i.kind, i.meta.sites, i.meta.source])).toEqual([["Shop", "login", ["shop.example"], { kind: "1password", ref: "op://Fleet/Shop", importedMs: k.clock.now() }]]);
+  const out = await k.call<{ items: { scope: string; label: string; kind: string; meta: Record<string, unknown> }[]; errors: unknown[] }>(k.ownerDevice, "vault_import", { proposalId, refs: ["op://Fleet/Shop"] });
+  expect(out.items.map((i) => [i.scope, i.label, i.kind, i.meta.sites, i.meta.source])).toEqual([["hub", "Shop", "login", ["shop.example"], { kind: "1password", ref: "op://Fleet/Shop", importedMs: k.clock.now() }]]);
   expect(chat(k.hub).bySource(PROJECT, `vault_import:${proposalId}`)!.vaultImport).toMatchObject({ state: "imported", imported: 1 });
   expect((await refusal(k.call(k.ownerDevice, "vault_import", { proposalId }))).code).toBe("invalid");
   // Searching again marks it imported.
@@ -57,6 +57,12 @@ test("dismiss closes the card; the person's own pick needs no proposal; a search
   expect(chat(k.hub).bySource(PROJECT, `vault_import:${proposalId}`)!.vaultImport).toMatchObject({ state: "dismissed" });
   const own = await k.call<{ items: { kind: string; meta: Record<string, unknown> }[] }>(k.ownerDevice, "vault_import", { refs: ["op://Fleet/Visa"] });
   expect(own.items[0]).toMatchObject({ kind: "card", meta: { brand: "visa", last4: "4242" } });
+  // An older app sends where the items go: refused, saying to update, with nothing read or stored.
+  for (const scope of ["person", "hub", "project"]) {
+    const e = await refusal(k.call(k.ownerDevice, "vault_import", { refs: ["op://Fleet/Shop"], scope, ...PROJECT }));
+    expect(e.reason).toBe("vault_update_app");
+  }
+  expect(k.v.store.select("kind = 'login'", [])).toEqual([]);
   const none = await k.call<{ items: unknown[]; error?: string }>(k.memberDevice, "vault_import_search", { query: "" });
   expect(none.error).toContain("No 1Password token");
 });

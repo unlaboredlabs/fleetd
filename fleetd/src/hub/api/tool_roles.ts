@@ -76,7 +76,7 @@ export const TOOLS = {
   vault_delete: { scope: "operate", module: "src/hub/vault" },
   vault_restore: { scope: "operate", module: "src/hub/vault" },
   vault_reveal: { scope: "operate", module: "src/hub/vault" },
-  vault_share_set: { scope: "operate", module: "src/hub/vault" },
+  vault_move: { scope: "operate", module: "src/hub/vault" },
   vault_audit: { scope: "read", module: "src/hub/vault" },
   vault_status: { scope: "read", module: "src/hub/vault" },
   vault_unlock: { scope: "admin", module: "src/hub/vault" },

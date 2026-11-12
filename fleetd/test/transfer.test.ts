@@ -125,7 +125,7 @@ async function fill(p: Place, k: Opened) {
 
   // The vault's items, as an app saves them: sealed to the hub's box key on the way in, then under its root key.
   const sealToHub = (fields: unknown) => b64(seal(boxPub, Buffer.from(JSON.stringify(fields))));
-  const login = await call<{ item: { itemId: string } }>(me, "vault_save", { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: sealToHub({ username: "ada", password: CANARY.password }) });
+  const login = await call<{ item: { itemId: string } }>(me, "vault_save", { kind: "login", label: "Shop", sites: ["shop.example"], sealed: sealToHub({ username: "ada", password: CANARY.password }) });
   const env = await call<{ item: { itemId: string } }>(me, "vault_save", { kind: "env", scope: "project", ...PROJECT, envName: "API_KEY", sealed: sealToHub({ value: CANARY.env }) });
 
   // What the hub seals to its own box key, a row of each table that holds one.

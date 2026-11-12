@@ -1,9 +1,11 @@
-// The vault's tools from a person's device: who lists, changes and reveals what (person, project, order,
-// hub), sharing, the trash, the limits, and that the database holds no value in the clear.
+// The vault's tools from a person's device: who lists, changes and reveals what (the team vault, a project's
+// variables, items set aside and their move), an older app's refusal, the trash, the limits, and that the database holds
+// no value in the clear.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import { OTHER, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
 import { refusal } from "./people-kit.ts";
+import { people } from "../src/hub/people/store.ts";
 
 let k: VaultHub;
 beforeEach(async () => {
@@ -25,16 +27,15 @@ async function reveal(caller: typeof k.ownerDevice, itemId: string, fields: stri
 const LOGIN = { username: "ada@example.test", password: "planted-pw-1x9z" };
 const CARD = { number: "4242 4242 4242 4242", month: "4", year: "31", cvc: "123", name: "Ada" };
 
-test("a person's own login: metadata worked out by the hub, the value only through a sealed reveal", async () => {
-  const item = await save(k.ownerDevice, { kind: "login", scope: "person", label: "Shop", sites: ["www.shop.example"], sealed: k.sealToHub(LOGIN) });
+test("a team login: metadata worked out by the hub, the value only through a sealed reveal", async () => {
+  const item = await save(k.ownerDevice, { kind: "login", label: "Shop", sites: ["www.shop.example"], sealed: k.sealToHub(LOGIN) });
+  expect(item.scope).toBe("hub");
   expect(item.meta).toEqual({ sites: ["www.shop.example"], fields: ["username", "password"], source: { kind: "typed" } });
   expect(item.canEdit && item.canReveal).toBe(true);
   expect(JSON.stringify(item)).not.toContain(LOGIN.password);
   expect(await reveal(k.ownerDevice, item.itemId, ["password"])).toEqual({ password: LOGIN.password });
-  // Nobody else lists it, not even an admin's second device of another person.
-  expect((await list(k.memberDevice)).map((i) => i.itemId)).not.toContain(item.itemId);
-  expect((await refusal(k.call(k.memberDevice, "vault_get", { itemId: item.itemId }))).code).toBe("not_found");
-  // An agent key never reaches the vault's tools.
+  // Everyone on the hub lists it; an agent key never reaches the vault's tools.
+  expect((await list(k.memberDevice)).map((i) => i.itemId)).toContain(item.itemId);
   expect((await refusal(k.call(k.agent(), "vault_list", {}))).code).toBe("forbidden");
   // Every write and reveal is audited, never with a value.
   const audit = await k.call<{ entries: { action: string; data: unknown }[] }>(k.ownerDevice, "vault_audit", { itemId: item.itemId });
@@ -42,9 +43,76 @@ test("a person's own login: metadata worked out by the hub, the value only throu
   expect(JSON.stringify(audit)).not.toContain(LOGIN.password);
 });
 
+test("team items: anyone adds one; its creator or an admin shows, changes or deletes it; others only list and fill it", async () => {
+  const bos = await save(k.memberDevice, { kind: "login", label: "Bo's shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
+  expect([bos.canEdit, bos.canReveal]).toEqual([true, true]);
+  const asAdmin = (await list(k.ownerDevice)).find((i) => i.itemId === bos.itemId)!;
+  expect([asAdmin.canEdit, asAdmin.canReveal]).toEqual([true, true]);
+  const ada = await save(k.ownerDevice, { kind: "card", label: "Team", sealed: k.sealToHub(CARD) });
+  const asMember = (await list(k.memberDevice)).find((i) => i.itemId === ada.itemId)!;
+  expect([asMember.canEdit, asMember.canReveal]).toEqual([false, false]);
+  expect((await refusal(reveal(k.memberDevice, ada.itemId, ["number"]))).code).toBe("forbidden");
+  expect((await refusal(k.call(k.memberDevice, "vault_delete", { itemId: ada.itemId }))).code).toBe("forbidden");
+  // A login's sites changed by someone who can't show it would fill its password wherever they pick.
+  const adas = await save(k.ownerDevice, { kind: "login", label: "Bank", sites: ["bank.example"], sealed: k.sealToHub(LOGIN) });
+  expect((await refusal(save(k.memberDevice, { itemId: adas.itemId, sites: ["evil.example"] }))).code).toBe("forbidden");
+  expect(k.v.store.get(adas.itemId)!.meta.sites).toEqual(["bank.example"]);
+  // Any session on the hub may fill it, whichever project.
+  expect(k.v.usable().map((r) => r.itemId).sort()).toEqual([bos.itemId, ada.itemId, adas.itemId].sort());
+  expect((await refusal(save(k.ownerDevice, { kind: "env", scope: "hub", envName: "X", sealed: k.sealToHub({ value: "y" }) }))).code).toBe("invalid");
+});
+
+test("an older app adding a person's own or hub-level item, or a project's login, is refused saying to update; its reads work", async () => {
+  for (const scope of ["person", "hub", "project"]) {
+    const e = await refusal(save(k.memberDevice, { kind: "login", scope, ...PROJECT, label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) }));
+    expect([e.code, e.reason, e.message]).toEqual(["invalid", "vault_update_app", "This app is older than the hub: update it to add vault items."]);
+  }
+  const e = await refusal(save(k.memberDevice, { kind: "env", scope: "person", envName: "TOKEN", sealed: k.sealToHub({ value: "x" }) }));
+  expect(e.reason).toBe("vault_update_app");
+  // Nothing was stored, at any level.
+  expect(k.hub.db.conn.query("SELECT count(*) AS n FROM vault_items").get()).toEqual({ n: 0 });
+  // Its reads: the team's items, under the scope it knows as the hub's, and a project's variables.
+  const team = await save(k.ownerDevice, { kind: "card", label: "Team", sealed: k.sealToHub(CARD) });
+  const env = await save(k.ownerDevice, { kind: "env", scope: "project", ...PROJECT, envName: "TOKEN", sealed: k.sealToHub({ value: "x" }) });
+  expect((await list(k.memberDevice, { scope: "hub" })).map((i) => i.itemId)).toEqual([team.itemId]);
+  expect((await list(k.memberDevice, { ...PROJECT })).map((i) => i.itemId)).toEqual([env.itemId]);
+  expect((await k.call<{ item: Item }>(k.memberDevice, "vault_get", { itemId: team.itemId })).item.scope).toBe("hub");
+});
+
+test("an item set aside: only its owner lists it, nothing fills it, and they move it to the team vault or a project, or delete it", async () => {
+  const login = k.v.store.insert(
+    { kind: "login", scope: "person", personId: k.member.personId, label: "Bo's own", meta: { sites: ["shop.example"], fields: ["username", "password"], source: { kind: "typed" } } },
+    LOGIN,
+    k.member.personId,
+    k.clock.now(),
+  );
+  const env = k.v.store.insert({ kind: "env", scope: "person", personId: k.member.personId, envName: "BO_TOKEN", label: "BO_TOKEN", meta: { secret: true, source: { kind: "typed" } } }, { value: "planted-bo-1" }, k.member.personId, k.clock.now());
+  const card = k.v.store.insert({ kind: "card", scope: "person", personId: k.member.personId, label: "Bo's Visa", meta: { brand: "visa", last4: "4242", source: { kind: "typed" } } }, CARD, k.member.personId, k.clock.now());
+  expect((await list(k.memberDevice)).filter((i) => i.scope === "person").map((i) => i.label).sort()).toEqual(["BO_TOKEN", "Bo's Visa", "Bo's own"]);
+  expect((await list(k.ownerDevice)).some((i) => i.scope === "person")).toBe(false);
+  expect(k.v.usable()).toEqual([]);
+  // Only its owner moves it.
+  expect((await refusal(k.call(k.ownerDevice, "vault_move", { itemId: login.itemId }))).code).toBe("not_found");
+  const moved = await k.call<{ item: Item }>(k.memberDevice, "vault_move", { itemId: login.itemId });
+  expect(moved.item.scope).toBe("hub");
+  expect(k.v.usable().map((r) => r.itemId)).toEqual([login.itemId]);
+  expect((await reveal(k.memberDevice, login.itemId, ["password"])).password).toBe(LOGIN.password);
+  // A variable needs a project, and goes in as that project's.
+  expect((await refusal(k.call(k.memberDevice, "vault_move", { itemId: env.itemId }))).code).toBe("invalid");
+  const asVar = await k.call<{ item: Item & { projectId?: string } }>(k.memberDevice, "vault_move", { itemId: env.itemId, ...PROJECT });
+  expect([asVar.item.scope, asVar.item.projectId]).toEqual(["project", PROJECT.projectId]);
+  expect(k.v.store.open(k.v.store.get(env.itemId)!).value).toBe("planted-bo-1");
+  // A moved item isn't set aside any more; a set-aside one goes with Delete.
+  expect((await refusal(k.call(k.memberDevice, "vault_move", { itemId: login.itemId }))).code).toBe("invalid");
+  await k.call(k.memberDevice, "vault_delete", { itemId: card.itemId });
+  expect(k.v.store.get(card.itemId)!.deletedMs).toBeDefined();
+  const audit = await k.call<{ entries: { action: string }[] }>(k.memberDevice, "vault_audit", { itemId: login.itemId });
+  expect(audit.entries.map((x) => x.action)).toEqual(["reveal", "move"]);
+});
+
 test("a card is checked (Luhn, expiry), its brand and last 4 derived; an edit merges only the changed fields", async () => {
-  expect((await refusal(save(k.ownerDevice, { kind: "card", scope: "person", label: "Bad", sealed: k.sealToHub({ ...CARD, number: "4242 4242 4242 4241" }) }))).code).toBe("invalid");
-  const card = await save(k.ownerDevice, { kind: "card", scope: "person", label: "Visa", sealed: k.sealToHub(CARD) });
+  expect((await refusal(save(k.ownerDevice, { kind: "card", label: "Bad", sealed: k.sealToHub({ ...CARD, number: "4242 4242 4242 4241" }) }))).code).toBe("invalid");
+  const card = await save(k.ownerDevice, { kind: "card", label: "Visa", sealed: k.sealToHub(CARD) });
   expect(card.meta).toMatchObject({ brand: "visa", last4: "4242" });
   const renamed = await save(k.ownerDevice, { itemId: card.itemId, label: "Visa (Personal)" });
   expect(renamed.label).toBe("Visa (Personal)");
@@ -52,50 +120,35 @@ test("a card is checked (Luhn, expiry), its brand and last 4 derived; an edit me
   expect(await reveal(k.ownerDevice, card.itemId, ["number", "month", "year", "cvc", "name"])).toEqual({ number: "4242424242424242", month: "04", year: "2031", cvc: "999" });
 });
 
-test("project items: everyone who sees the project lists them; operate changes them; the creator or an admin reveals", async () => {
-  const item = await save(k.memberDevice, { kind: "login", scope: "project", ...PROJECT, label: "Staging", sites: ["staging.example.com"], sealed: k.sealToHub(LOGIN) });
-  const asOwner = (await list(k.ownerDevice)).find((i) => i.itemId === item.itemId)!;
+test("project variables: everyone who sees the project lists them; operate changes them; the creator or an admin reveals", async () => {
+  const item = await save(k.memberDevice, { kind: "env", scope: "project", ...PROJECT, envName: "STAGING_KEY", sealed: k.sealToHub({ value: "planted-st-1" }) });
+  const asOwner = (await list(k.ownerDevice, { ...PROJECT })).find((i) => i.itemId === item.itemId)!;
   expect(asOwner.canEdit).toBe(true);
   expect(asOwner.canReveal).toBe(true); // an admin
   const reader = k.device([{ role: "read", machines: "*" }], k.member.personId, "bo-tablet");
-  const asReader = (await list(reader)).find((i) => i.itemId === item.itemId)!;
+  const asReader = (await list(reader, { ...PROJECT })).find((i) => i.itemId === item.itemId)!;
   expect(asReader.canEdit).toBe(false);
-  expect((await refusal(save(reader, { itemId: item.itemId, label: "x" }))).code).toBe("forbidden");
-  // The project's list holds its own items; `usable` adds what its work may use.
+  expect((await refusal(save(reader, { itemId: item.itemId, envName: "X" }))).code).toBe("forbidden");
+  // The project's list holds its own variables; `usable` adds the team vault's items.
+  const team = await save(k.ownerDevice, { kind: "card", label: "Team", sealed: k.sealToHub(CARD) });
   expect((await list(k.ownerDevice, { ...PROJECT })).map((i) => i.itemId)).toEqual([item.itemId]);
+  expect((await list(k.ownerDevice, { ...PROJECT, usable: true })).map((i) => i.itemId).sort()).toEqual([item.itemId, team.itemId].sort());
   expect((await list(k.ownerDevice, { ...OTHER })).map((i) => i.itemId)).toEqual([]);
 });
 
-test("a project that was Only me: its items are everyone's who sees the project (D491)", async () => {
-  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
-  const item = await save(k.memberDevice, { kind: "env", scope: "project", ...OTHER, envName: "API_KEY", sealed: k.sealToHub({ value: "planted-env-7q" }) });
-  expect((await list(k.memberDevice)).some((i) => i.itemId === item.itemId)).toBe(true);
-  expect((await list(k.ownerDevice)).some((i) => i.itemId === item.itemId)).toBe(true);
-  expect((await reveal(k.memberDevice, item.itemId, ["value"])).value).toBe("planted-env-7q");
-});
-
-test("hub items: everyone lists and uses them, only admins change and reveal them; variables can't be hub-wide", async () => {
-  expect((await refusal(save(k.memberDevice, { kind: "card", scope: "hub", label: "Team", sealed: k.sealToHub(CARD) }))).code).toBe("forbidden");
-  const team = await save(k.ownerDevice, { kind: "card", scope: "hub", label: "Team", sealed: k.sealToHub(CARD) });
-  const asMember = (await list(k.memberDevice)).find((i) => i.itemId === team.itemId)!;
-  expect([asMember.canEdit, asMember.canReveal]).toEqual([false, false]);
-  expect((await refusal(reveal(k.memberDevice, team.itemId, ["number"]))).code).toBe("forbidden");
-  expect((await refusal(save(k.ownerDevice, { kind: "env", scope: "hub", envName: "X", sealed: k.sealToHub({ value: "y" }) }))).code).toBe("invalid");
-});
-
-test("sharing a person's card with a project lets its work use it, never reveal it", async () => {
-  const card = await save(k.memberDevice, { kind: "card", scope: "person", label: "Bo's Visa", sealed: k.sealToHub(CARD) });
-  expect((await list(k.ownerDevice, { ...PROJECT, usable: true })).some((i) => i.itemId === card.itemId)).toBe(false);
-  await k.call(k.memberDevice, "vault_share_set", { itemId: card.itemId, projects: [PROJECT] });
-  expect(k.v.usable({ projectRef: PROJECT }).map((r) => r.itemId)).toContain(card.itemId);
-  expect(k.v.usable({ projectRef: OTHER }).map((r) => r.itemId)).not.toContain(card.itemId);
-  // The owner of the hub still doesn't list another person's item.
-  expect((await list(k.ownerDevice, { ...PROJECT, usable: true })).some((i) => i.itemId === card.itemId)).toBe(false);
-  expect((await refusal(k.call(k.ownerDevice, "vault_share_set", { itemId: card.itemId, projects: [] }))).code).toBe("not_found");
+test("making someone's secret variable plain, which would list its value, takes who may reveal it", async () => {
+  const other = k.device([{ role: "operate", machines: "*" }], people(k.hub).create("Cy", "member").personId, "cy-phone");
+  const item = await save(k.memberDevice, { kind: "env", scope: "project", ...PROJECT, envName: "DB_URL", sealed: k.sealToHub({ value: "planted-db-1" }) });
+  expect((await refusal(save(other, { itemId: item.itemId, secret: false }))).code).toBe("forbidden");
+  expect((await list(other, { ...PROJECT })).find((i) => i.itemId === item.itemId)!.value).toBeUndefined();
+  // A new value with it is fine: the old one never shows.
+  expect((await save(other, { itemId: item.itemId, secret: false, sealed: k.sealToHub({ value: "public" }) })).value).toBe("public");
+  const mine = await save(k.memberDevice, { kind: "env", scope: "project", ...PROJECT, envName: "MINE", sealed: k.sealToHub({ value: "planted-m-1" }) });
+  expect((await save(k.memberDevice, { itemId: mine.itemId, secret: false })).value).toBe("planted-m-1");
 });
 
 test("delete goes to the trash, restore brings it back, purge removes it for good", async () => {
-  const item = await save(k.ownerDevice, { kind: "address", scope: "person", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", country: "US" }) });
+  const item = await save(k.ownerDevice, { kind: "address", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", country: "US" }) });
   expect(item.meta.country).toBe("US");
   await k.call(k.ownerDevice, "vault_delete", { itemId: item.itemId });
   expect((await list(k.ownerDevice)).some((i) => i.itemId === item.itemId)).toBe(false);
@@ -128,22 +181,22 @@ test("variables: names checked, one per name and scope, the project's 100 and 51
 });
 
 test("a value sealed to another key is refused, and the database holds no value in the clear", async () => {
-  expect((await refusal(save(k.ownerDevice, { kind: "login", scope: "person", label: "x", sealed: Buffer.from("not sealed at all, just text").toString("base64") }))).code).toBe("invalid");
-  await save(k.ownerDevice, { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
-  await save(k.ownerDevice, { kind: "card", scope: "person", label: "Visa", sealed: k.sealToHub(CARD) });
+  expect((await refusal(save(k.ownerDevice, { kind: "login", label: "x", sealed: Buffer.from("not sealed at all, just text").toString("base64") }))).code).toBe("invalid");
+  await save(k.ownerDevice, { kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
+  await save(k.ownerDevice, { kind: "card", label: "Visa", sealed: k.sealToHub(CARD) });
   const dump = Buffer.from(k.hub.db.conn.serialize());
   for (const planted of [LOGIN.password, "4242424242424242", "ada@example.test"]) expect(dump.includes(Buffer.from(planted))).toBe(false);
 });
 
 test("reveals are rate limited per person", async () => {
-  const item = await save(k.ownerDevice, { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
+  const item = await save(k.ownerDevice, { kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
   for (let i = 0; i < 30; i++) await reveal(k.ownerDevice, item.itemId, ["username"]);
   const e = await refusal(reveal(k.ownerDevice, item.itemId, ["username"]));
   expect(e.reason).toBe("vault_rate_limited");
 });
 
 test("rotation rewraps every item under a new key, which then opens them alone", async () => {
-  const item = await save(k.ownerDevice, { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
+  const item = await save(k.ownerDevice, { kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
   k.v.store.setSetting("recovery_saved_ms", "1");
   const out = await k.call<{ keyId: string; rewrapped: number }>(k.ownerDevice, "vault_rotate", {});
   expect(out).toEqual({ keyId: "k2", rewrapped: 1 });

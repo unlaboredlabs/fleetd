@@ -95,15 +95,13 @@ test("a vault card: picked for the project, claimed once, sealed to the hosting 
   startPurchases(k.hub);
   const card = await k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", {
     kind: "card",
-    scope: "person",
     label: "Visa (Personal)",
     sealed: k.sealToHub({ number: "4242424242424242", month: "04", year: "2031", cvc: "123", name: "Ada" }),
   });
   const ref = `vault:${card.item.itemId}`;
-  await k.call(k.ownerDevice, "vault_share_set", { itemId: card.item.itemId, projects: [PROJECT] });
-  // Another person's card can't be picked for a project they can't share it with.
-  const bos = await k.call<{ item: { itemId: string } }>(k.memberDevice, "vault_save", { kind: "card", scope: "person", label: "Bo", sealed: k.sealToHub({ number: "4242424242424242" }) });
-  expect((await refusal(k.call(k.ownerDevice, "project_card_set", { ...PROJECT, card: `vault:${bos.item.itemId}` }))).code).toBe("invalid");
+  // A card set aside at the upgrade can't be picked: only the team vault's cards pay.
+  const bos = k.v.store.insert({ kind: "card", scope: "person", personId: k.member.personId, label: "Bo", meta: { brand: "visa", last4: "4242", source: { kind: "typed" } } }, { number: "4242424242424242" }, k.member.personId, k.clock.now());
+  expect((await refusal(k.call(k.ownerDevice, "project_card_set", { ...PROJECT, card: `vault:${bos.itemId}` }))).code).toBe("invalid");
   const set = await k.call<{ card: { ref: string; label?: string } }>(k.ownerDevice, "project_card_set", { ...PROJECT, card: ref });
   expect(set.card).toMatchObject({ ref, label: "Visa (Personal) ••4242" });
   const lead: LeadCaller = { projectRef: PROJECT, by: "lead:devbox/p1", agent: { kind: "lead" }, threadId: "t", via: M };
