@@ -107,14 +107,14 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
     },
     ["profiles_list"],
   ],
-  // A value sealed to the hub's key, which vault_status gives: an env item in the caller's vault (an env item's label is
-  // its name, so the mark is in its value, which only a reveal shows), and the vault's unlock (any passphrase opens one
-  // that has none).
+  // A value sealed to the hub's key, which vault_status gives: a login in the team vault (a login names no scope; a
+  // variable names a project, which no run adds), its mark only in its password, which only a reveal shows, and the
+  // vault's unlock (any passphrase opens one that has none).
   [
     "vault_save",
     async (mark, n, { as }) => {
-      const sealed = await sealedToHub(as, { value: `${mark} value ${n}` });
-      return sealed === undefined ? undefined : { kind: "env", scope: "person", envName: `AREAS_SEED_${n}`, sealed };
+      const sealed = await sealedToHub(as, { username: `areas-${n}`, password: `${mark} value ${n}` });
+      return sealed === undefined ? undefined : { kind: "login", label: `Areas seed ${n}`, sites: ["areas.example"], sealed };
     },
     ["vault_status"],
   ],
@@ -205,6 +205,7 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   pr_files: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   pr_diff: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
+  vault_move: "not called: it moves an item set aside at the upgrade, which no tool makes",
 };
 
 /**
@@ -217,11 +218,11 @@ const OUTSIDE: Readonly<Record<string, unknown>> = {
 
 /**
  * Writes that take more than ids, which made-up text can't stand in for: each is given the ids the team's reads turn
- * up (the seeds' first) and the rest here. vault_reveal reveals the vault_save seed's env item, whose only field is
- * `value`, sealed to a reply key: any 32 bytes, as an X25519 public key is.
+ * up (the seeds' first) and the rest here. vault_reveal reveals the vault_save seed's login's `password`, which holds
+ * its mark, sealed to a reply key: any 32 bytes, as an X25519 public key is.
  */
 const BESIDE_IDS: Readonly<Record<string, () => Record<string, unknown>>> = {
-  vault_reveal: () => ({ fields: ["value"], replyKey: randomBytes(32).toString("base64") }),
+  vault_reveal: () => ({ fields: ["password"], replyKey: randomBytes(32).toString("base64") }),
 };
 
 /**
