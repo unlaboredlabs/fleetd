@@ -5,8 +5,10 @@
 import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
+import { TRAIN_CONTEXT } from "./text.ts";
 
-export const TRAIN_CONTEXT = "fleetd/train";
+export { TRAIN_CONTEXT } from "./text.ts";
+
 export const GH_AUTH_FIX = "run `gh auth login` on the hub machine";
 /** How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST_MS`. */
 export const READ_TRIES = 3;
