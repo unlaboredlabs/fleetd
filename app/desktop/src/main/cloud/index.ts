@@ -1,18 +1,19 @@
-// fleetd cloud in main: Sign in, Sign out and Connect this computer behind one interface, which a fixture
+// fleetd cloud in main: Sign in, Sign out, Connect this computer and a team's invites by email behind one interface, which a fixture
 // (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
 // the page shows the self-hosted app alone.
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import type { CloudState, ConnectComputerOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { CloudState, ConnectComputerOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import { writePrivate } from "../hub/credentials";
 import { realTerminalDeps } from "../pairing/terminal";
 import { trustSystemCAs } from "../trust";
 import { CloudAccount, SavedAccount } from "./account";
-import type { CloudConfig } from "./config";
+import { teamOrigin, type CloudConfig } from "./config";
 import { connectComputer } from "./connect";
+import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 export interface Cloud {
   state(): CloudState;
@@ -22,7 +23,13 @@ export interface Cloud {
   link(): string | null;
   signOut(): Promise<SignOutOutcome>;
   connectComputer(hub: HubId): Promise<ConnectComputerOutcome>;
+  invites(hub: HubId): Promise<InvitesOutcome>;
+  invite(hub: HubId, request: InviteRequest): Promise<InviteOutcome>;
+  revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
 }
+
+/** Asked of a hub that didn't come with the account: the page never offers it there. */
+const NOT_CLOUD = { ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } } as const;
 
 /** Who is signed in, beside the hubs' list; no token is in it. */
 export const ACCOUNT_FILE = "desktop-account.json";
@@ -48,13 +55,21 @@ const save = (dir: string, account: SavedAccount | null): void => {
 const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "desktop app";
 
 export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, local: boolean, open: (url: string) => Promise<void>): Cloud => {
+  const fetch = (url: string, init: RequestInit): Promise<Response> => {
+    trustSystemCAs();
+    return globalThis.fetch(url, init);
+  };
+  /** A hub that came with the account, at a team address, with its key; null for any other. */
+  const team = (id: HubId): KeyedTeam | null => {
+    const hub = config === null ? undefined : hubs.cloudHubs().find((h) => h.id === id);
+    const keyed = hub?.service.keyed() ?? null;
+    const origin = keyed === null ? null : teamOrigin(keyed.url, local);
+    return hub === undefined || keyed === null || origin === null ? null : { origin, key: keyed.key, name: hub.label };
+  };
   const account = new CloudAccount({
     config,
     local,
-    fetch: (url, init) => {
-      trustSystemCAs();
-      return globalThis.fetch(url, init);
-    },
+    fetch,
     open,
     deviceName,
     connect: (url, key, label) => hubs.connectCloud({ url, key }, label),
@@ -80,6 +95,18 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
       const service = hubs.get(id);
       if (service === undefined) return { ok: false, message: "That hub was removed from this app." };
       return connectComputer((tool, input) => service.call({ tool, input }), realTerminalDeps());
+    },
+    invites: async (id) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : listInvites(fetch, t);
+    },
+    invite: async (id, request) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : sendInvite(fetch, t, request);
+    },
+    revokeInvite: async (id, inviteId) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : revokeInvite(fetch, t, inviteId);
     },
   };
 };

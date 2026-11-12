@@ -61,6 +61,12 @@ export const IPC = {
   cloudSignOut: "cloud:sign-out",
   /** invoke(hub) → ConnectComputerOutcome. A join line from the hub, run in a terminal on this computer. */
   cloudConnectComputer: "cloud:connect-computer",
+  /** invoke(hub) → InvitesOutcome. A cloud team's open invites by email (GET ACCOUNTS_INVITES_PATH with its key). */
+  cloudInvites: "cloud:invites",
+  /** invoke(hub, InviteRequest) → InviteOutcome. Invites an email to a cloud team; WorkOS sends the email. */
+  cloudInvite: "cloud:invite",
+  /** invoke(hub, inviteId) → RevokeInviteOutcome. Takes an invite by email back. */
+  cloudRevokeInvite: "cloud:revoke-invite",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /**

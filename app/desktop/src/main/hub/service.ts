@@ -54,6 +54,8 @@ export class HubService {
   readonly #thumbs = new Set<WebContents>();
   /** Dialling is held until `start`: the app connects once its window shows, not on the way to it. */
   #started = false;
+  /** The address and key the connection uses, for a call outside /app (a cloud team's invites by email). */
+  #paired: { readonly url: string; readonly key: string } | null = null;
 
   constructor(mode: HubMode) {
     this.id = mode.id;
@@ -84,6 +86,11 @@ export class HubService {
 
   state(): HubState {
     return this.#source?.state ?? this.#unpaired;
+  }
+
+  /** The address and key it is paired with, for main's own HTTP calls to it; null in a fixture or unpaired. */
+  keyed(): { readonly url: string; readonly key: string } | null {
+    return this.#paired;
   }
 
   /**
@@ -221,6 +228,7 @@ export class HubService {
     if (this.#mode.kind !== "hub") return;
     this.#source?.stop();
     this.#source = null;
+    this.#paired = null;
     if (!this.#ephemeral) clearCredentials(this.#mode.credentials, this.id);
     this.#mode.cache.clear();
     this.#unpaired = { phase: "unpaired" };
@@ -234,6 +242,7 @@ export class HubService {
   #use(hub: string, key: string): void {
     if (this.#mode.kind !== "hub") return;
     this.#source?.stop();
+    this.#paired = { url: hub, key };
     const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
     this.#source = client;
     client.chat(this.#chat);

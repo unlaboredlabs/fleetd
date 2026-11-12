@@ -14,7 +14,7 @@ const person = (personId: string, name: string, role: string, createdAt = AT): J
 const ref = (p: JsonObject): JsonObject => ({ personId: p["personId"] ?? "", name: p["name"] ?? "" });
 
 export const sam = person("p_aaaaaaaa", "Sam Rivera", "owner", "2026-09-01T08:00:00.000Z");
-const alice = person("p_bbbbbbbb", "Alice Chen", "admin");
+export const alice = person("p_bbbbbbbb", "Alice Chen", "admin");
 export const bob = person("p_cccccccc", "Bob Okafor", "member", "2026-10-14T16:20:00.000Z");
 const dana = person("p_dddddddd", "Dana Ito", "member", "2026-10-18T11:00:00.000Z");
 /** The people as a chat message names them (ChatMessage.person): Sam is the app's, the others write from theirs. */
