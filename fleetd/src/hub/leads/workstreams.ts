@@ -10,7 +10,7 @@ import { leadWakes } from "./seams.ts";
 import { leadWiring, unlanded } from "./ports.ts";
 import { isClosed, LeadRecords } from "./records.ts";
 import { runHuman, setRequested } from "./requested.ts";
-import { clip } from "./text.ts";
+import { titleOf } from "./stored.ts";
 
 export type IntakeInput = {
   projectRef: ProjectRef;
@@ -23,7 +23,6 @@ export type IntakeInput = {
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
-const titleOf = (text: string) => clip((text.trim().split("\n")[0] ?? "").trim(), 200);
 
 export const noProject = (r: ProjectRef) =>
   new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);

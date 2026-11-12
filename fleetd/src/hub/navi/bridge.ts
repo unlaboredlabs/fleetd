@@ -22,14 +22,15 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import * as navis from "./store.ts";
 import { othersOf, type Refs } from "./owner.ts";
+import { askFooter, RETRY_MS } from "./asks.ts";
+
+export { askFooter, RETRY_MS } from "./asks.ts";
 
 export const OPS = ["project_message", "factory_status"] as const;
 /** `project_message` as a Navi's session asks for it. */
 export const TOOL = "mcp__fleetd__project_message";
 /** The event log cursor `run` keeps in `time_cursors`. */
 const CURSOR = "navi.bridge";
-/** How long the same words to the same project count as a retry of the first ask, not a new one. */
-const RETRY_MS = 10 * 60 * 1000;
 /** Asks per project `factory_status` lists, newest first. */
 const ASKS_SHOWN = 5;
 const TYPES = ["workstream.created", "workstream.done", "workstream.state", "change.state"];
@@ -118,10 +119,6 @@ export function clip(s: string, max: number): string {
   }
   return `${out}…`;
 }
-
-/** What a project's lead is told at the end of an ask. */
-export const askFooter = (handle: string) =>
-  `(Ask ${handle}. If you open an order for it, pass asked: "${handle}" to brief, so the asker hears when it lands. If you fold it into an order already open, call brief with that workstreamId and asked: "${handle}".)`;
 
 /** Whether the hub has project `r`; an archived one only with `archived`. */
 export function isProject(db: Database, r: ProjectRef, archived: boolean): boolean {
