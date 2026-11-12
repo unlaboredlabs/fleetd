@@ -118,8 +118,9 @@ A case calls the tool three times with team A's key: with an id nobody holds, wi
 holds. B's must get the answer the unknown ones get, once the ids sent are masked: the same error, the same shape, the
 same message. What differs between the two unknown ids (a time, a number the call drew) is not held against it. And
 nothing team A is told, in the cases or in its own reads, may hold a canary: a string the run puts in team B's rows.
-What A sent itself is not held against it: a canary inside an id of B's that the call sent (a profile renamed to one
-of B's names), in the call after that one wrote it, or in an id of B's that a write of A's kept.
+What A sent itself is not held against it: a canary inside an id of B's that the case sent, in that call or the one
+after it (a profile renamed to one of B's names), or in an id of B's that a write of A's kept. The canary anywhere else,
+in any of the three calls, fails the case.
 
 An id is team B's while team A doesn't hold it too, and what A holds is not taken from its reads on trust: a list that
 shows A team B's rows would make every id in it look shared. So team A's ids are read before team B is made

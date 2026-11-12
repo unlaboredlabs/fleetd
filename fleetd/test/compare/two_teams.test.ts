@@ -150,9 +150,11 @@ test("a number team A counts up to itself during the run is no longer team B's i
   expect(failed(report)).toEqual([]);
 });
 
-test("a write that sets team A's own name to one of team B's may say so after; one that shows B's rows still fails", async () => {
+test("a write that sets team A's own name to one of team B's may say so after; one that shows B's rows still fails, in any of its calls", async () => {
   // note_rename renames the team's last-renamed note (welcome at first) and says from what, as the hub's renames do.
-  const rename = (leaks: boolean): StandInTool => {
+  // `lists`: it also lists every team's names; `joins`: it also shows another team's note under the old name, which
+  // only the call after B's name was written into A's rows can show.
+  const rename = (leak: "none" | "lists" | "joins"): StandInTool => {
     const last = new Map<unknown, string>();
     return {
       name: "note_rename",
@@ -165,12 +167,19 @@ test("a write that sets team A's own name to one of team B's may say so after; o
         team.notes.delete(from);
         team.notes.set(input.name, text);
         last.set(team, input.name);
-        return { note: { name: input.name, text }, next: `renamed ${from} to ${input.name}`, ...(leaks ? { everyone: all.flatMap((t) => [...t.notes.keys()]) } : {}) };
+        // A name the team renamed from, not the welcome every team has: only B's own name, once A took it, is B's too.
+        const elsewhere = from === "welcome" ? [] : all.filter((t) => t !== team).flatMap((t) => t.notes.get(from) ?? []);
+        return {
+          note: { name: input.name, text },
+          next: `renamed ${from} to ${input.name}`,
+          ...(leak === "lists" ? { everyone: all.flatMap((t) => [...t.notes.keys()]) } : {}),
+          ...(leak === "joins" && elsewhere.length > 0 ? { sameNameElsewhere: elsewhere } : {}),
+        };
       },
     };
   };
-  const cases = async (leaks: boolean) => {
-    const target = await standIn({ tools: [rename(leaks)] });
+  const cases = async (leak: "none" | "lists" | "joins") => {
+    const target = await standIn({ tools: [rename(leak)] });
     try {
       const session = async (team: Awaited<ReturnType<typeof target.team>>) => openSession(team.url, await team.key({ name: "cases", role: "admin" }));
       const a = await session(await target.team(""));
@@ -180,18 +189,21 @@ test("a write that sets team A's own name to one of team B's may say so after; o
       const notes = target.data(b).notes;
       const kept = [...notes];
       notes.clear();
-      notes.set(`${target.data(b).canary}-1`, "theirs");
+      notes.set(`${target.data(b).canary}-1`, `${target.data(b).canary} theirs`);
       for (const [name, text] of kept) notes.set(name, text);
       return await runTwoTeams({ a, b: await session(b), contract: target.contract, own, canaries: [target.data(b).canary] });
     } finally {
       await target.close();
     }
   };
-  const apart = await cases(false);
+  const apart = await cases("none");
   expect(apart.cases.filter((c) => c.tool === "note_rename")).toEqual([{ tool: "note_rename", ids: "NoteName: B's", verdict: "pass" }]);
   expect(failed(apart)).toEqual([]);
   // One that also lists every team's names shows B's: its case fails.
-  expect(failed(await cases(true)).filter((c) => c.tool === "note_rename").map((c) => c.verdict)).toEqual(["fail"]);
+  expect(failed(await cases("lists")).filter((c) => c.tool === "note_rename").map((c) => c.verdict)).toEqual(["fail"]);
+  // One whose answer after the rename to B's name joins on it and shows B's note: its case fails, though only that
+  // third answer shows it.
+  expect(failed(await cases("joins")).filter((c) => c.tool === "note_rename")).toEqual([{ tool: "note_rename", ids: "NoteName: B's", verdict: "fail", detail: "the answer holds team B's data (its canary)" }]);
 });
 
 const doc = JSON.parse(mcpToolsText) as { $defs: Record<string, any> };

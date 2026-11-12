@@ -543,7 +543,8 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
     asked.add(key);
     probed.add(c.tool);
     /** The call with `id` in the slots under test, A's own id in the others; the answer with every other id sent masked. */
-    const ask = async (id: (slot: Slot) => string) => {
+    /** `sentBefore`: the ids an earlier call of the case sent, which a write may have put in A's own rows. */
+    const ask = async (id: (slot: Slot) => string, sentBefore: ReadonlyMap<string, string> = new Map()) => {
       const sent = new Map<string, string>();
       const input = fill(c.shape, (slot) => {
         const held = given.includes(slot.kind) ? undefined : mine.get(slot.kind)?.[0];
@@ -552,22 +553,21 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
         return value;
       });
       const answer = await opts.a.call(c.tool, input);
-      const seen = masked(answer, sent);
-      // A's own input echoed back (a name it set to team B's) is no leak; the canary anywhere else is.
-      return { answer, leaves: leaves(seen), leaks: holds(seen) };
+      // A's own input echoed back (a name it set to team B's, now or in the call before) is no leak; the canary
+      // anywhere else is.
+      return { answer, sent, leaves: leaves(masked(answer, sent)), leaks: holds(masked(answer, new Map([...sentBefore, ...sent]))) };
     };
     // Team B's between the two unknown ones.
     const unknown = await ask((s) => strangersOf(s)![0]);
     const got = await ask((s) => used.get(s.kind)!);
-    const other = await ask((s) => strangersOf(s)![1]);
+    const other = await ask((s) => strangersOf(s)![1], got.sent);
     written = !readOnly.has(c.tool) && [unknown, got, other].some((r) => !r.answer.isError);
     const differs = [...new Set([...got.leaves.keys(), ...unknown.leaves.keys()])].filter((p) => unknown.leaves.get(p) === other.leaves.get(p) && got.leaves.get(p) !== unknown.leaves.get(p));
     const label = kinds(c.shape).map((k) => `${k}: ${given.includes(k) ? "B's" : mine.has(k) ? "A's" : "made up"}`).join(", ");
     const code = (unknown.answer.body as { code?: unknown } | null)?.code;
     if (differs.length > 0) {
       cases.push({ tool: c.tool, ids: label, verdict: "fail", detail: differs.slice(0, 3).map((p) => `${p} is ${show(got.leaves.get(p))} where an unknown id gets ${show(unknown.leaves.get(p))}`).join("; ") });
-    } else if (unknown.leaks || got.leaks || (got.answer.isError && other.leaks)) {
-      // After B's id was written into A's own rows (a profile renamed to B's name), the next call may rightly say so.
+    } else if (unknown.leaks || got.leaks || other.leaks) {
       cases.push({ tool: c.tool, ids: label, verdict: "fail", detail: "the answer holds team B's data (its canary)" });
     } else if (unknown.answer.isError && typeof code === "string" && REFUSED.has(code)) {
       cases.push({ tool: c.tool, ids: label, verdict: "weak", detail: code === "no_answer" ? "no answer in time" : "the unknown id was refused as invalid input, before any lookup" });
