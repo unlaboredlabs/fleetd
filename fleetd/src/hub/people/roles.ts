@@ -1,6 +1,6 @@
 // A person's hub role and what it caps (`role_cap`, `capped`,
 // `clean_name`).
-import type { Grant, HubRole, Role } from "../../shared/contracts.ts";
+import type { Grant, HubRole, Person, PersonRef, Role } from "../../shared/contracts.ts";
 
 /** The owner's name when the machine's user has none. */
 export const OWNER_FALLBACK = "Owner";
@@ -11,6 +11,9 @@ export function roleOf(text: string): HubRole {
 }
 
 export const administers = (role: HubRole) => role === "owner" || role === "admin";
+
+/** A person as others see them: id and name. */
+export const refOf = (p: Person): PersonRef => ({ personId: p.personId, name: p.name });
 
 /** The most a device of a person in `role` may hold: a member operates, an owner or admin administers. */
 export const roleCap = (role: HubRole): Role => (administers(role) ? "admin" : "operate");

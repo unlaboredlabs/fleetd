@@ -49,7 +49,7 @@ export function ownerOn(db: Database): Person | undefined {
   return row ? read(row) : undefined;
 }
 
-export const refOf = (p: Person): PersonRef => ({ personId: p.personId, name: p.name });
+export { refOf } from "../people/roles.ts";
 
 /** Some grant of the caller's gives `role` on every machine (api/grants.rs `allows_everywhere`). */
 export const allowsEverywhere = (caller: Caller, role: "admin" | "operate" | "read") =>

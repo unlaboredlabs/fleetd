@@ -13,31 +13,14 @@ import { workstreamGet } from "../orders/workstreams.ts";
 import { ENV_TOTAL_MAX_BYTES, envTotalOver, PROJECT_ENV_MAX } from "../projects/settings.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries, mirrorProjectRow } from "./deliver.ts";
-import { checkEnvName, cleanSecret, cleanSites, LABEL_MAX, merge, type Meta, metaOf, type Secret, type SinkMeta, type Source, type VaultKind, type VaultScope } from "./fields.ts";
+import { checkEnvName, cleanSecret, cleanSites, LABEL_MAX, merge, type Meta, metaOf, type Secret, type VaultKind } from "./fields.ts";
 import { type ItemRow, type Viewer, vault } from "./index.ts";
+import { type SaveSpec, sinkEnvName } from "./item.ts";
 import { type ItemDraft, ITEMS_MAX } from "./store.ts";
 
-/** What a save says, as vault_save takes it (its `sealed` already opened) or an alias builds it. */
-export type SaveSpec = {
-  itemId?: string;
-  kind?: VaultKind;
-  scope?: VaultScope;
-  machineId?: string;
-  projectId?: string;
-  workstreamId?: string;
-  label?: string;
-  sites?: string[];
-  envName?: string;
-  secret?: boolean;
-  billingAddress?: string;
-  /** The fields: all of them for a new item, only the changed ones for an edit. */
-  fields?: unknown;
-  source?: Source;
-  sink?: SinkMeta;
-  /** The node holds it already (the migration): no delivery now. */
-  held?: boolean;
-};
+export { type SaveSpec, sinkEnvName } from "./item.ts";
 
+/** What a save says, as vault_save takes it (its `sealed` already opened) or an alias builds it. */
 /** `sealed` opened with the hub's box key: its bytes. */
 export function openRawToHub(hub: Hub, sealed: string): Uint8Array {
   const bytes = openSealed(boxKey(hub), new Uint8Array(Buffer.from(sealed, "base64")));
@@ -59,11 +42,6 @@ export function openToHub(hub: Hub, sealed: string): unknown {
 
 const by = (v: Viewer) => v.person ?? `key:${v.caller.keyId}`;
 
-/**
- * A sink item's name in the vault: its own namespace, apart from the project's variables, and one per sink (secret
- * key, kind and path), since many requests write the same .env file.
- */
-export const sinkEnvName = (sink: SinkMeta) => `sink:${sink.kind}:${sink.secretKey ?? ""}:${sink.path}`;
 
 /** The vault item a `request_secret` env:/file: sink keeps its value in: the same file and the same secret key. */
 export function sinkItem(hub: Hub, sink: { kind: "env" | "file"; machineId: string; path: string; secretKey: string }): ItemRow | undefined {

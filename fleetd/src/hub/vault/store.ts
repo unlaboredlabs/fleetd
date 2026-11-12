@@ -2,34 +2,14 @@
 // `vault_keys` and `vault_settings`. Every write seals the item's secret fields again under a fresh data key and a
 // new version, so the AAD always names the row as it is.
 import type { Database } from "bun:sqlite";
-import { randomBytes } from "node:crypto";
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { type Binding, checkBlob, checkOpens, keyIdOf, openItem, rewrap, sealItem } from "./crypto.ts";
 import { type Meta, type Secret, type VaultKind, type VaultScope } from "./fields.ts";
+import { bindingOf, damaged, type ItemDraft, type ItemRow, keyMissing, locked, newItemId, TRASH_MS } from "./item.ts";
 import type { VaultKeys } from "./keys.ts";
 
-/** One row of `vault_items`, as read. */
-export type ItemRow = {
-  itemId: string;
-  kind: VaultKind;
-  scope: VaultScope;
-  personId?: string;
-  machineId?: string;
-  projectId?: string;
-  workstreamId?: string;
-  envName?: string;
-  label: string;
-  meta: Meta;
-  sealed: Uint8Array;
-  keyId: string;
-  version: number;
-  createdMs: number;
-  createdBy: string;
-  updatedMs: number;
-  updatedBy: string;
-  deletedMs?: number;
-};
+export { type ItemDraft, type ItemRow, ITEMS_MAX, keyMissing, locked, newItemId, scopeKey, TRASH_MS } from "./item.ts";
 
 type Raw = {
   item_id: string;
@@ -51,43 +31,6 @@ type Raw = {
   updated_by: string;
   deleted_ms: number | null;
 };
-
-/** What a new or changed item is, before its fields are sealed. */
-export type ItemDraft = Pick<ItemRow, "kind" | "scope" | "label" | "meta"> & {
-  personId?: string;
-  machineId?: string;
-  projectId?: string;
-  workstreamId?: string;
-  envName?: string;
-};
-
-/** The most items one person, and one project, keep. */
-export const ITEMS_MAX = 1000;
-/** Deleted items stay in the trash this long, then go for good. */
-export const TRASH_MS = 30 * 24 * 3600_000;
-
-export const newItemId = () => `V${randomBytes(16).toString("hex")}`;
-
-/** The scope part of an item's AAD. */
-export function scopeKey(r: Pick<ItemRow, "scope" | "personId" | "machineId" | "projectId" | "workstreamId">): string {
-  switch (r.scope) {
-    case "person":
-      return `person:${r.personId ?? ""}`;
-    case "project":
-      return `project:${r.machineId ?? ""}/${r.projectId ?? ""}`;
-    case "order":
-      return `order:${r.machineId ?? ""}/${r.projectId ?? ""}/${r.workstreamId ?? ""}`;
-    case "hub":
-      return "hub";
-  }
-}
-
-const bindingOf = (r: Pick<ItemRow, "itemId" | "kind" | "version"> & Parameters<typeof scopeKey>[0]): Binding => ({
-  itemId: r.itemId,
-  kind: r.kind,
-  scopeKey: scopeKey(r),
-  version: r.version,
-});
 
 function rowOf(x: Raw): ItemRow {
   let meta = { source: { kind: "typed" } } as Meta;
@@ -117,18 +60,6 @@ function rowOf(x: Raw): ItemRow {
 }
 
 const SELECT = "SELECT * FROM vault_items";
-
-export const locked = () =>
-  new ToolError("failed", "The vault is locked.", "An owner or admin unlocks it in the app: Settings › You › Vault.", "vault_locked");
-export const keyMissing = () =>
-  new ToolError(
-    "failed",
-    "Can't open: the vault key is missing.",
-    "Re-enter the recovery code with `fleetd vault restore-key` on the hub.",
-    "vault_key_missing",
-  );
-const damaged = (id: string) =>
-  new ToolError("failed", `The vault item ${id} doesn't open: it was changed outside fleetd.`, "Delete it and save it again.");
 
 export class VaultStore {
   constructor(

@@ -11,15 +11,16 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import type { RunnerInfo } from "../../shared/sessions.ts";
-import { isSealedSecret } from "../approvals/sink.ts";
 import { claudeAccountOverride } from "../doctor/checks.ts";
 import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { accountKey, ClaudeAccountStore } from "./index.ts";
 import { accountRemoved, activePeople, administrator, me as person, refOf } from "./people.ts";
+import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
-export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
+export { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
+
 const STARTED_NEXT = "Agents started from now on run this way; a running agent keeps the account it started on.";
 
 export function register(tools: Registry): void {
@@ -222,19 +223,6 @@ const me = (hub: Hub, caller: Caller) =>
     ),
   );
 
-/** The seals of one secret: each a sealed box, no machine twice (claude_accounts.rs `seals_distinct`). */
-export function checkSeals(seals: unknown): ClaudeSeal[] {
-  if (!Array.isArray(seals)) throw new ToolError("invalid", "sealed is a list of { machineId, sealed }.");
-  const seen = new Set<string>();
-  for (const s of seals as ClaudeSeal[]) {
-    if (typeof s?.machineId !== "string" || typeof s.sealed !== "string" || !isSealedSecret(s.sealed)) {
-      throw new ToolError("invalid", "each seal is { machineId, sealed }, sealed a sealed box in standard base64.");
-    }
-    if (seen.has(s.machineId)) throw new ToolError("invalid", `${s.machineId} is sealed to twice.`);
-    seen.add(s.machineId);
-  }
-  return seals as ClaudeSeal[];
-}
 
 /** The node can take the account's secret: online and new enough. */
 function nodeReady(hub: Hub, m: string): void {
