@@ -12,8 +12,9 @@
 // A new patch after an approved head is re-reviewed by what changed (`classify`): a clean rebase carries the approval
 // over, a conflict resolution gets a short review of those files, anything else a full review. A reviewer whose
 // fleetd tools failed is not counted against `RETRIES`: a new one starts after a doubling wait, or at once after any
-// review records a verdict. The lead resolving blocking findings without a new patch enqueues the Change again: those
-// findings count no more (`resolved`), and a fresh full review of the same patch starts.
+// review records a verdict. Nor is one a usage or rate limit stopped (`limitStop`): the next starts once the limit has
+// reset. The lead resolving blocking findings without a new patch enqueues the Change again: those findings count no
+// more (`resolved`), and a fresh full review of the same patch starts; so does enqueuing one whose reviewers stalled.
 //
 // People's reviews on GitHub (people.ts) hold a Change as blocking findings do: a clean patch is ready only once a read
 // at most `FRESH_MS` old shows none of theirs open. Each new one goes to the author task as review findings, and one that
@@ -28,10 +29,13 @@ import type { EventView, TrainHost } from "../train/host.ts";
 import { Mutex } from "../train/mutex.ts";
 import { short } from "../train/rules.ts";
 import { reviewed } from "../train/batch.ts";
-import { fixYourPr, type ReviewGate, type Train, type Verdict } from "../train/service.ts";
+import { fixYourPr, RESOLVED, RESTARTED, type ReviewGate, type Train, type Verdict } from "../train/service.ts";
 import { findingsText, FRESH_MS, holdWhy, PEOPLE_HOLD, People, type PersonFinding, POLL_MS, WATCHED } from "./people.ts";
 import { postVerdict } from "./post.ts";
+import { limitStop } from "./endings.ts";
 import { compare, type Rebase } from "./rebase.ts";
+import { checkAfterMs } from "../usage/state.ts";
+import { isoMs } from "../store/time.ts";
 import {
   type BoundReview,
   conflictsPrompt,
@@ -50,6 +54,8 @@ import {
 export const REVIEWS_BY = "hub:reviews";
 /** The start of a Change's `lastError` while blocking findings on its patch hold it in review until a new head. */
 export const BLOCKED = "waiting for a new head: ";
+/** The start of a Change's `lastError` while its reviewer waits out a usage or rate limit. */
+export const LIMITED = "review limited";
 
 const RETRIES = 1;
 const TOOLS_RETRIES = 6;
@@ -61,6 +67,9 @@ export const FOLLOWED = ["review.verdict", "task.completed", "task.failed", "tas
 
 /** How a patch after an approved head is re-reviewed, as `review_rebases` records it. */
 type Rebased = { fromTask: string; fromHead: string; fromBase: string; base: string; outcome: Rebase };
+
+/** How a patch's reviewer that ended without a verdict counts: a try, its tools failing, or a usage or rate limit. */
+type Ending = "reviewer" | "tools_failed" | "limited";
 
 /** A review task the gate spawned: its Change, the patch its round was for, and whether it counts no more. */
 type Round = { changeId: string; patchId: string; ignored: boolean };
@@ -77,6 +86,8 @@ export class Reviews implements ReviewGate {
   private readonly lock = new Mutex();
   /** When each reviewer whose tools failed ended, as this hub saw it. */
   private readonly brokenAt = new Map<string, number>();
+  /** When the next reviewer may start after each one a usage or rate limit stopped, as this hub saw it. */
+  private readonly limitedUntil = new Map<string, number>();
   /** When a verdict was last bound, on any Change. */
   private verdictAt = 0;
   /** The patches whose lead heard that their reviewer's tools failed. */
@@ -234,15 +245,15 @@ export class Reviews implements ReviewGate {
       .map((r) => r.task_id);
   }
 
-  /** This patch's reviewers that ended or still work, oldest first, each with whether its tools failed it. */
-  private rounds(changeId: string, patchId: string): [string, boolean][] {
+  /** This patch's reviewers that ended or still work, oldest first, each with how it counts. */
+  private rounds(changeId: string, patchId: string): [string, Ending][] {
     return this.db
-      .query<{ task_id: string; role: string }, [string, string]>(
+      .query<{ task_id: string; role: Ending }, [string, string]>(
         `SELECT task_id, role FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2
-           AND role IN ('reviewer', 'tools_failed') ORDER BY rowid`,
+           AND role IN ('reviewer', 'tools_failed', 'limited') ORDER BY rowid`,
       )
       .all(changeId, patchId)
-      .map((r) => [r.task_id, r.role === "tools_failed"]);
+      .map((r) => [r.task_id, r.role]);
   }
 
   private nowMs(): number {
@@ -278,20 +289,30 @@ export class Reviews implements ReviewGate {
     );
   }
 
-  /** `ReviewGate.resolved`: the findings holding the patch count no more, and a new reviewer starts a full review. */
-  async resolved(change: Change): Promise<boolean> {
+  /**
+   * `ReviewGate.resolved`: the findings holding the patch, or the reviewers that ended without a verdict until it
+   * stalled, count no more, and a new reviewer starts a full review. Its note, or undefined when neither holds it.
+   */
+  async resolved(change: Change): Promise<string | undefined> {
     return this.lock.run(async () => {
       const patchId = change.patchId;
-      if (patchId === undefined || !this.gateFor(change, patchId)[0].waitingForHead) return false;
-      this.db
-        .query(
+      if (patchId === undefined) return undefined;
+      const findings = this.gateFor(change, patchId)[0].waitingForHead;
+      const stalled =
+        !findings &&
+        !this.rounds(change.changeId, patchId).some(([t]) => this.live(t)) &&
+        this.db.query("SELECT 1 FROM review_stalls WHERE change_id = ?1 AND patch_id = ?2").get(change.changeId, patchId) !== null;
+      if (!findings && !stalled) return undefined;
+      this.train.records.db.transaction((c) => {
+        c.query(
           `UPDATE review_tasks SET role = 'resolved' WHERE change_id = ?1 AND (
-             (patch_id = ?2 AND role IN ('reviewer', 'tools_failed'))
+             (patch_id = ?2 AND role IN ('reviewer', 'tools_failed', 'limited'))
              OR task_id IN (SELECT task_id FROM review_bindings WHERE patch_id = ?2 AND blocking > 0))`,
-        )
-        .run(change.changeId, patchId);
+        ).run(change.changeId, patchId);
+        c.query("DELETE FROM review_stalls WHERE change_id = ?1 AND patch_id = ?2").run(change.changeId, patchId);
+      });
       await this.spawnReviewer(change, patchId);
-      return true;
+      return findings ? RESOLVED : RESTARTED;
     });
   }
 
@@ -493,12 +514,16 @@ export class Reviews implements ReviewGate {
       await this.spawnReviewer(change, patchId);
       return { kind: "pending" };
     }
-    if (lastRound[1]) {
-      const failed = rounds.filter(([, b]) => b).length;
+    if (lastRound[1] === "limited") {
+      await this.afterLimit(change, patchId, lastRound[0]);
+      return { kind: "pending" };
+    }
+    if (lastRound[1] === "tools_failed") {
+      const failed = rounds.filter(([, e]) => e === "tools_failed").length;
       await this.afterBroken(change, patchId, lastRound[0], failed);
       return { kind: "pending" };
     }
-    const reviewers = rounds.filter(([, b]) => !b).map(([t]) => t);
+    const reviewers = rounds.filter(([, e]) => e === "reviewer").map(([t]) => t);
     const last = reviewers.at(-1) ?? lastRound[0];
     const tries = reviewers.length;
     if (await this.nudge(change, last)) return { kind: "pending" };
@@ -550,6 +575,13 @@ export class Reviews implements ReviewGate {
       const why = fixed ? "another review recorded a verdict since, so the tools work again" : "its wait is over";
       this.note(change.changeId, `${TOOLS_FAILED} for ${last}; ${why}: ${next} reviews it now`);
     }
+  }
+
+  /** The patch's last reviewer was stopped by a usage or rate limit: a new one starts once the limit has reset. */
+  private async afterLimit(change: Change, patchId: string, last: string): Promise<void> {
+    if (this.nowMs() < (this.limitedUntil.get(last) ?? 0)) return;
+    const next = await this.spawnReviewer(change, patchId);
+    if (next !== undefined) this.note(change.changeId, `${LIMITED} for ${last}; it has reset: ${next} reviews it now`);
   }
 
   /** `failed` reviewers in a row couldn't use fleetd's tools: the lead hears once, across restarts. */
@@ -707,11 +739,19 @@ export class Reviews implements ReviewGate {
     if (bound || round.ignored) return;
     const how = event.eventType.startsWith("task.") ? event.eventType.slice(5) : event.eventType;
     const tail = this.finalText(taskId);
-    const broken = toolsFailed(tail);
-    if (broken) {
+    const limit = limitStop(tail, this.nowMs());
+    const broken = !limit && toolsFailed(tail);
+    if (limit) {
+      // Not a try: nothing it said counts, and the next reviewer starts at the reset, or on the usage layer's backoff.
+      this.db.query("UPDATE review_tasks SET role = 'limited' WHERE task_id = ?1").run(taskId);
+      const limited = this.rounds(round.changeId, round.patchId).filter(([, e]) => e === "limited").length;
+      const at = limit.resetMs ?? this.nowMs() + checkAfterMs(limited - 1);
+      this.limitedUntil.set(taskId, at);
+      this.note(round.changeId, `${LIMITED}: the reviewer ${taskId} was stopped by a usage or rate limit; a new reviewer starts at ${isoMs(at)}`);
+    } else if (broken) {
       this.db.query("UPDATE review_tasks SET role = 'tools_failed' WHERE task_id = ?1").run(taskId);
       this.brokenAt.set(taskId, this.nowMs());
-      const failed = this.rounds(round.changeId, round.patchId).filter(([, b]) => b).length;
+      const failed = this.rounds(round.changeId, round.patchId).filter(([, e]) => e === "tools_failed").length;
       this.note(
         round.changeId,
         `${TOOLS_FAILED}: the reviewer ${taskId} couldn't use fleetd's tools to record its verdict, saying "${oneLine(tail, 200)}"; a new reviewer starts within ${Math.ceil(toolsWait(failed) / 60_000)} min, or as soon as another review records a verdict`,

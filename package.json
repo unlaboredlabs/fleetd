@@ -80,6 +80,7 @@
     "./hub/prs/shapes": "./fleetd/src/hub/prs/shapes.ts",
     "./hub/push/payload": "./fleetd/src/hub/push/payload.ts",
     "./hub/redact": "./fleetd/src/hub/redact.ts",
+    "./hub/reviews/endings": "./fleetd/src/hub/reviews/endings.ts",
     "./hub/reviews/rebase": "./fleetd/src/hub/reviews/rebase.ts",
     "./hub/slots/board": "./fleetd/src/hub/slots/board.ts",
     "./hub/slots/sizing": "./fleetd/src/hub/slots/sizing.ts",

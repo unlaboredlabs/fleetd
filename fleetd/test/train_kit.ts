@@ -637,8 +637,8 @@ export class CleanGate implements ReviewGate {
   rereview() {
     return false;
   }
-  async resolved() {
-    return false;
+  async resolved(): Promise<string | undefined> {
+    return undefined;
   }
 }
 
