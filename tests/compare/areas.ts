@@ -154,6 +154,15 @@ const OUTSIDE: Readonly<Record<string, unknown>> = {
 };
 
 /**
+ * Writes that take more than ids, which made-up text can't stand in for: each is given the ids the team's reads turn
+ * up (the seeds' first) and the rest here. vault_reveal reveals the vault_save seed's env item, whose only field is
+ * `value`, sealed to a reply key: any 32 bytes, as an X25519 public key is.
+ */
+const BESIDE_IDS: Readonly<Record<string, () => Record<string, unknown>>> = {
+  vault_reveal: () => ({ fields: ["value"], replyKey: randomBytes(32).toString("base64") }),
+};
+
+/**
  * Reads that take more than ids, `now` the run's clock: every seeded decision's text holds "decision", the work is on
  * REPO, and the time reads cover the day before `now`.
  */
@@ -282,8 +291,9 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
       continue;
     }
     const input = inputFrom(tool, read.bag);
+    const beside = BESIDE_IDS[tool.name]?.();
     if (input === undefined) checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: "not called: none of the ids it needs turned up in the team's reads" });
-    else decoded(tool.name, [await as.call(tool.name, input)]);
+    else decoded(tool.name, [await as.call(tool.name, beside === undefined ? input : { ...(input as object), ...beside })]);
   }
   const made = new Map([...read.bag].map(([kind, ids]) => [kind, ids.filter((id) => !before.get(kind)?.includes(id))] as const).filter(([, ids]) => ids.length > 0));
   for (const tool of LAST.flatMap((name) => known.filter((t) => t.name === name))) {

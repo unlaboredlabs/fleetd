@@ -415,3 +415,52 @@ test("sealed vault seeds, a phone only after pushes are off and removed last, ti
   expect(off.calls).not.toContain("push_device_register");
   expect(off.rows).toContain("skip MCP push_device_register");
 });
+
+test("vault_reveal reveals the seeded env item's value to a 32-byte reply key, as the hub's rules allow", async () => {
+  const secret = new Uint8Array(randomBytes(32));
+  const status = { hubBoxKey: Buffer.from(publicKeyOf(secret)).toString("base64"), keyMode: "file", locked: false, keyMissing: false, recoverySaved: false, migration: "none" };
+  const items = new Map<string, { kind: string; fields: Record<string, string> }>();
+  const asked: Array<Record<string, unknown>> = [];
+  // The hub's rules (hub/vault): a kind reveals only its own fields (an env item's is `value`), to an X25519 key.
+  const FIELDS: Record<string, Array<string>> = { env: ["value"], login: ["username", "password", "otp"] };
+  const tools: Array<StandInTool> = [
+    { name: "vault_status", readOnly: true, input: input("VaultStatusInput"), output: {}, run: () => status },
+    {
+      name: "vault_save",
+      readOnly: false,
+      input: input("VaultSaveInput"),
+      output: {},
+      run: (_team, given) => {
+        const fields = JSON.parse(Buffer.from(openSealed(secret, new Uint8Array(Buffer.from(given.sealed, "base64")))!).toString("utf8")) as Record<string, string>;
+        const itemId = `V${String(items.size + 1).padStart(32, "0")}`;
+        items.set(itemId, { kind: given.kind, fields });
+        return { item: { itemId, kind: given.kind, label: given.envName } };
+      },
+    },
+    {
+      name: "vault_reveal",
+      readOnly: false,
+      input: input("VaultRevealInput"),
+      output: {},
+      run: (_team, given) => {
+        asked.push(given);
+        const item = items.get(given.itemId);
+        if (item === undefined) throw new Refusal("not_found", `No item ${given.itemId}.`);
+        const bad = (given.fields as Array<string>).find((f) => !FIELDS[item.kind]!.includes(f));
+        if (bad !== undefined) throw new Refusal("invalid", `A ${item.kind} has no field ${bad}.`);
+        if (Buffer.from(given.replyKey, "base64").length !== 32) throw new Refusal("invalid", "replyKey: expected a 32-byte X25519 public key");
+        return { sealed: Buffer.from(randomBytes(64)).toString("base64") };
+      },
+    },
+  ];
+  const target = await standIn({ only: tools });
+  try {
+    const checks = await areasContract(await target.team(""), doc, required);
+    expect(checks.find((c) => c.name.includes("vault_reveal"))).toEqual({ name: "MCP vault_reveal decodes as vault_reveal.output", ok: true });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.fields).toEqual(["value"]);
+    expect(Buffer.from(String(asked[0]!.replyKey), "base64")).toHaveLength(32);
+  } finally {
+    await target.close();
+  }
+});
