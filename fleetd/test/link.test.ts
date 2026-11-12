@@ -7,6 +7,7 @@ import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { FakeNode, nodeKey } from "./fake-node.ts";
 import { NodeIdentity } from "../src/node/identity.ts";
+import { REFUSED, runCmdCheck } from "../src/node/cmd/index.ts";
 import { runNode, type LinkContext } from "../src/node/link/index.ts";
 import { deflateBomb, hubHome } from "./helpers.ts";
 
@@ -118,7 +119,7 @@ test("a logged-out runner leaves the machine degraded with its problem", async (
 });
 
 test("request() resolves with the reply its id names, and fails as lost when the link drops", async () => {
-  const node = await linked("worker-4");
+  const node = await linked("worker-4", { cmdCheck: false });
   const seen: string[] = [];
   const off = links.on("thread_event", (machineId, frame) => {
     seen.push(`${machineId} ${frame.t}`);
@@ -273,7 +274,7 @@ test("a lead call is answered on its link with a lead_result for its id", async 
 test("cmd_check gets its cmd_result; the hub beats every heartbeatMs", async () => {
   const saved = links.timings;
   links.timings = { ...saved, heartbeatMs: 20 };
-  const node = await linked("worker-11");
+  const node = await linked("worker-11", { cmdCheck: false });
   await node.tag("hb");
   const run = links.commands.run("worker-11", { cwd: "/srv", argv: ["git", "status"], timeoutSec: 5 });
   const asked = await node.next((f) => f.t === "cmd_check");
@@ -287,6 +288,26 @@ test("cmd_check gets its cmd_result; the hub beats every heartbeatMs", async () 
   links.timings = saved;
   node.close();
   await node.closed;
+});
+
+test("a FakeNode answers a cmd_check as a real node does outside its roots, unless cmdCheck is false", async () => {
+  const node = await linked("worker-16");
+  const check = { t: "cmd_check" as const, cwd: "/", argv: ["true"], timeoutSec: 5 };
+  const reply = await links.request("worker-16", check);
+  const real = await runCmdCheck({ ...check, id: reply.id as string }, []);
+  expect(real.outputTail.startsWith(REFUSED)).toBe(true);
+  expect(reply).toMatchObject({ t: "cmd_result", ...real });
+  node.close();
+  await node.closed;
+
+  const held = await linked("worker-17", { cmdCheck: false });
+  const pending = links.request("worker-17", check);
+  await held.next((f) => f.t === "cmd_check");
+  // A lead call answered after it on the same link: an answer to the check would have come first.
+  held.send({ t: "lead_call", id: "call-17", cwd: "/nowhere", call: { op: "factory_status" } });
+  await held.next((f) => f.t === "lead_result");
+  held.close();
+  expect(((await pending.catch((e: unknown) => e)) as NodeCommandError).reason).toBe("lost");
 });
 
 test("start() takes a machine the store says is online offline when no node links", async () => {

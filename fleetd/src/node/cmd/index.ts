@@ -7,11 +7,10 @@ import { sep } from "node:path";
 import { constants } from "node:os";
 import { errnoName, gitCommandEnv, scrubbedEnv, tailUtf16, type Env } from "../util.ts";
 import type { CmdCheck, CmdResult } from "../wire.ts";
+import { notRunResult, OUTPUT_TAIL_MAX, outsideRoots, REFUSED } from "./refusal.ts";
 
-export const OUTPUT_TAIL_MAX = 2000;
+export { OUTPUT_TAIL_MAX, REFUSED };
 const SCRUBBED = "[secret]";
-/** How a `cmd_result`'s output starts when the node refused the command. */
-export const REFUSED = "fleetd node refused to run this: ";
 
 const under = (dir: string, root: string) => dir === root || dir.startsWith(root.endsWith(sep) ? root : root + sep);
 
@@ -31,7 +30,7 @@ export function confine(cwd: string, roots: string[]): string | { refused: strin
       return false;
     }
   });
-  if (!inside) return { refused: `${cwd} is outside cmdRoots, the directories this node runs commands in (${roots.join(", ")})` };
+  if (!inside) return { refused: outsideRoots(cwd, roots) };
   return dir;
 }
 
@@ -131,10 +130,6 @@ export async function runCmdCheck(frame: CmdCheck, roots: string[], home?: strin
   const git = frame.argv[0] === "git";
   const env = home !== undefined ? { ...(git ? gitCommandEnv() : scrubbedEnv()), FLEETD_NODE_HOME: home } : git ? gitCommandEnv() : undefined;
   const outcome = await runConfined({ cwd: frame.cwd, argv: frame.argv, timeoutSec: frame.timeoutSec, env, signal }, roots);
-  return {
-    id: frame.id,
-    exitCode: outcome.exitCode,
-    outputTail: outcome.notRun === undefined ? outcome.outputTail : tailUtf16(outcome.notRun, OUTPUT_TAIL_MAX),
-    timedOut: outcome.timedOut,
-  };
+  if (outcome.notRun !== undefined) return notRunResult(frame.id, outcome.notRun);
+  return { id: frame.id, exitCode: outcome.exitCode, outputTail: outcome.outputTail, timedOut: outcome.timedOut };
 }

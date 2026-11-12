@@ -1,6 +1,7 @@
 // A stand-in node for link tests: an ed25519 key, the hello the Rust node sends, and the frames it gets back.
 import { generateKeyPairSync, sign } from "node:crypto";
 import { Deflater, Inflater } from "../src/hub/link/deflate.ts";
+import { notRunResult, outsideRoots, REFUSED } from "../src/node/cmd/refusal.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 
 export type Frame = { t: string } & Record<string, unknown>;
@@ -25,6 +26,9 @@ export type FakeNodeOptions = {
   nodeVersion?: string;
   /** Answers each `session_call runner_info` as logged in; false leaves them unanswered. */
   runner?: "logged_in" | "logged_out" | false;
+  /** Answers each `cmd_check` as a real node with no command roots does: refused, in the node's own words. False
+   * leaves them unanswered. */
+  cmdCheck?: false;
 };
 
 export class FakeNode {
@@ -68,6 +72,9 @@ export class FakeNode {
         id: frame.id,
         result: { ok: { kind: "runner_info", runner: "claude", supported: "*", versionOk: true, login, ...(login === "logged_in" ? {} : { problem: "claude is logged out" }) } },
       });
+    }
+    if (frame.t === "cmd_check" && this.options.cmdCheck !== false) {
+      this.send({ t: "cmd_result", ...notRunResult(frame.id as string, `${REFUSED}${outsideRoots(frame.cwd as string, [])}`) });
     }
     this.waiters = this.waiters.filter((w) => {
       if (!w.match(frame)) return true;
