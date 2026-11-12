@@ -6,16 +6,18 @@
 // /app's `ready`, `snapshot` and a call's `result` as AppServerMessage, a hub event on /app after a write, and
 // `fleetd status --json`. It also prints the surface (tool names, ready's features, snapshot keys) so behaviour.ts can
 // diff two implementations. `--areas`, for a target that serves some areas and joins no machine (areas.ts): no fleet,
-// and the output check is made of exactly the tools the target lists, on a team seeded through them; the CLI's and
-// /app's rows are skipped. Exit 0 when every check passed.
+// and the output check is made of exactly the tools the target lists, on a team seeded through them; /app is checked on
+// that team with no machine (areasApp), and the CLI's rows are skipped. Exit 0 when every check passed.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { connectApp, type Frame } from "./app.ts";
 import { areasContract } from "./areas.ts";
+import { openSession } from "./mcp.ts";
 import { withFleet } from "./fleet.ts";
 import { openTarget } from "./hubBuild.ts";
 import { arg, has, REPO, scratch } from "./lib.ts";
+import type { Team } from "./target.ts";
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020") as new (o: object) => { compile: (s: object) => ((x: unknown) => boolean) & { errors?: unknown } };
@@ -73,17 +75,70 @@ const commandCheck = (name: string, run: () => string, pass: (out: string) => bo
 
 const { name, bin, target } = await openTarget();
 const surface: Record<string, unknown> = {};
+/** The read-only tools /app's call is made with under --areas, the first one listed; else any listed read that needs nothing. */
+const APP_READS = ["fleetd_status", "hub_info", "people_list"];
+/**
+ * /app with no machine, on a team the contract has seeded: `ready`, `snapshot` and every event the hub keeps (asked
+ * from cursor 0, up to the snapshot's), each decoded as AppServerMessage; a call of a listed read-only tool answered
+ * with a `result` whose output decodes as the tool's; one of a name the team doesn't list answered with an `error`
+ * that carries the call's id.
+ */
+const areasApp = async (team: Team) => {
+  const key = await team.key({ name: "areas-app", role: "admin", human: true });
+  const listed = await (await openSession(team.url, key)).tools();
+  const app = connectApp(team.url, key, { deflate: true, cursor: 0 });
+  try {
+    const ready = await app.next((x) => x.t === "ready" || x.t === "error", 15_000);
+    valid("/app ready decodes as AppServerMessage", appFrame, ready.frame);
+    surface.readyFeatures = [...((ready.frame.features as Array<string> | undefined) ?? [])].sort();
+    const snapshot = await app.next((x) => x.t === "snapshot", 15_000);
+    valid("/app snapshot decodes as AppServerMessage", appFrame, snapshot.frame);
+    surface.snapshotKeys = Object.keys(snapshot.frame).sort();
+    const cursor = Number(snapshot.frame.cursor);
+    const caught = await app.next((x) => x.t === "event" && Number(x.seq) >= cursor, 15_000, 0).then(
+      () => true,
+      () => false,
+    );
+    const events = app.frames.filter((x) => x.frame.t === "event");
+    const last = events.reduce((n, x) => Math.max(n, Number(x.frame.seq)), 0);
+    record(`/app events from 0 reach the snapshot's cursor ${cursor}`, caught || cursor === 0, `${events.length} event frames, the last seq ${last}`);
+    const badEvents = events.filter((x) => !appFrame(x.frame));
+    record(`every /app event frame decodes (${events.length} frames)`, badEvents.length === 0, badEvents.map((x) => String(x.frame.type)).join(", "));
+    surface.eventTypes = [...new Set(events.map((x) => x.frame.type as string))].sort();
+
+    const read = APP_READS.map((name) => listed.find((t) => t.name === name)).find((t) => t !== undefined) ??
+      listed.find((t) => t.annotations?.readOnlyHint === true && (t.inputSchema.required ?? []).length === 0 && toolOutput(t.name) !== undefined);
+    if (read === undefined) skip("/app call of a listed read-only tool", "the team lists no read-only tool that needs no input");
+    else {
+      const result = await app.call(read.name, {});
+      record(`/app call ${read.name} answers a result`, result.ok, JSON.stringify(result.frame).slice(0, 300));
+      valid("/app result decodes as AppServerMessage", appFrame, result.frame);
+      if (result.ok) valid(`/app ${read.name} decodes as ${read.name}.output`, toolOutput(read.name), result.output);
+    }
+    const unlisted = "areas_unlisted_tool";
+    const refused = await app.call(unlisted, {}).catch((e: unknown) => ({ ok: true, output: undefined, frame: { t: "none", message: failure(e) } as Frame }));
+    record(`/app call of an unlisted tool answers an error with its id`, !refused.ok && refused.frame.t === "error" && typeof refused.frame.id === "string", JSON.stringify(refused.frame).slice(0, 300));
+    valid("/app error decodes as AppServerMessage", appFrame, refused.frame);
+    const bad = app.frames.filter((x) => !appFrame(x.frame));
+    record(`every /app frame decodes (${app.frames.length} frames)`, bad.length === 0, bad.map((x) => x.frame.t).join(", "));
+  } finally {
+    app.close();
+  }
+};
+
 const areas = async () => {
   const valid = (tool: string, body: unknown) => {
     const check = toolOutput(tool);
     if (check === undefined) return "no schema";
     return check(body) ? undefined : JSON.stringify(check.errors);
   };
-  for (const c of await areasContract(await target.team(path.join(scratch(`ct-${name}`), "f")), tools as Parameters<typeof areasContract>[1], valid)) {
+  const team = await target.team(path.join(scratch(`ct-${name}`), "f"));
+  for (const c of await areasContract(team, tools as Parameters<typeof areasContract>[1], valid)) {
     if (c.skipped !== undefined) skip(c.name, c.skipped);
     else record(c.name, c.ok, c.detail);
   }
-  for (const row of ["fleetd --version", "fleetd help", "/app", "fleetd status --json reads the hub"]) skip(row, "--areas: no machine joins, and the target serves only the tools it lists");
+  for (const row of ["fleetd --version", "fleetd help", "fleetd status --json reads the hub"]) skip(row, "--areas: no machine joins, and the CLI is the build's");
+  await areasApp(team).catch((e: unknown) => record("/app answers", false, failure(e)));
 };
 await (has("--areas") ? areas() : withFleet(path.join(scratch(`ct-${name}`), "f"), target, async (fleet) => {
   const { f } = fleet;

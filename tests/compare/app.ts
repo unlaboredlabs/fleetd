@@ -40,8 +40,11 @@ export interface AppClient {
 
 export const appUrl = (hubUrl: string) => `${hubUrl.replace(/^http/u, "ws").replace(/\/+$/u, "")}/app`;
 
-/** Opens /app on `hubUrl` and authenticates; `ready` and `snapshot` arrive as frames (see `next`). */
-export const connectApp = (hubUrl: string, key: string, opts: { deflate?: boolean } = {}): AppClient => {
+/**
+ * Opens /app on `hubUrl` and authenticates; `ready` and `snapshot` arrive as frames (see `next`). Events stream from
+ * the snapshot's cursor on, or from `cursor` (0: every event the hub keeps).
+ */
+export const connectApp = (hubUrl: string, key: string, opts: { deflate?: boolean; cursor?: number } = {}): AppClient => {
   const features = opts.deflate === true ? ["deflate"] : [];
   const headers: Record<string, string> = { authorization: `Bearer ${key}` };
   if (features.length > 0) headers["x-fleetd-features"] = features.join(",");
@@ -58,10 +61,10 @@ export const connectApp = (hubUrl: string, key: string, opts: { deflate?: boolea
     const at = performance.now();
     const frame = JSON.parse(text) as Frame;
     frames.push({ at, frame });
-    // As the apps do: the event stream from the snapshot's cursor on.
+    // As the apps do: the event stream from the snapshot's cursor on (or the one asked for).
     if (frame.t === "snapshot" && !streaming) {
       streaming = true;
-      socket.send(JSON.stringify({ t: "events", cursor: frame.cursor }));
+      socket.send(JSON.stringify({ t: "events", cursor: opts.cursor ?? frame.cursor }));
     }
     for (const w of [...waiters]) {
       if (w.match(frame)) {
