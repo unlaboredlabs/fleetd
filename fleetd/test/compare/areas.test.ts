@@ -464,3 +464,62 @@ test("vault_reveal reveals the seeded env item's value to a 32-byte reply key, a
     await target.close();
   }
 });
+
+test("the caller's picture is made of a file of its own, so the file the run put is still there for attachment_get", async () => {
+  // The hub's rules (intake/attachments.ts, people/avatar.ts): files are numbered F1, F2…; setting a picture takes its
+  // file, which nothing finds after; attachment_get reads a file in a project.
+  const files = new Map<string, { name: string; mime: string; dataB64: string }>();
+  let picture: string | undefined;
+  let put = 0;
+  const at = "2026-01-01T00:00:00.000Z";
+  const tools: Array<StandInTool> = [
+    {
+      name: "attachment_put",
+      readOnly: false,
+      input: input("AttachmentPutInput"),
+      output: {},
+      run: (_team, given) => {
+        const attachmentId = `F${++put}`;
+        files.set(attachmentId, { name: given.name, mime: given.mime, dataB64: given.dataB64 });
+        return { attachmentId, bytes: Buffer.from(given.dataB64, "base64").length, sha256: "0".repeat(64) };
+      },
+    },
+    {
+      name: "person_avatar_set",
+      readOnly: true,
+      input: input("PersonAvatarSetInput"),
+      output: {},
+      run: (_team, given) => {
+        if (given.attachmentId !== undefined) {
+          if (!files.delete(given.attachmentId)) throw new Refusal("not_found", `No attachment ${given.attachmentId}.`);
+          picture = given.attachmentId;
+        }
+        return { person: { personId: "p_aaaaaaaa", name: "owner", role: "owner", createdAt: at } };
+      },
+    },
+    { name: "project_get", readOnly: true, input: input("ProjectGetInput"), output: {}, run: () => ({ projects: [{ machineId: "m1", projectId: "p1", title: "areas", workspaceRoot: "/srv/areas", threads: [], lastActivityAt: at }] }) },
+    {
+      name: "attachment_get",
+      readOnly: true,
+      input: input("AttachmentGetInput"),
+      output: {},
+      run: (_team, given) => {
+        const file = files.get(given.attachmentId);
+        if (file === undefined) throw new Refusal("not_found", `No attachment ${given.attachmentId} in this project.`);
+        return { attachmentId: given.attachmentId, name: file.name, mime: file.mime, bytes: Buffer.from(file.dataB64, "base64").length, dataB64: file.dataB64 };
+      },
+    },
+  ];
+  const target = await standIn({ only: tools });
+  try {
+    const checks = await areasContract(await target.team(""), doc, required);
+    expect(checks.filter((c) => c.name.includes("attachment_get") || c.name.includes("person_avatar_set"))).toEqual([
+      { name: "MCP person_avatar_set decodes as person_avatar_set.output", ok: true },
+      { name: "MCP attachment_get decodes as attachment_get.output", ok: true },
+    ]);
+    expect(picture).toBeDefined();
+    expect(files.has(picture!)).toBe(false);
+  } finally {
+    await target.close();
+  }
+});
