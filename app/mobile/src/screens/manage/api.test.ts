@@ -211,7 +211,7 @@ describe("New Project", () => {
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web" });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web", onlyMe: false });
     hub.answer("project_add", { addId: "a1", created: false, machineId: "devbox", path: "/home/ada/src/web" });
     await flush();
     hub.link.frame({ t: "event", seq: 2, type: "project.clone_progress", at: AT, data: { addId: "a1", phase: "receiving", percent: 40 } });
@@ -253,7 +253,7 @@ describe("New Project", () => {
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "new", machineId: "devbox", name: "Ada", path: "/home/ada/projects/ada", gitInit: false }, path: "/home/ada/projects/ada" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true, onlyMe: false });
     hub.answer("project_add", { addId: "a2", created: true, machineId: "devbox", path: "/home/ada/projects/ada" });
     await flush();
     hub.link.frame({

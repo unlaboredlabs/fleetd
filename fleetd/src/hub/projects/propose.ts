@@ -59,7 +59,8 @@ const words = (e: unknown) => (e instanceof Error ? e.message : String(e)).repla
 function preview(shown: Shown): ToolPreview {
   // As `project_add` from a person's own device: everyone on the hub can use it, with a repo or without (D491).
   const whose = shown.repo === null ? "once you approve" : `cloned from ${shown.repo} once you approve`;
-  const card = { ...shown, what: `A new project on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
+  // `onlyMe: false` for one release: an app from before D491 shows a card without it as a generic one, not New project.
+  const card = { ...shown, onlyMe: false, what: `A new project on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
   return {
     server: "fleetd",
     tool: "project_propose",

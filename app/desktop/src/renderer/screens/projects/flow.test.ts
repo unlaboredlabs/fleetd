@@ -48,16 +48,22 @@ const err = (c: Call, code: string, message: string): AddMsg => ({ t: "answer", 
 
 describe("the add flow", () => {
   it("sends each kind of add as it is", () => {
-    expect(only(run(live(), start(cloneReq))[1], "add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    expect(only(run(live(), start(cloneReq))[1], "add").input).toEqual({ machineId: "devbox", url: "acme/ledger", onlyMe: false });
     const folder: Request = { kind: "folder", machineId: "devbox", path: "/home/dev/notes" };
-    expect(only(run(live(), start(folder))[1], "add").input).toEqual({ machineId: "devbox", path: "/home/dev/notes" });
+    expect(only(run(live(), start(folder))[1], "add").input).toEqual({ machineId: "devbox", path: "/home/dev/notes", onlyMe: false });
+  });
+
+  it("tells a hub from before D491 that no project it adds is Only me, for one release; a newer hub ignores it", () => {
+    for (const r of [cloneReq, { kind: "folder", machineId: "devbox", path: "/home/dev/notes" } as Request, { kind: "new", machineId: "devbox", name: "Notes", path: "/home/dev/notes", gitInit: false } as Request]) {
+      expect(only(run(live(), start(r))[1], "add").input).toMatchObject({ onlyMe: false });
+    }
   });
 
   it("holds a failure that comes before the answer, then ends the add with it", () => {
     const [started, calls] = run(live(), start());
     let s = started;
     const add = only(calls, "add");
-    expect(add.input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    expect(add.input).toEqual({ machineId: "devbox", url: "acme/ledger", onlyMe: false });
     [s] = run(s, event(11, "project.add_failed", { addId: "a1", repo: "acme/ledger", path: "/p", code: "clone_failed", message: "git: remote hung up", fix: "Try again." }));
     expect(s.phase.kind).toBe("working");
     [s] = run(s, ok(add, { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
@@ -154,7 +160,7 @@ describe("the add flow", () => {
     ]);
     const [s] = run(initialAdd, ...first);
     const [, adding] = run(s, start());
-    expect(only(adding, "add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    expect(only(adding, "add").input).toEqual({ machineId: "devbox", url: "acme/ledger", onlyMe: false });
     // Later, only events past the last one seen are news; a drop and a fresh snapshot are passed on.
     const next = { ...fresh, events: [...fresh.events, { seq: 41, at: AT, type: "project.clone_progress", summary: "" }] };
     expect(hubMessages(fresh, next, 40).map((m) => m.t)).toEqual(["event"]);
@@ -175,7 +181,7 @@ describe("a new project", () => {
   it("asks the hub to make its folder, git init only when ticked, and is ready under its own name", () => {
     let [s, calls] = run(live(), { t: "start", request: newReq(), path: folder });
     const add = only(calls, "add");
-    expect(add.input).toEqual({ machineId: "devbox", path: folder, title: "Field notes", create: true });
+    expect(add.input).toEqual({ machineId: "devbox", path: folder, title: "Field notes", create: true, onlyMe: false });
     expect(s.phase).toMatchObject({ kind: "working", job: { what: "Field notes", path: folder, create: true, step: "register", detail: "Making the folder" } });
     [s] = run(s, ok(add, { machineId: "devbox", path: folder, projectId: "p9", created: true, inspect: plain }));
     expect(s.phase).toMatchObject({ kind: "ready", ready: { title: "Field notes", project: { machineId: "devbox", projectId: "p9" }, path: folder } });

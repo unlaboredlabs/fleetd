@@ -85,7 +85,8 @@ test("a proposal is one card in every approval mode, YOLO too, and nothing is ma
         tool: "project_propose",
         action: "write",
         title: `Create the project “Billing ${i}”`,
-        input: JSON.stringify({ machineId: "devbox", path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
+        // onlyMe false for one release: an older app shows the card as New project only with it.
+        input: JSON.stringify({ machineId: "devbox", onlyMe: false, path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
       });
     }
     expect(k.made()).toEqual([]);
@@ -241,7 +242,7 @@ test("a proposal with a repo clones it once approved: the project exists when th
     }) as typeof ex.call;
     await k.mode("yolo");
     const { card } = await k.prompt("p-1", { title: "Billing", url: "https://github.com/acme/billing" });
-    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
+    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", onlyMe: false, path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
     // Nothing is cloned for a card.
     expect(k.n.calls.filter((c) => c.op === "repo_clone")).toEqual([]);
     await k.tap(ada, card?.requestId as string, "approve");

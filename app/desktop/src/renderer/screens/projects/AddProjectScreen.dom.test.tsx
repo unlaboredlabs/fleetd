@@ -179,7 +179,7 @@ describe("Add project's new project", () => {
     });
     await settle();
     const add = calls.find((c) => c.tool === "project_add");
-    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true });
+    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true, onlyMe: false });
     // Not before the hub's snapshot has it, so its chat never shows as missing.
     expect(window.location.hash).toBe("#/projects/add");
     const made = { machineId: "devbox", projectId: "p9", title: "Field notes", workspaceRoot: `${ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };
