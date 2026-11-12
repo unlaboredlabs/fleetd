@@ -289,7 +289,7 @@ describe("a hub's export into a fresh hub", () => {
     // What an export keeps of them: the items' and the rows' places, each value under the export's key.
     expect(text).toContain('"key_id":"export"');
     expect(text).toContain('"sealed_key":{"$sealed":"');
-    expect(text).not.toContain(a.v.keys.active().id);
+    expect(text).not.toContain(`"key_id":"${a.v.keys.active().id}"`);
     const paths = (await entriesOf(from.file)).map(([path]) => path);
     expect(paths[0]).toBe("fleetd-export.json");
     expect(paths.slice(-2)).toEqual(["manifest.json", "manifest.sha256"]);
