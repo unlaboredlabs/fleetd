@@ -1,13 +1,27 @@
 import type { Hub } from "../api/hub.ts";
-import { sweepUploads } from "./attachments.ts";
+import { approvals } from "../approvals/index.ts";
+import type { AttachmentId } from "../../shared/contracts.ts";
+import { claimOwn, sweepUploads } from "./attachments.ts";
 import { registerLeadCalls } from "./chat_file.ts";
 
 /** How often unfinished uploads are swept: one nobody finishes goes within the hour and ten minutes. */
 export const SWEEP_EVERY_MS = 600_000;
 
-/** Starts this module's loops (Rust: intake::attachments::run_sweep) and registers its lead call (chat_file). */
+/**
+ * Starts this module's loops (Rust: intake::attachments::run_sweep) and registers its lead call (chat_file). It also
+ * answers the approvals' `ownImage`: a confirm step's screenshot shows on its card only when it is the asking
+ * project's own file, which then becomes the project's (wire_approvals.rs `navi_image`, `claim_own`).
+ */
 export function start(hub: Hub): void {
   registerLeadCalls(hub);
+  approvals(hub).deps.hooks.ownImage = async (project, id) => {
+    try {
+      return claimOwn(hub.db.conn, project, id as AttachmentId);
+    } catch (error) {
+      console.warn("approvals: a confirm step's screenshot not checked:", error);
+      return false;
+    }
+  };
   const timer = setInterval(() => {
     try {
       const n = sweepUploads(hub);

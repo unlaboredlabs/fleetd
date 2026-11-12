@@ -1,8 +1,8 @@
 // Ports the core of crates/fleetd/src/hub/approvals/tests.rs against fakes: no node, no live hub.
 import { expect, test } from "bun:test";
-import { type ApprovalCaller, Approvals, type GatedRunInput } from "../src/hub/approvals/index.ts";
+import { type ApprovalCaller, Approvals, approvals, type GatedRunInput } from "../src/hub/approvals/index.ts";
 import { chatItem, requestOutcome, wakeLine } from "../src/hub/approvals/outcome.ts";
-import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
+import { CONFIRM_TOOL, checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import {
   type ApprovalHooks,
   defaultHooks,
@@ -16,9 +16,15 @@ import { claimPurchase, openPurchase, openSecureInput, personOnly, purchaseFille
 import { parseSecretSink, secretEnvName } from "../src/hub/approvals/sink.ts";
 import { Requests } from "../src/hub/approvals/store.ts";
 import { shownArgv } from "../src/hub/approvals/text.ts";
+import { store as storeFile } from "../src/hub/intake/attachments.ts";
+import { start as startIntake } from "../src/hub/intake/loops.ts";
+import { leadBy } from "../src/hub/lead_calls/index.ts";
+import { setApprovals } from "../src/hub/project_lead/checker.ts";
+import { start as startProjectLead } from "../src/hub/project_lead/start.ts";
 import { EventLog } from "../src/hub/store/events.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import type { HubEvent, HumanRequest, ProjectRef } from "../src/shared/contracts.ts";
+import { PROJECT, testHub } from "./hub-helpers.ts";
 
 class Fake {
   db = HubDb.memory();
@@ -634,4 +640,42 @@ test("a thread event that throws is logged, and the follower goes on", async () 
   console.error = quiet;
   expect(calls).toBe(2);
   expect(fake.request("Q1")?.permission?.requestId).toBe("p-2");
+});
+
+test("a confirm step's card shows its screenshot only when it is the asking project's own file", async () => {
+  const { hub, done } = testHub();
+  startProjectLead(hub);
+  startIntake(hub);
+  const a = approvals(hub);
+  hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES (?, ?, 'lead-1', ?, 0)", [
+    PROJECT.machineId,
+    PROJECT.projectId,
+    "2026-11-08T10:00:00.000Z",
+  ]);
+  // The project asks the person on every risky step: its confirm goes on a card.
+  setApprovals(hub.db.conn, PROJECT, "ask");
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  // The lead's own screenshot (chat_file), another project's lead's, and a person's upload nobody gave the project.
+  const own = (await storeFile(hub, { bytes: png }, "page.png", "image/png", leadBy(PROJECT))).attachmentId;
+  const theirs = (await storeFile(hub, { bytes: png }, "page.png", "image/png", leadBy({ machineId: "lab-a", projectId: "p2" }))).attachmentId;
+  const upload = (await storeFile(hub, { bytes: png }, "mine.png", "image/png", "key_h")).attachmentId;
+  let pending: PendingPermission | undefined;
+  a.deps.nodes.pendingPermission = async () => pending;
+  const cardOf = async (requestId: string, screenshot: string) => {
+    const input = { site: "lupa.example", button: "Complete reservation", does: "Books a table for two", screenshot };
+    pending = { requestId, toolName: CONFIRM_TOOL, summary: "confirm the booking", input };
+    await onThreadEvent(a, { ...threadEvent("thread.waiting", pending), machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-1" });
+    return new Requests(hub.db).list({ projectRef: PROJECT, limit: 50 } as never).find((r) => r.permission?.requestId === requestId);
+  };
+  const shown = await cardOf("p-1", own);
+  expect(shown?.permission?.toolName).toBe(CONFIRM_TOOL);
+  expect(shown?.permission?.screenshot).toBe(own);
+  for (const [i, id] of [theirs, upload].entries()) {
+    const card = await cardOf(`p-${i + 2}`, id);
+    expect(card?.permission?.toolName).toBe(CONFIRM_TOOL);
+    expect(card?.permission?.screenshot).toBeUndefined();
+  }
+  hub.shutdown.abort();
+  await Bun.sleep(10);
+  done();
 });
