@@ -2,66 +2,34 @@
 // lowercased.
 import type { Change, ChangeId, ChangeState, ProjectRef, TrainState, WorkstreamId } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
-import { HEAD_STATES, isDraft, parseState, QUEUED_STATES, TERMINAL_STATES } from "./states.ts";
+import { encode, HEAD_STATES, isDraft, type ListFilter, parseState, QUEUED_STATES, TERMINAL_STATES, type TrainRow, type Wait, type Watch, type WatchCheck } from "./states.ts";
 
-export { ALL_STATES, DRAFT, errorText, HEAD_STATES, isDraft, parsePrUrl, parseState, QUEUED_STATES, TERMINAL_STATES } from "./states.ts";
-
-/** A commit the train merged onto `base`, whose checks outside the fast set it watches there. */
-export type Watch = { repo: string; sha: string; base: string; projectRef: ProjectRef; prUrl: string; sinceMs: number };
-
-/**
- * The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration,
- * and a person it waits on, told of at the patch id in its `head`.
- */
-export const WAIT_UNSTARTED = "unstarted";
-export const WAIT_BLOCKED = "blocked";
-export const WAIT_REGEN = "regen";
-export const WAIT_PERSON = "person";
-/** A wait's state before it came to anything. */
-export const WAITING = "waiting";
-
-/** One of the train's waits on a Change, kept across restarts (`train_waits`): its head, since when there, its state. */
-export type Wait = { head: string; sinceMs: number; state: string };
-
-/** What the watch did about a check's run on a merged commit (`putWatchCheck`): its name, run id, what, and when. */
-export type WatchCheck = { name: string; runId: number; did: string; atMs: number };
-
-export type TrainRow = {
-  repo: string;
-  projectRef: ProjectRef;
-  /** Merges outside the train after this are reported; it moves past each one reported. */
-  watchSinceMs: number;
-};
-
-export type ListFilter = { projectRef?: ProjectRef; repo?: string; state?: ChangeState; limit: number };
+export {
+  ALL_STATES,
+  DRAFT,
+  encode,
+  errorText,
+  HEAD_STATES,
+  isDraft,
+  type ListFilter,
+  parsePrUrl,
+  parseState,
+  QUEUED_STATES,
+  TERMINAL_STATES,
+  type TrainRow,
+  type Wait,
+  WAIT_BLOCKED,
+  WAIT_PERSON,
+  WAIT_REGEN,
+  WAIT_UNSTARTED,
+  WAITING,
+  type Watch,
+  type WatchCheck,
+} from "./states.ts";
 
 const numberOf = (changeId: ChangeId) => Number.parseInt(changeId.slice(1), 10) || 0;
 const decode = (data: string) => JSON.parse(data) as Change;
 
-/** A Change in the Rust struct's field order, its optional fields left out when absent, as serde writes it. */
-export function encode(c: Change): string {
-  const out: Record<string, unknown> = {
-    changeId: c.changeId,
-    projectRef: { machineId: c.projectRef.machineId, projectId: c.projectRef.projectId },
-    repo: c.repo,
-    prNumber: c.prNumber,
-    prUrl: c.prUrl,
-    branch: c.branch,
-  };
-  if (c.taskId !== undefined) out.taskId = c.taskId;
-  out.workstreamId = c.workstreamId;
-  out.headSha = c.headSha;
-  if (c.patchId !== undefined) out.patchId = c.patchId;
-  out.state = c.state;
-  out.reviews = c.reviews;
-  if (c.position !== undefined) out.position = c.position;
-  if (c.lastError !== undefined) out.lastError = c.lastError;
-  if (c.mergedSha !== undefined) out.mergedSha = c.mergedSha;
-  if (c.after !== undefined && c.after.length > 0) out.after = c.after;
-  out.createdAt = c.createdAt;
-  out.updatedAt = c.updatedAt;
-  return JSON.stringify(out);
-}
 
 type TrainSql = { repo: string; machine_id: string; project_id: string; watch_since_ms: number };
 const toTrain = (r: TrainSql): TrainRow => ({

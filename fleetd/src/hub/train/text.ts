@@ -1,7 +1,9 @@
-// The train's name for its commit status and the text helpers its records and the PR views share.
+// The train's names for its commit status and its label, and the text helpers its records and the PR views share.
 
 /** The commit status the train posts on a PR's head. */
 export const TRAIN_CONTEXT = "fleetd/train";
+/** The label the train puts on its batch PR and on the next PRs it will merge. */
+export const NEXT_LABEL = "fleetd:next";
 
 /** The first `max` UTF-16 units of `text`, never splitting a surrogate pair (api/grants.rs `clip`). */
 export function clip(text: string, max: number): string {

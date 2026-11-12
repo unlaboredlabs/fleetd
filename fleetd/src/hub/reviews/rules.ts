@@ -1,8 +1,7 @@
 // The readiness gate and the text reviewers and authors get. Pure; the gate
 // feeds them the Change and what its review tasks recorded.
 import type { Change } from "../../shared/contracts.ts";
-import type { PromptSetLike } from "../train/prompts.ts";
-import { fixYourPr } from "../train/service.ts";
+import { fixYourPr, type PromptSetLike } from "../train/prompts.ts";
 
 /** A recorded verdict of one of the Change's review tasks. */
 export type BoundReview = { taskId: string; patchId: string; blocking: number };

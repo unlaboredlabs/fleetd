@@ -6,8 +6,10 @@ import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
 import { TRAIN_CONTEXT } from "./text.ts";
+import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
 
-export { TRAIN_CONTEXT } from "./text.ts";
+export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
+export { NEXT_LABEL, TRAIN_CONTEXT } from "./text.ts";
 
 export const GH_AUTH_FIX = "run `gh auth login` on the hub machine";
 /** How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST_MS`. */
@@ -72,8 +74,6 @@ export function readPull(v: unknown): Pull | undefined {
 
 /** The label that keeps a PR off the train until someone takes it off. */
 export const HOLD_LABEL = "hold";
-/** The label the train puts on its batch PR and on the next PRs it will merge. */
-export const NEXT_LABEL = "fleetd:next";
 
 export const labelled = (pull: Pull, name: string) => pull.labels.some((l) => l.name.toLowerCase() === name.toLowerCase());
 export const held = (pull: Pull) => labelled(pull, HOLD_LABEL);
@@ -100,36 +100,6 @@ export function batchHeads(body: string): [number, string | undefined][] {
     if (/^[+-]?\d+$/.test(n)) out.push([Number(n), sha]);
   }
   return out;
-}
-
-export type CheckRun = {
-  id: number;
-  name: string;
-  status: string;
-  conclusion?: string | null;
-  html_url?: string | null;
-  /** GitHub's own stamps, whole seconds. */
-  started_at?: string | null;
-  completed_at?: string | null;
-  head_sha?: string | null;
-};
-
-/** The workflow run that reported it, from its page (`.../actions/runs/<id>/job/<job>`). */
-export function workflowRun(run: CheckRun): number | undefined {
-  const url = run.html_url ?? "";
-  const at = url.indexOf("/actions/runs/");
-  if (at < 0) return undefined;
-  const id = url.slice(at + "/actions/runs/".length).split("/")[0] ?? "";
-  return /^\d+$/.test(id) ? Number(id) : undefined;
-}
-
-/** The Actions job behind it, from its page (`.../job/<job>`). */
-export function jobOf(run: CheckRun): number | undefined {
-  const url = run.html_url ?? "";
-  const at = url.indexOf("/job/");
-  if (at < 0) return undefined;
-  const id = url.slice(at + 5).split(/[/?#]/)[0] ?? "";
-  return /^\d+$/.test(id) ? Number(id) : undefined;
 }
 
 export type WorkflowRun = {
@@ -176,9 +146,6 @@ function supersedes(next: CheckRun, seen: CheckRun): boolean {
   if (skipped(next) !== skipped(seen)) return skipped(seen);
   return next.id > seen.id;
 }
-
-/** A commit status on a head, as GitHub's combined status lists it. */
-export type CommitStatus = { context: string; state: string; target_url?: string | null };
 
 /** An open PR as the list answers it. */
 export type OpenPull = { number: number; draft: boolean; head: PullHead };

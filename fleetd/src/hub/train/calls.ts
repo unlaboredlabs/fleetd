@@ -9,25 +9,12 @@ import { reviewRead } from "../reviews/read.ts";
 import { leadReviewVerdict } from "../reviews/verdicts.ts";
 import { trainArea } from "./index.ts";
 import { parsePrUrl } from "./records.ts";
-import { CI_WATCHED, type EnqueueCall, timedOut } from "./service.ts";
+import { changeNext } from "./notes.ts";
+import type { EnqueueCall } from "./service.ts";
+
+export { changeNext } from "./notes.ts";
 import { toolError, type TrainError } from "./tools.ts";
 
-/** What the lead does next about a Change: almost always nothing, since the train and reviews move it on. */
-export function changeNext(change: Change): string {
-  switch (change.state) {
-    case "merged":
-      return "nothing; it is merged.";
-    case "ci_failed":
-    case "needs_rebase":
-      if (change.state === "ci_failed" && timedOut(change)) return `nothing: its CI timed out, and ${CI_WATCHED}.`;
-      return `nothing unless its author is gone: the train told ${change.taskId ?? "you"} what to fix, and it retries the new head by itself.`;
-    case "refused":
-    case "abandoned":
-      return "fix what it says and enqueue the PR again, or drop it.";
-    default:
-      return "don't merge it yourself or post the fleetd/train status; the train merges it and the outcome arrives in a wake.";
-  }
-}
 
 const isTrainError = (e: unknown): e is TrainError => typeof e === "object" && e !== null && "code" in e && "message" in e && !(e instanceof Error);
 
