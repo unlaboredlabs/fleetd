@@ -4,6 +4,7 @@
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
+import { isBase64 } from "../../shared/text.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
@@ -62,9 +63,6 @@ function box(hub: Hub): Uint8Array {
     throw boxFailed(error);
   }
 }
-
-/** Standard base64 with its padding, as Rust's `STANDARD` engine decodes it. */
-export const isBase64 = (text: string) => text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
 
 const refOf = (input: { project?: ProjectRef; navi?: ProjectRef }) => input.project ?? input.navi;
 

@@ -6,10 +6,9 @@ import type { Hub } from "../api/hub.ts";
 import { queuePorts } from "../leads/seams.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
-import { nextRun, ScheduleError, validate } from "./schedule.ts";
+import { LATE_AFTER_MS, nextRun, ScheduleError, validate } from "./schedule.ts";
 
-/** A firing this much past its time follows the wake's catchUp: the hub was down, or the host slept. */
-export const LATE_AFTER_MS = 60_000;
+export { LATE_AFTER_MS } from "./schedule.ts";
 
 export type WakeSet = {
   target: WakeTarget;

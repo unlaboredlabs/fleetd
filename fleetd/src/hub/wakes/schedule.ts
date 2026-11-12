@@ -6,6 +6,9 @@ import type { WakeSchedule } from "../../shared/contracts.ts";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+/** A firing this much past its time follows the wake's catchUp: the hub was down, or the host slept. */
+export const LATE_AFTER_MS = 60_000;
+
 export class ScheduleError extends Error {}
 
 export type LocalTime = { year: number; month: number; day: number; hour: number; minute: number; second: number };
