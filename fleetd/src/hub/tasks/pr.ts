@@ -15,6 +15,20 @@ export type BranchPrError =
   /** fleetd has no reader for the host. */
   | { kind: "no_reader" };
 
+/** Each step of a finished task's PR lookup: reading its report, its `origin`, the host. */
+export const PR_LOOKUP_TIMEOUT_MS = 60_000;
+/** When a lookup with no answer yet is given up on, after its task ended. */
+export const PR_LOOKUP_GIVE_UP_MS = 24 * 3600_000;
+
+/** A PR of the branch as GitHub lists it (`pulls?head=…&state=all`). */
+export type BranchPull = { number: number; state: string; merged?: boolean; merged_at?: string | null };
+
+/** The branch's PR among GitHub's answer for it in `repo` ("owner/name"): the open one, else a merged one. */
+export function openElseMerged(repo: string, pulls: readonly BranchPull[]): string | undefined {
+  const pull = pulls.find((p) => p.state === "open") ?? pulls.find((p) => p.merged === true || (p.merged_at ?? null) !== null);
+  return pull ? `https://github.com/${repo}/pull/${pull.number}` : undefined;
+}
+
 /** "github.com/acme/shop" from any form of a remote URL: https, ssh, scp-like `git@host:path`, with or without `.git`. */
 export function shortRemote(url: string): string {
   let u = url.trim().replace(/\/+$/, "");

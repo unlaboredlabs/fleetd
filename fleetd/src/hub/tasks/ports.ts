@@ -49,7 +49,7 @@ import { parkedOf as parkedOfEvent } from "../usage/classify.ts";
 import { usage } from "../usage/wire.ts";
 import { work } from "../work/index.ts";
 import type { CiGitHub, MergeReads } from "./ci_wait.ts";
-import { type BranchPrError, githubRepo, hostError } from "./pr.ts";
+import { type BranchPrError, type BranchPull, githubRepo, hostError, openElseMerged } from "./pr.ts";
 import { PortError, portError, type LaunchRequest, workspaceOf } from "./launch.ts";
 
 export { PortError, portError, type LaunchRequest, type Worktree, workspaceOf } from "./launch.ts";
@@ -350,9 +350,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
         throw hostError(answer.status, answer.message);
       }
       if (!Array.isArray(answer.value)) throw { kind: "unread", why: `gh api ${path} returned an unexpected shape` } satisfies BranchPrError;
-      const pulls = answer.value as { number: number; state: string; merged?: boolean; merged_at?: string | null }[];
-      const pull = pulls.find((p) => p.state === "open") ?? pulls.find((p) => p.merged === true || (p.merged_at ?? null) !== null);
-      return pull ? `https://github.com/${repo}/pull/${pull.number}` : undefined;
+      return openElseMerged(repo, answer.value as BranchPull[]);
     },
     prFound: (taskId) => {
       const train = hooks().train;
