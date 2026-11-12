@@ -147,8 +147,12 @@ export async function textOf(file: string): Promise<string> {
   return entries.map(([path, bytes]) => `${path}\n${Buffer.from(path.endsWith(".gz") ? gunzipSync(bytes) : bytes).toString("latin1")}`).join("\n");
 }
 
-/** Writes `from` again as `to` with its header or manifest changed, every checksum made right again. */
-export async function rewritten(from: string, to: string, change: { header?: (h: HubExportHeader) => void; manifest?: (m: HubExportManifest) => void }): Promise<void> {
+/** Writes `from` again as `to` with its header, manifest or entries' paths changed, every checksum made right again. */
+export async function rewritten(
+  from: string,
+  to: string,
+  change: { header?: (h: HubExportHeader) => void; manifest?: (m: HubExportManifest) => void; path?: (path: string) => string },
+): Promise<void> {
   const entries = await entriesOf(from);
   const fd = openSync(to, "wx", 0o600);
   try {
@@ -164,7 +168,7 @@ export async function rewritten(from: string, to: string, change: { header?: (h:
     await tar.entry(HEADER_PATH, headerBytes.length, headerBytes);
     for (const [path, bytes] of entries.slice(1)) {
       if (path === MANIFEST_PATH || path === MANIFEST_SUM_PATH) continue;
-      await tar.entry(path, bytes.length, bytes);
+      await tar.entry(change.path?.(path) ?? path, bytes.length, bytes);
     }
     await tar.entry(MANIFEST_PATH, manifestBytes.length, manifestBytes);
     const sum = Buffer.from(`${sha256Hex(manifestBytes)}\n`);

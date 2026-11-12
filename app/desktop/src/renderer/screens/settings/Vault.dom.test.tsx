@@ -106,8 +106,8 @@ const render = async (hash: string, features: string[] = TEAM, page?: ReactNode,
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin: false } });
       if (tool === "project_settings_get")
         return Promise.resolve({ ok: true, output: { settings: { machineId: "devbox", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", setup: { commands: [], inputs: [] }, env: [{ name: "STRIPE_KEY", kind: "secret", fingerprint: "ab12cd34", bytes: 20, updatedAt: AT }], worktrees: { dir: "/w/wt", baseBranch: "main", worktrees: [] } } } });
-      if (tool === "navi_purchases") return Promise.resolve({ ok: true, output: { purchases: [], ...(card === undefined ? {} : { card }) } });
-      if (tool === "navi_card_set") {
+      if (tool === "project_purchases") return Promise.resolve({ ok: true, output: { purchases: [], ...(card === undefined ? {} : { card }) } });
+      if (tool === "project_card_set") {
         const ref = (input as { card?: string }).card;
         card = ref === undefined ? undefined : { ref, label: "Team Visa", brand: "visa", last4: "4242" };
         return Promise.resolve({ ok: true, output: card === undefined ? {} : { card } });
@@ -305,7 +305,7 @@ it("picks the project's card from the vault cards its work can use, kept as vaul
   const team = options[0];
   if (team === undefined) throw new Error("no option");
   await click(team);
-  expect(calls.filter((c) => c.tool === "navi_card_set").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "shop", card: `vault:${teamCard.itemId}` }]);
+  expect(calls.filter((c) => c.tool === "project_card_set").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "shop", card: `vault:${teamCard.itemId}` }]);
   expect(host.textContent).toContain("Pays with Team Visa");
 });
 

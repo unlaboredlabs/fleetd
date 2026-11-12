@@ -5,7 +5,7 @@ import type { EnvSecretSaved } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors, READ_TIMEOUT_MS, REMOVE_TIMEOUT_MS, STOP_TIMEOUT_MS } from "./index.ts";
 
-/** Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close. */
+/** Forgetting a project's sign-ins: the node waits up to 20 s for the browser on its profile to close. */
 export const SIGNINS_TIMEOUT_MS = 30_000;
 
 function nonEmpty(machineId: MachineId, what: string, value: string): string {
@@ -20,18 +20,6 @@ export async function projectUpsert(hub: Hub, m: MachineId, projectId: ProjectId
     { op: "project_upsert", projectId, title: nonEmpty(m, "title", title), workspaceRoot: nonEmpty(m, "path", workspaceRoot) },
     READ_TIMEOUT_MS,
   );
-}
-
-/** Registers a project in `folder`, a path under the node's home that the node makes when missing: a Navi's. */
-export async function projectFolder(hub: Hub, m: MachineId, projectId: ProjectId, title: string, folder: string): Promise<string> {
-  const out = await executors(hub).call(
-    m,
-    "project",
-    { op: "project_upsert", projectId, title: nonEmpty(m, "title", title), workspaceRoot: nonEmpty(m, "folder", folder) },
-    READ_TIMEOUT_MS,
-  );
-  if (out.kind !== "folder") throw ExecutorError.failed(m, "project", "the node did not say where the folder is");
-  return out.path;
 }
 
 export async function projectRemove(
@@ -56,8 +44,8 @@ export async function projectRemove(
   );
 }
 
-export async function naviSigninsForget(hub: Hub, m: MachineId, projectId: ProjectId): Promise<void> {
-  await executors(hub).call(m, "project", { op: "navi_signins_forget", projectId }, SIGNINS_TIMEOUT_MS);
+export async function signinsForget(hub: Hub, m: MachineId, projectId: ProjectId): Promise<void> {
+  await executors(hub).call(m, "project", { op: "signins_forget", projectId }, SIGNINS_TIMEOUT_MS);
 }
 
 /** Sets and removes the project's variables on its node; the fingerprint of each secret it saved. */

@@ -84,5 +84,5 @@ export function digestLines(db: HubDb, r: ProjectRef): string[] | undefined {
   return digestOf(list);
 }
 
-/** A project's list, for other areas (the Navi bridge). */
+/** A project's list, for other areas (the project bridge). */
 export const checklistRead = (hub: Hub, r: ProjectRef) => read(hub.db, r);

@@ -85,7 +85,7 @@ export class People {
   ) {}
 
   /**
-   * The hub's owner, made from the machine's user when the hub has none; every human key and Navi with no person
+   * The hub's owner, made from the machine's user when the hub has none; every human key and project with no person
    * binds to it. Idempotent: the hub runs it at each start, and a human key made without a person runs it too.
    */
   ensureOwner(): Person {

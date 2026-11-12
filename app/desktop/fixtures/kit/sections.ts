@@ -11,7 +11,7 @@ const YOLO = { mode: "yolo", model: "claude-sonnet-5-5", effort: "medium", defau
 export const projectSections = (f: Fixture, ref: { readonly machineId: string; readonly projectId: string }): void => {
   const own = { machineId: ref.machineId, projectId: ref.projectId };
   const reads: ReadonlyArray<[string, JsonObject, JsonValue]> = [
-    ["hub_links_get", { navi: own }, { boxPubKey: BOX, issued: [], links: [] }],
+    ["hub_links_get", { project: own }, { boxPubKey: BOX, issued: [], links: [] }],
     [PROJECT_TOOLS.approvals, own, { approvals: YOLO, log: [] }],
     ["mcp_servers_get", { project: own }, { global: [], project: [], userServers: true }],
     [PROJECT_TOOLS.purchases, own, { purchases: [] }],

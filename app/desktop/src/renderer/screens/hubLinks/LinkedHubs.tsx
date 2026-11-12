@@ -20,7 +20,7 @@ const LINKED_LINE =
 
 export function LinkedHubs({ project }: { project: ProjectRef }) {
   const live = useLive();
-  const read = useToolQuery("hub_links_get", { navi: project }, { enabled: live });
+  const read = useToolQuery("hub_links_get", { project }, { enabled: live });
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   const row = (control: ReactNode, body: ReactNode) => (

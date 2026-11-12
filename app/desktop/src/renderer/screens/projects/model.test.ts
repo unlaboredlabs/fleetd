@@ -24,9 +24,6 @@ describe("the sidebar's default order", () => {
     ];
     expect(sidebarOrder(rows).map((r) => r.project.title)).toEqual(["billing", "Ada", "storefront"]);
   });
-  it("never reads the old kind", () => {
-    expect(sidebarOrder([project("billing"), project("Ada", { kind: "assistant" })]).map((r) => r.project.title)).toEqual(["billing", "Ada"]);
-  });
 });
 
 describe("a project's name", () => {

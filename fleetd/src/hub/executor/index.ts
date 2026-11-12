@@ -77,7 +77,7 @@ export const WATCH_IDLE_MS = 60_000;
 export const READ_TIMEOUT_MS = 15_000;
 /** A launch may create a worktree and spawn claude before the node answers. */
 export const LAUNCH_TIMEOUT_MS = 60_000;
-/** The node first stops the project's claude processes, then removes its worktrees and a Navi's sign-ins. */
+/** The node first stops the project's claude processes, then removes its worktrees and a project's sign-ins. */
 export const REMOVE_TIMEOUT_MS = 70_000;
 /** How long a launch or a send waits on a node that is up but busy (swapping, loaded) before it fails: `callPatient`. */
 export const PATIENCE_MS = 120_000;

@@ -1,4 +1,4 @@
-// Helpers my modules share that other areas own in Rust (orders/notes `require_human`, api/grants `unknown_*`, navi/owner
+// Helpers my modules share that other areas own in Rust (orders/notes `require_human`, api/grants `unknown_*`, project_lead/owner
 // `others`, hub/queue's ports) until those areas port them, plus the landed seams re-exported: the lead-call registry
 // (src/hub/lead_calls) and the lead wakes (src/hub/api/leads.ts).
 import { ToolError } from "../../shared/errors.ts";

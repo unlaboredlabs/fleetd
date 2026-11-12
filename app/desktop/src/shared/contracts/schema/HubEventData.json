@@ -840,7 +840,7 @@
       "properties": {
         "artifact": {
           "$ref": "#/$defs/ArtifactPublished",
-          "description": "A system line \"Published …\": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
+          "description": "A system line \"Published …\": a lead or task published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
         },
         "attachments": {
           "default": [],
@@ -929,7 +929,7 @@
         },
         "skillSaved": {
           "$ref": "#/$defs/SkillSaved",
-          "description": "A system line \"Saved a skill: …\": a Navi saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
+          "description": "A system line \"Saved a skill: …\": a project's lead saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
         },
         "skills": {
           "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
@@ -1194,7 +1194,7 @@
       "type": "object"
     },
     "CheckerNote": {
-      "description": "What a Navi's approval checker said of an action it didn't let through.",
+      "description": "What a project's approval checker said of an action it didn't let through.",
       "properties": {
         "reason": {
           "description": "Its reason, in one line. A checker that failed or answered nothing readable says so here.",
@@ -1561,14 +1561,14 @@
         },
         "purchase": {
           "$ref": "#/$defs/Purchase",
-          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `permission` is."
+          "description": "A project's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the project's node\nfills the card into that checkout once. Boxed, as `permission` is."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
-          "description": "A Navi's secure input from a 1Password field: approved, its node fills that field once."
+          "description": "A project's secure input from a 1Password field: approved, its node fills that field once."
         },
         "state": {
           "$ref": "#/$defs/CommandApprovalState"
@@ -2386,28 +2386,6 @@
       ],
       "type": "object"
     },
-    "NaviCard": {
-      "description": "The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
-      "properties": {
-        "brand": {
-          "$ref": "#/$defs/CardBrand"
-        },
-        "label": {
-          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
-          "type": "string"
-        },
-        "last4": {
-          "$ref": "#/$defs/CardLast4"
-        },
-        "ref": {
-          "$ref": "#/$defs/CardRef"
-        }
-      },
-      "required": [
-        "ref"
-      ],
-      "type": "object"
-    },
     "OpItemReference": {
       "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
       "type": "string"
@@ -2432,6 +2410,28 @@
       "required": [
         "leads",
         "tasks"
+      ],
+      "type": "object"
+    },
+    "PaymentCard": {
+      "description": "The card a project pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
+      "properties": {
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "label": {
+          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
+          "type": "string"
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
+        "ref": {
+          "$ref": "#/$defs/CardRef"
+        }
+      },
+      "required": [
+        "ref"
       ],
       "type": "object"
     },
@@ -2811,8 +2811,8 @@
       "description": "A purchase as its request keeps it: what the person approves.",
       "properties": {
         "card": {
-          "$ref": "#/$defs/NaviCard",
-          "description": "The Navi's card when it asked."
+          "$ref": "#/$defs/PaymentCard",
+          "description": "The project's card when it asked."
         },
         "filledAt": {
           "$ref": "#/$defs/Timestamp",
@@ -3231,7 +3231,7 @@
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
-          "description": "A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
+          "description": "A project's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
         },
         "sink": {
           "$ref": "#/$defs/SecretSink"
@@ -3396,14 +3396,14 @@
       "type": "string"
     },
     "SkillSaved": {
-      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
+      "description": "A chat line's skill: a lead saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
       "properties": {
         "created": {
           "description": "Its first version.",
           "type": "boolean"
         },
         "installed": {
-          "description": "Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
+          "description": "Installed: the source as the lead gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
           "maxLength": 300,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -3805,7 +3805,7 @@
         },
         {
           "const": "confirm",
-          "description": "A Navi's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
+          "description": "A project's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
           "type": "string"
         }
       ]
@@ -3815,7 +3815,7 @@
       "properties": {
         "checker": {
           "$ref": "#/$defs/CheckerNote",
-          "description": "A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input\nonce, when it asks again."
+          "description": "A project's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the project run exactly this input\nonce, when it asks again."
         },
         "input": {
           "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
@@ -3830,10 +3830,10 @@
         },
         "screenshot": {
           "$ref": "#/$defs/AttachmentId",
-          "description": "A Navi's `confirm_step`: its screenshot of the page, the project's, for the card."
+          "description": "A lead's `confirm_step`: its screenshot of the page, the project's, for the card."
         },
         "site": {
-          "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",
+          "description": "A project's first fetch or browser visit to this site (its host, such as `example.com`): approved, the project may\nfetch and open it without asking from then on, until a person revokes it (`project_site_revoke`).",
           "type": "string"
         },
         "summary": {
@@ -3873,7 +3873,7 @@
           "description": "The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`)."
         },
         "title": {
-          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Use create_page on docs\".",
+          "description": "What it does, as a verb phrase the app puts after \"<the project> wants to\": \"Use create_page on docs\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

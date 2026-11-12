@@ -289,7 +289,7 @@ export class LeadWakes {
     const lead = this.records.leadGet(r);
     // No lead yet: its first message carries the digest, which shows the same state.
     if (!lead) return void console.info(`lead wake of ${key} dropped: project has no lead`);
-    // An archived Navi's lead takes no turns.
+    // An archived project's lead takes no turns.
     if (store(this.hub).projectGet(r)?.archivedAt !== undefined) return;
     // The lead's first message listed every intent made before it started; a wake would say it twice.
     const triggers = all.filter((t) => {

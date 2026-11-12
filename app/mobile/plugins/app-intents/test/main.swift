@@ -60,8 +60,8 @@ func problem(_ run: () async throws -> Void) async -> Problem? {
 }
 
 let devbox = Pairing(hub: "http://devbox:4790", key: "fk_test", hubName: "devbox")
-let inbox = ChatTarget(machineId: "m1", projectId: "p2", title: "Inbox", navi: true, machine: nil, at: "2026-10-29T11:00:00Z")
-let billing = ChatTarget(machineId: "m1", projectId: "p1", title: "billing-api", navi: false, machine: "devbox", at: "2026-10-29T10:00:00Z")
+let inbox = ChatTarget(machineId: "m1", projectId: "p2", title: "Inbox", machine: nil, at: "2026-10-29T11:00:00Z")
+let billing = ChatTarget(machineId: "m1", projectId: "p1", title: "billing-api", machine: "devbox", at: "2026-10-29T10:00:00Z")
 let ref = { (c: ChatTarget) in ["machineId": c.machineId, "projectId": c.projectId] }
 
 // Links: a chat's opens it, Needs You opens the approvals.

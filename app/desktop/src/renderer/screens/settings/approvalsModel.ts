@@ -1,8 +1,8 @@
 // A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words (a new
 // project starts in YOLO, W588; one made before keeps the mode it had), and each auto-approved action as a log row.
-import type { AutoApproved, NaviApprovalMode } from "../../../shared/contracts";
+import type { AutoApproved, ApprovalMode } from "../../../shared/contracts";
 
-export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly label: string; readonly description: string }> = [
+export const MODES: ReadonlyArray<{ readonly mode: ApprovalMode; readonly label: string; readonly description: string }> = [
   {
     mode: "checker",
     label: "Checker decides",

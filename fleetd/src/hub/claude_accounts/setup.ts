@@ -18,7 +18,7 @@ import { administers, refOf } from "../people/roles.ts";
 
 export const CONNECT_REFUSAL = "Connect your Claude to start this order.";
 
-/** Whose work a launch is: the hub's (a lead, or work nobody started), or a person's (their order, their Navi). */
+/** Whose work a launch is: the hub's (a lead, or work nobody started), or a person's (their order, their project). */
 export type Whose = { hub: true } | { person: string };
 
 /** `hub`, or the person's id: how the hub and the node key an account's records and usage. */

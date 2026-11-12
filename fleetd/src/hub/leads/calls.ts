@@ -14,7 +14,7 @@ export function registerLeadCalls(hub: Hub): void {
     const c = call as { workstreamId?: string; text?: string; brief?: Brief; asked?: string };
     if (!c.brief || !Array.isArray(c.brief.doneWhen)) throw new ToolError("invalid", "Invalid brief_create call: brief needs its doneWhen lines.");
     const ws = workstreams(hub);
-    // With a workstream, `asked` is a Navi message folded into it; opening one, the message it is for.
+    // With a workstream, `asked` is a project message folded into it; opening one, the message it is for.
     if (c.workstreamId !== undefined) return ws.briefCreate(caller.projectRef, c.workstreamId, c.brief, c.asked);
     const { workstreamId } = ws.open(
       { projectRef: caller.projectRef, text: c.text ?? "", clientRequestId: requestId(), channel: "lead", by: caller.by },

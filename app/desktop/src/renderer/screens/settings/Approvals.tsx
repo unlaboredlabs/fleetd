@@ -4,7 +4,7 @@
 // list that reads older pages as it scrolls (W601). The checker runs on the hub's default model (W467). Reads
 // project_approvals; writes project_approvals_set.
 import { useState, type UIEvent } from "react";
-import type { NaviApprovalMode, NaviApprovals, NaviApprovalsOutput } from "../../../shared/contracts";
+import type { ApprovalMode, ProjectApprovals, ProjectApprovalsOutput } from "../../../shared/contracts";
 import { Button, Radio, RadioGroup, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { shortClock } from "../chat/format";
@@ -53,13 +53,13 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
   );
 }
 
-function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: NaviApprovals }) {
+function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: ProjectApprovals }) {
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const save = (mode: NaviApprovalMode) => {
+  const save = (mode: ApprovalMode) => {
     setBusy(true);
     setProblem(null);
     hubCall(PROJECT_TOOLS.approvalsSet, { ...projectRef, mode }).then(
@@ -75,7 +75,7 @@ function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: NaviApprova
   };
   return (
     <div className={s.stack}>
-      <RadioGroup className={s.modes} value={saved.mode} disabled={!live || busy} onValueChange={(v) => save(v as NaviApprovalMode)} aria-label="Approval mode">
+      <RadioGroup className={s.modes} value={saved.mode} disabled={!live || busy} onValueChange={(v) => save(v as ApprovalMode)} aria-label="Approval mode">
         {MODES.map((m) => (
           <Radio key={m.mode} value={m.mode} label={m.label} />
         ))}
@@ -91,7 +91,7 @@ function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: NaviApprova
   );
 }
 
-function ApprovedLog({ projectRef, first }: { projectRef: Ref; first: NaviApprovalsOutput }) {
+function ApprovedLog({ projectRef, first }: { projectRef: Ref; first: ProjectApprovalsOutput }) {
   // What Show all holds: the first page as it was when opened, then each older page read after it.
   const [all, setAll] = useState<Pages | null>(null);
   const rows = fold(first.log);

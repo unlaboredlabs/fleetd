@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
-import { answer, start as startPurchases } from "../src/hub/navi/purchases.ts";
+import { answer, start as startPurchases } from "../src/hub/project_lead/purchases.ts";
 import { putToken } from "../src/hub/onepassword/index.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { injected, start as startVault } from "../src/hub/vault/loops.ts";

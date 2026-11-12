@@ -2,7 +2,7 @@
 // account logged in at its screen, joined with the installer's `--mac`, which sets node.json's `agentsMac`. It is a
 // tool every project's agents use from their own machines, never a runner:
 //
-// - it runs no claude, no lead, no task and no Navi: `sessionCallAllowed` refuses every session call but the few a hub
+// - it runs no claude, no lead and no task: `sessionCallAllowed` refuses every session call but the few a hub
 //   sends any machine;
 // - it takes no sealed secret and runs no gated command: TOOL_ONLY;
 // - its hello lists only the calls a tool needs (`toolOnly`), with `agents_mac` whatever its checks say.
@@ -80,7 +80,7 @@ const KEPT = new Set([
 
 /** The calls the agents' Mac lists at its hello (mod.rs `capabilities`): `agents_mac` first, then of `caps` only
  * updates, screens it hosts for agents elsewhere, a project's removal and compressed link frames; nothing that carries
- * a secret, a claude or a Navi. `tool`: the Mac's tool is on (macOS), so `mac_tool` too, once. */
+ * a secret, a claude or a project. `tool`: the Mac's tool is on (macOS), so `mac_tool` too, once. */
 export function toolOnly(caps: Iterable<string>, tool: boolean): string[] {
   const out = [CAP_AGENTS_MAC, ...[...caps].filter((c) => KEPT.has(c) && c !== CAP_MAC_TOOL)];
   if (tool) out.push(CAP_MAC_TOOL);

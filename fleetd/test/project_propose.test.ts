@@ -7,7 +7,7 @@ import { approvals, PROJECT_PROPOSE_TOOL } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { leadCalls, type LeadResultFrame } from "../src/hub/lead_calls/index.ts";
-import { start as startNavi } from "../src/hub/navi/loops.ts";
+import { start as startLeadArea } from "../src/hub/project_lead/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { registerLeadCalls } from "../src/hub/projects/calls.ts";
 import { PEOPLE_ONLY } from "../src/hub/projects/people_only.ts";
@@ -37,7 +37,7 @@ async function rig(answer: Answer = () => undefined) {
   );
   const wakes: Trigger[] = [];
   leadWakes(k.hub).trigger = (_r, t) => void wakes.push(t);
-  startNavi(k.hub);
+  startLeadArea(k.hub);
   registerLeadCalls(k.hub);
   const a = approvals(k.hub);
   const send = (threadId: string | undefined, call: Record<string, unknown>) =>
@@ -85,14 +85,15 @@ test("a proposal is one card in every approval mode, YOLO too, and nothing is ma
         tool: "project_propose",
         action: "write",
         title: `Create the project “Billing ${i}”`,
-        input: JSON.stringify({ machineId: "devbox", path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
+        // onlyMe false for one release: an older app shows the card as New project only with it.
+        input: JSON.stringify({ machineId: "devbox", onlyMe: false, path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
       });
     }
     expect(k.made()).toEqual([]);
     // The card's check made nothing on the machine.
     expect(k.n.calls.filter((c) => c.op === "folder_make" && !c.dryRun)).toEqual([]);
     expect(k.n.calls.filter((c) => c.op === "project_upsert")).toEqual([]);
-    expect(k.db.query("SELECT COUNT(*) AS n FROM navi_auto_approved").get()).toEqual({ n: 0 });
+    expect(k.db.query("SELECT COUNT(*) AS n FROM project_auto_approved").get()).toEqual({ n: 0 });
   } finally {
     k.hub.shutdown.abort();
   }
@@ -241,7 +242,7 @@ test("a proposal with a repo clones it once approved: the project exists when th
     }) as typeof ex.call;
     await k.mode("yolo");
     const { card } = await k.prompt("p-1", { title: "Billing", url: "https://github.com/acme/billing" });
-    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
+    expect(card?.permission?.preview?.input).toBe(JSON.stringify({ machineId: "devbox", onlyMe: false, path: "/home/me/src/billing", repo: "acme/billing", title: "Billing", what: WHAT_CLONED }, null, 2));
     // Nothing is cloned for a card.
     expect(k.n.calls.filter((c) => c.op === "repo_clone")).toEqual([]);
     await k.tap(ada, card?.requestId as string, "approve");

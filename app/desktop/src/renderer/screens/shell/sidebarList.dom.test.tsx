@@ -128,7 +128,7 @@ describe("one list", () => {
   it("has every project in one unlabelled list, in its order, each row its name, time and line, numbered while ⌘ is held", () => {
     mount([{ ...ADA, line: "You: ship it" }, HOME, STOREFRONT]);
     expect(host.querySelector("[class*=sidebarSectionHead]")).toBeNull();
-    expect(host.textContent).not.toMatch(/Projects|Navi/u);
+    expect(host.textContent).not.toMatch(/Projects/u);
     const names = [...host.querySelectorAll("[data-reorder-row] [class*=name]")].map((n) => n.textContent);
     expect(names).toEqual(["Ada", "Home", "storefront"]);
     expect(button("Ada").querySelector("[class*=line]")?.textContent).toBe("You: ship it");

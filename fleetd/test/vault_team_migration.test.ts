@@ -16,7 +16,8 @@ import { scopeKey } from "../src/hub/vault/item.ts";
 import { VaultKeys } from "../src/hub/vault/keys.ts";
 import { copyTeamVars } from "../src/hub/vault/migrate.ts";
 import { summary } from "../src/hub/vault/items.ts";
-import { AT, exportOf, importInto, open, type Opened, place, type Place } from "./transfer-kit.ts";
+import { olderExportOf } from "./project_names_kit.ts";
+import { AT, importInto, open, type Opened, place, type Place } from "./transfer-kit.ts";
 
 const TEAM = MIGRATIONS.findIndex((m) => m.name.endsWith("_one_team_vault"));
 const M = "devbox";
@@ -273,13 +274,13 @@ function checkMulti(k: Opened) {
 
 test("an older export loaded with fleetd import ends as the hub would have", async () => {
   const from = await oldHub(multi());
-  await exportOf(from);
-  const { manifest } = await checkExport(from.file);
+  const older = await olderExportOf(from);
+  const { manifest } = await checkExport(older);
   expect(manifest.tables.find((t) => t.name === "vault_shares")?.rows).toBe(3);
   const to = place();
   places.push(to);
   (await open(to)).close();
-  const loaded = await importInto(to, from.file);
+  const loaded = await importInto(to, older);
   expect(loaded.skipped).toEqual([]);
   const k = await started(to);
   checkMulti(k);

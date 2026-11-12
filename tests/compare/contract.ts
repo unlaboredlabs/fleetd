@@ -186,7 +186,7 @@ await (has("--areas") ? areas() : withFleet(path.join(scratch(`ct-${name}`), "f"
     ["mcp_servers_get", {}],
     ["setup_list", {}],
     ["browser_sessions", { projectRef: ref }],
-    ["navi_list", {}],
+    ["project_get", {}],
     ["project_files", { machineId: ref.machineId, projectId: ref.projectId, limit: 5 }],
     ["usage_status", {}],
   ];

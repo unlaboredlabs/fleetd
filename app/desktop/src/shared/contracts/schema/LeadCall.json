@@ -79,7 +79,7 @@
       "type": "string"
     },
     "ArtifactPublishCall": {
-      "description": "`artifact_publish`: a lead, task or Navi publishes a report in its project's chat. With `path`, the agent's own\nfleetd tool reads the file and sends it as `content`; the hub takes `content` only.",
+      "description": "`artifact_publish`: a lead or task publishes a report in its project's chat. With `path`, the agent's own\nfleetd tool reads the file and sends it as `content`; the hub takes `content` only.",
       "properties": {
         "content": {
           "description": "The whole document. Give this or `path`.",
@@ -117,7 +117,7 @@
       "type": "object"
     },
     "ArtifactReadCall": {
-      "description": "`artifact_read`: a lead, task or Navi reads back an artifact published in its own project (its own or another\nagent's), the same ones `artifact_publish` writes to.",
+      "description": "`artifact_read`: a lead or task reads back an artifact published in its own project (its own or another\nagent's), the same ones `artifact_publish` writes to.",
       "properties": {
         "name": {
           "$ref": "#/$defs/ArtifactName",
@@ -158,7 +158,7 @@
       "type": "string"
     },
     "AutomationConfirmCall": {
-      "description": "`automation_confirm`: a Navi asks the person to let one of its automations run on its own. The person sees a card\nwith its name, prompt and schedule; their approval marks it `confirmed`, which no lead call does itself.",
+      "description": "`automation_confirm`: a project's lead asks the person to let one of its automations run on its own. The person sees a card\nwith its name, prompt and schedule; their approval marks it `confirmed`, which no lead call does itself.",
       "properties": {
         "automationId": {
           "$ref": "#/$defs/AutomationId"
@@ -211,22 +211,6 @@
     },
     "AutomationListCall": {
       "description": "`automation_list`: the project's automations with their last run.",
-      "type": "object"
-    },
-    "AutomationPauseCall": {
-      "description": "`automation_pause`: paused true stops its schedule and webhook; false resumes them. Only an older node sends it:\nagent-mcp lists `automation_update {paused}` instead, and sends a lead's `automation_pause` there.",
-      "properties": {
-        "automationId": {
-          "$ref": "#/$defs/AutomationId"
-        },
-        "paused": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "automationId",
-        "paused"
-      ],
       "type": "object"
     },
     "AutomationRunCall": {
@@ -751,26 +735,10 @@
       "type": "object"
     },
     "ChatFileCall": {
-      "description": "`chat_file`: a lead or task uploads a file it made (a PDF, a CSV, a document) for its project's chat, as\n`chat_image` does an image: read from the session's own working directory by its node, any type the hub takes\n([`AttachmentMime`]) with bytes that fit it, at most [`crate::mcp::ATTACHMENT_MAX_BYTES`]. A lead shows it with a\n`file` block; unshown, it goes after 24 h.",
+      "description": "`chat_file`: a lead or task uploads a file it made (a PDF, a CSV, a document) for its project's chat, an image\nincluded: read from the session's own working directory by its node, any type the hub takes\n([`AttachmentMime`]) with bytes that fit it, at most [`crate::mcp::ATTACHMENT_MAX_BYTES`]. A lead shows it with a\n`file` block; unshown, it goes after 24 h.",
       "properties": {
         "path": {
           "description": "The file: relative to your working directory, or absolute inside it.",
-          "maxLength": 1000,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "path"
-      ],
-      "type": "object"
-    },
-    "ChatImageCall": {
-      "description": "`chat_image`: a lead or task uploads an image it made (a screenshot of a UI change) for its project's chat. The\ncaller's node reads it from the session's own working directory: a png, jpeg, webp or gif by its bytes, at most\n[`crate::mcp::ATTACHMENT_MAX_BYTES`]. A lead shows it with an `image` block; unshown, it goes after 24 h.",
-      "properties": {
-        "path": {
-          "description": "The image file: relative to your working directory, or absolute inside it.",
           "maxLength": 1000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -787,7 +755,7 @@
       "type": "string"
     },
     "ChatReadCall": {
-      "description": "`chat_read`: the messages around one of a Navi's own chat, in order.",
+      "description": "`chat_read`: the messages around one message of a lead's own chat, in order.",
       "properties": {
         "after": {
           "description": "How many after it; absent, 5.",
@@ -816,7 +784,7 @@
       "type": "string"
     },
     "ChatSearchCall": {
-      "description": "`chat_search`: a Navi searches its own chat, all of it, by words.",
+      "description": "`chat_search`: a lead searches its own chat, all of it, by words.",
       "properties": {
         "before": {
           "$ref": "#/$defs/ChatMessageId",
@@ -891,7 +859,7 @@
       "type": "string"
     },
     "ConfirmStepCall": {
-      "description": "`confirm_step`: a Navi's lead calls it right before the final Confirm or Submit click on a site that doesn't pay or\norder (booking a table, cancelling a subscription, sending a form, an expense, a return, a post). The call goes\nthrough the Navi's approval mode like a send: the checker's go, the person's approval or YOLO let it through, and\nits answer says to click. A payment never goes through here.",
+      "description": "`confirm_step`: a project's lead calls it right before the final Confirm or Submit click on a site that doesn't pay or\norder (booking a table, cancelling a subscription, sending a form, an expense, a return, a post). The call goes\nthrough the project's approval mode like a send: the checker's go, the person's approval or YOLO let it through, and\nits answer says to click. A payment never goes through here.",
       "properties": {
         "button": {
           "description": "The button's label, as the page shows it: \"Complete reservation\".",
@@ -1936,20 +1904,6 @@
           "type": "object"
         },
         {
-          "$ref": "#/$defs/ChatImageCall",
-          "description": "A lead's or task's image for the chat, read from its own working directory by its node.",
-          "properties": {
-            "op": {
-              "const": "chat_image",
-              "type": "string"
-            }
-          },
-          "required": [
-            "op"
-          ],
-          "type": "object"
-        },
-        {
           "$ref": "#/$defs/ChatFileCall",
           "description": "A lead's or task's file for the chat, read the same way: any type the hub takes.",
           "properties": {
@@ -1965,7 +1919,7 @@
         },
         {
           "$ref": "#/$defs/ArtifactPublishCall",
-          "description": "A lead's, task's or Navi's report for its project's chat (hub/artifacts).",
+          "description": "A lead's or task's report for its project's chat (hub/artifacts).",
           "properties": {
             "op": {
               "const": "artifact_publish",
@@ -1979,7 +1933,7 @@
         },
         {
           "$ref": "#/$defs/ArtifactReadCall",
-          "description": "Reads one back, a lead's, task's or Navi's, from its own project only.",
+          "description": "Reads one back, a lead's or task's, from its own project only.",
           "properties": {
             "op": {
               "const": "artifact_read",
@@ -2022,19 +1976,6 @@
           "properties": {
             "op": {
               "const": "automation_update",
-              "type": "string"
-            }
-          },
-          "required": [
-            "op"
-          ],
-          "type": "object"
-        },
-        {
-          "$ref": "#/$defs/AutomationPauseCall",
-          "properties": {
-            "op": {
-              "const": "automation_pause",
               "type": "string"
             }
           },
@@ -2176,7 +2117,7 @@
         },
         {
           "$ref": "#/$defs/PurchaseOpenCall",
-          "description": "Made by the node for a Navi's purchase_request and purchase_fill (purchase.rs), never by the session itself.",
+          "description": "Made by the node for a project's purchase_request and purchase_fill (purchase.rs), never by the session itself.",
           "properties": {
             "op": {
               "const": "purchase_open",
@@ -2216,7 +2157,7 @@
         },
         {
           "$ref": "#/$defs/SecureInputOpenCall",
-          "description": "Made by the node for a Navi's request_secure_input and secure_input_fill (secure_input.rs).",
+          "description": "Made by the node for a project's request_secure_input and secure_input_fill (secure_input.rs).",
           "properties": {
             "op": {
               "const": "secure_input_open",
@@ -2324,7 +2265,7 @@
         },
         {
           "$ref": "#/$defs/ProjectMessageCall",
-          "description": "The factory bridge (navi.rs): any project's lead makes them (D310).",
+          "description": "The factory bridge (hub/project_lead/bridge.ts): any project's lead makes them (D310).",
           "properties": {
             "op": {
               "const": "project_message",
@@ -2351,7 +2292,7 @@
         },
         {
           "$ref": "#/$defs/ChatSearchCall",
-          "description": "A lead's read back through its own chat (hub/navi/recall.rs): any project's lead makes them (D310).",
+          "description": "A lead's read back through its own chat (hub/project_lead/recall.ts): any project's lead makes them (D310).",
           "properties": {
             "op": {
               "const": "chat_search",
@@ -2392,7 +2333,7 @@
         },
         {
           "$ref": "#/$defs/ConfirmStepCall",
-          "description": "A Navi's final Confirm or Submit click on a site, through its approval mode (hub/navi/confirm.rs).",
+          "description": "A project's final Confirm or Submit click on a site, through its approval mode (hub/project_lead/confirm.ts).",
           "properties": {
             "op": {
               "const": "confirm_step",
@@ -2838,7 +2779,7 @@
       "type": "string"
     },
     "ProjectMessageCall": {
-      "description": "`project_message`: Navi writes to another project's lead in its chat, as the agent \"Navi <its title>\", never as\nthe person. The lead reads it as input, never as the person's answer or approval.",
+      "description": "`project_message`: a project's lead writes to another project's lead in its chat, as the agent named by its own\nproject's title, never as the person. The lead reads it as input, never as the person's answer or approval.",
       "properties": {
         "hub": {
           "description": "A linked hub, by its label: the project is there. Absent: this hub.",
@@ -3036,7 +2977,7 @@
       "type": "object"
     },
     "PurchaseClaimCall": {
-      "description": "The node's lead call for an agent's `purchase_fill`: claims an approved purchase for one fill. The hub refuses it\nunless the purchase is this Navi's, approved, unfilled and within its window; claimed, nothing else can fill it.",
+      "description": "The node's lead call for an agent's `purchase_fill`: claims an approved purchase for one fill. The hub refuses it\nunless the purchase is this project's, approved, unfilled and within its window; claimed, nothing else can fill it.",
       "properties": {
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -3143,7 +3084,7 @@
       "type": "object"
     },
     "PurchaseRequestCall": {
-      "description": "`purchase_request`: ask the person to approve paying at this checkout with the Navi's card. Call it on the\ncheckout page, once the basket and the total are final.",
+      "description": "`purchase_request`: ask the person to approve paying at this checkout with the project's card. Call it on the\ncheckout page, once the basket and the total are final.",
       "properties": {
         "items": {
           "description": "Everything being bought.",
@@ -3761,7 +3702,7 @@
       "type": "string"
     },
     "SkillSaveCall": {
-      "description": "`skill_save`: a Navi writes one of its own skills, new or changed, as a whole `SKILL.md`. No one approves it: the\nhub keeps it as a new version with `why`, posts one line in the chat, and the Navi's sessions get it from their next\nstart. It is the Navi's only, never another Navi's or a project's.",
+      "description": "`skill_save`: a project's lead writes one of its project's skills, new or changed, as a whole `SKILL.md`. No one approves it: the\nhub keeps it as a new version with `why`, posts one line in the chat, and the project's sessions get it from their next\nstart. It is the project's only, never another project's or a project's.",
       "properties": {
         "name": {
           "$ref": "#/$defs/SkillName",

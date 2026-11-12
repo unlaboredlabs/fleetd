@@ -21,7 +21,7 @@ ${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_AP
 moving a hub:
 ${U.EXPORT_USAGE}
 projects:
-${U.PROJECT_USAGE}${U.NAVI_USAGE}
+${U.PROJECT_USAGE}
 running by hand:
 ${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
 
@@ -49,9 +49,6 @@ export function helpFor(argv: string[]): string | undefined {
         return U.GITHUB_APP_USAGE;
       case "project":
         return U.PROJECT_USAGE;
-      case "navi":
-      case "navis":
-        return U.NAVI_USAGE;
       case "hub":
         return rest[0] === "start"
           ? U.HUB_START_USAGE
@@ -109,9 +106,6 @@ async function longRunning(command: string, rest: string[]): Promise<number | un
       return (await import("./github_app.ts")).githubAppCommand(rest);
     case "project":
       return (await import("./project.ts")).projectCommand(rest);
-    case "navi":
-    case "navis":
-      return (await import("./navi.ts")).naviCommand(rest);
     case "node":
       return (await import("./node.ts")).nodeCommand(rest);
     case "time":

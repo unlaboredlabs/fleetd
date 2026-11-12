@@ -7,8 +7,8 @@ import { controlOf, PageTouches } from "./screen";
 import { memorySections } from "./sections";
 import { Session, type SessionOptions } from "./session";
 
-const REF = { machineId: "m1", projectId: "navi" };
-const KEY = "m1/navi";
+const REF = { machineId: "m1", projectId: "inbox" };
+const KEY = "m1/inbox";
 const AT = "2026-10-28T10:00:00Z";
 
 const project = (projectId: string, title: string) => ({
@@ -25,7 +25,7 @@ const snapshot = {
   cursor: 1,
   attention: [],
   machines: [],
-  projects: [project("navi", "Ada"), project("shop", "storefront")],
+  projects: [project("inbox", "Ada"), project("shop", "storefront")],
   chats: [{ projectRef: REF, lastSeq: 2, leadWorking: false, needsYou: false }],
 };
 
@@ -153,7 +153,7 @@ describe("Session", () => {
     hub.ready();
     hub.link.frame({ ...snapshot, chats: [{ ...snapshot.chats[0], lastSeq: 4 }] });
     // A chat opened here is read again too, as it is held from the link before.
-    const read = hub.sentOf("call").find((c) => c.tool === "chat_history" && (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    const read = hub.sentOf("call").find((c) => c.tool === "chat_history" && (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "inbox");
     hub.link.frame({ t: "result", id: read?.id, output: page([message(2, "Two emails need you."), message(3, "Sent the first."), message(4, "Sent both.")]) });
     await flush();
     expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Sent both.");
@@ -170,7 +170,7 @@ describe("Session", () => {
     hub.link.close(1006);
     vi.advanceTimersByTime(1000);
     hub.ready();
-    const ada = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    const ada = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "inbox");
     // Nothing new in Ada's chat: it isn't read again.
     hub.link.frame(snapshot);
     await flush();
@@ -284,7 +284,7 @@ describe("Session", () => {
     expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false });
     session.wake();
     expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat", project: REF });
-    expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false, agent: "lead:m1/navi" });
+    expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false, agent: "lead:m1/inbox" });
     expect(hub.links).toHaveLength(1);
   });
 
@@ -424,7 +424,7 @@ describe("Session", () => {
     const before = hub.sentOf("snapshot").length;
     hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
     expect(hub.sentOf("snapshot").length).toBe(before + 1);
-    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada"), project("shop", "Shop")] });
+    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("inbox", "Ada"), project("shop", "Shop")] });
     expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.project.title).toEqual("Shop");
   });
 
@@ -720,7 +720,7 @@ describe("a chat's screens", () => {
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
     // Another person's project's screen: refused, and nothing changes here.
     const refused = session.control(live("human").sessionId, "agent");
-    hub.fail("browser_control", "forbidden", "navi on m1 is another person's project: only its owner uses and manages it.");
+    hub.fail("browser_control", "forbidden", "inbox on m1 is another person's project: only its owner uses and manages it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
   });

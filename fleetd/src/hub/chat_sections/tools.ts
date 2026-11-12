@@ -5,7 +5,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows, isoMs } from "../auth/index.ts";
-import { Refs } from "../navi/owner.ts";
+import { Refs } from "../project_lead/owner.ts";
 import { me } from "../sidebar_order/store.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { kept, named } from "./rules.ts";

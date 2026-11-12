@@ -8,7 +8,7 @@ import { Avatar } from "../../ui";
 import type { BotIn } from "../../../shared/bot";
 import { useBotState } from "./botState";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "avatarColor">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "avatar" | "avatarColor">;
 
 /** Its picture's data: URL, undefined while it has none or it loads. */
 export const usePicture = (project: Pick<ProjectSummary, "machineId" | "projectId" | "avatar"> | undefined): string | undefined => {

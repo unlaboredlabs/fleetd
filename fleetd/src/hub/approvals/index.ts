@@ -5,7 +5,7 @@
 //   makes it one variable of an open order's agents on the project's machine, until the order closes.
 // - approval of a command (`gated_run`): the exact command is stored; once a person approves it, the project's node
 //   runs those bytes and the exit code and output tail go to the lead.
-// - approval of a Navi's purchase or secure input (purchases.ts, secure_input.ts), and of a tool prompt
+// - approval of a project's purchase or secure input (purchases.ts, secure_input.ts), and of a tool prompt
 //   (permissions.ts).
 // Every change is announced as `request.opened` / `request.updated`; the chat shows each request as its item.
 import type { Clock } from "../../shared/clock.ts";
@@ -96,7 +96,7 @@ export function storeRefusal(e: unknown): ToolError {
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 export class Approvals {
-  /** The prompts a Navi's checker is judging now (machine, thread, prompt): each is judged once. */
+  /** The prompts a project's checker is judging now (machine, thread, prompt): each is judged once. */
   readonly checking = new Set<string>();
   /** Called whenever a checker's verdict landed. */
   readonly idle = new Set<() => void>();
@@ -500,7 +500,7 @@ export class Approvals {
         } catch {
           shown = undefined;
         }
-        if (shown !== undefined) await this.deps.hooks.naviAutomationConfirm(projectOf(answered), shown, by);
+        if (shown !== undefined) await this.deps.hooks.automationConfirm(projectOf(answered), shown, by);
       }
       // A new project is the person's alone to make: their approval of the card makes it here, as theirs, before the
       // lead's call runs. Not made, the lead hears why in place of the go-ahead.
@@ -514,7 +514,7 @@ export class Approvals {
       await answerPrompt(this, answered, reason);
       return this.get(requestId) ?? answered;
     }
-    // A purchase or a secure input runs nothing here: the Navi hears the answer, and its node fills it if approved.
+    // A purchase or a secure input runs nothing here: the project hears the answer, and its node fills it if approved.
     if (answered.purchase || answered.secureInput) {
       await this.deps.hub.wakeRequest(answered);
       return answered;

@@ -1,7 +1,7 @@
 // The node's calls outside sessions, and what a session's start takes from them, over the session service and the
 // fake session host: MCP servers' secrets, their Test over stdio, HTTP and SSE, and their place in a session's
 // `--mcp-config`; skills listed and given as a plugin; a session on a Claude account; the landed log; a clone with its
-// progress; `gh repo list` through a stand-in gh; an agent's image; a Navi's sign-ins forgotten.
+// progress; `gh repo list` through a stand-in gh; an agent's image; a project's sign-ins forgotten.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { parseProgress } from "../../src/node/actions/clone.ts";
 import { frontmatter } from "../../src/node/actions/skills.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
+import { oldProfilesDir } from "../../src/node/own_homes.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { tempHome } from "../helpers.ts";
@@ -359,20 +360,20 @@ test("read_image reads an image from the session's own folder only, and checks i
   await ok("stop", { sessionId: "s3" });
 });
 
-test("a Navi's kept sign-ins are forgotten, and go with its project", async () => {
-  const navi = join(home.dir, "navi");
-  mkdirSync(navi);
-  await ok("project_upsert", { projectId: "n1", title: "navi", workspaceRoot: navi });
-  const kept = join(nodeHome, "browser", "navis", "n1", "Default");
+test("a project's kept sign-ins are forgotten, and go with its project", async () => {
+  const inbox = join(home.dir, "inbox");
+  mkdirSync(inbox);
+  await ok("project_upsert", { projectId: "n1", title: "inbox", workspaceRoot: inbox });
+  const kept = join(oldProfilesDir(nodeHome), "n1", "Default");
   mkdirSync(kept, { recursive: true });
   expect((await ok("project_worktrees", { projectId: "n1" })).signinsKept).toBe(true);
-  expect(await ok("navi_signins_forget", { projectId: "n1" })).toEqual({ kind: "done" });
-  expect(existsSync(join(nodeHome, "browser", "navis", "n1"))).toBe(false);
+  expect(await ok("signins_forget", { projectId: "n1" })).toEqual({ kind: "done" });
+  expect(existsSync(join(oldProfilesDir(nodeHome), "n1"))).toBe(false);
   expect((await ok("project_worktrees", { projectId: "n1" })).signinsKept).toBe(false);
   mkdirSync(join(nodeHome, "browser", "kept", "n1"), { recursive: true });
   await ok("mcp_secrets", { scope: { kind: "project", projectId: "n1" }, server: "s", set: [{ field: "env", name: "K", sealed: sealed("value-1") }] });
   await ok("project_remove", { projectId: "n1" });
   expect(existsSync(join(nodeHome, "browser", "kept", "n1"))).toBe(false);
   expect(existsSync(join(nodeHome, "mcp-secrets", "projects", "n1.json"))).toBe(false);
-  expect((await call("navi_signins_forget", { projectId: "n1" })).result).toMatchObject({ err: { code: "not_found" } });
+  expect((await call("signins_forget", { projectId: "n1" })).result).toMatchObject({ err: { code: "not_found" } });
 });

@@ -12,7 +12,7 @@ import type {
   Timestamp,
 } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import * as navi from "../navi/store.ts";
+import * as projectSettings from "../project_lead/store.ts";
 import * as avatar from "../projects/avatar.ts";
 import * as icon from "../projects/icon.ts";
 import * as repos from "../repos/store.ts";
@@ -33,7 +33,7 @@ export const store = (hub: Hub) => hub.area("store", (h) => new HubStore(h.db));
 
 /**
  * The tables `machineRemove` clears by `machine_id`: the machine itself, what its node reported (its projects,
- * sessions, checkouts) and what the hub holds for them (chats, settings, secrets, leads, slots, Navis).
+ * sessions, checkouts) and what the hub holds for them (chats, settings, secrets, leads, slots, projects).
  */
 export const MACHINE_TABLES = [
   "machines",
@@ -79,9 +79,9 @@ export const MACHINE_TABLES = [
   "memory_imports",
   "memory_refreshes",
   "memory_refresh_lines",
-  "navi_approvals",
-  "navi_auto_approved",
-  "navi_sites",
+  "project_approvals",
+  "project_auto_approved",
+  "project_sites",
   "skill_versions",
   "skill_uses",
   "artifact_versions",
@@ -110,7 +110,7 @@ export const MACHINE_KEEPS = [
   // What its agents wrote to each other: the person's audit, kept with the tasks it names.
   "agent_messages",
   "changes",
-  "navi_erases",
+  "project_erases",
   "pair_codes",
   // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
   "vault_audit",
@@ -128,7 +128,7 @@ function forgetMachine(conn: Database, m: string): number {
   // As `projectRemove` does for each project: a repo whose checkout was on it goes too.
   for (const sql of [
     "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
-    "DELETE FROM navi_asks WHERE from_machine_id = ?1",
+    "DELETE FROM project_asks WHERE from_machine_id = ?1",
     "DELETE FROM session_places WHERE origin_machine = ?1",
     // Its projects' and orders' variables; the team vault's items and those set aside name no machine (a NULL
     // machine_id, so not in MACHINE_TABLES, whose rows the orphan sweep reads as strings).
@@ -158,7 +158,7 @@ function forgetRef(conn: Database, table: "sidebar_orders" | "chat_pins", r: Pro
   }
 }
 
-/** An empty machine or project id is the hub's own, not a project's (hub/navi/erase.rs `a_project`). */
+/** An empty machine or project id is the hub's own, not a project's (hub/project_lead/erase.rs `a_project`). */
 function aProject(r: ProjectRef): void {
   if (r.machineId === "" || r.projectId === "") {
     throw new Error("an empty machine or project id is the hub's own, not a project's: nothing was erased");
@@ -173,7 +173,6 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   const r = { machineId: stored.machineId, projectId: stored.projectId };
   const {
     repos: _repos,
-    kind: _kind,
     createdBy: _createdBy,
     archivedAt: _archivedAt,
     avatar: _avatar,
@@ -184,7 +183,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   const out: ProjectSummary = project;
   const held = repos.of(conn, r);
   if (held.length > 0) out.repos = held;
-  const kept = navi.kept(conn, r) ?? {};
+  const kept = projectSettings.kept(conn, r) ?? {};
   if (kept.createdBy) out.createdBy = kept.createdBy;
   if (kept.archivedAt !== undefined) out.archivedAt = kept.archivedAt;
   if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
@@ -198,7 +197,6 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
 function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary {
   const {
     repos: _repos,
-    kind: _kind,
     createdBy: _createdBy,
     archivedAt: _archivedAt,
     avatar: _avatar,
@@ -321,7 +319,7 @@ export class HubStore {
       for (const sql of [
         `DELETE FROM repos WHERE (machine_id = ?1 AND project_id = ?2)
                    OR (checkout_machine_id = ?1 AND checkout_project_id = ?2)`,
-        "DELETE FROM navi_asks WHERE from_machine_id = ?1 AND from_project_id = ?2",
+        "DELETE FROM project_asks WHERE from_machine_id = ?1 AND from_project_id = ?2",
         "DELETE FROM session_places WHERE origin_machine = ?1 AND project_id = ?2",
         "DELETE FROM vault_items WHERE machine_id = ?1 AND project_id = ?2",
       ]) {
@@ -397,9 +395,9 @@ export class HubStore {
         "order_env",
         "memory_refreshes",
         "memory_refresh_lines",
-        "navi_sites",
-        "navi_approvals",
-        "navi_auto_approved",
+        "project_sites",
+        "project_approvals",
+        "project_auto_approved",
         "project_avatars",
         "project_icons",
         "project_setup_changes",

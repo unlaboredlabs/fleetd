@@ -197,7 +197,7 @@ describe("a pasted hub link key", () => {
     expect(sent[0]).toBe("hub_link_add");
     const input = sent[1] as { sealed: string; label: string; url: string };
     expect(JSON.stringify(input)).not.toContain(key);
-    expect(input).toMatchObject({ navi: request.project, label: "acme", url: "https://acme.example" });
+    expect(input).toMatchObject({ project: request.project, label: "acme", url: "https://acme.example" });
     expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk))).toBe(key);
 
     sent.length = 0;

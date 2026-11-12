@@ -261,21 +261,9 @@ async function list(client: McpClient, v: Parsed) {
   }
 }
 
-/** project_archive, else navi_archive, its old name, on a hub from before it. */
-export async function archiveCall(client: McpClient, input: unknown): Promise<any> {
-  try {
-    return await call(client, "project_archive", input);
-  } catch (error) {
-    if (error instanceof Stop && error.message.includes("'project_archive' not found")) {
-      return call(client, "navi_archive", input);
-    }
-    throw error;
-  }
-}
-
 async function archive(client: McpClient, out: Out, v: Parsed, archived: boolean) {
   const [machine, project] = await find(client, v);
-  await archiveCall(client, { machineId: machine, projectId: s(project, "/projectId"), archived });
+  await call(client, "project_archive", { machineId: machine, projectId: s(project, "/projectId"), archived });
   const title = s(project, "/title");
   out.success(
     archived

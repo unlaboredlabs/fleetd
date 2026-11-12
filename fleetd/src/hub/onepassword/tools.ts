@@ -106,7 +106,7 @@ export function register(tools: Registry): void {
   tools.add("onepassword_cards", async (hub, caller, input) => {
     const p = me(hub, caller);
     const id = p.personId;
-    const project: ProjectRef | undefined = input.project ?? input.navi;
+    const project: ProjectRef | undefined = input.project;
     let machineId: string;
     if (project) {
       // Its own token is its project's secret: listed with operate on its machine, for any project (D310).
@@ -201,7 +201,7 @@ function holding(hub: Hub, held: ClaudeSealedOn[], asked: string | undefined): s
   return m;
 }
 
-/** The project is on the hub and not archived (navi/bridge.rs `is_project`). */
+/** The project is on the hub and not archived (project_lead/bridge.rs `is_project`). */
 const isProject = (hub: Hub, r: ProjectRef) =>
   hub.db.conn
     .query(

@@ -5,7 +5,7 @@ import { register as apiTools } from "../src/hub/api/tools.ts";
 import { visible } from "../src/hub/app_ws/visible.ts";
 import { kept, putSections, sectionsOf } from "../src/hub/chat_sections/store.ts";
 import { register as sectionTools } from "../src/hub/chat_sections/tools.ts";
-import { setArchived } from "../src/hub/navi/store.ts";
+import { setArchived } from "../src/hub/project_lead/store.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { AgentKeyInfo, ChatSection, HubEvent, ProjectRef, ProjectSummary } from "../src/shared/contracts.ts";

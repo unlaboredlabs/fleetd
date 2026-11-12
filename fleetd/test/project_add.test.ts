@@ -6,7 +6,7 @@ import { approvals } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/index.ts";
-import { start as startNavi } from "../src/hub/navi/loops.ts";
+import { start as startLeadArea } from "../src/hub/project_lead/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { start as startLoops } from "../src/hub/projects/loops.ts";
 import { FOLDER_NEEDS } from "../src/hub/projects/inspect.ts";
@@ -202,7 +202,7 @@ test("a project that was there before keeps its mode: the one stored, or the che
   }
   await settle();
   await k.ok(person, "project_approvals_set", { machineId: "devbox", projectId: "careful", mode: "ask" });
-  const stored = () => k.hub.db.conn.query("SELECT project_id, mode FROM navi_approvals ORDER BY project_id").all();
+  const stored = () => k.hub.db.conn.query("SELECT project_id, mode FROM project_approvals ORDER BY project_id").all();
   expect([await mode(k, "old"), await mode(k, "careful")]).toEqual(["checker", "ask"]);
   expect(stored()).toEqual([{ project_id: "careful", mode: "ask" }]);
   // Added again, renamed, and reported again by its node: each is the same project, in the mode it had.
@@ -228,7 +228,7 @@ test("a new project's lead sends without asking, and is still refused or asked w
   const n = await node(k, ["repos", "folder_make"]);
   gh(k, {});
   const out = await k.ok(person, "project_add", { machineId: "devbox", create: true, title: "Fresh" });
-  startNavi(k.hub);
+  startLeadArea(k.hub);
   try {
     k.hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', ?, 't-lead', '', 1)", [out.projectId]);
     const a = approvals(k.hub);
@@ -244,7 +244,7 @@ test("a new project's lead sends without asking, and is still refused or asked w
     // YOLO: a send and a first visit to a site run, with no card and no checker.
     expect(await prompt("p-1", "mcp__mail__send_message", { to: ["sam@example.org"], body: "Saturday works" })).toEqual(["allow", undefined]);
     expect(await prompt("p-2", "WebFetch", { url: "https://example.org/x" })).toEqual(["allow", undefined]);
-    expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM navi_auto_approved").get()).toEqual({ n: 2 });
+    expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM project_auto_approved").get()).toEqual({ n: 2 });
     // The floors: a money move, by a tool or by a link, and a credential in what goes out.
     const MONEY = "Blocked by fleetd: an assistant never moves money between accounts, even with your approval.";
     expect(await prompt("p-3", "mcp__bank__transfer_funds", { to: "sam", amount: 5 })).toEqual(["deny", expect.stringContaining(MONEY)]);
@@ -381,7 +381,7 @@ test("removing a project checks its gates, then removes it and the checkouts onl
     { op: "project_remove", projectId: api as string, removeWorktrees: true },
   ]);
   // Erased in the hub, its mark included; the node's project_removed takes it and api out of the list.
-  expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM navi_erases").get()).toEqual({ n: 0 });
+  expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM project_erases").get()).toEqual({ n: 0 });
   await settle();
   expect(store(k.hub).projectsList("devbox").map((p) => p.projectId).sort()).toEqual([api2 as string, "shop"].sort());
   // Its folder goes only when asked, never a checkout's; shop holds api2 alone now, so it goes too.

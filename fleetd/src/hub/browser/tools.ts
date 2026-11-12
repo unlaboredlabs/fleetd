@@ -176,7 +176,7 @@ async function browserSessions(hub: Hub, caller: Caller, input: { projectRef: { 
   };
 }
 
-/** One read for the whole hub: every live screen, counted for the projects the caller reads, a Navi's for its owner. */
+/** One read for the whole hub: every live screen, counted for the projects the caller reads, a project's for its owner. */
 function screensCount(hub: Hub, caller: Caller) {
   const seen = new Map<string, boolean>();
   let count = 0;

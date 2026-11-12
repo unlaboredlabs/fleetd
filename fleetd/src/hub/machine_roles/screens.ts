@@ -153,14 +153,14 @@ function keptProfile(hub: Hub, r: ProjectRef, kind: SessionKind, runner: string)
 type Opener = { person: PersonRef; device: string };
 
 /** A start the hub placed and holds a slot for, to send to its runner (`launch`). */
-type Start = { place: Place; kind: SessionKind; frame: BrowserCallFrame; sealed: Sealed; navi: string | undefined; by: string };
+type Start = { place: Place; kind: SessionKind; frame: BrowserCallFrame; sealed: Sealed; project: string | undefined; by: string };
 
 /** A person's start as sealed to its runner, and the relay key in it, which seals the hub's install steps. */
 type Sealed = { sealed: string; relayKey: Uint8Array };
 
 /**
  * What the hub seals to the runner for a person's screen, as an agent's node seals its own: no secrets, and a relay
- * key. A Navi's browser names its Navi in the hub's frame, never here.
+ * key. A project's browser names its project in the hub's frame, never here.
  */
 function sealedFor(hub: Hub, runner: string): Sealed {
   const boxKey = store(hub).machineGet(runner)?.boxPubKey ?? "";
@@ -206,7 +206,7 @@ function prepare(
     kind,
     frame: { id: "open", cwd: "/", call: { op: "session_start", purpose: purpose(kind, o.person, pr), kind } },
     sealed,
-    navi: kept ? r.projectId : undefined,
+    project: kept ? r.projectId : undefined,
     by: `human:${o.device}`,
   };
 }
@@ -375,7 +375,7 @@ async function launch(hub: Hub, start: Start, build?: [ScreenPr, Build], wait?: 
   let id: string | undefined;
   let why = "it answered something else";
   try {
-    const answer = await hostSession(hub, p.runner, p.key, start.frame, start.sealed.sealed, start.navi, START_WAIT);
+    const answer = await hostSession(hub, p.runner, p.key, start.frame, start.sealed.sealed, start.project, START_WAIT);
     if (answer.result?.op === "session_start") id = String(answer.result.sessionId);
     else if (answer.error) why = answer.error.message;
   } catch (e) {

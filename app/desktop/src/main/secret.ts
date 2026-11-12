@@ -59,7 +59,7 @@ export const submitHubLink = async (
   }
   const sealed = await seal(request.boxPubKey, request.key);
   if (!sealed.ok) return sealed;
-  return call("hub_link_add", { navi: request.project, label: request.label, url: request.url, sealed: sealed.sealed });
+  return call("hub_link_add", { project: request.project, label: request.label, url: request.url, sealed: sealed.sealed });
 };
 
 /**

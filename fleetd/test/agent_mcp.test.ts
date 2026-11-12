@@ -7,7 +7,7 @@ import { callOf, handle, readArtifactPath, type LeadDeps } from "../src/cli/agen
 import { rustJson } from "../src/cli/agent_mcp/json.ts";
 import { browserResult, toolResult } from "../src/cli/agent_mcp/results.ts";
 import { callerCwd, sendToNode } from "../src/cli/agent_mcp/socket.ts";
-import { ALIASES, SNAPSHOT, toolList } from "../src/cli/agent_mcp/tools.ts";
+import { SNAPSHOT, toolList } from "../src/cli/agent_mcp/tools.ts";
 import { main } from "../src/cli/index.ts";
 import { HUB_UNREACHABLE } from "../src/node/lead/index.ts";
 import { tempHome } from "./helpers.ts";
@@ -77,13 +77,11 @@ describe("agent-mcp", () => {
     ]) {
       expect(lead).toContain(tool);
     }
-    // Gone from the list, still answered for an older lead or skill that names them.
-    for (const [gone] of ALIASES) expect(lead).not.toContain(gone);
-    expect(callOf("worker", "chat_image", { path: "shot.png" })).toEqual({ op: "chat_file", path: "shot.png" });
-    expect(callOf("lead", "automation_pause", { automationId: "au_k3Jd8sQp2xYz", paused: true })).toEqual({
-      op: "automation_update", automationId: "au_k3Jd8sQp2xYz", paused: true,
-    });
-    refusal(() => callOf("worker", "automation_pause", {}));
+    // The old names are gone from the list and no longer answered: an older lead or skill that names them is told so.
+    for (const gone of ["automation_pause", "chat_image"]) {
+      expect(lead).not.toContain(gone);
+      expect(refusal(() => callOf("lead", gone, {}))).toBe(`No tool ${gone} here.`);
+    }
     expect(lead).not.toContain("report");
     expect(lead).not.toContain("ask_lead");
     // A worker calling a lead's tool by name gets nothing sent.

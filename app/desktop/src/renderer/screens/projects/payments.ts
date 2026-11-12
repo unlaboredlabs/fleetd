@@ -1,6 +1,6 @@
 // Payments in the person's words (D265, D312), shared with the phone: money as they read it, the card a project pays
 // with, and Settings' help, card picker and purchase log. Pure, with no UI, so it is unit-tested.
-import type { NaviCard, OnePasswordCard, PurchaseLogEntry, PurchaseTotal } from "../../../shared/contracts";
+import type { PaymentCard, OnePasswordCard, PurchaseLogEntry, PurchaseTotal } from "../../../shared/contracts";
 
 /** `129.90 EUR` as the person reads money: `€129.90`. An amount Intl can't place stays as the hub sent it. */
 export const money = (amount: string, currency: string): string => {
@@ -16,7 +16,7 @@ export const money = (amount: string, currency: string): string => {
 export const totalWords = (total: PurchaseTotal): string => money(total.amount, total.currency);
 
 /** `op://Personal/Visa` as `Visa (Personal)`, as the hub names it. */
-export const cardLabel = (card: NaviCard): string => {
+export const cardLabel = (card: PaymentCard): string => {
   const rest = card.ref.replace(/^op:\/\//u, "");
   const slash = rest.indexOf("/");
   return slash < 0 ? rest : `${rest.slice(slash + 1)} (${rest.slice(0, slash)})`;

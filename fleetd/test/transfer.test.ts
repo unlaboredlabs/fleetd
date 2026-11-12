@@ -20,6 +20,7 @@ import { checkExport, importHub } from "../src/hub/transfer/import.ts";
 import { SECRET_TABLES } from "../src/hub/transfer/tables.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import type { ProjectRef, ProjectSummary, Task } from "../src/shared/contracts.ts";
+import { expectRenamed, olderExportOf, oldTable, RENAMES_AT, seedOld } from "./project_names_kit.ts";
 import { AT, entriesOf, exportOf, importInto, open, type Opened, PASS, place, type Place, rewritten, rowsOf, stateOf, textOf } from "./transfer-kit.ts";
 
 const M = "devbox";
@@ -335,19 +336,43 @@ test("an export an older fleetd wrote: its rows go through the migrations it had
     JSON.stringify({ decisionId: "D1", key: "ui.accent", scope: { kind: "global" }, value: "Neutral accent", state: "active", source: "human", at: ISO }),
   );
   old.close();
-  expect(await exportOf(from, { secrets: false })).toMatchObject({ skipped: [] });
-  const { manifest } = await checkExport(from.file);
+  const older = await olderExportOf(from, { secrets: false });
+  const { manifest } = await checkExport(older);
   expect(manifest.schema.at(-1)?.name).toBe(MIGRATIONS[cut - 1]!.name);
   expect(manifest.tables.some((t) => t.name === "project_setup_changes")).toBe(false);
 
   const { p: to } = await fresh();
-  expect(await importInto(to, from.file)).toMatchObject({ skipped: ["the secrets, which the export was written without"] });
+  expect(await importInto(to, older)).toMatchObject({ skipped: ["the secrets, which the export was written without"] });
   const b = await start(to);
   expect(b.owner).toMatchObject({ personId: "p_ada", name: "Ada" });
   expect(b.hub.db.all<{ key: string }>("SELECT key FROM decisions")).toEqual([{ key: "ui.accent" }]);
   // The hub keeps its own schema: every migration, the younger tables there and empty.
   expect(b.hub.db.all<{ name: string }>("SELECT name FROM migrations_applied ORDER BY name").map((m) => m.name)).toEqual(MIGRATIONS.map((m) => m.name));
   expect(b.hub.db.all("SELECT proposed FROM project_setup_clones")).toEqual([]);
+});
+
+test("an export from before the D317 renames: what it kept under the old names arrives under the project's", async () => {
+  const from = newPlace();
+  rmSync(join(from.home, "hub.sqlite"));
+  const old = new Database(join(from.home, "hub.sqlite"), { create: true, strict: true });
+  seedOld(old);
+  old.query("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ada', 'Ada', 'owner', ?)").run(AT);
+  old.close();
+  const older = await olderExportOf(from, { secrets: false });
+  const { manifest } = await checkExport(older);
+  expect(manifest.schema.at(-1)?.name).toBe(MIGRATIONS[RENAMES_AT - 1]!.name);
+  expect(manifest.tables.some((t) => t.name === oldTable("project_asks"))).toBe(true);
+
+  const { p: to } = await fresh();
+  await importInto(to, older);
+  const b = await start(to);
+  expectRenamed(b.hub.db);
+  // The prompt renames are the new hub's own, from its migration.
+  expect(b.hub.db.all<{ new_id: string }>("SELECT new_id FROM prompt_renames ORDER BY new_id").map((r) => r.new_id)).toEqual([
+    "approvals.checker",
+    "assistant.start",
+    "assistant.voice",
+  ]);
 });
 
 const refusal = async (p: Promise<unknown>): Promise<TransferError> => {

@@ -110,7 +110,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // A vault item made, changed, moved or deleted, or used (an audit row): the Vault's lists, the open item and its
   // activity; a card's label shows in Payments too.
   if (type === "vault.changed" || type === "vault.used") out.push({ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" });
-  if (type === "vault.changed") out.push({ tool: "navi_purchases" }, { tool: "vault_status" });
+  if (type === "vault.changed") out.push({ tool: "project_purchases" }, { tool: "vault_status" });
   // An MCP server's sign-in started, finished, failed or ended, or the server was removed: Integrations reads again.
   if (type === "mcp.oauth") out.push({ tool: "mcp_servers_get" });
   // A name published again is a new version: the list, and the open artifact's list of versions.

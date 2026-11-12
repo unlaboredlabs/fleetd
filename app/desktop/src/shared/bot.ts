@@ -1,4 +1,4 @@
-// The bot every project and Navi wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
+// The bot every project wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
 // of calm slate, or the color a person picked for its project (BOT_PAINT), with two eyes and no mouth, standing free
 // with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). Its motion says what

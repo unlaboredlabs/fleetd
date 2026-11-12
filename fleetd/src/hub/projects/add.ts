@@ -25,7 +25,7 @@ import { ExecutorError, executors, newUuid } from "../executor/index.ts";
 import { projectUpsert } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/index.ts";
-import { startNew as startApprovals } from "../navi/checker.ts";
+import { startNew as startApprovals } from "../project_lead/checker.ts";
 import * as repos from "../repos/store.ts";
 import { type EventLog, events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";

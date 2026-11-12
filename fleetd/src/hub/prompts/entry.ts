@@ -20,13 +20,6 @@ export type RegistryEntry = {
 
 export const INSTRUCTIONS = "instructions";
 
-/** Prompts a release renamed, old id first (D310). */
-export const RENAMED: [string, string][] = [
-  ["navi.start", "assistant.start"],
-  ["navi.voice", "assistant.voice"],
-  ["navi.checker", "approvals.checker"],
-];
-
 export const perProject = (e: RegistryEntry) => e.kind !== "oneshot";
 
 export function placeholdersOf(e: RegistryEntry): Placeholder[] {
@@ -44,12 +37,8 @@ export const safetyRules = (e: RegistryEntry): SafetyRule[] =>
 /** Past this many characters an edit gets a `too_long` warning. */
 export const budget = (e: RegistryEntry) => [...e.default].length * 3 + 500;
 
-/** The id `id` had before RENAMED, if it had another. */
-export const oldId = (id: string) => RENAMED.find(([, now]) => now === id)?.[0];
-
 export function getEntry(id: string): RegistryEntry | undefined {
-  const now = RENAMED.find(([old]) => old === id)?.[1] ?? id;
-  return ENTRIES.find((e) => e.id === now);
+  return ENTRIES.find((e) => e.id === id);
 }
 
 /** The entry, for ids the code names. */

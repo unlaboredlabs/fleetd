@@ -39,7 +39,7 @@ const LEASE: ToolCall = {
  * Ada and Home above the projects. Ada asked storefront for W18 earlier; just now it got the lease renewal ready, and
  * sending it waits on you. Send it answers, and Ada says so.
  */
-export const naviScene = (f: Fixture, storefront: Ref): void => {
+export const inboxScene = (f: Fixture, storefront: Ref): void => {
   if (f.snapshot === undefined) throw new Error("the showcase needs a snapshot");
   f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home")];
   const item = { ...toolApproval(ADA, "ada", LEASE), requestId: ADA_REQUEST };
@@ -61,8 +61,8 @@ export const naviScene = (f: Fixture, storefront: Ref): void => {
   f.answer("requests_list", { limit: 100 }, { requests: [...(isObject(old) ? arr(old["requests"]) : []), { ...request, state: "open" }, { ...request, state: "approved" }] });
   const row = (state: string) => ({ tool: "requests_list", field: "requests", where: { requestId: ADA_REQUEST, state } });
   f.hidden.push(row("approved"));
-  f.answer(PROJECT_TOOLS.asks, { navi: { ...ADA } }, {
-    navi: { ...ADA },
+  f.answer(PROJECT_TOOLS.asks, { project: { ...ADA } }, {
+    project: { ...ADA },
     asks: [
       {
         handle: "N3",

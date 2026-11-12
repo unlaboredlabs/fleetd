@@ -1,12 +1,12 @@
 // A session's permission prompt as an approval (W97). Every lead runs
 // in `manual` mode (D310) and asks before any tool off its allow-list. The ask reaches the hub as `thread.waiting`
 // carrying `data.permission`, and the tool's input is read off the thread. The hub's rules decide first
-// (`hooks.promptVerdict`: the integrations policy, a Navi's confirm step and bridge, automation confirm), then the
-// site gate for a fetch or browser visit, then the Navi's approval mode: a card the person answers, the checker's
+// (`hooks.promptVerdict`: the integrations policy, a project's confirm step and bridge, automation confirm), then the
+// site gate for a fetch or browser visit, then the project's approval mode: a card the person answers, the checker's
 // verdict, or (YOLO) at once. Approved, the tool runs with exactly the input the approval showed; denied, the session
 // hears who said no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
 //
-// The navi and integrations decisions are hooks (ports.ts, D348) that the navi port fills; until it does, every
+// The project-lead and integrations decisions are hooks (ports.ts, D348) that their areas fill; until it does, every
 // prompt files a card for the person.
 import type { CheckerNote, HubEvent, HumanRequest, ProjectRef, ToolPermission, ToolPreview } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
@@ -18,7 +18,7 @@ import { clip } from "./text.ts";
 
 /** A prompt whose input the node didn't send (over 64 KiB): an approval couldn't show what approving it runs. */
 const UNSHOWN = "Blocked by fleetd: what this call would do is too large to show on an approval card.";
-/** A Navi's final Confirm on a site (navi/confirm.rs `TOOL`): its screenshot shows on the card. */
+/** A project's final Confirm on a site (project_lead/confirm.rs `TOOL`): its screenshot shows on the card. */
 export const CONFIRM_TOOL = "mcp__fleetd__confirm_step";
 
 /** Events that change whether a thread's prompt is still open. */
@@ -76,7 +76,7 @@ export async function onThreadEvent(a: Approvals, event: HubEvent): Promise<void
   if (!current || filed) return;
   const project = { machineId, projectId };
   // Only a lead runs with prompts; any other session's are not this relay's to answer.
-  if (!(await a.deps.hooks.naviLead(project, threadId))) return;
+  if (!(await a.deps.hooks.isLead(project, threadId))) return;
   // The event carries no input (an event's data is at most 2 KB): the thread does.
   const pending = await a.deps.nodes.pendingPermission(machineId, threadId);
   await raise(a, project, threadId, pending && pending.requestId === current.requestId ? pending : current);
@@ -86,7 +86,7 @@ const toObject = (input: unknown): Record<string, unknown> =>
   input !== null && typeof input === "object" && !Array.isArray(input) ? { ...(input as Record<string, unknown>) } : {};
 
 /**
- * Answers a new prompt by the hub's policy, or decides it by the Navi's approval mode: a card the person answers,
+ * Answers a new prompt by the hub's policy, or decides it by the project's approval mode: a card the person answers,
  * the checker's verdict, or (YOLO) at once.
  */
 async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt: PendingPermission): Promise<void> {
@@ -96,15 +96,15 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
   const servers = await a.deps.hub.mcpServers(project);
   const input = prompt.input ?? null;
   const unshown = prompt.input === undefined;
-  // Letting an automation run on its own: its card shows the automation as the hub has it, never the Navi's words.
+  // Letting an automation run on its own: its card shows the automation as the hub has it, never the project's words.
   const confirming = tool === AUTOMATION_CONFIRM_TOOL;
   const automationId = toObject(input).automationId;
   const automation =
-    confirming && typeof automationId === "string" ? await hooks.naviAutomation(project, automationId) : undefined;
+    confirming && typeof automationId === "string" ? await hooks.ownAutomation(project, automationId) : undefined;
   // A new project a lead proposes: its card says exactly what would be made, and only a person's answer settles it.
   const proposing = tool === PROJECT_PROPOSE_TOOL;
-  // The integrations policy first, for an MCP server's tool; then the Navi's own rules (its confirm step, its bridge,
-  // automation confirm), which the navi port sets.
+  // The integrations policy first, for an MCP server's tool; then the project's own rules (its confirm step, its bridge,
+  // automation confirm), which the project-lead area sets.
   const policy = proposing ? undefined : policyVerdict(tool, input, servers);
   const verdict: PromptVerdict | undefined = proposing
     ? unshown
@@ -123,7 +123,7 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
   else if (unshown) decided = deny(UNSHOWN);
   else if (verdict && "deny" in verdict) decided = deny(verdict.deny);
   else if (verdict && "ask" in verdict) preview = verdict.ask;
-  // A Navi's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
+  // A project's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
   // approval allows the site.
   let site: string | undefined;
   const visit = hooks.siteVisit(tool, input);
@@ -134,9 +134,9 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
       if (why !== undefined) decided = deny(why);
     }
     const host = visit ?? undefined;
-    // A link that carries data goes through the Navi's mode even on an allowed site.
+    // A link that carries data goes through the project's mode even on an allowed site.
     const data = hooks.visitCarriesData(input);
-    const allowed = await hooks.naviSite(project, host);
+    const allowed = await hooks.siteAllowed(project, host);
     if (!decided) {
       if (allowed === true && !data) decided = ALLOW;
       else if (allowed !== undefined) site = host;
@@ -153,12 +153,12 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
     ...(preview ? { preview } : {}),
     ...(site !== undefined ? { site } : {}),
   };
-  // What the person approved anyway after the checker blocked it runs once, when the Navi asks again.
+  // What the person approved anyway after the checker blocked it runs once, when the project asks again.
   if (!unshown && approvedAnyway(a, project, action)) {
     await answerByRule(a, machine, threadId, prompt, ALLOW);
     return;
   }
-  const settings = unshown ? undefined : await hooks.naviApprovals(project);
+  const settings = unshown ? undefined : await hooks.approvalSettings(project);
   const risky = action.preview !== undefined || action.site !== undefined;
   // A purchase, a spend, a payment command and a new project are the person's alone: no checker and no YOLO answers them.
   const alone = hooks.alwaysAsks(action) || confirming || proposing || personOnly(prospect(a, project, threadId, prompt, action));
@@ -182,7 +182,7 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
     // A checker turn takes seconds to minutes: the follower goes on with other prompts meanwhile.
     void (async () => {
       try {
-        const verdict = await hooks.naviCheck(project, threadId, action, settings);
+        const verdict = await hooks.checkAction(project, threadId, action, settings);
         await checked(a, project, threadId, prompt, action, verdict);
       } catch (e) {
         console.warn("approvals: the checker failed:", e);
@@ -255,8 +255,8 @@ async function go(
   reason?: string,
 ): Promise<void> {
   if (!(await answerByRule(a, project.machineId, threadId, prompt, ALLOW))) return;
-  if (action.site !== undefined) await a.deps.hooks.naviSiteAllow(project, action.site, by);
-  await a.deps.hooks.naviAutoApproved(project, action, by, reason);
+  if (action.site !== undefined) await a.deps.hooks.allowSite(project, action.site, by);
+  await a.deps.hooks.autoApproved(project, action, by, reason);
 }
 
 /**
@@ -339,10 +339,10 @@ async function file(
   action: Action,
   checker: CheckerNote | undefined,
 ): Promise<void> {
-    // A confirm step's screenshot shows on its card once it is the Navi's own image (`chat_image`).
+    // A confirm step's screenshot shows on its card once it is the project's own image (`chat_file`).
     const shot = toObject(action.input).screenshot;
     const screenshot =
-      prompt.toolName === CONFIRM_TOOL && typeof shot === "string" && /^F[1-9][0-9]*$/.test(shot) && (await a.deps.hooks.naviImage(project, shot))
+      prompt.toolName === CONFIRM_TOOL && typeof shot === "string" && /^F[1-9][0-9]*$/.test(shot) && (await a.deps.hooks.ownImage(project, shot))
         ? shot
         : undefined;
     const now = a.deps.clock.now();
@@ -432,7 +432,7 @@ export async function answerPrompt(a: Approvals, r: HumanRequest, said: string |
   const machine = project.machineId;
   const by = r.answeredBy ?? "a person";
   const allow = r.state === "approved";
-  // Its prompt was refused already: approved anyway, the Navi hears so and runs exactly this input once when it asks
+  // Its prompt was refused already: approved anyway, the project hears so and runs exactly this input once when it asks
   // again; kept blocked, nothing changes.
   if (blocked(p)) {
     if (allow) {
@@ -443,7 +443,7 @@ export async function answerPrompt(a: Approvals, r: HumanRequest, said: string |
     }
     return;
   }
-  if (allow && p.site !== undefined) await a.deps.hooks.naviSiteAllow(project, p.site, by);
+  if (allow && p.site !== undefined) await a.deps.hooks.allowSite(project, p.site, by);
   const decision: PermissionDecision = allow
     ? { behavior: "allow", ...(p.input !== undefined ? { updatedInput: p.input } : {}) }
     : deny(`${by} said no (${r.requestId})${said !== undefined ? `: ${said}` : ""}`);

@@ -18,7 +18,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { ClaudeAccountStore, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
-import { who } from "../navi/owner.ts";
+import { who } from "../project_lead/owner.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { events } from "../store/events.ts";
 import { type AuditEntry, type NewAudit, VaultAudit } from "./audit.ts";
@@ -175,7 +175,7 @@ export class Vault {
 
   // --- what an agent's session may use ---
 
-  /** Whose work a session of `r` is: a task's order starter or a Navi's owner; undefined: the hub's. */
+  /** Whose work a session of `r` is: a task's order starter or a project's owner; undefined: the hub's. */
   personFor(r: ProjectRef, taskId: string | undefined): { personId?: string; workstreamId?: string } {
     const db = this.hub.db;
     const order = taskId !== undefined ? this.orderOfTask(taskId) : undefined;

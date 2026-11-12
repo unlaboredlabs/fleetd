@@ -17,7 +17,7 @@ import { errorText, useHubCall } from "./hub";
 import { SettingsRow } from "./parts";
 import p from "./Picture.module.css";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "avatarColor">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "avatar" | "avatarColor">;
 type Picked = { readonly file: File; readonly mime: AttachmentMime; readonly url: string; readonly size: Size };
 
 const TAKES: readonly string[] = ["image/png", "image/jpeg", "image/webp"];

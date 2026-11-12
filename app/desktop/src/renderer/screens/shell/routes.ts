@@ -240,9 +240,6 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       const id = parts[3];
       return { id: "screens", open: a === undefined || b === undefined || id === undefined ? null : { project: { machineId: a, projectId: b }, session: id } };
     }
-    // The old Navi page, from a link or a notification of before: what it offered is New project's.
-    case "navi":
-      return { id: "projects.add" };
     case "session": {
       const id = parts[3];
       return a === undefined || b === undefined || id === undefined ? HOME : { id: "session", project: { machineId: a, projectId: b }, session: id };

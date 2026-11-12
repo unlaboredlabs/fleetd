@@ -55,3 +55,6 @@ seen on this project
 
 # Try it (previews of a PR, W58) is gone.
 \bpreviews?_(start|end|list|suggest|feedback|config_propose)\b
+
+# Navis are projects (D310), and their last names went with D317: no `fleetd navi`, no navi_* tools.
+\bnavi(s|_\w+)?\b

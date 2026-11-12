@@ -67,7 +67,7 @@ export class Session implements GuardSession {
   /** Until when the session waits on a person (a purchase's approval, a takeover such as a bank's confirmation): it
    * isn't idle meanwhile, so a held fare or room isn't lost. */
   private heldUntil = 0;
-  /** The hold waits for an answer the Navi is woken with (a purchase, a secure input): its next browser command ends
+  /** The hold waits for an answer the project is woken with (a purchase, a secure input): its next browser command ends
    * it, whatever the answer was. */
   private heldForAnswer = false;
 
@@ -96,7 +96,7 @@ export class Session implements GuardSession {
     this.touched = Date.now();
   }
 
-  /** As `hold`, until the Navi's next browser command, which comes once it is woken with the person's answer. */
+  /** As `hold`, until the project's next browser command, which comes once it is woken with the person's answer. */
   holdForAnswer(forMs: number): void {
     this.hold(forMs);
     this.heldForAnswer = true;
@@ -192,7 +192,7 @@ export class Session implements GuardSession {
 
   /** A finished `agent-browser` command of the agent's, logged, and the page after it in the DOM trace. */
   agentStep(command: string, ok: boolean, output: string | undefined, durationMs: number): number {
-    // The Navi drives again: a hold for an answer it is woken with has done its work, approved or denied.
+    // The project drives again: a hold for an answer it is woken with has done its work, approved or denied.
     if (this.heldForAnswer) {
       this.heldForAnswer = false;
       this.heldUntil = 0;

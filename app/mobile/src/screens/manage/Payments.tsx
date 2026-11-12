@@ -33,7 +33,7 @@ const readPurchases = async (hub: Hub, p: ProjectRef): Promise<Result<PurchasesO
 
 /** The Credit Card items its machine's 1Password token reads, with the token it fills from. */
 const readCards = async (hub: Hub, p: ProjectRef): Promise<Result<OnePasswordCardsOutput>> => {
-  const r = await hub.call("onepassword_cards", { navi: ref(p) }, CARDS_MS);
+  const r = await hub.call("onepassword_cards", { project: ref(p) }, CARDS_MS);
   return r.ok ? { ok: true, value: r.output } : r;
 };
 

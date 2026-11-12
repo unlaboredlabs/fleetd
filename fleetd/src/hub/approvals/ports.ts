@@ -1,6 +1,6 @@
 // What approvals reaches outside its own table (crates/fleetd/src/hub/approvals/mod.rs `ApprovalNodes`,
 // `ApprovalHub`; the real hub's side is usage/wire_approvals.rs). Nodes go over the node link; the rest is the hub's
-// store, or a hook (D348) the area that owns it sets: navi, orders and intake are T2246's, automations T2255's.
+// store, or a hook (D348) the area that owns it sets: project leads', orders' and intake's are T2246's, automations' T2255's.
 import type { Clock } from "../../shared/clock.ts";
 import type {
   Automation,
@@ -8,7 +8,7 @@ import type {
   HubEvent,
   HumanRequest,
   McpServer,
-  NaviApprovals,
+  ProjectApprovals,
   PersonRef,
   ProjectRef,
   RequestState,
@@ -77,7 +77,7 @@ export type OrderEnvSaved = {
   requestId: string;
 };
 
-/** One of a lead's actions the approval step judges (hub/navi/checker.rs `Action`). */
+/** One of a lead's actions the approval step judges (hub/project_lead/checker.rs `Action`). */
 export type Action = { tool: string; summary: string; input: unknown; preview?: ToolPreview; site?: string };
 
 /** The checker's answer: a plain public read passes on its rule; anything else is its note. */
@@ -86,7 +86,7 @@ export type Checked = { publicRead: true } | { note: CheckerNote };
 /** The person who approved a proposed project, whose it becomes: their key's name and person. */
 export type ProposalApprover = { name: string; person?: PersonRef };
 
-/** The hub policy's first word on a prompt (integrations policy, a Navi's confirm step, its bridge, automation confirm). */
+/** The hub policy's first word on a prompt (integrations policy, a project's confirm step, its bridge, automation confirm). */
 export type PromptVerdict = { allow: true } | { deny: string } | { ask: ToolPreview };
 
 /**
@@ -99,15 +99,15 @@ export type ApprovalHooks = {
   /** Records a variable a node saved for an order; a string is why it could not (order_env.rs `saved`). */
   orderEnvSaved(saved: OrderEnvSaved, at: string): Promise<string | undefined>;
   /** Whether the thread is the project's lead, the one session the tool prompt relay answers. */
-  naviLead(project: ProjectRef, threadId: string): Promise<boolean>;
+  isLead(project: ProjectRef, threadId: string): Promise<boolean>;
   /** Whether the project's lead may open `site` without asking (false with no site); undefined when unread. */
-  naviSite(project: ProjectRef, site: string | undefined): Promise<boolean | undefined>;
+  siteAllowed(project: ProjectRef, site: string | undefined): Promise<boolean | undefined>;
   /** A person approved a first visit to `site`: from now on it opens without asking. */
-  naviSiteAllow(project: ProjectRef, site: string, by: string): Promise<void>;
+  allowSite(project: ProjectRef, site: string, by: string): Promise<void>;
   /** The project's own automation `id`, for `automation_confirm`'s card. */
-  naviAutomation(project: ProjectRef, id: string): Promise<Automation | undefined>;
+  ownAutomation(project: ProjectRef, id: string): Promise<Automation | undefined>;
   /** The person approved `automation_confirm`'s card showing `shown`: whether the automation is marked confirmed. */
-  naviAutomationConfirm(project: ProjectRef, shown: unknown, by: string): Promise<boolean>;
+  automationConfirm(project: ProjectRef, shown: unknown, by: string): Promise<boolean>;
   /** The card for a lead's `project_propose`: exactly what approving it makes, or why the proposal is refused. */
   projectProposal(project: ProjectRef, input: unknown): Promise<PromptVerdict>;
   /**
@@ -115,17 +115,17 @@ export type ApprovalHooks = {
    * it was not made; `requestId` keeps a card approved twice (its answer undelivered) from making two.
    */
   projectProposed(project: ProjectRef, shown: unknown, by: ProposalApprover, requestId: string): Promise<string | undefined>;
-  /** Whether `id` is an image of the Navi's own (`chat_image`); if so it becomes the project's, for its card. */
-  naviImage(project: ProjectRef, id: string): Promise<boolean>;
+  /** Whether `id` is an image of the project's own (`chat_file`); if so it becomes the project's, for its card. */
+  ownImage(project: ProjectRef, id: string): Promise<boolean>;
   /** How the project's risky actions are approved; undefined when unread. */
-  naviApprovals(project: ProjectRef): Promise<NaviApprovals | undefined>;
-  /** The checker's verdict on one of the lead's actions (navi/checker.rs `judge`). */
-  naviCheck(project: ProjectRef, threadId: string, action: Action, settings: NaviApprovals): Promise<Checked>;
-  /** An action ran without asking: an entry in the Navi's auto-approved log (checker.rs `auto_approved`). */
-  naviAutoApproved(project: ProjectRef, action: Action, by: "checker" | "yolo", reason?: string): Promise<void>;
+  approvalSettings(project: ProjectRef): Promise<ProjectApprovals | undefined>;
+  /** The checker's verdict on one of the lead's actions (project_lead/checker.rs `judge`). */
+  checkAction(project: ProjectRef, threadId: string, action: Action, settings: ProjectApprovals): Promise<Checked>;
+  /** An action ran without asking: an entry in the project's auto-approved log (checker.rs `auto_approved`). */
+  autoApproved(project: ProjectRef, action: Action, by: "checker" | "yolo", reason?: string): Promise<void>;
   /**
-   * The Navi's rules on a prompt the integrations policy had no word on (navi confirm.rs `refused`/`preview`,
-   * automations calls.rs `confirm_preview`, navi bridge.rs `preview`); undefined: no rule, so the approval mode decides.
+   * The project's rules on a prompt the integrations policy had no word on (project_lead confirm.rs `refused`/`preview`,
+   * automations calls.rs `confirm_preview`, project_lead bridge.rs `preview`); undefined: no rule, so the approval mode decides.
    */
   promptVerdict(
     project: ProjectRef,
@@ -134,15 +134,15 @@ export type ApprovalHooks = {
     servers: McpServer[],
     automation: Automation | undefined,
   ): PromptVerdict | undefined;
-  /** A fetch or browser visit (navi/sites.rs `visit`): its host, `null` for one it can't tell; undefined: no visit. */
+  /** A fetch or browser visit (project_lead/sites.rs `visit`): its host, `null` for one it can't tell; undefined: no visit. */
   siteVisit(tool: string, input: unknown): string | null | undefined;
-  /** The floors every mode keeps (navi/review.rs `floor`): why `shown` (the input with its `tool`) is refused. */
+  /** The floors every mode keeps (project_lead/review.rs `floor`): why `shown` (the input with its `tool`) is refused. */
   floor(shown: Record<string, unknown>): string | undefined;
-  /** A visit whose link carries data (navi/review.rs `visit_url` + `carries_data`). */
+  /** A visit whose link carries data (project_lead/review.rs `visit_url` + `carries_data`). */
   visitCarriesData(input: unknown): boolean;
-  /** A shell command YOLO still refuses (navi/shell_guard.rs `refused`). */
+  /** A shell command YOLO still refuses (project_lead/shell_guard.rs `refused`). */
   shellRefused(command: string): string | undefined;
-  /** An action the checker never judges (navi/checker.rs `always_asks`). */
+  /** An action the checker never judges (project_lead/checker.rs `always_asks`). */
   alwaysAsks(action: Action): boolean;
   /** The key a new secret request's value is sealed to (the vault's: the hub's own); undefined: the sink machine's. */
   vaultSealTo(): string | undefined;
@@ -155,21 +155,21 @@ export type ApprovalHooks = {
 
 export const NOT_PORTED_ORDERS = "The Bun hub can't set an order's variable yet (src/hub/projects: order_env).";
 
-/** The hooks before their areas set them: order variables refused, Navi reads unknown, every prompt asks. */
+/** The hooks before their areas set them: order variables refused, project reads unknown, every prompt asks. */
 export const defaultHooks = (): ApprovalHooks => ({
   orderRefusal: async () => NOT_PORTED_ORDERS,
   orderEnvSaved: async () => NOT_PORTED_ORDERS,
-  naviLead: async () => false,
-  naviSite: async () => undefined,
-  naviSiteAllow: async () => {},
-  naviAutomation: async () => undefined,
-  naviAutomationConfirm: async () => false,
+  isLead: async () => false,
+  siteAllowed: async () => undefined,
+  allowSite: async () => {},
+  ownAutomation: async () => undefined,
+  automationConfirm: async () => false,
   projectProposal: async () => ({ deny: "Blocked by fleetd: this hub can't put a new project on a card yet." }),
   projectProposed: async () => "this hub can't create a project from a card yet",
-  naviImage: async () => false,
-  naviApprovals: async () => undefined,
-  naviCheck: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun hub yet" } }),
-  naviAutoApproved: async () => {},
+  ownImage: async () => false,
+  approvalSettings: async () => undefined,
+  checkAction: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun hub yet" } }),
+  autoApproved: async () => {},
   promptVerdict: () => undefined,
   siteVisit: () => undefined,
   floor: () => undefined,
@@ -215,7 +215,7 @@ export interface PromptApprovals {
     events: ApprovalEvents;
     signal?: AbortSignal;
   };
-  /** The prompts a Navi's checker is judging now (machine, thread, prompt): each is judged once. */
+  /** The prompts a project's checker is judging now (machine, thread, prompt): each is judged once. */
   readonly checking: Set<string>;
   /** Called whenever a checker's verdict landed. */
   readonly idle: Set<() => void>;

@@ -23,7 +23,7 @@ import { changesAnswers } from "../../src/renderer/screens/train/fixture.ts";
 import { MEMORY_REFRESHED } from "../lead/index.ts";
 import { answerHub } from "../admin/index.ts";
 import { CODE, PHONE_FRAME } from "./pages.ts";
-import { hubsScene, naviScene, teamScene } from "./more.ts";
+import { hubsScene, inboxScene, teamScene } from "./more.ts";
 
 export const REQUEST = "Let shoppers save their cart and pick it up on the web or the iPhone app.";
 
@@ -549,7 +549,7 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   WEB_PAGES.forEach(([ms, image, address], i) => at(ms, "browser_frame", frame(SCREEN.web, i + 1, image, "agent", address)));
   PHONE_PAGES.forEach(([ms, image], i) => at(ms, "browser_frame", frame(SCREEN.phone, i + 1, image, "agent")));
   // Ada, Hub › People and the second hub (more.ts).
-  naviScene(f, ref);
+  inboxScene(f, ref);
   answerHub(f);
   teamScene(f);
   hubsScene(f, other);

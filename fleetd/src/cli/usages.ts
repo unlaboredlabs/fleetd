@@ -137,19 +137,6 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
              next start. Deleting the lead's puts leads back on the default
 `;
 
-export const NAVI_USAGE = `  navi ...   the old name of fleetd project (project add --new <name>,
-             project list, project archive, project unarchive), kept for one release
-  navi create <name> [--machine <id>] [--hub <url>]
-             the old project add --new <name>: a new project, in its own
-             folder (navi/<name> under the machine's fleetd home; the least busy worker by default)
-  navi list [--archived] [--machine <id>] [--hub <url>]
-  navi rename <machine>/<project> <name> [--hub <url>]
-  navi archive <machine>/<project> [--hub <url>]
-             the old project archive; <project> is its id or its name
-  navi unarchive <machine>/<project> [--hub <url>]
-             the old project unarchive
-`;
-
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h)

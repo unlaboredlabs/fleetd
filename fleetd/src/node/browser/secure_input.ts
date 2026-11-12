@@ -1,4 +1,4 @@
-// A Navi's secure input in its browser: something only the person
+// A project's secure input in its browser: something only the person
 // may give.
 // - `request`: on the page, the node checks it is on the site and the field is there (in the page or one of the
 //   site's own frames), then opens the request on the hub. Typed by the person, the session waits for it.
@@ -10,7 +10,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { SecretDeliver, SecretResult } from "../wire.ts";
 import { fingerprintOf } from "../secrets/files.ts";
 import { parseSecretSink } from "../secrets/index.ts";
-import { CardError, docs, FILL_WINDOW_MINUTES, naviSession, notTyped, onDomain, oneLine, WAIT_ON_PERSON_MS } from "./cards.ts";
+import { CardError, docs, FILL_WINDOW_MINUTES, leadSession, notTyped, onDomain, oneLine, WAIT_ON_PERSON_MS } from "./cards.ts";
 import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
 import type { Broker } from "./index.ts";
 import { hostOf } from "./onepassword.ts";
@@ -102,7 +102,7 @@ async function typeInto(session: Session, target: string, domain: string, value:
 
 /** An agent's `request_secure_input`. */
 export async function request(broker: Broker, thread: string, call: Record<string, unknown>): Promise<{ requestId: string; message: string }> {
-  const session = naviSession(broker, thread);
+  const session = leadSession(broker, thread);
   const domain = String((call.site as { domain?: unknown } | undefined)?.domain ?? "");
   const off = await onSite(session, domain);
   if (off) throw new ToolError("forbidden", `Not asked: ${off}.`, "open the page with the field first, then ask with its own domain");
@@ -202,7 +202,7 @@ export async function deliver(
 /** An agent's `secure_input_fill`: an approved 1Password field, typed into the page. */
 export async function fillApproved(broker: Broker, thread: string, call: Record<string, unknown>): Promise<{ message: string }> {
   const started = performance.now();
-  const session = naviSession(broker, thread);
+  const session = leadSession(broker, thread);
   const id = String(call.requestId ?? "");
   const args = { requestId: id };
   const failed = (error: ToolError) => {

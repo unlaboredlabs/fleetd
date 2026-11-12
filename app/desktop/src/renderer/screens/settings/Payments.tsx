@@ -52,7 +52,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
     if (vault) return;
     setCards(null);
     // On the project's machine, with the token its fills read the card with.
-    hubCall("onepassword_cards", { navi: projectRef }, { timeoutMs: CARDS_MS }).then(
+    hubCall("onepassword_cards", { project: projectRef }, { timeoutMs: CARDS_MS }).then(
       (data) => setCards({ data }),
       (e: unknown) => setCards({ error: errorText(e) }),
     );

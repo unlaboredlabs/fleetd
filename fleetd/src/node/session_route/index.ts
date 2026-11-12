@@ -259,11 +259,11 @@ export class Router {
         if (relayKey.length !== 32) return refuse("the session's sealed relay key is not 32 bytes");
         // Only the hub's own word opens a project's profile (a person's screen_open, D239): never anything sealed, which
         // any node can make for any runner.
-        if (frame.navi !== undefined) {
+        if (frame.project !== undefined) {
           const kind = frame.frame.call.kind;
-          const known = this.broker.sessionsArea()?.hasProject?.(frame.navi) ?? false;
-          if ((kind !== undefined && kind !== "browser") || !known) return refuse(`this machine has no project ${frame.navi} with a browser to open`);
-          this.broker.personScreen(key, frame.navi);
+          const known = this.broker.sessionsArea()?.hasProject?.(frame.project) ?? false;
+          if ((kind !== undefined && kind !== "browser") || !known) return refuse(`this machine has no project ${frame.project} with a browser to open`);
+          this.broker.personScreen(key, frame.project);
         }
         const secrets = (Array.isArray(opened.secrets) ? opened.secrets : [])
           .filter((pair) => Array.isArray(pair) && pair.length === 2)
@@ -277,7 +277,7 @@ export class Router {
           return { id, result };
         } catch (e) {
           this.hosted.delete(key);
-          this.broker.notNavi(key);
+          this.broker.dropKept(key);
           throw e;
         }
       }
@@ -297,7 +297,7 @@ export class Router {
       const result = await this.here(key, frame.frame);
       if (op === "session_end") {
         this.hosted.delete(key);
-        this.broker.notNavi(key);
+        this.broker.dropKept(key);
       }
       return { id, result };
     } catch (e) {

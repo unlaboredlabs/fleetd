@@ -36,7 +36,7 @@ class Fake {
   /** Whether the node is linked when the hub looks. */
   isLinked = () => this.linked;
   pending: PendingPermission | undefined;
-  hooks: ApprovalHooks = { ...defaultHooks(), naviLead: async () => true };
+  hooks: ApprovalHooks = { ...defaultHooks(), isLead: async () => true };
   private wakers: (() => void)[] = [];
 
   approvals(): Approvals {
@@ -415,7 +415,7 @@ test("a prompt becomes one approval and approve runs the tool with exactly the i
   expect(fake.answers.at(-1)!.by).toBe("hub_rule");
 
   // Only a lead's prompts are the relay's.
-  fake.hooks.naviLead = async () => false;
+  fake.hooks.isLead = async () => false;
   fake.pending = prompt("p-4", "Write", "x", {});
   await onThreadEvent(a, threadEvent("thread.waiting", fake.pending));
   expect(fake.request("Q3")).toBeUndefined();
@@ -434,10 +434,10 @@ test("deny tells the run who said no, and the checker's verdicts go, ask and blo
   let verdict: "go" | "ask" | "block" = "go";
   Object.assign(fake.hooks, {
     siteVisit: () => "example.org",
-    naviSite: async () => false,
-    naviApprovals: async () => ({ mode: "checker", model: "m", effort: "low", defaults: true }),
-    naviCheck: async () => ({ note: { verdict, reason: "a plain read" } }),
-    naviAutoApproved: async (_p: ProjectRef, act: { tool: string }, by: string) => {
+    siteAllowed: async () => false,
+    approvalSettings: async () => ({ mode: "checker", model: "m", effort: "low", defaults: true }),
+    checkAction: async () => ({ note: { verdict, reason: "a plain read" } }),
+    autoApproved: async (_p: ProjectRef, act: { tool: string }, by: string) => {
       logged.push(`${by} ${act.tool}`);
     },
   } satisfies Partial<ApprovalHooks>);
@@ -461,7 +461,7 @@ test("deny tells the run who said no, and the checker's verdicts go, ask and blo
   await onThreadEvent(a, threadEvent("thread.waiting", fake.pending));
   await checksDone(a);
   expect((fake.answers.at(-1)!.decision as { message: string }).message).toStartWith("Blocked by fleetd's approval checker: a plain read.");
-  // Approved anyway: the Navi hears it, and the same call runs once when it asks again.
+  // Approved anyway: the project hears it, and the same call runs once when it asks again.
   await a.answer(person, "Q3", true);
   expect(fake.request("Q3").evidence).toBe("approved anyway: call it again with exactly the same input, and it runs once");
   fake.pending = prompt("p-5", "WebFetch", "fetch", input);
@@ -598,15 +598,15 @@ test("openRequests lists the open ones, newest first", async () => {
   expect(openRequests(hub, 10, { machineId: "lab-a", projectId: "p2" })).toEqual([]);
 });
 
-test("the navi port's hooks are looked up at each call, the defaults kept for the rest", async () => {
+test("the inbox port's hooks are looked up at each call, the defaults kept for the rest", async () => {
   const { Hub } = await import("../src/hub/api/hub.ts");
-  const { naviFilled } = await import("../src/hub/approvals/wire.ts");
+  const { hooksFilled } = await import("../src/hub/approvals/wire.ts");
   const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => 0 });
-  const hooks = naviFilled(hub, defaultHooks());
-  expect(await hooks.naviLead(p1, "T1")).toBe(false);
-  hub.area("navi_hooks", () => ({ naviLead: async () => true }));
-  expect(await hooks.naviLead(p1, "T1")).toBe(true);
-  expect(await hooks.naviSite(p1, "x.example")).toBeUndefined();
+  const hooks = hooksFilled(hub, defaultHooks());
+  expect(await hooks.isLead(p1, "T1")).toBe(false);
+  hub.area("project_hooks", () => ({ isLead: async () => true }));
+  expect(await hooks.isLead(p1, "T1")).toBe(true);
+  expect(await hooks.siteAllowed(p1, "x.example")).toBeUndefined();
 });
 
 test("a thread event that throws is logged, and the follower goes on", async () => {
@@ -614,9 +614,9 @@ test("a thread event that throws is logged, and the follower goes on", async () 
   const fake = new Fake();
   const stop = new AbortController();
   let calls = 0;
-  fake.hooks.naviLead = async () => {
+  fake.hooks.isLead = async () => {
     calls++;
-    if (calls === 1) throw new Error("the navi port failed");
+    if (calls === 1) throw new Error("the inbox port failed");
     return true;
   };
   const a = new Approvals({ ...fake.approvals().deps, hooks: fake.hooks, signal: stop.signal });

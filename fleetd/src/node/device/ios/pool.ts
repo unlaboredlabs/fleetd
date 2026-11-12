@@ -227,7 +227,7 @@ export async function stopDaemon(state: string, within = DAEMON_EXIT): Promise<v
 
 /**
  * A clone's own agent-device home, made for it alone and deleted with it. Its daemon's registration holds the token
- * that drives the clone, so it is outside `device` (which every Navi reads), in the node's home that Navis never see.
+ * that drives the clone, so it is outside `device` (which every project reads), in the node's home that projects never see.
  */
 export const cloneHome = (home: string, udid: string) => join(home, "ios-clones", udid);
 

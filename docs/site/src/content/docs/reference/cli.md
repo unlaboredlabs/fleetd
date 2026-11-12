@@ -378,50 +378,6 @@ fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|
 
 create or change a task profile (owner or admin), or delete one. A new one needs `--model` and `--effort`. `--default` makes it the one every review, helper call and task naming no profile runs on; `--lead` the one leads start on (on the default: leads follow the default), from each lead's next start. Deleting the lead's puts leads back on the default
 
-### fleetd navi {#navi}
-
-```text
-fleetd navi ...
-```
-
-the old name of `fleetd project` (project add `--new` \<name\>, project list, project archive, project unarchive), kept for one release
-
-### fleetd navi create {#navi-create}
-
-```text
-fleetd navi create <name> [--machine <id>] [--hub <url>]
-```
-
-the old project add `--new` \<name\>: a new project, in its own folder (navi/\<name\> under the machine's fleetd home; the least busy worker by default)
-
-### fleetd navi list {#navi-list}
-
-```text
-fleetd navi list [--archived] [--machine <id>] [--hub <url>]
-```
-
-### fleetd navi rename {#navi-rename}
-
-```text
-fleetd navi rename <machine>/<project> <name> [--hub <url>]
-```
-
-### fleetd navi archive {#navi-archive}
-
-```text
-fleetd navi archive <machine>/<project> [--hub <url>]
-```
-
-the old project archive; \<project\> is its id or its name
-
-### fleetd navi unarchive {#navi-unarchive}
-
-```text
-fleetd navi unarchive <machine>/<project> [--hub <url>]
-```
-
-the old project unarchive
-
 
 ## Running by hand {#running-by-hand}
 

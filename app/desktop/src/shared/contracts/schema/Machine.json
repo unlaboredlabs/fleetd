@@ -6,7 +6,7 @@
     "Machine": {
       "properties": {
         "agentsMac": {
-          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,\nand clients seal no secret to it. Absent on every other machine.",
+          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent or lead runs there,\nand clients seal no secret to it. Absent on every other machine.",
           "type": "boolean"
         },
         "boxPubKey": {

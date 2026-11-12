@@ -79,8 +79,8 @@ describe("what a notification shows", () => {
       body: "Your flight moved to 9:40.",
       channel: "quiet",
       urgent: false,
-      id: "chat:devbox/navi-ada",
-      route: { t: "chat", key: "devbox/navi-ada" },
+      id: "chat:devbox/inbox-ada",
+      route: { t: "chat", key: "devbox/inbox-ada" },
       payload: JSON.parse(message!.plaintext),
     });
   });
@@ -104,14 +104,14 @@ describe("what a notification shows", () => {
 
 describe("tapping a notification", () => {
   it("opens the chat or the approval an Android notification carries", () => {
-    expect(tapRoute({ route: { t: "chat", key: "devbox/navi-ada" } }, undefined, null)).toEqual({ t: "chat", key: "devbox/navi-ada" });
+    expect(tapRoute({ route: { t: "chat", key: "devbox/inbox-ada" } }, undefined, null)).toEqual({ t: "chat", key: "devbox/inbox-ada" });
     expect(tapRoute({ route: { t: "approval", requestId: "Q7" } }, undefined, null)).toEqual({ t: "approval", requestId: "Q7" });
   });
 
   it("opens again the payload iOS showed, from its APNs userInfo", () => {
     const userInfo = { aps: { alert: { title: "fleetd", body: "New activity" }, "mutable-content": 1 }, c: approval!.ciphertext };
     expect(tapRoute({}, userInfo, keys)).toEqual({ t: "approval", requestId: "Q7", key: "devbox/shop" });
-    expect(tapRoute({}, { data: { c: message!.ciphertext } }, keys)).toEqual({ t: "chat", key: "devbox/navi-ada" });
+    expect(tapRoute({}, { data: { c: message!.ciphertext } }, keys)).toEqual({ t: "chat", key: "devbox/inbox-ada" });
   });
 
   it("opens an approval's chat, scrolled to the card that answers it", () => {
@@ -132,7 +132,7 @@ describe("tapping a notification", () => {
     expect(landingOf(newest, at!, { hasOlder: false, failed: false })).toBeUndefined();
     expect(landingOf(newest, at!, { hasOlder: true, failed: true })).toBeUndefined();
     expect(landingOf(newest, { messageId: "m6" }, { hasOlder: true, failed: false })).toBe("m6");
-    expect(chatAt({ t: "chat", key: "devbox/navi-ada" }, undefined)).toEqual({ key: "devbox/navi-ada" });
+    expect(chatAt({ t: "chat", key: "devbox/inbox-ada" }, undefined)).toEqual({ key: "devbox/inbox-ada" });
   });
 
   it("finds the chat of an approval that didn't say it among the open requests, once they're read", () => {
@@ -148,15 +148,15 @@ describe("tapping a notification", () => {
 
   it("opens the live view of a screen whose agent asks for you, over its chat", () => {
     const sessionId = "B0123456789abcdef0123456789abcdef";
-    const p = { v: 1, kind: "alert", title: "Nova", body: "Needs you on its screen: Solve the captcha on booking.com", hub: "", machineId: "devbox", projectId: "navi-ada", sessionId, at: "" };
+    const p = { v: 1, kind: "alert", title: "Nova", body: "Needs you on its screen: Solve the captcha on booking.com", hub: "", machineId: "devbox", projectId: "inbox-ada", sessionId, at: "" };
     const shown = shownOf(openPayload(sealedJson(p), keys)!);
-    expect(shown).toMatchObject({ title: "Nova", channel: "other", id: `screen:${sessionId}`, route: { t: "screen", key: "devbox/navi-ada", sessionId } });
-    expect(chatAt(shown.route!, undefined)).toEqual({ key: "devbox/navi-ada", sessionId });
+    expect(shown).toMatchObject({ title: "Nova", channel: "other", id: `screen:${sessionId}`, route: { t: "screen", key: "devbox/inbox-ada", sessionId } });
+    expect(chatAt(shown.route!, undefined)).toEqual({ key: "devbox/inbox-ada", sessionId });
     // Android's posted notification carries the route; iOS's opens the payload again.
     expect(tapRoute({ route: shown.route }, undefined, null)).toEqual(shown.route);
     expect(tapRoute({}, { c: sealedJson(p) }, keys)).toEqual(shown.route);
     // Not a screen's id: just its chat.
-    expect(shownOf(openPayload(sealedJson({ ...p, sessionId: "../x" }), keys)!).route).toEqual({ t: "chat", key: "devbox/navi-ada" });
+    expect(shownOf(openPayload(sealedJson({ ...p, sessionId: "../x" }), keys)!).route).toEqual({ t: "chat", key: "devbox/inbox-ada" });
   });
 
   it("opens the Devices list of the hub a new sign-in happened on, where it is signed out", () => {
@@ -169,8 +169,8 @@ describe("tapping a notification", () => {
     expect(tapRoute({ route: shown.route }, undefined, null)).toEqual(shown.route);
     expect(tapRoute({}, { c: sealedJson(p) }, keys)).toEqual(shown.route);
     // Not a chat: it shows even with a chat on screen, and opens no chat.
-    expect(inApp(shown.route, "devbox/navi-ada")).toBe(true);
-    expect(readClears(shown.route, "devbox/navi-ada")).toBe(false);
+    expect(inApp(shown.route, "devbox/inbox-ada")).toBe(true);
+    expect(readClears(shown.route, "devbox/inbox-ada")).toBe(false);
     expect(chatAt(shown.route!, undefined)).toBeNull();
     // A payload that says no hub can't say whose Devices: the app just opens.
     expect(shownOf(openPayload(sealedJson({ ...p, hub: "" }), keys)!).route).toBeUndefined();
@@ -185,7 +185,7 @@ describe("tapping a notification", () => {
     expect(tapRoute({}, { c: sealedJson(p) }, keys)).toBeUndefined();
     expect(tapRoute({ route: { t: "billing", hub: "https://acme.fleetd.test" } }, undefined, null)).toBeUndefined();
     // A known route on a payload that is also a chat's still goes where the route says.
-    expect(shownOf({ ...opened, kind: "message", machineId: "devbox", projectId: "navi-ada", route: "devices" }).route).toEqual({ t: "devices", hub: "https://acme.fleetd.test" });
+    expect(shownOf({ ...opened, kind: "message", machineId: "devbox", projectId: "inbox-ada", route: "devices" }).route).toEqual({ t: "devices", hub: "https://acme.fleetd.test" });
   });
 
   it("just opens the app for one it can't read", () => {
@@ -346,7 +346,7 @@ describe("a notification's buttons", () => {
   const base = { v: 1, title: "app", hub: "http://devbox:4790", machineId: "devbox", projectId: "app", at: "2026-10-29T08:00:00.000Z" } as const;
   const push: PushPayload = { ...base, kind: "approval", body: "Push the fix: git push", requestId: "Q3", category: "approve", badge: 2 };
   const deploy: PushPayload = { ...base, kind: "approval", body: "Ship it: ./deploy.sh prod", requestId: "Q4", category: "review", urgent: true };
-  const said: PushPayload = { ...base, kind: "message", title: "Ada", projectId: "navi", body: "Which flight?", category: "reply", badge: 1 };
+  const said: PushPayload = { ...base, kind: "message", title: "Ada", projectId: "inbox", body: "Which flight?", category: "reply", badge: 1 };
   const route = { t: "approval", requestId: "Q3", key: "devbox/app" } as const;
 
   it("come from the sealed payload, and a field this app doesn't know is left out", () => {
@@ -376,7 +376,7 @@ describe("a notification's buttons", () => {
     expect(opensRoute("approve", DEFAULT)).toBe(false);
     expect(actOf("approve", undefined, push)).toEqual({ t: "approve", requestId: "Q3", route });
     expect(actOf("deny", undefined, push)).toEqual({ t: "deny", requestId: "Q3", route });
-    expect(actOf("reply", "  The 9:40 one ", said)).toEqual({ t: "reply", key: "devbox/navi", text: "The 9:40 one" });
+    expect(actOf("reply", "  The 9:40 one ", said)).toEqual({ t: "reply", key: "devbox/inbox", text: "The 9:40 one" });
     expect(actOf("reply", " ", said)).toBeUndefined();
     expect(actOf(DEFAULT, undefined, push)).toBeUndefined();
     // iOS's payload is opened again from the APNs userInfo; Android's notification carries it.
@@ -450,10 +450,10 @@ describe("a notification's buttons", () => {
   it("reply into the chat, and say so when it wasn't sent", async () => {
     const hub = fakeHub();
     const link = { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport };
-    const sent = act({ t: "reply", key: "devbox/navi", text: "The 9:40 one" }, said, link, () => "c1");
+    const sent = act({ t: "reply", key: "devbox/inbox", text: "The 9:40 one" }, said, link, () => "c1");
     hub.ready();
     await flush();
-    expect(calls(hub, "chat_send")).toMatchObject([{ input: { projectRef: { machineId: "devbox", projectId: "navi" }, text: "The 9:40 one", clientRequestId: "c1" } }]);
+    expect(calls(hub, "chat_send")).toMatchObject([{ input: { projectRef: { machineId: "devbox", projectId: "inbox" }, text: "The 9:40 one", clientRequestId: "c1" } }]);
     hub.answer("chat_send", { message: { messageId: "m9" } });
     await flush();
     hub.answer("push_badge", { badge: 0 });
@@ -461,9 +461,9 @@ describe("a notification's buttons", () => {
 
     vi.useFakeTimers();
     try {
-      const offline = act({ t: "reply", key: "devbox/navi", text: "Hi" }, said, link, () => "c2");
+      const offline = act({ t: "reply", key: "devbox/inbox", text: "Hi" }, said, link, () => "c2");
       await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
-      expect(await offline).toEqual({ followUp: { title: "Ada", body: "Your reply wasn't sent: The hub can't be reached.", route: { t: "chat", key: "devbox/navi" } } });
+      expect(await offline).toEqual({ followUp: { title: "Ada", body: "Your reply wasn't sent: The hub can't be reached.", route: { t: "chat", key: "devbox/inbox" } } });
     } finally {
       vi.useRealTimers();
     }
@@ -472,19 +472,19 @@ describe("a notification's buttons", () => {
 
 describe("with the app open", () => {
   it("shows nothing for the chat on screen or its approvals, and everything else", () => {
-    expect(inApp({ t: "chat", key: "devbox/navi" }, "devbox/navi")).toBe(false);
-    expect(inApp({ t: "approval", requestId: "Q7", key: "devbox/navi" }, "devbox/navi")).toBe(false);
-    expect(inApp({ t: "chat", key: "devbox/shop" }, "devbox/navi")).toBe(true);
-    expect(inApp({ t: "chat", key: "devbox/navi" }, null)).toBe(true);
+    expect(inApp({ t: "chat", key: "devbox/inbox" }, "devbox/inbox")).toBe(false);
+    expect(inApp({ t: "approval", requestId: "Q7", key: "devbox/inbox" }, "devbox/inbox")).toBe(false);
+    expect(inApp({ t: "chat", key: "devbox/shop" }, "devbox/inbox")).toBe(true);
+    expect(inApp({ t: "chat", key: "devbox/inbox" }, null)).toBe(true);
     // An approval that didn't say its chat, and a screen asking for the person, always show.
-    expect(inApp({ t: "approval", requestId: "Q7" }, "devbox/navi")).toBe(true);
-    expect(inApp({ t: "screen", key: "devbox/navi", sessionId: "B1" }, "devbox/navi")).toBe(true);
-    expect(inApp(undefined, "devbox/navi")).toBe(true);
+    expect(inApp({ t: "approval", requestId: "Q7" }, "devbox/inbox")).toBe(true);
+    expect(inApp({ t: "screen", key: "devbox/inbox", sessionId: "B1" }, "devbox/inbox")).toBe(true);
+    expect(inApp(undefined, "devbox/inbox")).toBe(true);
   });
 
   it("clears a chat's messages from Notification Center once it's read, never an approval still waiting", () => {
-    expect(readClears({ t: "chat", key: "devbox/navi" }, "devbox/navi")).toBe(true);
-    expect(readClears({ t: "chat", key: "devbox/shop" }, "devbox/navi")).toBe(false);
-    expect(readClears({ t: "approval", requestId: "Q7", key: "devbox/navi" }, "devbox/navi")).toBe(false);
+    expect(readClears({ t: "chat", key: "devbox/inbox" }, "devbox/inbox")).toBe(true);
+    expect(readClears({ t: "chat", key: "devbox/shop" }, "devbox/inbox")).toBe(false);
+    expect(readClears({ t: "approval", requestId: "Q7", key: "devbox/inbox" }, "devbox/inbox")).toBe(false);
   });
 });

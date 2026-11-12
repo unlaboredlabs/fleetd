@@ -91,7 +91,7 @@ class Fake implements UpdatePorts {
   }
   /**
    * Machines whose agents carry on through the restart, by machine: the host protocol their hold answers, and how many
-   * of their sessions that aren't hosted (a Navi's) are mid-step. Absent: they don't, as without scopes.
+   * of their sessions that aren't hosted (a project's) are mid-step. Absent: they don't, as without scopes.
    */
   hosted = new Map<string, [number, number]>();
   /** The machines whose agents were held, a hold each. */
@@ -476,14 +476,14 @@ test("hosted agents mid-step don't hold their node's update", async () => {
   expect(fake.held).toEqual([]);
 });
 
-test("a Navi mid-step or an approved command is waited for, its hosted agents not held", async () => {
-  for (const [navi, busy] of [
+test("a project mid-step or an approved command is waited for, its hosted agents not held", async () => {
+  for (const [inbox, busy] of [
     [1, undefined],
     [0, "1 approved command"],
   ] as const) {
-    const dir = join(home.dir, `j${navi}`);
+    const dir = join(home.dir, `j${inbox}`);
     const fake = new Fake(dir, [{ name: "builder", ...(busy ? { busy } : {}) }]);
-    fake.hosted.set("m0", [HOSTED, navi]);
+    fake.hosted.set("m0", [HOSTED, inbox]);
     const { after, resumed } = await restarted(dir, fake);
     await until(() => byMachine(after.status()!).get("m0")!.installsBy !== undefined);
     const message = byMachine(after.status()!).get("m0")!.message!;

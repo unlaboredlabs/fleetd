@@ -6,7 +6,7 @@ import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts
 import { wireChecker } from "../src/hub/executor/checker.ts";
 import { stop } from "../src/hub/executor/stop.ts";
 import { ExecutorTurn, limitMs, Owner, turn } from "../src/hub/executor/turn.ts";
-import { checkerSeams } from "../src/hub/navi/checker_turn.ts";
+import { checkerSeams } from "../src/hub/project_lead/checker_turn.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { SessionLaunch, SessionOutput, SessionSummary } from "../src/shared/sessions.ts";
 import { AT, kit } from "./work-kit.ts";
@@ -164,7 +164,7 @@ test("stop sends the node's stop, removing the worktree when asked", async () =>
   expect(why).toBe("thread nope is not known on machine devbox");
 });
 
-test("the wired checker runs the Navi checker's turn and reads on the executors", async () => {
+test("the wired checker runs the project checker's turn and reads on the executors", async () => {
   const n = await node();
   wireChecker(n.hub);
   const seams = checkerSeams(n.hub);
@@ -179,7 +179,7 @@ test("the wired checker runs the Navi checker's turn and reads on the executors"
   let why = "";
   await checked.catch((e: Error) => (why = e.message));
   expect(why).toContain("no room");
-  // The Navi's reads come from its thread's follow.
+  // The project's reads come from its thread's follow.
   let readWhy = "";
   await seams.reads({ machineId: "devbox", threadId: "lead-1" }, 60).catch((e: Error) => (readWhy = e.message));
   expect(readWhy).toBe("thread lead-1 is not known on machine devbox");

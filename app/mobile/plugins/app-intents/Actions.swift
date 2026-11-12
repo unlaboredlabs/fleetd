@@ -117,7 +117,7 @@ enum Chats {
     ids.compactMap { id in
       if let chat = known.first(where: { $0.id == id }) { return chat }
       guard let ref = ChatRef(id) else { return nil }
-      return ChatTarget(machineId: ref.machineId, projectId: ref.projectId, title: "Chat", navi: false, machine: nil, at: "")
+      return ChatTarget(machineId: ref.machineId, projectId: ref.projectId, title: "Chat", machine: nil, at: "")
     }
   }
 
@@ -129,7 +129,7 @@ enum Chats {
   /// The list kept between runs, so a shortcut's chat shows its name and Open Chat needs no hub.
   static func encode(_ chats: [ChatTarget]) -> Data {
     let rows: [[String: Any]] = chats.map { c in
-      var row: [String: Any] = ["machineId": c.machineId, "projectId": c.projectId, "title": c.title, "navi": c.navi, "at": c.at]
+      var row: [String: Any] = ["machineId": c.machineId, "projectId": c.projectId, "title": c.title, "at": c.at]
       if let machine = c.machine { row["machine"] = machine }
       return row
     }
@@ -140,7 +140,7 @@ enum Chats {
     guard let data, let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
     return rows.compactMap { r in
       guard let m = r["machineId"] as? String, let p = r["projectId"] as? String, let title = r["title"] as? String else { return nil }
-      return ChatTarget(machineId: m, projectId: p, title: title, navi: r["navi"] as? Bool == true, machine: r["machine"] as? String, at: r["at"] as? String ?? "")
+      return ChatTarget(machineId: m, projectId: p, title: title, machine: r["machine"] as? String, at: r["at"] as? String ?? "")
     }
   }
 }

@@ -304,7 +304,6 @@ it("keeps each hub's projects in its own group, newest first, and numbers the ro
   });
   await settle();
   const group = (label: string) => host.querySelector(`section[aria-label="${label}"]`)?.textContent ?? "";
-  expect(host.textContent).not.toMatch(/Navi/u);
   expect(group("Personal")).toMatch(/Ada.*storefront/u);
   expect(group("Acme")).toMatch(/Bee.*billing/u);
   expect(group("Personal")).not.toContain("Bee");

@@ -39,9 +39,7 @@ function withFresh(hub: Hub, checks: DoctorCheck[]): DoctorCheck[] {
 }
 
 function read(hub: Hub, checks: DoctorCheck[]): HubSetupStep[] {
-  const code = store(hub)
-    .projectsShown()
-    .filter((p) => p.kind !== "assistant").length;
+  const code = store(hub).projectsShown().length;
   return readSteps(guides(hubUrl(hub)), beforeFirstUse(checks, code));
 }
 

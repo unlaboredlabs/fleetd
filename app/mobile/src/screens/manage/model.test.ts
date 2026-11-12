@@ -14,7 +14,7 @@ const project = (extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
   ...extra,
 });
-const own = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/navi/ada", ...extra });
+const own = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/inbox/ada", ...extra });
 
 const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
   machineId: "devbox",
@@ -135,7 +135,7 @@ describe("Delete", () => {
       expect(`${w.folder.label}, ${w.folder.path}`).toBe(desktop.folder);
       expect(w.folder.note).toBe(desktop.folderNote);
     }
-    expect(deleteWords(own(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox").folder).toMatchObject({ label: "Also delete its folder", path: "~/.fleetd/navi/ada" });
+    expect(deleteWords(own(), settings({ workspaceRoot: "/home/ada/.fleetd/inbox/ada" }), "devbox").folder).toMatchObject({ label: "Also delete its folder", path: "~/.fleetd/inbox/ada" });
   });
 
   it("names the worktrees with uncommitted changes, a worktree without a branch by its path", () => {

@@ -33,7 +33,6 @@ export const CAP_SESSION_END = "session_end";
 export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_SCREEN_SETTINGS = "screen_settings";
 export const CAP_PROJECT_SIGNINS = "project_signins";
-export const CAP_NAVI_SIGNINS = "navi_signins";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
 
@@ -98,7 +97,7 @@ export type SessionHostFrame = {
   hostKey: string;
   frame: BrowserCallFrame;
   sealed?: string;
-  navi?: ProjectId;
+  project?: ProjectId;
 };
 export type SessionStepFrame = { hostKey: string; item: unknown };
 export type RelayDialFrame = { hostKey: string; token: string; stream?: "cdp" };

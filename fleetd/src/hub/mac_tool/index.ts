@@ -1,6 +1,6 @@
 // The agents' Mac, the hub's half (D298): `mac_where` names the online machine whose
 // node lists `mac_tool` and its key, `mac_send` passes one step an agent's node sealed to it on, with who the caller is,
-// and brings back the sealed answer. The hub never opens either. Every project's agents may use the Mac; Navis never.
+// and brings back the sealed answer. The hub never opens either. Every project's agents may use the Mac; projects never.
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCaller, MacResultFrame, MacSendCall } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";

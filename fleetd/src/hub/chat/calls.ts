@@ -1,11 +1,11 @@
-// The chat's lead calls: the lead's `nudge`, and a Navi reading back through its
+// The chat's lead calls: the lead's `nudge`, and a project reading back through its
 // own chat with `chat_search` and `chat_read`. Plain text matching over the
 // stored chat, nothing more; the chat is always the caller's own project's, so another chat is never read.
 import type { ChatAuthor, ChatMessage, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadCalls, type LeadCaller } from "../leads/seams.ts";
-import { mayUse } from "../navi/bridge.ts";
+import { mayUse } from "../project_lead/bridge.ts";
 import { parseMs } from "../store/time.ts";
 import { type LiveParts, leadThread, liveOf, state } from "./flow.ts";
 import { leadSource } from "./history.ts";

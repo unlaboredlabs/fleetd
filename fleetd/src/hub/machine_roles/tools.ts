@@ -34,7 +34,7 @@ const NODE_RESTART =
   "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node 2>/dev/null || systemctl --user restart fleetd-node.service";
 
 /**
- * What the app's Navi dialog reads besides roles: whether its node takes screen settings. A node between two links
+ * What the app's machine settings read besides roles: whether its node takes screen settings. A node between two links
  * says nothing either way: only a linked node that doesn't list them is too old, and then the command that restarts
  * it goes with it.
  */

@@ -170,8 +170,8 @@ export const readApprovedPage = async (hub: Hub, p: ProjectRef, before?: number)
 
 /** The other hubs it reaches through hub links. */
 export const readLinks = async (hub: Hub, p: ProjectRef): Promise<Result<readonly HubLink[]>> => {
-  const r = await hub.call("hub_links_get", { navi: ref(p) });
-  return r.ok ? { ok: true, value: r.output.links.filter((l) => l.navi.machineId === p.machineId && l.navi.projectId === p.projectId) } : r;
+  const r = await hub.call("hub_links_get", { project: ref(p) });
+  return r.ok ? { ok: true, value: r.output.links } : r;
 };
 
 /** A link removed here, and revoked on the other hub when it can be reached: the hub says which, and what's next. */

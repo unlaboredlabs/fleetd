@@ -346,7 +346,7 @@ export class Slots {
     this.locked((b) => [undefined, b.release(holder)]);
   }
 
-  /** The project is gone (`navi::erase`): its slots, queued claims and own max agents go. */
+  /** The project is gone (`project_lead::erase`): its slots, queued claims and own max agents go. */
   forgetProject(r: ProjectRef): void {
     this.locked((b) => [undefined, b.forgetProject(r)]);
   }

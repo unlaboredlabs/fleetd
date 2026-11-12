@@ -9,7 +9,7 @@ import * as machine from "../../cli/setup/machine.ts";
 import { type AddArgs, type Found, type HubSide, type Progress, type Resolved, Stop } from "../../cli/setup/machine.ts";
 import { isHuman } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
-import { eraseIn } from "../navi/erase.ts";
+import { eraseIn } from "../project_lead/erase.ts";
 import { adminEverywhereFix, allowsEverywhere } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { events } from "../store/events.ts";

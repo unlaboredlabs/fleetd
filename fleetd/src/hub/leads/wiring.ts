@@ -31,7 +31,7 @@ export function wire(hub: Hub): void {
           `Run fleetd update on ${machineId}; the project's message waits until then.`,
         );
       }
-      // A project's lead runs on the hub's account whoever writes to it, a Navi's on its owner's.
+      // A project's lead runs on the hub's account whoever writes to it, a project's on its owner's.
       const r = { machineId, projectId: input.projectId };
       const account = accountForLead(hub.db, (m) => nodeAccounts(hub, m), r);
       if (isRefusal(account)) throw new ToolError("invalid", account.message, account.fix);

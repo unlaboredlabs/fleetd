@@ -49,7 +49,7 @@ let marked: [(String, String?)] = [
   (#"{"kind":"approval","requestId":"Q1","category":"approve","urgent":true}"#, "fleetd.review"),
   (#"{"kind":"approval","requestId":"Q1","category":"review"}"#, "fleetd.review"),
   (#"{"kind":"approval","category":"approve"}"#, nil),
-  (#"{"kind":"message","machineId":"devbox","projectId":"navi","category":"reply"}"#, "fleetd.reply"),
+  (#"{"kind":"message","machineId":"devbox","projectId":"inbox","category":"reply"}"#, "fleetd.reply"),
   (#"{"kind":"message","category":"reply"}"#, nil),
   (#"{"kind":"order","category":"bounce"}"#, nil),
 ]

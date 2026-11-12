@@ -86,7 +86,7 @@ let files: unknown[];
 
 const ANSWERS: Readonly<Record<string, unknown>> = {
   skills_list: { skills: [] },
-  navi_asks: { navi: { machineId: "devbox", projectId: "storefront" }, asks: [] },
+  project_asks: { project: { machineId: "devbox", projectId: "storefront" }, asks: [] },
   // One report, as the chat published it.
   artifact_get: { name: "dependency-sweep", artifact: SWEEP, content: "# Sweep", versions: [SWEEP] },
   decisions_list: { decisions: [decision("D2", "active"), decision("D1", "superseded")], orders: [] },

@@ -1,8 +1,8 @@
-// Artifacts (W367, D292): the reports a lead, task or Navi publishes for the
+// Artifacts (W367, D292): the reports a lead or task publishes for the
 // person with `artifact_publish`, a Markdown or HTML document under a name in its project. Each publish keeps a version
 // in `artifact_versions` (the newest ARTIFACT_VERSIONS_KEPT of a name), posts a system line with the artifact as a card
-// in the project's chat, and announces `artifacts.changed`. The content is stored and served as written. A lead, task or
-// Navi reads one of its own project's back with `artifact_read`, cut at ARTIFACT_READ_CAP.
+// in the project's chat, and announces `artifacts.changed`. The content is stored and served as written. A lead or task
+// reads one of its own project's back with `artifact_read`, cut at ARTIFACT_READ_CAP.
 import type { Database } from "bun:sqlite";
 import type { ArtifactFormat, ArtifactSummary, ArtifactVersion, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

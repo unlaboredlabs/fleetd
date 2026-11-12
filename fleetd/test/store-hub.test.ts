@@ -67,7 +67,7 @@ test("removing a machine forgets its rows and leaves another's with the same pro
   const tables = machineTables(db.conn);
   for (const [t, columns] of tables) {
     const byId = columns.some((col) => col.name === "machine_id");
-    const ownRule = ["repos", "navi_asks", "session_places", "slot_claims", "vault_items"].includes(t);
+    const ownRule = ["repos", "project_asks", "session_places", "slot_claims", "vault_items"].includes(t);
     expect(tableList(MACHINE_TABLES).includes(t) || tableList(MACHINE_KEEPS).includes(t) || ownRule).toBe(true);
     expect(byId || ownRule).toBe(true);
   }
@@ -100,7 +100,7 @@ test("forgetting a removed machine's project leaves its other project and anothe
   for (const [t, columns] of tables) {
     const has = (c: string) => columns.some((col) => col.name === c);
     expect([t, machineRows(db.conn, tables, t, "devbox")]).toEqual([t, 1]);
-    const ownRule = ["repos", "navi_asks", "session_places", "vault_items"].includes(t);
+    const ownRule = ["repos", "project_asks", "session_places", "vault_items"].includes(t);
     const forgot =
       !tableList(MACHINE_KEEPS).includes(t) && (ownRule || (tableList(MACHINE_TABLES).includes(t) && (has("project_id") || has("thread_id"))));
     const other = ["projects", "threads", "thread_accounts"].includes(t) ? 1 : 0;
@@ -121,7 +121,7 @@ const project = (projectId: string, at: string, extra: Partial<ProjectSummary> =
 });
 
 test("an unpicked icon is derived from its id, the same as the Rust hub's", () => {
-  // Pinned in the Rust tests: a change here would give every existing project and Navi another face.
+  // Pinned in the Rust tests: a change here would give every existing project and project another face.
   expect(derived({ machineId: "devbox", projectId: "app" })).toEqual({ face: "wink", color: "teal" });
 });
 
@@ -130,13 +130,13 @@ test("projects keep the node's report and wear what the hub keeps of them", () =
   const store = new HubStore(db);
   // The hub's own fields in a node's report are dropped: the hub serves them from its tables.
   store.projectsUpsertMany("devbox", [
-    project("app", "2026-10-17T10:00:00.000Z", { kind: "assistant", avatar: "x" }),
+    project("app", "2026-10-17T10:00:00.000Z", { avatar: "x" }),
     project("site", "2026-10-18T10:00:00.000Z"),
   ]);
   const stored = JSON.parse(
     db.conn.query<{ data: string }, []>("SELECT data FROM projects WHERE project_id = 'app'").get()?.data ?? "",
   );
-  expect(stored.kind).toBeUndefined();
+  expect(stored.avatar).toBeUndefined();
   expect(store.projectsList().map((p) => p.projectId)).toEqual(["site", "app"]);
   expect(store.projectsList(undefined, "SITE").map((p) => p.projectId)).toEqual(["site"]);
   expect(store.projectsList(undefined, "%")).toEqual([]);

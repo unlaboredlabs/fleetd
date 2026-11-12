@@ -13,7 +13,7 @@ import { start as s10 } from "../mcp_oauth/loops.ts";
 import { start as s11 } from "../mcp_servers/loops.ts";
 import { start as s12 } from "../memory/loops.ts";
 import { start as s13 } from "../metrics/loops.ts";
-import { start as s14 } from "../navi/loops.ts";
+import { start as s14 } from "../project_lead/loops.ts";
 import { start as s15 } from "../outage/loops.ts";
 import { start as s16 } from "../pair/loops.ts";
 import { start as s18 } from "../projects/loops.ts";
@@ -47,7 +47,7 @@ export function startAll(hub: Hub): void {
   s11(hub); // hub/mcp_servers
   s12(hub); // hub/memory
   s13(hub); // hub/metrics
-  s14(hub); // hub/navi
+  s14(hub); // hub/project_lead
   s15(hub); // hub/outage
   s16(hub); // hub/pair
   s18(hub); // hub/projects

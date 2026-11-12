@@ -13,7 +13,7 @@
 // (secure_input.ts). From the first fill on, the
 // session is sealed: every answer to the agent is scrubbed of the values, and the proxy lets through a narrower list.
 //
-// A lead (a project with no repo, as a Navi's did, or one with repos whose browser the hub places here) runs its
+// A lead (a project with no repo, or one with repos whose browser the hub places here) runs its
 // sessions on the profile its project keeps (D221, D310; chrome.ts `Kept`), not a fresh one, and a person's screen for
 // a project of this machine's runs on it too. One browser at a time runs on a kept profile.
 //
@@ -80,7 +80,7 @@ type Install =
   | { kind: "missing"; why: string; owed: boolean };
 
 /** A session's project, whose kept profile its browser runs on: a lead's, or a person's screen. */
-type Navi = {
+type KeptOwner = {
   name: string;
   /** A person's screen, or a lead with repos: with the kept profile busy, it opens on a fresh one rather than not at all. */
   freshIfBusy: boolean;
@@ -123,7 +123,7 @@ export class Broker {
   /** Payment-provider hosts a card may fill in beyond cards.ts's PAYMENT_FRAMES (tests: a fake provider). */
   readonly extraPaymentFrames: string[] = [];
   /** The project of each agent session whose browser runs on its kept profile, by the agent session. */
-  private readonly navis = new Map<string, Navi>();
+  private readonly owners = new Map<string, KeptOwner>();
   readonly kept: Kept;
   private install: Install;
   private readonly installer: Installer;
@@ -311,14 +311,14 @@ export class Broker {
     this.starting.add(thread);
     try {
       const pool = await this.pool();
-      const navi = this.navis.get(thread);
+      const owner = this.owners.get(thread);
       // One browser at a time runs on a kept profile: a person's screen meanwhile opens on a fresh one, signed out.
       let lease: ReturnType<Kept["take"]> | undefined;
-      if (navi) {
+      if (owner) {
         try {
-          lease = this.kept.take(navi.name);
+          lease = this.kept.take(owner.name);
         } catch (e) {
-          if (!navi.freshIfBusy) {
+          if (!owner.freshIfBusy) {
             throw new ToolError(
               "invalid",
               `${(e as Error).message}: it keeps the project's sign-ins, and one browser at a time runs on them.`,
@@ -533,29 +533,29 @@ export class Broker {
   /** A person's screen `key` for project `project` of this machine's, as the hub's own frame names it (D239): on its
    * kept profile, or a fresh one while that profile is busy. */
   personScreen(key: string, project: string): void {
-    this.navis.set(key, { name: project, freshIfBusy: true, staysHere: true });
+    this.owners.set(key, { name: project, freshIfBusy: true, staysHere: true });
   }
 
   /** The agent session's claude launched as a lead of `project` (ScreenHooks `launched`). */
   lead(thread: string, role: string, project: string): void {
-    if (role === "assistant") this.navis.set(thread, { name: project, freshIfBusy: false, staysHere: true });
-    else if (role === "lead") this.navis.set(thread, { name: project, freshIfBusy: true, staysHere: false });
+    if (role === "assistant") this.owners.set(thread, { name: project, freshIfBusy: false, staysHere: true });
+    else if (role === "lead") this.owners.set(thread, { name: project, freshIfBusy: true, staysHere: false });
   }
 
   /** Whether the agent session's browser runs on this machine whatever the hub would pick: a lead that does its own
    * work, whose kept profile is here. */
   staysHere(thread: string): boolean {
-    return this.navis.get(thread)?.staysHere ?? false;
+    return this.owners.get(thread)?.staysHere ?? false;
   }
 
-  /** Whether the agent session is a project's lead: its browser runs here, on its project's kept profile. */
-  isNavi(thread: string): boolean {
-    return this.navis.has(thread);
+  /** Whether the session's browser runs here on its project's kept profile: a project's lead's, or a person's screen. */
+  hasKept(thread: string): boolean {
+    return this.owners.has(thread);
   }
 
-  /** The agent session ended: it is no project's lead any more. */
-  notNavi(thread: string): void {
-    this.navis.delete(thread);
+  /** The session ended: its browser no longer runs on a kept profile. */
+  dropKept(thread: string): void {
+    this.owners.delete(thread);
   }
 
   /** The agent session's claude exited (the launch area's `ended`, before session_route ends its screens elsewhere):
@@ -563,7 +563,7 @@ export class Broker {
   exited(thread: string): void {
     this.credentials.ended(thread);
     this.credentials.forget(remoteVault(thread));
-    this.notNavi(thread);
+    this.dropKept(thread);
     const open = this.sessions.get(thread);
     if (!open) return;
     open.session.stepAt("agent_session_ended", {}, true, undefined, 0);
@@ -576,9 +576,9 @@ export class Broker {
    */
   async forgetSignins(project: string): Promise<void> {
     if (!keptDir(this.home, project)) return;
-    for (const [thread, navi] of this.navis) {
+    for (const [thread, owner] of this.owners) {
       const open = this.sessions.get(thread);
-      if (navi.name !== project || !open) continue;
+      if (owner.name !== project || !open) continue;
       open.session.stepAt("signins_forgotten", {}, true, undefined, 0);
       void this.end(thread).catch(() => {});
     }

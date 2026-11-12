@@ -42,11 +42,11 @@ describe("an ask in a line", () => {
   it("is its first line, past a relay preamble, and the person's words when it quotes them", () => {
     expect(askSummary("Let people save their cart.\n\nDone when: a cart survives a reload.")).toBe("Let people save their cart.");
     expect(askSummary("\n  Gift cards at checkout  \nmore")).toBe("Gift cards at checkout");
-    expect(askSummary('From the person, relayed by their Navi (their words: "machines setup is not good ux enough. also it says \'too old\'.") Two things')).toBe(
+    expect(askSummary('From the person, relayed by their lead (their words: "machines setup is not good ux enough. also it says \'too old\'.") Two things')).toBe(
       "Machines setup is not good ux enough. also it says 'too old'.",
     );
-    expect(askSummary("From the person, relayed by their Navi: “dark mode please” and soon")).toBe("Dark mode please");
-    expect(askSummary("From the person, relayed by their Navi: two things on the Machines page.")).toBe("Two things on the Machines page.");
+    expect(askSummary("From the person, relayed by their lead: “dark mode please” and soon")).toBe("Dark mode please");
+    expect(askSummary("From the person, relayed by their lead: two things on the Machines page.")).toBe("Two things on the Machines page.");
     // A quote of its own, without the preamble, is the ask's words as they are.
     expect(askSummary('"Saved carts" broke after the update.')).toBe('"Saved carts" broke after the update.');
     expect(askSummary("Follow-up to my last message (the two automation bugs): please check the logs.")).toBe(
@@ -55,7 +55,7 @@ describe("an ask in a line", () => {
   });
 
   it("keeps the preamble when nothing follows it", () => {
-    expect(askSummary("From the person, relayed by their Navi:")).toBe("From the person, relayed by their Navi:");
+    expect(askSummary("From the person, relayed by their lead:")).toBe("From the person, relayed by their lead:");
     expect(askSummary("")).toBe("");
   });
 });
@@ -63,7 +63,7 @@ describe("an ask in a line", () => {
 describe("the Asked rows", () => {
   it("marks an ask folded into an earlier ask's order, and not the earlier one", () => {
     const shared = order("W280", "done", { merged: true });
-    // Newest first, as navi_asks lists them.
+    // Newest first, as project_asks lists them.
     const rows = askRows([ask("N3", [shared], "Follow-up: check the logs too."), ask("N2"), ask("N1", [shared])]);
     expect(rows.map((r) => [r.ask.handle, r.state, r.folded])).toEqual([
       ["N3", "merged", true],

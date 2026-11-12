@@ -31,14 +31,13 @@ vi.hoisted(() => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const project = (title: string, kind?: "assistant", at = "09:00"): ProjectSummary => ({
+const project = (title: string, at = "09:00"): ProjectSummary => ({
   machineId: "devbox",
   projectId: title,
   title,
   workspaceRoot: `/srv/${title}`,
   lastActivityAt: `2026-10-26T${at}:00.000Z`,
   threads: { failed: 0, idle: 0, running: 0, waiting: 0 },
-  ...(kind === undefined ? {} : { kind }),
 });
 const ref = (id: string): ProjectRef => ({ machineId: "devbox", projectId: id });
 const refs = (...ids: string[]) => ids.map(ref);
@@ -136,7 +135,7 @@ const announced = async () => {
   await settle(120);
 };
 
-const PROJECTS = [project("Ada", "assistant"), project("Home", "assistant", "09:03"), project("api", undefined, "09:02"), project("docs", undefined, "09:04"), project("web"), project("new", undefined, "09:05")];
+const PROJECTS = [project("Ada"), project("Home", "09:03"), project("api", "09:02"), project("docs", "09:04"), project("web"), project("new", "09:05")];
 
 describe("your pins and the chats' activity", () => {
   it("puts your pinned chats on top in your order, the rest newest first, and follows another device's change live", async () => {

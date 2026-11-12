@@ -172,21 +172,20 @@ enum Frame {
   }
 }
 
-/// One chat to send into: a Navi or a project.
+/// One chat to send into: a project's.
 struct ChatTarget: Identifiable, Equatable {
   let machineId: String
   let projectId: String
   let title: String
-  let navi: Bool
-  /// The machine's name, for a project; nil for a Navi.
+  /// The machine's name; nil when the snapshot doesn't name it.
   let machine: String?
   /// When it last spoke, or last did anything (ISO 8601, so it sorts as text).
   let at: String
 
   var id: String { "\(machineId)/\(projectId)" }
-  var subtitle: String { navi ? "Navi" : machine ?? "Project" }
+  var subtitle: String { machine ?? "Project" }
 
-  /// The snapshot's chats, who spoke last first, as the app's Chats list (src/lists.ts); an archived Navi is in none.
+  /// The snapshot's chats, who spoke last first, as the app's Chats list (src/lists.ts); an archived project is in none.
   static func from(snapshot s: [String: Any]) -> [ChatTarget] {
     var machines: [String: String] = [:]
     for m in s["machines"] as? [[String: Any]] ?? [] {
@@ -199,11 +198,9 @@ struct ChatTarget: Identifiable, Equatable {
     }
     let chats = (s["projects"] as? [[String: Any]] ?? []).compactMap { p -> ChatTarget? in
       guard let m = p["machineId"] as? String, let id = p["projectId"] as? String, let title = p["title"] as? String else { return nil }
-      // An older hub's Navi.
-      let navi = p["kind"] as? String == "assistant"
-      if navi && p["archivedAt"] != nil { return nil }
+      if p["archivedAt"] != nil { return nil }
       return ChatTarget(
-        machineId: m, projectId: id, title: title, navi: navi, machine: navi ? nil : machines[m],
+        machineId: m, projectId: id, title: title, machine: machines[m],
         at: spoke["\(m)/\(id)"] ?? p["lastActivityAt"] as? String ?? ""
       )
     }

@@ -53,6 +53,7 @@ import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import { ITEMS_KEPT_MS, NodeStore, SPANS_KEPT, type SessionLocal, type SessionRow } from "./store.ts";
 import { Health } from "./health.ts";
+import { ownHomeDir, ownHomeEnv } from "../own_homes.ts";
 import { killOrphans, killRecorded } from "./proc.ts";
 import { briefNote, compileCacheEnv, jobsEnv } from "./share.ts";
 import {
@@ -256,41 +257,6 @@ export function settingsOverlay(
 
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
-/** The user-level bin dirs installers put programs in, in a former Navi's home, first on its commands' PATH. */
-const NAVI_HOME_BINS = [".local/bin", "bin", ".cargo/bin", "go/bin", ".bun/bin", ".deno/bin"];
-
-/** What claude runs ahead of each command of a former Navi's lead (`CLAUDE_ENV_FILE`), when the project has the home a
- * Navi kept (`navis/<id>/home` under the node's home, D234): that home as HOME, with NAVI_HOME_BINS first on its PATH
- * and npm installing globally there too (`~/.local`); `navis/<id>/tmp` as TMPDIR; pip allowed to install for the user
- * on a system that marks its Python as managed; the person's rustup toolchains, when they have them. claude itself
- * keeps the person's HOME, where its login and settings are. Undefined for a project with no such home. */
-export function naviHomeEnv(nodeHome: string, projectId: string, userHome: string): string | undefined {
-  const own = join(nodeHome, "navis", projectId);
-  let home: string;
-  try {
-    home = realpathSync(join(own, "home"));
-  } catch {
-    return undefined;
-  }
-  const tmp = join(own, "tmp");
-  try {
-    mkdirSync(tmp, { recursive: true });
-  } catch (error) {
-    console.warn(`${nowIso()} WARN a former Navi's tmp dir was not made: ${(error as Error).message}`);
-  }
-  let env =
-    `export HOME=${quote(home)}\n` +
-    `export PATH="${NAVI_HOME_BINS.map((b) => `$HOME/${b}`).join(":")}:$PATH"\n` +
-    `export NPM_CONFIG_PREFIX="$HOME/.local"\n` +
-    `export CARGO_HOME="$HOME/.cargo"\n` +
-    `export PIP_BREAK_SYSTEM_PACKAGES=1\n` +
-    `export TMPDIR=${quote(tmp)} TMP=${quote(tmp)} TEMP=${quote(tmp)}\n`;
-  const rustup = join(userHome, ".rustup");
-  try {
-    if (statSync(rustup).isDirectory()) env += `export RUSTUP_HOME=${quote(rustup)}\n`;
-  } catch {}
-  return env;
-}
 /** The PreToolUse hook: free while there is no hold, `fleetd update-hold` while there is one (node/hold.rs). */
 export const holdHook = (fleetd: string[], home: string) => {
   const hold = quote(join(home, "update", "hold"));
@@ -851,7 +817,7 @@ export class SessionService {
 
   #projectUpsert(projectId: string, title: string, root: string): SessionOutput {
     if (!pathSafe(projectId)) throw invalid(`project id ${projectId} has characters a path can't hold`);
-    // A relative root is a folder of the node's own, made when missing (a Navi's).
+    // A relative root is a folder of the node's own, made when missing.
     const folder = !isAbsolute(root) && !root.startsWith("~") && pathSafe(root.replaceAll("/", "_")) ? join(this.home, root) : undefined;
     let workspaceRoot = root;
     if (folder) {
@@ -911,12 +877,12 @@ export class SessionService {
       this.store.forgetSessions(projectId);
       if (removeFolder && project) await rm(project.workspaceRoot, { recursive: true, force: true });
     }
-    // A Navi's kept browser profile goes with it, before the project does.
+    // Its kept browser profile goes with it, before the project does.
     await this.forgetSignins(projectId);
     forgetProjectEnv(this.home, projectId);
     mcp.forgetSecrets(this.home, projectId);
-    // What a Navi kept under the node's home before Navis became projects (D310): its own home.
-    await rm(join(this.home, "navis", projectId), { recursive: true, force: true });
+    // The HOME of its own it kept from before D310, if it has one (own_homes.ts).
+    await rm(ownHomeDir(this.home, projectId), { recursive: true, force: true });
     const frame = this.store.removeProject(projectId);
     if (frame) this.#machine(frame);
     return { kind: "done" };
@@ -1350,10 +1316,10 @@ export class SessionService {
     env.FLEETD_PROJECT_ID = row.summary.projectId;
     delete env[claude.ORDER_ENV_FILE_ENV];
     let sourced = row.local.orderId ? orderEnvFile(this.home, row.summary.projectId, row.local.orderId) : undefined;
-    // A former Navi's lead still runs its commands in the home it kept, with what it installed there on the PATH (D234,
-    // kept by D310); its agents run in the person's own, with their git and logins.
-    const naviHome = role === "lead" || role === "assistant" ? naviHomeEnv(this.home, row.summary.projectId, homeDir()) : undefined;
-    if (naviHome) sourced = naviHome + (sourced ?? "");
+    // A lead whose project kept a HOME of its own still runs its commands there, with what it installed there on the
+    // PATH (D234, kept by D310); its agents run in the person's own, with their git and logins.
+    const ownHome = role === "lead" || role === "assistant" ? ownHomeEnv(this.home, row.summary.projectId, homeDir()) : undefined;
+    if (ownHome) sourced = ownHome + (sourced ?? "");
     if (sourced) {
       const at = join(dir, "order-env.sh");
       writeFileSync(at, sourced);

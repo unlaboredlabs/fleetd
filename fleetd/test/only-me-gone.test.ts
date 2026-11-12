@@ -7,8 +7,8 @@ import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import type { Caller } from "../src/hub/api/registry.ts";
 import { Registry } from "../src/hub/api/registry.ts";
-import { allowPasted } from "../src/hub/navi/tools.ts";
-import * as navis from "../src/hub/navi/store.ts";
+import { allowPasted } from "../src/hub/project_lead/tools.ts";
+import * as kept from "../src/hub/project_lead/store.ts";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { migrate } from "../src/hub/store/migrations.ts";
@@ -99,7 +99,7 @@ test("on a hub with more than one person, they are archived too; a second person
     expect(await ok(bo, "chat_history", { projectRef: notes, limit: 10 })).toMatchObject({ messages: [] });
 
     // And uses it: brings it back, gives its bot a color, reads its orders, approvals and vault.
-    expect((await ok(bo, "project_archive", { ...notes, archived: false })).navi.archivedAt).toBeUndefined();
+    expect((await ok(bo, "project_archive", { ...notes, archived: false })).project.archivedAt).toBeUndefined();
     expect((await ok(bo, "project_settings_set", { ...notes, avatarColor: "teal" })).next).toBe("Its bot is teal on every device now.");
     expect((await ok(bo, "vault_list", notes)).items).toEqual([]);
     expect((await ok(bo, "workstream_list", notes)).workstreams).toEqual([]);
@@ -120,7 +120,7 @@ test("a removed person's projects stay as they are, unarchived and listed for ev
   k.hub.db.conn.run("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'notes', 0, 'p_adaadaad')");
   const own = key("admin", { human: true, person: { personId: "p_ownownow", name: "Own" }, name: "own" });
   await k.ok(own, "person_remove", { personId: "p_adaadaad" });
-  expect(navis.archived(k.hub.db.conn, notes)).toBe(false);
+  expect(kept.archived(k.hub.db.conn, notes)).toBe(false);
   expect(((await k.ok(own, "project_get", {})).projects as { projectId: string }[]).map((p) => p.projectId)).toEqual(["notes"]);
   expect((await k.ok(own, "people_list", {})).left).toBeUndefined();
 });
@@ -130,5 +130,5 @@ test("a person's pasted link allows its site in any project", () => {
   const shop = { machineId: "devbox", projectId: "shop" };
   project(k.hub, shop);
   allowPasted(k.hub, shop, "see https://docs.example.org/a", "human:desk");
-  expect(navis.siteAllowed(k.hub.db.conn, shop, "docs.example.org")).toBe(true);
+  expect(kept.siteAllowed(k.hub.db.conn, shop, "docs.example.org")).toBe(true);
 });

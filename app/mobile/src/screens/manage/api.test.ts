@@ -59,7 +59,7 @@ describe("Rename and Archive", () => {
     const { hub, session, calls } = setup();
     const archived = setArchived(session, SHOP, true);
     expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: true });
-    hub.answer(PROJECT_TOOLS.archive, { navi: SHOP });
+    hub.answer(PROJECT_TOOLS.archive, { project: SHOP });
     await expect(archived).resolves.toEqual({ ok: true, value: null });
     void setArchived(session, SHOP, false);
     expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: false });
@@ -211,7 +211,7 @@ describe("New Project", () => {
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web" });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web", onlyMe: false });
     hub.answer("project_add", { addId: "a1", created: false, machineId: "devbox", path: "/home/ada/src/web" });
     await flush();
     hub.link.frame({ t: "event", seq: 2, type: "project.clone_progress", at: AT, data: { addId: "a1", phase: "receiving", percent: 40 } });
@@ -253,7 +253,7 @@ describe("New Project", () => {
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "new", machineId: "devbox", name: "Ada", path: "/home/ada/projects/ada", gitInit: false }, path: "/home/ada/projects/ada" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true, onlyMe: false });
     hub.answer("project_add", { addId: "a2", created: true, machineId: "devbox", path: "/home/ada/projects/ada" });
     await flush();
     hub.link.frame({
@@ -363,12 +363,12 @@ describe("Approvals and Linked hubs", () => {
     await expect(next).resolves.toEqual({ ok: true, value: { log: [entry], older: undefined } });
   });
 
-  it("lists only its own hub links, and removes one", async () => {
+  it("lists the hub links the hub reads for the project, and removes one", async () => {
     const { hub, session, calls } = setup();
     const read = readLinks(session, SHOP);
-    expect(calls("hub_links_get").at(-1)?.input).toEqual({ navi: REF });
-    const link = (linkId: string, navi: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, navi });
-    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF), link("hl_2", { machineId: "devbox", projectId: "ada" })] });
+    expect(calls("hub_links_get").at(-1)?.input).toEqual({ project: REF });
+    const link = (linkId: string, project: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, project });
+    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF)] });
     await expect(read).resolves.toMatchObject({ ok: true, value: [{ linkId: "hl_1" }] });
     const removed = removeLink(session, "hl_1");
     expect(calls("hub_link_remove").at(-1)?.input).toEqual({ linkId: "hl_1" });

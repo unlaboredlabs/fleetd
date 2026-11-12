@@ -119,7 +119,13 @@ const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo : r.kin
 const failure = (message: string, fix: string | undefined): Failure => (fix?.trim() ? { message, fix } : { message });
 
 
-const addInput = (r: Request): ProjectAddInput => {
+/** For one release: a hub from before D491 makes a project with no repo Only me unless told otherwise; a newer hub
+ * ignores it. */
+const FOR_OLDER_HUBS = { onlyMe: false } as const;
+
+const addInput = (r: Request): ProjectAddInput => ({ ...kindInput(r), ...FOR_OLDER_HUBS });
+
+const kindInput = (r: Request): ProjectAddInput => {
   switch (r.kind) {
     case "clone":
       return { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) };

@@ -1,7 +1,7 @@
 // What the train, reviews, PRs and the GitHub App take from other areas, in one place: the shared seams (D346), each
 // re-exported from its owner's module once it lands, `hub.peek(name)` of an owner's area until then (never a stand-in
 // made under its name, D355), and reads of other areas' tables with the Rust hub's own SQL (people, workstreams, tasks,
-// Navis, repos, machines, order variables).
+// projects, repos, machines, order variables).
 import type { Database } from "bun:sqlite";
 import type {
   HubEvent,

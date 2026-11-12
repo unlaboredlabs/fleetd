@@ -348,8 +348,7 @@ export class Pool<B extends Launched = Launched> {
   }
 }
 
-/** Where a project's kept profile lives (actions/signins.ts): `browser/kept/<project>`, or a former Navi's
- * `browser/navis/<project>`. */
+/** Where a project's kept profile lives (actions/signins.ts): `browser/kept/<project>`. */
 export { keptDir };
 
 /** What a kept profile doesn't keep, in its `Default` dir: the HTTP and code caches (a page as a site showed it, a

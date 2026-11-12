@@ -1,4 +1,4 @@
-// The share sheet: what's being shared with a note under it, the recent chats in a row on top, every Navi and project
+// The share sheet: what's being shared with a note under it, the recent chats in a row on top, every project and project
 // below with search, and Send. Native lists and bars, Liquid Glass on iOS 26 (materials before it).
 import SwiftUI
 import UIKit
@@ -93,7 +93,7 @@ struct ShareSheet: View {
   }
 }
 
-/// The chats: the recent ones in a row, then every Navi and project, as the search finds them. Picking one ends the
+/// The chats: the recent ones in a row, then every project and project, as the search finds them. Picking one ends the
 /// search and the note's typing, so Send shows.
 private struct ChatPicker: View {
   @ObservedObject var model: ShareModel
@@ -107,17 +107,12 @@ private struct ChatPicker: View {
           .listRowInsets(EdgeInsets())
       }
     }
-    if !model.navis.isEmpty {
-      Section("Navis") {
-        ForEach(model.navis) { chat in ChatRow(chat: chat, selected: model.selected == chat, select: pick) }
-      }
-    }
     if !model.projects.isEmpty {
       Section("Projects") {
         ForEach(model.projects) { chat in ChatRow(chat: chat, selected: model.selected == chat, select: pick) }
       }
     }
-    if model.navis.isEmpty && model.projects.isEmpty {
+    if model.projects.isEmpty {
       Section {
         Text(model.query.isEmpty ? "\(model.hubName) has no chats yet." : "No chats match “\(model.query)”.")
           .foregroundStyle(.secondary)
@@ -204,7 +199,7 @@ private struct RecentRow: View {
         ForEach(chats) { chat in
           Button { select(chat) } label: {
             VStack(spacing: 6) {
-              AvatarView(name: chat.title, navi: chat.navi, size: 58)
+              AvatarView(name: chat.title, size: 58)
                 .overlay(alignment: .bottomTrailing) {
                   if selected == chat {
                     Image(systemName: "checkmark.circle.fill")
@@ -241,7 +236,7 @@ private struct ChatRow: View {
   var body: some View {
     Button { select(chat) } label: {
       HStack(spacing: 12) {
-        AvatarView(name: chat.title, navi: chat.navi, size: 40)
+        AvatarView(name: chat.title, size: 40)
         VStack(alignment: .leading, spacing: 1) {
           Text(chat.title).lineLimit(1)
           Text(chat.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -258,11 +253,9 @@ private struct ChatRow: View {
   }
 }
 
-/// A chat's initials on its color, in a circle as in the app (src/ui/Avatar.tsx): a Navi's filled, a project's a soft
-/// wash of it.
+/// A chat's initials on its color, in a circle as in the app (src/ui/Avatar.tsx): a soft wash of it.
 struct AvatarView: View {
   let name: String
-  let navi: Bool
   let size: CGFloat
   @Environment(\.colorScheme) private var scheme
 
@@ -274,9 +267,9 @@ struct AvatarView: View {
     let initials = Avatar.initials(name)
     Text(initials)
       .font(.system(size: size * (initials.count > 1 ? 0.36 : 0.42), weight: .semibold))
-      .foregroundStyle(navi ? Color.white : tint)
+      .foregroundStyle(tint)
       .frame(width: size, height: size)
-      .background(navi ? tint : tint.opacity(scheme == .dark ? 0.28 : 0.16), in: Circle())
+      .background(tint.opacity(scheme == .dark ? 0.28 : 0.16), in: Circle())
       .accessibilityHidden(true)
   }
 }

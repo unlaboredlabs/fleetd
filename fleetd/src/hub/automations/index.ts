@@ -69,7 +69,7 @@ export {
   webhookUrl,
 } from "./model.ts";
 
-/** Runs per lead thread `naviTurns` remembers seeing: more than one turn's wakes, steers and chat messages. */
+/** Runs per lead thread `leadTurns` remembers seeing: more than one turn's wakes, steers and chat messages. */
 const RUNS_SEEN = 32;
 
 /** A new automation: the app's automation_create or the lead's. */

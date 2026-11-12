@@ -1,26 +1,26 @@
-// What /link/v1 and the Navi side's client reach in the navi area's bridge (src/hub/navi/bridge.ts, T2246's): its
-// `bridgeOf(hub)`, imported, never an area made here (D354). A test hands its own bridge to `setNaviBridge`.
+// What /link/v1 and the asking side's client reach in the project-lead area's bridge (src/hub/project_lead/bridge.ts, T2246's): its
+// `bridgeOf(hub)`, imported, never an area made here (D354). A test hands its own bridge to `setAskBridge`.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { bridgeOf, type NaviBridge } from "../navi/bridge.ts";
+import { bridgeOf, type AskBridge } from "../project_lead/bridge.ts";
 
 export type {
   Asker,
   FactoryStatusCall,
   FactoryStatusResult,
   LinkFeedItem,
-  NaviBridge,
+  AskBridge,
   ProjectMessageCall,
   ProjectMessageResult,
-} from "../navi/bridge.ts";
+} from "../project_lead/bridge.ts";
 
-const overrides = new WeakMap<Hub, Partial<NaviBridge>>();
+const overrides = new WeakMap<Hub, Partial<AskBridge>>();
 
-/** For tests: `bridge`'s methods in place of the navi area's, on this hub only. */
-export const setNaviBridge = (hub: Hub, bridge: Partial<NaviBridge>) => overrides.set(hub, bridge);
+/** For tests: `bridge`'s methods in place of the project-lead area's, on this hub only. */
+export const setAskBridge = (hub: Hub, bridge: Partial<AskBridge>) => overrides.set(hub, bridge);
 
-/** The hub's navi bridge: `naviBridge(hub).factoryStatus(…)`. */
-export const naviBridge = (hub: Hub): NaviBridge => ({ ...bridgeOf(hub), ...overrides.get(hub) });
+/** The hub's ask bridge: `askBridge(hub).factoryStatus(…)`. */
+export const askBridge = (hub: Hub): AskBridge => ({ ...bridgeOf(hub), ...overrides.get(hub) });
 
 /** Whether `r` is a project here, an archived one only when `archived` (bridge.rs `is_project`). */
 export const isProject = (hub: Hub, r: ProjectRef, archived: boolean) =>

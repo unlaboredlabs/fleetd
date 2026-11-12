@@ -1,9 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
-import { setNaviBridge } from "../src/hub/hub_links/bridge.ts";
+import { setAskBridge } from "../src/hub/hub_links/bridge.ts";
 import { start as startLinks } from "../src/hub/hub_links/loops.ts";
-import { found } from "../src/hub/navi/bridge.ts";
+import { found } from "../src/hub/project_lead/bridge.ts";
 import { boxKey, checkUrl, linkGrants, reachableUrl, verify } from "../src/hub/hub_links/store.ts";
 import { followOnce, retryDelayMs, failedReads } from "../src/hub/hub_links/client.ts";
 import { leadWakes } from "../src/hub/api/leads.ts";
@@ -25,11 +25,11 @@ const project = (hub: Hub, machineId: string, projectId: string, title: string) 
     { machineId, projectId, title, workspaceRoot: `/w/${projectId}`, lastActivityAt: "2026-11-08T10:00:00.000Z" } as never,
   ]);
 
-// The hub whose projects the link reaches, served over HTTP; its navi bridge faked.
+// The hub whose projects the link reaches, served over HTTP; its inbox bridge faked.
 const there = testHub({ home: homes[0]?.dir });
 project(there.hub, "lab-a", "p1", "Site");
 let feedItems = [{ handle: "A7", title: "Site", what: "order opened" }];
-setNaviBridge(there.hub, {
+setAskBridge(there.hub, {
   factoryStatus: () => ({ projects: [{ projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site", state: "idle", agentsRunning: 0, checklist: [], openOrders: [], asks: [] }] }),
   projectMessage: async () => ({ handle: "A7", projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site" }),
   feed: (_: string, after: number) => {
@@ -42,14 +42,14 @@ const server = serve(there.hub, there.tools, 0);
 done.push(() => stop(server));
 const THERE = `http://127.0.0.1:${server.port}`;
 
-// The hub with the Navi.
+// The hub with the project.
 const here = testHub({ home: homes[1]?.dir });
-project(here.hub, "devbox", "navi", "Navi");
+project(here.hub, "devbox", "inbox", "project");
 const sent = new Map<string, string>();
-setNaviBridge(here.hub, {
+setAskBridge(here.hub, {
   mayUse: () => {},
   recordSent: (_from: unknown, _link: string, s: { handle: string }) => (sent.set(s.handle, "H1"), "H1"),
-  askSent: (_link: string, remote: string) => (sent.has(remote) ? { handle: sent.get(remote) as string, from: { machineId: "devbox", projectId: "navi" } } : undefined),
+  askSent: (_link: string, remote: string) => (sent.has(remote) ? { handle: sent.get(remote) as string, from: { machineId: "devbox", projectId: "inbox" } } : undefined),
 });
 const wakes: string[] = [];
 leadWakes(here.hub).trigger = (_r, t) => {
@@ -90,11 +90,11 @@ test("a link added to a project here, sealed to this hub, follows the feed there
   const got = await here.call<{ boxPubKey: string }>(me, "hub_links_get", {});
   expect(Buffer.from(got.boxPubKey, "base64")).toEqual(Buffer.from(publicKeyOf(boxKey(here.hub))));
   const sealed = Buffer.from(seal(Buffer.from(got.boxPubKey, "base64"), new TextEncoder().encode(`${key}\n`))).toString("base64");
-  expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "navi" }, label: "Work", url: "http://203.0.113.9:4790", sealed }))).message).toBe(
+  expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "inbox" }, label: "Work", url: "http://203.0.113.9:4790", sealed }))).message).toBe(
     "http://203.0.113.9:4790 is plain HTTP off a tailnet: the link key would cross the network in the clear.",
   );
   const added = await here.call<{ link: { linkId: string; state: string; who?: string }; projects: unknown[] }>(me, "hub_link_add", {
-    project: { machineId: "devbox", projectId: "navi" },
+    project: { machineId: "devbox", projectId: "inbox" },
     label: "Work",
     url: `${THERE}/`,
     sealed,
@@ -102,13 +102,13 @@ test("a link added to a project here, sealed to this hub, follows the feed there
   expect(added.link.state).toBe("ok");
   expect(added.link.who).toBe(minter.person?.name as string);
   expect(added.projects).toEqual([{ projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site" }]);
-  expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "navi" }, label: "work", url: THERE, sealed }))).message).toBe(
+  expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "inbox" }, label: "work", url: THERE, sealed }))).message).toBe(
     "This project has a linked hub called work already.",
   );
 
-  // What the navi bridge lists as the project's linked hubs, through the hooks this area's start sets.
+  // What the inbox bridge lists as the project's linked hubs, through the hooks this area's start sets.
   startLinks(here.hub);
-  expect(found.linked?.(here.hub, { machineId: "devbox", projectId: "navi" })).toEqual([{ label: "Work", state: "ok" }]);
+  expect(found.linked?.(here.hub, { machineId: "devbox", projectId: "inbox" })).toEqual([{ label: "Work", state: "ok" }]);
   expect(typeof found.ask).toBe("function");
 
   sent.set("A7", "H1");

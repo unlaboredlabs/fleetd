@@ -1,4 +1,4 @@
-// Which requests only a person may answer, whatever the Navi's approval mode (purchases.ts, permissions.ts).
+// Which requests only a person may answer, whatever the project's approval mode (purchases.ts, permissions.ts).
 import type { HumanRequest } from "../../shared/contracts.ts";
 
 /** Payment command-line tools: a `gated_run` of one of these spends money, so it is a purchase's class too. */

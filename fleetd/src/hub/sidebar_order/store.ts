@@ -1,4 +1,4 @@
-// Each person's own order of the projects and Navis in their sidebar,
+// Each person's own order of the projects in their sidebar,
 // and the person a human key stands for.
 import type { Database } from "bun:sqlite";
 import type { ProjectRef } from "../../shared/contracts.ts";

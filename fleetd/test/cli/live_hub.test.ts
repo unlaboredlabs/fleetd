@@ -247,7 +247,7 @@ describe("which hub is the live one", () => {
       expect(isLiveHubUrl("http://100.64.0.1:4790")).toBe(true);
       expect(isLiveHubUrl("http://devbox.example:4790")).toBe(true);
       for (const url of ["http://127.0.0.1:4790", "http://localhost:4790"]) expect(isLiveHubUrl(url)).toBe(false);
-      expect(liveHubToolRefusal("http://127.0.0.1:4790/mcp", "navi_create")).toBeUndefined();
+      expect(liveHubToolRefusal("http://127.0.0.1:4790/mcp", "project_add")).toBeUndefined();
     } finally {
       writeFileSync(file, before);
     }
