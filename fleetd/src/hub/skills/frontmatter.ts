@@ -1,5 +1,5 @@
 // A SKILL.md's rules: its frontmatter, its description, its checks.
-import { linesOf } from "../memory/index.ts";
+import { linesOf } from "../memory/target.ts";
 
 export const SKILL_FILE = "SKILL.md";
 export const SKILL_TEXT_CAP = 64_000;
