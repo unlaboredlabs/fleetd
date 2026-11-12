@@ -1,17 +1,12 @@
 // The executor's session calls (`send`, `send_with`, `withdraw`,
 // `answer`, `interrupt`, `interrupt_now`, `runner_info`, `runner_refusal`, and the run reads the tasks area uses).
-import type { ClaudeAccount, DecidedBy, Effort, MachineId, PersonId, ProjectRef, ThreadRef, WorktreeSetup } from "../../shared/contracts.ts";
+import type { DecidedBy, MachineId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import { CAP_PROFILE_NAMES, CAP_SYSTEM_PROMPT } from "../../shared/node_link.ts";
 import type {
-  McpAgentRole,
   McpSessionConfig,
   PermissionDecision,
   RunnerInfo,
-  RuntimeMode,
   SendMode,
-  SessionLaunch,
-  SessionRole,
-  SessionWorkspace,
   SkillBundle,
   WorktreeBase,
 } from "../../shared/sessions.ts";
@@ -26,43 +21,12 @@ import * as repos from "../repos/store.ts";
 import { Skills } from "../skills/index.ts";
 import { ExecutorError, executors, LAUNCH_TIMEOUT_MS, READ_TIMEOUT_MS, uuidFrom } from "./index.ts";
 import { fromThread } from "./shell_mapper.ts";
+import { type LaunchInput, type LaunchOptions, launchCall, oldNodeLaunch, type SessionRules } from "./launch_call.ts";
 
-export type LaunchInput = {
-  projectId: string;
-  prompt: string;
-  /** The session's standing rules, kept out of `prompt` so a compaction never summarizes them. */
-  systemPrompt?: string;
-  /** The profile's name; one gone since runs on the default. */
-  profile: string;
-  runtimeMode: RuntimeMode;
-  title?: string;
-  /** The session and run ids derive from it, so a retried launch returns the same thread. */
-  clientRequestId: string;
-};
-
-export type LaunchOptions = {
-  /** Default: the project root. */
-  workspace?: SessionWorkspace;
-  role?: SessionRole;
-  mcpRole?: McpAgentRole;
-  orderId?: string;
-  setup?: WorktreeSetup;
-  /** These tools and no other, in place of the project's own allow rules. */
-  onlyTools?: string[];
-  /** These MCP servers instead of `mcpRole`'s, kept for the thread's life. */
-  mcp?: McpSessionConfig;
-  claudeAccount?: ClaudeAccount;
-  onepassword?: PersonId;
-  isolated?: boolean;
-  /** This model and effort in place of the profile's. */
-  model?: [string, Effort];
-};
+export { type LaunchGot, type LaunchInput, launchCall, type LaunchOptions, oldNodeLaunch, type SessionRules } from "./launch_call.ts";
 
 export type SendOpts = { mode?: SendMode; steer?: string; riders?: string[] };
 export type SendOutcome = { runId?: string; queued: boolean };
-
-/** What a project's policy file says about its sessions' claude: `tools.allow` and `tools.deny`. */
-export type SessionRules = { allow: string[]; deny: string[] };
 
 /**
  * The project policy file's tool rules (hub/policy `Policies::get(r).tools`), set by the policy area when it starts;
@@ -114,14 +78,6 @@ export function runnerRefusal(hub: Hub, m: MachineId, operation: "launch" | "sen
   const problem = runnerProblem(info);
   return problem === undefined ? undefined : ExecutorError.failed(m, operation, problem, runnerFix(info, m));
 }
-
-/** What a node from before named profiles reads: `high` or `medium`, an effort it knows, no fast mode. */
-const oldNodeLaunch = (c: Chosen): Chosen => ({
-  ...c,
-  profile: c.profile === "medium" ? "medium" : "high",
-  effort: c.effort === "xhigh" ? "high" : c.effort,
-  fast: false,
-});
 
 function mcpConfig(hub: Hub, r: ProjectRef): McpSessionConfig | undefined {
   try {
@@ -193,39 +149,9 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
     else prompt = `${system}\n\n${input.prompt}`;
   }
   if (prompt === "") throw ExecutorError.failed(m, "launch", "the prompt is empty");
-  const seed = `${m}\n${input.clientRequestId}`;
-  const sessionId = uuidFrom(`session\n${seed}`);
   const mcp = options.mcp ?? (options.mcpRole !== undefined ? mcpConfig(hub, r) : undefined);
-  const model = options.model?.[0] ?? chosen?.model;
-  const effort = options.model?.[1] ?? chosen?.effort;
-  const call: SessionLaunch = {
-    sessionId,
-    projectId: input.projectId,
-    title,
-    runner,
-    profile: chosen?.profile ?? input.profile,
-    ...(model !== undefined ? { model } : {}),
-    ...(effort !== undefined ? { effort } : {}),
-    ...(chosen?.fast ? { fast: true } : {}),
-    ...(chosen?.helperModel !== undefined ? { helperModel: chosen.helperModel } : {}),
-    runtimeMode: input.runtimeMode,
-    workspace: options.workspace ?? { type: "root" },
-    prompt,
-    ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-    runId: uuidFrom(`run\n${seed}`),
-    allowedTools: options.onlyTools ?? rules.allow,
-    disallowedTools: rules.deny,
-    ...(options.onlyTools !== undefined ? { allowedOnly: true } : {}),
-    role: options.role ?? "plain",
-    ...(options.mcpRole !== undefined ? { mcpRole: options.mcpRole } : {}),
-    ...(mcp !== undefined ? { mcp } : {}),
-    ...(skills.length > 0 ? { skills } : {}),
-    ...(options.orderId !== undefined ? { orderId: options.orderId } : {}),
-    ...(options.setup !== undefined ? { setup: options.setup } : {}),
-    ...(options.claudeAccount !== undefined ? { claudeAccount: options.claudeAccount } : {}),
-    ...(options.onepassword !== undefined ? { onepassword: options.onepassword } : {}),
-    ...(options.isolated ? { isolated: true } : {}),
-  };
+  const call = launchCall(m, input, options, { title, runner, chosen, rules, skills, mcp, prompt, systemPrompt });
+  const sessionId = call.sessionId;
   // Recorded before the session runs, so its first limit already counts against its account.
   if (options.claudeAccount !== undefined) {
     try {
