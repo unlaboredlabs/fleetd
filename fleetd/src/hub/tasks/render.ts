@@ -5,7 +5,7 @@ import type { Brief, Decision, MachineId, Task, TaskKind, TaskRecovery, TaskResu
 import type { WorktreeSource } from "../../shared/sessions.ts";
 import { jsPrefix, jsSuffix } from "../../shared/text.ts";
 import { type Ended, renderEvent } from "../leads/events.ts";
-import type { PromptSet } from "../prompts/store.ts";
+import type { PromptSet } from "../prompts/set.ts";
 import { line as baseLine } from "./base.ts";
 
 export const TAIL_MAX = 2000;

@@ -11,7 +11,6 @@ import type {
   MachineId,
   ProjectRef,
   RepoId,
-  Task,
   TaskId,
   TaskKind,
   ThreadRef,
@@ -51,70 +50,9 @@ import { usage } from "../usage/wire.ts";
 import { work } from "../work/index.ts";
 import type { CiGitHub, MergeReads } from "./ci_wait.ts";
 import { type BranchPrError, githubRepo, hostError } from "./pr.ts";
+import { PortError, portError, type LaunchRequest, workspaceOf } from "./launch.ts";
 
-/** How an executor call failed: the machine is not connected, or anything else (ports.rs `PortError`). */
-export class PortError extends Error {
-  constructor(
-    readonly offline: boolean,
-    message: string,
-  ) {
-    super(message);
-    this.name = "PortError";
-  }
-
-  static offline(machineId: MachineId): PortError {
-    return new PortError(true, `machine ${machineId} is not connected`);
-  }
-
-  /** The refusal a lead's call answers with. */
-  toToolError(machineId: MachineId): ToolError {
-    return this.offline
-      ? new ToolError(
-          "machine_offline",
-          `Machine ${machineId} has no live node link.`,
-          "Wait for the machine to come back online (fleetd_status shows it), then retry.",
-        )
-      : new ToolError("failed", this.message, "Retry; if it keeps failing, check the machine with fleetd_status.");
-  }
-}
-
-/** Any error from the executor as a port's: not connected is offline (wire.rs `port_error`). */
-export function portError(error: unknown): PortError {
-  if (error instanceof PortError) return error;
-  if (error instanceof ExecutorError && error.kind === "not_connected") return new PortError(true, error.message);
-  return new PortError(false, error instanceof Error ? error.message : String(error));
-}
-
-/** A task's thread launch (runtime mode full-access). */
-export type LaunchRequest = {
-  /** The node checkout it runs in: the project's own directory, or its repo's (W79). */
-  projectId: string;
-  /** The task's project and repo, whose setup commands a new worktree runs. */
-  projectRef: ProjectRef;
-  repoId?: RepoId;
-  prompt: string;
-  /** Its brief's rules and the human's custom instructions and memory. */
-  systemPrompt?: string;
-  profile: string;
-  title: string;
-  clientRequestId: string;
-  /** Which MCP servers its agent gets: a writer's, or a reviewer's for a read or review task. */
-  kind: TaskKind;
-  /** Write tasks: on its branch; read and review tasks: detached (`branch` undefined). */
-  worktree?: Worktree;
-  /** The task's order: its session gets the variables delivered for it. */
-  orderId?: WorkstreamId;
-};
-
-export type Worktree = {
-  baseRef: string;
-  /** Undefined: a detached worktree, for a read or review task. */
-  branch?: string;
-  /** A review's PR, whose head its detached worktree is at. */
-  pr?: string;
-  /** The task's earlier thread, whose worktree a fresh restart takes over. */
-  from?: string;
-};
+export { PortError, portError, type LaunchRequest, type Worktree, workspaceOf } from "./launch.ts";
 
 /** What a finished task thread changed. */
 export type ThreadChanges = { branch?: string; worktreePath?: string; paths: string[] };
@@ -302,17 +240,11 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
         let workspace: SessionWorkspace | undefined;
         const w = request.worktree;
         if (w) {
-          if (w.baseRef === "") throw new PortError(false, "a worktree needs a base ref");
-          if (w.branch !== undefined) {
-            if (w.branch === "") throw new PortError(false, "a worktree needs a branch");
-            workspace = { type: "worktree", baseRef: w.baseRef, branch: w.branch, ...(w.from !== undefined ? { fromSession: w.from } : {}) };
-          } else {
-            const pr = w.pr !== undefined && w.pr !== "" ? w.pr : undefined;
-            // The head the merge train has for the PR: a node with that commit asks no remote.
-            const parsed = pr !== undefined ? parsePrUrl(pr) : undefined;
-            const head = parsed ? changeRecords(hub).openFor(parsed.repo, parsed.number)?.headSha : undefined;
-            workspace = { type: "detached", baseRef: w.baseRef, ...(pr !== undefined ? { pr } : {}), ...(head ? { head } : {}) };
-          }
+          // The head the merge train has for the PR: a node with that commit asks no remote.
+          workspace = workspaceOf(w, (pr) => {
+            const parsed = parsePrUrl(pr);
+            return parsed ? changeRecords(hub).openFor(parsed.repo, parsed.number)?.headSha : undefined;
+          });
         }
         // Its order's starter's Claude account: refused when they have none here.
         const account = claudeForTask(hub.db, (machine) => nodeAccounts(hub, machine), request.projectRef, request.orderId, m);
