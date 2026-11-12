@@ -8,7 +8,6 @@ import type { Database } from "bun:sqlite";
 import type {
   ChatMessage,
   HubEvent,
-  HumanRequest,
   PersonId,
   ProjectRef,
   PushDevice,
@@ -19,7 +18,6 @@ import type { Hub } from "../api/hub.ts";
 import { quietPolicy, quietUntil } from "../attention/index.ts";
 import { openRequests } from "../approvals/index.ts";
 import { Requests } from "../approvals/store.ts";
-import { shownArgv } from "../approvals/text.ts";
 import { base32 } from "../auth/nodes.ts";
 import { chat } from "../chat/index.ts";
 import { boxKey } from "../hub_links/store.ts";
@@ -28,11 +26,41 @@ import { ownerOn } from "../people/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import {
+  DEFAULT_RELAY,
+  isLine,
+  type Notice,
+  noticeOf,
+  noticeShape,
+  type Outcome,
+  outcomeOf,
+  payloadJson,
+  type RelayPush,
+  relayRequest,
+  type RelaySetting,
+  sendable,
+} from "./payload.ts";
 
-/** The longest body before the payload is cut to PUSH_PAYLOAD_MAX. */
-const BODY_MAX = 1000;
-export const PUSH_PAYLOAD_MAX = 2400;
-export const PUSH_DEVICES_MAX = 20;
+export {
+  approvalNotice,
+  cut,
+  DEFAULT_RELAY,
+  defaultHost,
+  type Notice,
+  type Outcome,
+  payloadJson,
+  plain,
+  PUSH_DEVICES_MAX,
+  PUSH_PAYLOAD_MAX,
+  type PushCategory,
+  type PushKind,
+  type PushPayload,
+  type RelayPush,
+  type RelaySetting,
+  sendable,
+  shownWhole,
+} from "./payload.ts";
+
 /** Chat messages already sent, so a final message announced again isn't sent twice. */
 const SENT_MEMORY = 500;
 /** How long a failure logged stays quiet. */
@@ -40,14 +68,6 @@ const WARN_EVERY_MS = 60 * 60 * 1000;
 const RELAY_TIMEOUT_MS = 15_000;
 /** The waits before posting again a push that never reached the relay (no connection). */
 const RECONNECT_MS = [1000, 3000];
-/** The longest command a notification offers Approve for. */
-const APPROVE_MAX = 200;
-
-/**
- * The relay every hub sends through until `fleetd push-relay set` says otherwise (D225). Tests never reach it: they
- * set their own relay, or pass `defaultRelay` to `Follow`.
- */
-export const DEFAULT_RELAY = "https://push.fleetd.sh";
 
 const B64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
@@ -57,9 +77,6 @@ const newId = () => `pd_${base32(crypto.getRandomValues(new Uint8Array(5)))}`;
 const COLUMNS = "device_id, platform, name, created_ms, last_sent_ms";
 
 type DeviceRow = { device_id: string; platform: string; name: string; created_ms: number; last_sent_ms: number | null };
-
-/** A `Line`: one line of 1 to 200 characters. */
-const isLine = (s: string) => s.trim() !== "" && [...s].length <= 200 && !/[\r\n]/.test(s);
 
 function readDevice(row: DeviceRow): PushDevice {
   return {
@@ -111,9 +128,6 @@ export function remove(c: Database, person: PersonId, id: string): PushDevice | 
   return readDevice(row);
 }
 
-/** The hub's push relay. */
-export type RelaySetting = { url: string; keySealed?: string };
-
 /**
  * The hub's push relay as set; `fallback` (normally DEFAULT_RELAY) without a key when never set; undefined when pushes
  * are turned off (a row with an empty URL).
@@ -123,30 +137,6 @@ export function relay(c: Database, fallback: string): RelaySetting | undefined {
   if (!row) return { url: fallback };
   if (row.url === "") return undefined;
   return { url: row.url, ...(row.key_sealed === null ? {} : { keySealed: row.key_sealed }) };
-}
-
-const hostOf = (u: string) => {
-  try {
-    const h = new URL(u).hostname.toLowerCase();
-    return h === "" ? undefined : h;
-  } catch {
-    return undefined;
-  }
-};
-
-/** Whether `url` points at the default relay's host: it gets no key, and only https. */
-export const defaultHost = (url: string) => {
-  const h = hostOf(url);
-  return h !== undefined && h === hostOf(DEFAULT_RELAY);
-};
-
-/** The sealed key to send `r`, after `defaultHost`'s rule; a string error when it can't be sent at all. */
-export function sendable(r: RelaySetting): { key?: string } | { error: string } {
-  if (!defaultHost(r.url)) return r.keySealed === undefined ? {} : { key: r.keySealed };
-  if (!r.url.startsWith("https://")) {
-    return { error: `${r.url} is sent to over https only: set it again with \`fleetd push-relay set ${DEFAULT_RELAY}\`` };
-  }
-  return {};
 }
 
 /** Sets the hub's push relay: undefined goes back to DEFAULT_RELAY, an empty URL turns pushes off. */
@@ -182,142 +172,6 @@ function targets(c: Database, person: PersonId): Target[] {
 /** Seals `plain` to a device's X25519 public key: a libsodium sealed box, standard base64. */
 export const seal = (publicKey: Uint8Array, plain: Uint8Array) => B64(sealBox(publicKey, plain));
 
-export type PushKind = "message" | "approval" | "order" | "alert";
-export type PushCategory = "approve" | "review" | "reply";
-
-/** The plaintext a notification seals (fleetd-contracts push.rs `PushPayload`). */
-export type PushPayload = {
-  v: 1;
-  kind: PushKind;
-  title: string;
-  body: string;
-  hub: string;
-  machineId?: string;
-  projectId?: string;
-  threadId?: string;
-  messageId?: string;
-  requestId?: string;
-  sessionId?: string;
-  urgent?: true;
-  quiet?: true;
-  category?: PushCategory;
-  badge?: number;
-  at: string;
-};
-
-/** The payload's JSON in the Rust struct's field order, absent fields left out. */
-function payloadText(p: PushPayload): string {
-  const order: (keyof PushPayload)[] = [
-    "v", "kind", "title", "body", "hub", "machineId", "projectId", "threadId", "messageId", "requestId", "sessionId",
-    "urgent", "quiet", "category", "badge", "at",
-  ];
-  const out: Record<string, unknown> = {};
-  for (const k of order) if (p[k] !== undefined) out[k] = p[k];
-  return JSON.stringify(out);
-}
-
-/** `text` on one line, at most `max` characters with "…" when cut. */
-export function cut(text: string, max: number): string {
-  const flat = text.split(/\s+/u).filter((w) => w !== "").join(" ");
-  const chars = [...flat];
-  if (chars.length <= max) return flat;
-  return `${chars.slice(0, Math.max(0, max - 1)).join("")}…`;
-}
-
-/**
- * The payload's JSON, its body cut until it fits PUSH_PAYLOAD_MAX. An approval whose body had to be cut is no longer
- * its whole command, so it is reviewed in the app.
- */
-export function payloadJson(payload: PushPayload): Uint8Array {
-  const p = { ...payload };
-  const whole = p.body;
-  p.body = cut(p.body, BODY_MAX);
-  for (;;) {
-    if (p.category === "approve" && p.body !== whole) p.category = "review";
-    const json = Buffer.from(payloadText(p), "utf8");
-    const chars = [...p.body].length;
-    if (json.length <= PUSH_PAYLOAD_MAX || chars === 0) return new Uint8Array(json);
-    const over = json.length - PUSH_PAYLOAD_MAX;
-    p.body = cut(p.body, Math.max(0, chars - Math.max(over, 8)));
-  }
-}
-
-/** A notification before it is addressed and sealed. */
-export type Notice = { payload: PushPayload; people: PersonId[]; collapse?: string };
-
-/** The project an event names: at its top level, or (chat events) in `data.projectRef`. */
-function projectOf(event: HubEvent): ProjectRef | undefined {
-  if (event.machineId !== undefined && event.projectId !== undefined) {
-    return { machineId: event.machineId, projectId: event.projectId };
-  }
-  const r = (event.data as { projectRef?: { machineId?: unknown; projectId?: unknown } } | undefined)?.projectRef;
-  return r && typeof r.machineId === "string" && typeof r.projectId === "string"
-    ? { machineId: r.machineId, projectId: r.projectId }
-    : undefined;
-}
-
-/** A short opaque key: the relay and Apple see it, so it names nothing. */
-const collapseKey = (what: string) => new Bun.CryptoHasher("sha256").update(what).digest("hex").slice(0, 16);
-
-function finalLeadMessage(hub: Hub, event: HubEvent, r: ProjectRef): ChatMessage | undefined {
-  const data = event.data as Record<string, unknown> | undefined;
-  if (!data || data.author !== "lead" || data.state !== "final") return undefined;
-  if (data.message !== undefined) return data.message as ChatMessage;
-  // Too big for the event: read it from the chat.
-  if (typeof data.seq !== "number") return undefined;
-  try {
-    const row = hub.db.conn
-      .query<{ data: string }, [string, string, number]>(
-        "SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND seq = ?",
-      )
-      .get(r.machineId, r.projectId, data.seq);
-    return row ? (JSON.parse(row.data) as ChatMessage) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Whether `text` reads on a lock screen exactly as it runs: one line of at most APPROVE_MAX characters, plain. */
-export const shownWhole = (text: string) => text.trim() !== "" && [...text].length <= APPROVE_MAX && plain(text);
-
-/** The characters that hide or reorder text (push/mod.rs `plain`; app/desktop/src/shared/hidden.ts's class). */
-const HIDDEN =
-  /[\p{Cc}\u2028\u2029\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\u200B-\u200D\u2060-\u2064\uFEFF\u180E\u00AD\u034F\u115F\u1160\u3164\uFFA0\u17B4\u17B5\uFE00-\uFE0F\u{E0000}-\u{E007F}\u206A-\u206F\uFFF9-\uFFFB\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}]/u;
-
-/** Whether `text` holds nothing that hides or reorders text. */
-export const plain = (text: string) => !HIDDEN.test(text);
-
-/**
- * An approval's body and what the notification may do about it: Approve and Deny only when the body is everything the
- * card would show, whole on one line (D183/D193). A secret is entered in the app, so it gets no action.
- */
-export function approvalNotice(r: HumanRequest): [string, PushCategory | undefined] {
-  const why = r.text.trim().replace(/[.:]+$/, "");
-  let what = "";
-  let answerable = false;
-  if (r.gated) {
-    const g = r.gated;
-    const argv = shownArgv(g.argv);
-    what = g.cwd !== undefined ? `${argv} (in ${g.cwd})` : argv;
-    const isPlain = g.argv.every((w) => w === "" || shownWhole(w)) && shownWhole(what);
-    const safe = isPlain && g.class !== "money" && g.class !== "irreversible";
-    const secret = (g.secretEnv?.length ?? 0) > 0;
-    answerable = safe && !secret;
-  } else if (r.permission) {
-    const p = r.permission;
-    const input = p.input as { command?: unknown } | undefined;
-    const command = typeof input?.command === "string" ? input.command : undefined;
-    const whole = p.toolName === "Bash" && command === p.summary && shownWhole(p.summary);
-    what = `${p.toolName} ${p.summary}`;
-    answerable = whole && p.preview === undefined && p.site === undefined;
-  }
-  if (r.kind === "secret") return [why, undefined];
-  const exact = what.trim() !== "" && cut(what, BODY_MAX) === what;
-  const body = what === "" ? why : `${why}: ${what}`;
-  // The reason shows just before the command: a right-to-left mark at its end would flip how the command reads.
-  return [body, answerable && exact && plain(why) ? "approve" : "review"];
-}
-
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 /**
@@ -336,78 +190,39 @@ export function badge(hub: Hub, person: PersonId): number {
   return count;
 }
 
+/** A lead's final message the event was too big to carry, read from the chat. */
+function messageAt(hub: Hub, r: ProjectRef, seq: number): ChatMessage | undefined {
+  try {
+    const row = hub.db.conn
+      .query<{ data: string }, [string, string, number]>(
+        "SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND seq = ?",
+      )
+      .get(r.machineId, r.projectId, seq);
+    return row ? (JSON.parse(row.data) as ChatMessage) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The notification `event` makes, if it is one a person is pushed for. */
 export function notice(hub: Hub, event: HubEvent): Notice | undefined {
-  const project = projectOf(event);
-  const data = event.data as Record<string, unknown> | undefined;
-  const text = (k: string) => (typeof data?.[k] === "string" ? (data[k] as string) : undefined);
-  let messageId: string | undefined;
-  let requestId: string | undefined;
-  let sessionId: string | undefined;
-  let collapse: string | undefined;
-  let category: PushCategory | undefined;
-  let kind: PushKind;
-  let body: string;
-  if (event.type === "chat.message") {
-    if (!project) return undefined;
-    const m = finalLeadMessage(hub, event, project);
-    // An inline item (a command to approve, a secret to give) has no text: its request is pushed instead.
-    if (!m || m.text.trim() === "") return undefined;
-    messageId = m.messageId;
-    category = "reply";
-    [kind, body] = ["message", m.text];
-  } else if (event.type === "workstream.done") {
-    // A Navi's automation run closed by itself (D277): its reply was the notification.
-    if (text("by")?.startsWith("automation:")) return undefined;
-    [kind, body] = ["order", event.summary];
-  } else if (event.type === "workstream.state" && text("state") === "stopped") {
-    [kind, body] = ["order", event.summary];
-  } else if (event.attention !== undefined) {
-    const id = event.type === "request.opened" ? text("requestId") : undefined;
-    const screen = event.type === "browser.session" ? text("sessionId") : undefined;
-    if (id !== undefined) {
-      requestId = id;
-      collapse = collapseKey(`request/${id}`);
-      const r = new Requests(hub.db).get(id);
-      if (r && r.state === "open") [body, category] = approvalNotice(r);
-      else body = event.summary;
-      kind = "approval";
-    } else if (screen !== undefined) {
-      // A screen whose agent asks for the person (`request_takeover`): one notification per screen.
-      sessionId = screen;
-      collapse = collapseKey(`screen/${screen}`);
-      [kind, body] = ["alert", event.summary];
-    } else [kind, body] = ["alert", event.summary];
-  } else return undefined;
-  const people = recipients(hub.db.conn, project);
-  if (people.length === 0) return undefined;
-  const found = project ? store(hub).projectGet(project)?.title : undefined;
-  const title = found !== undefined && found.trim() !== "" ? found : "fleetd";
-  // The title shows above the command too.
-  if (category === "approve" && !plain(title)) category = "review";
-  const urgent = event.attention === "urgent";
+  const shape = noticeShape(event);
+  if (!shape) return undefined;
+  const project = shape.project;
+  let message: ChatMessage | undefined;
+  if (shape.kind === "message") {
+    // Too big for the event: read it from the chat.
+    message = shape.message ?? (shape.seq === undefined ? undefined : messageAt(hub, shape.project, shape.seq));
+  }
   const [tz, quietHours] = quietPolicy((k) => decisions(hub).globalValue(k));
-  const quiet = !urgent && quietUntil(hub.clock.now(), tz, quietHours) !== undefined;
-  return {
-    payload: {
-      v: 1,
-      kind,
-      title: cut(title, 80),
-      body,
-      hub: hub.url(),
-      ...(project ? { machineId: project.machineId, projectId: project.projectId } : {}),
-      ...(event.threadId === undefined ? {} : { threadId: event.threadId }),
-      ...(messageId === undefined ? {} : { messageId }),
-      ...(requestId === undefined ? {} : { requestId }),
-      ...(sessionId === undefined ? {} : { sessionId }),
-      ...(urgent ? { urgent: true as const } : {}),
-      ...(quiet ? { quiet: true as const } : {}),
-      ...(category === undefined ? {} : { category }),
-      at: event.at,
-    },
-    people,
-    ...(collapse === undefined ? {} : { collapse }),
-  };
+  return noticeOf(event, shape, {
+    message,
+    request: shape.kind === "approval" ? new Requests(hub.db).get(shape.requestId) : undefined,
+    people: recipients(hub.db.conn, project),
+    title: project ? store(hub).projectGet(project)?.title : undefined,
+    quietNow: quietUntil(hub.clock.now(), tz, quietHours) !== undefined,
+    hubUrl: hub.url(),
+  });
 }
 
 /**
@@ -449,24 +264,14 @@ export function recipients(c: Database, project: ProjectRef | undefined): Person
   return on ? [on.person_id] : [];
 }
 
-/** What became of one push. */
-export type Outcome = { kind: "sent" } | { kind: "dead" } | { kind: "failed"; why: string };
-
-export type RelayPush = { platform: PushPlatform; token: string; ciphertext: string; collapseKey?: string };
-
 /** Posts one sealed notification to the relay, with its key when it has one. */
 export async function post(relayUrl: string, key: string | undefined, push: RelayPush): Promise<Outcome> {
-  const url = `${relayUrl.replace(/\/+$/, "")}/v1/push`;
+  const { url, init } = relayRequest(relayUrl, key, push);
   const waits = [...RECONNECT_MS];
   let answer: Response;
   for (;;) {
     try {
-      answer = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...(key === undefined ? {} : { authorization: `Bearer ${key}` }) },
-        body: JSON.stringify(push),
-        signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
-      });
+      answer = await fetch(url, { ...init, signal: AbortSignal.timeout(RELAY_TIMEOUT_MS) });
       break;
     } catch (error) {
       const wait = waits.shift();
@@ -475,17 +280,13 @@ export async function post(relayUrl: string, key: string | undefined, push: Rela
       await Bun.sleep(wait);
     }
   }
-  const status = `${answer.status} ${answer.statusText}`.trim();
-  let body: { status?: string; error?: string } | undefined;
+  let body: unknown;
   try {
-    body = (await answer.json()) as typeof body;
+    body = await answer.json();
   } catch {
     body = undefined;
   }
-  if (body?.status === "sent" && answer.ok) return { kind: "sent" };
-  if (body?.status === "dead") return { kind: "dead" };
-  if (body?.status === "failed" && typeof body.error === "string") return { kind: "failed", why: `${status}: ${body.error}` };
-  return { kind: "failed", why: `the relay answered ${status}` };
+  return outcomeOf(answer, body);
 }
 
 /** The loop's memory between pages. */

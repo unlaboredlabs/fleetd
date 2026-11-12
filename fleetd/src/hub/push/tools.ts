@@ -4,13 +4,14 @@
 import type { PersonId } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
+import { isBase64 } from "../../shared/text.ts";
 import { isHuman } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import type { Hub } from "../api/hub.ts";
-import { isBase64 } from "../hub_links/tools.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { badge, DEFAULT_RELAY, defaultHost, list, PUSH_DEVICES_MAX, register as registerDevice, relay, type RelaySetting, remove, setRelay } from "./index.ts";
+import { httpUrl } from "./payload.ts";
 
 /** The caller's person: phones are a person's, so only a person's own device registers or reads them. */
 function person(caller: Caller): PersonId {
@@ -47,16 +48,6 @@ function reseal(hub: Hub, sealed: string): string {
   const trimmed = plain?.trim();
   if (trimmed === undefined || trimmed === "" || /\s/u.test(trimmed)) throw refused();
   return Buffer.from(seal(publicKeyOf(key), new TextEncoder().encode(trimmed))).toString("base64");
-}
-
-/** Whether `url` is an http(s) URL with a host and no query. */
-function httpUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (u.protocol === "http:" || u.protocol === "https:") && u.hostname !== "" && u.search === "" && !url.includes("?");
-  } catch {
-    return false;
-  }
 }
 
 export function register(tools: Registry): void {

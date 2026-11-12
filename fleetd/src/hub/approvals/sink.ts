@@ -1,7 +1,7 @@
 // Secret sinks and variable names (project_settings.rs `env_name_reserved`, and
 // approvals' own `parse_secret_sink`).
 
-import { SEAL_OVERHEAD } from "../../shared/sealed_box.ts";
+import { SEAL_OVERHEAD } from "../../shared/sealed_box_core.ts";
 
 export { SEAL_OVERHEAD };
 /** The most a sealed secret holds. */

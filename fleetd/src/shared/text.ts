@@ -48,3 +48,6 @@ export function jsSuffix(s: string, max: number): string {
 
 /** `text` if it fits in `max` UTF-16 units, else "…" and its last `max - 1`. */
 export const keepTail = (text: string, max: number) => (text.length <= max ? text : `…${jsSuffix(text, max - 1)}`);
+
+/** Standard base64 with its padding, as Rust's `STANDARD` engine decodes it. */
+export const isBase64 = (text: string) => text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
