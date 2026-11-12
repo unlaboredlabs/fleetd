@@ -5,7 +5,7 @@
 // A self-hosted hub never shows any of this: its People keeps the invite link (Invites.tsx).
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Mail } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { InviteRequest } from "../../../shared/cloud";
 import type { AccountsInvite } from "../../../shared/contracts";
 import type { PairFailure } from "../../../shared/pairing";
@@ -25,13 +25,26 @@ const said = (f: PairFailure): string => (f.fix === undefined ? f.message : `${f
 
 const key = (hub: string) => ["cloud_invites", hub] as const;
 
-/** The team's open invites by email, newest first. */
-export function useEmailInvites(enabled: boolean) {
+/**
+ * The team's open invites by email, newest first. No hub event names them, so they are read again with the people
+ * (`peopleReadAt`, people_list's read time, which people.changed renews): someone joining leaves the list at once, as
+ * does an invite another admin made or revoked. Opening the page reads them afresh too.
+ */
+export function useEmailInvites(enabled: boolean, peopleReadAt: number) {
   const hub = useHub().id;
+  const client = useQueryClient();
+  // The people's first read comes with the page's own read of the invites; only a read after it asks again.
+  const seen = useRef(peopleReadAt);
+  useEffect(() => {
+    const first = seen.current === 0;
+    seen.current = peopleReadAt;
+    if (enabled && !first && peopleReadAt > 0) void client.invalidateQueries({ queryKey: key(hub) });
+  }, [client, hub, enabled, peopleReadAt]);
   return useQuery({
     queryKey: key(hub),
     enabled,
     retry: false,
+    staleTime: 0,
     queryFn: async (): Promise<ReadonlyArray<AccountsInvite>> => {
       const out = await window.fleetd.cloud.invites(hub);
       if (!out.ok) throw new Error(said(out.failure));
@@ -80,11 +93,13 @@ function EmailInviteForm() {
         setLine({ text: `Invite sent to ${out.invite.email}. They get an email, and join by signing in with it.`, refused: false });
         void client.invalidateQueries({ queryKey: key(hub.id) });
       })
+      .catch(() => setLine({ text: "This app couldn't send that. Check the address, then try again.", refused: true }))
       .finally(() => setBusy(false));
   };
   return (
     <form
       aria-label="Invite by email"
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
         send();
@@ -163,10 +178,14 @@ function EmailInviteRow({ invite: i }: { invite: AccountsInvite }) {
     void window.fleetd.cloud
       .revokeInvite(hub, i.inviteId)
       .then((out) => {
-        if (out.ok) void client.invalidateQueries({ queryKey: key(hub) });
-        else setError(`Not revoked: ${said(out.failure)}`);
+        if (!out.ok) setError(`Not revoked: ${said(out.failure)}`);
       })
-      .finally(() => setBusy(false));
+      .catch(() => setError("Not revoked: this app couldn't ask the team. Try again."))
+      .finally(() => {
+        setBusy(false);
+        // Either way the list is read again: a refused revoke is mostly an invite used or gone meanwhile.
+        void client.invalidateQueries({ queryKey: key(hub) });
+      });
   };
   return (
     <SettingsListRow

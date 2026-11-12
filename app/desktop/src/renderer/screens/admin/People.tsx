@@ -55,7 +55,7 @@ export function People({ me }: { me: Person | undefined }) {
   const canInvite = live && !lacksPeople(read.error);
   // A cloud team's owners and admins invite by email; the team refuses anyone else, so nobody else is offered it.
   const byEmail = useHub().cloud === true && (me?.role === "owner" || me?.role === "admin");
-  const emailInvites = useEmailInvites(live && byEmail);
+  const emailInvites = useEmailInvites(live && byEmail, read.dataUpdatedAt);
   return (
     <div className={s.scroll} data-screen="settings.hub.people">
       <div className={s.column}>
