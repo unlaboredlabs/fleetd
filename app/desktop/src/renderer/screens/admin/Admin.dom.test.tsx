@@ -40,7 +40,6 @@ const people: PeopleListOutput = {
   devices: [device("k1", "MacBook", sam), device("k2", "ThinkPad", alice), device("k3", "iMac", bob)],
   invites: [{ inviteId: "inv_aaaaaaaa", person: { personId: "p_dddddddd", name: "Dana Ito" }, state: "open", createdAt: AT, expiresAt: new Date(Date.now() + 6.5 * 86_400_000).toISOString(), createdBy: ref(sam) }],
   me: sam.personId,
-  left: [{ machineId: "devbox", projectId: "diary", title: "Diary", path: "/home/devbox/diary", owner: { personId: "p_ffffffff", name: "Lee Park" } }],
 };
 const LINK = "fleetd://pair?hub=http%3A%2F%2Fdevbox%3A4790&code=ABCD-2345";
 
@@ -317,17 +316,6 @@ it("removes a person once confirmed", async () => {
   expect(document.body.textContent).toContain("Their 1 device is signed out at once.");
   await click(button("Remove Bob Okafor"));
   expect(sent("person_remove")).toEqual([{ personId: "p_cccccccc" }]);
-});
-
-it("lists a removed person's projects by name alone, with Delete", async () => {
-  window.location.hash = "#/settings/hub/people";
-  await render({ me: sam, admin: true });
-  const left = row("Diary");
-  expect(left.textContent).toContain("Lee Park's");
-  await click(button("Delete", left));
-  // Its machine isn't in this test's hub, so the delete only forgets it in fleetd.
-  await click(button("Forget project"));
-  expect(sent("project_remove")).toEqual([{ machineId: "devbox", projectId: "diary" }]);
 });
 
 it("never offers an admin a change to the owner", async () => {

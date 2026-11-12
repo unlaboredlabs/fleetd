@@ -179,19 +179,12 @@ export const rows = (text: string, found: ReadonlyArray<Found>): { rows: Readonl
   return { rows: out, selected: pasted >= 0 ? pasted : Math.max(adds, 0) };
 };
 
-/** An add; `onlyMe`: only the person adding it sees and uses the project. */
-export type Request = (
+/** An add. */
+export type Request =
   | { readonly kind: "clone"; readonly repo: string; readonly machineId: string; readonly useExisting: boolean }
   | { readonly kind: "folder"; readonly machineId: string; readonly path: string }
   /** The hub makes the folder at `path` and adds it: a plain folder, or a git repo with no remote when `gitInit`. */
-  | { readonly kind: "new"; readonly machineId: string; readonly name: string; readonly path: string; readonly gitInit: boolean }
-) & { readonly onlyMe?: boolean };
-
-/**
- * Where Only me starts: on for a project with no repo (a new folder, or a typed one fleetd found no checkout at), off
- * for a clone or a checkout it found, which teammates likely share.
- */
-export const onlyMeFirst = (p: Plan): boolean => p.kind === "new" || (p.kind === "folder" && !p.fixed);
+  | { readonly kind: "new"; readonly machineId: string; readonly name: string; readonly path: string; readonly gitInit: boolean };
 
 /** What Enter or the primary button does for the selected row. */
 export type Plan =

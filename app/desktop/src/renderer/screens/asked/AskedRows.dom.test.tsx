@@ -30,7 +30,7 @@ const summary = (title: string, extra: Partial<ProjectSummary> = {}): ProjectSum
   ...extra,
 });
 const STOREFRONT = summary("storefront");
-const ADA = summary("Ada", { onlyMe: true });
+const ADA = summary("Ada");
 
 const snapshot = (cursor: number, projects: ProjectSummary[]): HubFrame => {
   const snap: FleetStatus = {

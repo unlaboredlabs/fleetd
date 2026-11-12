@@ -1,4 +1,4 @@
-// only-me's projects (fixtures/only-me), shared with the QA registry.
+// no-repo's projects (fixtures/no-repo), shared with the QA registry.
 export const ADA = { machineId: "devbox", projectId: "6dd9376b-4709-44a8-869e-fb5645046d52" } as const;
 export const HOME = { machineId: "devbox", projectId: "b9c1435a-fb02-4e0a-87ce-9d5e779c55a2" } as const;
 export const TAXES = { machineId: "devbox", projectId: "daa6878e-1e3b-487d-8851-ea82b172a2cc" } as const;
@@ -9,5 +9,5 @@ export const ADA_ROUTE = `#/project/${ADA.machineId}/${ADA.projectId}`;
 /** Taxes' chat: an archived project, still open. */
 export const TAXES_ROUTE = `#/project/${TAXES.machineId}/${TAXES.projectId}`;
 
-/** Home's chat: only-me-files' files both ways, only-me-pictures' pictures. */
+/** Home's chat: no-repo-files' files both ways, no-repo-pictures' pictures. */
 export const HOME_ROUTE = `#/project/${HOME.machineId}/${HOME.projectId}`;

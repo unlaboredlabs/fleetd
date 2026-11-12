@@ -211,10 +211,10 @@ describe("HubClient", () => {
     const calls = hub.sent.filter((m) => m["t"] === "call");
     expect(calls.map((c) => c["id"])).toEqual(["c1", "c2", "c3"]);
     hub.frame({ t: "result", id: "c1", output: { cursor: 3 } });
-    hub.frame({ t: "error", id: "c2", code: "forbidden", message: "This key lacks the operate role.", fix: "Use an operator key.", reason: "no_only_me_project" });
+    hub.frame({ t: "error", id: "c2", code: "forbidden", message: "This key lacks the operate role.", fix: "Use an operator key.", reason: "no_project" });
     await expect(ok).resolves.toEqual({ ok: true, output: { cursor: 3 } });
     // Which refusal it is goes through with it, for a screen that acts on one.
-    await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden", fix: "Use an operator key.", reason: "no_only_me_project" } });
+    await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden", fix: "Use an operator key.", reason: "no_project" } });
     vi.advanceTimersByTime(1000);
     await expect(slow).resolves.toMatchObject({ ok: false, error: { code: "timeout" } });
     // A late answer to a timed-out call is ignored.

@@ -101,11 +101,11 @@ const project = (machineId: string, projectId: string): HubFrame => {
   };
 };
 
-/** A hub with a project and an Only-me one of its own. */
-const withOwn = (machineId: string, projectId: string, own: string): HubFrame => {
+/** A hub with two projects, the second one newer. */
+const withTwo = (machineId: string, projectId: string, own: string): HubFrame => {
   const frame = project(machineId, projectId);
   if (frame.t !== "snapshot") throw new Error("not a snapshot");
-  const mine = { machineId, projectId: own, title: own, onlyMe: true as const, workspaceRoot: `/srv/${own}`, lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 } };
+  const mine = { machineId, projectId: own, title: own, workspaceRoot: `/srv/${own}`, lastActivityAt: new Date(Date.parse(AT) + 60_000).toISOString(), threads: { running: 0, waiting: 0, idle: 0, failed: 0 } };
   return { t: "snapshot", snapshot: { ...frame.snapshot, projects: [...frame.snapshot.projects, mine] } };
 };
 
@@ -291,16 +291,16 @@ it("⌘1–9 open the rows on show, as the sidebar numbers them, a collapsed hub
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("keeps each hub's Only-me projects in its own group, first among its new ones, and numbers the rows on show", async () => {
+it("keeps each hub's projects in its own group, newest first, and numbers the rows on show", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
   ]);
   act(() => {
     hub("hub").send(live());
-    hub("hub").send(withOwn("devbox", "storefront", "Ada"));
+    hub("hub").send(withTwo("devbox", "storefront", "Ada"));
     hub("a1b2").send(live());
-    hub("a1b2").send(withOwn("laptop", "billing", "Bee"));
+    hub("a1b2").send(withTwo("laptop", "billing", "Bee"));
   });
   await settle();
   const group = (label: string) => host.querySelector(`section[aria-label="${label}"]`)?.textContent ?? "";

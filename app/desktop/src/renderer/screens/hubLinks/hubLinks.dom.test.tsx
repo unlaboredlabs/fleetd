@@ -137,14 +137,14 @@ const render = async (page: React.ReactNode) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: HUB, protocol: 1 } });
-    const project = (ref: typeof SHOP, title: string, onlyMe = false) => ({ ...ref, title, workspaceRoot: `/home/dev/${ref.projectId}`, lastActivityAt: AT, threads: { failed: 0, idle: 0, running: 0, waiting: 0 }, ...(onlyMe ? { onlyMe: true as const } : {}) });
+    const project = (ref: typeof SHOP, title: string) => ({ ...ref, title, workspaceRoot: `/home/dev/${ref.projectId}`, lastActivityAt: AT, threads: { failed: 0, idle: 0, running: 0, waiting: 0 } });
     listener({
       t: "snapshot",
       snapshot: {
         cursor: 1,
         attention: [],
         machines: [],
-        projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(ADA, "Ada", true)],
+        projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(ADA, "Ada")],
       },
     });
     await new Promise((r) => setTimeout(r, 0));
@@ -273,7 +273,7 @@ describe("Links to this hub, in a person's settings", () => {
     await type(label as HTMLInputElement, "home");
     const some = [...document.querySelectorAll('[role="radio"]')].find((r) => r.getAttribute("value") === "some");
     await click(some as Element);
-    // Every project in use is one to send work to, an Only-me one too.
+    // Every project in use is one to send work to.
     const boxes = [...document.querySelectorAll('[role="group"] label')].map((l) => l.textContent);
     expect(boxes).toEqual(["Ada", "Billing", "Shop"]);
     expect(button("Make link key").disabled).toBe(true);

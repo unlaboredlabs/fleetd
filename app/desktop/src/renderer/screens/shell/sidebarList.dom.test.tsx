@@ -48,8 +48,8 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   pinned: false,
 });
 
-const ADA = row("Ada", { onlyMe: true });
-const HOME = row("Home", { onlyMe: true });
+const ADA = row("Ada");
+const HOME = row("Home");
 const STOREFRONT = row("storefront");
 
 let host: HTMLDivElement;
@@ -160,7 +160,7 @@ describe("one list", () => {
   });
 
   it("shows a working pin's glyph in its dot's place only when its picture is its own, the dot first", () => {
-    const pictured = row("Home", { onlyMe: true, avatar: "a1b2c3d4e5f60718" });
+    const pictured = row("Home", { avatar: "a1b2c3d4e5f60718" });
     mount([
       { ...ADA, pinned: true, working: true },
       { ...pictured, pinned: true, running: 2 },
@@ -306,7 +306,7 @@ describe("one list", () => {
 
 describe("each row's avatar", () => {
   it("is a circle of its bot, its picture once it has one, read once for that row alone", async () => {
-    const pictured = row("Home", { onlyMe: true, avatar: "a1b2c3d4e5f60718" });
+    const pictured = row("Home", { avatar: "a1b2c3d4e5f60718" });
     let listener: (frame: HubFrame) => void = () => undefined;
     const hub: HubApi = {
       call: (tool, input) => {

@@ -193,7 +193,7 @@
   padding: var(--space-3) var(--space-4);
 }
 
-/* The footer: one plain sentence on what the button does, then Only me and the buttons. */
+/* The footer: one plain sentence on what the button does, then the buttons. */
 .foot {
   flex: none;
   display: flex;

@@ -1,5 +1,5 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// picture (Picture.tsx), its bot's color (BotColor.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
+// picture (Picture.tsx), its bot's color (BotColor.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
 // its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
@@ -16,7 +16,6 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { archiveProject } from "../projects/actions";
-import { isOnlyMe } from "../projects/model";
 import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { when } from "../live/when";
 import { navigate } from "../shell/navigation";
@@ -26,7 +25,7 @@ import { McpServersSection } from "./Integrations";
 import { ApprovalsSetting } from "./Approvals";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
-import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
+import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import { PictureSetting } from "./Picture";
 import { BotColorSetting } from "./BotColor";
 import {
@@ -150,7 +149,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
         <BotColorSetting project={summary ?? { ...ref, title: settings.title }} />
         <NameSetting settings={settings} />
-        <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
       </SettingsSection>
       <RepoSection settings={settings}>
         {vault ? <EnvInVault count={settings.env.length} projectRef={ref} /> : <EnvSetting env={settings.env} projectRef={ref} />}
@@ -269,23 +267,6 @@ function NameSetting({ settings }: { settings: Settings }) {
           ) : null}
         </>
       }
-    />
-  );
-}
-
-/** Only me: only its owner sees and uses it. Its owner, or an admin, may change it; the hub says so to anyone else. */
-function OnlyMeSetting({ settings, onlyMe }: { settings: Settings; onlyMe: boolean }) {
-  const { busy, echo, save } = useSave();
-  return (
-    <SwitchRow
-      reveal="projects.only-me"
-      title="Only me"
-      hint="On: only you see this project. Off: everyone on this hub sees it."
-      line={echo !== null ? <EchoText echo={echo} /> : null}
-      lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
-      checked={onlyMe}
-      disabled={busy}
-      onCheckedChange={(on) => save({ machineId: settings.machineId, projectId: settings.projectId, onlyMe: on }, on ? "Only you see it now." : "Everyone on this hub sees it now.")}
     />
   );
 }

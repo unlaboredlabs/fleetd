@@ -6,8 +6,7 @@
 // you (what the lead waits on you for, a block, what there is to look at, a red main), shown only when something does.
 // The conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its
 // picture and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings);
-// an empty chat asks what to do. It opens where you stopped reading, under a "New" divider. Your own (Only me) project
-// with no repo has its name in the box and everyday starters, not a codebase's.
+// an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
@@ -29,7 +28,6 @@ import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arr
 import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
-import { hasRepos, isOnlyMe } from "../projects/model";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useJustDone } from "../projects/botState";
 import { navigate } from "../shell/navigation";
@@ -144,9 +142,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const justDone = useJustDone(turnUntil, skew);
   const held = view?.held === true;
   const bot = { needs: barWaiting !== undefined, blocked: !held && data.blocked !== undefined, done: justDone };
-  // Your own project with no repo: everyday words. Any other, or one still loading, a codebase's.
-  const plain = summary !== undefined && isOnlyMe(summary) && !hasRepos(summary);
-  const who = plain && title !== "" ? title : undefined;
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
     // Back to following the newest message.
@@ -345,7 +340,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
           </div>
         ) : empty ? (
-          <EmptyChat project={project} title={title} plain={plain} />
+          <EmptyChat project={project} title={title} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
             <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
@@ -393,7 +388,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               onSent={onSent}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(undefined)}
-              who={who}
             />
           </div>
         )}

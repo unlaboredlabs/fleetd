@@ -11,7 +11,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, EmptyState, FrameTitle, Select, Text, Truncate, toast } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
-import { isOnlyMe } from "../projects/model";
 import { useNow } from "../live/clock";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
@@ -241,8 +240,7 @@ const KIND_PHRASE: Readonly<Record<ScreenKind, string>> = {
 function OpenLine({ onClose }: { onClose: () => void }) {
   const layer = useDataLayer();
   const projects = useData(selectProjects);
-  // Your Only-me ones first, as a new one is in the sidebar.
-  const owners = useMemo(() => (projects ?? []).slice().sort((a, b) => Number(isOnlyMe(b)) - Number(isOnlyMe(a))), [projects]);
+  const owners = useMemo(() => projects ?? [], [projects]);
   const machines = useToolQuery("machine_roles", NONE).data?.machines;
   const [kind, setKind] = useState<ScreenKind>("browser");
   const [owner, setOwner] = useState<string | undefined>(undefined);

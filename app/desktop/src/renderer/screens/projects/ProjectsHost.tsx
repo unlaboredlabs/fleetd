@@ -147,7 +147,7 @@ export function ProjectsHost() {
         title: "New project…",
         detail: "Start a chat with its own lead: in a new folder, a GitHub repo cloned onto a machine, or a folder already on one",
         group: "actions",
-        keywords: ["add project", "new", "clone", "repo", "github", "folder", "only me", "assistant"],
+        keywords: ["add project", "new", "clone", "repo", "github", "folder"],
         run: () => openAddProject(),
       },
     ],

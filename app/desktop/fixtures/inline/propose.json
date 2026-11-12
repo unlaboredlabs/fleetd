@@ -20,7 +20,7 @@
           "tool": "project_propose",
           "action": "write",
           "title": "Create the project “Pricing page”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/pricing-page\",\n  \"repo\": \"acme/pricing-page\",\n  \"title\": \"Pricing page\",\n  \"what\": \"A new project on devbox, cloned from acme/pricing-page once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/pricing-page\",\n  \"repo\": \"acme/pricing-page\",\n  \"title\": \"Pricing page\",\n  \"what\": \"A new project on devbox, cloned from acme/pricing-page once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -39,7 +39,7 @@
           "tool": "project_propose",
           "action": "write",
           "title": "Create the project “Release notes”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": true,\n  \"path\": \"/home/dev/fleetd/projects/release-notes\",\n  \"repo\": null,\n  \"title\": \"Release notes\",\n  \"what\": \"A new project on devbox, once you approve. Only you will see it (Only me). Nothing is made before that.\"\n}"
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/release-notes\",\n  \"repo\": null,\n  \"title\": \"Release notes\",\n  \"what\": \"A new project on devbox, once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -60,7 +60,7 @@
           "tool": "project_propose",
           "action": "write",
           "title": "Create the project “Docs site”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/docs\",\n  \"repo\": \"acme/docs\",\n  \"title\": \"Docs site\",\n  \"what\": \"A new project on devbox, cloned from acme/docs once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/docs\",\n  \"repo\": \"acme/docs\",\n  \"title\": \"Docs site\",\n  \"what\": \"A new project on devbox, cloned from acme/docs once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -81,7 +81,7 @@
           "tool": "project_propose",
           "action": "write",
           "title": "Create the project “Scratch”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": true,\n  \"path\": \"/home/dev/fleetd/projects/scratch\",\n  \"repo\": null,\n  \"title\": \"Scratch\",\n  \"what\": \"A new project on devbox, once you approve. Only you will see it (Only me). Nothing is made before that.\"\n}"
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/scratch\",\n  \"repo\": null,\n  \"title\": \"Scratch\",\n  \"what\": \"A new project on devbox, once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -103,7 +103,7 @@
           "tool": "project_propose",
           "action": "write",
           "title": "Create the project “Billing”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/billing\",\n  \"repo\": \"acme/billing\",\n  \"title\": \"Billing\",\n  \"what\": \"A new project on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/billing\",\n  \"repo\": \"acme/billing\",\n  \"title\": \"Billing\",\n  \"what\": \"A new project on devbox, cloned from acme/billing once you approve. Nothing is made before that.\"\n}"
         }
       }
     }

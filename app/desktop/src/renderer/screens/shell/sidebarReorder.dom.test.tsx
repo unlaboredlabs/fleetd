@@ -248,13 +248,6 @@ describe("dragging a row", () => {
     expect(went).toEqual([]);
   });
 
-  it("moves an Only-me project among the others: one list", async () => {
-    mount([row("ada", { onlyMe: true }), ...ROWS]);
-    await drag("ada", 3 * ROW);
-    expect(titles("Projects")).toEqual(["api", "docs", "web", "ada"]);
-    expect(saved()).toEqual([["api", "docs", "web", "ada"]]);
-  });
-
   it("is still a click when it doesn't move, and Esc puts a lifted row back", async () => {
     mount();
     const el = button("docs");

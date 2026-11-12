@@ -1,6 +1,6 @@
 // Memory, as the plain text files the hub keeps (D212): a project's MEMORY.md and the topic files it lists, on its
 // Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
-// work you start and your Only-me projects read, and only you edit. The lead writes with `remember`; here a person reads
+// work you start read, and only you edit. The lead writes with `remember`; here a person reads
 // each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
@@ -116,8 +116,8 @@ export function Memory({ project }: { project: Scope | null }) {
 }
 
 /**
- * You › Your memory: how you work, as the leads remember it. The agents of work you start and your Only-me projects read it; only
- * you edit it (memory_set at user scope writes the caller's own). On a hub with no people it is the hub's one user.md.
+ * You › Your memory: how you work, as the leads remember it. The agents of work you start read it; only you
+ * edit it (memory_set at user scope writes the caller's own). On a hub with no people it is the hub's one user.md.
  */
 export function YourMemory() {
   const live = useLive();

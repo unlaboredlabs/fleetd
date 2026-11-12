@@ -15,7 +15,6 @@ import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import { Media } from "../chat/blocks/Media";
 import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords, proposal, proposalWords, type Proposal } from "./toolPreview";
-import { openTo } from "../../../shared/proposal";
 import {
   approvalOffline,
   approvalOutcome,
@@ -358,7 +357,7 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
   );
 }
 
-/** A proposed project, as it would be made: its repo or none, its folder, and who sees it. The machine is the card's own line. */
+/** A proposed project, as it would be made: its repo or none and its folder. The machine is the card's own line. */
 function ProposalDetail({ made }: { made: Proposal }) {
   return (
     <dl className={s.facts} data-proposal="">
@@ -381,12 +380,6 @@ function ProposalDetail({ made }: { made: Proposal }) {
         <InlineCode>
           <Exact text={made.path} ltr />
         </InlineCode>
-      </Text>
-      <Text as="dt" size="sm" tone="quiet">
-        Open to
-      </Text>
-      <Text as="dd" size="sm">
-        {openTo(made)}
       </Text>
     </dl>
   );

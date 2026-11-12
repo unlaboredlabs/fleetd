@@ -1,4 +1,4 @@
-// A project's Integrations and Approvals (Settings → Projects), on the typical hub's first project, made Home, Only me.
+// A project's Integrations and Approvals (Settings → Projects), on the typical hub's first project, made Home, with no repo.
 // integrations-approvals: its approvals with the checker on, and what ran without asking (the checker's go with its
 // reason, YOLO's run, a first visit), each linking to its line. integrations-signin: servers that sign in with OAuth:
 // mail signed in, calendar signed out by its service (Reconnect, whose service takes only the person's own app), and
@@ -15,12 +15,11 @@ import { longLogPages } from "./longLog.ts";
 
 const AT = "2026-10-27T09:00:00.000Z";
 
-/** Makes the first project Home, Only me with no repo, and returns its ref. */
+/** Makes the first project Home with no repo, and returns its ref. */
 const home = (f: Fixture): { machineId: string; projectId: string } => {
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const first = projects[0];
   if (first === undefined) throw new Error("integrations fixtures: the base has no project");
-  first["onlyMe"] = true;
   first["title"] = "Home";
   delete first["repos"];
   const ref = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };

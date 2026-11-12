@@ -22,7 +22,7 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <SettingsSection title="Claude" reveal="claude" hint="What the agents of the orders you start, and your Only-me projects, run on from their next start. Nobody else's work uses it.">
+    <SettingsSection title="Claude" reveal="claude" hint="What the agents of the orders you start run on from their next start. Nobody else's work uses it.">
       {!live ? (
         <GroupNote>Not connected. Connect to a hub to choose your Claude account.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
