@@ -4,6 +4,8 @@ import { expect, test } from "bun:test";
 import { FILL_WINDOW_MINUTES } from "../src/hub/approvals/outcome.ts";
 import { claimRefusal, expiredWhy, filledEvidence, PURCHASE_CLAIM, purchaseText, SECURE_INPUT_CLAIM } from "../src/hub/approvals/purchase_rules.ts";
 import { keyRefusal, shownPrefix } from "../src/hub/auth/key_rules.ts";
+import { activity } from "../src/hub/executor/activity.ts";
+import { ActivityTracker, liveParts } from "../src/hub/executor/activity_tracker.ts";
 import { codeRefusal, NAMELESS, suffixed } from "../src/hub/auth/node_rules.ts";
 import { ftsQuery, searchWords, overturnLine, overturnedNext } from "../src/hub/ledger/rules.ts";
 import { backSummary, downSummary } from "../src/hub/outage/rules.ts";
@@ -13,6 +15,7 @@ import { asksGitHub, upstreamOf } from "../src/hub/train/next_rules.ts";
 import { cardShown, vaultCardId } from "../src/hub/vault/card_rules.ts";
 import { stallWhy } from "../src/hub/watchdog/rules.ts";
 import type { Change, Decision, HumanRequest, Task, TrainState } from "../src/shared/contracts.ts";
+import type { ThreadEvent } from "../src/shared/sessions.ts";
 import { exported, findings, line, readRepo } from "./pkg/purity.ts";
 
 const MODULES = [
@@ -21,6 +24,7 @@ const MODULES = [
   "approvals/purchase_rules",
   "auth/key_rules",
   "auth/node_rules",
+  "executor/activity_tracker",
   "executor/rules",
   "ledger/rules",
   "link/duration",
@@ -133,4 +137,29 @@ test("a purchase's line, a claim's refusals and a fill's evidence; a vault card 
   expect(filledEvidence({ ok: true, typed: true, message: "done" }, "filled", "partly filled, then")).toEqual({ evidence: "filled: done", again: false });
   expect(vaultCardId(`vault:V${"a".repeat(32)}`)).toBe(`V${"a".repeat(32)}`);
   expect(cardShown("Visa (Personal)", { brand: "visa", last4: "4242" })).toEqual({ label: "Visa (Personal) ••4242", brand: "visa", last4: "4242" });
+});
+
+test("a tracker's live parts are what the hub's live lane gives for the same events", () => {
+  const T0 = 1_760_000_000_000;
+  let now = T0;
+  let area: unknown;
+  const hub = { clock: { now: () => now }, area: (_: string, make: (h: unknown) => unknown) => (area ??= make(hub)) } as never;
+  const t = new ActivityTracker();
+  const events = [
+    { type: "snapshot", summary: { sessionId: "t1", projectId: "p1", worktreePath: "/w" }, messages: [], items: [], runs: [{ id: "r1", status: "running", ordinal: 1 }], truncated: false },
+    { type: "item", id: "i1", runId: "r1", status: "running", title: "", startedAt: "2025-10-09T08:53:20.000Z", updatedAt: "2025-10-09T08:53:20.000Z", kind: { type: "file_change", path: "/w/src/a.ts" } },
+    { type: "delta", messageId: "m1", runId: "r1", append: "Reading" },
+    { type: "usage", runId: "r1", usage: { inputTokens: 40, outputTokens: 9, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } },
+  ] as ThreadEvent[];
+  for (const event of events) {
+    now += 500;
+    activity(hub).onThreadEvent("devbox", { sessionId: "t1", at: "", event });
+    if (event.type === "snapshot") t.setRoot("/w");
+    t.apply(event, now);
+  }
+  now += 1000;
+  const parts = liveParts(t, now);
+  expect(activity(hub).live({ machineId: "devbox", threadId: "t1" })).toEqual(parts);
+  expect(parts).toMatchObject({ activity: { activity: { kind: "edit", path: "src/a.ts" } }, tokens: { input: 40, output: 9, live: true }, runActive: true });
+  expect(parts.text?.tail).toBe("Reading");
 });
