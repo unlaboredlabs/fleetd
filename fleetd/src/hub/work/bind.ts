@@ -10,13 +10,12 @@ import { type CmdResult, link } from "../link/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { work } from "./index.ts";
+import { type GitOut, gitOk, remoteHead } from "./landing_rules.ts";
 import { repoKeyOf } from "./repo_key.ts";
 import type { WorkScope } from "./store.ts";
 import { isLine } from "./view.ts";
 
-/** One git command's exit code (null when it didn't exit on its own) and the last 2000 characters of its output. */
-export type GitOut = { code: number | null; out: string };
-export const gitOk = (o: GitOut) => o.code === 0;
+export { type GitOut, gitOk, remoteHead } from "./landing_rules.ts";
 
 /** How the hub runs git in a directory on a machine: the node link, or real git in tests. Undefined when it couldn't. */
 export type NodeGit = { git(machine: MachineId, cwd: string, args: string[]): Promise<GitOut | undefined> };
@@ -148,16 +147,4 @@ async function readBase(node: NodeGit, machine: MachineId, root: string, repoKey
   if (!remote || !gitOk(remote)) return undefined;
   const base = remoteHead(remote.out);
   return base !== undefined && isLine(base, 250) ? base : undefined;
-}
-
-/** `ref: refs/heads/main\tHEAD` in `git ls-remote --symref origin HEAD` → `main`. */
-export function remoteHead(out: string): string | undefined {
-  for (const line of out.split("\n")) {
-    if (!line.startsWith("ref: ")) continue;
-    const tab = line.indexOf("\t", 5);
-    if (tab < 0) continue;
-    const [target, name] = [line.slice(5, tab), line.slice(tab + 1)];
-    if (name.trim() === "HEAD" && target.startsWith("refs/heads/")) return target.slice("refs/heads/".length);
-  }
-  return undefined;
 }
