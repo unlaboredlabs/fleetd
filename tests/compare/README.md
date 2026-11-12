@@ -78,21 +78,21 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   `project_remove`, `person_remove`, `invite_revoke`, `device_revoke`, and last of all `machine_remove`), each only on
   what the run made: what the target seeded, the phone, the invited person and invite, and a spare device key
   (`areas-spare`: `key` makes the same person more than one), never the caller or the key it calls with. A write a
-  machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is known, and
-  `claude_subscription_set` and `onepassword_set` with a real sealed box, whose answer may be the hub's failed "No
-  machine took it.") is called on the machine the reads turn up and may answer `machine_offline`, or is skipped when
-  there is none; `skill_install` is called on a source at a host that never resolves, and must refuse the fetch
-  (`failed` or `invalid`); `vault_reveal` reveals the seeded env item's `value` to a 32-byte reply key;
-  `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello first),
-  `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the account or
-  token does their work) and `skill_update` (it fetches from outside) are skipped, saying why, as is a tool whose seed
-  needs a tool the team doesn't list (`vault_status` for the vault's, `push_relay_set` for the phone). The vault's
-  seeds seal with fleetd's sealed box, from this checkout or from the fleetd package installed in a node_modules
-  directory above a copy of tests/compare (not one in the system's temp directory). Then `/app` on that team, with no
-  machine: `ready` and `snapshot`, every event the hub keeps (asked from cursor 0, up to the snapshot's), a call of a
-  listed read-only tool (`fleetd_status`, `hub_info` or `people_list` first), and a call of a name the team doesn't
-  list, which must come back as an `error` with the call's id; each frame decoded as `AppServerMessage`. The CLI's
-  rows are skipped.
+  machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is known,
+  `machine_screens_set`, and `claude_subscription_set` and `onepassword_set` with a real sealed box, whose answer may
+  be the hub's failed "No machine took it.") is called on the machine the reads turn up and may answer
+  `machine_offline`, or is skipped when there is none; `skill_install` is called on a source at a host that never
+  resolves, and must refuse the fetch (`failed` or `invalid`); `vault_reveal` reveals the seeded env item's `value` to
+  a 32-byte reply key; `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello
+  first), `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the
+  account or token does their work), `screen_open` and `screen_end` (a node hosts screens) and `skill_update` (it
+  fetches from outside) are skipped, saying why, as is a tool whose seed needs a tool the team doesn't list
+  (`vault_status` for the vault's, `push_relay_set` for the phone). The vault's seeds seal with fleetd's sealed box,
+  from this checkout or from the fleetd package installed in a node_modules directory above a copy of tests/compare
+  (not one in the system's temp directory). Then `/app` on that team, with no machine: `ready` and `snapshot`, every
+  event the hub keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`,
+  `hub_info` or `people_list` first), and a call of a name the team doesn't list, which must come back as an `error`
+  with the call's id; each frame decoded as `AppServerMessage`. The CLI's rows are skipped.
 
 A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
 unless `--bin` gives one:
