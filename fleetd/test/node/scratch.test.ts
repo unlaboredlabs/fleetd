@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { startOf } from "../../src/node/runner/host.ts";
 import { SCRATCH_KEEP_MS, scratchKept, SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import type { SessionRow } from "../../src/node/sessions/store.ts";
 import { tempHome } from "../helpers.ts";
@@ -59,6 +60,8 @@ async function nodeKit() {
       const pid = k.service.store.session(id)!.local.pid!;
       await k.service.shutdown();
       process.kill(pid, "SIGKILL");
+      // The kill lands a moment later on a loaded machine: a node started before it would re-adopt the dying host.
+      await until("its process's exit", () => startOf(pid) === undefined);
       k.service = await SessionService.start(config);
     },
   };
