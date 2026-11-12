@@ -1,8 +1,9 @@
 // The train's pure rules (the top of service.rs): the refusal shape, and how
 // a head's checks read: green, pending or red, gated by the fast set, the checks that must report, and stalls.
-import { type CheckRun, type CommitStatus, TRAIN_CONTEXT, workflowRun } from "./github.ts";
-import { afterMergeOnly, fastSet, type TrainSettings } from "./repo_checks.ts";
-import { parseMs } from "./seams.ts";
+import { parseMs } from "../store/time.ts";
+import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
+import { afterMergeOnly, fastSet, type TrainSettings } from "./settings.ts";
+import { TRAIN_CONTEXT } from "./text.ts";
 
 /** An enqueue refusal: what is wrong, and its fix. */
 export type Refusal = { message: string; fix: string };

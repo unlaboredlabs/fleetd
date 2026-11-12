@@ -1,6 +1,6 @@
 // The lead's lines about PRs (its `Pr*` events): what the train and the
 // review gate wake a lead with.
-import { clip } from "./seams.ts";
+import { clip } from "./text.ts";
 
 /** `text` on one line, whitespace runs as one space, at most `max` UTF-16 units with "…" when cut. */
 export function oneLine(text: string, max: number): string {

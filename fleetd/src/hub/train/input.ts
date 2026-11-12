@@ -2,7 +2,7 @@
 // train's, the reviews' and the PR views' tools: a value that doesn't fit is refused as `invalid`.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { ALL_STATES } from "./records.ts";
+import { ALL_STATES } from "./states.ts";
 
 type Input = Record<string, unknown>;
 

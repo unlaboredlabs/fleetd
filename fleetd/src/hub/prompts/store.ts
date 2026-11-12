@@ -20,8 +20,11 @@ import type {
 } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
 import { type Audience, ENTRIES, getEntry, INSTRUCTIONS, oldId, perProject, placeholdersOf, type RegistryEntry, safetyRules } from "./entry.ts";
-import { gitBlobSha, merge, refOf, render, rulePresent, sameWords, type Vars, warnings } from "./render.ts";
+import { gitBlobSha, merge, refOf, rulePresent, sameWords, warnings } from "./render.ts";
 import { RETIRED, type Retired } from "./retired.ts";
+import { defaultOf, PromptSet, type Resolved } from "./set.ts";
+
+export { PromptSet, type Resolved } from "./set.ts";
 
 /** Tools no fleetd session gets (node/runner/claude/mod.rs `ALWAYS_DISALLOWED`). */
 export const ALWAYS_DISALLOWED = [
@@ -65,50 +68,6 @@ export const ALWAYS_DISALLOWED = [
   "Bash(exec *claude -*)",
   "Bash(xargs *claude -*)",
 ];
-
-/** One resolved text. */
-export type Resolved = { ref: string; scope: PromptScope; text: string };
-
-const defaultOf = (e: RegistryEntry): Resolved => ({ ref: refOf(e.id, e.default), scope: "default", text: e.default });
-
-/** The texts one message is rendered from: a session's pinned ones, or the current ones for a project. */
-export class PromptSet {
-  constructor(
-    readonly entries: Map<string, Resolved>,
-    /** Global, then project; empty ones left out. */
-    readonly instructions: Resolved[],
-  ) {}
-
-  /** The shipped texts and no instructions. */
-  static defaults(): PromptSet {
-    return new PromptSet(new Map(ENTRIES.map((e) => [e.id, defaultOf(e)])), []);
-  }
-
-  get(id: string): Resolved {
-    const r = this.entries.get(id);
-    if (!r) throw new Error(`no prompt ${id} in the registry`);
-    return r;
-  }
-
-  render(id: string, vars: Vars): string {
-    return render(this.get(id).text, vars);
-  }
-
-  /** A first message (lead or task) with the human's custom instructions appended. */
-  withInstructions(first: string): string {
-    if (this.instructions.length === 0) return first;
-    return `${first}\n\n## Custom instructions from the human\n${this.instructions.map((r) => r.text.trim()).join("\n\n")}`;
-  }
-
-  /** What a session of `audience` pins: every entry it may receive, and the instructions. */
-  refs(audience: Audience): [SessionPromptRef, string][] {
-    const picked: [string, Resolved][] = [
-      ...ENTRIES.filter((e) => e.audience === audience || e.audience === "any").map((e): [string, Resolved] => [e.id, this.get(e.id)]),
-      ...this.instructions.map((r): [string, Resolved] => [INSTRUCTIONS, r]),
-    ];
-    return picked.map(([id, r]) => [{ id, ref: r.ref, scope: r.scope }, r.text]);
-  }
-}
 
 /** An override file's text, without its frontmatter, and the default it was edited from. */
 export type Override = { text: string; base?: string };

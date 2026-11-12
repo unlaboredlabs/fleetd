@@ -7,7 +7,7 @@
 // The base's own rules on GitHub decide the rest (`rules`): where it requires a person's approval, a PR waits for it
 // (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
-import type { Change, ChangeReview, ChangeState, CiInfo, ProjectRef } from "../../shared/contracts.ts";
+import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared/contracts.ts";
 import * as batch from "./batch.ts";
 import { prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
@@ -18,7 +18,7 @@ import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
-import { type PromptSetLike, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
+import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
 import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
@@ -50,6 +50,43 @@ import { rerunning, watchMerge, watchPass } from "./watch.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { openBlocking } from "../reviews/read.ts";
 import type { HubDb } from "../store/db.ts";
+import {
+  BLOCKED_WAKE_MS,
+  CHECKS_START_WAIT_MS,
+  CI_CANCELLED,
+  CI_FINISHED_LATE,
+  CI_QUEUE_CEILING_MS,
+  CI_RUNNING_TIMEOUT_MS,
+  CI_SUPERSEDED,
+  CI_TIMED_OUT,
+  CI_WATCHED,
+  NEVER_RAN_WAIT_MS,
+  PIPELINE_DEPTH,
+  REMOVED_PROJECT,
+  REVIEW_WAIT_MS,
+  timedOut,
+} from "./notes.ts";
+
+export {
+  BLOCKED_PREFIX,
+  BLOCKED_WAKE_MS,
+  CHECKS_START_WAIT_MS,
+  CI_CANCELLED,
+  CI_FINISHED_LATE,
+  CI_QUEUE_CEILING_MS,
+  CI_RUNNING_TIMEOUT_MS,
+  CI_SUPERSEDED,
+  CI_TIMED_OUT,
+  CI_WATCHED,
+  NEVER_RAN_WAIT_MS,
+  PIPELINE_DEPTH,
+  REMOVED_PROJECT,
+  RESOLVED,
+  RESTARTED,
+  REVIEW_WAIT_MS,
+  timedOut,
+} from "./notes.ts";
+export { fixYourPr } from "./prompts.ts";
 
 /** Recorded as the sender of the train's task messages. */
 export const TRAIN_BY = "hub:train";
@@ -111,15 +148,6 @@ export type TrainOptions = {
   sleep: (ms: number) => Promise<void>;
 };
 
-/** Batch PRs in CI at once: the one that lands next, and one behind it. */
-export const PIPELINE_DEPTH = 2;
-export const REVIEW_WAIT_MS = 15 * 60_000;
-export const CHECKS_START_WAIT_MS = 15 * 60_000;
-export const CI_RUNNING_TIMEOUT_MS = 45 * 60_000;
-export const CI_QUEUE_CEILING_MS = 2 * 60 * 60_000;
-export const BLOCKED_WAKE_MS = 30 * 60_000;
-export const NEVER_RAN_WAIT_MS = 5 * 60_000;
-
 export function defaultOptions(signal?: AbortSignal): TrainOptions {
   return {
     pollIntervalMs: 15_000,
@@ -137,26 +165,8 @@ export function defaultOptions(signal?: AbortSignal): TrainOptions {
   };
 }
 
-/** The start of `lastError` on a Change whose CI timed out rather than went red. */
-export const CI_TIMED_OUT = "CI timed out";
-/** The `lastError` of a Change that left the train with its project (`dropRemovedChanges`). */
-export const REMOVED_PROJECT = "its project was removed from fleetd";
-export const CI_WATCHED = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
-export const CI_SUPERSEDED = "a push to the PR replaced the head its CI ran on; the train takes the new head";
-export const CI_CANCELLED = "its CI timed out, then was cancelled, and re-running it didn't finish it";
-export const RESOLVED =
-  "enqueued again while its review's findings blocked it: they count no more, and a fresh full review of its patch runs";
-export const RESTARTED =
-  "enqueued again after its reviewers ended without a verdict: they count no more, and a fresh full review of its patch runs";
-export const CI_FINISHED_LATE = "CI finished after the timeout; back in the queue";
-/** The reviews' note on a Change its findings block (reviews/service.rs `BLOCKED`). */
-export const BLOCKED_PREFIX = "waiting for a new head: ";
-
 /** How the note of a Change ends whose merge GitHub refused by a rule the train can't satisfy. */
 const RULE_HELD = "; fleetd can't satisfy this rule, and never goes around one";
-
-/** A Change in `ci_failed` because its CI timed out, not because a check went red. */
-export const timedOut = (change: Change) => change.state === "ci_failed" && (change.lastError?.startsWith(CI_TIMED_OUT) ?? false);
 
 const CI_CONFIG_TTL_MS = 10 * 60_000;
 /** The error code of a task result's PR that already merged: nothing to enqueue, and nothing to tell the lead. */
@@ -2053,11 +2063,6 @@ const changeIds = (c: Change) => ({
   ...(c.taskId !== undefined ? { taskId: c.taskId } : {}),
 });
 
-/** The one message that sends a PR back to its author: what is wrong, a review's findings if any. */
-export function fixYourPr(set: PromptSetLike, change: Change, problem: string, findings: string): string {
-  const f = findings.trim() === "" ? "" : `\n\n${findings.trim()}\n`;
-  return set.render("pr.fix", { pr: `${change.prUrl} (${change.changeId})`, problem, findings: f, branch: change.branch });
-}
 
 /** A writer's ready PR (a slice): it goes on the train now, as its task's. */
 export async function sliceReady(train: Train, projectRef: ProjectRef, taskId: string, prUrl: string): Promise<Change> {
