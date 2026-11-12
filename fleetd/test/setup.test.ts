@@ -95,9 +95,14 @@ test("the 1Password step's Test tests the caller's own token and keeps it as its
   const { HubDb } = await import("../src/hub/store/db.ts");
   const { fakeNodePort } = await import("../src/hub/link/node_port.ts");
   const { store } = await import("../src/hub/store/hub_store.ts");
+  const { doctor } = await import("../src/hub/doctor/index.ts");
   const { token } = await import("../src/hub/onepassword/index.ts");
   const at = "2026-11-08T10:00:00.000Z";
   const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 4790 } }, HubDb.memory(), { now: () => Date.parse(at) });
+  // setup_test runs the doctor's first pass: its probes are stand-ins, never this machine's own gh or a hub on 4790.
+  const probes = doctor(hub);
+  probes.health = async () => ({ ok: true });
+  probes.runCmd = async () => ({ ran: false, error: "ENOENT" });
   const calls: Record<string, unknown>[] = [];
   // A node on lab that holds the token and answers its Test, as a node does.
   hub.area("node_port", () =>
