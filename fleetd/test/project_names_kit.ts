@@ -54,14 +54,14 @@ export function expectRenamed(db: HubDb): void {
  * migration): this fleetd writes only tables it knows, so the renamed ones go out under their new names and the file
  * is given the old names back. Its path.
  */
-export async function olderExportOf(from: Place): Promise<string> {
+export async function olderExportOf(from: Place, opts: { secrets?: boolean } = {}): Promise<string> {
   const conn = new Database(join(from.home, "hub.sqlite"), { strict: true });
   const there = (name: string) => conn.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== null;
   const renamed: string[] = RENAMED_TABLES.filter((now) => there(oldTable(now)));
   for (const now of renamed) conn.run(`ALTER TABLE ${oldTable(now)} RENAME TO ${now}`);
   conn.close();
   const file = join(from.dir, "older-export.tar");
-  await exportOf(from, { secrets: false, file: join(from.dir, "older-export.new.tar") });
+  await exportOf(from, { ...opts, file: join(from.dir, "older-export.new.tar") });
   await rewritten(join(from.dir, "older-export.new.tar"), file, {
     manifest: (m) => {
       for (const t of m.tables) {

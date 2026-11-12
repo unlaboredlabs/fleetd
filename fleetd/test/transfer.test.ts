@@ -336,7 +336,7 @@ test("an export an older fleetd wrote: its rows go through the migrations it had
     JSON.stringify({ decisionId: "D1", key: "ui.accent", scope: { kind: "global" }, value: "Neutral accent", state: "active", source: "human", at: ISO }),
   );
   old.close();
-  const older = await olderExportOf(from);
+  const older = await olderExportOf(from, { secrets: false });
   const { manifest } = await checkExport(older);
   expect(manifest.schema.at(-1)?.name).toBe(MIGRATIONS[cut - 1]!.name);
   expect(manifest.tables.some((t) => t.name === "project_setup_changes")).toBe(false);
@@ -358,7 +358,7 @@ test("an export from before the D317 renames: what it kept under the old names a
   seedOld(old);
   old.query("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ada', 'Ada', 'owner', ?)").run(AT);
   old.close();
-  const older = await olderExportOf(from);
+  const older = await olderExportOf(from, { secrets: false });
   const { manifest } = await checkExport(older);
   expect(manifest.schema.at(-1)?.name).toBe(MIGRATIONS[RENAMES_AT - 1]!.name);
   expect(manifest.tables.some((t) => t.name === oldTable("project_asks"))).toBe(true);
