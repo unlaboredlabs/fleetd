@@ -6,7 +6,7 @@ import type { HubRole, Person, PersonRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
-import { allows } from "../auth/index.ts";
+import { allowsEverywhere } from "../auth/allows.ts";
 import { events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
 
@@ -49,11 +49,9 @@ export function ownerOn(db: Database): Person | undefined {
   return row ? read(row) : undefined;
 }
 
+export { allowsEverywhere } from "../auth/allows.ts";
 export { refOf } from "../people/roles.ts";
 
-/** Some grant of the caller's gives `role` on every machine (api/grants.rs `allows_everywhere`). */
-export const allowsEverywhere = (caller: Caller, role: "admin" | "operate" | "read") =>
-  caller.grants.some((g) => g.machines === "*" && allows({ ...caller, grants: [g] }, role));
 
 /** The owner or admin behind a human key with admin everywhere; undefined for anyone else. */
 export function administrator(hub: Hub, caller: Caller): Person | undefined {
