@@ -1,13 +1,13 @@
 // What the hub binds a project's work to: `work_projects`, the repo and base
 // its work lands on.
 import type { Database } from "bun:sqlite";
-import type { Claim, ClaimId, LandingRoute, ProjectRef, RepoId, RepoKey, Task } from "../../shared/contracts.ts";
+import type { Claim, ClaimId, LandingRoute, ProjectRef, RepoId, Task } from "../../shared/contracts.ts";
 import { get as repoGet } from "../repos/store.ts";
 import { parseMs } from "../store/time.ts";
 import type { Landing } from "./landings.ts";
+import type { WorkScope } from "./repo_key.ts";
 
-/** The repo and base a project's work lands on. */
-export type WorkScope = { repoKey: RepoKey; base: string };
+export type { WorkScope } from "./repo_key.ts";
 
 export function scopeOf(db: Database, project: ProjectRef): WorkScope | undefined {
   const row = db

@@ -2,7 +2,7 @@
 // lines (claims, other projects' writers and Changes on the same repo and base, and recent landings outside the train).
 import type { ClaimOwner, LandingRoute, ProjectRef, WorkItem, WorkKey } from "../../shared/contracts.ts";
 import { oneLine } from "../leads/text.ts";
-import type { WorkScope } from "./store.ts";
+import type { WorkScope } from "./repo_key.ts";
 
 /** Landings the digest shows: the newest this many outside the train, from the last `LANDINGS_SHOWN_MS`. */
 export const LANDINGS_SHOWN = 5;
