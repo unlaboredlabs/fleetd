@@ -18,6 +18,7 @@ import { parseHash } from "../shell/routes";
 import { FirstRun } from "./FirstRun";
 import { SetupScreen } from "./SetupScreen";
 import type { SetupStep } from "./steps";
+import { resetServes } from "../admin/role";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -60,6 +61,7 @@ let app: GithubApp | undefined;
 let send: (frame: HubFrame) => void = () => undefined;
 
 beforeEach(() => {
+  resetServes();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -304,6 +306,10 @@ describe("setup", () => {
 describe("Settings › Hub › Setup", () => {
   it("lists only the team's own accounts on fleetd cloud, which has no setup steps: nothing asked, nothing said to update", async () => {
     leftOut = ["setup_list", "setup_test"];
+    // The app knows the hub's answer before it opens the page (Settings' Hub group waits for hub_info): a first mount
+    // learns it, and the page that opens next asks nothing left out.
+    await render(page);
+    calls = [];
     await render(page);
     expect(rows("Accounts")).toEqual(["claude:Claude", "github:GitHub"]);
     expect(settings()?.textContent).toBe("AccountsClaudeGitHub");

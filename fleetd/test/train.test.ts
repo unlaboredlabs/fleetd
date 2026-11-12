@@ -333,6 +333,7 @@ test("a flaky job's log names its failing test", () => {
   expect(failedTest("2026-10-17T10:00:00.1234567Z test hub::train::tests::merges ... FAILED")).toBe("hub::train::tests::merges");
   expect(failedTest("--- FAIL: TestMerge (0.01s)")).toBe("TestMerge");
   expect(failedTest("\u001b[31mFAIL\u001b[0m src/a.test.ts > merges")).toBe("src/a.test.ts > merges");
+  expect(failedTest("2026-11-12T08:58:54.9047475Z (fail) train > merges a green PR [97.28ms]")).toBe("train > merges a green PR");
   expect(failedTest("all good")).toBeUndefined();
 });
 

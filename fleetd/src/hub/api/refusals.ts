@@ -1,10 +1,9 @@
 // More of the grant checks, standard refusals and output limits handlers share,
 // with the same words: the ones src/hub/api/grants.ts doesn't have yet.
-import type { HubEvent, MachineId, ProjectRef, Role, ThreadRef } from "../../shared/contracts.ts";
+import type { AgentKeyInfo as Caller, HubEvent, MachineId, ProjectRef, Role, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { allows } from "../auth/index.ts";
+import { allows } from "../auth/allows.ts";
 import { isHuman, REPAIR_FIX } from "./grants.ts";
-import type { Caller } from "./registry.ts";
 
 /** How much one tool result may carry. */
 export const LIMITS = {

@@ -37,8 +37,10 @@ import {
 } from "./shell_mapper.ts";
 import { type SendOpts, sendWith as sendThread } from "./sessions.ts";
 import { Views } from "./views.ts";
+import { newUuid } from "./ids.ts";
 
 export { ExecutorError, type NodeOperation } from "./error.ts";
+export { newUuid, uuidFrom } from "./ids.ts";
 
 /** The activity tracker (T2253's src/hub/executor/activity.ts, `hub.area("activity")`), once its area exists. */
 type ActivityArea = { onThreadEvent(machineId: MachineId, frame: ThreadEventFrame): void };
@@ -90,19 +92,6 @@ function fromSessionError(machineId: MachineId, operation: NodeOperation, sessio
   }
   return ExecutorError.failed(machineId, operation, error.message, error.fix);
 }
-
-const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-
-function uuidOf(b: Uint8Array): string {
-  const h = hex(b);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-}
-
-/** A random v4-shaped UUID. */
-export const newUuid = () => uuidOf(crypto.getRandomValues(new Uint8Array(16)));
-
-/** A v4-shaped UUID derived from `seed`: the same request always names the same session or run. */
-export const uuidFrom = (seed: string) => uuidOf(new Bun.CryptoHasher("sha256").update(seed).digest().subarray(0, 16));
 
 export const threadRef = (machineId: MachineId, threadId: string): ThreadRef => ({ machineId, threadId });
 

@@ -11,6 +11,7 @@ import { UiProvider } from "../../ui";
 import { resetFlow } from "../updates/flow";
 import { AutoUpdates } from "../updates/AutoUpdates";
 import { Updates } from "./Updates";
+import { resetServes } from "./role";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -38,6 +39,7 @@ const status = () => ({
 });
 
 beforeEach(() => {
+  resetServes();
   calls = [];
   auto = true;
   resetFlow();
@@ -134,6 +136,12 @@ it("shows a member no switch", async () => {
 });
 
 it("says on fleetd cloud, which leaves its update out, only that it updates itself: no button, no switch, nothing asked", async () => {
+  // The app knows the hub's answer before it opens the page (Settings' Hub group waits for hub_info): a first mount
+  // learns it, and the page that opens next asks nothing left out.
+  await render(<Updates />, true, ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart"]);
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
   await render(<Updates />, true, ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart"]);
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
   expect(page?.querySelector("[data-updates='cloud']")?.textContent).toBe("Updatesfleetd cloud updates itself.");

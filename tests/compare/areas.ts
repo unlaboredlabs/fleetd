@@ -67,11 +67,21 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
   ["decisions_record", (mark, n) => ({ key: `isolation.seed-${n}`, value: `${mark} decision ${n}`, why: mark, scope: { kind: "global" } })],
   // A person and their invite: a new person needs a name.
   ["invite_create", (mark, n) => ({ name: `${mark} person ${n}`, role: "member" })],
-  // A file, and the caller's picture made of it (which takes the file): person_avatar_get has nothing to answer until
-  // one is set.
+  // A file, and the caller's picture made of another, put for it alone: setting a picture takes its file, which
+  // attachment_get would then not find, and person_avatar_get has nothing to answer until one is set. The picture's
+  // file is put when attachment_put is listed (a seed of it made a file).
   ["attachment_put", (mark, n) => ({ name: `${mark} ${n}.png`, mime: "image/png", dataB64: PNG })],
   ["attachment_part", () => ({ dataB64: PNG })],
-  ["person_avatar_set", (_mark, _n, { made }) => (made.has("AttachmentId") ? { attachmentId: made.get("AttachmentId")!.at(-1) } : undefined)],
+  [
+    "person_avatar_set",
+    async (mark, n, { made, as }) => {
+      if (!made.has("AttachmentId")) return undefined;
+      const own = await as.call("attachment_put", { name: `${mark} picture ${n}.png`, mime: "image/png", dataB64: PNG });
+      const attachmentId = (own.body as { attachmentId?: unknown } | null)?.attachmentId;
+      if (own.isError || typeof attachmentId !== "string") throw new Error(`attachment_put, for the picture: ${JSON.stringify(own.body)}`);
+      return { attachmentId };
+    },
+  ],
   // The caller's own name: a write a read key may make, so listed as read-only, and it needs the name.
   ["person_name_set", (mark, n) => ({ name: `${mark} name ${n}` })],
   // The hub-wide text of a prompt: saving needs the text.

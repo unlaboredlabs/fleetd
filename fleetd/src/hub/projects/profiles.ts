@@ -15,6 +15,9 @@ import { executors, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { link } from "../link/server.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import type { Chosen } from "./chosen.ts";
+
+export type { Chosen } from "./chosen.ts";
 
 export const PROFILES_MAX = 50;
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
@@ -37,9 +40,6 @@ export const hasFast = (model: string) => FAST_MODELS.includes(model);
 
 /** A profile's model unless claude refused it. */
 export const usableModel = (p: Profile) => (p.refused === undefined ? p.model : undefined);
-
-/** What a launch on one profile sends the node. */
-export type Chosen = { profile: string; model?: string; effort: Effort; fast: boolean; helperModel?: string };
 
 /** A new profile, or what an update changes. */
 export type ProfileEdit = {
