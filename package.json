@@ -140,6 +140,7 @@
     "./hub/train/states": "./fleetd/src/hub/train/states.ts",
     "./hub/train/text": "./fleetd/src/hub/train/text.ts",
     "./hub/usage/classify": "./fleetd/src/hub/usage/classify.ts",
+    "./hub/usage/state": "./fleetd/src/hub/usage/state.ts",
     "./hub/vault/audit_entry": "./fleetd/src/hub/vault/audit_entry.ts",
     "./hub/vault/crypto": "./fleetd/src/hub/vault/crypto.ts",
     "./hub/vault/fields": "./fleetd/src/hub/vault/fields.ts",
