@@ -18,19 +18,9 @@ import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { MACHINE_TABLES, store } from "../store/hub_store.ts";
 import { resetHours } from "../time/store.ts";
+import { aProject, BY_KEY, BY_PROJECT, BY_THREAD, hubWide } from "./erase_tables.ts";
 
-/** Tables with the Navi's rows by `machine_id` and `project_id`. */
-const BY_PROJECT = [
-  "chat_messages", "chat_projects", "checklists", "leads", "lead_mcp", "approval_checks", "memory_imports",
-  "memory_refreshes", "memory_refresh_lines", "navi_auto_approved", "navi_approvals", "navi_sites", "skill_versions",
-  "skill_uses", "browser_sessions", "screen_waits", "session_prompts", "tasks", "slot_claims", "workstreams", "hub_links",
-];
-
-/** Tables with rows of the Navi's sessions, by `machine_id` and `thread_id`. */
-const BY_THREAD = ["threads", "wakes", "queued_writes", "steers", "thread_accounts", "task_threads", "time_lead_runs", "time_wakes"];
-
-/** Tables with the Navi's rows by `project_key` (`<machine>/<project>`). */
-const BY_KEY = ["requests", "legacy_asks", "decisions"];
+export { aProject, BY_KEY, BY_PROJECT, BY_THREAD, hubWide } from "./erase_tables.ts";
 
 const projectKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
 
@@ -63,18 +53,6 @@ export function finishPending(hub: Hub): number {
   return n;
 }
 
-/**
- * A hub-wide row's key, which no project has: a hub-wide MCP server's and skill's are an empty machine and project.
- * Erasing it as a project's would delete every hub-wide server and skill.
- */
-export const hubWide = (machineId: string, projectId: string) => machineId === "" || projectId === "";
-
-/** Refuses a hub-wide key where a project's is meant. */
-export function aProject(r: ProjectRef): void {
-  if (hubWide(r.machineId, r.projectId)) {
-    throw new Error("an empty machine or project id is the hub's own, not a project's: nothing was erased");
-  }
-}
 
 /**
  * Projects the hub no longer has, whose rows an older hub left behind: `projects` names their id on no machine, yet a

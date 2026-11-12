@@ -8,21 +8,9 @@ import { unknownProject } from "../api/refusals.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { COLORS, derived, FACES } from "./derived_icon.ts";
 
-/** IconFace::ALL and IconColor::ALL, in the Rust contracts' order: the derived icon indexes them. */
-const FACES = ["mo", "wee", "peep", "nap", "cy", "wink", "joy", "huh", "wow"] as const;
-const COLORS = ["fleet", "sky", "teal", "mint", "lime", "sun", "ember", "rose", "plum", "lilac", "sand", "graphite"] as const;
-
-/** The icon a project wears until a person picks one: from the first eight bytes of its ref's sha256. */
-export function derived(r: ProjectRef): ProjectIcon {
-  const digest = new Bun.CryptoHasher("sha256").update(`${r.machineId}/${r.projectId}`).digest();
-  const n = digest.readBigUInt64BE(0);
-  const faces = BigInt(FACES.length);
-  return {
-    face: FACES[Number(n % faces)] as string,
-    color: COLORS[Number((n / faces) % BigInt(COLORS.length))] as string,
-  };
-}
+export { derived } from "./derived_icon.ts";
 
 /** The project's icon, for its summary: the one picked, else its derived one (also for a pick this build doesn't know). */
 export function of(db: Database, r: ProjectRef): ProjectIcon {
