@@ -2,8 +2,8 @@
 // recent limit hits per login and the breaker. The service (service.ts) feeds it events and acts on what it returns.
 import type { ClaudeAccount, HubEvent } from "../../shared/contracts.ts";
 import type { LoginLimit } from "../../shared/node_link.ts";
-import { accountFromKey, accountKey } from "../claude_accounts/index.ts";
-import type { NewEvent } from "../store/events.ts";
+import { accountFromKey, accountKey } from "../claude_accounts/setup.ts";
+import type { NewEvent } from "../store/new_event.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { limitOfEvent, parkedOf, type UsageClass, type UsageParked } from "./classify.ts";
 
