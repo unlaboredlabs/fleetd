@@ -37,11 +37,16 @@ let asked: string[];
 let invites: AccountsInvite[];
 /** The team's answer to the next invite instead of making one. */
 let refuse: PairFailure | null;
+/** The team's answer to the next revoke: the invite was used or gone meanwhile. */
+let gone: boolean;
+/** Sends the page a frame from the hub. */
+let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
   asked = [];
   invites = [{ inviteId: "inv_aaaaaaaaaa", email: "dana@example.com", role: "member", createdAt: AT, expiresAt: dayAhead() }];
   refuse = null;
+  gone = false;
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -62,6 +67,7 @@ beforeEach(() => {
       revokeInvite: (hub: string, inviteId: string) => {
         asked.push(`revoke ${hub} ${inviteId}`);
         invites = invites.filter((i) => i.inviteId !== inviteId);
+        if (gone) return Promise.resolve({ ok: false, failure: { code: "not_found", message: `No open invite ${inviteId}.`, fix: "List the open invites to see which are left." } });
         return Promise.resolve({ ok: true });
       },
     },
@@ -91,8 +97,9 @@ function Team({ cloud }: { cloud: boolean }) {
   );
 }
 
-const render = async (me: Person, cloud: boolean) => {
+const render = async (me: Person, cloud: boolean, list: () => PeopleListOutput = () => people) => {
   let listener: (frame: HubFrame) => void = () => undefined;
+  send = (frame) => listener(frame);
   const info: Partial<HubInfoOutput> = { me, admin: me.role !== "member" };
   const hub: HubApi = {
     call: (tool) =>
@@ -102,7 +109,7 @@ const render = async (me: Person, cloud: boolean) => {
           tool === "hub_info"
             ? { version: "0.0.0", protocol: 1, busy: [], ...info }
             : tool === "people_list"
-              ? people
+              ? list()
               : tool === "hub_links_get"
                 ? { links: [], issued: [], boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }
                 : tool === "setup_list"
@@ -187,6 +194,30 @@ it("lets a cloud team's owner invite by email, says what happens next, and revok
   expect(asked).toContain("revoke hub inv_aaaaaaaaaa");
   expect(row("dana@example.com")).toBeNull();
   expect(row("eve@example.com")).not.toBeNull();
+});
+
+it("drops an invite from the list when its person joins while the page is open, and after a revoke the team refused", async () => {
+  invites = [...invites, { inviteId: "inv_cccccccccc", email: "kai@example.com", role: "member", createdAt: AT, expiresAt: dayAhead() }];
+  let list = people;
+  await render(sam, true, () => list);
+  expect(row("dana@example.com")).not.toBeNull();
+  // Dana signs in with that email on her own computer: the team takes her invite as used and tells every app.
+  const dana = person("p_dddddddd", "Dana Ito", "member");
+  invites = invites.filter((i) => i.email !== "dana@example.com");
+  list = { ...people, people: [...people.people, dana] };
+  await act(async () => {
+    send({ t: "event", event: { seq: 2, at: AT, type: "people.changed", summary: "Dana Ito joined", data: { change: "joined" } } });
+    // The layer gathers events a moment before reading again.
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  for (let i = 0; i < 4; i++) await settle();
+  expect(row("Dana Ito")).not.toBeNull();
+  expect(row("dana@example.com")).toBeNull();
+  // Kai's invite was used or ran out meanwhile: the team refuses the revoke, and the list is read again.
+  gone = true;
+  await click(button("Revoke", row("kai@example.com") ?? document));
+  expect(asked).toContain("revoke hub inv_cccccccccc");
+  expect(row("kai@example.com")).toBeNull();
 });
 
 it("shows each refusal as one line by the field, in the team's words", async () => {

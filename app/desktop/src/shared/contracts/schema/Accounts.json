@@ -4,7 +4,7 @@
       "description": "A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written.",
       "properties": {
         "code": {
-          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), not_signed_in_team (409: a team with no sign-in).",
+          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
           "minLength": 1,
           "type": "string"
         },
