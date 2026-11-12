@@ -430,13 +430,19 @@ describe("a version difference", () => {
     const admin = signedInPorts(() => [hub({ admin: true, me: { role: "admin" } })]);
     expect(await admin.hubRole(ANSWER.hubUrl)).toBe("admin");
     expect(await admin.updateHub(ANSWER.hubUrl)).toEqual({ ok: true });
-    expect(calls).toEqual(["hub_info", "hub_update"]);
+    expect(calls).toEqual(["hub_info", "hub_info", "hub_update"]);
     expect(await signedInPorts(() => [hub({ admin: true, me: { role: "member" } })]).hubRole(ANSWER.hubUrl)).toBe("member");
     // Signed in to another hub, or none: where to press Update instead.
     const elsewhere = signedInPorts(() => [{ ...hub({}), url: "http://other:4790" }]);
     expect(await elsewhere.hubRole(ANSWER.hubUrl)).toBe("unknown");
     const refused = await elsewhere.updateHub(ANSWER.hubUrl);
     expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Machines › Updates");
+
+    // fleetd cloud, whose hub_info leaves hub_update out: never asked, and it says why.
+    calls.length = 0;
+    const cloud = await signedInPorts(() => [hub({ admin: true, me: { role: "owner" }, leftOut: ["hub_update", "hub_restart"] })]).updateHub(ANSWER.hubUrl);
+    expect(cloud).toEqual({ ok: false, failure: { message: "fleetd cloud updates itself." } });
+    expect(calls).toEqual(["hub_info"]);
   });
 });
 

@@ -234,12 +234,16 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
   const newer = (v: string | null) => v !== null && last?.to !== undefined && compareVersions(v, last.to) === 1;
   const live = last?.finishedAt !== undefined && (newer(connected ? ready : null) || newer(of)) ? null : last;
 
+  // fleetd cloud updates itself: only this app's own update is said, whatever the hub's build, run or machines.
+  if (!updates) {
+    if (flow.phase === "app" && app?.app.kind !== "failed") return { ...appUpdating(app), rows: [] };
+    return { ...(own ?? { kind: "current", title: "Up to date", detail: CLOUD_UPDATES }), rows: [] };
+  }
   if (flow.phase === "refused") return { kind: "failed", title: "The update didn't start", detail: sentence(flow.message), action: TRY_AGAIN, rows: [] };
   if (flow.phase === "starting") return { kind: "updating", title: "Updating the hub…", ...(newest === null ? {} : { detail: named(newest) }), rows: [] };
   if (live !== null && live.finishedAt === undefined) return { ...going(live, flow, now, timeZone, administers), rows: [] };
   if (flow.phase === "app" && app?.app.kind !== "failed") return { ...appUpdating(app), rows: [] };
   if (!connected) return { ...(own ?? { kind: "none", title: "Not connected", detail: "Updates show here once the hub answers." }), rows: [] };
-  if (!updates) return { ...(own ?? { kind: "current", title: "Up to date", detail: CLOUD_UPDATES }), rows: [] };
 
   // Up to date, by what the hub says it runs; and for a while after an update came through, when.
   const cameAt = live?.finishedAt !== undefined && !live.parts.some(bad) && live.parts.some((p) => p.state === "done") ? Date.parse(live.finishedAt) : undefined;
