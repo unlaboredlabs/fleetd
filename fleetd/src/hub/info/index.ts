@@ -1,33 +1,18 @@
 // `hub_info`: the hub's own fleetd build, and everything a restart of the hub (or of
 // one machine's node) would cut off now. An update restarts at once anyway: what it cuts off carries on by itself.
-import type { HubBusyItem, HubBusyKind, HubEvent, MachineId, ProjectRef } from "../../shared/contracts.ts";
+import type { HubBusyItem, HubEvent, MachineId, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { Requests } from "../approvals/store.ts";
 import { shownArgv } from "../approvals/text.ts";
-import { jsTake } from "../chat/index.ts";
 import { leads } from "../leads/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { changeRecords } from "../train/index.ts";
-import { BUSY_MAX, hubStep } from "./state.ts";
+import { BUSY_MAX, hubStep, item, text } from "./state.ts";
 
-export { BUSY_MAX, channel, hubStep } from "./state.ts";
-
-/** One line of at most 280 UTF-16 units, its whitespace collapsed. */
-function text(s: string): string {
-  const flat = jsTake(s.split(/\s+/u).filter((w) => w !== "").join(" "), 280);
-  return flat === "" ? "something is running" : flat;
-}
-
-const item = (kind: HubBusyKind, t: string, r: ProjectRef, since?: string): HubBusyItem => ({
-  kind,
-  machineId: r.machineId,
-  projectRef: r,
-  ...(since === undefined ? {} : { since }),
-  text: text(t),
-});
+export { BUSY_MAX, channel, hubStep, item, text } from "./state.ts";
 
 /** Clones a project add started and no `project.added` or `project.add_failed` ended yet (projects `open_clones`). */
 export function openClones(hub: Hub): [MachineId | undefined, { repo?: string; path: string }][] {
