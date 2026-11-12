@@ -4,54 +4,36 @@
 // operate, only through /link/v1. On the hub with the Navi, the link's key is kept sealed to this hub's box key and
 // opened only to call the other hub (client.ts).
 import { isIP } from "node:net";
-import type { AgentKeyInfo, Grant, HubLink, HubLinkState, IssuedLink, LinkProject, PersonRef, ProjectRef, Role } from "../../shared/contracts.ts";
+import type { AgentKeyInfo, Grant, HubLinkState, IssuedLink, PersonRef, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { loadOrCreateBoxKey } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { sha256, stripBearer } from "../auth/index.ts";
 import { base32, secret } from "../auth/nodes.ts";
-import { capped, roleCap } from "../people/roles.ts";
+import { roleCap } from "../people/roles.ts";
 import { people, refOf } from "../people/store.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
+import { dead, IDLE_EXPIRY_MS, type Issued, type Kept, LINK_KEY_PREFIX, linkGrants, type LinkHello } from "./links.ts";
 
-export const LINK_KEY_PREFIX = "flk_";
-/** The longest a feed read waits for news. */
-export const FEED_WAIT_MAX_SEC = 25;
+export {
+  dead,
+  FEED_WAIT_MAX_SEC,
+  IDLE_EXPIRY_MS,
+  type Issued,
+  type Kept,
+  keptInfo,
+  LINK_KEY_PREFIX,
+  linkAllows,
+  linkAuthor,
+  linkGrants,
+  type LinkHello,
+  linkLimits,
+} from "./links.ts";
+
 /** How often a link's last use is written, at most. */
 const LAST_USED_EVERY_MS = 60_000;
-/** A link unused this long expires, revoked at its next use. */
-export const IDLE_EXPIRY_MS = 90 * 24 * 60 * 60 * 1000;
-
 const linkId = () => `hl_${base32(crypto.getRandomValues(new Uint8Array(5)))}`;
-
-/** A link minted here as a request through it sees it, read again at each request (T2246's navi_bridge `Issued`). */
-export type Issued = {
-  linkId: string;
-  label: string;
-  projects?: ProjectRef[];
-  person?: PersonRef;
-  /** What it may do (`linkGrants`). */
-  grants: Grant[];
-  /** Its person's name, or its device's for a link from before people. */
-  who: string;
-};
-
-const RANK: Record<Role, number> = { read: 0, operate: 1, admin: 2 };
-
-/** The link holds `role` on the machine. */
-export const linkAllows = (link: Issued, role: Role, machineId: string) =>
-  link.grants.some((g) => RANK[g.role] >= RANK[role] && (g.machines === "*" || g.machines.includes(machineId)));
-
-/** The project is within the link's limits. */
-export const linkLimits = (link: Issued, p: ProjectRef) =>
-  link.projects === undefined || link.projects.some((q) => q.machineId === p.machineId && q.projectId === p.projectId);
-
-/** Who its asks are from, in the chats here. */
-export const linkAuthor = (link: Issued) => `${link.who} via ${link.label}`;
-
-/** What a link may do: the minting device's grants, none above its person's role cap, and none above operate. */
-export const linkGrants = (device: Grant[], cap: Role): Grant[] => capped(device, RANK[cap] < RANK.operate ? cap : "operate");
 
 type IssuedRow = {
   link_id: string;
@@ -138,10 +120,6 @@ export const revokeIssued = (hub: Hub, id: string) =>
   hub.db.conn.query("UPDATE hub_links_issued SET revoked_ms = COALESCE(revoked_ms, ?) WHERE link_id = ?").run(hub.clock.now(), id)
     .changes > 0;
 
-/** Why a link key can't be used: the request goes no further. */
-export const dead = (message: string) =>
-  new ToolError("forbidden", message, "Ask the person to make a new link on this hub and add it to their project's Linked hubs.");
-
 /** A store failure, as a link's caller hears it. */
 export function failed(error: unknown): ToolError {
   console.error("hub links store:", error);
@@ -191,23 +169,6 @@ export function verify(hub: Hub, bearer: string): Issued {
   return link;
 }
 
-/** A link this hub keeps for one of its projects, its key still sealed. */
-export type Kept = {
-  linkId: string;
-  navi: ProjectRef;
-  label: string;
-  url: string;
-  sealed: Uint8Array;
-  cursor: number;
-  state: HubLinkState;
-  error?: string;
-  checkedMs?: number;
-  createdMs: number;
-  /** What the other hub's last hello said: the person it acts as, and the projects it is limited to (JSON). */
-  who?: string;
-  projects?: string;
-};
-
 type KeptRow = {
   link_id: string;
   machine_id: string;
@@ -243,32 +204,6 @@ function readKept(r: KeptRow): Kept {
   };
 }
 
-export function keptInfo(k: Kept): HubLink {
-  let projects: LinkProject[] | undefined;
-  try {
-    // Written by `setHello` only; a row that doesn't read reads as not limited.
-    projects = k.projects === undefined ? undefined : (JSON.parse(k.projects) as LinkProject[]);
-  } catch {
-    projects = undefined;
-  }
-  return {
-    ...(k.checkedMs === undefined ? {} : { checkedAt: isoMs(k.checkedMs) }),
-    createdAt: isoMs(k.createdMs),
-    ...(k.error === undefined ? {} : { error: k.error }),
-    label: k.label,
-    linkId: k.linkId,
-    navi: k.navi,
-    ...(projects === undefined ? {} : { projects }),
-    state: k.state,
-    url: k.url,
-    ...(k.who === undefined ? {} : { who: k.who }),
-  };
-}
-
-/** What `GET /link/v1/hello` answers (fleetd-contracts hub_links.rs `LinkHello`). */
-export type LinkHello = { label: string; projects: LinkProject[]; cursor: number; who?: string; limited?: boolean };
-
-/** Keeps what the other hub's hello said of a kept link: its person, and its projects when it is limited to them. */
 export function setHello(db: HubDb, id: string, hello: LinkHello): void {
   const projects =
     hello.limited === true
