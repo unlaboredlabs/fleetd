@@ -1,5 +1,5 @@
-// The vault's rows (vault-design §3): `vault_items` (readable metadata beside one sealed envelope), `vault_shares`,
-// `vault_keys` and `vault_settings`. Every write seals the item's secret fields again under a fresh data key and a
+// The vault's rows (vault-design §3): `vault_items` (readable metadata beside one sealed envelope), `vault_keys` and
+// `vault_settings`. Every write seals the item's secret fields again under a fresh data key and a
 // new version, so the AAD always names the row as it is.
 import type { Database } from "bun:sqlite";
 import type { ProjectRef } from "../../shared/contracts.ts";
@@ -30,6 +30,7 @@ type Raw = {
   updated_ms: number;
   updated_by: string;
   deleted_ms: number | null;
+  sealed_scope: string | null;
 };
 
 function rowOf(x: Raw): ItemRow {
@@ -56,6 +57,7 @@ function rowOf(x: Raw): ItemRow {
     updatedMs: x.updated_ms,
     updatedBy: x.updated_by,
     ...(x.deleted_ms !== null ? { deletedMs: x.deleted_ms } : {}),
+    ...(x.sealed_scope !== null ? { sealedScope: x.sealed_scope } : {}),
   };
 }
 
@@ -86,32 +88,11 @@ export class VaultStore {
     return this.select("machine_id = ? AND project_id = ? AND scope IN ('project', 'order')", [r.machineId, r.projectId]);
   }
 
-  /** The projects a person item is shared with. */
-  shares(itemId: string): ProjectRef[] {
-    return this.db
-      .query<{ machine_id: string; project_id: string }, [string]>(
-        "SELECT machine_id, project_id FROM vault_shares WHERE item_id = ? ORDER BY machine_id, project_id",
-      )
-      .all(itemId)
-      .map((x) => ({ machineId: x.machine_id, projectId: x.project_id }));
-  }
-
-  setShares(itemId: string, to: ProjectRef[], by: string, at: number): void {
-    this.db.transaction(() => {
-      this.db.query("DELETE FROM vault_shares WHERE item_id = ?").run(itemId);
-      for (const r of to) {
-        this.db
-          .query("INSERT OR IGNORE INTO vault_shares (item_id, machine_id, project_id, by_person, at_ms) VALUES (?, ?, ?, ?, ?)")
-          .run(itemId, r.machineId, r.projectId, by, at);
-      }
-    })();
-  }
-
-  /** How many live items count against a person's or a project's limit. */
-  count(of: { personId: string } | ProjectRef): number {
+  /** How many live items count against the team vault's or a project's limit. */
+  count(of: "team" | ProjectRef): number {
     const q =
-      "personId" in of
-        ? this.db.query<{ n: number }, [string]>("SELECT count(*) AS n FROM vault_items WHERE deleted_ms IS NULL AND scope = 'person' AND person_id = ?").get(of.personId)
+      of === "team"
+        ? this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM vault_items WHERE deleted_ms IS NULL AND scope = 'hub'").get()
         : this.db
             .query<{ n: number }, [string, string]>(
               "SELECT count(*) AS n FROM vault_items WHERE deleted_ms IS NULL AND machine_id = ? AND project_id = ?",
@@ -196,7 +177,7 @@ export class VaultStore {
       changed = this.db
         .query(
           `UPDATE vault_items SET scope = ?, person_id = ?, machine_id = ?, project_id = ?, workstream_id = ?, env_name = ?,
-             label = ?, meta = ?, sealed = ?, key_id = ?, version = ?, updated_ms = ?, updated_by = ?
+             label = ?, meta = ?, sealed = ?, key_id = ?, version = ?, updated_ms = ?, updated_by = ?, sealed_scope = NULL
            WHERE item_id = ? AND version = ?`,
         )
         .run(
@@ -230,10 +211,9 @@ export class VaultStore {
     this.db.query("UPDATE vault_items SET deleted_ms = ?, updated_ms = ?, updated_by = ? WHERE item_id = ?").run(deletedMs, at, by, itemId);
   }
 
-  /** Removes an item for good, with its shares and deliveries. */
+  /** Removes an item for good, with its deliveries. */
   purge(itemId: string): void {
     this.db.transaction(() => {
-      this.db.query("DELETE FROM vault_shares WHERE item_id = ?").run(itemId);
       this.db.query("DELETE FROM vault_deliveries WHERE item_id = ?").run(itemId);
       this.db.query("DELETE FROM vault_items WHERE item_id = ?").run(itemId);
     })();

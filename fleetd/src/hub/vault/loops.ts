@@ -13,7 +13,7 @@ import { registerLeadCalls as registerFills } from "./calls.ts";
 import { deliveries, orderSet, projectSet } from "./deliver.ts";
 import { registerLeadCalls as registerImports } from "./import.ts";
 import { vault } from "./index.ts";
-import { adopt, migrateCards, migratePlain } from "./migrate.ts";
+import { adopt, copyTeamVars, migrateCards, migratePlain } from "./migrate.ts";
 
 /** Each machine coming online: what it holds moves in, what it's missing goes out. */
 async function linked(hub: Hub, m: string): Promise<void> {
@@ -104,6 +104,7 @@ export function start(hub: Hub): void {
     } catch (e) {
       console.warn(`vault: plain variables not moved in yet: ${(e as Error).message}`);
     }
+    copyTeamVars(hub);
     await deliveries(hub)
       .reconcileAll()
       .catch((e) => console.warn(`vault: variables not delivered: ${(e as Error).message}`));

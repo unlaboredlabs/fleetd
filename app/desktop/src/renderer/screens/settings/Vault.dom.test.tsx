@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-// Settings › Vault: its rows show only on a hub that serves it; yours lists your items and the hub's, a project's its
-// own; an item's fields are dots until Show, which goes through main (Touch ID there), and hide again when the window
-// loses focus; Copy goes through main too, so the page never holds a copied value; Add sends the typed fields to main
-// to seal, never to the hub.
+// Settings › Vault: its rows show only on a hub that serves it; it lists the team's logins, cards and addresses, a
+// project's tab its variables; an item's fields are dots until Show, which goes through main (Touch ID there), and
+// hide again when the window loses focus; Copy goes through main too, so the page never holds a copied value; Add sends
+// the typed fields to main to seal, never to the hub, and names no scope; an item only its creator or an admin may
+// show or change says so; items set aside for the person have a section of their own, only when there are some; an
+// older hub's items are one list.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -12,8 +14,8 @@ import type { VaultCopyRequest, VaultRevealRequest, VaultSaveRequest } from "../
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { HubVault } from "./Vault";
 import { PaymentsSetting } from "./Payments";
-import { ShareDialog } from "./VaultItem";
 import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,8 +26,11 @@ vi.hoisted(() => {
 const CANARY = "canary-7Qx-not-a-real-secret";
 const AT = "2026-11-09T10:00:00.000Z";
 const base = { canEdit: true, canReveal: true, createdMs: 0, updatedMs: 0, updatedBy: "human:laptop", version: 1 };
-const amazon: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000001", kind: "login", scope: "person", label: "Amazon", meta: { source: { kind: "typed" }, sites: ["amazon.com"], fields: ["username", "password"] } };
+const amazon: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000001", kind: "login", scope: "hub", label: "Amazon", meta: { source: { kind: "typed" }, sites: ["amazon.com"], fields: ["username", "password"] } };
 const teamCard: VaultItemSummary = { ...base, canEdit: false, canReveal: false, itemId: "V00000000000000000000000000000002", kind: "card", scope: "hub", label: "Team Visa", meta: { source: { kind: "typed" }, brand: "visa", last4: "4242" } };
+/** Set aside: Sam's own from before the team vault, never shared. */
+const oldCard: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000004", kind: "card", scope: "person", label: "Sam's Amex", meta: { source: { kind: "typed" }, brand: "amex", last4: "0005" } };
+const oldEnv: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000005", kind: "env", scope: "person", label: "OPENAI_KEY", envName: "OPENAI_KEY", meta: { source: { kind: "typed" }, secret: true } };
 const stripe: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000003", kind: "env", scope: "project", machineId: "devbox", projectId: "shop", label: "STRIPE_KEY", envName: "STRIPE_KEY", meta: { source: { kind: "typed" }, secret: true, fingerprint: "ab12cd34", bytes: 20 } };
 
 let host: HTMLDivElement;
@@ -35,6 +40,9 @@ let saves: VaultSaveRequest[];
 let reveals: VaultRevealRequest[];
 let copies: VaultCopyRequest[];
 let card: { ref: string; label?: string; brand?: string; last4?: string } | undefined;
+/** What vault_list {} gives: the team's items, and those set aside for the caller. */
+let team: VaultItemSummary[];
+const TEAM = ["vault", "vault_team"];
 
 beforeEach(() => {
   calls = [];
@@ -42,6 +50,7 @@ beforeEach(() => {
   reveals = [];
   copies = [];
   card = undefined;
+  team = [amazon, teamCard];
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -76,7 +85,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (hash: string, features: string[] = ["vault"], page?: ReactNode, snapshot = true) => {
+const render = async (hash: string, features: string[] = TEAM, page?: ReactNode, snapshot = true) => {
   window.location.hash = hash;
   let send: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -84,15 +93,16 @@ const render = async (hash: string, features: string[] = ["vault"], page?: React
       calls.push({ tool, input });
       const i = input as { machineId?: string; kind?: string };
       if (tool === "vault_list") {
-        const all = i.machineId === undefined ? [amazon, teamCard, stripe] : [stripe, amazon, teamCard];
+        const all = i.machineId === undefined ? team : (i as { usable?: boolean }).usable === true ? [stripe, teamCard] : [stripe];
         return Promise.resolve({ ok: true, output: { items: all.filter((x) => i.kind === undefined || x.kind === i.kind) } });
       }
       if (tool === "vault_get") {
         const id = (input as { itemId: string }).itemId;
-        const item = [amazon, teamCard, stripe].find((x) => x.itemId === id);
+        const item = [amazon, teamCard, stripe, oldCard, oldEnv].find((x) => x.itemId === id);
         return Promise.resolve({ ok: true, output: { item, activity: [{ n: 4, atMs: Date.parse(AT), action: "fill", outcome: "ok", data: { site: "amazon.com", fields: ["password"] } }] } });
       }
       if (tool === "vault_status") return Promise.resolve({ ok: true, output: { hubBoxKey: "k", keyMode: "file", locked: false, keyMissing: false, recoverySaved: true, migration: { done: true, machines: [] } } });
+      if (tool === "vault_move") return Promise.resolve({ ok: true, output: { item: { ...amazon } } });
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin: false } });
       if (tool === "project_settings_get")
         return Promise.resolve({ ok: true, output: { settings: { machineId: "devbox", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", setup: { commands: [], inputs: [] }, env: [{ name: "STRIPE_KEY", kind: "secret", fingerprint: "ab12cd34", bytes: 20, updatedAt: AT }], worktrees: { dir: "/w/wt", baseBranch: "main", worktrees: [] } } } });
@@ -185,13 +195,17 @@ it("shows no Vault row on a hub that doesn't serve it, and one under You where i
   expect([...host.querySelectorAll("nav button")].map((b) => b.textContent)).toContain("Vault");
 });
 
-it("lists yours and the hub's, with the hub's tagged Everyone, and the project's on its own tab", async () => {
+it("lists the team's logins, cards and addresses with no tag, and the project's variables on its own tab", async () => {
   await render("#/settings/vault");
-  expect(rows()).toEqual(["Amazonamazon.com", "Team VisaEveryoneVisa ••4242"]);
+  expect(rows()).toEqual(["Amazonamazon.com", "Team VisaVisa ••4242"]);
+  expect(host.textContent).not.toContain("Everyone");
+  expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
   act(() => root.unmount());
   root = createRoot(host);
+  calls = [];
   await render("#/settings/project-vault?for=devbox/shop");
-  expect(rows()).toEqual(["STRIPE_KEYShopSecret"]);
+  expect(rows()).toEqual(["STRIPE_KEYSecret"]);
+  expect(calls.find((c) => c.tool === "vault_list")?.input).toEqual({ machineId: "devbox", projectId: "shop" });
 });
 
 it("shows an item's fields as dots until Show, through main, and hides them when the window loses focus", async () => {
@@ -214,37 +228,58 @@ it("shows an item's fields as dots until Show, through main, and hides them when
   expect(JSON.stringify(calls)).not.toContain(CANARY);
 });
 
-it("says why a hub item can't be shown or changed here, instead of greying it out", async () => {
+it("says an item only its creator or an admin may show or change, instead of greying it out", async () => {
   await render("#/settings/vault");
   await openRow("Team Visa");
-  expect(panel()?.textContent).toContain("Only owners and admins can show it. Agents still fill it.");
-  expect(panel()?.textContent).toContain("Only the hub's owners and admins change it.");
-  expect([...(panel()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).not.toContain("Show");
+  expect(panel()?.textContent).toContain("Only its creator or an admin can show it. Agents still fill it.");
+  expect(panel()?.textContent).toContain("Only its creator or an admin can change or delete it.");
+  const words = [...(panel()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
+  expect(words).not.toContain("Show");
+  expect(words).not.toContain("Edit");
+  expect(words).not.toContain("Delete…");
+  expect(panel()?.textContent).not.toContain("Used by");
+  // Its creator or an admin gets Show, Edit and Delete, and no line about it.
+  await openRow("Amazon");
+  expect([...(panel()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(expect.arrayContaining(["Show", "Edit", "Delete…"]));
+  expect(panel()?.textContent).not.toContain("Only its creator");
 });
 
-it("adds a login by handing its typed fields to main to seal, never to the hub", async () => {
-  await render("#/settings/vault");
+const openPlus = async () => {
   const plus = button("Add to the vault");
   await act(async () => {
     plus.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
     await Promise.resolve();
   });
   await settle();
-  const login = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((m) => m.textContent === "Login");
+  return [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
+};
+
+it("adds logins, cards, addresses or a 1Password import on the Vault page, and variables or a .env on a project's", async () => {
+  await render("#/settings/vault");
+  expect((await openPlus()).map((m) => m.textContent)).toEqual(["Login", "Card", "Address", "Import from 1Password…"]);
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render("#/settings/project-vault?for=devbox/shop");
+  expect((await openPlus()).map((m) => m.textContent)).toEqual(["Variable", "Paste .env…"]);
+});
+
+it("adds a login by handing its typed fields to main to seal, never to the hub, and names no scope", async () => {
+  await render("#/settings/vault");
+  const login = (await openPlus()).find((m) => m.textContent === "Login");
   if (login === undefined) throw new Error("no Login item");
   await click(login);
   await type(fieldByLabel("Websites"), "https://www.github.com/login");
   await type(fieldByLabel("User name"), "sam");
   await type(fieldByLabel("Password"), CANARY);
   await click(button("Add"));
-  expect(saves).toEqual([{ kind: "login", scope: "person", label: "github.com", sites: ["github.com"], fields: { username: "sam", password: CANARY } }]);
+  expect(saves).toEqual([{ kind: "login", label: "github.com", sites: ["github.com"], fields: { username: "sam", password: CANARY } }]);
   expect(JSON.stringify(calls)).not.toContain(CANARY);
 });
 
 
 it("names a picked vault card the list doesn't have by its label, never its raw vault: id", async () => {
   card = { ref: "vault:V00000000000000000000000000000077", label: "Old Visa", brand: "visa", last4: "1111" };
-  await render("#/settings/projects?for=devbox/shop", ["vault"], <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
+  await render("#/settings/projects?for=devbox/shop", TEAM, <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
   expect(host.textContent).toContain("Pays with Old Visa");
   await click(button("Change…"));
   const picker = host.querySelector<HTMLElement>("[role='combobox']");
@@ -253,7 +288,7 @@ it("names a picked vault card the list doesn't have by its label, never its raw 
 });
 
 it("picks the project's card from the vault cards its work can use, kept as vault:<id>", async () => {
-  await render("#/settings/projects?for=devbox/shop", ["vault"], <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
+  await render("#/settings/projects?for=devbox/shop", TEAM, <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
   expect(host.textContent).toContain("from the vault");
   await click(button("Pick a card…"));
   expect(calls.filter((c) => c.tool === "vault_list").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "shop", kind: "card", usable: true }]);
@@ -266,7 +301,7 @@ it("picks the project's card from the vault cards its work can use, kept as vaul
   });
   await settle();
   const options = [...document.querySelectorAll<HTMLElement>("[role='option']")];
-  expect(options.map((o) => o.textContent)).toEqual(["Team Visa · Visa ••4242 · Everyone", "No card"]);
+  expect(options.map((o) => o.textContent)).toEqual(["Team Visa · Visa ••4242", "No card"]);
   const team = options[0];
   if (team === undefined) throw new Error("no option");
   await click(team);
@@ -274,13 +309,48 @@ it("picks the project's card from the vault cards its work can use, kept as vaul
   expect(host.textContent).toContain("Pays with Team Visa");
 });
 
-it("keeps Save off in Use in until the projects are in, so no share is dropped", async () => {
-  const shared = { ...amazon, sharedWith: [{ machineId: "devbox", projectId: "shop" }] };
-  await render("#/settings/vault", ["vault"], <ShareDialog item={shared} onClose={() => undefined} />, false);
+it("shows the items set aside for the person under the list, each to move or delete", async () => {
+  team = [amazon, teamCard, oldCard, oldEnv];
+  await render("#/settings/vault");
+  expect(rows()).toEqual(["Amazonamazon.com", "Team VisaVisa ••4242"]);
+  const aside = host.querySelector<HTMLElement>("[data-vault-set-aside]");
+  if (aside === null) throw new Error("no set-aside section");
+  expect(aside.textContent).toContain("Yours from before the team vault. Nothing uses them until you move them.");
+  expect([...aside.querySelectorAll("[data-vault-row]")].map((r) => r.getAttribute("aria-label"))).toEqual(["Sam's Amex", "OPENAI_KEY"]);
+  // A card goes to the team vault as it is.
+  await click(button("Move to team vault", aside));
+  expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }]);
+  // A variable goes to a project, picked first: Add stays off until one is.
+  await click(button("Add to a project…", aside));
   const dialog = document.querySelector<HTMLElement>("[role='dialog']");
-  expect(dialog?.textContent).toContain("Loading your projects… Save waits for them, so no share is dropped.");
-  const save = button("Save", dialog ?? document.body);
-  expect(save.disabled).toBe(true);
-  await click(save);
-  expect(calls.some((c) => c.tool === "vault_share_set")).toBe(false);
+  if (dialog === null) throw new Error("no dialog");
+  expect(button("Add", dialog).disabled).toBe(true);
+  const picker = dialog.querySelector<HTMLElement>("[role='combobox']");
+  if (picker === null) throw new Error("no project picker");
+  await act(async () => {
+    picker.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const shop = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Shop");
+  if (shop === undefined) throw new Error("no Shop");
+  await click(shop);
+  await click(button("Add", document.querySelector<HTMLElement>("[role='dialog']") ?? document.body));
+  expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }, { itemId: oldEnv.itemId, machineId: "devbox", projectId: "shop" }]);
+});
+
+it("lists an older hub's items as one list, the person's own among them, with no set-aside section", async () => {
+  team = [amazon, teamCard, oldCard];
+  await render("#/settings/vault", ["vault"]);
+  expect(rows()).toEqual(["Amazonamazon.com", "Sam's AmexAmex ••0005", "Team VisaVisa ••4242"]);
+  expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
+});
+
+it("keeps only the vault key on Hub › Every project › Vault", async () => {
+  await render("#/settings/hub/vault", TEAM, <HubVault />);
+  expect(host.querySelector("[data-screen='settings.hub.vault']")).not.toBeNull();
+  expect(host.textContent).toContain("Recovery code");
+  expect(host.textContent).toContain("Rotate the key");
+  expect(host.querySelector("[aria-label='Vault items']")).toBeNull();
+  expect(calls.some((c) => c.tool === "vault_list")).toBe(false);
 });

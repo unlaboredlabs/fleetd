@@ -74,7 +74,7 @@ export function sessionContext(hub: Hub, caller: LeadCaller, sessionId: unknown)
 }
 
 
-/** The address fill's own sites: a checkout recorded in the session, the item's sites, its owner's logins' sites. */
+/** The address fill's own sites: a checkout recorded in the session, the item's sites, the team vault's logins' sites. */
 function addressAllowed(hub: Hub, row: ItemRow, host: string, sessionId: string, ctx: UseContext): boolean {
   if (onAny(host, row.meta.sites)) return true;
   const now = hub.clock.now();
@@ -83,11 +83,9 @@ function addressAllowed(hub: Hub, row: ItemRow, host: string, sessionId: string,
     const at = Date.parse(q.createdAt);
     if (p?.sessionId === sessionId && now - at <= PURCHASE_WINDOW_MS && onSite(host, p.shop.domain)) return true;
   }
-  const owner = row.scope === "person" ? row.personId : undefined;
-  if (owner === undefined) return false;
   return vault(hub)
-    .store.select("kind = 'login' AND scope = 'person' AND person_id = ?", [owner])
-    .some((l) => onAny(host, l.meta.sites));
+    .usable()
+    .some((l) => l.kind === "login" && onAny(host, l.meta.sites));
 }
 
 const refuse = (message: string, fix: string) => new ToolError("forbidden", message, fix);
@@ -122,7 +120,7 @@ export class Fills {
     let row: ItemRow | undefined;
     try {
       v.requireOpen();
-      row = resolve(v.usable(ctx), call.item, call.ref);
+      row = resolve(v.usable(), call.item, call.ref);
       this.check(row, field, site, frame, sessionId, ctx, host);
     } catch (e) {
       if (e instanceof ToolError && (e.code === "forbidden" || e.code === "not_found" || e.reason === "vault_rate_limited")) {
@@ -157,7 +155,7 @@ export class Fills {
       for (const h of [site, ...(frame !== undefined ? [frame] : [])]) {
         if (!addressAllowed(hub, row, h, sessionId, ctx)) {
           throw refuse(
-            `${row.label} doesn't fill on ${h}: an address fills at a checkout recorded in this session, on its own sites, or where its owner has a vault login.`,
+            `${row.label} doesn't fill on ${h}: an address fills at a checkout recorded in this session, on its own sites, or on a site the team vault has a login for.`,
             "Record the purchase first with purchase_request, or ask the person to add the site to the address.",
           );
         }
@@ -224,18 +222,20 @@ export class Fills {
     return { auditId: n };
   }
 
-  /** `vault_items`: what this session may use: labels, kinds, sites and fields; variables by name. Never a value. */
+  /**
+   * `vault_items`: the team vault's logins, cards and addresses (labels, sites and fields) and the variables in the
+   * session's environment, by name. Never a value.
+   */
   items(caller: LeadCaller, call: LeadCall): Record<string, unknown> {
     const v = vault(this.hub);
     const agent = caller.agent;
     const taskId = agent.kind === "task" ? agent.taskId : undefined;
-    const { personId, workstreamId } = v.personFor(caller.projectRef, taskId);
-    const ctx: UseContext = { projectRef: caller.projectRef, ...(personId !== undefined ? { personId } : {}) };
+    const workstreamId = taskId !== undefined ? v.orderOfTask(taskId) : undefined;
     const kind = typeof call.kind === "string" ? (call.kind as VaultKind) : undefined;
     const site = typeof call.site === "string" ? hostOf(call.site) : undefined;
     const items: Record<string, unknown>[] = [];
     if (kind === undefined || kind !== "env") {
-      for (const row of v.usable(ctx)) {
+      for (const row of v.usable()) {
         if (kind !== undefined && row.kind !== kind) continue;
         if (site !== undefined && row.kind === "login" && !onAny(site, row.meta.sites)) continue;
         if (site !== undefined && row.kind !== "login") continue;

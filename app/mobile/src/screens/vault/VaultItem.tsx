@@ -2,8 +2,9 @@
 // the person asks. Tapping a hidden field asks for Face ID (or the passcode), then shows every field of the item for 30
 // seconds; tapping a shown one copies it to a clipboard that stays on this phone and empties itself after a minute.
 // Leaving the screen, or the app going to the background, hides them at once: a value lives in this screen's state
-// only while it's on screen, and is never logged. A plain variable shows as it is, its value in the list's metadata. Then the sites it fills on, where
-// it's used, its last 20 uses (vault_get's activity), and Delete.
+// only while it's on screen, and is never logged. A plain variable shows as it is, its value in the list's metadata.
+// Then the sites it fills on, its last 20 uses (vault_get's activity), and Delete. Only its creator or an admin may
+// show, change or delete it: for anyone else the fields stay hidden and Delete is off, each with a line saying why.
 import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +18,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { useNow } from "../time";
 import { confirmDestructive, errorWords, Problem, Symbol, useRead } from "../manage/parts";
 import { deleteItem, readItem, reveal, vaultErrorWords, vaultHub } from "./api";
-import { auditLine, CLIPBOARD_MS, copyText, isSecretEnv, presentFields, REVEAL_MS, rowLine, SCOPE_WORDS, sealedFields, shownFields, sitesMeta, titleOf, type FieldSpec } from "./model";
+import { auditLine, KIND_WORDS, CLIPBOARD_MS, copyText, isSecretEnv, offWhy, presentFields, REVEAL_MS, rowLine, sealedFields, shownFields, sitesMeta, titleOf, type FieldSpec } from "./model";
 import { KindTile, useVaultChanged, useVaultNav, useVaultRoute } from "./parts";
 import { unlock } from "./unlock";
 
@@ -151,19 +152,14 @@ export function VaultItem() {
 
   const sites = sitesMeta(item);
   const projectName = (machineId: string, projectId: string) => state.projects?.[`${machineId}/${projectId}`]?.title;
-  const usedIn =
-    item.scope === "person"
-      ? [SCOPE_WORDS.person, ...(item.sharedWith ?? []).map((p) => projectName(p.machineId, p.projectId) ?? "A project")]
-      : item.scope === "hub"
-        ? [SCOPE_WORDS.hub]
-        : [item.machineId === undefined || item.projectId === undefined ? SCOPE_WORDS.project : (projectName(item.machineId, item.projectId) ?? SCOPE_WORDS.project)];
-  const footer = !item.canReveal
-    ? "Only whoever added it, or an admin, can see its values."
-    : plain
+  const off = offWhy(item);
+  const footer =
+    off.show ??
+    (plain
       ? "A plain variable: not a secret, so it shows as it is."
       : values === null
         ? "Tap a field to see it, after Face ID. Tap it again to copy it."
-        : "Shown for 30 seconds. A copied value stays on this phone and clears after a minute.";
+        : "Shown for 30 seconds. A copied value stays on this phone and clears after a minute.");
 
   return (
     <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
@@ -198,12 +194,6 @@ export function VaultItem() {
         </ListSection>
       )}
 
-      <ListSection header="Used by">
-        {usedIn.map((u, i) => (
-          <ListRow key={`${String(i)}${u}`} title={u} />
-        ))}
-      </ListSection>
-
       {got === undefined ? null : (
         <ListSection header="Activity" {...(got.activity.length === 0 ? {} : { footer: "Every use is logged, never a value." })}>
           {got.activity.length === 0 ? (
@@ -217,11 +207,11 @@ export function VaultItem() {
         </ListSection>
       )}
 
-      {item.canEdit ? (
-        <ListSection>
-          <ListRow title={item.kind === "env" ? "Delete Variable" : `Delete ${item.kind === "login" ? "Login" : item.kind === "card" ? "Card" : "Address"}`} destructive chevron={false} {...(live ? { onPress: remove } : {})} />
+      {item.deletedMs !== undefined ? null : (
+        <ListSection {...(off.change === undefined ? {} : { footer: off.change })}>
+          <ListRow title={`Delete ${KIND_WORDS[item.kind].one}`} destructive={item.canEdit} chevron={false} {...(item.canEdit && live ? { onPress: remove } : {})} />
         </ListSection>
-      ) : null}
+      )}
     </ScrollView>
   );
 }

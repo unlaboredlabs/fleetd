@@ -51,7 +51,6 @@ test("the vault's migration sorts last and adds its tables to a fresh database",
     "vault_items",
     "vault_keys",
     "vault_settings",
-    "vault_shares",
   ]);
   expect(db.all("SELECT * FROM vault_items")).toEqual([]);
   db.close();

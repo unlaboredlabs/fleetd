@@ -34,7 +34,7 @@ import {
   TransferError,
 } from "./format.ts";
 import { EXPORT_KEY_ID, itemToExport, newSecrets, sealValue } from "./seal.ts";
-import { AREAS, CARRIED, fateOf, machineRow, ROWS_LEFT_OUT, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
+import { AREAS, CARRIED, fateOf, machineRow, RETIRED, ROWS_LEFT_OUT, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
 import { TarError, TarWriter } from "./tar.ts";
 
 /** The hub's box key as its home keeps it; undefined when the home has none. Never made here. */
@@ -223,7 +223,7 @@ export async function exportHub(o: ExportOptions): Promise<ExportSummary> {
     }
     const headerBytes = jsonBytes(header);
     const headerPart = { path: HEADER_PATH, ...(await tar.entry(HEADER_PATH, headerBytes.length, headerBytes)) };
-    for (const name of CARRIED) {
+    for (const name of [...CARRIED, ...Object.keys(RETIRED)]) {
       if (!present.has(name) || (!sealing && SECRET_TABLES.includes(name))) continue;
       tables.push(await writeTable(conn, tar, name, sealing, skipped));
     }

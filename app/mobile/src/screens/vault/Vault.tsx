@@ -1,22 +1,25 @@
-// The Vault, as iOS's Passwords app lists its own: the person's logins, cards, addresses and variables (with the hub's
-// items everyone's work uses) from Settings, or a project's own from its screen. A section per kind, each row its kind's
-// tile, its label and one quiet line ("amazon.com", "Visa ••4242"), and where it's used when that isn't only the
-// person's own work. The bar's search field narrows the list; its + is a menu of the four kinds and Import from
-// 1Password. A row swipes left (or is held) to delete, to the trash for 30 days. The list holds metadata alone: no
-// value is read until an item is opened and revealed (VaultItem.tsx), and the list reads again on vault.changed.
+// The Vault, as iOS's Passwords app lists its own: from Settings, the team's logins, cards and addresses, which every
+// project's agents fill; from a project's screen, its variables and its orders'. A section per kind, each row its
+// kind's tile, its label and one quiet line ("amazon.com", "Visa ••4242"). The bar's search field narrows the list; its
+// + is a menu of the three kinds and Import from 1Password (a project's: a new variable). A row swipes left (or is held)
+// to delete, to the trash for 30 days, when the person may (its creator or an admin). Under the team's list, only when
+// it has items, the person's own items set aside from before the team vault: each moved where it's used, or deleted.
+// The list holds metadata alone: no value is read until an item is opened and revealed (VaultItem.tsx), and the list
+// reads again on vault.changed.
 import { useLayoutEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useHub } from "../../hubContext";
 import { shape, space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { HoldMenu } from "../../ui/HoldMenu";
+import type { MenuItem } from "../../ui/Menu";
 import { Icon } from "../../ui/Icon";
 import { ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { SwipeGroup, SwipeRow, useSwipeGroup } from "../../ui/SwipeRow";
 import { confirmDestructive, errorWords, Problem, Symbol, useRead } from "../manage/parts";
-import { deleteItem, listItems, vaultErrorWords, vaultHub } from "./api";
-import { KIND_WORDS, KINDS, rowLine, scopeTag, sections, titleOf } from "./model";
+import { deleteItem, listItems, moveItem, vaultErrorWords, vaultHub } from "./api";
+import { KIND_WORDS, rowLine, sections, SET_ASIDE_WHY, TEAM_KINDS, teamVault, titleOf } from "./model";
 import { KindTile, useVaultChanged, useVaultNav, useVaultRoute, whoseOf } from "./parts";
 import type { VaultItemSummary, VaultKind } from "./types";
 
@@ -27,7 +30,8 @@ export function Vault() {
   const { state, session } = useHub();
   const hub = useMemo(() => vaultHub(session), [session]);
   const { whose, project } = whoseOf(state, key);
-  const list = useRead(() => listItems(hub, whose), [hub, key]);
+  const team = teamVault(state.hub);
+  const list = useRead(() => listItems(hub, whose, team), [hub, key, team]);
   useVaultChanged(session, list.reload);
   const [query, setQuery] = useState("");
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
@@ -36,10 +40,10 @@ export function Vault() {
   const live = state.hub.phase === "live";
 
   const add = (kind: VaultKind) => navigation.navigate("VaultEdit", { kind, ...(key === undefined ? {} : { key }) });
-  const importFrom = () => navigation.navigate("VaultImport", key === undefined ? undefined : { key });
+  const importFrom = () => navigation.navigate("VaultImport");
 
   useLayoutEffect(() => {
-    const kinds = KINDS.map((k) => ({ kind: k, label: KIND_WORDS[k].one }));
+    const kinds = TEAM_KINDS.map((k) => ({ kind: k, label: KIND_WORDS[k].one }));
     navigation.setOptions({
       headerSearchBarOptions: {
         placeholder: "Search",
@@ -52,8 +56,11 @@ export function Vault() {
       ...(Platform.OS === "ios"
         ? {
             unstable_headerRightItems: () =>
-              live
-                ? [
+              !live
+                ? []
+                : key !== undefined
+                  ? [{ type: "button", label: "Add", icon: { type: "sfSymbol", name: "plus" }, accessibilityLabel: "Add a variable", onPress: () => add("env") }]
+                  : [
                     {
                       type: "menu",
                       label: "Add",
@@ -66,18 +73,18 @@ export function Vault() {
                         ],
                       },
                     },
-                  ]
-                : [],
+                  ],
           }
         : {
             headerRight: () =>
               live ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Add to the Vault"
+                  accessibilityLabel={key === undefined ? "Add to the Vault" : "Add a variable"}
                   hitSlop={12}
                   onPress={() => {
                     haptics.tap();
+                    if (key !== undefined) return add("env");
                     Alert.alert("Add to the Vault", undefined, [...kinds.map((k) => ({ text: k.label, onPress: () => add(k.kind) })), { text: "Import from 1Password", onPress: importFrom }, { text: "Cancel", style: "cancel" as const }]);
                   }}
                 >
@@ -89,10 +96,11 @@ export function Vault() {
     // `add` and `importFrom` read only `key` and `navigation`.
   }, [navigation, t.accent, live, key, swipes.close]);
 
+  const setAsideOf = (item: VaultItemSummary) => list.value?.ok === true && list.value.value.setAside.some((i) => i.itemId === item.itemId);
   const remove = (item: VaultItemSummary) =>
     confirmDestructive({
       title: `Delete ${titleOf(item)}?`,
-      message: item.kind === "env" ? "Agents stop getting it from their next start. It stays in the trash for 30 days." : "Agents can't use it any more. It stays in the trash for 30 days.",
+      message: setAsideOf(item) ? TRASH : item.kind === "env" ? `Agents stop getting it from their next start. ${TRASH}` : `Agents can't use it any more. ${TRASH}`,
       button: "Delete",
       onConfirm: () => {
         setGone((g) => new Set(g).add(item.itemId));
@@ -108,10 +116,40 @@ export function Vault() {
       },
     });
 
+  /** A set-aside item moved where it's used: a login, card or address to the team vault; a variable to a project picked. */
+  const move = (item: VaultItemSummary) => {
+    if (item.kind === "env") return navigation.navigate("VaultMove", { item });
+    setGone((g) => new Set(g).add(item.itemId));
+    void moveItem(hub, item.itemId).then((r) => {
+      if (r.ok) {
+        list.reload();
+        return haptics.success();
+      }
+      setGone((g) => {
+        const next = new Set(g);
+        next.delete(item.itemId);
+        return next;
+      });
+      setProblem(`Couldn't move ${titleOf(item)}: ${vaultErrorWords(r.error) ?? errorWords(r.error)}`);
+    });
+  };
+  const moveWord = (item: VaultItemSummary) => (item.kind === "env" ? "Add to a Project…" : "Move to Team Vault");
+  const setAsideActions = (item: VaultItemSummary) => {
+    haptics.tap();
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions({ title: titleOf(item), options: [moveWord(item), "Delete", "Cancel"], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (i) => {
+        if (i === 0) move(item);
+        if (i === 1) remove(item);
+      });
+      return;
+    }
+    Alert.alert(titleOf(item), undefined, [{ text: moveWord(item), onPress: () => move(item) }, { text: "Delete", style: "destructive", onPress: () => remove(item) }, { text: "Cancel", style: "cancel" }]);
+  };
+
   const r = list.value;
-  const items = r?.ok === true ? r.value.filter((i) => !gone.has(i.itemId)) : [];
+  const items = r?.ok === true ? r.value.items.filter((i) => !gone.has(i.itemId)) : [];
+  const setAside = r?.ok === true ? r.value.setAside.filter((i) => !gone.has(i.itemId) && i.deletedMs === undefined) : [];
   const shown = sections(items, query);
-  const projectName = (machineId: string, projectId: string) => (project?.machineId === machineId && project.projectId === projectId ? undefined : state.projects?.[`${machineId}/${projectId}`]?.title);
 
   return (
     <SwipeGroup swipes={swipes}>
@@ -131,13 +169,9 @@ export function Vault() {
         ) : items.length === 0 ? (
           <EmptyState
             icon="lock"
-            title={project === undefined ? "Your Vault" : "No Items Yet"}
-            body={
-              project === undefined
-                ? "Logins, cards, addresses and variables. Your agents sign in, pay and fill forms with them without ever seeing them."
-                : `Logins, cards, addresses and variables for ${project.title}. Its agents use them without ever seeing them.`
-            }
-            {...(live ? { action: { label: "Add Login", onPress: () => add("login") } } : {})}
+            title={project === undefined ? "Team Vault" : "No Variables Yet"}
+            body={project === undefined ? "Logins, cards and addresses every project's agents use without seeing them." : `Variables ${project.title}'s agents get when they start.`}
+            {...(live ? { action: project === undefined ? { label: "Add Login", onPress: () => add("login") } : { label: "Add Variable", onPress: () => add("env") } } : {})}
           />
         ) : shown.length === 0 ? (
           <EmptyState icon="search" title="No Results" body={`Nothing in the vault matches “${query.trim()}”.`} />
@@ -149,7 +183,6 @@ export function Vault() {
                   key={item.itemId}
                   icon
                   item={item}
-                  tag={scopeTag(item, projectName)}
                   {...(item.canEdit && live ? { onDelete: () => remove(item) } : {})}
                   onPress={() => {
                     haptics.tap();
@@ -164,18 +197,37 @@ export function Vault() {
         <Problem text={problem} />
         {r?.ok === true && items.length > 0 && query === "" ? (
           <Text style={[type.footnote, styles.footer, { color: t.secondary }]}>
-            {project === undefined ? "Agents fill these in and get their variables without seeing them. Every use is logged." : `${project.title}'s agents fill these in and get its variables without seeing them. Every use is logged.`}
+            {project === undefined ? "Every project's agents fill these without seeing them. Every use is logged." : `${project.title}'s agents get these when they start. Every use is logged.`}
           </Text>
         ) : null}
+        {setAside.length === 0 ? null : (
+          <ListSection header="Set Aside" footer={SET_ASIDE_WHY}>
+            {setAside.map((item) => (
+              <ItemRow
+                key={item.itemId}
+                icon
+                item={item}
+                onPress={() => setAsideActions(item)}
+                menu={[
+                  { label: moveWord(item), icon: item.kind === "env" ? "folder" : "import", onPress: () => move(item) },
+                  { label: "Delete", icon: "trash", destructive: true, onPress: () => remove(item) },
+                ]}
+                {...(live ? { onDelete: () => remove(item) } : {})}
+              />
+            ))}
+          </ListSection>
+        )}
       </ScrollView>
     </SwipeGroup>
   );
 }
 
+const TRASH = "It stays in the trash for 30 days.";
+
 const SYMBOL: Readonly<Record<VaultKind, "key" | "creditcard" | "house" | "terminal">> = { login: "key", card: "creditcard", address: "house", env: "terminal" };
 
 /** `icon` is ListSection's sign to inset the separator past the tile. */
-function ItemRow({ item, tag, onPress, onEdit, onDelete }: { item: VaultItemSummary; tag: string | undefined; icon: true; onPress: () => void; onEdit: (() => void) | undefined; onDelete?: () => void }) {
+function ItemRow({ item, onPress, onEdit, onDelete, menu: given }: { item: VaultItemSummary; icon: true; onPress: () => void; onEdit?: (() => void) | undefined; onDelete?: () => void; menu?: readonly MenuItem[] }) {
   const t = useTheme();
   const title = titleOf(item);
   const line = rowLine(item);
@@ -190,16 +242,11 @@ function ItemRow({ item, tag, onPress, onEdit, onDelete }: { item: VaultItemSumm
           {line}
         </Text>
       </View>
-      {tag === undefined ? null : (
-        <Text style={[type.subhead, styles.tag, { color: t.secondary }]} numberOfLines={1}>
-          {tag}
-        </Text>
-      )}
       <Icon name="chevron" size={14} color={t.tertiary} weight="semibold" />
     </View>
   );
-  const menu = [...(onEdit === undefined ? [] : [{ label: "Edit", icon: "edit" as const, onPress: onEdit }]), ...(onDelete === undefined ? [] : [{ label: "Delete", icon: "trash" as const, destructive: true, onPress: onDelete }])];
-  const label = [title, line, tag].filter((x) => x !== undefined).join(", ");
+  const menu = given ?? [...(onEdit === undefined ? [] : [{ label: "Edit", icon: "edit" as const, onPress: onEdit }]), ...(onDelete === undefined ? [] : [{ label: "Delete", icon: "trash" as const, destructive: true, onPress: onDelete }])];
+  const label = `${title}, ${line}`;
   const held = (tap: (run: () => void) => () => void) => (
     <HoldMenu items={menu} radius={shape.group} color={t.cell} onPress={tap(onPress)} accessibilityRole="button" accessibilityLabel={label} style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : null)}>
       {face}
@@ -217,6 +264,5 @@ const styles = StyleSheet.create({
   loading: { marginTop: 64 },
   row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: shape.row, paddingHorizontal: space.lg, paddingVertical: 9 },
   grow: { flex: 1, gap: 1 },
-  tag: { maxWidth: "35%" },
   footer: { marginHorizontal: space.lg * 2, marginTop: space.md },
 });

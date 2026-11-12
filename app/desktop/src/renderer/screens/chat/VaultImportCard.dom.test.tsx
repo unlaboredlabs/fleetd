@@ -18,7 +18,7 @@ vi.hoisted(() => {
 const card: VaultImportCard = {
   proposalId: "VI1",
   state: "open",
-  scope: "person",
+  scope: "hub",
   why: "To sign in to Amazon for the order.",
   items: [
     { ref: "op://fleetd/Amazon", kind: "login", title: "Amazon", site: "amazon.com" },
@@ -76,10 +76,12 @@ it("imports only the ticked items, with the proposal, then says how it went", as
   await render();
   expect(host.textContent).toContain("To sign in to Amazon for the order.");
   expect(host.textContent).toContain("Login · amazon.com");
+  expect(host.textContent).toContain("Into the team vault");
   await click(host.querySelectorAll("[role='checkbox']")[1]);
   await click(button("Import 1"));
-  expect(calls).toEqual([{ tool: "vault_import", input: { proposalId: "VI1", refs: ["op://fleetd/Amazon"], scope: "person" } }]);
-  expect(host.textContent).toContain("Imported 1 item into your vault");
+  // The proposal says where they go: the import names no scope, so a team-vault hub never gets a personal one.
+  expect(calls).toEqual([{ tool: "vault_import", input: { proposalId: "VI1", refs: ["op://fleetd/Amazon"] } }]);
+  expect(host.textContent).toContain("Imported 1 item into the vault");
 });
 
 it("turns it down with Dismiss, reading nothing from 1Password", async () => {

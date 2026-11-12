@@ -197,16 +197,13 @@ export function cardLabelOf(hub: Hub, ref: string): { label: string; brand?: str
   };
 }
 
-/** Checks a card a person picks for `r`: a live card they see, which the project's work may use. */
-export function checkCardPick(hub: Hub, caller: Caller, r: ProjectRef, ref: string): void {
+/** Checks a card a person picks for a project: a live card of the team vault. */
+export function checkCardPick(hub: Hub, ref: string): void {
   const id = vaultCardId(ref);
   if (id === undefined) return;
-  const vt = vault(hub);
-  const v = vt.viewer(caller);
-  const row = vt.store.get(id);
-  const usable = row !== undefined && vt.usable({ projectRef: r, ...(vt.personFor(r, undefined).personId !== undefined ? { personId: vt.personFor(r, undefined).personId! } : {}) }).some((x) => x.itemId === id);
-  if (!row || row.kind !== "card" || row.deletedMs !== undefined || !vt.canSee(v, row) || !usable) {
-    throw new ToolError("invalid", "That card isn't one this project can pay with.", "Pick one of the project's cards, a hub card, or share one of yours with the project.");
+  const row = vault(hub).usable().find((x) => x.itemId === id);
+  if (!row || row.kind !== "card") {
+    throw new ToolError("invalid", "That card isn't in the team vault.", "Pick one of the team vault's cards, or add one in Settings › Vault.");
   }
 }
 
@@ -223,8 +220,8 @@ export function sealedCardFor(hub: Hub, r: ProjectRef, ref: string, requestId: s
     throw new ToolError("failed", `Update fleetd on ${host}: its node can't fill a vault card yet.`, "Tell the person; the purchase can be asked again after.");
   }
   const { personId, workstreamId } = vt.personFor(r, undefined);
-  const row = vt.usable({ projectRef: r, ...(personId !== undefined ? { personId } : {}) }).find((x) => x.itemId === id);
-  if (!row || row.kind !== "card") throw new ToolError("forbidden", "The project's card is gone or no longer shared with it.", "Ask the person to pick a card again in Settings › Payments.");
+  const row = vt.usable().find((x) => x.itemId === id);
+  if (!row || row.kind !== "card") throw new ToolError("forbidden", "The project's card is gone from the team vault.", "Ask the person to pick a card again in Settings › Payments.");
   const box = hubStore(hub).machineGet(host)?.boxPubKey;
   if (!box) throw new ToolError("failed", `${host}'s node takes no sealed values.`, `Update fleetd on ${host}.`);
   const secret = vt.store.open(row);

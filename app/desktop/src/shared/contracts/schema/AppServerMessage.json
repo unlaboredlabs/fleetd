@@ -1274,7 +1274,7 @@
         },
         {
           "const": "vault.changed",
-          "description": "A vault item was made, changed, deleted, restored or shared; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
+          "description": "A vault item was made, changed, deleted, restored or moved; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
           "type": "string"
         },
         {

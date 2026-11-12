@@ -21,7 +21,7 @@ import { migrate } from "../store/migrations.ts";
 import { fileChunks } from "./export.ts";
 import { damaged, decodeValue, MANIFEST_PATH, readPart, sha256Hex, TransferError, type Verified, verifyExport } from "./format.ts";
 import { itemFromExport, openSecrets, openValue } from "./seal.ts";
-import { AREAS, CARRIED, fateOf, MARKS_USE, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
+import { AREAS, CARRIED, fateOf, MARKS_USE, RETIRED, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
 import { bodyBytes, TarError, tarEntries } from "./tar.ts";
 
 const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
@@ -332,7 +332,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
     }
 
     for (const t of manifest.tables) {
-      if (!copied.some((c) => c.name === t.name) && t.rows > 0 && !(secret(t.name) && !key)) skipped.push(`${plural(t.rows, "row")} of ${t.name}, a table this fleetd no longer has`);
+      if (!copied.some((c) => c.name === t.name) && RETIRED[t.name] === undefined && t.rows > 0 && !(secret(t.name) && !key)) skipped.push(`${plural(t.rows, "row")} of ${t.name}, a table this fleetd no longer has`);
     }
     return {
       tables: copied.length,

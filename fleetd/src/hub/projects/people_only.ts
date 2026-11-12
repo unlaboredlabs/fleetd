@@ -24,7 +24,7 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   sites: "Only a person allows a site: they answer the card its first visit shows, or add it in the project's settings in the app.",
   agents: "Only a person picks a project's profiles and models and sets its max agents: Settings › Projects › Agents in the app.",
   card: "Only a person gives a project a card: the project's Vault in the app, on their own device.",
-  vault: "Only a person adds, changes or removes vault items: Settings › You › Vault or the project's Vault in the app. For a secret you need, call request_secret.",
+  vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a project's variables in its Vault tab. For a secret you need, call request_secret.",
   mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Every project › Tools & skills, or the project's own settings, in the app.",
   prompts: "Only a person edits prompts: the project's settings › Prompts in the desktop app. The project's Instructions are yours to write: project_setup with instructions.",
   hub_links: "Only a person links hubs: Settings › You › Hubs in the app.",

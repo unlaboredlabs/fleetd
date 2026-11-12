@@ -131,7 +131,7 @@ export async function run(opts: {
         if (changed) problems.push(`table ${table} changed in the migration`);
       }
       count("tables kept", [...before.keys()].filter((t) => t !== "migrations_applied").length);
-      for (const table of ["vault_keys", "vault_items", "vault_shares", "vault_deliveries", "vault_audit", "vault_imports", "vault_settings"]) {
+      for (const table of ["vault_keys", "vault_items", "vault_deliveries", "vault_audit", "vault_imports", "vault_settings"]) {
         if (!after.has(table)) problems.push(`table ${table} is missing`);
         else if (db.all<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)[0]?.n !== 0) problems.push(`table ${table} isn't empty`);
       }

@@ -51,7 +51,7 @@ async function source() {
   ]);
   await k.call(me, "decisions_record", { key: "db.engine", scope: { kind: "project", projectRef: PROJECT }, value: "Postgres for orders" });
   const sealed = Buffer.from(seal(publicKeyOf(loadOrCreateBoxKey(p.home)), Buffer.from(JSON.stringify({ username: "ada", password: SECRET })))).toString("base64");
-  const login = await k.call<{ item: { itemId: string } }>(me, "vault_save", { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed });
+  const login = await k.call<{ item: { itemId: string } }>(me, "vault_save", { kind: "login", label: "Shop", sites: ["shop.example"], sealed });
   return { p, k, bo, login };
 }
 

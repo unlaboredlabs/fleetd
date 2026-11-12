@@ -87,7 +87,6 @@ export const MACHINE_TABLES = [
   "artifact_versions",
   "browser_sessions",
   "screen_waits",
-  "vault_shares",
   "vault_deliveries",
   "vault_imports",
 ] as const;
@@ -131,8 +130,8 @@ function forgetMachine(conn: Database, m: string): number {
     "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
     "DELETE FROM navi_asks WHERE from_machine_id = ?1",
     "DELETE FROM session_places WHERE origin_machine = ?1",
-    // Its projects' and orders' items; a person's and the hub's name no machine (a NULL machine_id, so not in
-    // MACHINE_TABLES, whose rows the orphan sweep reads as strings).
+    // Its projects' and orders' variables; the team vault's items and those set aside name no machine (a NULL
+    // machine_id, so not in MACHINE_TABLES, whose rows the orphan sweep reads as strings).
     "DELETE FROM vault_items WHERE machine_id = ?1",
   ]) {
     n += conn.query(sql).run(m).changes;

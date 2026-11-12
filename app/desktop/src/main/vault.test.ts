@@ -41,10 +41,10 @@ const clock = () => {
 describe("saving a vault item", () => {
   it("seals the typed fields to the hub's own key: no value leaves in the clear", async () => {
     const hub = fakeHub();
-    const out = await saveVaultItem({ kind: "login", scope: "person", label: "Amazon", sites: ["amazon.com"], fields: { username: "sam", password: CANARY } }, hub.call);
+    const out = await saveVaultItem({ kind: "login", label: "Amazon", sites: ["amazon.com"], fields: { username: "sam", password: CANARY } }, hub.call);
     expect(out.ok).toBe(true);
     const save = hub.calls.find((c) => c.tool === "vault_save")?.input as Record<string, unknown>;
-    expect(save).toMatchObject({ kind: "login", scope: "person", label: "Amazon", sites: ["amazon.com"] });
+    expect(save).toMatchObject({ kind: "login", label: "Amazon", sites: ["amazon.com"] });
     expect(save).not.toHaveProperty("fields");
     expect(JSON.stringify(hub.calls)).not.toContain(CANARY);
     expect(openWithHub(save["sealed"] as string)).toEqual({ username: "sam", password: CANARY });

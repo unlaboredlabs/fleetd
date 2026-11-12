@@ -25,7 +25,7 @@ function upgraded(dir: string, people: string[]): HubDb {
   const conn = new Database(join(dir, "hub.sqlite"), { create: true, strict: true });
   conn.run("PRAGMA synchronous = OFF");
   const at = MIGRATIONS.findIndex((m) => m.name.endsWith("_only_me_gone"));
-  expect(at).toBe(MIGRATIONS.length - 1);
+  expect(at).toBeGreaterThan(0);
   migrate(conn, MIGRATIONS.slice(0, at));
   const names: Record<string, string> = { p_adaadaad: "Ada", p_bobobobo: "Bo" };
   for (const [i, p] of people.entries()) conn.run(`INSERT INTO people (person_id, name, role, created_ms) VALUES ('${p}', '${names[p]}', '${i === 0 ? "owner" : "member"}', ${i})`);

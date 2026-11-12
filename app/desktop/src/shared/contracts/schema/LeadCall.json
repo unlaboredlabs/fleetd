@@ -4239,7 +4239,7 @@
       "type": "object"
     },
     "VaultImportProposeCall": {
-      "description": "`vault_import_propose` (leads only): put an import card in the chat for the person to confirm with one tap.",
+      "description": "`vault_import_propose` (leads only): put an import card in the chat for the person to confirm with one tap;\nthe items go in the team vault.",
       "properties": {
         "refs": {
           "items": {
@@ -4249,10 +4249,6 @@
           "minItems": 1,
           "type": "array",
           "uniqueItems": true
-        },
-        "scope": {
-          "$ref": "#/$defs/VaultScope",
-          "description": "Where they go; absent: the person's own."
         },
         "why": {
           "maxLength": 500,
@@ -4327,16 +4323,16 @@
       "x-open": true
     },
     "VaultScope": {
-      "description": "Whose an item is, and so who lists, changes and reveals it, and which work uses it.",
+      "description": "Where an item is, and so who lists, changes and reveals it, and which work uses it.",
       "oneOf": [
         {
           "const": "person",
-          "description": "One person's: used by work they started, and projects it's shared with.",
+          "description": "Set aside at the upgrade to one team vault: only its owner lists it, and nothing fills or delivers it\nuntil they move it (`vault_move`) or delete it.",
           "type": "string"
         },
         {
           "const": "project",
-          "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
+          "description": "One project's variable (`machineId`, `projectId`): its leads and agents get it.",
           "type": "string"
         },
         {
@@ -4346,7 +4342,7 @@
         },
         {
           "const": "hub",
-          "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
+          "description": "The team vault's login, card or address: everyone on the hub lists it and every project's work fills it;\nits creator or an admin changes it. Never a variable.",
           "type": "string"
         }
       ]

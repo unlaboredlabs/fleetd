@@ -79,7 +79,7 @@ Everything the hub keeps across its own restart:
 | Settings | The hub's settings, profiles, agent limits, approvals. |
 | Recordings | Browser and screen sessions that were recorded, with their files. |
 | History | The event log, time and metrics. |
-| Secrets | Vault items (logins, cards, addresses, variables) with their shares and log, the GitHub App's keys, connected GitHub accounts, MCP sign-ins, links to other hubs, your own push relay's key. |
+| Secrets | Vault items (logins, cards, addresses, variables) with their log, the GitHub App's keys, connected GitHub accounts, MCP sign-ins, links to other hubs, your own push relay's key. |
 
 Secrets never leave in the clear. Export opens each with the hub's own keys and seals it under a key made for that
 file, which is in the file only wrapped under your passphrase (scrypt, then AES-256-GCM). Import seals each again to

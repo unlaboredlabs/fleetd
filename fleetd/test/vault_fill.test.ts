@@ -36,8 +36,8 @@ const refused = async (p: Promise<unknown>) => {
 };
 const audit = () => k.hub.db.all<{ action: string; outcome: string; item_id: string; data: string }>("SELECT action, outcome, item_id, data FROM vault_audit WHERE action LIKE 'fill%' ORDER BY n");
 
-async function shopLogin(scope = "project") {
-  return save({ kind: "login", scope, ...(scope === "project" ? PROJECT : {}), label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ username: "ada", password: "planted-pw-77", totp: SEED }) });
+async function shopLogin() {
+  return save({ kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ username: "ada", password: "planted-pw-77", totp: SEED }) });
 }
 
 test("the site rule: the host or a subdomain; never a look-alike, a dotless site or a shared-hosting neighbour", () => {
@@ -75,12 +75,13 @@ test("a login fills on its site and subdomains, sealed to the hosting node; vaul
 
 test("refused: off its site, over http, a card, an unknown session, another project's session, another machine", async () => {
   await shopLogin();
-  await save({ kind: "card", scope: "project", ...PROJECT, label: "Visa", sealed: k.sealToHub({ number: "4242424242424242" }) });
+  await save({ kind: "card", label: "Visa", sealed: k.sealToHub({ number: "4242424242424242" }) });
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example.evil.test/" }))).code).toBe("forbidden");
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/", frame: "https://evil.test/frame" }))).code).toBe("forbidden");
   expect((await refused(fill({ item: "Shop", field: "password", page: "http://shop.example/" }))).code).toBe("forbidden");
   expect((await refused(fill({ item: "Visa", field: "password", page: "https://shop.example/" }))).message).toContain("purchase");
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/", sessionId: "B0123456789abcdef0123456789abcdee" }))).code).toBe("not_found");
+  // The team vault fills in any project's session, but only in a session of the calling project.
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }, { ...lead, projectRef: OTHER }))).code).toBe("not_found");
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }, { ...lead, via: "builder-1" }))).code).toBe("forbidden");
   // Refusals are audited, never with a value; the third in ten minutes puts one quiet line in the chat.
@@ -90,35 +91,42 @@ test("refused: off its site, over http, a card, an unknown session, another proj
   expect(lines.filter((t) => t.startsWith("An agent tried to fill")).length).toBe(1);
 });
 
-test("a person's login: usable for their own work, or where they shared it; not elsewhere", async () => {
-  const id = await save({ kind: "login", scope: "person", label: "Bo's mail", sites: ["mail.example"], sealed: k.sealToHub({ password: "bo-pw" }) }, k.memberDevice);
-  // This project's lead works for the hub, not for Bo.
-  expect((await refused(fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" }))).code).toBe("not_found");
-  await k.call(k.memberDevice, "vault_share_set", { itemId: id, projects: [PROJECT] });
+test("a team login fills in every project's sessions, whoever added it; an item set aside fills nowhere", async () => {
+  const id = await save({ kind: "login", label: "Bo's mail", sites: ["mail.example"], sealed: k.sealToHub({ password: "bo-pw" }) }, k.memberDevice);
   expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" })).itemId).toBe(id);
-  // A project that was Bo's Only me one is everyone's now (D491): his own items reach it only by a share.
-  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
   const S2 = "B0123456789abcdef0123456789abcd02";
   browserSession(k, S2, OTHER);
-  const there = { ...lead, projectRef: OTHER };
-  expect((await refused(fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, there))).code).toBe("not_found");
-  await k.call(k.memberDevice, "vault_share_set", { itemId: id, projects: [OTHER] });
-  expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, there)).itemId).toBe(id);
+  expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/", sessionId: S2 }, { ...lead, projectRef: OTHER })).itemId).toBe(id);
+  // Set aside at the upgrade: its owner's alone, used by nothing.
+  const aside = k.v.store.insert(
+    { kind: "login", scope: "person", personId: k.member.personId, label: "Bo's bank", meta: { sites: ["bank.example"], fields: ["password"], source: { kind: "typed" } } },
+    { password: "planted-aside-1" },
+    k.member.personId,
+    k.clock.now(),
+  );
+  for (const [sessionId, projectRef] of [[S, PROJECT], [S2, OTHER]] as const) {
+    expect((await refused(fill({ item: aside.itemId, field: "password", page: "https://bank.example/", sessionId }, { ...lead, projectRef }))).code).toBe("not_found");
+  }
 });
 
-test("an address fills on its own sites or where its owner has a vault login, and nowhere else", async () => {
-  const home = await save({ kind: "address", scope: "person", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US" }) });
-  const login = await save({ kind: "login", scope: "person", label: "Store", sites: ["store.example"], sealed: k.sealToHub({ password: "x" }) });
-  const owned = { ...lead };
-  // The owner's items, shared with the project, are usable by its lead.
-  for (const itemId of [home, login]) await k.call(k.ownerDevice, "vault_share_set", { itemId, projects: [PROJECT] });
-  const out = await fill({ item: "Home", field: "address", page: "https://checkout.store.example/" }, owned);
+test("an address fills on its own sites or a site the team vault has a login for, and nowhere else", async () => {
+  await save({ kind: "address", label: "Home", sealed: k.sealToHub({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US" }) });
+  // Bo's login, not the address's creator's: the team vault's logins all count.
+  await save({ kind: "login", label: "Store", sites: ["store.example"], sealed: k.sealToHub({ password: "x" }) }, k.memberDevice);
+  const out = await fill({ item: "Home", field: "address", page: "https://checkout.store.example/" });
   expect(JSON.parse(k.open(out.sealed))).toEqual({ line1: "1 Main St", city: "Springfield", postalCode: "00000", country: "US", sites: [] });
-  expect((await refused(fill({ item: "Home", field: "address", page: "https://random.example/" }, owned))).code).toBe("forbidden");
+  const e = await refused(fill({ item: "Home", field: "address", page: "https://random.example/" }));
+  expect([e.code, e.message]).toEqual([
+    "forbidden",
+    "Home doesn't fill on random.example: an address fills at a checkout recorded in this session, on its own sites, or on a site the team vault has a login for.",
+  ]);
+  // A login set aside doesn't count.
+  k.v.store.insert({ kind: "login", scope: "person", personId: k.member.personId, label: "Aside", meta: { sites: ["random.example"], fields: ["password"], source: { kind: "typed" } } }, { password: "y" }, k.member.personId, k.clock.now());
+  expect((await refused(fill({ item: "Home", field: "address", page: "https://random.example/" }))).code).toBe("forbidden");
 });
 
 test("an op:// reference fills the item imported from it; one not imported says so", async () => {
-  await save({ kind: "login", scope: "project", ...PROJECT, label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ password: "pw" }) });
+  await save({ kind: "login", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub({ password: "pw" }) });
   const e = await refused(fill({ ref: "op://Fleet/Shop/password", field: "password", page: "https://shop.example/" }));
   expect(e.reason).toBe("vault_not_imported");
   k.hub.db.conn.query("UPDATE vault_items SET meta = json_set(meta, '$.source', json('{\"kind\":\"1password\",\"ref\":\"op://Fleet/Shop\",\"importedMs\":1}'))").run();

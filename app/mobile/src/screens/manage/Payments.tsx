@@ -1,6 +1,6 @@
 // Payments, pushed from a project's screen, as the desktop's Settings › Projects › Payments: the card it pays with, and
 // every purchase it made, with what became of it. On a hub with a vault the card is one of the vault's its work can use
-// (its own, the person's, the hub's: vault_list), kept as `vault:<id>`, with Add Card and Import from 1Password beside
+// (the team's: vault_list), kept as `vault:<id>`, with Add Card and Import from 1Password beside
 // them; on an older hub, a Credit Card item from the person's own 1Password (onepassword_cards lists them, on its
 // machine; the project's card tool keeps only its op:// reference). The card is filled into a checkout without asking
 // (D312), and the project never sees it. Its calls are its own, here, so Payments stays one piece.
@@ -137,12 +137,12 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
       ) : vaultCards !== null && !vaultCards.ok ? (
         <Problem text={`Couldn't list the cards: ${errorWords(vaultCards.error)}`} />
       ) : vaultCards !== null ? (
-        <ListSection header="Cards" footer="Cards in the vault this project can use: its own, yours, and the hub's.">
+        <ListSection header="Cards" footer="The team's cards in the vault.">
           {[...vaultCards.value.map((c) => ({ value: `vault:${c.itemId}`, title: c.label, detail: rowLine(c) })), { value: NO_CARD, title: "No card", detail: undefined }].map((o) => (
             <CheckRow key={o.value} title={o.title} detail={o.detail} checked={o.value === (card ?? NO_CARD)} disabled={!live || saving !== null} onPress={() => void pick(o.value)} />
           ))}
           <ListRow title="Add Card…" onPress={() => navigation.navigate("VaultEdit", { kind: "card", key })} chevron={false} />
-          <ListRow title="Import from 1Password…" onPress={() => navigation.navigate("VaultImport", { key })} chevron={false} />
+          <ListRow title="Import from 1Password…" onPress={() => navigation.navigate("VaultImport")} chevron={false} />
         </ListSection>
       ) : null}
       {cards === "reading" ? (

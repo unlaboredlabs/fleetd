@@ -3,20 +3,18 @@
 // security code and name, which iOS can fill from a scanned card; an address's lines; a variable's name, value and
 // whether it's secret. Changing an item shows its fields empty: what's typed replaces them, what's left empty stays as
 // it was, so nothing is revealed just to change one thing, and a field the item can do without has Clear, which takes
-// it away. From Settings a new item is the person's own (or, for an admin, every project's); from a project's screen,
-// that project's. What's typed is sealed to the hub as ✓ is tapped
-// (api.ts saveItem), and goes with the sheet.
+// it away. A new login, card or address goes to the team vault; a new variable to the project it was added from. What's
+// typed is sealed to the hub as ✓ is tapped (api.ts saveItem), and goes with the sheet.
 import { useLayoutEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
 import { useHub } from "../../hubContext";
 import { shape, space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListSection } from "../../ui/List";
-import { CheckRow, errorWords, Problem, sheetOptions } from "../manage/parts";
-import { saveItem, vaultHub } from "./api";
-import { brandOf, check, CLEARABLE, emptyDraft, envNameProblem, groupNumber, isSecretEnv, KIND_WORDS, SCOPE_WORDS, sitesMeta, titleOf, toggleCleared, typeExpiry, type Draft } from "./model";
+import { errorWords, Problem, sheetOptions } from "../manage/parts";
+import { saveItem, vaultErrorWords, vaultHub } from "./api";
+import { brandOf, check, CLEARABLE, emptyDraft, envNameProblem, groupNumber, isSecretEnv, KIND_WORDS, sitesMeta, titleOf, toggleCleared, typeExpiry, type Draft } from "./model";
 import { useVaultNav, useVaultRoute, whoseOf } from "./parts";
-import type { VaultScope } from "./types";
 
 export function VaultEdit() {
   const t = useTheme();
@@ -25,13 +23,11 @@ export function VaultEdit() {
   const { state, session } = useHub();
   const { project } = whoseOf(state, key);
   const editing = item !== undefined;
-  const admin = state.meRole === "admin" || state.meRole === "owner";
   const [draft, setDraft] = useState<Draft>(() =>
     item === undefined
       ? emptyDraft(kind)
       : { ...emptyDraft(kind), label: item.label, sites: sitesMeta(item).join("\n"), envName: titleOf(item), secret: isSecretEnv(item) },
   );
-  const [scope, setScope] = useState<VaultScope>(item?.scope ?? (project === undefined ? "person" : "project"));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   // Typing into a field marked to go keeps what's typed instead.
@@ -51,8 +47,7 @@ export function VaultEdit() {
     const r = await saveItem(vaultHub(session), {
       ...(item === undefined ? {} : { itemId: item.itemId }),
       kind,
-      scope,
-      ...(scope === "project" && project !== undefined ? { project } : {}),
+      ...(project === undefined ? {} : { project }),
       label: c.value.label,
       ...(kind === "login" || kind === "address" ? { sites: c.value.sites } : {}),
       // A variable keeps its name: only a new one sends it.
@@ -63,7 +58,7 @@ export function VaultEdit() {
     setBusy(false);
     if (!r.ok) {
       haptics.warning();
-      return setProblem(`Not saved: ${errorWords(r.error)}`);
+      return setProblem(`Not saved: ${vaultErrorWords(r.error) ?? errorWords(r.error)}`);
     }
     haptics.success();
     navigation.goBack();
@@ -74,8 +69,8 @@ export function VaultEdit() {
       title: editing ? `Edit ${KIND_WORDS[kind].one}` : `New ${KIND_WORDS[kind].one}`,
       ...sheetOptions(t, () => navigation.goBack(), { label: "Save", enabled: true, busy, onPress: () => void save() }, !busy),
     });
-    // `save` reads the draft and scope.
-  }, [navigation, t, busy, draft, scope]);
+    // `save` reads the draft.
+  }, [navigation, t, busy, draft]);
 
   // On an edit, a field the item can do without has Clear, which takes it away as ✓ saves (Undo keeps it).
   const row = (k: string, placeholder: string, props: TextInputProps = {}) => {
@@ -199,7 +194,7 @@ export function VaultEdit() {
             {row("phone", "Phone (optional)", { keyboardType: "phone-pad", textContentType: "telephoneNumber", autoComplete: "tel" })}
             {row("email", "Email (optional)", { autoCapitalize: "none", keyboardType: "email-address", textContentType: "emailAddress", autoComplete: "email" })}
           </ListSection>
-          <ListSection footer="Agents fill it in at a checkout they record, on these sites, and on sites you have a login for here.">
+          <ListSection footer="Agents fill it in at a checkout they record, on these sites, and on sites the team vault has a login for.">
             {label("Label, like Home")}
             {sites("Websites (optional)")}
           </ListSection>
@@ -228,27 +223,10 @@ export function VaultEdit() {
         </>
       )}
 
-      {editing ? (
-        <ListSection header="Used by">
-          <CheckRow title={scopeWords(scope, project?.title)} checked disabled onPress={() => undefined} />
-        </ListSection>
-      ) : project === undefined && kind !== "env" && admin ? (
-        <ListSection header="Used by" footer={scope === "hub" ? "Every project's agents can fill it in. Only admins can change it or see it." : "Only work you start."}>
-          {(["person", "hub"] as const).map((s) => (
-            <CheckRow key={s} title={SCOPE_WORDS[s]} checked={scope === s} disabled={busy} onPress={() => {
-                haptics.select();
-                setScope(s);
-              }} />
-          ))}
-        </ListSection>
-      ) : null}
-
       <Problem text={problem} />
     </ScrollView>
   );
 }
-
-const scopeWords = (scope: VaultScope, project: string | undefined): string => (scope === "project" && project !== undefined ? project : SCOPE_WORDS[scope]);
 
 /** A field as a grouped row, with an optional quiet word at its end (the card's brand). */
 function Field({

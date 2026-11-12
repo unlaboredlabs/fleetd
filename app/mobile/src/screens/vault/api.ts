@@ -8,7 +8,7 @@ import type { Session } from "../../session";
 import { fromBase64, keyPairOf, openSealed, seal, toBase64, utf8, utf8Encode } from "../../seal";
 import type { Result } from "../manage/api";
 import { knownKind } from "./model";
-import type { VaultAuditEntry, VaultImportCandidate, VaultItemSummary, VaultKind, VaultScope, VaultStatus } from "./types";
+import type { VaultAuditEntry, VaultImportCandidate, VaultItemSummary, VaultKind, VaultStatus } from "./types";
 
 /** The calls these make, typed loosely: the vault's tools are read by their own shapes (types.ts). */
 export interface VaultHub {
@@ -26,24 +26,36 @@ const cleanRef = (p: ProjectRef): ProjectRef => ({ machineId: p.machineId, proje
 
 const failed = (message: string): { ok: false; error: HubError } => ({ ok: false, error: { code: "failed", message } });
 
-/** Whose items a list shows: the person's own and the hub's (Settings › Vault), or one project's (its Info › Vault). */
-export type Whose = { readonly kind: "mine" } | { readonly kind: "project"; readonly project: ProjectRef };
+/** Which list a screen shows: the team vault (Settings › Vault), or one project's variables (its Info › Vault). */
+export type Whose = { readonly kind: "team" } | { readonly kind: "project"; readonly project: ProjectRef };
 
-/**
- * A project's list is what its work can use that the person can see; its Vault shows its own items (and its orders'
- * variables) among them, the person's shared ones and the hub's staying in Settings.
- */
 /** Only the kinds this app knows: one from a newer hub has no screen here. */
 const known = <T extends { readonly kind: string }>(items: readonly T[]): Array<T & { kind: VaultKind }> => items.filter((i): i is T & { kind: VaultKind } => knownKind(i.kind));
 
-export const listItems = async (hub: VaultHub, whose: Whose): Promise<Result<readonly VaultItemSummary[]>> => {
-  const r = await hub.call("vault_list", whose.kind === "mine" ? {} : cleanRef(whose.project));
+/** A project's variable or one of its orders'. */
+const projects = (i: Pick<VaultItemSummary, "scope">): boolean => i.scope === "project" || i.scope === "order";
+
+export interface Listed {
+  readonly items: readonly VaultItemSummary[];
+  /** The person's own items from before the team vault, which nothing uses until they move them; none on an older hub. */
+  readonly setAside: readonly VaultItemSummary[];
+}
+
+/**
+ * The team's logins, cards and addresses, and the person's set-aside items (scope `person`) apart; or a project's
+ * variables and its orders'. An older hub (no `vault_team`) has no set-aside: its `person` items are the person's own,
+ * listed with the hub's as one list.
+ */
+export const listItems = async (hub: VaultHub, whose: Whose, team: boolean): Promise<Result<Listed>> => {
+  const r = await hub.call("vault_list", whose.kind === "team" ? {} : cleanRef(whose.project));
   if (!r.ok) return r;
   const items = known((r.output as { items: readonly VaultItemSummary[] }).items);
-  return { ok: true, value: whose.kind === "mine" ? items : items.filter((i) => i.scope === "project" || i.scope === "order") };
+  if (whose.kind === "project") return { ok: true, value: { items: items.filter(projects), setAside: [] } };
+  const listed = items.filter((i) => !projects(i));
+  return { ok: true, value: team ? { items: listed.filter((i) => i.scope !== "person"), setAside: listed.filter((i) => i.scope === "person") } : { items: listed, setAside: [] } };
 };
 
-/** The cards a project's work can pay with: its own, the person's it may use, and the hub's. */
+/** The cards a project's work can pay with: the team's (and, on an older hub, the others it may use). */
 export const usableCards = async (hub: VaultHub, p: ProjectRef): Promise<Result<readonly VaultItemSummary[]>> => {
   const r = await hub.call("vault_list", { kind: "card", ...cleanRef(p), usable: true });
   return r.ok ? { ok: true, value: (r.output as { items: readonly VaultItemSummary[] }).items.filter((i) => i.kind === "card" && i.deletedMs === undefined) } : r;
@@ -79,7 +91,7 @@ export interface SaveItem {
   /** An item being changed; none for a new one. */
   readonly itemId?: string;
   readonly kind: VaultKind;
-  readonly scope: VaultScope;
+  /** A new variable's project. A new login, card or address goes with no scope: to the team vault. */
   readonly project?: ProjectRef;
   readonly label: string;
   readonly sites?: readonly string[];
@@ -90,7 +102,11 @@ export interface SaveItem {
   readonly fields?: Readonly<Record<string, string>>;
 }
 
-/** A new item, or a change to one, its fields sealed to the hub on the way. */
+/**
+ * A new item, or a change to one, its fields sealed to the hub on the way. Only a new variable names a scope (its
+ * project's): a new login, card or address names none, which a newer hub takes as the team vault and an older one as
+ * the person's own. A change names none either: the item stays where it is.
+ */
 export const saveItem = async (hub: VaultHub, s: SaveItem): Promise<Result<VaultItemSummary>> => {
   const typed = s.fields !== undefined && Object.keys(s.fields).length > 0;
   let sealed: string | undefined;
@@ -104,8 +120,7 @@ export const saveItem = async (hub: VaultHub, s: SaveItem): Promise<Result<Vault
   const r = await hub.call("vault_save", {
     ...(s.itemId === undefined ? {} : { itemId: s.itemId }),
     kind: s.kind,
-    scope: s.scope,
-    ...(s.project === undefined ? {} : cleanRef(s.project)),
+    ...(s.itemId === undefined && s.kind === "env" && s.project !== undefined ? { scope: "project", ...cleanRef(s.project) } : {}),
     label: s.label,
     ...(s.sites === undefined ? {} : { sites: s.sites }),
     ...(s.envName === undefined ? {} : { envName: s.envName }),
@@ -172,15 +187,21 @@ export interface Imported {
 
 /**
  * The ticked 1Password items brought into the vault: a machine holding the token reads them and seals them to the hub,
- * so their values never pass through the phone. From a lead's proposal (`proposalId`), or picked here.
+ * so their values never pass through the phone. From a lead's proposal (`proposalId`), where they go as it says; or
+ * picked here, to the team vault. No scope either way.
  */
-export const importItems = async (hub: VaultHub, i: { proposalId?: string; refs: readonly string[]; scope: VaultScope; project?: ProjectRef }): Promise<Result<Imported>> => {
-  const r = await hub.call(
-    "vault_import",
-    { ...(i.proposalId === undefined ? {} : { proposalId: i.proposalId }), refs: i.refs, scope: i.scope, ...(i.project === undefined ? {} : cleanRef(i.project)) },
-    ONEPASSWORD_MS,
-  );
+export const importItems = async (hub: VaultHub, i: { proposalId?: string; refs: readonly string[] }): Promise<Result<Imported>> => {
+  const r = await hub.call("vault_import", { ...(i.proposalId === undefined ? {} : { proposalId: i.proposalId }), refs: i.refs }, ONEPASSWORD_MS);
   return r.ok ? { ok: true, value: r.output as Imported } : r;
+};
+
+/**
+ * A set-aside item moved where it's used: a login, card or address to the team vault, a variable to the project picked
+ * (refused when it has one of that name).
+ */
+export const moveItem = async (hub: VaultHub, itemId: string, project?: ProjectRef): Promise<Result<VaultItemSummary>> => {
+  const r = await hub.call("vault_move", { itemId, ...(project === undefined ? {} : cleanRef(project)) });
+  return r.ok ? { ok: true, value: (r.output as { item: VaultItemSummary }).item } : r;
 };
 
 /** A lead's proposal turned down: its card says so, and nothing is read from 1Password. */
@@ -198,5 +219,6 @@ export const vaultErrorWords = (e: HubError): string | undefined => {
   if (reason === "vault_locked") return "The vault is locked. An owner unlocks it in the desktop app, under Settings › You › Vault.";
   if (reason === "vault_rate_limited") return "Too many reveals in the last hour. Try again later.";
   if (reason === "vault_key_missing") return "The vault's key is missing on the hub. An owner restores it with the recovery code.";
+  if (reason === "vault_update_app") return "This app is older than the hub. Update it to add vault items.";
   return undefined;
 };

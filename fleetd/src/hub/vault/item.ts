@@ -8,6 +8,8 @@ import { BRAND_NAMES, type Meta, type SinkMeta, type Source, type VaultKind, typ
 
 /** The app feature the hub announces once it has a vault: apps show their Vault screens only then. */
 export const FEATURE_VAULT = "vault";
+/** The app feature of a hub with one team vault: no person's own items (but those set aside), no sharing. */
+export const FEATURE_VAULT_TEAM = "vault_team";
 
 /** One row of `vault_items`, as read. */
 export type ItemRow = {
@@ -29,6 +31,8 @@ export type ItemRow = {
   updatedMs: number;
   updatedBy: string;
   deletedMs?: number;
+  /** The scope part of the AAD its version was sealed under, when the one-team-vault migration moved it since. */
+  sealedScope?: string;
 };
 
 /** What a new or changed item is, before its fields are sealed. */
@@ -40,7 +44,7 @@ export type ItemDraft = Pick<ItemRow, "kind" | "scope" | "label" | "meta"> & {
   envName?: string;
 };
 
-/** The most items one person, and one project, keep. */
+/** The most items the team vault, and one project, keep. */
 export const ITEMS_MAX = 1000;
 /** Deleted items stay in the trash this long, then go for good. */
 export const TRASH_MS = 30 * 24 * 3600_000;
@@ -61,10 +65,10 @@ export function scopeKey(r: Pick<ItemRow, "scope" | "personId" | "machineId" | "
   }
 }
 
-export const bindingOf = (r: Pick<ItemRow, "itemId" | "kind" | "version"> & Parameters<typeof scopeKey>[0]): Binding => ({
+export const bindingOf = (r: Pick<ItemRow, "itemId" | "kind" | "version" | "sealedScope"> & Parameters<typeof scopeKey>[0]): Binding => ({
   itemId: r.itemId,
   kind: r.kind,
-  scopeKey: scopeKey(r),
+  scopeKey: r.sealedScope ?? scopeKey(r),
   version: r.version,
 });
 
@@ -80,12 +84,21 @@ export const keyMissing = () =>
 export const damaged = (id: string) =>
   new ToolError("failed", `The vault item ${id} doesn't open: it was changed outside fleetd.`, "Delete it and save it again.");
 
+/** An older app adding a person's own item, a hub-level one or a project's login: refused, never stored wider. */
+export const updateApp = () =>
+  new ToolError(
+    "invalid",
+    "This app is older than the hub: update it to add vault items.",
+    "The hub keeps logins, cards and addresses in one team vault now, and variables per project.",
+    "vault_update_app",
+  );
+
 /** Who is asking, as the access rules read them. */
 export type Viewer = {
   caller: AgentKeyInfo;
   /** The person the key acts as: its own, or the hub's owner for a key with no person. */
   person?: string;
-  /** Admin on every machine: changes and reveals hub items and shared project items. */
+  /** Admin on every machine: changes and reveals every team item and project variable. */
   admin: boolean;
   human: boolean;
   /** The hub itself (the migration): it keeps a removed project's variables too, so nothing is lost. */
@@ -97,7 +110,7 @@ export type UseContext = {
   projectRef: ProjectRef;
   taskId?: string;
   workstreamId?: string;
-  /** Whose work it is: their person items are usable. */
+  /** Whose work it is, for the audit. */
   personId?: string;
   threadId?: string;
 };

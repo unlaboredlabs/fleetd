@@ -46,6 +46,7 @@ import { Vault } from "./src/screens/vault/Vault";
 import { VaultEdit } from "./src/screens/vault/VaultEdit";
 import { VaultImport } from "./src/screens/vault/VaultImport";
 import { VaultItem } from "./src/screens/vault/VaultItem";
+import { VaultMove } from "./src/screens/vault/VaultMove";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
 import type { State } from "./src/store";
@@ -518,6 +519,7 @@ function SettingsScreens() {
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultEdit" component={VaultEdit} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultImport" component={VaultImport} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultMove" component={VaultMove} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }

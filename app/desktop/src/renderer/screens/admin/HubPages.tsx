@@ -4,8 +4,7 @@
 // while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
 // as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide
-// built-in prompts from its foot) and Vault (the cards, logins and addresses every project uses, and the vault key,
-// settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
+// built-in prompts from its foot) and Vault (the vault key, settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
 // Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every
 // page, and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.

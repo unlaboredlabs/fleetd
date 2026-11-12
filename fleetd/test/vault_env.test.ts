@@ -1,5 +1,5 @@
 // Variables from the vault to the nodes (src/hub/vault/deliver.ts): through today's node files, the order's over the
-// project's over a person's; caught up when an offline machine is back; taken back when deleted; the Rust mirror rows
+// project's, a variable set aside nowhere; caught up when an offline machine is back; taken back when deleted; the Rust mirror rows
 // kept; one inject row per launch with names only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { deliveries } from "../src/hub/vault/deliver.ts";
@@ -61,32 +61,28 @@ test("an offline machine catches up once it's back; a deleted variable is taken 
   expect(mirror()).toEqual([]);
 });
 
-test("a project that was Only me gets no person's variables, its former owner's neither (D491)", async () => {
-  k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('${OTHER.machineId}', '${OTHER.projectId}', 1, '${k.member.personId}')`);
-  await save({ kind: "env", scope: "person", envName: "OPENAI_KEY", sealed: k.sealToHub({ value: "bo-1" }) }, k.memberDevice);
-  await save({ kind: "env", scope: "person", envName: "REGION", secret: false, sealed: k.sealToHub({ value: "us" }) }, k.memberDevice);
-  await save({ kind: "env", scope: "project", ...OTHER, envName: "REGION", secret: false, sealed: k.sealToHub({ value: "eu" }) }, k.memberDevice);
+test("a variable set aside is delivered nowhere, not even to its owner's own orders", async () => {
+  order(8, PROJECT, k.member.personId);
+  k.v.store.insert({ kind: "env", scope: "person", personId: k.member.personId, envName: "BO_ONLY", label: "BO_ONLY", meta: { secret: true, source: { kind: "typed" } } }, { value: "x" }, k.member.personId, k.clock.now());
   await sync();
-  expect(file("p2")).toEqual({ REGION: "eu" });
+  expect(k.node.orderFiles.get("p1/W8")).toBeUndefined();
   expect(file("p1")).toEqual({});
+  expect(file("p2")).toEqual({});
 });
 
-test("an order gets its own variables and its starter's person variables; they go when it closes", async () => {
+test("an order gets its own variables, the project's stay in its file; they go when it closes", async () => {
   order(7, PROJECT, k.member.personId);
-  await save({ kind: "env", scope: "person", envName: "BO_TOKEN", sealed: k.sealToHub({ value: "bo-tok" }) }, k.memberDevice);
-  await save({ kind: "env", scope: "person", envName: "SHARED", sealed: k.sealToHub({ value: "person" }) }, k.memberDevice);
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "SHARED", sealed: k.sealToHub({ value: "project" }) });
   await save({ kind: "env", scope: "order", ...PROJECT, workstreamId: "W7", envName: "DEPLOY_KEY", sealed: k.sealToHub({ value: "order-only" }) });
   await sync();
-  // The project's SHARED wins over the person's, and lives in the project file.
-  expect(Object.fromEntries(k.node.orderFiles.get("p1/W7") ?? [])).toEqual({ BO_TOKEN: "bo-tok", DEPLOY_KEY: "order-only" });
+  expect(Object.fromEntries(k.node.orderFiles.get("p1/W7") ?? [])).toEqual({ DEPLOY_KEY: "order-only" });
   expect(file("p1")).toEqual({ SHARED: "project" });
   const rows = k.hub.db.all<{ name: string; request_id: string }>("SELECT name, request_id FROM order_env WHERE workstream_id = 'W7' ORDER BY name");
-  expect(rows.map((r) => r.name)).toEqual(["BO_TOKEN", "DEPLOY_KEY"]);
+  expect(rows.map((r) => r.name)).toEqual(["DEPLOY_KEY"]);
   // A launch writes one inject row with the names, never a value.
   injected(k.hub, PROJECT, "W7", "t1");
   const inject = k.hub.db.all<{ data: string }>("SELECT data FROM vault_audit WHERE action = 'inject'");
-  expect(JSON.parse(inject[0]!.data)).toEqual({ names: ["BO_TOKEN", "DEPLOY_KEY", "SHARED"] });
+  expect(JSON.parse(inject[0]!.data)).toEqual({ names: ["DEPLOY_KEY", "SHARED"] });
   // Closed: its order variables are gone from the vault, and their deliveries with them.
   k.hub.db.conn.query("UPDATE workstreams SET state = 'done' WHERE n = 7").run();
   dropClosed(k.hub);
@@ -94,23 +90,19 @@ test("an order gets its own variables and its starter's person variables; they g
   expect(k.hub.db.all("SELECT * FROM vault_deliveries WHERE target LIKE 'order:%'")).toEqual([]);
 });
 
-test("a launch in a new order delivers its person's variables first; the inject row lists only what the node holds", async () => {
-  await save({ kind: "env", scope: "person", envName: "BO_TOKEN", sealed: k.sealToHub({ value: "bo-tok" }) }, k.memberDevice);
-  await sync();
+test("a launch in a new order delivers its variables first; the inject row lists only what the node holds", async () => {
   order(9, PROJECT, k.member.personId);
-  // Nothing reconciled since the order opened: the inject row says so.
+  // Written without a delivery (as the request_secret answer held for an offline node): the inject row says so.
+  k.v.store.insert(
+    { kind: "env", scope: "order", machineId: M, projectId: "p1", workstreamId: "W9", envName: "BO_TOKEN", label: "BO_TOKEN", meta: { secret: true, source: { kind: "typed" } } },
+    { value: "bo-tok" },
+    k.member.personId,
+    k.clock.now(),
+  );
   injected(k.hub, PROJECT, "W9", "t0");
   expect(k.hub.db.all("SELECT data FROM vault_audit WHERE action = 'inject'")).toEqual([]);
   await beforeLaunch(k.hub, M);
   expect(Object.fromEntries(k.node.orderFiles.get("p1/W9") ?? [])).toEqual({ BO_TOKEN: "bo-tok" });
   injected(k.hub, PROJECT, "W9", "t1");
   expect(JSON.parse(k.hub.db.all<{ data: string }>("SELECT data FROM vault_audit WHERE action = 'inject'")[0]!.data)).toEqual({ names: ["BO_TOKEN"] });
-});
-
-test("a person's variables are never delivered to work that isn't theirs", async () => {
-  order(8, PROJECT, k.owner.personId);
-  await save({ kind: "env", scope: "person", envName: "BO_ONLY", sealed: k.sealToHub({ value: "x" }) }, k.memberDevice);
-  await sync();
-  expect(k.node.orderFiles.get("p1/W8")).toBeUndefined();
-  expect(file("p1")).toEqual({});
 });

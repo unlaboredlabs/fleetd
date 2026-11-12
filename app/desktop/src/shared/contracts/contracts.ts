@@ -8889,7 +8889,8 @@ export type KnownVaultAuditAction =
   | "inject"
   | "deliver"
   | "purchase"
-  | "adopt";
+  | "adopt"
+  | "move";
 /** KnownVaultAuditAction, or a value from a newer hub. */
 export type VaultAuditAction = KnownVaultAuditAction | (string & {});
 
@@ -8966,7 +8967,7 @@ export type VaultAuditOutput = {
   truncated?: boolean;
 };
 
-/** `vault.changed`: an item was made, changed, deleted, restored or shared. Never a value; vault_list reads it. */
+/** `vault.changed`: an item was made, changed, deleted, restored or moved. Never a value; vault_list reads it. */
 export type VaultChangedData = {
   itemId: VaultItemId;
   machineId?: MachineId;
@@ -9056,7 +9057,7 @@ export type VaultImportCard = {
   imported?: number;
   items: VaultImportCardItem[];
   proposalId: VaultImportId;
-  /** Where the items go unless the person picks another: the person's own by default. */
+  /** Always `hub`: imported items go in the team vault. */
   scope: VaultScope;
   state: VaultImportState;
   /** The lead's reason, one line. */
@@ -9085,7 +9086,10 @@ export type VaultImportInput = {
   projectId?: ProjectId;
   proposalId?: VaultImportId;
   refs?: OpItemReference[];
-  /** Where they go; default: the proposal's, else the caller's own. */
+  /**
+   * Only an older app sends it, with machineId and projectId: refused with `vault_update_app`. Imports go in
+   * the team vault.
+   */
   scope?: VaultScope;
 };
 
@@ -9129,7 +9133,7 @@ export type VaultItemId = string;
 
 /** One item as a person's app lists it: metadata only, never a value (a plain variable's `value` aside). */
 export type VaultItemSummary = {
-  /** What the caller may do, by the scope table: change (edit, delete, share) and reveal. */
+  /** What the caller may do: change (edit, delete) and reveal. A team item: its creator or an admin. */
   canEdit: boolean;
   canReveal: boolean;
   createdMs: number;
@@ -9142,12 +9146,10 @@ export type VaultItemSummary = {
   label: string;
   machineId?: MachineId;
   meta: VaultMeta;
-  /** A person item's owner; for other scopes its creator. */
+  /** A team item's creator; a set-aside item's owner. */
   personId?: PersonId;
   projectId?: ProjectId;
   scope: VaultScope;
-  /** The projects a person item is shared with: their agents fill it, never reveal it. */
-  sharedWith?: ProjectRef[];
   /** Who changed it last: `human:<device>`, or `system` for the migration. */
   updatedBy: string;
   updatedMs: number;
@@ -9169,19 +9171,16 @@ export type VaultKind = KnownVaultKind | (string & {});
 
 export type VaultListInput = {
   kind?: VaultKind;
-  /** A project's items: with projectId. */
+  /** A project's variables and its orders': with projectId. Absent: the team vault and your items set aside. */
   machineId?: MachineId;
   projectId?: ProjectId;
   /** Only items whose label, site or variable name contains it. */
   query?: string;
-  /** Only this scope's items; absent: every item the caller sees. */
+  /** Only this scope's items; absent: every item the call lists. */
   scope?: VaultScope;
   /** The trash instead: items deleted in the last 30 days. */
   trash?: boolean;
-  /**
-   * With projectId: every item that project's work may use instead (its own, those shared with it, and the
-   * hub's), as Payments' card picker lists them.
-   */
+  /** With projectId: the team vault's items too, as Payments' card picker lists them. */
   usable?: boolean;
 };
 
@@ -9239,6 +9238,23 @@ export type VaultMigrationMachine = {
   waitingFor?: string;
 };
 
+/**
+ * An item set aside at the upgrade, by its owner: a login, card or address into the team vault (no project),
+ * a variable into a project as its variable.
+ */
+export type VaultMoveInput = {
+  itemId: VaultItemId;
+  /** A variable's project: with projectId. */
+  machineId?: MachineId;
+  projectId?: ProjectId;
+};
+
+export type VaultMoveOutput = {
+  item: VaultItemSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type VaultRestoreInput = {
   itemId: VaultItemId;
 };
@@ -9282,9 +9298,13 @@ export type VaultSaveInput = {
   itemId?: VaultItemId;
   kind?: VaultKind;
   label?: string;
-  /** A project's or an order's item. */
+  /** A variable's project. */
   machineId?: MachineId;
   projectId?: ProjectId;
+  /**
+   * A new variable's: `project` or `order`. A new login, card or address names none: it goes in the team
+   * vault (`person` or `hub` there is an older app's, refused with `vault_update_app`).
+   */
   scope?: VaultScope;
   /**
    * `crypto_box_seal(hubBoxKey, utf8 JSON of the kind's fields)`: LoginSecret, CardSecret, AddressSecret,
@@ -9304,7 +9324,12 @@ export type VaultSaveOutput = {
   truncated?: boolean;
 };
 
-/** Whose an item is, and so who lists, changes and reveals it, and which work uses it. */
+/**
+ * Where an item is, and so who lists, changes and reveals it, and which work uses it: `hub` the team vault (logins,
+ * cards, addresses; everyone lists them, every project's work fills them, their creator or an admin changes them),
+ * `project` and `order` variables, `person` an item set aside at the upgrade to one team vault (only its owner lists
+ * it; nothing fills or delivers it until they move it with `vault_move` or delete it).
+ */
 export type VaultScope = "person" | "project" | "order" | "hub";
 
 /**
@@ -9321,18 +9346,6 @@ export type VaultSealedShapes = {
   imported: VaultImportedFields;
   /** `vault_save` and `vault_reveal`, by kind; a purchase claim's `sealedCard` is a card. */
   login: LoginSecret;
-};
-
-export type VaultShareSetInput = {
-  itemId: VaultItemId;
-  /** A person item's projects, replacing those before; empty: only its owner's own work. */
-  projects: ProjectRef[];
-};
-
-export type VaultShareSetOutput = {
-  item: VaultItemSummary;
-  next?: string;
-  truncated?: boolean;
 };
 
 /** Where an item came from. */
@@ -9985,11 +9998,11 @@ export interface ToolMap {
   vault_import: { input: VaultImportInput; output: VaultImportOutput };
   vault_import_search: { input: VaultImportSearchInput; output: VaultImportSearchOutput };
   vault_list: { input: VaultListInput; output: VaultListOutput };
+  vault_move: { input: VaultMoveInput; output: VaultMoveOutput };
   vault_restore: { input: VaultRestoreInput; output: VaultRestoreOutput };
   vault_reveal: { input: VaultRevealInput; output: VaultRevealOutput };
   vault_rotate: { input: VaultRotateInput; output: VaultRotateOutput };
   vault_save: { input: VaultSaveInput; output: VaultSaveOutput };
-  vault_share_set: { input: VaultShareSetInput; output: VaultShareSetOutput };
   vault_status: { input: VaultStatusInput; output: VaultStatusOutput };
   vault_unlock: { input: VaultUnlockInput; output: VaultUnlockOutput };
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };

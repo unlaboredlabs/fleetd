@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, titleOf, shownFields, sitesOf, toggleCleared, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
+import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, moveTargets, NOT_CHANGED, NOT_SHOWN, offWhy, parseDotenv, parseExpiry, presentFields, rowLine, sections, titleOf, shownFields, sitesOf, teamVault, toggleCleared, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
 import type { VaultAuditEntry, VaultItemSummary } from "./types";
 
 /** An item's metadata as the hub sends it: what it holds, and where it came from. */
@@ -10,7 +10,7 @@ const NOW = new Date("2026-11-09T12:00:00Z");
 const item = (over: Partial<VaultItemSummary>): VaultItemSummary => ({
   itemId: "V1",
   kind: "login",
-  scope: "person",
+  scope: "hub",
   label: "Shop",
   meta: m({}),
   createdMs: 0,
@@ -141,14 +141,15 @@ describe("a row's line", () => {
     expect(rowLine(item({ kind: "env", envName: "K", meta: m({ secret: false }) }))).toBe("Plain");
     expect(rowLine(item({ kind: "env", envName: "K", meta: m({ secret: false }), value: "eu-west-1" }))).toBe("eu-west-1");
   });
+});
 
-  it("tags where an item is used when it isn't only the person's work", () => {
-    const name = (m: string, p: string) => (p === "p1" ? "Nova" : undefined);
-    expect(scopeTag(item({ scope: "person" }), name)).toBeUndefined();
-    expect(scopeTag(item({ scope: "hub" }), name)).toBe("Everyone");
-    expect(scopeTag(item({ scope: "project", machineId: "devbox", projectId: "p1" }), name)).toBe("Nova");
-    expect(scopeTag(item({ scope: "person", sharedWith: [{ machineId: "devbox", projectId: "p1" }] }), name)).toBe("Nova");
-    expect(scopeTag(item({ scope: "person", sharedWith: [{ machineId: "devbox", projectId: "p1" }, { machineId: "devbox", projectId: "p2" }] }), name)).toBe("2 projects");
+describe("who may show, change or delete an item", () => {
+  it("is its creator or an admin, as the hub says; anyone else reads why", () => {
+    expect(offWhy(item({ canReveal: true, canEdit: true }))).toEqual({ show: undefined, change: undefined });
+    expect(offWhy(item({ canReveal: false, canEdit: false }))).toEqual({ show: NOT_SHOWN, change: NOT_CHANGED });
+    expect(NOT_SHOWN).toBe("Only its creator or an admin can show it. Agents still fill it.");
+    // A plain variable shows to everyone, but only its creator or an admin changes it.
+    expect(offWhy(item({ kind: "env", canReveal: true, canEdit: false }))).toEqual({ show: undefined, change: NOT_CHANGED });
   });
 });
 
@@ -278,8 +279,8 @@ describe("activity", () => {
   it("leaves one line once an import proposal is answered", () => {
     expect(importOutcome({ state: "open" })).toBeUndefined();
     expect(importOutcome({ state: "dismissed" })).toBe("Not imported");
-    expect(importOutcome({ state: "imported", imported: 1 })).toBe("Imported 1 item into your vault");
-    expect(importOutcome({ state: "imported", imported: 3 })).toBe("Imported 3 items into your vault");
+    expect(importOutcome({ state: "imported", imported: 1 })).toBe("Imported 1 item into the vault");
+    expect(importOutcome({ state: "imported", imported: 3 })).toBe("Imported 3 items into the vault");
   });
 
   it("shows the Vault only on a hub that has one", () => {
@@ -287,5 +288,22 @@ describe("activity", () => {
     expect(vaultShown({ ...live, features: ["vault"] })).toBe(true);
     expect(vaultShown({ ...live, features: [] })).toBe(false);
     expect(vaultShown({ phase: "connecting", hub: "http://devbox:4790", attempt: 1 })).toBe(false);
+  });
+
+  it("knows a hub with one team vault by its feature", () => {
+    const live = { phase: "live", hub: "http://devbox:4790", protocol: 1 } as const;
+    expect(teamVault({ ...live, features: ["vault", "vault_team"] })).toBe(true);
+    expect(teamVault({ ...live, features: ["vault"] })).toBe(false);
+  });
+});
+
+describe("where a set-aside variable may go", () => {
+  it("lists every project not archived, by title", () => {
+    const p = (title: string, archivedAt?: string) => ({ title, ...(archivedAt === undefined ? {} : { archivedAt }) }) as never;
+    expect(moveTargets({ "devbox/b": p("Nova"), "devbox/a": p("Atlas"), "devbox/c": p("Old", "2026-01-01T00:00:00Z") })).toEqual([
+      { key: "devbox/a", title: "Atlas" },
+      { key: "devbox/b", title: "Nova" },
+    ]);
+    expect(moveTargets(undefined)).toEqual([]);
   });
 });

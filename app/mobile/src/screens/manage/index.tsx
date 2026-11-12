@@ -36,6 +36,7 @@ import { Vault } from "../vault/Vault";
 import { VaultEdit } from "../vault/VaultEdit";
 import { VaultImport } from "../vault/VaultImport";
 import { VaultItem } from "../vault/VaultItem";
+import { VaultMove } from "../vault/VaultMove";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -140,6 +141,7 @@ function ChatInfo() {
       <InfoStack.Screen name="VaultItem" component={VaultItem} options={pushed(t, "")} />
       <InfoStack.Screen name="VaultEdit" component={VaultEdit} options={sheet(t, "")} />
       <InfoStack.Screen name="VaultImport" component={VaultImport} options={sheet(t, "Import from 1Password")} />
+      <InfoStack.Screen name="VaultMove" component={VaultMove} options={sheet(t, "")} />
     </InfoStack.Navigator>
   );
 }

@@ -4,8 +4,10 @@
 // - on each Bun node's link, `vault_adopt`: the node's project and order variables and its env:/file: sinks, each
 //   sealed to the hub's box key. A Rust node can't adopt: its secrets stay on its files and keep working ("waiting");
 // - fleetd's own order variables (an order's `GH_TOKEN`) stay on their own path;
-// - a picked `op://` card is imported from a node holding its person's token, then the project pays with the vault
-//   card.
+// - a picked `op://` card is imported from a node holding its person's token into the team vault, then the project
+//   pays with the vault card;
+// - a person's variable the one-team-vault migration (202611121235_one_team_vault.sql) gave more than one project is
+//   copied into the others once the key is open (`copyTeamVars`).
 // Each step is idempotent and its progress is in `vault_settings` (`migration`). The node's files and the hub's rows
 // stay: they are the delivery and the Rust mirror. After a rollback and a roll-forward the same steps run again and
 // take in what changed under Rust.
@@ -17,6 +19,7 @@ import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { token } from "../onepassword/index.ts";
+import { store as hubStore } from "../store/hub_store.ts";
 import { parseMs } from "../store/time.ts";
 import { fingerprintOf } from "./fields.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
@@ -285,10 +288,9 @@ export async function migrateCards(hub: Hub): Promise<number> {
         const saved = saveItem(
           hub,
           hubViewer(hub, person),
-          { kind: "card", scope: "person", label: String(f.title ?? "Card").slice(0, 120) || "Card", fields: f.card ?? {}, source: { kind: "1password", ref: row.card_ref, importedMs: hub.clock.now() } },
+          { kind: "card", label: String(f.title ?? "Card").slice(0, 120) || "Card", fields: f.card ?? {}, source: { kind: "1password", ref: row.card_ref, importedMs: hub.clock.now() } },
           "import",
         );
-        vault(hub).store.setShares(saved.itemId, [r, ...vault(hub).store.shares(saved.itemId)], person, hub.clock.now());
         itemId = saved.itemId;
       }
       hub.db.conn.query("UPDATE project_settings SET card_ref = ? WHERE machine_id = ? AND project_id = ? AND card_ref = ?").run(`vault:${itemId}`, r.machineId, r.projectId, row.card_ref);
@@ -299,5 +301,39 @@ export async function migrateCards(hub: Hub): Promise<number> {
       console.warn(`vault: ${r.projectId}'s card not moved in yet: ${(e as Error).message}`);
     }
   }
+  return n;
+}
+
+type TeamCopy = { itemId: string; machineId: string; projectId: string };
+
+/**
+ * The copies of a person's variable the one-team-vault migration left to make (`team_vault_copies`): each into its
+ * project unless that has a variable of the name by now. Needs the key open; what it can't do yet stays listed.
+ */
+export function copyTeamVars(hub: Hub): number {
+  const vt = vault(hub);
+  let todo: TeamCopy[];
+  try {
+    todo = JSON.parse(vt.store.setting("team_vault_copies") ?? "[]") as TeamCopy[];
+  } catch {
+    todo = [];
+  }
+  if (todo.length === 0 || vt.keys.locked) return 0;
+  const v = hubViewer(hub);
+  const left: TeamCopy[] = [];
+  let n = 0;
+  for (const c of todo) {
+    const row = vt.store.get(c.itemId);
+    if (!row || row.kind !== "env" || row.deletedMs !== undefined || !hubStore(hub).projectGet(c) || projectVar(hub, c, row.envName!)) continue;
+    try {
+      const secret = vt.store.open(row);
+      saveItem(hub, v, { kind: "env", scope: "project", machineId: c.machineId, projectId: c.projectId, envName: row.envName!, secret: row.meta.secret !== false, fields: { value: secret.value ?? "" }, source: row.meta.source });
+      n++;
+    } catch (e) {
+      console.warn(`vault: ${row.envName} not copied into ${c.projectId} yet: ${(e as Error).message}`);
+      left.push(c);
+    }
+  }
+  vt.store.setSetting("team_vault_copies", left.length > 0 ? JSON.stringify(left) : undefined);
   return n;
 }

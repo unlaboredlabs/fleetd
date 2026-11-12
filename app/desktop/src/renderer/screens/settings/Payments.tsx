@@ -1,6 +1,6 @@
 // A project's Payments (its Projects page; D265): the card its lead pays with, and every purchase it made
-// (project_purchases). On a hub with a vault the card is one of the vault's cards the project's work can use (its own,
-// yours shared with it, the hub's: vault_list with usable), kept as `vault:<id>`, with Add a card and Import from
+// (project_purchases). On a hub with a vault the card is one of the vault's cards the project's work can use (the
+// team vault's: vault_list with usable), kept as `vault:<id>`, with Add a card and Import from
 // 1Password beside them; on an older hub, a Credit Card item from the person's own 1Password (onepassword_cards lists
 // them; project_card_set keeps only its op:// reference). A purchase fills the card in at its checkout without asking (D312), and the chat says what
 // was paid. One section on its own, so it can go without touching the rest.
@@ -15,8 +15,8 @@ import { when } from "../live/when";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import { ImportDialog, VaultEditor } from "./VaultForms";
-import { rowLine, scopeTag, vaultServed } from "./vaultModel";
-import { useProjectName, vaultError } from "./vaultParts";
+import { rowLine, vaultServed } from "./vaultModel";
+import { vaultError } from "./vaultParts";
 import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
@@ -202,17 +202,11 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
 function VaultCards(props: { projectRef: Ref; picked: string | undefined; pickedLabel: string | undefined; saving: boolean; onPick: (value: string) => void }) {
   const { projectRef } = props;
   const live = useLive();
-  const projectName = useProjectName();
-  // usable: what the project's work may pay with (its own, yours shared with it, the hub's), not
-  // only its own.
+  // usable: what the project's work may pay with, the team vault's cards, not only the project's own variables.
   const list = useToolQuery("vault_list", { ...projectRef, kind: "card", usable: true }, { enabled: live });
   const [adding, setAdding] = useState<"card" | "import" | null>(null);
-  const whose = { kind: "project", ...projectRef } as const;
   const cards = (list.data?.items ?? []).filter((c) => c.kind === "card" && c.deletedMs === undefined);
-  const options = cards.map((c) => {
-    const tag = scopeTag(c, projectName);
-    return { value: `vault:${c.itemId}`, label: [c.label, rowLine(c), tag === undefined ? "yours" : tag].join(" · ") };
-  });
+  const options = cards.map((c) => ({ value: `vault:${c.itemId}`, label: [c.label, rowLine(c)].join(" · ") }));
   // A card picked that the list doesn't have (gone, or a 1Password one from before the vault): by its label from the
   // purchases read, never a raw `vault:` id.
   if (props.picked !== undefined && !options.some((o) => o.value === props.picked)) {
@@ -233,7 +227,7 @@ function VaultCards(props: { projectRef: Ref; picked: string | undefined; picked
       )}
       {list.data !== undefined && cards.length === 0 ? (
         <Text size="sm" tone="quiet">
-          No card in the vault this project can use yet. Add one, or import it from your 1Password.
+          No card in the vault yet. Add one, or import it from your 1Password.
         </Text>
       ) : null}
       <div className={s.inline}>
@@ -244,8 +238,8 @@ function VaultCards(props: { projectRef: Ref; picked: string | undefined; picked
           Import from 1Password…
         </Button>
       </div>
-      {adding === "card" ? <VaultEditor whose={whose} kind="card" onClose={() => setAdding(null)} onSaved={(item) => (setAdding(null), props.onPick(`vault:${item.itemId}`))} /> : null}
-      {adding === "import" ? <ImportDialog whose={whose} onClose={() => setAdding(null)} /> : null}
+      {adding === "card" ? <VaultEditor kind="card" onClose={() => setAdding(null)} onSaved={(item) => (setAdding(null), props.onPick(`vault:${item.itemId}`))} /> : null}
+      {adding === "import" ? <ImportDialog onClose={() => setAdding(null)} /> : null}
     </div>
   );
 }

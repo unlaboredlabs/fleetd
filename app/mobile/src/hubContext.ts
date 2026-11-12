@@ -110,16 +110,18 @@ export type ChatInfoParams = {
   Dm: { key: Key; message: AgentMessage };
 } & VaultParams;
 /**
- * The Vault's screens (screens/vault), in Settings for the person's own and the hub's items, and in a project's screen
- * for its own (`key`). `item` is the row's metadata, shown while the item is read again; never a value.
+ * The Vault's screens (screens/vault), in Settings for the team's logins, cards and addresses, and in a project's
+ * screen for its variables (`key`). `item` is the row's metadata, shown while the item is read again; never a value.
  */
 export type VaultParams = {
   Vault: { key?: Key } | undefined;
   VaultItem: { itemId: string; item?: VaultItemSummary; key?: Key };
   /** A new item of `kind`, or `item` changed. */
   VaultEdit: { kind: VaultKind; item?: VaultItemSummary; key?: Key };
-  /** Items picked from the person's 1Password, brought into the vault. */
-  VaultImport: { key?: Key } | undefined;
+  /** Items picked from the person's 1Password, brought into the team vault. */
+  VaultImport: undefined;
+  /** A set-aside variable added to a project picked here. */
+  VaultMove: { item: VaultItemSummary };
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;

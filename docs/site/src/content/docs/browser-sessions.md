@@ -195,7 +195,7 @@ scrubbed: whatever showed on the page is in it.
 An agent signs in to a site without seeing the password. It names a [vault](/docs/vault) login, and the node types
 the value into the page itself.
 
-1. **Add the login to the vault** (Settings › You › Vault, or the project's Vault), with the websites it signs in to.
+1. **Add the login to the team vault** (Settings › You › Vault), with the websites it signs in to.
    The node fills a field only on a page of one of those sites (the same host, or a subdomain of it), and submits only
    to a form that sends there. A login with no site fills nowhere. Shared-hosting suffixes (`github.io`,
    `vercel.app`, `netlify.app`, `pages.dev`, `herokuapp.com` and the like) match only as whole hosts.
@@ -205,7 +205,7 @@ the value into the page itself.
    `field: "password"` into `#password`, which submits the form. `field: "otp"` types the current one-time code,
    made on the hub, so the seed never leaves it. `vault_items` lists the logins the agent may use, by label and site.
 3. **The hub checks before it sends.** The node hosting the browser asks the hub for the value. The hub checks, from
-   its own records, which project, order and person the session works for, that the item is one they may use
+   its own records, which project and order the session works for, that the item is in the team vault
    ([who uses what](/docs/vault#scopes)) and that the page is on its sites. Only then does it seal the value to that
    node. Each fill, and each refusal, is in the item's activity.
 

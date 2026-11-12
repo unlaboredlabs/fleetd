@@ -144,7 +144,7 @@ export function Settings() {
       <RestartHub />
       <UpdateFleetd />
       {vaultShown(hub) ? (
-        <ListSection footer="Logins, cards, addresses and variables your agents use without seeing them.">
+        <ListSection footer="The team's logins, cards and addresses, which agents use without seeing them.">
           <ListRow title="Vault" onPress={() => navigation.navigate("Vault")} />
         </ListSection>
       ) : null}

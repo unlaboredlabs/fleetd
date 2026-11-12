@@ -124,12 +124,19 @@ export const CARRIED = [
   "vault_imports",
   "vault_items",
   "vault_settings",
-  "vault_shares",
   "wakes",
   "work_claims",
   "work_projects",
   "workstreams",
 ] as const;
+
+/**
+ * Tables a later migration folds into others and drops. An older hub's database may still hold one: its export carries
+ * it as it is, so the import runs that migration on its rows as the hub's own update would have.
+ */
+export const RETIRED: Record<string, string> = {
+  vault_shares: "the projects a person's vault item was shared with: the one-team-vault migration makes those items the team's",
+};
 
 /** The tables import fills by itself, each with how. */
 export const REBUILT: Record<string, string> = {
@@ -190,7 +197,7 @@ const carried = new Set<string>(CARRIED);
 
 /** What an export does with `table`; undefined for a table no list names. */
 export function fateOf(table: string): Fate | undefined {
-  if (carried.has(table)) return { fate: "carried" };
+  if (carried.has(table) || RETIRED[table] !== undefined) return { fate: "carried" };
   const how = REBUILT[table];
   if (how !== undefined) return { fate: "rebuilt", how };
   const why = LEFT_OUT[table];
@@ -238,7 +245,7 @@ export const VAULT_ITEMS = "vault_items";
  * The tables an export without secrets (`--no-secrets`) leaves out whole, and an import without the passphrase
  * skips: the ones with a sealed value, and the vault's rows about its items.
  */
-export const SECRET_TABLES: readonly string[] = [...Object.keys(SEALED), VAULT_ITEMS, "vault_deliveries", "vault_imports", "vault_shares"];
+export const SECRET_TABLES: readonly string[] = [...Object.keys(SEALED), VAULT_ITEMS, "vault_deliveries", "vault_imports"];
 
 /**
  * A machine as the file carries it: its id and name as an offline machine, without its box key. The projects, orders

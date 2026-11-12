@@ -1,5 +1,5 @@
 // What the Vault's screens share: each kind's tile (a key, a card, a house, a terminal, as iOS's Passwords draws its
-// groups), the reads again on a vault event and on coming back to a screen, and where a screen's items live.
+// groups), the reads again on a vault event and on coming back to a screen, and which list a screen shows.
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { SFSymbol, AndroidSymbol } from "expo-symbols";
@@ -51,9 +51,9 @@ export const useVaultChanged = (session: Session, reload: () => void): void => {
 export const useVaultNav = () => useNavigation<NativeStackNavigationProp<VaultParams>>();
 export const useVaultRoute = <K extends keyof VaultParams>() => useRoute<RouteProp<VaultParams, K>>();
 
-/** Whose items a screen shows: a project's when it was opened from one, else the person's own and the hub's. */
+/** Which list a screen shows: a project's variables when it was opened from one, else the team vault. */
 export const whoseOf = (state: State, key: string | undefined): { whose: Whose; project?: ProjectRef & { title: string } } => {
-  if (key === undefined) return { whose: { kind: "mine" } };
+  if (key === undefined) return { whose: { kind: "team" } };
   const p = state.projects?.[key];
   const ref = refOf(key);
   return { whose: { kind: "project", project: ref }, project: { ...ref, title: p?.title ?? "This project" } };

@@ -1,14 +1,22 @@
 // The Vault in the person's words, with no UI, the same rules as the phone's (app/mobile/src/screens/vault/model.ts):
 // each kind's fields and checks (a card's number by Luhn and its brand, its expiry as MM/YY, a login's site cut from a
 // pasted address, a variable's name by the hub's rule), the one quiet line a row shows ("Visa ••4242", "amazon.com",
-// "Germany", "Secret"), the scope tag, the filter and search, and an audit row in words. Values never come through here
+// "Germany", "Secret"), which page lists an item, the filter and search, and an audit row in words. Values never come through here
 // except as the person types them into a form; the lists hold metadata alone.
-import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind, VaultListInput, VaultScope } from "../../../shared/contracts";
+import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind, VaultListInput } from "../../../shared/contracts";
 import { byteLength, nameProblem } from "./projectModel";
 
 /** The hub's app feature that serves the vault: an older hub shows no Vault rows rather than a page that fails. */
 export const VAULT_FEATURE = "vault";
 export const vaultServed = (features: readonly string[]): boolean => features.includes(VAULT_FEATURE);
+
+/**
+ * A hub with the team vault (D492): its "hub" items are the team's, and a "person" item is one set aside for its owner.
+ * Without it (an older hub) the Vault page lists what vault_list gives as one list, and adds the same way: a new
+ * login, card or address names no place, which that hub keeps as the person's own.
+ */
+export const TEAM_FEATURE = "vault_team";
+export const teamServed = (features: readonly string[]): boolean => features.includes(TEAM_FEATURE);
 
 export const KINDS: readonly VaultKind[] = ["login", "card", "address", "env"];
 
@@ -24,47 +32,46 @@ export const kindWords = (kind: VaultKind): { plural: string; one: string } => K
 
 /** The list's filter: every kind, or one. */
 export type Filter = "all" | VaultKind;
-export const FILTERS: ReadonlyArray<{ value: Filter; label: string }> = [{ value: "all", label: "All" }, ...KINDS.map((k) => ({ value: k, label: kindWords(k).plural }))];
+/** The team's page filters its logins, cards and addresses; a project's holds only variables, so it has none. */
+export const FILTERS: ReadonlyArray<{ value: Filter; label: string }> = [{ value: "all", label: "All" }, ...KINDS.filter((k) => k !== "env").map((k) => ({ value: k, label: kindWords(k).plural }))];
 
-/** Whose items a Vault page shows: yours (with the hub's beside them), one project's, or the hub's (admins). */
-export type Whose = { readonly kind: "mine" } | { readonly kind: "project"; readonly machineId: string; readonly projectId: string } | { readonly kind: "hub" };
+/** A Vault page: the team's logins, cards and addresses, or one project's variables (and its orders'). */
+export type Whose = { readonly kind: "team" } | { readonly kind: "project"; readonly machineId: string; readonly projectId: string };
 
-/** vault_list's input for a page. A project's asks for what its work can use, then keeps its own (onPage). */
+/** vault_list's input for a page: everything the person sees for the team's, the project's own for a project's. */
 export const listInput = (whose: Whose, trash = false): VaultListInput => {
   const t = trash ? { trash: true } : {};
-  switch (whose.kind) {
-    case "mine":
-      return t;
-    case "project":
-      return { machineId: whose.machineId, projectId: whose.projectId, ...t };
-    case "hub":
-      return { scope: "hub", ...t };
-  }
+  return whose.kind === "project" ? { machineId: whose.machineId, projectId: whose.projectId, ...t } : t;
 };
 
 /**
- * Whether a listed item belongs on the page: yours shows your own and the hub's (which your work uses too); a project's
- * its own and its orders' (your items shared with it, and the hub's, stay in yours); the hub's only its own.
+ * An item set aside for this person: one of their own from before the team vault, never shared, on a hub with several
+ * people, which the hub keeps as "person". Only they list it, nothing fills or gets it, and they move it to the team
+ * vault (or a variable to a project, vault_move) or delete it.
  */
-export const onPage = (whose: Whose, item: Pick<VaultItemSummary, "scope">): boolean =>
-  whose.kind === "project" ? item.scope === "project" || item.scope === "order" : whose.kind === "hub" ? item.scope === "hub" : item.scope === "person" || item.scope === "hub";
+export const isSetAside = (item: Pick<VaultItemSummary, "scope">, team: boolean): boolean => team && item.scope === "person";
 
-/** Where a new item goes from a page: your own work, the project, or every project. */
-export const scopeFor = (whose: Whose): VaultScope => (whose.kind === "project" ? "project" : whose.kind === "hub" ? "hub" : "person");
+/** A project's variable or one of its orders'. */
+const projectEnv = (item: Pick<VaultItemSummary, "kind" | "scope">): boolean => item.kind === "env" && (item.scope === "project" || item.scope === "order");
 
-/** Where a page's new or imported item goes, and so who uses it, as a dialog says it. */
-export const PLACE_WORDS: Readonly<Record<Whose["kind"], { into: string; used: string }>> = {
-  mine: { into: "your vault", used: "Only the work you start uses it." },
-  project: { into: "this project's vault", used: "This project's agents use it." },
-  hub: { into: "the hub's vault", used: "Every project's agents use it." },
-};
+/**
+ * Whether a listed item belongs on the page: a project's shows its variables and its orders'; the team's every other
+ * item. On a hub from before the team vault that is every login, card and address the person sees, and their own
+ * variables, so nothing they had goes missing. Items set aside have their own section (SetAsidePart).
+ */
+export const onPage = (whose: Whose, item: Pick<VaultItemSummary, "kind" | "scope">, team: boolean): boolean =>
+  !isSetAside(item, team) && (whose.kind === "project" ? projectEnv(item) : !projectEnv(item));
 
-export const SCOPE_WORDS: Readonly<Record<string, string>> = {
-  person: "Only your work",
-  project: "This project",
-  order: "This order",
-  hub: "Every project",
-};
+/**
+ * Where a page's new item goes, as vault_save and vault_import take it. A login, card or address names no place: a hub
+ * with the team vault keeps it there, and one from before keeps it as the person's own, as its You › Vault did. A
+ * variable is the project's.
+ */
+export const placeOf = (whose: Whose): { scope?: "project"; machineId?: string; projectId?: string } =>
+  whose.kind === "project" ? { scope: "project", machineId: whose.machineId, projectId: whose.projectId } : {};
+
+/** The kinds a page adds: the team's logins, cards and addresses; a project's variables. */
+export const pageKinds = (whose: Whose): VaultKind[] => (whose.kind === "project" ? ["env"] : ["login", "card", "address"]);
 
 // ——— Cards ———
 
@@ -216,31 +223,8 @@ export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "value">)
   }
 };
 
-/** Where an item may be used, when it isn't only its owner's work: a project's name, or Everyone for the hub's. */
-export const scopeTag = (
-  item: Pick<VaultItemSummary, "scope" | "machineId" | "projectId" | "sharedWith" | "workstreamId">,
-  projectName: (machineId: string, projectId: string) => string | undefined,
-): string | undefined => {
-  const shared = item.sharedWith?.length ?? 0;
-  switch (item.scope) {
-    case "hub":
-      return "Everyone";
-    case "project":
-    case "order": {
-      const name = item.machineId === undefined || item.projectId === undefined ? undefined : projectName(item.machineId, item.projectId);
-      const project = name ?? "Project";
-      return item.scope === "order" && item.workstreamId !== undefined ? `${project} · ${item.workstreamId}` : project;
-    }
-    case "person": {
-      if (shared === 0) return undefined;
-      const first = item.sharedWith?.[0];
-      if (shared === 1 && first !== undefined) return projectName(first.machineId, first.projectId) ?? "1 project";
-      return `${String(shared)} projects`;
-    }
-    default:
-      return undefined;
-  }
-};
+/** An order's variable on its project's page: its order, beside the name. */
+export const orderTag = (item: Pick<VaultItemSummary, "scope" | "workstreamId">): string | undefined => (item.scope === "order" ? item.workstreamId : undefined);
 
 /**
  * The title a row shows: a variable by its name, everything else by its label. A `request_secret` sink's variable is
@@ -514,7 +498,7 @@ export const importOutcome = (card: Pick<VaultImportCard, "state" | "imported">)
   if (card.state === "open") return undefined;
   if (card.state === "dismissed") return "Not imported";
   const n = card.imported;
-  return n === undefined ? "Imported into your vault" : `Imported ${String(n)} ${n === 1 ? "item" : "items"} into your vault`;
+  return n === undefined ? "Imported into the vault" : `Imported ${String(n)} ${n === 1 ? "item" : "items"} into the vault`;
 };
 
 /** The hub's reasons a vault call failed, in the person's words; undefined for any other. */

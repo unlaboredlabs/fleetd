@@ -90,6 +90,7 @@ value. The lead relays it to you as a secret request whose item says **for W27's
   claude starts again with it and resumes its conversation), and each new one from the start. No other order's agents
   and no other project's see it.
 - It is masked like a project's secret, as `***NAME***`, in everything those agents report.
+- For those agents it wins over a project variable of the same name.
 - A value entered after the order closed is refused.
 - It goes when the order closes, done or stopped: the node forgets it, and the hub deletes it from the vault. A
   machine offline then forgets it once it is back.

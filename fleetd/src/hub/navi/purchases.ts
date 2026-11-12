@@ -215,7 +215,7 @@ export function register(tools: Registry): void {
         throw new ToolError("forbidden", "Only a person picks the card a project pays with.", "Pick it in the app: the project's Settings › Payments.");
       }
       const r = naviRef(hub, input);
-      if (input.card !== undefined) checkCardPick(hub, caller, r, input.card);
+      if (input.card !== undefined) checkCardPick(hub, input.card);
       navis.setCard(hub.db.conn, r, input.card);
       const paysWith = input.card !== undefined ? card(hub, r) : undefined;
       return {

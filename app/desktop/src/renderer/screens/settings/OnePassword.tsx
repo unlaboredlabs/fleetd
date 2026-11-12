@@ -50,7 +50,7 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
 
 /** On a hub with a vault, 1Password is only where items come from (vault-design §6): fills use the vault. */
 const IMPORT_INTRO =
-  "Optional: a place to import logins, cards and addresses from into your vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
+  "Optional: a place to import logins, cards and addresses from into the team vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
 
 export function OnePasswordSettings() {
   const live = useLive();

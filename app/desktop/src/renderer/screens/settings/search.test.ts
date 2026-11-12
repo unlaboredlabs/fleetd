@@ -106,7 +106,10 @@ describe("settings search", () => {
     expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Every project › Agents"]);
     expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Every project › Agents"]);
     expect(first("instructions for every project")).toEqual(["hub.instructions", "hub.instructions", "Every project › Instructions"]);
-    expect(first("vault for every project")).toEqual(["hub.vault", "hub.vault", "Every project › Vault"]);
+    // The hub's vault for every project is the team vault now (D492): its old name finds the Vault page.
+    expect(first("vault for every project")).toEqual(["vault", "vault", "Vault"]);
+    expect(first("team card")).toEqual(["vault", "vault", "Vault"]);
+    expect(first("project variables")).toEqual(["project-vault", "project-vault", "Project › Vault"]);
     expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every project › Vault"]);
     // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
     expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);

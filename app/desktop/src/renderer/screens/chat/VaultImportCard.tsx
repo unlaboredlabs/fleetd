@@ -1,13 +1,14 @@
 // A lead's proposal to bring items from the person's 1Password into the vault, as a card in its chat (a system
 // message's `vaultImport`, vault-design §6), as the phone shows it: why it asks, each item with its kind and site,
-// ticked, where they'll be used, and Import and Dismiss. Import is the one confirm the vault has: the items are read on
+// ticked, where they go, and Import and Dismiss. Import is the one confirm the vault has: the items are read on
 // a machine holding the person's token and sealed to the hub there, so no value reaches the app, the chat or the lead.
+// Where they go is the proposal's (the team vault, or a project's variables): the import names no scope of its own.
 // Once answered, one quiet line says how it went.
 import { useState } from "react";
 import type { VaultImportCard } from "../../../shared/contracts";
 import { Button, Checkbox, Text } from "../../ui";
 import { useHubCall, useRefetch } from "../settings/hub";
-import { importOutcome, kindWords, SCOPE_WORDS } from "../settings/vaultModel";
+import { importOutcome, kindWords } from "../settings/vaultModel";
 import { VAULT_READS, vaultError } from "../settings/vaultParts";
 import v from "../settings/vault.module.css";
 import s from "./view.module.css";
@@ -48,7 +49,7 @@ export function VaultImportCardView({ card, at }: { card: VaultImportCard; at: s
     const done =
       what === "dismiss"
         ? call("vault_import", { proposalId: card.proposalId, dismiss: true }).then(() => "Not imported")
-        : call("vault_import", { proposalId: card.proposalId, refs: ticked.map((i) => i.ref), scope: card.scope }, { timeoutMs: ONEPASSWORD_MS }).then((out) => {
+        : call("vault_import", { proposalId: card.proposalId, refs: ticked.map((i) => i.ref) }, { timeoutMs: ONEPASSWORD_MS }).then((out) => {
             if (out.errors.length > 0) setProblem(out.errors.map((e) => `${card.items.find((i) => i.ref === e.ref)?.title ?? e.ref}: ${e.message}`).join(" "));
             refetch([...VAULT_READS]);
             return importOutcome({ state: "imported", imported: out.items.length });
@@ -69,7 +70,7 @@ export function VaultImportCardView({ card, at }: { card: VaultImportCard; at: s
     <section className={v.card} aria-label="Import from 1Password" data-vault-import={card.proposalId}>
       <div className={v.cardHead}>
         <Text strong>Import from 1Password</Text>
-        <Text size="xs" tone="quiet">{`Into your vault · ${SCOPE_WORDS[card.scope] ?? card.scope}`}</Text>
+        <Text size="xs" tone="quiet">{card.scope === "project" || card.scope === "order" ? "Into the project's variables" : "Into the team vault"}</Text>
       </div>
       {card.why.trim() === "" ? null : <Text size="sm">{card.why}</Text>}
       <div className={v.picks} role="group" aria-label="Items">
