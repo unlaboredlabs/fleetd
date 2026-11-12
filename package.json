@@ -143,6 +143,7 @@
     "./hub/orders/phase": "./fleetd/src/hub/orders/phase.ts",
     "./hub/outage/rules": "./fleetd/src/hub/outage/rules.ts",
     "./hub/people/roles": "./fleetd/src/hub/people/roles.ts",
+    "./hub/policy/file": "./fleetd/src/hub/policy/file.ts",
     "./hub/project_lead/asks": "./fleetd/src/hub/project_lead/asks.ts",
     "./hub/project_lead/checker_modes": "./fleetd/src/hub/project_lead/checker_modes.ts",
     "./hub/project_lead/checker_rules": "./fleetd/src/hub/project_lead/checker_rules.ts",
