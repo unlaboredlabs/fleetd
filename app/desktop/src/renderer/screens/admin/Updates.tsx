@@ -3,8 +3,7 @@
 // and why), and the Update automatically switch. Nothing else to read.
 import { useEffect } from "react";
 import { Part } from "../settings/Frames";
-import { SettingsSection } from "../settings/parts";
-import { Text } from "../../ui";
+import { GroupNote, SettingsSection } from "../settings/parts";
 import { CLOUD_UPDATES } from "../updates/model";
 import { useServes } from "./role";
 import { AutoUpdates } from "../updates/AutoUpdates";
@@ -25,7 +24,7 @@ export function Updates() {
     return (
       <Part reveal="hub.updates" screen="settings.hub.updates">
         <SettingsSection title="Updates" data={{ "data-screen": "updates", "data-updates": "cloud" }}>
-          <Text tone="quiet">{CLOUD_UPDATES}</Text>
+          <GroupNote>{CLOUD_UPDATES}</GroupNote>
         </SettingsSection>
       </Part>
     );
