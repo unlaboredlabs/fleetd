@@ -30,6 +30,12 @@ export const HOSTED_OPS: readonly string[] = ["browser_session", "browser_record
 /** Whose session a runner hosts under `threadId` (hub/machine_roles sets it). */
 export type Hosts = (runner: MachineId, threadId: ThreadId) => HostedCaller | undefined;
 
+/** The node's own reports of a screen it runs, in the name of the session that opened it. */
+export const SCREEN_OPS: readonly string[] = ["browser_session", "browser_recording_part", "browser_takeover"];
+
+/** The agent whose screen `sessionId` on `machineId` the hub holds unfinished under `threadId` (hub/browser sets it). */
+export type Screens = (machineId: MachineId, threadId: ThreadId, sessionId: string) => HostedCaller | undefined;
+
 export const leadBy = (r: ProjectRef) => `lead:${r.machineId}/${r.projectId}`;
 
 const failedHandling = () => new ToolError("failed", "the hub failed while handling this call", "try again shortly");
@@ -56,6 +62,7 @@ export function outsideEvery(machineId: MachineId, cwd: string, projects: Worksp
 export class LeadCalls {
   private readonly handlers = new Map<string, LeadCallHandler>();
   private hosts: Hosts | undefined;
+  private screens: Screens | undefined;
 
   constructor(
     private readonly hub: Hub,
@@ -78,6 +85,10 @@ export class LeadCalls {
 
   setHosts(hosts: Hosts): void {
     this.hosts = hosts;
+  }
+
+  setScreens(screens: Screens): void {
+    this.screens = screens;
   }
 
   /** The agent a call from `runner` naming `threadId` is for, when that is a session the runner hosts for an agent
@@ -145,6 +156,8 @@ export class LeadCalls {
   private async outcome(machineId: MachineId, frame: LeadCallFrame): Promise<Record<string, unknown>> {
     const hosted = this.answerHosted(machineId, frame);
     if (hosted) return await hosted;
+    const screen = this.answerScreen(machineId, frame);
+    if (screen) return await screen;
     let projects: WorkspaceProject[];
     try {
       projects = projectsOn(this.hub, machineId);
@@ -189,6 +202,41 @@ export class LeadCalls {
       via: machineId,
     };
     return Promise.resolve().then(() => handler(caller, call));
+  }
+
+  /**
+   * The node's report of a screen the hub still holds unfinished, in the name of a session that is no agent now: a
+   * lead's old session after the lead started again on a fresh one (a profile switch, a fresh start), whose screen
+   * lives on and may wait on a person. Answered in the screen's agent's name, as when it opened, so a takeover is
+   * confirmed and the recording lands. Only that screen's reports; undefined for every other call and session.
+   */
+  private answerScreen(machineId: MachineId, frame: LeadCallFrame): Promise<Record<string, unknown>> | undefined {
+    const op = frame.call.op;
+    const sessionId = frame.call.sessionId;
+    if (!SCREEN_OPS.includes(op) || frame.threadId === undefined || typeof sessionId !== "string") return undefined;
+    const handler = this.handlers.get(op);
+    if (!handler || this.knows({ machineId, threadId: frame.threadId })) return undefined;
+    const held = this.screens?.(machineId, frame.threadId, sessionId);
+    if (!held) return undefined;
+    const caller: LeadCaller = {
+      by: leadBy(held.projectRef),
+      projectRef: held.projectRef,
+      agent: held.agent,
+      threadId: held.threadId,
+      via: machineId,
+    };
+    return Promise.resolve().then(() => handler(caller, frame.call));
+  }
+
+  /** Whether `thread` is one of fleetd's agents now; a failed lookup fails the call. */
+  private knows(thread: ThreadRef): boolean {
+    try {
+      this.directory.agentOf(thread);
+      return true;
+    } catch (error) {
+      if (error instanceof ToolError && error.code === "forbidden") return false;
+      throw error;
+    }
   }
 }
 

@@ -110,11 +110,7 @@ function WithHub({ read }: { read: MacMenuBarRead }) {
   const layer = useDataLayer();
   const hub = useHubInput();
   const take = async (screen: ScreenInput, to: "human" | "agent") => {
-    const ok = await setControl(layer, screen.id, to);
-    if (!ok) {
-      toast({ title: to === "human" ? "Couldn’t take over" : "Couldn’t hand back", description: "The hub didn’t take it. Try again.", key: `control:${screen.id}` });
-      return;
-    }
+    if (!(await setControl(layer, screen.id, to))) return;
     if (to === "human") {
       showWindow(screen.project, screen.id, layer.hub);
       void window.fleetd.menuBar.hide();
