@@ -21,6 +21,7 @@ import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
+import { durationText } from "./duration.ts";
 import { type NodeSessions, type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
 import { BadFrames, FrameError, undecodable } from "./frames.ts";
@@ -111,15 +112,6 @@ const nonce = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toSt
 export function hubId(): string {
   const host = hostname().trim();
   return `fleetd-${host === "" ? "localhost" : host}`;
-}
-
-/** `model::duration_text`: "45s", "10m46s", "2h05m". */
-export function durationText(ms: number): string {
-  const s = Math.floor(Math.max(0, ms) / 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m${pad(s % 60)}s`;
-  return `${Math.floor(s / 3600)}h${pad(Math.floor((s % 3600) / 60))}m`;
 }
 
 /** `executor::providers::runner_problem`: None while logged in, else the runner's own problem or "not logged in". */

@@ -2,13 +2,11 @@
 // `get`, `revoke`), with the same SQL: `hub.auth.keys`.
 import type { AgentKeyInfo, Grant, PersonId } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { ToolError } from "../../shared/errors.ts";
 import { ensureOwnerOn, getOn, machineUser } from "../people/store.ts";
 import type { HubDb } from "../store/db.ts";
 import { info, type KeyRow, sha256 } from "./index.ts";
 import { base32, secret } from "./nodes.ts";
-
-const KEY_PREFIX = "fld_";
+import { KEY_PREFIX, keyNotFound, shownPrefix } from "./key_rules.ts";
 
 const KEY_COLUMNS = `k.key_id, k.name, k.kind, k.prefix, k.grants, k.created_ms, k.last_used_ms, k.revoked_ms,
   p.person_id, p.name AS person_name, p.role AS person_role, p.removed_ms IS NOT NULL AS person_removed`;
@@ -17,9 +15,7 @@ const KEY_FROM = "agent_keys k LEFT JOIN people p ON p.person_id = k.person_id";
 /** `key` is shown once and never stored; the hub keeps its sha256. */
 export type CreatedKey = { key: string; info: AgentKeyInfo };
 
-/** `AuthError::KeyNotFound`. */
-export const keyNotFound = (keyId: string) =>
-  new ToolError("not_found", `no agent key ${keyId}; run \`fleetd hub key list\` to see key ids`);
+export { keyNotFound } from "./key_rules.ts";
 
 export class Keys {
   constructor(
@@ -47,7 +43,7 @@ export class Keys {
       ).run({
         key_id: keyId,
         hash: sha256(key),
-        prefix: key.slice(0, KEY_PREFIX.length + 6),
+        prefix: shownPrefix(key),
         name,
         grants: JSON.stringify(grants),
         created_ms: now,
@@ -59,7 +55,7 @@ export class Keys {
         key_id: keyId,
         name,
         kind,
-        prefix: key.slice(0, KEY_PREFIX.length + 6),
+        prefix: shownPrefix(key),
         grants: JSON.stringify(grants),
         created_ms: now,
         last_used_ms: null,

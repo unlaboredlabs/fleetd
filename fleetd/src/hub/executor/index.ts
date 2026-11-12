@@ -2,7 +2,7 @@
 // each welcomed socket over with `attach`, every session-side frame with `handleFrame`, and its close with
 // `detachLink`. The executor subscribes to the machine stream, keeps the hub's thread and project caches from it,
 // logs the transitions as events, and makes session calls, matching each reply to its call by frame id.
-import type { MachineId, ProjectRef, ThreadId, ThreadRef } from "../../shared/contracts.ts";
+import type { MachineId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import type {
   CloneProgressFrame,
   MachineEvent,
@@ -10,7 +10,6 @@ import type {
   RunnerInfo,
   SessionCall,
   SessionCallFrame,
-  SessionError,
   SessionOutput,
   SessionReplyFrame,
   SteerReceipt,
@@ -37,6 +36,7 @@ import {
 } from "./shell_mapper.ts";
 import { type SendOpts, sendWith as sendThread } from "./sessions.ts";
 import { Views } from "./views.ts";
+import { backoffMs, fromSessionError, namesAPr, PATIENCE_MS, READ_TIMEOUT_MS } from "./rules.ts";
 import { newUuid } from "./ids.ts";
 
 export { ExecutorError, type NodeOperation } from "./error.ts";
@@ -61,37 +61,17 @@ export type NodeToHubSession =
 /** A sender over one welcomed node link, which the link builds per socket. `linkId` tells a newer link from the one it replaced. */
 export type NodeSessions = { linkId: number; send(frame: HubToNodeSession): boolean | void };
 
-/** Resubscribe delay: doubles from 1 s to a 30 s cap, ±25 % jitter so machines don't retry in step. */
-/** A finished command whose output holds a GitHub pull URL, such as `gh pr create`'s (executor/mod.rs `names_a_pr`). */
-export function namesAPr(item: { status: string; kind: { type: string; output?: string } }): boolean {
-  const output = item.kind.type === "command" ? item.kind.output : undefined;
-  return item.status === "completed" && output !== undefined && output.includes("github.com/") && output.includes("/pull/");
-}
-
-export function backoffMs(attempt: number, random: number): number {
-  const base = 1000 * 2 ** Math.min(attempt, 5) * (0.75 + random * 0.5);
-  return Math.min(Math.round(base), 30_000);
-}
-
-export const WATCH_IDLE_MS = 60_000;
-export const READ_TIMEOUT_MS = 15_000;
-/** A launch may create a worktree and spawn claude before the node answers. */
-export const LAUNCH_TIMEOUT_MS = 60_000;
-/** The node first stops the project's claude processes, then removes its worktrees and a project's sign-ins. */
-export const REMOVE_TIMEOUT_MS = 70_000;
-/** How long a launch or a send waits on a node that is up but busy (swapping, loaded) before it fails: `callPatient`. */
-export const PATIENCE_MS = 120_000;
-/** The node's stop waits up to 25 s for claude to exit. */
-export const STOP_TIMEOUT_MS = 40_000;
-/** The node keeps the last 2000 characters of the assistant's text on the summary. */
-export const SUMMARY_TAIL_MAX = 2000;
-
-function fromSessionError(machineId: MachineId, operation: NodeOperation, session: ThreadId | undefined, error: SessionError): ExecutorError {
-  if (error.code === "not_found" && session !== undefined && operation !== "answer" && operation !== "launch") {
-    return ExecutorError.threadNotFound(machineId, session);
-  }
-  return ExecutorError.failed(machineId, operation, error.message, error.fix);
-}
+export {
+  backoffMs,
+  LAUNCH_TIMEOUT_MS,
+  namesAPr,
+  PATIENCE_MS,
+  READ_TIMEOUT_MS,
+  REMOVE_TIMEOUT_MS,
+  STOP_TIMEOUT_MS,
+  SUMMARY_TAIL_MAX,
+  WATCH_IDLE_MS,
+} from "./rules.ts";
 
 export const threadRef = (machineId: MachineId, threadId: string): ThreadRef => ({ machineId, threadId });
 

@@ -19,6 +19,10 @@ export type BranchPrError =
 export const PR_LOOKUP_TIMEOUT_MS = 60_000;
 /** When a lookup with no answer yet is given up on, after its task ended. */
 export const PR_LOOKUP_GIVE_UP_MS = 24 * 3600_000;
+/** The thread's newest actions the lookup reads for a PR URL. */
+export const PR_ACTIONS = 30;
+/** How long the node may take to say a checkout's `origin`, in seconds. */
+export const ORIGIN_TIMEOUT_SEC = 15;
 
 /** A PR of the branch as GitHub lists it (`pulls?head=…&state=all`). */
 export type BranchPull = { number: number; state: string; merged?: boolean; merged_at?: string | null };

@@ -14,81 +14,52 @@ import { limitReset } from "../train/budget.ts";
 import type { Tasks } from "./index.ts";
 import { taskHooks } from "./ports.ts";
 import { holdsPr } from "./pr.ts";
+import {
+  BY,
+  type Merge,
+  giveUpMs,
+  givenUpLine,
+  headRead,
+  mergeLine,
+  notProjectRepo,
+  ownPr,
+  passed,
+  PER_TASK,
+  POLL_EVERY_MS,
+  type Read,
+  READ_TRIES,
+  summary,
+  type Target,
+  targetFor,
+  targetOf,
+  targetUrl,
+  tooManyWaits,
+  type Waiting,
+  waitingMerge,
+  waitLabel,
+  waitNext,
+  unreadLine,
+} from "./ci_rules.ts";
 
-export const POLL_EVERY_MS = 60_000;
-/** A wait still open this long ends, telling its task so. */
-export const GIVE_UP_MS = 6 * 3600 * 1000;
-/** A wait with `merged` still open this long ends: a PR can sit in the train's line for hours. */
-export const MERGE_GIVE_UP_MS = 24 * 3600 * 1000;
-/** GitHub reads that fail in a row before the wait ends, telling its task why. */
-export const READ_TRIES = 3;
-/** A PR head counts as finished only once its last check completed this long ago. */
-export const SETTLE_MS = 2 * 60_000;
-const PER_TASK = 10;
-/** Failing jobs named in the line; the rest are counted. */
-const NAMED = 10;
-const BY = "ci";
-
-/** What a wait names: an Actions run, or a PR whose current head's checks count. */
-export type Target = { kind: "run"; repo: string; id: number } | { kind: "pr"; repo: string; number: number };
-
-export const targetUrl = (t: Target) =>
-  t.kind === "run" ? `https://github.com/${t.repo}/actions/runs/${t.id}` : `https://github.com/${t.repo}/pull/${t.number}`;
-
-const positive = (s: string | undefined) => (s !== undefined && /^[0-9]+$/.test(s) && Number(s) > 0 ? Number(s) : undefined);
-
-/** `https://github.com/<owner>/<repo>/actions/runs/<id>[/…]` or `…/pull/<n>[/…]`. */
-export function targetOf(url: string): Target | undefined {
-  const t = url.trim();
-  if (!t.startsWith("https://github.com/")) return undefined;
-  const parts = t.slice("https://github.com/".length).split(/[/?#]/);
-  const [owner, name, a, b, c] = parts;
-  if (!owner || !name || a === undefined || b === undefined) return undefined;
-  const repo = `${owner}/${name}`;
-  if (a === "actions" && b === "runs" && c !== undefined) {
-    const id = positive(c);
-    return id === undefined ? undefined : { kind: "run", repo, id };
-  }
-  if (a === "pull") {
-    const number = positive(b);
-    return number === undefined ? undefined : { kind: "pr", repo, number };
-  }
-  return undefined;
-}
-
-/** What GitHub says of a target now. */
-export type Read =
-  | { kind: "running" }
-  /** Every job (a run's) or check (a PR head's) completed: `failing` names those that didn't pass, of `total`. */
-  | { kind: "finished"; conclusion?: string; label: string; failing: string[]; total: number }
-  /** Nothing more will happen: why, in a few words. */
-  | { kind: "over"; why: string };
-
-/** One check run on a PR's head. */
-export type Check = { name: string; status: string; conclusion?: string; completedMs?: number };
-
-/** Job and check conclusions that pass. */
-const passed = (c: string | undefined | null) => c === "success" || c === "skipped" || c === "neutral";
-
-/** A PR head's state: running while any run or check is, while it has none yet, and SETTLE_MS after its last. */
-export function headRead(sha: string, runs: string[], checks: Check[], now: number): Read {
-  const done = checks.map((c) => c.completedMs).filter((x): x is number => x !== undefined);
-  const last = done.length > 0 ? Math.max(...done) : undefined;
-  if (checks.length === 0 || runs.some((r) => r !== "completed") || checks.some((c) => c.status !== "completed") || last === undefined || now - last < SETTLE_MS) {
-    return { kind: "running" };
-  }
-  return { kind: "finished", label: [...sha].slice(0, 7).join(""), failing: checks.filter((c) => !passed(c.conclusion)).map((c) => c.name), total: checks.length };
-}
-
-/** Where a PR a wait with `merged` names stands. */
-export type Merge =
-  /** Neither merged nor failed: in the train's line or CI, back with its writer, or not on the train yet. */
-  | { kind: "pending" }
-  | { kind: "merged" }
-  /** It failed on the train, why ("its CI failed"): its writer fixes it, so the wait goes on. */
-  | { kind: "failed"; why: string }
-  /** It won't merge, why: closed unmerged. */
-  | { kind: "over"; why: string };
+export {
+  CLOSED,
+  type Check,
+  GIVE_UP_MS,
+  headRead,
+  type Merge,
+  MERGE_GIVE_UP_MS,
+  POLL_EVERY_MS,
+  type Read,
+  READ_TRIES,
+  SETTLE_MS,
+  summary,
+  type Target,
+  targetOf,
+  targetUrl,
+  type Waiting,
+  WAITING_ON,
+  waitsNote,
+} from "./ci_rules.ts";
 
 /** GitHub's reads, and the train's for `merged`; the hub's go through the train and its GitHub reader, tests fake them. */
 export type CiReads = {
@@ -97,30 +68,6 @@ export type CiReads = {
   merge(by: ProjectRef, target: Target): Promise<Merge>;
 };
 
-/** The task's line for a finished wait. */
-export function summary(target: Target, read: Read): string | undefined {
-  const url = targetUrl(target);
-  let line: string;
-  if (read.kind === "running") return undefined;
-  if (read.kind === "over") line = `${url} ${read.why}.`;
-  else {
-    const { conclusion, label, failing, total } = read;
-    const names = failing.slice(0, NAMED);
-    if (failing.length > NAMED) names.push(`and ${failing.length - NAMED} more`);
-    const named = names.join(", ");
-    const c = conclusion ?? "without a conclusion";
-    if (target.kind === "run") {
-      if (conclusion === "success" && failing.length === 0) line = `${url} (${label}) succeeded: all ${total} jobs passed.`;
-      else if (failing.length === 0) line = `${url} (${label}) ended ${c}.`;
-      else line = `${url} (${label}) ended ${c}: ${failing.length} of ${total} jobs failed: ${named}.`;
-    } else if (failing.length === 0) line = `${url} at ${label}: all ${total} checks passed.`;
-    else line = `${url} at ${label}: ${failing.length} of ${total} checks failed: ${named}.`;
-  }
-  return `CI you waited on (wait_ci) finished: ${line}`;
-}
-
-const repoOf = (t: Target) => t.repo.toLowerCase();
-
 /**
  * Keeps `url` for `taskId` until it finishes, or with `merged` (a PR's only), until it merges. Only a run or PR in one
  * of the task's project's repos, or its own PR's.
@@ -128,33 +75,11 @@ const repoOf = (t: Target) => t.repo.toLowerCase();
 export function waitCi(tasks: Tasks, db: Database, now: number, taskId: TaskId, url: string, merged = false): { url: string; next: string } {
   const task = tasks.get(taskId);
   if (!task) throw new ToolError("not_found", `No task ${taskId}.`);
-  const target = targetOf(url);
-  if (!target) {
-    throw new ToolError(
-      "invalid",
-      `${url.trim()} is not a GitHub Actions run or pull request URL.`,
-      "Pass https://github.com/<owner>/<repo>/actions/runs/<id> (`gh run view <id> --json url -q .url`) or the PR's URL.",
-    );
-  }
-  if (merged && target.kind !== "pr") {
-    throw new ToolError("invalid", `${targetUrl(target)} is not a pull request: only a PR merges.`, "Pass the PR's URL with merged, or the run's without it.");
-  }
+  const target = targetFor(url, merged);
   const canonical = targetUrl(target);
-  const ownPr = [task.pr, task.result?.prUrl]
-    .filter((p): p is string => p !== undefined)
-    .map(targetOf)
-    .some((t) => t !== undefined && repoOf(t) === repoOf(target));
-  if (!ownPr && !tasks.reposOf(task.projectRef).some((repo) => holdsPr(repo, canonical))) {
-    throw new ToolError(
-      "forbidden",
-      `${repoOf(target)} is not one of this project's repos.`,
-      "Wait only on CI of your project's repos; ask your lead about another repo.",
-    );
-  }
+  if (!ownPr(task, target) && !tasks.reposOf(task.projectRef).some((repo) => holdsPr(repo, canonical))) throw notProjectRepo(target);
   const open = db.query<{ n: number }, [string, string]>("SELECT COUNT(*) AS n FROM ci_waits WHERE task_id = ? AND url <> ?").get(taskId, canonical)?.n ?? 0;
-  if (open >= PER_TASK) {
-    throw new ToolError("invalid", `${taskId} already waits on ${open} CI runs or PRs.`, "Wait on fewer at once: each wakes you when it ends.");
-  }
+  if (open >= PER_TASK) throw tooManyWaits(taskId, open);
   // Asked again, a wait keeps its start and the failure it last woke for; the newest call says which kind it is.
   db.query(
     `INSERT INTO ci_waits (task_id, url, created_ms, merged) VALUES (?, ?, ?, ?)
@@ -162,12 +87,7 @@ export function waitCi(tasks: Tasks, db: Database, now: number, taskId: TaskId, 
        created_ms = CASE WHEN (excluded.merged IS NULL) = (merged IS NULL) THEN created_ms ELSE excluded.created_ms END,
        merged = CASE WHEN excluded.merged IS NULL THEN NULL ELSE COALESCE(merged, '') END`,
   ).run(taskId, canonical, now, merged ? "" : null);
-  return {
-    url: canonical,
-    next: merged
-      ? "Waiting. End your turn now if you have nothing else to do: this thread continues when the PR merges, or if it fails on the merge train or is closed unmerged."
-      : "Waiting. End your turn now if you have nothing else to do: when it finishes, this thread continues with the outcome and the failing jobs.",
-  };
+  return { url: canonical, next: waitNext(merged) };
 }
 
 /** A wait with `merged` keeps the failure it last woke its task for ('' none); NULL for a CI wait. */
@@ -186,12 +106,10 @@ function ciWaits(db: Database): WaitRow[] {
 /** Each task's open wait URLs, by task id; a wait with `merged` says so. */
 export function openCiWaits(db: Database): Map<string, string[]> {
   const open = new Map<string, string[]>();
-  for (const w of ciWaits(db)) open.set(w.task_id, [...(open.get(w.task_id) ?? []), w.merged !== null ? `${w.url} (until it merges)` : w.url]);
+  for (const w of ciWaits(db)) open.set(w.task_id, [...(open.get(w.task_id) ?? []), waitLabel(w.url, w.merged !== null)]);
   return open;
 }
 
-/** The lead's line for a done task with open waits: wait_ci wakes it, so it needs no steer. */
-export const waitsNote = (taskId: string, urls: string[]) => `${taskId} waits on CI, and wait_ci wakes it as each ends: ${urls.join(" ")}.`;
 
 function done(db: Database, taskId: string, url: string): void {
   try {
@@ -262,7 +180,7 @@ export async function pollCiWaits(
           console.warn(`ci wait: GitHub not read (${url}): ${why}`);
           setErrors(db, taskId, url, errors + 1);
         } else {
-          line = `CI you waited on (wait_ci) could not be read: GitHub failed ${READ_TRIES} times in a row for ${url} (${why}). Look at it with \`gh\`, or call wait_ci again.`;
+          line = unreadLine(url, why);
         }
       }
     } else {
@@ -278,18 +196,13 @@ export async function pollCiWaits(
         // Back on its way, its next failure wakes the task again.
         if (merged !== "") told(db, taskId, url, "");
       } else if (m.kind === "failed" && m.why !== merged) {
-        line = `A PR you waited on to merge (wait_ci merged) failed on the merge train: ${url}: ${m.why}. Its writer gets it back to fix; you still wait on it, and are woken when it merges or fails again.`;
+        line = mergeLine(url, m);
         goesOn = m.why;
-      } else if (m.kind === "merged") line = `A PR you waited on to merge (wait_ci merged) has merged: ${url}.`;
-      else if (m.kind === "over") line = `A PR you waited on to merge (wait_ci merged) won't merge: ${url}: ${m.why}. Ask your lead what to build on instead.`;
+      } else if (m.kind === "merged" || m.kind === "over") line = mergeLine(url, m);
     }
-    const [giveUpMs, what] =
-      merged === null
-        ? [GIVE_UP_MS, "CI you waited on (wait_ci) has not finished"]
-        : [MERGE_GIVE_UP_MS, "A PR you waited on to merge (wait_ci merged) has not merged"];
-    const givenUp = now - created >= giveUpMs;
+    const givenUp = now - created >= giveUpMs(merged !== null);
     if (line === undefined && givenUp) {
-      line = `${what} after ${giveUpMs / 3_600_000} h: ${url}. Look at it with \`gh\`, or call wait_ci again.`;
+      line = givenUpLine(url, merged !== null);
       goesOn = undefined;
     }
     if (line === undefined) continue;
@@ -325,14 +238,6 @@ export type CiGitHub = {
 
 const statusText = (r: { status: number; message: string }) => `${r.status}: ${r.message}`;
 
-/** The train's hold for a Change waiting on an upstream PR: "held: waiting on owner/name#n: why" (train/next.rs). */
-export const WAITING_ON = "held: waiting on ";
-/** Why an upstream PR closed unmerged hasn't merged: it won't. */
-export const CLOSED = "it was closed without merging";
-
-/** Where an upstream PR stands on the train (train/next.rs `Waiting`): undefined once it merged. */
-export type Waiting = { note: string; failed: boolean };
-
 /** The train's reads a merge wait needs (train/next.rs `upstream`). */
 export type MergeReads = {
   upstream(url: string): Promise<Waiting | undefined>;
@@ -342,15 +247,7 @@ export type MergeReads = {
 export async function mergeOf(train: MergeReads | undefined, by: ProjectRef, target: Target): Promise<Merge> {
   // Until the train sets its reads, a merge wait waits (and is given up on after MERGE_GIVE_UP_MS).
   if (!train) return { kind: "pending" };
-  const url = targetUrl(target);
-  const waiting = await train.upstream(url);
-  if (!waiting) return { kind: "merged" };
-  // The train's hold: "held: waiting on owner/name#n: why".
-  const rest = waiting.note.startsWith(WAITING_ON) ? waiting.note.slice(WAITING_ON.length) : undefined;
-  const colon = rest?.indexOf(": ") ?? -1;
-  const why = rest !== undefined && colon >= 0 ? rest.slice(colon + 2) : waiting.note;
-  if (why === CLOSED) return { kind: "over", why };
-  return waiting.failed ? { kind: "failed", why } : { kind: "pending" };
+  return waitingMerge(await train.upstream(targetUrl(target)));
 }
 
 /** The hub's GitHub reads, through the train's reader, and its merge reads, the train's. */

@@ -13,8 +13,9 @@ import { type CheckRun, GhError, jobOf, NEXT_LABEL, type Pull, workflowRun } fro
 import { WAITING_FOR_LIMIT } from "./budget.ts";
 import { HEAD_STATES, parsePrUrl, QUEUED_STATES } from "./records.ts";
 import { errorText } from "./records.ts";
-import { BLOCKED_PREFIX, timedOut, type Train } from "./service.ts";
+import type { Train } from "./service.ts";
 import {
+  asksGitHub,
   type BatchSkip,
   batchSkipped,
   type Gate,
@@ -35,10 +36,10 @@ import {
   type Reruns,
   UPSTREAM_TTL_MS,
   type UpstreamPull,
+  upstreamOf,
   USES_TTL_MS,
   type Waiting,
   WAITING_FOR_RUNNERS,
-  WAITING_ON,
   type Workflows,
 } from "./next_rules.ts";
 
@@ -309,25 +310,7 @@ export async function upstream(t: Train, url: string): Promise<Waiting | undefin
   const repo = p.repo.toLowerCase();
   const n = p.number;
   const latest = t.records.latestFor(repo, n);
-  let why: string;
-  let failed: boolean;
-  const s = latest?.state;
-  if (s === "merged") return undefined;
-  if (s === "ci_failed" && timedOut(latest!)) [why, failed] = ["its CI ran past the timeout", false];
-  else if (s === "ci_failed") [why, failed] = ["its CI failed", true];
-  else if (s === "needs_rebase") [why, failed] = ["it conflicts with its base and is back with its writer", false];
-  else if (s === "reviewing" && latest!.lastError?.startsWith(BLOCKED_PREFIX)) [why, failed] = ["its review found blocking issues", true];
-  else if (s === "refused" || s === "abandoned" || s === undefined) {
-    const read = await upstreamPull(t, url, repo, n);
-    if (read.kind === "merged") return undefined;
-    if (read.kind === "closed") [why, failed] = ["it was closed without merging", true];
-    else if (read.kind === "open") {
-      if (s === "refused") [why, failed] = ["the train refused it", true];
-      else if (s !== undefined) [why, failed] = ["it left the train unmerged", true];
-      else [why, failed] = ["it is not on the train yet", false];
-    } else [why, failed] = [`it could not be read: GitHub: ${read.message}`, false];
-  } else [why, failed] = ["it hasn't merged yet", false];
-  return { note: `${WAITING_ON}${repo}#${n}: ${why}`, failed };
+  return upstreamOf(repo, n, latest, asksGitHub(latest) ? await upstreamPull(t, url, repo, n) : undefined);
 }
 
 /** The upstream PR as GitHub has it, read at most every `UPSTREAM_TTL_MS`. */

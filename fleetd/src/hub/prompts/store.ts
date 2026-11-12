@@ -23,51 +23,11 @@ import { type Audience, ENTRIES, getEntry, INSTRUCTIONS, perProject, placeholder
 import { gitBlobSha, merge, refOf, rulePresent, sameWords, warnings } from "./render.ts";
 import { RETIRED, type Retired } from "./retired.ts";
 import { defaultOf, PromptSet, type Resolved } from "./set.ts";
+import { ALWAYS_DISALLOWED } from "./disallowed.ts";
 
 export { PromptSet, type Resolved } from "./set.ts";
 
-/** Tools no fleetd session gets (node/runner/claude/mod.rs `ALWAYS_DISALLOWED`). */
-export const ALWAYS_DISALLOWED = [
-  "Task",
-  "Agent",
-  "Workflow",
-  "ListAgents",
-  "SendMessage",
-  "TaskStop",
-  "TaskOutput",
-  "TeamCreate",
-  "TeamDelete",
-  "AskUserQuestion",
-  "EnterPlanMode",
-  "ExitPlanMode",
-  "CronCreate",
-  "CronDelete",
-  "CronList",
-  "ScheduleWakeup",
-  "EnterWorktree",
-  "ExitWorktree",
-  "Bash(claude *)",
-  "Bash(/*/claude *)",
-  "Bash(~/*/claude *)",
-  "Bash($HOME/*/claude *)",
-  "Bash(./*/claude *)",
-  "Bash(/*/claude/versions/*)",
-  "Bash(~/*/claude/versions/*)",
-  "Bash($HOME/*/claude/versions/*)",
-  "Bash(npx claude *)",
-  "Bash(bunx claude *)",
-  "Bash(npx *@anthropic-ai/claude-code*)",
-  "Bash(bunx *@anthropic-ai/claude-code*)",
-  "Bash(npm exec *@anthropic-ai/claude-code*)",
-  "Bash(pnpm dlx *@anthropic-ai/claude-code*)",
-  "Bash(sh -*c *claude -*)",
-  "Bash(bash -*c *claude -*)",
-  "Bash(zsh -*c *claude -*)",
-  "Bash(/*sh -*c *claude -*)",
-  "Bash(env *claude -*)",
-  "Bash(exec *claude -*)",
-  "Bash(xargs *claude -*)",
-];
+export { ALWAYS_DISALLOWED } from "./disallowed.ts";
 
 /** An override file's text, without its frontmatter, and the default it was edited from. */
 export type Override = { text: string; base?: string };

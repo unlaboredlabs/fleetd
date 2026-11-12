@@ -5,12 +5,12 @@ import type { Change } from "../../shared/contracts.ts";
 import { HELD, ownCiRed, reviewed, tellOwnRed } from "./batch.ts";
 import { prNote } from "./events.ts";
 import type { Pull } from "./github.ts";
+import { APPROVAL } from "./notes.ts";
 import { WAIT_PERSON } from "./records.ts";
 import { short } from "./rules.ts";
 import type { Train } from "./service.ts";
 
-/** A ready Change's `lastError` while its base requires an approving review it doesn't have. */
-export const APPROVAL = "held: waiting for a person's approval on GitHub; the train merges it once it is approved";
+export { APPROVAL } from "./notes.ts";
 
 /** How often at most the train brings one PR a person merges up to date with its base: each update runs its CI again. */
 const HELD_UPDATE_EVERY_MS = 60 * 60_000;

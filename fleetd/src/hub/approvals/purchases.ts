@@ -13,20 +13,28 @@ import type {
   SecureInput,
   SecureInputSite,
 } from "../../shared/contracts.ts";
-import { isoMs, parseMs } from "../store/time.ts";
+import { isoMs } from "../store/time.ts";
 import { type Approvals, projectOf, refuse } from "./index.ts";
-import { FILL_WINDOW_MINUTES } from "./outcome.ts";
+import {
+  type ClaimWords,
+  claimRefusal,
+  expiredWhy,
+  filledEvidence,
+  notOwnPurchase,
+  notOwnSecureInput,
+  pastWindow,
+  PURCHASE_CLAIM,
+  purchaseText,
+  SECURE_INPUT_CLAIM,
+  SECURE_INPUT_KEY,
+  secureInputText,
+  typedInput,
+} from "./purchase_rules.ts";
 import { clip } from "./text.ts";
 
 export { PAYMENT_CLIS, pays, personOnly } from "./person_only.ts";
 
-/** A PaymentCard as the person reads it: a vault card's label, or an `op://vault/item` as "item (vault)". */
-export function cardLabel(card: PaymentCard): string {
-  if (card.label) return card.label;
-  const rest = card.ref.replace(/^(op:\/\/)+/, "");
-  const at = rest.indexOf("/");
-  return at < 0 ? rest : `${rest.slice(at + 1)} (${rest.slice(0, at)})`;
-}
+export { cardLabel } from "./purchase_rules.ts";
 
 export type PurchaseOpenCall = {
   sessionId: string;
@@ -39,9 +47,6 @@ export type SecureInputOpenCall = {
   input: { site: SecureInputSite; target: string; label: string; why: string; ref?: string };
 };
 
-/** The key a secure input's secret request goes by: never a variable, only a name for the request. */
-const SECURE_INPUT_KEY = "browser.secure_input";
-
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 /**
@@ -51,7 +56,7 @@ const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineI
 export function openPurchase(a: Approvals, project: ProjectRef, call: PurchaseOpenCall, card: PaymentCard, noAsk: boolean): HumanRequest {
   const { sessionId, purchase } = call;
   const now = a.deps.clock.now();
-  const text = `Pay ${purchase.total.amount} ${purchase.total.currency} at ${purchase.shop.name} (${purchase.shop.domain}) with ${cardLabel(card)}`;
+  const text = purchaseText(purchase, card);
   const add = {
     projectRef: project,
     kind: "approval" as const,
@@ -66,24 +71,19 @@ export function openPurchase(a: Approvals, project: ProjectRef, call: PurchaseOp
 function ownPurchase(a: Approvals, project: ProjectRef, requestId: string): [HumanRequest, Purchase] {
   const r = a.get(requestId);
   if (!r || !sameProject(projectOf(r), project) || !r.purchase) {
-    throw refuse("not_found", `${requestId} is none of your purchases.`, "Use the requestId purchase_request returned.");
+    throw notOwnPurchase(requestId);
   }
   return [r, r.purchase];
 }
 
 /** Refuses a claim of `r` unless it is approved, and expires it past its window. */
-function claimable(a: Approvals, r: HumanRequest, sessionId: string, asked: string, what: { once: string; how: string; again: string; other: string; none: string; expired: string; expiredFix: string }) {
+function claimable(a: Approvals, r: HumanRequest, sessionId: string, asked: string, what: ClaimWords) {
   const id = r.requestId;
-  if (r.state === "open") {
-    throw refuse("invalid", `The person hasn't answered ${id} yet.`, "End your turn: you are woken with their answer.");
-  }
-  if (r.state === "ran") throw refuse("forbidden", `${id}${what.once}`, what.again);
-  if (r.state !== "approved") throw refuse("forbidden", `${id} is ${r.state}: ${what.none}`, what.other);
-  if (asked !== sessionId) throw refuse("forbidden", `${id} was asked for in another browser session.`, what.how);
+  const refused = claimRefusal(r, sessionId, asked, what);
+  if (refused) throw refused;
   const now = a.deps.clock.now();
-  const approved = (r.answeredAt ? parseMs(r.answeredAt) : undefined) ?? 0;
-  if (now - approved > FILL_WINDOW_MINUTES * 60_000) {
-    const why = `expired: ${what.expired} within ${FILL_WINDOW_MINUTES} minutes of the approval`;
+  if (pastWindow(r, now)) {
+    const why = expiredWhy(what.expired);
     a.quietly(() =>
       a.changeFrom(id, "approved", (r) => {
         r.state = "failed";
@@ -102,15 +102,7 @@ function claimable(a: Approvals, r: HumanRequest, sessionId: string, asked: stri
  */
 export function claimPurchase(a: Approvals, project: ProjectRef, requestId: string, sessionId: string) {
   const [r, purchase] = ownPurchase(a, project, requestId);
-  const now = claimable(a, r, sessionId, purchase.sessionId, {
-    once: "'s card was filled already: a purchase fills once.",
-    again: "Finish that checkout; for another purchase, ask again with purchase_request.",
-    none: "its card isn't filled.",
-    other: "Don't buy it another way; say so in the chat.",
-    how: "Ask again with purchase_request from this checkout.",
-    expired: "its card wasn't filled",
-    expiredFix: "Ask again with purchase_request if the person still wants it.",
-  });
+  const now = claimable(a, r, sessionId, purchase.sessionId, PURCHASE_CLAIM);
   // Guarded on approved: of two claims at once only one moves it, so a purchase fills at most once.
   const at = isoMs(now);
   const claimed = a.changeFrom(r.requestId, "approved", (r) => {
@@ -131,14 +123,12 @@ export function purchaseFilled(a: Approvals, project: ProjectRef, call: FilledCa
 }
 
 function filled(a: Approvals, r: HumanRequest, call: FilledCall, ok: string, partly: string, unfill: (r: HumanRequest) => void) {
-  const said = clip(call.message, 300);
-  if (call.ok || call.typed) {
-    const evidence = call.ok ? `${ok}: ${said}` : `${partly}: ${said}`;
+  const { evidence, again } = filledEvidence(call, ok, partly);
+  if (!again) {
     return a.changeFrom(r.requestId, "ran", (r) => {
       r.evidence = evidence;
     });
   }
-  const evidence = `not filled: ${said}; it may be filled again within its window`;
   return a.changeFrom(r.requestId, "ran", (r) => {
     r.state = "approved";
     r.evidence = evidence;
@@ -152,9 +142,8 @@ export function expireUnfilled(a: Approvals): void {
   const now = a.deps.clock.now();
   for (const r of a.listQuiet({ states: ["approved"], kind: "approval" })) {
     if (!r.purchase && !r.secureInput) continue;
-    const at = (r.answeredAt ? parseMs(r.answeredAt) : undefined) ?? 0;
-    if (now - at <= FILL_WINDOW_MINUTES * 60_000) continue;
-    const why = `expired: not filled within ${FILL_WINDOW_MINUTES} minutes of the approval`;
+    if (!pastWindow(r, now)) continue;
+    const why = expiredWhy("not filled");
     a.quietly(() =>
       a.changeFrom(r.requestId, "approved", (r) => {
         r.state = "failed";
@@ -180,9 +169,7 @@ export function openSecureInput(a: Approvals, project: ProjectRef, call: SecureI
   const { sessionId, input } = call;
   const now = a.deps.clock.now();
   const from1Password = input.ref !== undefined;
-  const text = from1Password
-    ? `Fill ${input.label} on ${input.site.name} (${input.site.domain}) from 1Password: ${input.why}`
-    : `Enter ${input.label} for ${input.site.name} (${input.site.domain}): ${input.why}`;
+  const text = secureInputText(input, from1Password);
   const secureInput: SecureInput = {
     site: input.site,
     target: input.target,
@@ -207,7 +194,7 @@ export function openSecureInput(a: Approvals, project: ProjectRef, call: SecureI
 function ownSecureInput(a: Approvals, project: ProjectRef, requestId: string): [HumanRequest, SecureInput] {
   const r = a.get(requestId);
   if (!r || !sameProject(projectOf(r), project) || !r.secureInput) {
-    throw refuse("not_found", `${requestId} is none of your secure inputs.`, "Use the requestId request_secure_input returned.");
+    throw notOwnSecureInput(requestId);
   }
   return [r, r.secureInput];
 }
@@ -217,17 +204,9 @@ export function claimSecureInput(a: Approvals, project: ProjectRef, requestId: s
   const [r, input] = ownSecureInput(a, project, requestId);
   const reference = input.ref;
   if (reference === undefined) {
-    throw refuse("invalid", `${requestId} is for the person to type: fleetd fills it as they do.`, "End your turn: you are woken once it is filled.");
+    throw typedInput(requestId);
   }
-  const now = claimable(a, r, sessionId, input.sessionId, {
-    once: " was filled already: a secure input fills once.",
-    again: "Ask again with request_secure_input if the page needs it again.",
-    none: "it isn't filled.",
-    other: "Don't get it another way; say so in the chat.",
-    how: "Ask again with request_secure_input from this page.",
-    expired: "it wasn't filled",
-    expiredFix: "Ask again with request_secure_input if the page still needs it.",
-  });
+  const now = claimable(a, r, sessionId, input.sessionId, SECURE_INPUT_CLAIM);
   const at = isoMs(now);
   const claimed = a.changeFrom(r.requestId, "approved", (r) => {
     r.state = "ran";

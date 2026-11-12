@@ -7,16 +7,7 @@
 // heartbeats size machines (loops.ts); `cap_set` is `setCaps` in cap.ts.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "../../shared/clock.ts";
-import type {
-  HubEventType,
-  MachineId,
-  ProjectRef,
-  SlotState,
-  SlotStatePerMachine,
-  SlotStatePerProject,
-  TaskKind,
-  ThreadRef,
-} from "../../shared/contracts.ts";
+import type { HubEventType, MachineId, ProjectRef, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
@@ -32,6 +23,7 @@ import {
   parseClaimState,
   parsePriority,
   type SlotPriority,
+  slotState,
 } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
 
@@ -205,31 +197,6 @@ function load(db: HubDb): Board {
   return board;
 }
 
-function slotState(s: ReturnType<Board["state"]>): SlotState {
-  const count = (n: number) => Math.max(n, 0);
-  const out: SlotState = { cap: count(s.cap), used: count(s.used), queued: count(s.queued), perProject: [] };
-  if (s.fleetCap !== undefined) out.fleetCap = count(s.fleetCap);
-  out.perProject = s.perProject.map(
-    (row): SlotStatePerProject => ({
-      projectRef: row.projectRef,
-      maxAgents: count(row.maxAgents),
-      own: row.own,
-      running: count(row.running),
-      queued: count(row.queued),
-    }),
-  );
-  out.perMachine = s.perMachine.map((row) => {
-    // Keys in the Rust struct's order.
-    const m: Record<string, unknown> = { machineId: row.machineId, cap: count(row.cap) };
-    if (row.maxAgents !== undefined) m.maxAgents = count(row.maxAgents);
-    m.auto = count(row.auto);
-    m.why = row.why.length >= 1 && row.why.length <= 200 ? row.why : "auto";
-    m.running = count(row.running);
-    if (row.diskRoom !== undefined) m.diskRoom = count(row.diskRoom);
-    return m as SlotStatePerMachine;
-  });
-  return out;
-}
 
 export class Slots {
   private readonly listeners: ReleaseListener[] = [];

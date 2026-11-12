@@ -40,7 +40,7 @@ import * as baseOf from "./base.ts";
 import { Breakers, type Opened, type Paused, QUIET_MS, WINDOW_MS } from "./breaker.ts";
 import * as duplicates from "./duplicates.ts";
 import { Lock, Notify } from "./lock.ts";
-import { type BranchPrError, holdsPr, PR_LOOKUP_GIVE_UP_MS, PR_LOOKUP_TIMEOUT_MS, shortRemote, taskPrUrl } from "./pr.ts";
+import { type BranchPrError, holdsPr, ORIGIN_TIMEOUT_SEC, PR_ACTIONS, PR_LOOKUP_GIVE_UP_MS, PR_LOOKUP_TIMEOUT_MS, shortRemote, taskPrUrl } from "./pr.ts";
 import { openCiWaits } from "./ci_wait.ts";
 import {
   hubTaskPorts,
@@ -914,7 +914,7 @@ export class Tasks {
       return undefined;
     }
     if (!project) return null;
-    const out = await this.ports.runCommand(r.machineId, project.workspaceRoot, ["git", "remote", "get-url", "origin"], 15);
+    const out = await this.ports.runCommand(r.machineId, project.workspaceRoot, ["git", "remote", "get-url", "origin"], ORIGIN_TIMEOUT_SEC);
     if (!out) return undefined;
     const url = out.outputTail.trim();
     return out.exitCode === 0 && url !== "" ? shortRemote(url) : null;
@@ -1269,7 +1269,7 @@ export class Tasks {
   private async lookUpPr(task: Task): Promise<Lookup | undefined> {
     const texts: string[] = [];
     if (task.threadRef) {
-      const actions = (await within(PR_LOOKUP_TIMEOUT_MS, this.ports.actionTexts(task.threadRef, 30))) ?? [];
+      const actions = (await within(PR_LOOKUP_TIMEOUT_MS, this.ports.actionTexts(task.threadRef, PR_ACTIONS))) ?? [];
       for (const [summary, outputTail] of [...actions].reverse()) {
         texts.push(summary);
         if (outputTail !== undefined) texts.push(outputTail);

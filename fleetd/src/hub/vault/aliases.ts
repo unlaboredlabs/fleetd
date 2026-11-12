@@ -19,6 +19,7 @@ import { BRAND_NAMES } from "./fields.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
 import { deleteItem, saveItem, sinkItem } from "./items.ts";
 import { adopt } from "./migrate.ts";
+import { cardShown, notInVault, vaultCardId } from "./card_rules.ts";
 
 const b64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
 
@@ -181,8 +182,7 @@ export async function takeSecret(
 
 // --- cards ---
 
-/** A `vault:V…` card reference's item id; undefined for an `op://` one. */
-export const vaultCardId = (ref: string | undefined) => (ref !== undefined && /^vault:V[0-9a-f]{32}$/.test(ref) ? ref.slice(6) : undefined);
+export { vaultCardId } from "./card_rules.ts";
 
 /** The vault card's label as the chat and the apps show it: "Visa (Personal) ••4242". */
 export function cardLabelOf(hub: Hub, ref: string): { label: string; brand?: string; last4?: string } | undefined {
@@ -190,11 +190,7 @@ export function cardLabelOf(hub: Hub, ref: string): { label: string; brand?: str
   if (id === undefined) return undefined;
   const row = vault(hub).store.get(id);
   if (!row || row.kind !== "card") return undefined;
-  return {
-    label: `${row.label} ••${row.meta.last4 ?? ""}`,
-    ...(row.meta.brand !== undefined ? { brand: row.meta.brand } : {}),
-    ...(row.meta.last4 !== undefined ? { last4: row.meta.last4 } : {}),
-  };
+  return cardShown(row.label, row.meta);
 }
 
 /** Checks a card a person picks for a project: a live card of the team vault. */
@@ -203,7 +199,7 @@ export function checkCardPick(hub: Hub, ref: string): void {
   if (id === undefined) return;
   const row = vault(hub).usable().find((x) => x.itemId === id);
   if (!row || row.kind !== "card") {
-    throw new ToolError("invalid", "That card isn't in the team vault.", "Pick one of the team vault's cards, or add one in Settings › Vault.");
+    throw notInVault();
   }
 }
 

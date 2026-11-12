@@ -3,7 +3,6 @@
 import type { Database } from "bun:sqlite";
 import type { Decision, DecisionOrder, DecisionScope, ProjectRef, WorkstreamId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { quote } from "../../shared/text.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
@@ -14,8 +13,8 @@ import { openIn, projectOf, workstreamGet } from "../orders/workstreams.ts";
 import { store } from "../store/hub_store.ts";
 import { decisions } from "./decisions.ts";
 import { type Actor, decisionN } from "./repo.ts";
+import { GLOBAL_REFUSED, NO_MATCH, overturnLine, overturnedNext, recordedNext, SEARCH_LIMIT, unknownWorkstream } from "./rules.ts";
 
-const SEARCH_LIMIT = 20;
 
 /** Who a decision written with this key comes from: the human for a human key (a person's device), else the agent. */
 function actorOf(caller: Caller): Actor {
@@ -24,7 +23,6 @@ function actorOf(caller: Caller): Actor {
     : { source: "agent", by: caller.name };
 }
 
-const unknownWorkstream = (id: WorkstreamId) => new ToolError("not_found", `No workstream ${id}.`, "Call workstream_list to see workstreams.");
 
 /** The project a decision scope belongs to: undefined for global, a not_found for an unknown workstream. */
 function decisionProject(c: Database, scope: DecisionScope): ProjectRef | undefined {
@@ -51,7 +49,6 @@ function canReadDecision(hub: Hub, caller: Caller, decision: Decision): boolean 
   return r === undefined || allows(caller, "read", r.machineId);
 }
 
-const GLOBAL_REFUSED = "A global decision applies to every machine; this key has no operate grant on all of them.";
 
 export function register(tools: Registry): void {
   tools.add("decisions_search", (hub, caller, input) => {
@@ -66,7 +63,7 @@ export function register(tools: Registry): void {
     const visible = found.filter((d) => canReadDecision(hub, caller, d));
     return {
       decisions: visible,
-      ...(visible.length === 0 ? { next: "No active decision matches; record one with decisions_record." } : {}),
+      ...(visible.length === 0 ? { next: NO_MATCH } : {}),
     };
   });
 
@@ -94,11 +91,7 @@ export function register(tools: Registry): void {
       },
       actorOf(caller),
     );
-    const supersedes = decision.supersedes ? ` and supersedes ${decision.supersedes}` : "";
-    return {
-      decision,
-      next: `${decision.decisionId} is active${supersedes}. Leads use it instead of asking; a project's lead is woken with it.`,
-    };
+    return { decision, next: recordedNext(decision) };
   });
 
   tools.add("decisions_list", (hub, caller, input) => {
@@ -134,17 +127,12 @@ export function register(tools: Registry): void {
     }
     const done = decisions(hub).overturn(id, input.value, input.why, project, actorOf(caller));
     if (project) {
-      const text = done.replacement
-        ? `- the human replaced ${id} ${old.key} ${quote(old.value)} with ${done.replacement.decisionId} ${quote(done.replacement.value)}: ${quote(input.why)}; follow ${done.replacement.decisionId} from now on`
-        : `- the human revoked ${id} ${old.key} (was ${quote(old.value)}): ${quote(input.why)}; it is open again, so ask before deciding it`;
-      leadWakes(hub).trigger(project, { kind: "line", line: "quiet", text });
+      leadWakes(hub).trigger(project, { kind: "line", line: "quiet", text: overturnLine(id, old, input.why, done.replacement) });
     }
     return {
       overturned: done.overturned,
       ...(done.replacement ? { decision: done.replacement } : {}),
-      next: done.replacement
-        ? `${done.replacement.decisionId} answers ${done.replacement.key} now; the lead reads it at its next wake.`
-        : `${old.key} is unanswered again; the lead asks before deciding it.`,
+      next: overturnedNext(old, done.replacement),
     };
   });
 }
