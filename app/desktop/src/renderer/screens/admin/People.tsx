@@ -4,7 +4,9 @@
 // offers comes from model.ts; the hub checks it all again. A removed person's Only-me projects, archived with them,
 // are listed below by name alone, each with Delete (people_list `left`; nobody else opens them). Invite someone is the
 // plus beside the page's line (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke.
-// Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
+// Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx). On a fleetd cloud team (a hub that
+// came with the account) the plus invites by email instead, and who is invited so is listed under People
+// (EmailInvites.tsx); a self-hosted hub's page is the one above, with nothing of the cloud on it.
 import { FolderArchive, Mail, User } from "lucide-react";
 import { useState } from "react";
 import type { HubRole, Invite, LeftProject, PeopleListOutput, Person } from "../../../shared/contracts";
@@ -17,7 +19,8 @@ import { useReveal } from "../settings/search";
 import { openUpdates } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
 import { invitedBy, InviteSection, OpenInvite } from "./Invites";
-import { useToolQuery } from "../../src/data/react";
+import { EmailInviteList, EmailInviteSection, useEmailInvites } from "./EmailInvites";
+import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { RemoveProjectDialog } from "../projects/RemoveProjectDialog";
@@ -50,6 +53,9 @@ export function People({ me }: { me: Person | undefined }) {
   const [inviting, setInviting] = useState(false);
   const inviteRef = useReveal<HTMLSpanElement>("hub.invite");
   const canInvite = live && !lacksPeople(read.error);
+  // A cloud team's owners and admins invite by email; the team refuses anyone else, so nobody else is offered it.
+  const byEmail = useHub().cloud === true && (me?.role === "owner" || me?.role === "admin");
+  const emailInvites = useEmailInvites(live && byEmail);
   return (
     <div className={s.scroll} data-screen="settings.hub.people">
       <div className={s.column}>
@@ -58,12 +64,12 @@ export function People({ me }: { me: Person | undefined }) {
           aside={
             canInvite && !inviting ? (
               <span ref={inviteRef}>
-                <AddButton label="Invite someone" onClick={() => setInviting(true)} />
+                <AddButton label={byEmail ? "Invite by email" : "Invite someone"} onClick={() => setInviting(true)} />
               </span>
             ) : undefined
           }
         />
-        {canInvite && inviting ? <InviteSection /> : null}
+        {canInvite && inviting ? byEmail ? <EmailInviteSection /> : <InviteSection /> : null}
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
         ) : lacksPeople(read.error) ? (
@@ -75,6 +81,7 @@ export function People({ me }: { me: Person | undefined }) {
         ) : (
           <PeopleList list={read.data} me={me} />
         )}
+        {live && byEmail ? <EmailInviteList read={emailInvites} /> : null}
         <AllLinks />
       </div>
     </div>
