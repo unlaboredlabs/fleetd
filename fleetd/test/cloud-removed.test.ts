@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
+import { doctor } from "../src/hub/doctor/index.ts";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -84,6 +85,10 @@ test("a hub with cloud machines upgrades clean: their rows, the boat.dev key and
     // The hub starts on it: its store reads one machine, and "Machines that run agents" is done, not failing.
     const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4790 } }, db, { now: () => Date.parse(AT) });
     expect(store(hub).machinesList().map((m) => m.machineId)).toEqual(["devbox"]);
+    // setup_list runs the doctor's first pass: its probes are stand-ins, never this machine's own gh or a hub on 4790.
+    const probes = doctor(hub);
+    probes.health = async () => ({ ok: true });
+    probes.runCmd = async () => ({ ran: false, error: "ENOENT" });
     const tools = new Registry();
     registerAll(tools);
     const owner = { keyId: "k", name: "k", prefix: "fld_x", grants: [{ role: "admin" as const, machines: "*" as const }], createdAt: AT };

@@ -10,6 +10,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { Registry, type Caller } from "../src/hub/api/registry.ts";
 import { AppGh, repoOf } from "../src/hub/github_app/gh.ts";
+import { doctor } from "../src/hub/doctor/index.ts";
 import { githubApps, manifest } from "../src/hub/github_app/index.ts";
 import { BLOCKED_TOKEN, deliver, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
 import { isoMs } from "../src/hub/train/seams.ts";
@@ -166,6 +167,10 @@ function lab(home = tempHome()): Lab {
   const gh = fakeGithub(clock);
   cleanups.push(gh.stop);
   githubApps(hub).setEndpoints({ api: gh.base, web: gh.base });
+  // setup_list runs the doctor's first pass: its probes are stand-ins, never this machine's own gh.
+  const probes = doctor(hub);
+  probes.health = async () => ({ ok: true });
+  probes.runCmd = async () => ({ ran: false, error: "ENOENT" });
   return { hub, tools, clock, fake: gh.fake, home: home.dir };
 }
 
