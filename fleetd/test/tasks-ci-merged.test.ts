@@ -160,3 +160,21 @@ test("a merged PR's writer keeps its worktree while a wait of its own will conti
   expect(k.ports.removed[0]?.threadId).toBe("s1");
   k.hub.shutdown.abort();
 });
+
+test("a merged PR's writer whose ask_lead question no message has answered keeps its worktree until one does", async () => {
+  const k = await ended();
+  k.t.askLead("T1", "Which seam do I build on?");
+  const merged = () => k.thread("pr.merged", "s1", { taskId: "T1", prNumber: 7 });
+  merged();
+  await Bun.sleep(50);
+  expect(k.ports.removed).toEqual([]);
+  // The lead's answer continues it; done again with nothing waiting, its next merge removes the worktree.
+  await k.t.message(k.lead, "T1", "Build on #8.");
+  await until(() => k.t.get("T1")?.state === "running");
+  k.threadRow("s1", "completed", "Opened #9.");
+  k.thread("thread.completed", "s1", { runId: sendRunId({ machineId: "lab-a", threadId: "s1" }, k.ports.sends.at(-1)!.id) });
+  await until(() => k.t.get("T1")?.state === "done");
+  merged();
+  await until(() => k.ports.removed.length === 1);
+  k.hub.shutdown.abort();
+});

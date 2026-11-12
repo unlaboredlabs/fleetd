@@ -1,6 +1,6 @@
 // A task restarted fresh goes on with its scratch dir: the files it kept in $TMPDIR (clones, worktrees, drafts) are
 // still there in its new session, and through a node restart. They go only when the task can't come back: with its
-// worktree, or, with none, a while after its last turn.
+// worktree's removal (even one refused for unsaved work), or, with none, a while after its last turn.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -106,9 +106,29 @@ test("a task keeps its scratch dir across its sessions and a node restart, until
   }
 });
 
-// Nov 12: T3085's PR merged while it waited to open its next one; the hub's removal of its worktree was refused (a
-// commit not pushed), but its scratch dir, and the Postgres it ran there, went anyway, 22 s before it was continued.
-test("a worktree kept for its work keeps its scratch dir; the removal that takes the worktree takes the scratch", async () => {
+// The nightly sweep's removal past the bound: a worktree kept for its unsaved work stays for the person, but the task
+// can't come back, so its scratch dir goes (they reach 0.7-6.3 GB each).
+test("a removal the node refuses for unsaved work keeps the worktree and takes the scratch dir", async () => {
+  const k = await nodeKit();
+  const { scratch, call, done, launch } = k;
+  try {
+    const launched = await launch("t1", "r1");
+    const path = (launched.result as { ok: { summary: { worktreePath: string } } }).ok.summary.worktreePath;
+    await until("the run", done("t1", "r1"));
+    writeFileSync(join(scratch("t1"), "build.out"), "big\n");
+    git(path, "commit", "-q", "--allow-empty", "-m", "never pushed");
+    const refused = await call("stop", { sessionId: "t1", removeWorktree: true });
+    expect((refused.result as { err?: { message: string } }).err?.message).toContain("1 commit(s) not pushed");
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(scratch("t1"))).toBe(false);
+  } finally {
+    await k.service.stopAll();
+    k.home.done();
+  }
+});
+
+// A Monitor of its own may still continue the task: a merge's removal of its worktree waits, as for a wait_ci.
+test("a removal while a Monitor of the session may still fire is refused, keeping the worktree and the scratch dir", async () => {
   const k = await nodeKit();
   const { scratch, call, done, launch } = k;
   try {
@@ -116,18 +136,14 @@ test("a worktree kept for its work keeps its scratch dir; the removal that takes
     const path = (launched.result as { ok: { summary: { worktreePath: string } } }).ok.summary.worktreePath;
     await until("the run", done("t1", "r1"));
     writeFileSync(join(scratch("t1"), "pg.pid"), "4242\n");
-    git(path, "commit", "-q", "--allow-empty", "-m", "the next PR");
-
+    const arm = (untilMs: number) => k.service.update("t1", (c) => void (c.row.local.monitors = [{ id: "m1", description: "CI", untilMs }]));
+    arm(Date.now() + 60_000);
     const refused = await call("stop", { sessionId: "t1", removeWorktree: true });
-    expect((refused.result as { err?: { message: string } }).err?.message).toContain("1 commit(s) not pushed");
+    expect((refused.result as { err?: { message: string } }).err?.message).toContain("a Monitor of its session may still continue it");
     expect(existsSync(path)).toBe(true);
     expect(readFileSync(join(scratch("t1"), "pg.pid"), "utf8")).toBe("4242\n");
-    // Continued, it finds both as it left them.
-    await call("send", { sessionId: "t1", runId: "r2", text: "the PR merged" });
-    await until("the continued run", done("t1", "r2"));
-    expect(readFileSync(join(scratch("t1"), "pg.pid"), "utf8")).toBe("4242\n");
-
-    git(path, "push", "-q", "origin", "HEAD:fleetd/T1-feature");
+    // Past its deadline, nothing of it can: the removal takes both.
+    arm(Date.now() - 1);
     expect((await call("stop", { sessionId: "t1", removeWorktree: true })).result).toEqual({ ok: { kind: "done" } });
     expect(existsSync(path)).toBe(false);
     expect(existsSync(scratch("t1"))).toBe(false);

@@ -2068,6 +2068,10 @@ export class SessionService {
     }
     if (removeWorktree && this.store.runs(id).some((r) => isActive(r.status))) return { kind: "done" };
     const row = this.#session(id);
+    // A Monitor of its own may still continue the task there: its worktree and scratch stay, and the hub's removal is
+    // tried again by the nightly sweep, long after any Monitor's deadline.
+    if (removeWorktree && (row.local.monitors ?? []).some((m) => m.untilMs > Date.now()))
+      throw invalid(`${row.local.cwd} not removed: a Monitor of its session may still continue it`);
     const live = this.#live.get(id);
     if (live) {
       live.ending = { kind: "requested", why };
@@ -2086,12 +2090,9 @@ export class SessionService {
       const ended = await endLeft(join(this.home, "hosts", id));
       if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
     }
-    const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     // A session's scratch goes with its worktree, or with its process when it has none.
-    if (!row.local.baseRef) await rm(scratch, { recursive: true, force: true });
+    if (removeWorktree || !row.local.baseRef) await rm(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
     if (removeWorktree && row.local.baseRef) {
-      // Only once the worktree is gone: one kept for work found nowhere else (the refusal throws) is the task's to go
-      // on in, its scratch with it (on Nov 12 T3085 lost its scratch to a removal that kept its worktree).
       let deleted = false;
       if (row.local.branch) deleted = await worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef);
       else {
@@ -2099,7 +2100,6 @@ export class SessionService {
         await warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home));
         await worktree.removeDetached(row.local.workspaceRoot, row.local.cwd);
       }
-      await rm(scratch, { recursive: true, force: true });
       this.update(id, (c) => {
         delete c.row.summary.worktreePath;
         if (deleted) delete c.row.summary.branch;

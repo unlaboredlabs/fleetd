@@ -33,7 +33,7 @@ test("the brief says how many jobs and which variables", () => {
     "## This machine\n" +
       "- Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build to 2 jobs too.\n" +
       "- Test runners get 4 workers: VITEST_MAX_WORKERS is set to it. Keep any other test runner to 4 workers too.\n" +
-      "- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory. Its files last until you can no longer be continued (they go with your worktree: once your PR merges with no wait_ci of yours open, else 3 days after your task ends), but what you started there (a database, a server) ends when your session is reaped idle, 10 minutes after a turn ends: after a wait, start it again from the data you kept there.\n",
+      "- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory. Its files last until you can no longer be continued (they go with your worktree: once your PR merges with nothing of yours waiting (a wait_ci, a Monitor, a question to your lead), else 3 days after your task ends), but what you started there (a database, a server) ends when your session is reaped idle, 10 minutes after a turn ends: after a wait, start it again from the data you kept there.\n",
   );
   const one = briefNote([["GOFLAGS", "-p=2"]], 2);
   expect(one).toContain(": GOFLAGS is set to it.");
