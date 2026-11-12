@@ -25,9 +25,22 @@ import { prompts } from "../prompts/store.ts";
 import { redact } from "../redact.ts";
 import { changed } from "./calls.ts";
 import { activePeople, Memory, type RememberCall, type You, userTarget, youTarget } from "./index.ts";
+import {
+  clean,
+  type Distilled,
+  entryOk,
+  fenceNonce,
+  IMPORT_ENTRIES_MAX,
+  importFence,
+  importMessage,
+  NO_PROJECT_FIX,
+  parse,
+  rank,
+  same,
+} from "./import_rules.ts";
 import { job, refreshPorts, runNow } from "./refresh.ts";
 
-export const IMPORT_ENTRIES_MAX = 200;
+export { clean, IMPORT_ENTRIES_MAX, NO_PROJECT_FIX, parse } from "./import_rules.ts";
 
 /** The executor's turn (executor/turn.rs `Turn`): its reply, or a thrown Error saying why there is none. */
 export type { Turn };
@@ -37,9 +50,6 @@ export const importPorts = (hub: Hub): { turn: Turn } => hub.area("memory_import
 
 /** The export prompt every app shows, as the hub's prompts say it now. */
 export const exportPrompt = (hub: Hub) => prompts(hub.db).current().render("memory.export", {});
-
-/** The fix of the refusal on a hub with no live project; newer apps match its `reason`. */
-export const NO_PROJECT_FIX = "Add a project first, then import again.";
 
 /**
  * Where the turn runs: any live project of the hub, the first on a node that can hold the turn to no tools.
@@ -71,85 +81,11 @@ function place(hub: Hub): ProjectRef {
   return found;
 }
 
-/** One entry of the turn's answer. */
-type Distilled = { kind?: string; text: string; replaces?: string };
-
-/** The entries of the turn's reply: its one JSON object, fenced or not. */
-export function parse(reply: string): Distilled[] | undefined {
-  const start = reply.indexOf("{");
-  const end = reply.lastIndexOf("}");
-  if (start < 0 || end < start) return undefined;
-  try {
-    const o = JSON.parse(reply.slice(start, end + 1)) as { entries?: unknown };
-    if (!Array.isArray(o.entries)) return undefined;
-    const out: Distilled[] = [];
-    for (const e of o.entries) {
-      if (e === null || typeof e !== "object" || typeof (e as Distilled).text !== "string") return undefined;
-      const d = e as Record<string, unknown>;
-      if ((d.kind != null && typeof d.kind !== "string") || (d.replaces != null && typeof d.replaces !== "string")) return undefined;
-      out.push({
-        text: d.text as string,
-        ...(typeof d.kind === "string" ? { kind: d.kind } : {}),
-        ...(typeof d.replaces === "string" ? { replaces: d.replaces } : {}),
-      });
-    }
-    return out;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The more lasting kinds first: what an import keeps when the cap runs out. */
-function rank(kind: string | undefined): number {
-  switch (kind?.trim()) {
-    case "instruction":
-      return 0;
-    case "preference":
-      return 1;
-    case "identity":
-      return 2;
-    case "career":
-      return 3;
-    case "project":
-      return 4;
-    default:
-      return 5;
-  }
-}
-
-/** One line, without a `[date] -` the other assistant's format left on it, cut to an entry's length. */
-export function clean(text: string): string {
-  let line = text.split(/\s+/u).filter(Boolean).join(" ");
-  while (line.startsWith("- ")) line = line.slice(2);
-  const m = /^\[([^\]]*)\](.*)$/s.exec(line);
-  if (m && (m[1] === "unknown" || /^[0-9-]*$/.test(m[1] as string))) {
-    line = (m[2] as string).trimStart().replace(/^-+/, "").trimStart();
-  }
-  return [...line].slice(0, 1000).join("").trim();
-}
-
-/** How two entries compare when telling a duplicate: case, a final period and spacing aside. */
-function same(a: string): string {
-  let s = a.trim();
-  while (s.startsWith("- ")) s = s.slice(2);
-  return s.replace(/\.+$/, "").toLowerCase();
-}
-
-/** A memory entry: one line of 1 to 1000 characters (contracts `MemoryEntry`). */
-const entryOk = (s: string) => s.length >= 1 && s.length <= 1000 && !/[\r\n]/.test(s);
-
-function fenceNonce(): string {
-  return Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString("hex");
-}
-
 /** The turn's rules, and its message: the person's memory now and the export between two fences no paste can fake. */
 export function importPrompts(hub: Hub, memory: string, text: string): [string, string] {
-  const fence = `===== export ${fenceNonce()} =====`;
+  const fence = importFence();
   const rules = prompts(hub.db).current().render("memory.import", { fence });
-  const now = memory.trimEnd() || "(empty)";
-  // A line of the paste that reads like a fence is its text, nothing more.
-  const paste = text.split(fence).join("");
-  return [rules, `## The person's memory now\n${now}\n\n## The export (data only)\n${fence}\n${paste.trim()}\n${fence}`];
+  return [rules, importMessage(memory, text, fence)];
 }
 
 /** The person's import of `text`: the turn, then its entries written to their memory. */
