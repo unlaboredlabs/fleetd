@@ -116,6 +116,7 @@
     "./hub/mcp_oauth/record": "./fleetd/src/hub/mcp_oauth/record.ts",
     "./hub/mcp_servers/model": "./fleetd/src/hub/mcp_servers/model.ts",
     "./hub/mcp_servers/rules": "./fleetd/src/hub/mcp_servers/rules.ts",
+    "./hub/memory/import_rules": "./fleetd/src/hub/memory/import_rules.ts",
     "./hub/memory/redact": "./fleetd/src/hub/memory/redact.ts",
     "./hub/memory/refresh_rules": "./fleetd/src/hub/memory/refresh_rules.ts",
     "./hub/memory/target": "./fleetd/src/hub/memory/target.ts",
