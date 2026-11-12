@@ -80,6 +80,7 @@
     "./hub/intake/mime": "./fleetd/src/hub/intake/mime.ts",
     "./hub/intake/office": "./fleetd/src/hub/intake/office.ts",
     "./hub/intake/preview": "./fleetd/src/hub/intake/preview.ts",
+    "./hub/intake/zip": "./fleetd/src/hub/intake/zip.ts",
     "./hub/integrations/policy": "./fleetd/src/hub/integrations/policy.ts",
     "./hub/lead_calls/cwd": "./fleetd/src/hub/lead_calls/cwd.ts",
     "./hub/lead_calls/policy": "./fleetd/src/hub/lead_calls/policy.ts",
