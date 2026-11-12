@@ -90,6 +90,18 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
   ["work_claim", (mark, n) => ({ title: `${mark} work ${n}`, repo: REPO })],
   // The team's cap on agents at once: setting nothing is refused.
   ["cap_set", (_mark, n) => ({ cap: 10 + n })],
+  // A profile of the run's own, on a model the hub offers (profiles_list names them: a made-up model is refused), named
+  // after the mark as a profile name may be.
+  [
+    "profile_create",
+    async (mark, n, { as }) => {
+      const list = await as.call("profiles_list", {});
+      const model = (list.body as { models?: Array<{ id?: unknown }> } | null)?.models?.[0]?.id;
+      const name = `${mark.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 24) || "areas"}-${n}`;
+      return list.isError || typeof model !== "string" ? undefined : { name, note: `${mark} profile ${n}`, model, effort: "high" };
+    },
+    ["profiles_list"],
+  ],
   // A value sealed to the hub's key, which vault_status gives: an env item in the caller's vault (an env item's label is
   // its name, so the mark is in its value, which only a reveal shows), and the vault's unlock (any passphrase opens one
   // that has none).
@@ -126,32 +138,63 @@ const unseedable = (listed: ReadonlyArray<Tool>) =>
 
 /**
  * The writes that take away what other calls need, called after every other write and in this order: an automation
- * (automation_delete), a phone (push_device_remove), a project and all it holds, its decisions among them
- * (project_remove), a person (person_remove), an invite and the person it brought who never joined (invite_revoke), a
- * device (device_revoke), and last of all a machine and all it holds, its projects among them (machine_remove). Each
- * is given only ids the run made, never one the team held before it seeded (the caller, the device it calls from):
- * what the target seeded (the automation, the project, its machine), the phone and the person and invite the seeds
- * made, and a spare device of the caller's, made for device_revoke.
+ * (automation_delete), a phone (push_device_remove), a profile (profile_delete), a project and all it holds, its
+ * decisions among them (project_remove), a person (person_remove), an invite and the person it brought who never
+ * joined (invite_revoke), a device (device_revoke), and last of all a machine and all it holds, its projects among them
+ * (machine_remove). Each is given only what the run made, never what the team held before it seeded (the caller, the
+ * device it calls from, the default profile): what the target seeded (the automation, the project, its machine), the
+ * phone, the profile and the person and invite the seeds made, and a spare device of the caller's, made for
+ * device_revoke.
  */
-const LAST = ["automation_delete", "push_device_remove", "project_remove", "person_remove", "invite_revoke", "device_revoke", "machine_remove"];
+const LAST = ["automation_delete", "push_device_remove", "profile_delete", "project_remove", "person_remove", "invite_revoke", "device_revoke", "machine_remove"];
 
 /**
- * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer: the
- * ones below, each called on the machine (and project) the team's reads turn up with what else it needs, and
- * project_remove (LAST), which the hub refuses so while the project's machine is known and offline. A target's seed
+ * LAST's writes whose id is a number, which no read hands the suite as an id: each takes what a seed made from that
+ * seed's answer. profile_delete deletes the profile the profile_create seed made, never the hub's default.
+ */
+const FROM_SEEDS: Readonly<Record<string, (seeded: ReadonlyArray<{ tool: string; answer: Answer }>) => unknown>> = {
+  profile_delete: (seeded) => {
+    const id = seeded.filter((s) => s.tool === "profile_create").map((s) => (s.answer.body as { profile?: { id?: unknown } } | null)?.profile?.id).find((id) => typeof id === "number");
+    return id === undefined ? undefined : { id };
+  },
+};
+
+/**
+ * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer (and
+ * for a secret sealed to machines, the hub's failed "No machine took it."): the ones below, each called on the machine
+ * (and project) the team's reads turn up with what else it needs, project_remove (LAST), which the hub refuses so
+ * while the project's machine is known and offline, and machine_screens_set, which its node takes. A target's seed
  * puts its project on such a machine: one that joined once and is offline now. With no machine to name they aren't
  * called.
  */
-const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove"];
+const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove", "claude_subscription_set", "onepassword_set", "machine_screens_set"];
+
+/** A person's secret sealed for the machine the reads turn up, as a real box (to a key of the run's own: no machine opens it). */
+const sealedForMachine = async (ids: Ids, secret: string) => {
+  if (!ids.has("MachineId")) return undefined;
+  const seal = await sealing();
+  const sealed = Buffer.from(seal(new Uint8Array(randomBytes(32)), new TextEncoder().encode(secret))).toString("base64");
+  return { sealed: [{ machineId: ids.get("MachineId")![0], sealed }] };
+};
 const ON_MACHINE: ReadonlyArray<readonly [tool: string, input: (ids: Ids, tool: Tool) => unknown]> = [
   ["project_add", (ids) => (ids.has("MachineId") ? { machineId: ids.get("MachineId")![0], path: "/srv/areas/added" } : undefined)],
   ["project_repo_add", (ids, tool) => ((input) => (input === undefined ? undefined : { ...(input as object), path: "/srv/areas/repo" }))(inputFrom(tool, ids))],
+  // The caller's Claude token and 1Password service account token, each kept only by a machine online that takes it.
+  ["claude_subscription_set", (ids) => sealedForMachine(ids, "areas-claude-token")],
+  ["onepassword_set", (ids) => sealedForMachine(ids, "areas-1password-token")],
 ];
 
 /** Writes a run with no machine and one hub can't make at all, by why. */
 const NOT_HERE: Readonly<Record<string, string>> = {
   claude_hub_api_set: "not called: it seals the key to each machine, which takes it only while online, and no node joins",
   hub_link_add: "not called: the other hub must answer a hello before the link is kept, and the run has no second hub to link to",
+  claude_account_test:
+    "not called: a machine holding the account tests it, and no node joins, so no machine holds one (claude_hub_api_set and claude_subscription_set keep a secret only on a machine online)",
+  onepassword_test: "not called: a machine holding the 1Password token tests it, and no node joins, so no machine holds one",
+  onepassword_cards: "not called: a machine holding the 1Password token lists them, and no node joins, so no machine holds one",
+  vault_import: "not called: a machine holding the person's 1Password token reads 1Password, and no node joins, so no machine holds one",
+  screen_open: "not called: it needs a node that hosts screens, and no node joins",
+  screen_end: "not called: it ends a person's screen, which only screen_open on a node makes",
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
 };
 
@@ -254,8 +297,11 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
 
   const decoded = (tool: string, answers: ReadonlyArray<Answer>) => {
     const ok = answers.filter((a) => !a.isError);
-    const offline = answers.some((a) => a.isError && (a.body as { code?: unknown } | null)?.code === "machine_offline");
-    if (ok.length === 0 && offline && OFFLINE_ANSWERS.includes(tool)) return checks.push({ name: `MCP ${tool} answers machine_offline, as no node joins`, ok: true });
+    // The hub answers a secret no machine took (all offline) as failed "No machine took it.", else machine_offline.
+    const offline = answers
+      .map((a) => (a.isError ? (a.body as { code?: unknown; message?: unknown } | null) : null))
+      .find((body) => body?.code === "machine_offline" || (body?.code === "failed" && String(body?.message).startsWith("No machine took it")));
+    if (ok.length === 0 && offline && OFFLINE_ANSWERS.includes(tool)) return checks.push({ name: `MCP ${tool} answers ${String(offline.code)}, as no node joins`, ok: true });
     if (ok.length === 0) return checks.push({ name: `MCP ${tool}`, ok: false, detail: JSON.stringify(answers[0]?.body) });
     const why = ok.map((a) => valid(tool, a.body)).find((w) => w !== undefined);
     checks.push({ name: `MCP ${tool} decodes as ${tool}.output`, ok: why === undefined, ...(why === undefined ? {} : { detail: why }) });
@@ -292,7 +338,7 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
       continue;
     }
     if (onMachine !== undefined) {
-      const input = onMachine[1](read.bag, tool);
+      const input = await onMachine[1](read.bag, tool);
       if (input === undefined) {
         checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: "not called: it needs a machine, no node joins, and the target seeded none" });
         continue;
@@ -307,7 +353,7 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
   }
   const made = new Map([...read.bag].map(([kind, ids]) => [kind, ids.filter((id) => !before.get(kind)?.includes(id))] as const).filter(([, ids]) => ids.length > 0));
   for (const tool of LAST.flatMap((name) => known.filter((t) => t.name === name))) {
-    const input = inputFrom(tool, made);
+    const input = tool.name in FROM_SEEDS ? FROM_SEEDS[tool.name]!(seeded) : inputFrom(tool, made);
     if (input !== undefined) decoded(tool.name, [await as.call(tool.name, input)]);
     else if (inputFrom(tool, read.bag) === undefined) checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: "not called: none of the ids it needs turned up in the team's reads" });
     else checks.push({ name: `MCP ${tool.name}`, ok: false, detail: "not called: the team holds only ids it had before the run, and the run made none for it to take away (the seed that would is not listed)" });

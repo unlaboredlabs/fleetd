@@ -269,6 +269,10 @@ function projectTools(seeded: "none" | "machine" | "gone") {
       return { overturned: decision };
     }),
     tool("project_get", true, "ProjectGet", () => ({ projects: projects.map((p) => ({ ...p, title: "areas", workspaceRoot: "/srv/areas", threads: [], lastActivityAt: at })) })),
+    tool("machine_screens_set", false, "MachineScreensSet", (given) => {
+      if (!machines.has(given.machineId)) throw new Refusal("not_found", `No machine ${given.machineId}.`);
+      throw offline(given.machineId);
+    }),
   ];
   const seed = async () => {
     if (seeded === "none") return;
@@ -301,6 +305,7 @@ test("the project tools under the hub's rules: project_remove runs last, and wha
     "pass MCP project_add answers machine_offline, as no node joins",
     "pass MCP project_repo_add answers machine_offline, as no node joins",
     "pass MCP decisions_overturn decodes as decisions_overturn.output",
+    "pass MCP machine_screens_set answers machine_offline, as no node joins",
     "pass MCP project_remove answers machine_offline, as no node joins",
     "pass MCP machine_remove decodes as machine_remove.output",
   ]);
@@ -519,6 +524,83 @@ test("the caller's picture is made of a file of its own, so the file the run put
     ]);
     expect(picture).toBeDefined();
     expect(files.has(picture!)).toBe(false);
+  } finally {
+    await target.close();
+  }
+});
+
+test("a profile of the run's own on a model the hub offers, deleted last, never the default; a token no machine takes", async () => {
+  const at = "2026-01-01T00:00:00.000Z";
+  const calls: Array<string> = [];
+  const models = [{ id: "claude-sonnet-5-5", fast: false }];
+  const profiles: Array<Record<string, any>> = [{ id: 1, name: "high", note: "", model: "claude-sonnet-5-5", effort: "high", fast: false, default: true, updatedAt: at }];
+  const profile = (id: number) => {
+    const found = profiles.find((p) => p.id === id);
+    if (found === undefined) throw new Refusal("not_found", `No profile ${id}.`);
+    return found;
+  };
+  // The hub's rules (projects/profiles.ts, claude_accounts/tools.ts): a model the hub offers; the default is never
+  // deleted; a token sealed to machines is kept only by one online, and none is.
+  const tool = (name: string, readOnly: boolean, type: string, run: (given: any) => unknown): StandInTool => ({
+    name,
+    readOnly,
+    input: input(`${type}Input`),
+    output: {},
+    run: (_team, given) => {
+      calls.push(`${name} ${JSON.stringify(given.id ?? given.name ?? "")}`);
+      return run(given);
+    },
+  });
+  const tools = [
+    tool("profile_delete", false, "ProfileDelete", (given) => {
+      if (profile(given.id).default) throw new Refusal("invalid", "high is the default: every review and helper call runs on it.");
+      profiles.splice(profiles.indexOf(profile(given.id)), 1);
+      return { ok: true };
+    }),
+    tool("profiles_list", true, "ProfilesList", () => ({ profiles, models, modelsFrom: "builtin", efforts: ["low", "medium", "high"] })),
+    tool("profile_create", false, "ProfileCreate", (given) => {
+      if (!models.some((m) => m.id === given.model)) throw new Refusal("invalid", `${given.model} is not among the models this hub offers.`);
+      const made = { id: profiles.length + 1, name: given.name, note: given.note, model: given.model, effort: given.effort, fast: false, default: false, updatedAt: at };
+      profiles.push(made);
+      return { profile: made };
+    }),
+    tool("profile_update", false, "ProfileUpdate", (given) => ({ profile: profile(given.id) })),
+    tool("project_get", true, "ProjectGet", () => ({ projects: [{ machineId: "m1", projectId: "p1", title: "areas", workspaceRoot: "/srv/areas", threads: [], lastActivityAt: at }] })),
+    tool("claude_subscription_set", false, "ClaudeSubscriptionSet", (given) => {
+      const seals = given.sealed as Array<{ machineId: string; sealed: string }>;
+      if (seals.some((s) => Buffer.from(s.sealed, "base64").length < 48)) throw new Refusal("invalid", "each seal is { machineId, sealed }, sealed a sealed box in standard base64.");
+      throw new Refusal("failed", `No machine took it. ${seals.map((s) => `${s.machineId} is offline.`).join(" ")}`);
+    }),
+    tool("claude_account_test", false, "ClaudeAccountTest", () => {
+      throw new Refusal("not_found", "The hub has no API key.");
+    }),
+    tool("onepassword_set", false, "OnePasswordSet", (given) => {
+      const seals = given.sealed as Array<{ machineId: string; sealed: string }>;
+      if (seals.some((s) => Buffer.from(s.sealed, "base64").length < 48)) throw new Refusal("invalid", "each seal is { machineId, sealed }, sealed a sealed box in standard base64.");
+      throw new Refusal("failed", "No machine took it. m1 is offline.");
+    }),
+    tool("onepassword_test", false, "OnePasswordTest", () => {
+      throw new Refusal("not_found", "You have no 1Password token saved.");
+    }),
+  ];
+  const target = await standIn({ only: tools });
+  try {
+    const checks = await areasContract(await target.team(""), doc, required);
+    const rows = checks.filter((c) => /profile|claude|onepassword/u.test(c.name)).map((c) => `${c.skipped !== undefined ? "skip" : c.ok ? "pass" : "FAIL"} ${c.name}${c.ok ? "" : `: ${c.detail}`}`);
+    expect(rows).toEqual([
+      "pass MCP profile_create decodes as profile_create.output",
+      "pass MCP profiles_list decodes as profiles_list.output",
+      "pass MCP profile_update decodes as profile_update.output",
+      "pass MCP claude_subscription_set answers failed, as no node joins",
+      "skip MCP claude_account_test",
+      "pass MCP onepassword_set answers failed, as no node joins",
+      "skip MCP onepassword_test",
+      "pass MCP profile_delete decodes as profile_delete.output",
+    ]);
+    // The run's own profile, on the model the hub listed, and deleted last; the default stays.
+    expect(calls.filter((c) => c.startsWith("profile_create"))).toEqual(['profile_create "contract-1"']);
+    expect(calls.at(-1)).toBe("profile_delete 2");
+    expect(profiles.map((p) => p.name)).toEqual(["high"]);
   } finally {
     await target.close();
   }
