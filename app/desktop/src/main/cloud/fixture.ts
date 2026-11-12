@@ -2,9 +2,11 @@
 // (ignored by the hub fixture's schema, as `pair` is) turns Sign in on and says how each step answers, so the QA gate
 // shoots the real screens. No section: Sign in is off, as in a release. On a fixture whose hub came with the account,
 // its invites by email are kept here as the team keeps them: an invite is added, an email already invited refused.
+// A sign-in may arrive (`signIn.arrival`): who signed in and the invitations to ask about, as the accounts service
+// answers them; Join and Not now then connect nothing, a fixture's hubs being fixed.
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { CloudState, ConnectComputerOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -20,8 +22,14 @@ export const CloudSection = z.object({
   email: z.string().optional(),
   /** The app's first hub came with the account (a team of the person's). */
   hub: z.boolean().optional(),
-  /** How Sign in ends: it waits on the browser until Cancel, or fails so. Absent: it waits. */
-  signIn: z.union([z.literal("wait"), z.object({ failure: Failure })]).optional(),
+  /** How Sign in ends: it waits on the browser until Cancel, fails so, or arrives with this answer. Absent: it waits. */
+  signIn: z
+    .union([
+      z.literal("wait"),
+      z.object({ failure: Failure }),
+      z.object({ arrival: z.object({ email: z.string(), invitations: z.array(z.object({ name: z.string(), invitedBy: z.string(), role: z.string() })) }) }),
+    ])
+    .optional(),
   /** The terminal Connect this computer opens; absent: none could be opened. Nothing is ever run. */
   terminal: z.string().optional(),
   /** The team's open invites by email, newest first. */
@@ -41,6 +49,7 @@ export class FixtureCloud implements Cloud {
   #waiting: ((outcome: SignInOutcome) => void) | null = null;
   #invites: AccountsInvite[];
   #next = 0;
+  #arrival: Arrival | null = null;
 
   constructor(section: CloudSection | null) {
     this.#section = section;
@@ -49,17 +58,34 @@ export class FixtureCloud implements Cloud {
   }
 
   state(): CloudState {
-    return { available: this.#section !== null, email: this.#email };
+    return { available: this.#section !== null, email: this.#email, domain: this.#section === null ? null : "fleetd.dev" };
   }
 
   signIn(): Promise<SignInOutcome> {
     this.cancel();
     const how = this.#section?.signIn ?? "wait";
+    if (how !== "wait" && "arrival" in how) {
+      this.#arrival = how.arrival;
+      return Promise.resolve({ ok: true, arrival: how.arrival });
+    }
     if (how !== "wait") {
       const { fix, ...failure } = how.failure;
       return Promise.resolve({ ok: false, failure: fix === undefined ? failure : { ...failure, fix } });
     }
     return new Promise((resolve) => (this.#waiting = resolve));
+  }
+
+  finish(join: readonly number[]): Promise<FinishOutcome> {
+    const arrival = this.#arrival;
+    this.#arrival = null;
+    if (arrival === null) return Promise.resolve(failed({ code: "", message: "That sign-in isn't waiting any more.", fix: "Sign in again." }));
+    this.#email = arrival.email;
+    return Promise.resolve({ ok: true, email: arrival.email, teams: join.flatMap((at) => (arrival.invitations[at] === undefined ? [] : [{ name: arrival.invitations[at].name, ok: true as const }])) });
+  }
+
+  notMe(): Promise<void> {
+    this.#arrival = null;
+    return Promise.resolve();
   }
 
   cancel(): void {

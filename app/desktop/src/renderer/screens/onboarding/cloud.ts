@@ -4,7 +4,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { CloudState } from "../../../shared/cloud";
 
-const OFF: CloudState = { available: false, email: null };
+const OFF: CloudState = { available: false, email: null, domain: null };
 
 let current: CloudState | null = null;
 const listeners = new Set<() => void>();

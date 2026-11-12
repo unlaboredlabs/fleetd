@@ -22,10 +22,11 @@ import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { diskCache, diskPreviews, forgetCache } from "./src/cacheStore";
+import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import { afterSignIn, endSession, revokeOver, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { afterSignIn, endSession, revokeDropped, revokeOver, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { cloudDomain } from "./src/desktop";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
@@ -127,14 +128,17 @@ export default function App() {
     [hubs, paired, show],
   );
   // Signed in: the account's teams beside the person's own hubs, the first of them shown. A new sign-in's session
-  // replaces the one kept, which ends as signing out would end it.
+  // replaces the one kept, which ends as signing out would end it; each key it replaces, and an earlier account's
+  // teams, are revoked on their hubs from memory as they leave the keychain.
   const signedIn = useCallback<OnSignedIn>(
     async (out) => {
       const before = account;
       await saveAccount(out.account);
       setAccount(out.account);
       if (cloud !== null && before !== null && before.sessionId !== out.account.sessionId) void endSession(fetch, cloud, before.sessionId);
-      const list = afterSignIn(hubs, out.teams);
+      const { hubs: list, dropped } = afterSignIn(hubs, out.teams);
+      void revokeDropped((h) => revokeOver({ hub: h.hub, key: h.key, transport: webSocketTransport }), dropped);
+      forgetPreviews(dropped.filter((h) => !list.some((k) => k.hub === h.hub)).map((h) => h.hub));
       setNote(undefined);
       await show(list.find((h) => h.cloud === true) ?? null, list);
     },
@@ -145,10 +149,12 @@ export default function App() {
     async (rest: readonly KeptHub[]) => {
       await saveAccount(null).catch(() => undefined);
       setAccount(null);
+      // The teams' picture previews go with them; the hub that stays keeps its own.
+      forgetPreviews(hubs.filter((h) => !rest.some((r) => r.hub === h.hub)).map((h) => h.hub));
       if (paired?.cloud === true) await show(rest[0] ?? null, rest);
       else await saveHubs(rest).then(() => setHubs(rest));
     },
-    [paired, show],
+    [hubs, paired, show],
   );
   const theme = useMemo(() => navigationTheme(t), [t]);
   // A pairing link from outside the app (iOS's Camera, a page, a message): a phone that isn't paired asks first, once
@@ -166,7 +172,7 @@ export default function App() {
       if (paired !== null) setOpened(shortcut);
       return handled();
     }
-    const step = pairLinkStep(link, "outside", paired?.hubName ?? null);
+    const step = pairLinkStep(link, "outside", paired?.hubName ?? null, cloud === null ? null : cloudDomain(cloud.accountsUrl));
     if (step.t === "ignore") return handled();
     if (step.t === "paired") {
       Alert.alert(step.title, step.message);

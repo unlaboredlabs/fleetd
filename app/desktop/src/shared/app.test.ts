@@ -15,6 +15,18 @@ describe("parseDeepLink", () => {
     });
   });
 
+  // The phone's parsePairLink takes the same lengths (app/mobile/src/hub/pairLink.test.ts, the same table): 2 to 8
+  // groups of four, with dashes or without, and neither 1 nor 9.
+  it("takes a link with a code of every length the phone's parsePairLink takes, 2 to 8 groups, with dashes or without", () => {
+    const groups = ["ABCD", "2345", "WXYZ", "6789", "KMNP", "QRST", "VWXY", "Z234", "ABCD"];
+    for (let n = 1; n <= 9; n++) {
+      for (const code of [groups.slice(0, n).join("-"), groups.slice(0, n).join("").toLowerCase()]) {
+        const out = parseDeepLink(`fleetd://pair?hub=https%3A%2F%2Facme.fleetd.dev&code=${code}`);
+        expect(out, `${String(n)} groups: ${code}`).toEqual(n >= 2 && n <= 8 ? { kind: "pair", hub: "https://acme.fleetd.dev", code } : null);
+      }
+    }
+  });
+
   it("ignores other links and anything that isn't a plain hub address and code", () => {
     for (const link of [
       "fleetd://pair?hub=http%3A%2F%2Fh",

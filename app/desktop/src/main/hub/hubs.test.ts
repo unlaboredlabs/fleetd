@@ -52,6 +52,24 @@ describe("hubs", () => {
     again.stop();
   });
 
+  it("marks a team joined by invitation as such, across launches and a later sign-in, and finds the hub holding a key at an address", () => {
+    const { make } = setup();
+    const hubs = make();
+    expect(hubs.heldAt("https://side.fleetd.dev")).toBeNull();
+    expect(hubs.connectCloud({ url: "https://acme.fleetd.dev", key: "k1" }, "acme")).toEqual({ ok: true });
+    expect(hubs.connectCloud({ url: "https://side.fleetd.dev", key: "k2" }, "side", true)).toEqual({ ok: true });
+    // The team now one of the person's own at the next sign-in: still the one joined by invitation on this device.
+    expect(hubs.connectCloud({ url: "https://side.fleetd.dev", key: "k3" }, "side")).toEqual({ ok: true });
+    expect(hubs.list().map((h) => [h.label, h.invited])).toEqual([["acme", undefined], ["side", true]]);
+    expect(hubs.heldAt("https://side.fleetd.dev/")?.label).toBe("side");
+    const id = hubs.list()[1]?.id ?? "";
+    expect(hubs.update(id, { label: "Side", color: null })).toEqual({ ok: true });
+    hubs.stop();
+    const again = make();
+    expect(again.list()[1]).toEqual({ id, label: "Side", cloud: true, invited: true });
+    again.stop();
+  });
+
   it("starts an upgraded app as its first hub, labelled by host until named, and writes nothing until a change", () => {
     const { home, credentials, make } = setup();
     saveCredentials(credentials, { url: "http://devbox.tail1234.ts.net:4790", key: "k1" });

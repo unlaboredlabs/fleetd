@@ -2,13 +2,20 @@
 // notification, a fleetd:// link) and notifications to post. Menu commands are the palette registry's ids.
 import { z } from "zod";
 import { HUB_ID } from "./hubs";
+import { normalizeCode } from "./pairing";
 
 /** Ids from the hub, as they appear in a notification's target. */
 const machineId = z.string().regex(/^[a-z0-9-]{1,32}$/u);
 const hubId = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);
 
-/** A pairing code as typed or linked; the onboarding screen normalises it. */
-const pairCode = z.string().regex(/^[A-Za-z0-9-]{4,32}$/u);
+/**
+ * A pairing code as linked: any that normalizeCode reads, short or long (up to 8 groups of four, 39 characters with
+ * dashes), as the phone's parsePairLink takes it; the onboarding screen normalises it.
+ */
+const pairCode = z
+  .string()
+  .max(64)
+  .refine((code) => normalizeCode(code) !== null, "a pairing code");
 const hubUrl = z
   .string()
   .max(2048)

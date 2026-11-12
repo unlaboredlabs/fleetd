@@ -2,18 +2,35 @@
 // but for a phone: WorkOS's sign-in page with PKCE in the system's auth session (ASWebAuthenticationSession on iOS,
 // never a web view of the app's), back on fleetd://signin/callback, then one call to the accounts service
 // (contracts: Accounts.json), which redeems WorkOS's code itself and answers the person's teams, each with its address
-// and a one-time pairing code. Each code goes to that team's own POST /pair, as a typed one does (hub/pair.ts), and
-// each key is kept as any hub's (vault.ts). The app keeps the email and WorkOS's session id, never a WorkOS token, and
-// never the verifier. Sign out drops this phone's key on each of the account's hubs, then ends the session.
+// and a one-time pairing code, and apart from them each invitation they haven't answered. Before anything pairs, the
+// person is shown who signed in ("Signed in as <email>", Not you? Sign out) and asked about each invitation, Join or
+// Not now (decision hosted.invites-need-accept): finish then sends each team's code to that team's own POST /pair, as
+// a typed one does (hub/pair.ts), joins each invitation chosen (POST ACCOUNTS_ACCEPT_PATH) and pairs it the same way,
+// and each key is kept as any hub's (vault.ts); a key it replaces, and a previous account's teams, are revoked there
+// as Sign out does. The app keeps the email and WorkOS's session id, never a WorkOS token, and never the verifier.
+// Sign out drops this phone's key on each of the account's hubs, then ends the session.
 //
 // The phone's own code, not the desktop's: that one listens on a loopback port with node:http and checks with zod,
 // neither of which the phone has. The contract's paths and shapes are shared (desktop.ts).
 import { sha256 } from "@noble/hashes/sha2.js";
-import { ACCOUNTS_APP_REDIRECT, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, type AccountsSignInInput, type PairFailure } from "../desktop";
+import {
+  ACCOUNTS_ACCEPT_PATH,
+  ACCOUNTS_APP_REDIRECT,
+  ACCOUNTS_SIGN_IN_PATH,
+  ACCOUNTS_SIGN_OUT_PATH,
+  readAccepted,
+  readSignIn,
+  teamOrigin,
+  type AccountsInvitation,
+  type AccountsSignInInput,
+  type AccountsTeam,
+  type PairFailure,
+  type SignedIn,
+} from "../desktop";
 import { pair, type Fetch, type Paired } from "../hub/pair";
 import { signOut, withHub, type HubLink } from "../push";
 import { toBase64, utf8Encode } from "../seal";
-import { teamOrigin, type CloudConfig } from "./config";
+import type { CloudConfig } from "./config";
 
 const CALL_TIMEOUT_MS = 20_000;
 
@@ -43,15 +60,18 @@ export interface SignInPorts {
 /** One team of the account's, and its key, or why this phone got none. */
 export type TeamOutcome = { readonly name: string; readonly ok: true; readonly hub: KeptHub } | { readonly name: string; readonly ok: false; readonly failure: PairFailure };
 
-/** How a sign-in ended. Cancelled ends quietly: the person closed the page. */
+/** Back from the page: the service's answer, held until the person says it's them; nothing is paired yet. */
+export type Arrived = { readonly ok: true; readonly answer: SignedIn } | { readonly ok: false; readonly cancelled: true } | { readonly ok: false; readonly cancelled?: undefined; readonly failure: PairFailure };
+
+/** How a sign-in ended. Cancelled ends quietly: the person closed the page, or said it wasn't them. */
 export type SignInOutcome =
   | { readonly ok: true; readonly account: SavedAccount; readonly teams: readonly TeamOutcome[] }
   | { readonly ok: false; readonly cancelled: true }
   | { readonly ok: false; readonly cancelled?: undefined; readonly failure: PairFailure };
 
-const failed = (code: string, message: string, fix?: string): SignInOutcome => ({ ok: false, failure: fix === undefined ? { code, message } : { code, message, fix } });
+const failed = (code: string, message: string, fix?: string): { ok: false; failure: PairFailure } => ({ ok: false, failure: fix === undefined ? { code, message } : { code, message, fix } });
 
-const OFFLINE = failed("offline", "This phone can't reach fleetd.", "Check your connection, then sign in again.");
+const OFFLINE_FAILURE: PairFailure = { code: "offline", message: "This phone can't reach fleetd.", fix: "Check your connection, then sign in again." };
 
 const base64url = (bytes: Uint8Array): string => toBase64(bytes).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 
@@ -112,24 +132,46 @@ const readJson = async (response: Response): Promise<unknown> => {
 
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v !== "" && v.length <= max;
 
-type Team = { readonly name: string; readonly url: string; readonly pairingCode: string };
-
-/** The service's 200, checked as the desktop's zod schema does; null when it isn't one. */
-const signedIn = (json: unknown): { email: string; sessionId: string; teams: Team[] } | null => {
-  if (typeof json !== "object" || json === null) return null;
-  const { email, sessionId, teams } = json as Record<string, unknown>;
-  if (!text(email, 320) || !text(sessionId, 200) || !Array.isArray(teams) || teams.length === 0 || teams.length > 50) return null;
-  const out: Team[] = [];
-  for (const t of teams as unknown[]) {
-    const { id, name, url, pairingCode } = (typeof t === "object" && t !== null ? t : {}) as Record<string, unknown>;
-    if (!text(id, 200) || !text(name, 63) || !text(url, 2000) || !text(pairingCode, 100)) return null;
-    out.push({ name, url, pairingCode });
-  }
-  return { email, sessionId, teams: out };
+/** A refusal in the service's words, else its status. */
+const refusal = (json: unknown, status: number): { ok: false; failure: PairFailure } => {
+  const { code, message, fix } = (typeof json === "object" && json !== null ? json : {}) as Record<string, unknown>;
+  return typeof code === "string" && text(message, 500)
+    ? { ok: false, failure: text(fix, 500) ? { code, message, fix } : { code, message } }
+    : { ok: false, failure: { code: "", message: `fleetd's sign-in answered HTTP ${String(status)}.`, fix: "Try again in a moment." } };
 };
 
-/** One sign-in, from opening the page to a key per team. */
-export const signIn = async (ports: SignInPorts): Promise<SignInOutcome> => {
+const UNREADABLE: PairFailure = { code: "", message: "fleetd's sign-in answered in a way this app doesn't understand.", fix: "Update the app, then sign in again." };
+
+/** The questions after the page, each the person's answer: it's them, and each invitation joined or not. */
+export interface AfterSignInAsk {
+  /** "Signed in as <email>", with Not you? Sign out: false is Sign out. */
+  readonly signedInAs: (email: string) => Promise<boolean>;
+  /** "<invitedBy> invited you to <name>", Join or Not now: true is Join. */
+  readonly invitation: (invitation: AccountsInvitation) => Promise<boolean>;
+}
+
+/** Asks who signed in, then about each invitation in turn; null when it isn't them. */
+export const askAfterSignIn = async (ask: AfterSignInAsk, answer: SignedIn): Promise<number[] | null> => {
+  if (!(await ask.signedInAs(answer.email))) return null;
+  const join: number[] = [];
+  for (const [at, invitation] of answer.invitations.entries()) if (await ask.invitation(invitation)) join.push(at);
+  return join;
+};
+
+/** A whole sign-in: the page, who signed in and each invitation asked, then a key per team and per invitation joined. */
+export const signInAsking = async (ports: SignInPorts, ask: AfterSignInAsk): Promise<SignInOutcome> => {
+  const arrived = await signIn(ports);
+  if (!arrived.ok) return arrived;
+  const join = await askAfterSignIn(ask, arrived.answer).catch(() => null);
+  if (join === null) {
+    void endSession(ports.fetch, ports.config, arrived.answer.sessionId);
+    return { ok: false, cancelled: true };
+  }
+  return finish(ports, arrived.answer, join);
+};
+
+/** The browser's part and the service's answer, held for the questions: nothing is paired yet. */
+export const signIn = async (ports: SignInPorts): Promise<Arrived> => {
   const { verifier, challenge } = pkce(ports.random);
   const state = base64url(ports.random(16));
   let result: AuthResult;
@@ -151,36 +193,64 @@ export const signIn = async (ports: SignInPorts): Promise<SignInOutcome> => {
   return exchange(ports, { code, codeVerifier: verifier, redirectUri: ACCOUNTS_APP_REDIRECT, deviceName: ports.deviceName });
 };
 
-/** The accounts service's answer, then a key from each team's /pair. */
-const exchange = async (ports: SignInPorts, body: AccountsSignInInput): Promise<SignInOutcome> => {
+/** The accounts service's answer, held: nothing pairs before the person has said it's them. */
+const exchange = async (ports: SignInPorts, body: AccountsSignInInput): Promise<Arrived> => {
   let response: Response;
   try {
     response = await post(ports.fetch, `${ports.config.accountsUrl}${ACCOUNTS_SIGN_IN_PATH}`, body);
   } catch {
-    return OFFLINE;
+    return { ok: false, failure: OFFLINE_FAILURE };
   }
   const json = await readJson(response);
-  if (!response.ok) {
-    const { code, message, fix } = (typeof json === "object" && json !== null ? json : {}) as Record<string, unknown>;
-    return typeof code === "string" && text(message, 500)
-      ? failed(code, message, text(fix, 500) ? fix : undefined)
-      : failed("", `fleetd's sign-in answered HTTP ${String(response.status)}.`, "Try again in a moment.");
+  if (!response.ok) return refusal(json, response.status);
+  const answer = readSignIn(json);
+  if (answer === null) return { ok: false, failure: UNREADABLE };
+  if (answer.teams.length === 0 && answer.invitations.length === 0) {
+    void endSession(ports.fetch, ports.config, answer.sessionId);
+    return { ok: false, failure: { code: "", message: "No team of this account could be connected." } };
   }
-  const answer = signedIn(json);
-  if (answer === null) return failed("", "fleetd's sign-in answered in a way this app doesn't understand.", "Update the app, then sign in again.");
+  return { ok: true, answer };
+};
+
+/**
+ * It's them: a key from each team's /pair, and from each invitation at `join` once the service has joined it. With
+ * nothing paired, the session ends.
+ */
+export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonly number[]): Promise<SignInOutcome> => {
   const teams: TeamOutcome[] = [];
   for (const team of answer.teams) teams.push(await pairTeam(ports, team));
+  for (const at of join) {
+    const invitation = answer.invitations[at];
+    if (invitation === undefined) continue;
+    const joined = await accept(ports, invitation.accept);
+    teams.push(joined.ok ? await pairTeam(ports, joined.team) : { name: invitation.name, ok: false, failure: joined.failure });
+  }
   if (!teams.some((t) => t.ok)) {
     void endSession(ports.fetch, ports.config, answer.sessionId);
     const first = teams[0];
-    return first === undefined || first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
+    if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
+    return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
   }
   return { ok: true, account: { email: answer.email, sessionId: answer.sessionId }, teams };
 };
 
-const pairTeam = async (ports: SignInPorts, team: Team): Promise<TeamOutcome> => {
+/** The service joins an invitation the person chose, and answers the team with its pairing code. */
+const accept = async (ports: SignInPorts, value: string): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> => {
+  let response: Response;
+  try {
+    response = await post(ports.fetch, `${ports.config.accountsUrl}${ACCOUNTS_ACCEPT_PATH}`, { accept: value });
+  } catch {
+    return { ok: false, failure: OFFLINE_FAILURE };
+  }
+  const json = await readJson(response);
+  if (!response.ok) return refusal(json, response.status);
+  const team = readAccepted(json);
+  return team === null ? { ok: false, failure: UNREADABLE } : { ok: true, team };
+};
+
+const pairTeam = async (ports: SignInPorts, team: AccountsTeam): Promise<TeamOutcome> => {
   const name = team.name;
-  const origin = teamOrigin(team.url, ports.local);
+  const origin = teamOrigin(team.url, ports.config.accountsUrl, ports.local);
   if (origin === null) return { name, ok: false, failure: { code: "", message: `${name}'s address isn't one this app connects to.`, fix: "Update the app, then sign in again." } };
   const paired = await pair(ports.fetch, origin, team.pairingCode, ports.deviceName);
   if (!paired.ok) {
@@ -199,11 +269,24 @@ export const endSession = async (fetch: Fetch, config: CloudConfig, sessionId: s
   await post(fetch, `${config.accountsUrl}${ACCOUNTS_SIGN_OUT_PATH}`, { sessionId }).catch(() => undefined);
 };
 
-/** The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. */
-export const afterSignIn = (kept: readonly KeptHub[], teams: readonly TeamOutcome[]): KeptHub[] => {
+/**
+ * The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. `dropped`,
+ * each hub whose key goes: a team's key a new one replaces, and the earlier teams this sign-in didn't bring.
+ */
+export const afterSignIn = (kept: readonly KeptHub[], teams: readonly TeamOutcome[]): { hubs: KeptHub[]; dropped: KeptHub[] } => {
   const fresh = teams.flatMap((t) => (t.ok ? [t.hub] : []));
   const origins = new Set(fresh.map((h) => h.hub));
-  return [...kept.filter((h) => h.cloud !== true && !origins.has(h.hub)), ...fresh];
+  const stays = (h: KeptHub) => h.cloud !== true && !origins.has(h.hub);
+  return { hubs: [...kept.filter(stays), ...fresh], dropped: kept.filter((h) => !stays(h)) };
+};
+
+/**
+ * Each dropped key revoked on its hub, as Sign out does, from memory: the app forgets it at once, and a hub that
+ * can't be reached doesn't hold up the sign-in. Resolves with the names of the hubs that couldn't be told.
+ */
+export const revokeDropped = async (revoke: (hub: KeptHub) => Promise<boolean>, dropped: readonly KeptHub[]): Promise<string[]> => {
+  const done = await Promise.all(dropped.map((h) => revoke(h).catch(() => false)));
+  return dropped.filter((_, i) => done[i] !== true).map((h) => h.hubName);
 };
 
 export interface SignOutPorts {

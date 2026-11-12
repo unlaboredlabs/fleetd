@@ -43,15 +43,3 @@ export const cloudConfig = (
   if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "" || url.pathname !== "/") return null;
   return { accountsUrl: url.origin, clientId, authorizeUrl };
 };
-
-/** A team's hub address from the accounts service: an https origin, or (in a local build) http on 127.0.0.1. */
-export const teamOrigin = (raw: string, local: boolean): string | null => {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" && !(local && loopback(url))) return null;
-    if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "" || url.pathname !== "/") return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-};

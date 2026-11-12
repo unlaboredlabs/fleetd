@@ -15,6 +15,17 @@ describe("parsePairLink", () => {
     expect(parsePairLink("fleetd://pair?hub=devbox&code=ABCD-2345-WXYZ-67")).toMatchObject({ ok: false, failure: { message: "This pairing QR code's code isn't a pairing code." } });
   });
 
+  // The desktop's fleetd:// links take the same lengths (app/desktop/src/shared/app.test.ts, the same table).
+  it("takes a code of 2 to 8 groups of four, with dashes or without, and neither 1 nor 9", () => {
+    const groups = ["ABCD", "2345", "WXYZ", "6789", "KMNP", "QRST", "VWXY", "Z234", "ABCD"];
+    for (let n = 1; n <= 9; n++) {
+      for (const code of [groups.slice(0, n).join("-"), groups.slice(0, n).join("").toLowerCase()]) {
+        const out = parsePairLink(`fleetd://pair?hub=https%3A%2F%2Facme.fleetd.dev&code=${code}`);
+        expect(out?.ok, `${String(n)} groups: ${code}`).toBe(n >= 2 && n <= 8);
+      }
+    }
+  });
+
   it("is null for anything but a pairing link", () => {
     for (const text of ["https://fleetd.sh", "fleetd://chat?key=a", "ABCD-2345", "", "fleetd://pairing?hub=x&code=y"]) {
       expect(parsePairLink(text)).toBeNull();
@@ -66,6 +77,18 @@ describe("pairLinkStep", () => {
       title: "Connect to devbox.tail1234.ts.net:4790?",
       message: "This phone pairs with the hub at http://devbox.tail1234.ts.net:4790, which then sees it and sends it notifications. Connect only to a hub you or your team run.",
     });
+  });
+
+  it("says a link to a team of fleetd cloud is one anyone can make, and only under the build's cloud domain", () => {
+    const team = "fleetd://pair?hub=https%3A%2F%2Fsecurity.fleetd.dev&code=ABCD-2345-WXYZ-6789";
+    expect(pairLinkStep(team, "outside", null, "fleetd.dev")).toMatchObject({
+      t: "confirm",
+      title: "Connect to security.fleetd.dev?",
+      message: "This is a fleetd cloud team. Anyone can make one, so join only if you know who sent you this link. This phone then gets its notifications.",
+    });
+    // A build with no cloud, and a hub elsewhere, ask as before.
+    expect(pairLinkStep(team, "outside", null, null)).toMatchObject({ message: expect.stringContaining("Connect only to a hub you or your team run.") });
+    expect(pairLinkStep(LINK, "outside", null, "fleetd.dev")).toMatchObject({ message: expect.stringContaining("Connect only to a hub you or your team run.") });
   });
 
   it("pairs at once with a code from the app's own scanner", () => {

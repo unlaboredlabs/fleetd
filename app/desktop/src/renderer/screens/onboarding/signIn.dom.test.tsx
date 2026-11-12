@@ -2,7 +2,7 @@
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { CloudState, SignInOutcome } from "../../../shared/cloud";
+import type { CloudState, FinishOutcome, SignInOutcome } from "../../../shared/cloud";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, useData } from "../../src/data/react";
@@ -17,11 +17,13 @@ import { OnboardingScreen } from "./OnboardingScreen";
 const { cloud } = vi.hoisted(() => {
   const cloud = {
     available: true,
-    finish: (_out: SignInOutcome): void => undefined,
-    state: vi.fn((): Promise<CloudState> => Promise.resolve({ available: cloud.available, email: null })),
-    signIn: vi.fn(() => new Promise<SignInOutcome>((resolve) => (cloud.finish = resolve))),
+    arrive: (_out: SignInOutcome): void => undefined,
+    state: vi.fn((): Promise<CloudState> => Promise.resolve({ available: cloud.available, email: null, domain: "fleetd.dev" })),
+    signIn: vi.fn(() => new Promise<SignInOutcome>((resolve) => (cloud.arrive = resolve))),
+    finish: vi.fn((_join: number[]): Promise<FinishOutcome> => Promise.resolve({ ok: true, email: "sam@example.com", teams: [] })),
+    notMe: vi.fn(() => Promise.resolve()),
     cancel: vi.fn(() => {
-      cloud.finish({ ok: false, cancelled: true });
+      cloud.arrive({ ok: false, cancelled: true });
       return Promise.resolve();
     }),
     reopen: vi.fn(() => Promise.resolve()),
@@ -86,7 +88,7 @@ beforeEach(() => {
   resetCloud();
   cloud.available = true;
   calls.length = 0;
-  for (const f of [cloud.signIn, cloud.cancel, cloud.connectComputer]) f.mockClear();
+  for (const f of [cloud.signIn, cloud.cancel, cloud.connectComputer, cloud.finish, cloud.notMe]) f.mockClear();
   window.location.hash = "#/onboarding";
 });
 afterEach(() => {
@@ -143,11 +145,81 @@ it("Sign in waits on the browser; Cancel comes back quietly, and a refusal says 
   expect(host.querySelector("[role='alert']")).toBeNull();
   click("Sign in");
   await act(async () => {
-    cloud.finish({ ok: false, failure: { code: "refused", message: "The browser came back without signing you in.", fix: "Nothing was changed. Sign in again." } });
+    cloud.arrive({ ok: false, failure: { code: "refused", message: "The browser came back without signing you in.", fix: "Nothing was changed. Sign in again." } });
     await new Promise((r) => setTimeout(r, 0));
   });
   expect(host.querySelector("[role='alert']")?.textContent).toContain("The browser came back without signing you in.");
   expect(button("Sign in again")).toBeDefined();
+});
+
+/** Sign in, and the browser comes back with this answer. */
+const arriveWith = async (arrival: { email: string; invitations: Array<{ name: string; invitedBy: string; role: string }> }) => {
+  click("Sign in");
+  await act(async () => {
+    cloud.arrive({ ok: true, arrival });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+};
+
+it("back from the browser, the first thing shown names the account; Not you signs out with nothing connected", async () => {
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({ email: "sam@example.com", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "admin" }] });
+  expect(screen()).toBe("onboarding.signed-in");
+  expect(host.querySelector("h1")?.textContent).toBe("Signed in as sam@example.com");
+  expect(host.textContent).toContain("Not you?");
+  expect(host.textContent).not.toContain("invited you");
+  expect(cloud.finish).not.toHaveBeenCalled();
+  click("Sign out");
+  await settle();
+  expect(cloud.notMe).toHaveBeenCalledTimes(1);
+  expect(cloud.finish).not.toHaveBeenCalled();
+  expect(screen()).toBe("onboarding.ways");
+});
+
+it("asks about each invitation before anything connects: Join and Not now, then the teams connect with the ones joined", async () => {
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({
+    email: "sam@example.com",
+    invitations: [
+      { name: "acme", invitedBy: "eve@other.example", role: "admin" },
+      { name: "side", invitedBy: "kai@example.com", role: "member" },
+    ],
+  });
+  click("Continue");
+  expect(screen()).toBe("onboarding.invited");
+  expect(host.querySelector("h1")?.textContent).toBe("eve@other.example invited you to acme");
+  expect(host.textContent).toContain("You'd join as an admin. Join only if you know who sent it.");
+  click("Not now");
+  expect(host.querySelector("h1")?.textContent).toBe("kai@example.com invited you to side");
+  expect(cloud.finish).not.toHaveBeenCalled();
+  click("Join");
+  await settle();
+  expect(cloud.finish).toHaveBeenCalledTimes(1);
+  expect(cloud.finish).toHaveBeenCalledWith([1]);
+});
+
+it("no team of their own and one invitation: still asked, and Not now joins nothing", async () => {
+  cloud.finish.mockImplementationOnce(() =>
+    Promise.resolve({ ok: false, failure: { code: "none_joined", message: "You didn't join a team, so you aren't signed in.", fix: "Sign in again when you want to join it." } }),
+  );
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({ email: "new@example.com", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }] });
+  click("Continue");
+  expect(host.querySelector("h1")?.textContent).toBe("eve@other.example invited you to acme");
+  click("Not now");
+  await settle();
+  expect(cloud.finish).toHaveBeenCalledWith([]);
+  expect(screen()).toBe("onboarding.ways");
+  expect(host.textContent).toContain("You didn't join a team, so you aren't signed in.");
+});
+
+it("a pairing link to a team of fleetd cloud says anyone can make one; a link to another hub doesn't", async () => {
+  await mount(<OnboardingScreen hub="https://security.fleetd.dev" code="ABCD-2345-WXYZ-6789" />, unpaired);
+  expect(host.textContent).toContain("This is a fleetd cloud team. Anyone can make one, so join only if you know who sent you this link.");
+  act(() => root.unmount());
+  host.remove();
+  await mount(<OnboardingScreen hub="https://hub.example:4790" code="ABCD-2345" />, unpaired);
+  expect(host.textContent).not.toContain("fleetd cloud team");
 });
 
 it("Connect a computer: makes a line with no machine name, opens this computer's terminal, and moves on when a machine joins", async () => {

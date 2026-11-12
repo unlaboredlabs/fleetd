@@ -8,16 +8,39 @@ export interface CloudState {
   readonly available: boolean;
   /** Who is signed in, or null. The app keeps the email and WorkOS's session id, never a WorkOS token. */
   readonly email: string | null;
+  /** The domain fleetd cloud's teams live under (`fleetd.dev`), from the build's accounts address; null without one. */
+  readonly domain: string | null;
 }
 
 /** One team of the account's, and whether this app got its key. */
 export type TeamOutcome = { readonly name: string; readonly ok: true } | { readonly name: string; readonly ok: false; readonly failure: PairFailure };
 
-/** How a sign-in ended. Cancelled ends quietly: the person pressed Cancel, or started another. */
+/** A pending invitation to a team, as the page asks about it: "<invitedBy> invited you to <name>". */
+export interface Invitation {
+  readonly name: string;
+  readonly invitedBy: string;
+  readonly role: string;
+}
+
+/**
+ * A sign-in's answer, held in main until the person says it's them: who signed in, and each invitation to ask about,
+ * by its place in this list. Nothing is connected yet.
+ */
+export interface Arrival {
+  readonly email: string;
+  readonly invitations: ReadonlyArray<Invitation>;
+}
+
+/** How the browser's part of a sign-in ended. Cancelled ends quietly: the person pressed Cancel, or started another. */
 export type SignInOutcome =
-  | { readonly ok: true; readonly email: string; readonly teams: ReadonlyArray<TeamOutcome> }
+  | { readonly ok: true; readonly arrival: Arrival }
   | { readonly ok: false; readonly cancelled: true }
   | { readonly ok: false; readonly cancelled?: undefined; readonly failure: PairFailure };
+
+/** How a sign-in ended once the person said it's them: the account's teams and the invitations joined, each connected or not. */
+export type FinishOutcome =
+  | { readonly ok: true; readonly email: string; readonly teams: ReadonlyArray<TeamOutcome> }
+  | { readonly ok: false; readonly failure: PairFailure };
 
 /** Signed out. `kept` names each team whose hub couldn't be told to drop this device's key (it was offline). */
 export interface SignOutOutcome {

@@ -1,5 +1,6 @@
 // fleetd cloud's Sign in, on a build that has it (src/main/cloud/fixture.ts reads each fixture's `cloud` section):
-// the first screen's two ways in, the wait for the browser and how a sign-in fails; Connect a computer on a team with
+// the first screen's two ways in, the wait for the browser and how a sign-in fails; back from it, who signed in and
+// an invitation asked about before anything connects; Connect a computer on a team with
 // no machine yet; the account's row in Settings; People on a team, where owners and admins invite by email; and
 // `cloud-admin`, the Hub group as a team's owner sees it, the hub's own controls (Updates, Restart hub, adding a machine
 // over SSH, setup steps) gone, as hub_info's leftOut says. Without a `cloud` section every other fixture is today's app.
@@ -74,6 +75,12 @@ export default defineGroup({
     unpaired("sign-in-refused", "Sign in came back from the browser without signing in.", {
       signIn: { failure: { code: "refused", message: "The browser came back without signing you in.", fix: "Nothing was changed. Sign in again." } },
     }),
+    unpaired("signed-in", "Back from the browser: who signed in, before anything connects.", {
+      signIn: { arrival: { email: EMAIL, invitations: [] } },
+    }),
+    unpaired("invited", "Back from the browser with an invitation from someone else's team: asked before it connects.", {
+      signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }] } },
+    }),
     unpaired("sign-in-timeout", "The sign-in page was left unfinished and ran out.", {
       signIn: { failure: { code: "timeout", message: "The sign-in page wasn't finished, so it ran out after 10 minutes." } },
     }),
@@ -110,7 +117,7 @@ export default defineGroup({
     })(),
     (() => {
       const f = Fixture.from(base("typical"), "cloud-account-signed-out", "Settings on a build with fleetd cloud, not signed in.");
-      f.cloud = {};
+      f.cloud = { signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }] } } };
       f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
       return f;
     })(),

@@ -4,20 +4,24 @@
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import type { CloudState, ConnectComputerOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import { cloudDomain, teamOrigin } from "../../shared/accounts";
+import type { CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
+import type { HubService } from "../hub/service";
 import { writePrivate } from "../hub/credentials";
 import { realTerminalDeps } from "../pairing/terminal";
 import { trustSystemCAs } from "../trust";
-import { CloudAccount, SavedAccount } from "./account";
-import { teamOrigin, type CloudConfig } from "./config";
+import { CloudAccount, SavedAccount, type CloudHub } from "./account";
+import type { CloudConfig } from "./config";
 import { connectComputer } from "./connect";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 export interface Cloud {
   state(): CloudState;
   signIn(): Promise<SignInOutcome>;
+  finish(join: readonly number[]): Promise<FinishOutcome>;
+  notMe(): Promise<void>;
   cancel(): void;
   reopen(): Promise<void>;
   link(): string | null;
@@ -63,30 +67,37 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
   const team = (id: HubId): KeyedTeam | null => {
     const hub = config === null ? undefined : hubs.cloudHubs().find((h) => h.id === id);
     const keyed = hub?.service.keyed() ?? null;
-    const origin = keyed === null ? null : teamOrigin(keyed.url, local);
+    const origin = keyed === null || config === null ? null : teamOrigin(keyed.url, config.accountsUrl, local);
     return hub === undefined || keyed === null || origin === null ? null : { origin, key: keyed.key, name: hub.label };
   };
+  const cloudHub = ({ id, label, service }: { id: HubId; label: string; service: HubService }): CloudHub => ({
+    id,
+    label,
+    url: service.url(),
+    call: (tool, input) => service.call({ tool, input: input as never }),
+    refused: () => service.state().phase === "refused",
+  });
   const account = new CloudAccount({
     config,
     local,
     fetch,
     open,
     deviceName,
-    connect: (url, key, label) => hubs.connectCloud({ url, key }, label),
-    cloudHubs: () =>
-      hubs.cloudHubs().map(({ id, label, service }) => ({
-        id,
-        label,
-        call: (tool, input) => service.call({ tool, input: input as never }),
-        refused: () => service.state().phase === "refused",
-      })),
+    connect: (url, key, label, invited) => hubs.connectCloud({ url, key }, label, invited),
+    cloudHubs: () => hubs.cloudHubs().map(cloudHub),
+    heldAt: (origin) => {
+      const held = hubs.heldAt(origin);
+      return held === null ? null : cloudHub(held);
+    },
     forget: (id) => hubs.remove(id),
     load: () => load(dir),
     save: (a) => save(dir, a),
   });
   return {
-    state: () => account.state(),
+    state: () => ({ ...account.state(), domain: config === null ? null : cloudDomain(config.accountsUrl) }),
     signIn: () => account.signIn(),
+    finish: (join) => account.finish(join),
+    notMe: () => account.notMe(),
     cancel: () => account.cancel(),
     reopen: () => account.reopen(),
     link: () => account.link(),

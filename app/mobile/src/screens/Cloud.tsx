@@ -2,13 +2,15 @@
 // in, a line each, Sign In and Use Your Own Hub; Connect a Computer, the chats list of a team with no computer yet;
 // and in Settings, the hubs this phone keeps with a tap to switch, and the fleetd account with Sign In or Sign Out.
 // Only a build given the cloud's two values (cloud/config.ts) shows any of it; any other is the self-hosted app alone.
+// Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
+// ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept).
 import { getRandomBytes } from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, StyleSheet, Text, View } from "react-native";
-import { signIn, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
+import { Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { signInAsking, type AfterSignInAsk, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
 import { builtCloudConfig, type CloudConfig } from "../cloud/config";
-import type { PairFailure } from "../desktop";
+import { invitationLine, invitationTitle, type PairFailure } from "../desktop";
 import { deviceName } from "../hub/deviceName";
 import { useHub } from "../hubContext";
 import { space, type, useTheme } from "../theme";
@@ -38,6 +40,24 @@ const ports = (config: CloudConfig): SignInPorts => ({
   deviceName: deviceName(),
 });
 
+/** The questions after the page, as iOS's alerts: neither can be dismissed without an answer. */
+const alertAsk: AfterSignInAsk = {
+  signedInAs: (email) =>
+    new Promise((resolve) =>
+      Alert.alert(`Signed in as ${email}`, "Not you? Sign out.", [
+        { text: "Sign Out", style: "destructive", onPress: () => resolve(false) },
+        { text: "Continue", style: "default", isPreferred: true, onPress: () => resolve(true) },
+      ], { cancelable: false }),
+    ),
+  invitation: (invitation) =>
+    new Promise((resolve) =>
+      Alert.alert(invitationTitle(invitation), invitationLine(invitation), [
+        { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+        { text: "Join", onPress: () => resolve(true) },
+      ], { cancelable: false }),
+    ),
+};
+
 /** A signed-in account's outcome, for the app to keep its teams' keys; a failure there is the keychain's. */
 export type OnSignedIn = (out: SignInOutcome & { ok: true }) => Promise<void>;
 
@@ -63,7 +83,7 @@ export function useSignIn(onSignedIn: OnSignedIn) {
     haptics.tap();
     setBusy(true);
     setNote(null);
-    void signIn(ports(cloud))
+    void signInAsking(ports(cloud), alertAsk)
       .then(async (out): Promise<PairFailure | null> => {
         if (!out.ok) return out.cancelled === true ? null : out.failure;
         missed = out.teams.filter((t): t is TeamOutcome & { ok: false } => !t.ok);
