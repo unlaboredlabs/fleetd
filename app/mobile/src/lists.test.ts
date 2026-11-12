@@ -37,8 +37,8 @@ describe("lists", () => {
 
   it("lists every chat as one, sorted by title when none spoke later, and keeps archived ones apart", () => {
     const projects = {
-      "m1/b": project("b", "Bea", { onlyMe: true }),
-      "m1/a": project("a", "Ada", { onlyMe: true }),
+      "m1/b": project("b", "Bea"),
+      "m1/a": project("a", "Ada"),
       "m1/old": project("old", "Old", { archivedAt: AT }),
       "m1/shop": project("shop", "storefront"),
     };
@@ -50,7 +50,7 @@ describe("lists", () => {
   });
 
   it("shows an archived project while an approval of its waits, as the badges count it", () => {
-    const projects = { "m1/a": project("a", "Ada", { onlyMe: true }), "m1/old": project("old", "Old", { archivedAt: AT }) };
+    const projects = { "m1/a": project("a", "Ada"), "m1/old": project("old", "Old", { archivedAt: AT }) };
     const waiting = { ...gated("r1"), projectRef: { machineId: "m1", projectId: "old" } };
     const out = lists({ projects, chatStates: {}, requests: [waiting] });
     expect(out?.needsYou.map((r) => [r.project.title, r.approvals])).toEqual([["Old", 1]]);
@@ -62,7 +62,7 @@ describe("lists", () => {
   });
 
   it("gives each row its badge, its newest message and its time", () => {
-    const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { onlyMe: true }) };
+    const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada") };
     const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 2, leadWorking: true, needsYou: false, lastMessageAt: "2026-10-28T12:00:00Z" } };
     const chat = {
       messages: [
@@ -87,7 +87,7 @@ describe("a long chat's preview", () => {
   const ref = { machineId: "m1", projectId: "a" };
   const m = (seq: number, author: string, text: string) => ({ messageId: `a-${String(seq)}`, projectRef: ref, seq, author, text, state: "final", createdAt: AT });
   const chatOf = (messages: ReturnType<typeof m>[], streams: Record<string, { text: string; at: string }> = {}) => ({ messages, streams, leadWaiting: {}, hasOlder: false, loadingOlder: false, held: [], loaded: true, missing: [] });
-  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { onlyMe: true }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.chats[0]?.preview;
+  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada") }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.chats[0]?.preview;
 
   it("is its newest line, the same each time it's drawn, and looks past a run of system lines", () => {
     const many = Array.from({ length: 300 }, (_, i) => m(i + 1, "lead", `Line **${String(i + 1)}**`));
@@ -119,7 +119,7 @@ describe("lists' order and previews", () => {
   it("puts who spoke last first, as Messages does", () => {
     const projects = {
       "m1/a": project("a", "Ada", { lastActivityAt: "2026-10-28T09:00:00Z" }),
-      "m1/b": project("b", "Bea", { onlyMe: true, lastActivityAt: "2026-10-28T08:00:00Z" }),
+      "m1/b": project("b", "Bea", { lastActivityAt: "2026-10-28T08:00:00Z" }),
     };
     const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
     expect(lists({ projects, chatStates, requests: [] })?.chats.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
@@ -212,7 +212,7 @@ describe("a lead's proposal for a new project", () => {
       preview: { title: "Create the project “Pricing page”", input: JSON.stringify(shown, null, 2), server: "fleetd", tool: "project_propose", action: "write" },
     },
   });
-  const shown = { machineId: "devbox", onlyMe: false, path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
+  const shown = { machineId: "devbox", path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
 
   it("shows all that approving it makes on the card's face, and its input under Details", () => {
     const view = approvalView(card(shown), "storefront");
@@ -222,19 +222,17 @@ describe("a lead's proposal for a new project", () => {
       { label: "Repo", value: "acme/pricing-page", mono: true },
       { label: "Folder", value: "/home/dev/src/pricing-page", mono: true },
       { label: "On", value: "devbox" },
-      { label: "Open to", value: "Everyone on this hub" },
       { label: "Asked", value: "mcp__fleetd__project_propose: Proposes a new project", lines: true },
     ]);
     expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input"]);
   });
 
-  it("says a project with no repo has none, and is the person's alone", () => {
-    const view = approvalView(card({ ...shown, repo: null, onlyMe: true, path: "/home/dev/fleetd/projects/pricing-page" }), "storefront");
-    expect(view.fields.slice(0, 4).map((f) => [f.label, f.value])).toEqual([
+  it("says a project with no repo has none", () => {
+    const view = approvalView(card({ ...shown, repo: null, path: "/home/dev/fleetd/projects/pricing-page" }), "storefront");
+    expect(view.fields.slice(0, 3).map((f) => [f.label, f.value])).toEqual([
       ["Repo", "None"],
       ["Folder", "/home/dev/fleetd/projects/pricing-page"],
       ["On", "devbox"],
-      ["Open to", "Only you"],
     ]);
   });
 
@@ -270,7 +268,7 @@ describe("an answered approval's line", () => {
 
 describe("chatList", () => {
   const projects = {
-    "m1/a": project("a", "Ada", { onlyMe: true, lastActivityAt: "2026-10-28T09:00:00Z" }),
+    "m1/a": project("a", "Ada", { lastActivityAt: "2026-10-28T09:00:00Z" }),
     "m1/b": project("b", "Bea", { lastActivityAt: "2026-10-28T11:00:00Z" }),
     "m1/shop": project("shop", "Shop", { lastActivityAt: "2026-10-28T10:00:00Z" }),
   };

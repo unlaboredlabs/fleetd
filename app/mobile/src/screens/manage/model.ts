@@ -1,15 +1,7 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
-// call (a member operates, an Only-me project is its owner's alone); these only leave out what it would refuse, and say
-// in the desktop's words what a delete does.
-import { deleteWords as eraseWords, foundRows, isOnlyMe, isYours, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+// call; these say in the desktop's words what a delete does.
+import { deleteWords as eraseWords, foundRows, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
-
-/**
- * Whether the person may manage it from the phone: rename, Only me, its approvals, payments, links, sign-ins,
- * archive and delete. A shared project: anyone who operates its machine, as the desktop's Settings › Projects. An
- * Only-me one: its owner alone; one with no owner, on a hub before people, is everyone's.
- */
-export const manages = (p: ProjectSummary, me: string | undefined): boolean => !isOnlyMe(p) || isYours(p, me);
 
 /** A machine's name, else its id. */
 export const machineName = (machines: readonly Machine[], machineId: string): string => machines.find((m) => m.machineId === machineId)?.name ?? machineId;

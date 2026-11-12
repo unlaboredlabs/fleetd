@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeHub } from "./hub/fake";
-import { addedWords, canAdd, IMPORT_MS, importClient, importedOf, importStep, initialImport, lostAnswer, needsOwnProject, NO_ONLY_ME_PROJECT, OLD_NO_NAVI_FIX, oldHub, OLD_HUB, type ImportMsg, type ImportState } from "./memoryImport";
+import { addedWords, canAdd, IMPORT_MS, importClient, importedOf, importStep, initialImport, lostAnswer, needsProject, NO_PROJECT, oldHub, OLD_HUB, type ImportMsg, type ImportState } from "./memoryImport";
 import { Session } from "./session";
 
 const run = (...msgs: ImportMsg[]): ImportState => msgs.reduce(importStep, initialImport);
@@ -83,20 +83,19 @@ describe("Add to Memory", () => {
 });
 
 describe("when the hub can't import", () => {
-  const NONE = { code: "invalid", reason: NO_ONLY_ME_PROJECT, message: "Import memory runs in a project that's only yours, so nobody else can read what you paste, and you have none yet.", fix: OLD_NO_NAVI_FIX };
+  const NONE = { code: "invalid", reason: NO_PROJECT, message: "Import memory runs in a project, and this hub has none yet.", fix: "Add a project first, then import again." };
 
-  it("offers New Project without one of your own, and keeps the paste for after", () => {
+  it("offers New Project when the hub has none, and keeps the paste for after", () => {
     const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NONE } });
-    expect(s.phase.t === "failed" && needsOwnProject(s.phase.error)).toBe(true);
+    expect(s.phase.t === "failed" && needsProject(s.phase.error)).toBe(true);
     expect(s.text).toBe("Ada, Berlin");
     expect(canAdd(s)).toBe(true);
-    // An older hub says it by its fix alone; a newer one's fix may change, its reason stays.
-    expect(needsOwnProject({ code: "invalid", message: "Import memory runs in your own Navi.", fix: OLD_NO_NAVI_FIX })).toBe(true);
-    expect(needsOwnProject({ code: "invalid", reason: NO_ONLY_ME_PROJECT, message: "No project of yours.", fix: "Make a project with Only me on, then import again." })).toBe(true);
-    expect(needsOwnProject({ code: "invalid", reason: "other", message: "Too long." })).toBe(false);
+    // Its fix may change, its reason stays.
+    expect(needsProject({ code: "invalid", reason: NO_PROJECT, message: "No project yet.", fix: "Add one." })).toBe(true);
+    expect(needsProject({ code: "invalid", reason: "other", message: "Too long." })).toBe(false);
     // Another refusal, or its machine offline, is said as it is.
-    expect(needsOwnProject({ code: "invalid", message: "Too long." })).toBe(false);
-    expect(needsOwnProject({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
+    expect(needsProject({ code: "invalid", message: "Too long." })).toBe(false);
+    expect(needsProject({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
   });
 
   it("says a hub from before memory_import needs an update, and adds nothing until it is", () => {

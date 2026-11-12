@@ -10,7 +10,7 @@ import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboa
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHub, type SettingsProps } from "../hubContext";
-import { addedWords, canAdd, IMPORT_MAX, importClient, importStep, initialImport, lostAnswer, needsOwnProject, oldHub } from "../memoryImport";
+import { addedWords, canAdd, IMPORT_MAX, importClient, importStep, initialImport, lostAnswer, needsProject, oldHub } from "../memoryImport";
 import { shape, space, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
@@ -143,9 +143,8 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
             <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{done.detail}</Text>
           </Animated.View>
         )}
-        {s.phase.t === "failed" && needsOwnProject(s.phase.error) ? (
-          // No project of their own yet: the hub's words, plainly, and New Project (Only me, as one with no repo starts),
-          // which comes back here with the paste.
+        {s.phase.t === "failed" && needsProject(s.phase.error) ? (
+          // No project yet: the hub's words, plainly, and New Project, which comes back here with the paste.
           <Animated.View entering={rowIn(reduce)} style={styles.noProject}>
             <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="alert">
               {s.phase.error.message}

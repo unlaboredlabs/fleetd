@@ -233,7 +233,7 @@ export function VaultEdit() {
           <CheckRow title={scopeWords(scope, project?.title)} checked disabled onPress={() => undefined} />
         </ListSection>
       ) : project === undefined && kind !== "env" && admin ? (
-        <ListSection header="Used by" footer={scope === "hub" ? "Every project's agents can fill it in. Only admins can change it or see it." : "Only work you start, and your Only me projects."}>
+        <ListSection header="Used by" footer={scope === "hub" ? "Every project's agents can fill it in. Only admins can change it or see it." : "Only work you start."}>
           {(["person", "hub"] as const).map((s) => (
             <CheckRow key={s} title={SCOPE_WORDS[s]} checked={scope === s} disabled={busy} onPress={() => {
                 haptics.select();

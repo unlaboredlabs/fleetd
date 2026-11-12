@@ -12,7 +12,6 @@ import { ListRow, ListSection } from "../../ui/List";
 import { Markdown } from "../../ui/Markdown";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
-import { manages } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 import { SkillTile, useSkillsChanged } from "./Skills";
 import { deleteSkill, readSkillView, turnSkillOff } from "./skillsApi";
@@ -33,7 +32,7 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
   // A fresh read says where the switch stands.
   useEffect(() => setOffNow(null), [r]);
   const v = r?.ok === true ? r.value : undefined;
-  const can = v === undefined || p === undefined ? undefined : offers(v.skill, manages(p, state.me));
+  const can = v === undefined ? undefined : offers(v.skill);
   const live = state.hub.phase === "live";
 
   useLayoutEffect(() => {

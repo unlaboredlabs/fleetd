@@ -123,14 +123,11 @@ export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
   }
 };
 
-/** The hub's reason when the person has no Only-me project of their own, where an import runs. */
-export const NO_ONLY_ME_PROJECT = "no_only_me_project";
+/** The hub's reason when it has no project yet, where an import runs. */
+export const NO_PROJECT = "no_project";
 
-/** An older hub's fix for the same, from before projects took Navis' place. */
-export const OLD_NO_NAVI_FIX = "Create a Navi first, then import again.";
-
-/** Refused for want of a project of their own: the screen offers New Project, and the paste stays for after. */
-export const needsOwnProject = (e: HubError): boolean => e.reason === NO_ONLY_ME_PROJECT || (e.code === "invalid" && e.fix === OLD_NO_NAVI_FIX);
+/** Refused for want of a project: the screen offers New Project, and the paste stays for after. */
+export const needsProject = (e: HubError): boolean => e.reason === NO_PROJECT;
 
 /** Add to Memory: something pasted, and not already on its way. */
 export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working" && !oldHub(s);

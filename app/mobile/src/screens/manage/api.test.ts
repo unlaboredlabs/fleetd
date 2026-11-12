@@ -2,21 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setOnlyMe, setPicture, setProfile, withPart } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
 
-const summary = (projectId: string, title: string, onlyMe?: true) => ({
+const summary = (projectId: string, title: string) => ({
   machineId: "devbox",
   projectId,
   title,
   workspaceRoot: `/home/ada/${projectId}`,
   lastActivityAt: AT,
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
-  ...(onlyMe === undefined ? {} : { onlyMe }),
 });
-const ADA = summary("ada", "Ada", true);
+const ADA = summary("ada", "Ada");
 const SHOP = summary("shop", "storefront");
 const REF = { machineId: "devbox", projectId: "shop" };
 
@@ -37,25 +36,13 @@ const flush = async () => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("Rename, Only me and Archive", () => {
+describe("Rename and Archive", () => {
   it("renames any project by its settings' title", async () => {
     const { hub, session, calls } = setup();
     const renamed = rename(session, ADA, "Ada Lovelace");
     expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", title: "Ada Lovelace" });
     hub.answer("project_settings_set", { settings: {} });
     await expect(renamed).resolves.toEqual({ ok: true, value: null });
-  });
-
-  it("turns Only me on or off by its settings", async () => {
-    const { hub, session, calls } = setup();
-    const on = setOnlyMe(session, SHOP, true);
-    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, onlyMe: true });
-    hub.answer("project_settings_set", { settings: {} });
-    await expect(on).resolves.toEqual({ ok: true, value: null });
-    const off = setOnlyMe(session, ADA, false);
-    expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", onlyMe: false });
-    hub.fail("project_settings_set", "forbidden", "Only its owner can share it.");
-    await expect(off).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
   });
 
   it("gives its bot a color by its settings, and a project keeps it in its summary", async () => {
@@ -220,11 +207,11 @@ describe("New Project", () => {
     const send = (msg: AddMsg) => {
       const [next, out] = addStep(s, msg, (id) => id);
       s = next;
-      for (const call of out) void addCall(session, call, "Web", false).then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of out) void addCall(session, call, "Web").then((outcome) => send({ t: "answer", call, outcome }));
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web", onlyMe: false });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web" });
     hub.answer("project_add", { addId: "a1", created: false, machineId: "devbox", path: "/home/ada/src/web" });
     await flush();
     hub.link.frame({ t: "event", seq: 2, type: "project.clone_progress", at: AT, data: { addId: "a1", phase: "receiving", percent: 40 } });
@@ -247,27 +234,26 @@ describe("New Project", () => {
     off();
   });
 
-  it("adds a folder as it is, unnamed when no name is typed, Only me off as the person left it", () => {
+  it("adds a folder as it is, unnamed when no name is typed", () => {
     const { session, calls } = setup();
-    // Off is sent too: the hub's own default for a folder with no git repo is on.
-    void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "", false);
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api", onlyMe: false });
-    // A dry run that inspects a clone's folder is never named, nor Only me.
-    void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web", true);
+    void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "");
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api" });
+    // A dry run that inspects a clone's folder is never named.
+    void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web");
     expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", dryRun: true });
   });
 
-  it("makes a new folder of its own, Only me as left on", async () => {
+  it("makes a new folder of its own", async () => {
     const { hub, session, calls } = setup();
     let s: AddState = { ...initialAdd, live: true };
     const send = (msg: AddMsg) => {
       const [next, out] = addStep(s, msg, (id) => id);
       s = next;
-      for (const call of out) void addCall(session, call, "Ada", true).then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of out) void addCall(session, call, "Ada").then((outcome) => send({ t: "answer", call, outcome }));
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "new", machineId: "devbox", name: "Ada", path: "/home/ada/projects/ada", gitInit: false }, path: "/home/ada/projects/ada" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true, onlyMe: true });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true });
     hub.answer("project_add", { addId: "a2", created: true, machineId: "devbox", path: "/home/ada/projects/ada" });
     await flush();
     hub.link.frame({
@@ -290,7 +276,7 @@ describe("New Project", () => {
 });
 
 describe("Session", () => {
-  it("reads who this phone's person is, whose Only-me projects are theirs", async () => {
+  it("reads who this phone's person is", async () => {
     const { hub, session } = setup();
     hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", me: { personId: "p_ada", name: "Ada", role: "member", createdAt: AT } });
     await flush();

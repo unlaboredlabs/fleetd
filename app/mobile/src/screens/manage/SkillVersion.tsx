@@ -13,7 +13,6 @@ import { haptics } from "../../ui/haptics";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { errorWords, Note, Problem, useRead } from "./parts";
-import { manages } from "./model";
 import { readSkill, restoreSkill } from "./skillsApi";
 import { diffChunks, diffSummary, offers, whoOf, type SkillRead } from "./skillsModel";
 
@@ -53,7 +52,7 @@ export function SkillVersion({ navigation, route }: ChatInfoProps<"SkillVersion"
   const { after, before } = r.value;
   const v = after.versions.find((x) => x.version === version);
   const current = after.versions[0]?.version === version;
-  const restorable = !current && offers(after.skill, manages(p, state.me)).edit && state.hub.phase === "live";
+  const restorable = !current && offers(after.skill).edit && state.hub.phase === "live";
   const chunks = diffChunks(before ?? "", after.text, open);
   const who = v === undefined ? undefined : whoOf(v, state.meName);
 
