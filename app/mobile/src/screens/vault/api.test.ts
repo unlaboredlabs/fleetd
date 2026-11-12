@@ -14,12 +14,12 @@ vi.mock("expo-crypto", () => ({
   },
 }));
 
-const { deleteItem, dismissImport, importItems, listItems, reveal, saveItem, sealToHub, searchOnePassword, usableCards, vaultErrorWords } = await import("./api");
+const { deleteItem, dismissImport, importItems, listItems, moveItem, reveal, saveItem, sealToHub, searchOnePassword, usableCards, vaultErrorWords } = await import("./api");
 const { openSealed, seal, toBase64, fromBase64, utf8, utf8Encode, keyPairOf } = await import("../../seal");
 
 const HUB = keyPairOf(new Uint8Array(randomBytes(32)));
 const STATUS = { hubBoxKey: toBase64(HUB.publicKey), locked: false };
-const SUMMARY = { itemId: "V1", kind: "card", scope: "person", label: "Visa", meta: { brand: "visa", last4: "4242" }, createdMs: 1, updatedMs: 1, updatedBy: "human:phone", version: 1, canEdit: true, canReveal: true };
+const SUMMARY = { itemId: "V1", kind: "card", scope: "hub", label: "Visa", meta: { brand: "visa", last4: "4242" }, createdMs: 1, updatedMs: 1, updatedBy: "human:phone", version: 1, canEdit: true, canReveal: true };
 
 /** A hub that answers each tool from `answers`, recording what it was called with. */
 const fake = (answers: Record<string, (input: Record<string, unknown>) => unknown>) => {
@@ -44,35 +44,54 @@ describe("saving an item", () => {
   it("seals the typed fields to the hub's key and sends nothing of them in the clear", async () => {
     const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
     const fields = { number: "4242424242424242", month: "04", year: "28", cvc: "123" };
-    const r = await saveItem(hub, { kind: "card", scope: "person", label: "Visa", fields });
+    const r = await saveItem(hub, { kind: "card", label: "Visa", fields });
     expect(r).toEqual({ ok: true, value: SUMMARY });
     const save = calls.find((c) => c.tool === "vault_save")!;
-    expect(save.input).toEqual({ kind: "card", scope: "person", label: "Visa", sealed: expect.any(String) });
+    expect(save.input).toEqual({ kind: "card", label: "Visa", sealed: expect.any(String) });
     expect(JSON.stringify(save.input)).not.toContain("4242424242424242");
     expect(opened(save.input.sealed as string)).toEqual(fields);
   });
 
   it("changes only the label without asking for the hub's key or sealing anything", async () => {
     const { hub, calls } = fake({ vault_save: () => ({ item: SUMMARY }) });
-    await saveItem(hub, { itemId: "V1", kind: "login", scope: "person", label: "Amazon", sites: ["amazon.com"], fields: {} });
-    expect(calls).toEqual([{ tool: "vault_save", input: { itemId: "V1", kind: "login", scope: "person", label: "Amazon", sites: ["amazon.com"] }, timeoutMs: undefined }]);
+    await saveItem(hub, { itemId: "V1", kind: "login", label: "Amazon", sites: ["amazon.com"], fields: {} });
+    expect(calls).toEqual([{ tool: "vault_save", input: { itemId: "V1", kind: "login", label: "Amazon", sites: ["amazon.com"] }, timeoutMs: undefined }]);
   });
 
   it("seals a cleared field as empty, which the hub's merge takes away", async () => {
     const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
-    await saveItem(hub, { itemId: "V1", kind: "address", scope: "person", label: "Home", sites: [], fields: { line2: "" } });
+    await saveItem(hub, { itemId: "V1", kind: "address", label: "Home", sites: [], fields: { line2: "" } });
     expect(opened(calls.find((c) => c.tool === "vault_save")!.input.sealed as string)).toEqual({ line2: "" });
   });
 
-  it("puts a project's item in that project, and a variable's name and secrecy beside it", async () => {
+  it("puts a new variable in its project, its name and secrecy beside it", async () => {
     const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
-    await saveItem(hub, { kind: "env", scope: "project", project: { machineId: "devbox", projectId: "p1", title: "x" } as never, label: "K", envName: "K", secret: false, fields: { value: "v" } });
+    await saveItem(hub, { kind: "env", project: { machineId: "devbox", projectId: "p1", title: "x" } as never, label: "K", envName: "K", secret: false, fields: { value: "v" } });
     expect(calls.at(-1)!.input).toEqual({ kind: "env", scope: "project", machineId: "devbox", projectId: "p1", label: "K", envName: "K", secret: false, sealed: expect.any(String) });
+  });
+
+  it("names no scope for a login, card or address, nor for a change: never the person's own or the hub's", async () => {
+    const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
+    const p1 = { machineId: "devbox", projectId: "p1" };
+    // A card added from a project's Payments goes to the team vault too.
+    await saveItem(hub, { kind: "card", project: p1, label: "Visa", fields: { number: "4242424242424242" } });
+    await saveItem(hub, { kind: "login", label: "Shop", sites: ["shop.example"], fields: { password: "p" } });
+    await saveItem(hub, { itemId: "V2", kind: "env", project: p1, label: "K", fields: { value: "w" } });
+    const saves = calls.filter((c) => c.tool === "vault_save").map((c) => c.input);
+    expect(saves).toHaveLength(3);
+    for (const s of saves) {
+      expect(s).not.toHaveProperty("scope");
+      expect(s).not.toHaveProperty("projectId");
+    }
+  });
+
+  it("says to update the app when a newer hub refuses an older one's scope", () => {
+    expect(vaultErrorWords({ code: "invalid", message: "This app is older than the hub: update it to add vault items.", reason: "vault_update_app" })).toMatch(/Update it/u);
   });
 
   it("refuses while the vault is locked, before anything is sealed", async () => {
     const { hub, calls } = fake({ vault_status: () => ({ ...STATUS, locked: true }) });
-    const r = await saveItem(hub, { kind: "login", scope: "person", label: "x", fields: { password: "p" } });
+    const r = await saveItem(hub, { kind: "login", label: "x", fields: { password: "p" } });
     expect(r).toMatchObject({ ok: false, error: { message: expect.stringMatching(/locked/u) } });
     expect(calls.map((c) => c.tool)).toEqual(["vault_status"]);
   });
@@ -122,24 +141,50 @@ describe("the rest", () => {
     expect(calls[0]!.input).toEqual({ kind: "card", machineId: "devbox", projectId: "p1", usable: true });
   });
 
-  it("lists the person's items, or a project's", async () => {
-    const own = { ...SUMMARY, itemId: "V2", scope: "project" };
-    const order = { ...SUMMARY, itemId: "V3", scope: "order", kind: "env" };
-    const newer = { ...SUMMARY, itemId: "V4", kind: "passport" };
-    const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, own, order, newer] }) });
-    expect(await listItems(hub, { kind: "mine" })).toEqual({ ok: true, value: [SUMMARY, own, order] });
-    expect(await listItems(hub, { kind: "project", project: { machineId: "devbox", projectId: "p1" } })).toEqual({ ok: true, value: [own, order] });
-    expect(calls.map((c) => c.input)).toEqual([{}, { machineId: "devbox", projectId: "p1" }]);
+  const own = { ...SUMMARY, itemId: "V2", scope: "project", kind: "env" };
+  const order = { ...SUMMARY, itemId: "V3", scope: "order", kind: "env" };
+  const mine = { ...SUMMARY, itemId: "V5", scope: "person", kind: "login" };
+  const newer = { ...SUMMARY, itemId: "V4", kind: "passport" };
+
+  it("lists the team vault, with the person's set-aside items apart", async () => {
+    const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, mine, newer] }) });
+    expect(await listItems(hub, { kind: "team" }, true)).toEqual({ ok: true, value: { items: [SUMMARY], setAside: [mine] } });
+    expect(calls.map((c) => c.input)).toEqual([{}]);
+  });
+
+  it("sets nothing aside when there's nothing to set aside", async () => {
+    const { hub } = fake({ vault_list: () => ({ items: [SUMMARY] }) });
+    expect(await listItems(hub, { kind: "team" }, true)).toEqual({ ok: true, value: { items: [SUMMARY], setAside: [] } });
+  });
+
+  it("lists an older hub's own and hub items as one list, its projects' left to them", async () => {
+    const { hub } = fake({ vault_list: () => ({ items: [SUMMARY, mine, own, order, newer] }) });
+    expect(await listItems(hub, { kind: "team" }, false)).toEqual({ ok: true, value: { items: [SUMMARY, mine], setAside: [] } });
+  });
+
+  it("lists a project's variables and its orders'", async () => {
+    const { hub, calls } = fake({ vault_list: () => ({ items: [own, order, newer] }) });
+    expect(await listItems(hub, { kind: "project", project: { machineId: "devbox", projectId: "p1" } }, true)).toEqual({ ok: true, value: { items: [own, order], setAside: [] } });
+    expect(calls.map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "p1" }]);
+  });
+
+  it("moves a set-aside item to the team vault, or a variable to a project", async () => {
+    const { hub, calls } = fake({ vault_move: (input) => ({ item: { ...SUMMARY, itemId: input.itemId, scope: input.projectId === undefined ? "hub" : "project" } }) });
+    expect(await moveItem(hub, "V5")).toMatchObject({ ok: true, value: { itemId: "V5", scope: "hub" } });
+    expect(await moveItem(hub, "V6", { machineId: "devbox", projectId: "p1", title: "Nova" } as never)).toMatchObject({ ok: true, value: { scope: "project" } });
+    expect(calls.map((c) => c.input)).toEqual([{ itemId: "V5" }, { itemId: "V6", machineId: "devbox", projectId: "p1" }]);
   });
 
   it("deletes to the trash, imports what was ticked, and dismisses a proposal", async () => {
     const { hub, calls } = fake({ vault_delete: () => ({}), vault_import: () => ({ items: [SUMMARY], errors: [] }) });
     expect(await deleteItem(hub, "V1")).toEqual({ ok: true, value: null });
-    expect(await importItems(hub, { proposalId: "P1", refs: ["op://v/a"], scope: "person" })).toEqual({ ok: true, value: { items: [SUMMARY], errors: [] } });
+    expect(await importItems(hub, { proposalId: "P1", refs: ["op://v/a"] })).toEqual({ ok: true, value: { items: [SUMMARY], errors: [] } });
+    expect(await importItems(hub, { refs: ["op://v/b"] })).toEqual({ ok: true, value: { items: [SUMMARY], errors: [] } });
     expect(await dismissImport(hub, "P1")).toEqual({ ok: true, value: null });
     expect(calls.map((c) => [c.tool, c.input])).toEqual([
       ["vault_delete", { itemId: "V1" }],
-      ["vault_import", { proposalId: "P1", refs: ["op://v/a"], scope: "person" }],
+      ["vault_import", { proposalId: "P1", refs: ["op://v/a"] }],
+      ["vault_import", { refs: ["op://v/b"] }],
       ["vault_import", { proposalId: "P1", dismiss: true }],
     ]);
     expect(calls[1]!.timeoutMs).toBe(240_000);

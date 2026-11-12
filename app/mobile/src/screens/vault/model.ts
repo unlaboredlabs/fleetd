@@ -1,15 +1,24 @@
 // The phone's Vault in the person's words, with no UI: each kind's fields and checks (a card's number by Luhn and its
 // brand, its expiry as MM/YY, a login's site cut from a pasted address, a variable's name by the hub's rule), the one
-// quiet line a row shows ("Visa ••4242", "amazon.com", "Germany", "Secret"), the scope tag, and the
-// list's sections and search. Values never come through here except as the person types them into a form; the lists
+// quiet line a row shows ("Visa ••4242", "amazon.com", "Germany", "Secret"), why a control is off, and the list's
+// sections and search. Values never come through here except as the person types them into a form; the lists
 // hold metadata alone.
-import type { HubState } from "../../desktop";
-import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind, VaultScope } from "./types";
+import { isArchived, type HubState, type ProjectSummary } from "../../desktop";
+import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind } from "./types";
 
 /** Whether the hub has a vault: an older one shows no Vault rows rather than a screen that fails. */
 export const vaultShown = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("vault") === true;
 
+/**
+ * Whether the hub keeps one team vault (logins, cards and addresses) with variables per project, and so sets aside a
+ * person's own items from before. An older hub still lists them as the person's own.
+ */
+export const teamVault = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("vault_team") === true;
+
 export const KINDS: readonly VaultKind[] = ["login", "card", "address", "env"];
+
+/** What the team vault holds; a project's Vault holds variables. */
+export const TEAM_KINDS: readonly VaultKind[] = ["login", "card", "address"];
 
 /** Whether a kind from the hub is one this app knows. */
 export const knownKind = (kind: string): kind is VaultKind => (KINDS as readonly string[]).includes(kind);
@@ -218,31 +227,18 @@ const BRAND_WORDS: Readonly<Record<string, string>> = { visa: "Visa", mastercard
 /** The hub's brand (`visa`) as printed on the card; one it doesn't know is just a card. */
 export const brandWord = (brand: string | undefined): string => (brand === undefined ? "Card" : (BRAND_WORDS[brand] ?? "Card"));
 
-/** Where an item may be used, when it isn't only its owner's work: a project's name, or Everyone for the hub's. */
-export const scopeTag = (item: Pick<VaultItemSummary, "scope" | "machineId" | "projectId" | "sharedWith">, projectName: (machineId: string, projectId: string) => string | undefined): string | undefined => {
-  const shared = item.sharedWith?.length ?? 0;
-  switch (item.scope) {
-    case "hub":
-      return "Everyone";
-    case "project":
-    case "order":
-      return item.machineId === undefined || item.projectId === undefined ? "Project" : (projectName(item.machineId, item.projectId) ?? "Project");
-    case "person":
-      if (shared === 0) return undefined;
-      if (shared === 1) {
-        const p = item.sharedWith![0]!;
-        return projectName(p.machineId, p.projectId) ?? "1 project";
-      }
-      return `${String(shared)} projects`;
-  }
-};
+/** Why someone may not show an item, or change or delete it: only its creator or an admin may. */
+export const NOT_SHOWN = "Only its creator or an admin can show it. Agents still fill it.";
+export const NOT_CHANGED = "Only its creator or an admin can change or delete it.";
 
-export const SCOPE_WORDS: Readonly<Record<VaultScope, string>> = {
-  person: "Only your work",
-  project: "This project",
-  order: "This order",
-  hub: "Every project",
-};
+/** What the person may not do with an item, and why: undefined for what they may (the hub's canReveal, canEdit). */
+export const offWhy = (item: Pick<VaultItemSummary, "canReveal" | "canEdit">): { show: string | undefined; change: string | undefined } => ({
+  show: item.canReveal ? undefined : NOT_SHOWN,
+  change: item.canEdit ? undefined : NOT_CHANGED,
+});
+
+/** The line under the set-aside section: why its items are there, and what to do with them. */
+export const SET_ASIDE_WHY = "Yours from before the team vault. Only you see them and nothing uses them until you move them.";
 
 /**
  * The title a row shows: a variable by its name, everything else by its label. A `request_secret` sink's item has an
@@ -276,6 +272,13 @@ export const sections = (items: readonly VaultItemSummary[], query: string): Sec
       .slice()
       .sort((a, b) => titleOf(a).localeCompare(titleOf(b))),
   })).filter((s) => s.items.length > 0);
+
+/** The projects a set-aside variable may go to: every one not archived, by title. */
+export const moveTargets = (projects: Readonly<Record<string, ProjectSummary>> | undefined): Array<{ key: string; title: string }> =>
+  Object.entries(projects ?? {})
+    .filter(([, p]) => !isArchived(p))
+    .map(([key, p]) => ({ key, title: p.title }))
+    .sort((a, b) => a.title.localeCompare(b.title));
 
 // ——— Forms ———
 
@@ -488,7 +491,7 @@ const ACTION_WORDS: Readonly<Record<string, string>> = {
   update: "Changed",
   delete: "Deleted",
   restore: "Restored",
-  share: "Sharing changed",
+  share: "Changed",
   import: "Imported from 1Password",
   purchase: "Paid",
   rotate: "Key rotated",
@@ -515,5 +518,5 @@ export const importOutcome = (card: Pick<VaultImportCard, "state" | "imported">)
   if (card.state === "open") return undefined;
   if (card.state === "dismissed") return "Not imported";
   const n = card.imported;
-  return n === undefined ? "Imported into your vault" : `Imported ${String(n)} ${n === 1 ? "item" : "items"} into your vault`;
+  return n === undefined ? "Imported into the vault" : `Imported ${String(n)} ${n === 1 ? "item" : "items"} into the vault`;
 };

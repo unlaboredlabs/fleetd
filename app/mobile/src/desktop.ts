@@ -67,7 +67,6 @@ export type {
   VaultImportCandidate as WireVaultImportCandidate,
   VaultImportCard as WireVaultImportCard,
   VaultItemSummary as WireVaultItemSummary,
-  VaultScope,
   VaultStatusOutput,
 } from "../../desktop/src/shared/contracts";
 export {

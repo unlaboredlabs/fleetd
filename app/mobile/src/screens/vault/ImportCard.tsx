@@ -1,6 +1,7 @@
 // A lead's proposal to bring items from the person's 1Password into the vault, as a card in its chat (a system
 // message's `vaultImport`, vault-design §6): why it asks, each item with its kind and site, ticked, a tap unticking it,
-// where they'll be used, and Import and Dismiss. Import is the one confirm the vault has: the items are read on a
+// and Import and Dismiss. They go where the proposal says: logins, cards and addresses to the team vault, variables to
+// the project or the order. Import is the one confirm the vault has: the items are read on a
 // machine holding the person's token and sealed to the hub there, so no value reaches the phone, the chat or the lead.
 // Once answered, one quiet line says how it went.
 import { useState } from "react";
@@ -13,7 +14,7 @@ import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { errorWords } from "../manage/parts";
 import { dismissImport, importItems, vaultErrorWords, vaultHub } from "./api";
-import { importOutcome, KIND_WORDS, knownKind, SCOPE_WORDS } from "./model";
+import { importOutcome, KIND_WORDS, knownKind } from "./model";
 import { KindTile } from "./parts";
 import type { VaultImportCard } from "./types";
 
@@ -52,7 +53,7 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
     setBusy(what);
     setProblem(undefined);
     const hub = vaultHub(session);
-    const r = what === "dismiss" ? await dismissImport(hub, card.proposalId) : await importItems(hub, { proposalId: card.proposalId, refs: ticked.map((i) => i.ref), scope: card.scope });
+    const r = what === "dismiss" ? await dismissImport(hub, card.proposalId) : await importItems(hub, { proposalId: card.proposalId, refs: ticked.map((i) => i.ref) });
     setBusy(null);
     if (!r.ok) {
       haptics.warning();
@@ -72,10 +73,7 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
     <Card>
       <View style={styles.head}>
         <Icon name="import" size={22} color={t.accent} />
-        <View style={styles.grow}>
-          <Text style={[type.headline, { color: t.label }]}>Import from 1Password</Text>
-          <Text style={[type.footnote, { color: t.secondary }]}>{`Into your vault · ${SCOPE_WORDS[card.scope]}`}</Text>
-        </View>
+        <Text style={[type.headline, styles.grow, { color: t.label }]}>Import from 1Password</Text>
       </View>
       {card.why.trim() === "" ? null : <Text style={[type.subhead, { color: t.label }]}>{card.why}</Text>}
       <View style={[styles.items, { backgroundColor: t.cell }]}>

@@ -1,7 +1,7 @@
 // Import from 1Password, a sheet from the Vault's +: the person's 1Password items (read on a machine holding their
 // token: titles, kinds and sites, never values), searched, ticked, and brought in with Import, the sheet's ✓. The
-// machine reads the ticked ones and seals them to the hub, so no value passes through the phone. From a project's
-// Vault they become that project's; from Settings, the person's own. After that 1Password is never asked again for them.
+// machine reads the ticked ones and seals them to the hub, so no value passes through the phone. They go to the team
+// vault, from Settings or a project's Payments alike. After that 1Password is never asked again for them.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useHub } from "../../hubContext";
@@ -12,8 +12,8 @@ import { ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { CheckRow, errorWords, Problem, sheetOptions } from "../manage/parts";
 import { importItems, searchOnePassword, vaultErrorWords, vaultHub } from "./api";
-import { KIND_WORDS, KINDS } from "./model";
-import { useVaultNav, useVaultRoute, whoseOf } from "./parts";
+import { KIND_WORDS, TEAM_KINDS } from "./model";
+import { useVaultNav } from "./parts";
 import type { VaultImportCandidate } from "./types";
 
 /** How long typing rests before the search goes. */
@@ -22,10 +22,8 @@ const TYPED_MS = 400;
 export function VaultImport() {
   const t = useTheme();
   const navigation = useVaultNav();
-  const key = useVaultRoute<"VaultImport">().params?.key;
-  const { state, session } = useHub();
+  const { session } = useHub();
   const hub = useMemo(() => vaultHub(session), [session]);
-  const { project } = whoseOf(state, key);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<readonly VaultImportCandidate[] | null>(null);
   const [searching, setSearching] = useState(true);
@@ -56,7 +54,7 @@ export function VaultImport() {
     if (busy || ticked.size === 0) return;
     setBusy(true);
     setProblem(undefined);
-    const r = await importItems(hub, { refs: [...ticked], scope: project === undefined ? "person" : "project", ...(project === undefined ? {} : { project }) });
+    const r = await importItems(hub, { refs: [...ticked] });
     setBusy(false);
     if (!r.ok) {
       haptics.warning();
@@ -90,7 +88,7 @@ export function VaultImport() {
     });
   };
 
-  const groups = KINDS.map((kind) => ({ kind, hits: (hits ?? []).filter((h) => h.kind === kind) })).filter((g) => g.hits.length > 0);
+  const groups = TEAM_KINDS.map((kind) => ({ kind, hits: (hits ?? []).filter((h) => h.kind === kind) })).filter((g) => g.hits.length > 0);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
       <View style={[styles.search, { backgroundColor: t.fill }]}>
@@ -134,7 +132,7 @@ export function VaultImport() {
       )}
       {groups.length === 0 ? null : (
         <Text style={[type.footnote, styles.note, { color: t.secondary }]}>
-          {project === undefined ? "They become yours: your work fills them in. " : `They become ${project.title}'s. `}Your machine reads them and seals them for the hub: no value passes through this phone.
+          They go to the team vault. Your machine reads them and seals them for the hub: no value passes through this phone.
         </Text>
       )}
     </ScrollView>
