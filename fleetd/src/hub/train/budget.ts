@@ -67,11 +67,14 @@ export class Budget {
     }
   }
 
-  /** GitHub refused for its rate limit: no call on the budget until the reset it names (capped), or a minute. When. */
+  /**
+   * GitHub refused for its rate limit: no call on the budget until `retry-after`, else the budget's reset when none of
+   * it is left (capped), else a minute (a secondary limit, with budget left). When.
+   */
   usedUp(owner: string, resource: string, headers: Map<string, string>): number {
     const now = this.now();
     const after = num(headers.get("retry-after"));
-    const reset = num(headers.get("x-ratelimit-reset"));
+    const reset = num(headers.get("x-ratelimit-remaining")) === 0 ? num(headers.get("x-ratelimit-reset")) : undefined;
     let until = after !== undefined ? now + after * 1000 : reset !== undefined ? reset * 1000 : now + LIMIT_WAIT_DEFAULT_MS;
     if (until <= now) until = now + LIMIT_WAIT_DEFAULT_MS;
     until = Math.min(until, now + LIMIT_WAIT_MAX_MS);
@@ -83,10 +86,16 @@ export class Budget {
     return a.usedUpUntil;
   }
 
-  /** When the account's limit resets, while it is used up. */
-  until(owner: string, resource = "core"): number | undefined {
-    const u = this.accounts.get(`${owner.toLowerCase()}\u0000${resource}`)?.usedUpUntil;
-    return u !== undefined && u > this.now() ? u : undefined;
+  /** When the account's limit resets, while it is used up; without `resource`, the last of its used-up ones. */
+  until(owner: string, resource?: string): number | undefined {
+    const now = this.now();
+    let last: number | undefined;
+    for (const [key, a] of this.accounts) {
+      const [o, r] = key.split("\u0000");
+      if (o !== owner.toLowerCase() || (resource !== undefined && r !== resource)) continue;
+      if (a.usedUpUntil !== undefined && a.usedUpUntil > now) last = Math.max(last ?? 0, a.usedUpUntil);
+    }
+    return last;
   }
 
   /** `ms`, or `SPREAD` times it while a budget of `owner` (any, without one) is under a tenth or used up. */

@@ -300,7 +300,10 @@ test("under a tenth of the budget left, the hub warns once with the reset time a
     // Used up: no call until its reset, which is capped.
     expect(budget.usedUp("unlaboredlabs", "core", at(0))).toBe(Date.parse("2026-11-12T08:17:00Z"));
     expect(budget.until("unlaboredlabs")).toBe(Date.parse("2026-11-12T08:17:00Z"));
-    expect(budget.usedUp("acme", "core", new Map([["x-ratelimit-reset", String(now / 1000 + 7200)]]))).toBe(now + LIMIT_WAIT_MAX_MS);
+    expect(budget.usedUp("acme", "core", new Map([["x-ratelimit-remaining", "0"], ["x-ratelimit-reset", String(now / 1000 + 7200)]]))).toBe(now + LIMIT_WAIT_MAX_MS);
+    // A secondary limit with budget left: GitHub's minute, not the hour's reset.
+    const left = new Map([["x-ratelimit-remaining", "4200"], ["x-ratelimit-reset", String(now / 1000 + 3000)]]);
+    expect(budget.usedUp("second", "core", left)).toBe(now + MINUTE);
     expect(budget.usedUp("other", "core", new Map([["retry-after", "30"]]))).toBe(now + 30_000);
     now = Date.parse("2026-11-12T08:17:01Z");
     expect(budget.until("unlaboredlabs")).toBeUndefined();
@@ -349,4 +352,46 @@ test("the train's loop polls less often while the budget is low, and sleeps to t
   expect(sleeps[2]).toBeGreaterThan(4 * MINUTE);
   expect(sleeps[2]).toBeLessThanOrEqual(5 * MINUTE);
   expect(gh!.refused).toBe(1);
+});
+
+test("the train's loop sleeps out a branch update's limit (GitHub's GraphQL budget) instead of running passes back to back", async () => {
+  // Each wait: how long, and how many calls GitHub had refused by then.
+  const sleeps: [number, number][] = [];
+  let gh: StandIn | undefined;
+  let stopped!: () => void;
+  const over = new Promise<void>((resolve) => (stopped = resolve));
+  const k: Kit = new Kit(
+    {
+      autoRun: true,
+      sleep: async (ms) => {
+        sleeps.push([ms, gh!.refused]);
+        k.clock.ms += ms;
+        if (k.train.records.latestFor(REPO, 7)?.state === "merged" || sleeps.length >= 200) {
+          k.train.stop();
+          stopped();
+        }
+        await Bun.sleep(0);
+      },
+    },
+    (fake, now) => (gh = new StandIn(fake, now)),
+  );
+  kits.push(k);
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  // Main moves on: the PR's branch is brought up to date before its CI, and GitHub refuses that for the limit.
+  k.commitMain({ "other.md": "other\n" });
+  gh!.trip = (args) => args[0] === "pr" && args[1] === "update-branch";
+  gh!.limitMs = MINUTE;
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await k.enqueue(7);
+    await over;
+  } finally {
+    warn.mockRestore();
+  }
+  expect(gh!.refused).toBe(1);
+  // The first wait after the refusal runs to the reset, a minute away, and the PR merges after it.
+  const after = sleeps.find(([, refused]) => refused === 1);
+  expect(after?.[0]).toBeGreaterThanOrEqual(MINUTE - 1000);
+  expect(k.change(7).state).toBe("merged");
+  expect(sleeps.length).toBeLessThan(200);
 });

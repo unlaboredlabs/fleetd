@@ -465,7 +465,7 @@ export class TrainGitHub {
     return out;
   }
 
-  /** When `repo`'s owner's REST budget, used up, resets. */
+  /** When `repo`'s owner's used-up budgets (REST, and GraphQL's for a branch update) reset: the last of them. */
   limitedUntil(repo: string): number | undefined {
     return this.budget.until(repo.split("/")[0] ?? "");
   }
