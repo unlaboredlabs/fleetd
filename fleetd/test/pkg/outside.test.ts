@@ -61,6 +61,25 @@ test("a project outside the repo installs the package, imports every entry point
   expect(bun(["main.ts"])).toEqual({ code: 0, out: String(names.length) });
   expect(typecheck("main.ts")).toEqual({ code: 0, out: "" });
 
+  // The tool prompt relay runs outside the hub, on the importer's own requests: a prompt files a card, a prompt gone
+  // closes it, and an approval answers the tool with exactly the input shown.
+  writeFileSync(join(project, "prompts.ts"), PROMPTS);
+  expect(bun(["prompts.ts"])).toEqual({
+    code: 0,
+    out: JSON.stringify({
+      filed: [["Q1", "denied", "expired: the run ended"], ["Q2", "approved", "allowed on devbox, answered by human:desk"]],
+      answers: [{ behavior: "allow", updatedInput: { command: "ls" } }],
+      project: { machineId: "devbox", projectId: "P1" },
+      confirmPays: true,
+      personOnly: false,
+      alwaysAsks: true,
+      plainVisit: false,
+      said: "Let through without asking you: `Bash`: ls. The checker's reason: asked for",
+      logged: "`Bash`: ls",
+    }),
+  });
+  expect(typecheck("prompts.ts")).toEqual({ code: 0, out: "" });
+
   // A type the package exports is the real one, not `any`: a wrong use fails.
   writeFileSync(join(project, "wrong.ts"), `import { TOOL_LIST } from "fleetd/tools";\nexport const n: number = TOOL_LIST[0]!.name;\n`);
   expect(typecheck("wrong.ts").out).toContain("wrong.ts(2,14): error TS2322");
@@ -70,3 +89,76 @@ test("a project outside the repo installs the package, imports every entry point
   expect(bun(["deep.ts"]).code).not.toBe(0);
   expect(typecheck("deep.ts").out).toContain("error TS2307");
 }, 120_000);
+
+/** The prompt relay and the Navi's prompt rules through the package, as fleetd cloud drives them over its own store. */
+const PROMPTS = `
+import type { HubEvent, HumanRequest } from "fleetd/contracts";
+import { projectOf } from "fleetd/hub/approvals/names";
+import { answerPrompt, onThreadEvent } from "fleetd/hub/approvals/permissions";
+import { personOnly } from "fleetd/hub/approvals/person_only";
+import { defaultHooks, type PermissionDecision, type PromptApprovals } from "fleetd/hub/approvals/ports";
+import { alwaysAsks, autoApprovedEntry, autoApprovedText } from "fleetd/hub/navi/checker_rules";
+import { TOOL } from "fleetd/hub/navi/confirm_rules";
+import { promptVerdict, visitCarriesData } from "fleetd/hub/navi/prompt_rules";
+
+const at = "2026-01-01T00:00:00.000Z";
+const rows: HumanRequest[] = [];
+const answers: PermissionDecision[] = [];
+let pending = { requestId: "r1", toolName: "Bash", summary: "ls", input: { command: "ls" } as unknown };
+const row = (id: string) => rows.find((r) => r.requestId === id)!;
+const a: PromptApprovals = {
+  deps: {
+    hooks: { ...defaultHooks(), naviLead: async () => true },
+    hub: { mcpServers: async () => [], wakeRequest: async () => {} },
+    nodes: { answerPermission: async (_m, _t, _r, d) => void answers.push(d), pendingPermission: async () => pending },
+    clock: { now: () => 0 },
+    events: { append: () => {}, head: () => 0, wait: async () => ({ events: [], cursor: 0 }) },
+  },
+  checking: new Set(),
+  idle: new Set(),
+  now: () => at,
+  listQuiet: (f) => rows.filter((r) => (!f.states || f.states.includes(r.state)) && (!f.kind || r.kind === f.kind)),
+  create: (add) => {
+    const r: HumanRequest = { requestId: "Q" + (rows.length + 1), projectRef: add.projectRef, kind: add.kind, text: add.text, state: "open", createdAt: add.at, permission: add.permission };
+    rows.push(r);
+    return r;
+  },
+  changeFrom: (id, from, f) => {
+    if (row(id).state !== from) throw new Error(id + " is not " + from);
+    f(row(id));
+    return row(id);
+  },
+  reopen: (id) => a.changeFrom(id, "approved", (r) => void (r.state = "open")),
+  note: (id, evidence) => Object.assign(row(id), { evidence }),
+  quietly: (f) => {
+    try {
+      return f();
+    } catch {
+      return undefined;
+    }
+  },
+};
+const event = (seq: number, type: string, requestId?: string): HubEvent => ({
+  seq, at, type, summary: type, machineId: "devbox", projectId: "P1", threadId: "T1",
+  ...(requestId ? { data: { permission: { requestId, toolName: "Bash", summary: "ls" } } } : {}),
+});
+await onThreadEvent(a, event(1, "thread.waiting", "r1"));
+await onThreadEvent(a, event(2, "thread.completed"));
+pending = { ...pending, requestId: "r2" };
+await onThreadEvent(a, event(3, "thread.waiting", "r2"));
+Object.assign(row("Q2"), { state: "approved", answeredBy: "human:desk" });
+await answerPrompt(a, row("Q2"), undefined);
+const pay = promptVerdict(TOOL, { site: "a.example", button: "Pay now", does: "Pays" }, undefined);
+const spend = { server: "shop", tool: "buy", action: "spend", title: "Buy", input: "{}" } as const;
+console.log(JSON.stringify({
+  filed: rows.map((r) => [r.requestId, r.state, r.evidence]),
+  answers,
+  project: projectOf(row("Q1")),
+  confirmPays: pay !== undefined && "deny" in pay,
+  personOnly: personOnly(row("Q2")),
+  alwaysAsks: alwaysAsks({ tool: "mcp__shop__buy", summary: "", input: {}, preview: spend }),
+  plainVisit: visitCarriesData({ url: "https://a.example/" }),
+  said: autoApprovedText({ tool: "Bash", summary: "ls", input: {} }, "checker", "asked for"),
+  logged: autoApprovedEntry({ tool: "Bash", summary: "ls", input: {} }, "yolo", undefined, 0).what,
+}));
+`;

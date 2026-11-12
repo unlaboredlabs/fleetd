@@ -167,7 +167,6 @@ export const allowed = (path: string): Taint[] => (path.startsWith("fleetd/test/
  * exported, fails test/pkg/purity.test.ts until its line goes.
  */
 export const LEFT_OUT: Record<string, string> = {
-  "fleetd/src/hub/approvals/ports.ts": "the ports of approvals' logic, which isn't pure yet (permissions.ts, purchases.ts)",
   "fleetd/src/hub/projects/avatar-worker.ts": "a worker thread's entry; the render it runs is exported (avatar-render.ts)",
   "fleetd/src/hub/tasks/lock.ts": "a lock inside one process; a second server locks rows",
   "fleetd/src/hub/train/host.ts": "the port of the train's logic, which isn't pure yet",

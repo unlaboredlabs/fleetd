@@ -13,6 +13,7 @@ import type { HumanRequest, PersonRef, ProjectRef, RequestState } from "../../sh
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../store/time.ts";
+import { AUTOMATION_CONFIRM_TOOL, PROJECT_PROPOSE_TOOL, projectOf } from "./names.ts";
 import { requestAttention } from "./outcome.ts";
 import { answerPrompt, refusePrompt } from "./permissions.ts";
 import {
@@ -41,6 +42,7 @@ import {
 } from "./rules.ts";
 import { clip, shownArgv } from "./text.ts";
 
+export { AUTOMATION_CONFIRM_TOOL, PROJECT_PROPOSE_TOOL, projectOf } from "./names.ts";
 export {
   GATED_DEFAULT_TIMEOUT_SEC,
   GATED_MAX_TIMEOUT_SEC,
@@ -90,11 +92,6 @@ export function storeRefusal(e: unknown): ToolError {
   console.error("approvals: request store failed:", e);
   return refuse("failed", "The hub failed while saving the request.", "Try again shortly.");
 }
-
-export const projectOf = (r: HumanRequest): ProjectRef => ({
-  machineId: r.projectRef.machineId,
-  projectId: r.projectRef.projectId,
-});
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
@@ -768,11 +765,6 @@ export class Approvals {
     }
   }
 }
-
-/** The Navi tool whose approval lets an automation run on its own (automations/calls.rs `CONFIRM_TOOL`). */
-export const AUTOMATION_CONFIRM_TOOL = "mcp__fleetd__automation_confirm";
-/** A lead's proposal for a new project (projects/propose.ts): asked in every approval mode, made only by a person's approval. */
-export const PROJECT_PROPOSE_TOOL = "mcp__fleetd__project_propose";
 
 /** The hub's approvals, `hub.area("approvals")`: `approvals(hub).requestSecret(…)`. */
 export const approvals = (hub: Hub) => hub.area("approvals", (h) => new Approvals(hubDeps(h)));
