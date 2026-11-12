@@ -323,8 +323,9 @@ export function prNumberIn(url: string, repoKey: string): number | undefined {
 /** Words that close an issue in a commit message, on GitHub, GitLab, Gitea and Bitbucket alike. */
 const CLOSING = new Set(["close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved", "implement", "implements", "implemented"]);
 
-/** Whether `text` closes `key` ("#12", "SHOP-12"): the key as a whole word right after a closing word. */
+/** Whether `text` closes `key` ("#12", "SHOP-12"): the key as a whole word right after a closing word. An empty key closes nothing. */
 export function closes(textRaw: string, keyRaw: string): boolean {
+  if (keyRaw === "") return false;
   const [text, key] = [textRaw.toLowerCase(), keyRaw.toLowerCase()];
   for (let at = text.indexOf(key); at >= 0; at = text.indexOf(key, at + 1)) {
     const after = [...text.slice(at + key.length)][0];

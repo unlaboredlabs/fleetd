@@ -58,3 +58,16 @@ test("a closed PR as GitHub answers it is merged only with a merge time", () => 
   expect(merged(pull)).toEqual({ number: 3, mergedAt: "2026-01-01T00:00:00Z", mergeSha: SHA, base: "main", head: "x", authorBot: true });
   expect(merged({ ...pull, merged_at: null })).toBeUndefined();
 });
+
+test("an empty issue key closes nothing, and its claim is matched at once", () => {
+  // `indexOf("", n)` past the end answers the text's length, never -1: the loop over a key's places never ended. Run
+  // in a process of its own, so a loop that doesn't end fails the test instead of hanging the run.
+  expect("fixes".indexOf("", 9)).toBe(5);
+  const script = `
+    import { claimMatch, closes } from ${JSON.stringify(`${import.meta.dir}/../src/hub/work/landing_rules.ts`)};
+    const landing = { repoKey: "github.com/acme/shop", base: "main", sha: "a", at: "", seenAt: "", route: "direct_push", subject: "feat: x", paths: [], claimIds: [] };
+    const claim = { claimId: "C1", title: "y", keys: [{ issue: "" }], paths: [] };
+    console.log(JSON.stringify([closes("fixes #12", ""), closes("", ""), claimMatch(claim, landing, "body") ?? null]));`;
+  const run = Bun.spawnSync([process.execPath, "-e", script], { timeout: 4_000, stdout: "pipe", stderr: "pipe" });
+  expect([run.exitCode, run.stdout.toString().trim(), run.stderr.toString()]).toEqual([0, "[false,false,null]", ""]);
+});
