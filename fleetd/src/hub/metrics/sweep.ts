@@ -39,19 +39,10 @@ import * as store from "./store.ts";
 import type { MergeRow } from "./store.ts";
 import { repoProjects } from "./tools.ts";
 import { mergedByHand } from "./touches.ts";
+import { due, headTask, landedSince, ORIGIN_EVERY_MS, ORIGIN_RETRY_MS, OVERLAP_MS, skipWhy } from "./rules.ts";
 
-/** A metrics read asks for a repo again once its last read is this old. */
-export const ON_READ_MS = 60_000;
-/** How often a repo with a merge in the last ACTIVE_FOR_MS is read. */
-export const ACTIVE_EVERY_MS = 15 * 60_000;
-/** How often any other repo is read. */
-export const QUIET_EVERY_MS = 60 * 60_000;
-export const ACTIVE_FOR_MS = 7 * store.DAY_MS;
-/** Each read starts this far before the last one, for host clocks and late updates; rows are idempotent. */
-const OVERLAP_MS = 10 * 60_000;
-/** A checkout's origin is asked of its node again after a day, or after ten minutes when the node didn't answer. */
-const ORIGIN_EVERY_MS = store.DAY_MS;
-const ORIGIN_RETRY_MS = 10 * 60_000;
+export { ACTIVE_EVERY_MS, ACTIVE_FOR_MS, due, firstParent, landedSince, ON_READ_MS, QUIET_EVERY_MS, skipWhy } from "./rules.ts";
+
 const TICK_MS = 60_000;
 
 /** The sweep's sources and when each repo was last tried. */
@@ -82,17 +73,6 @@ export class Sweep {
 
 /** The hub's sweep. A hub reads no git host until `start` gives it the real sources (loops.ts), as a test hub's never does. */
 export const sweepArea = (hub: Hub): Sweep => hub.area("metrics_sweep", () => new Sweep(noSources()));
-
-/** Whether a repo is due: never tried, asked for by a read a minute on, active and 15 minutes on, or an hour on. */
-export function due(lastTryMs: number | undefined, lastMergeMs: number | undefined, wanted: boolean, nowMs: number): boolean {
-  if (lastTryMs === undefined) return true;
-  const every = wanted
-    ? ON_READ_MS
-    : lastMergeMs !== undefined && nowMs - lastMergeMs < ACTIVE_FOR_MS
-      ? ACTIVE_EVERY_MS
-      : QUIET_EVERY_MS;
-  return nowMs - lastTryMs >= every;
-}
 
 /** Runs a pass now, then each minute and whenever a read asks, until the hub stops. */
 export async function run(hub: Hub): Promise<void> {
@@ -323,31 +303,6 @@ async function readRepo(hub: Hub, source: GitHostSource, remote: string, now: nu
   return out.length;
 }
 
-/** The default branch's own line: from its head, first parents only, as far as the commits read go. */
-export function firstParent(commits: LandedCommit[]): LandedCommit[] {
-  const bySha = new Map(commits.map((c) => [c.sha, c]));
-  const out: LandedCommit[] = [];
-  const seen = new Set<string>();
-  let next = commits[0];
-  while (next && !seen.has(next.sha)) {
-    seen.add(next.sha);
-    out.push(next);
-    next = next.firstParent === undefined ? undefined : bySha.get(next.firstParent);
-  }
-  return out;
-}
-
-/**
- * The default branch's commits since the last read: its line back to the head that read saw, whatever their dates (a
- * commit made earlier can be pushed later). With no head seen, or one no longer on the line (a force push), those made
- * since `sinceMs`.
- */
-export function landedSince(commits: LandedCommit[], headSeen: string | undefined, sinceMs: number): LandedCommit[] {
-  const line = firstParent(commits);
-  const i = headSeen === undefined ? -1 : line.findIndex((c) => c.sha.toLowerCase() === headSeen.toLowerCase());
-  return i >= 0 ? line.slice(0, i) : line.filter((c) => c.atMs >= sinceMs);
-}
-
 /** The commits already known as landed on the repo: merges and squashes the train or a PR left. */
 function knownShas(db: HubDb, remote: string): string[] {
   return db.conn
@@ -381,20 +336,6 @@ function changeOf(db: HubDb, repo: string, pr: number): Change | undefined {
 }
 
 const actorKind = (k: ActorKind): ActorKind | undefined => (k === "unknown" ? undefined : k);
-
-/**
- * Why a merged PR is not a landed change, beyond the projector's bots: into a base that isn't the repo's default
- * branch, or a merge-back (an upstream's default branch synced in). A branch other PRs merged into, merged into the
- * default branch (stacked PRs, `release` → `main`), is landed: the PRs into it were not, so the work counts once, as the
- * PR that reached the default branch.
- */
-export function skipWhy(pr: MergedPr, repoPath: string, info: RepoInfo): "other_base" | "merge_back" | undefined {
-  if (pr.base !== info.defaultBranch) return "other_base";
-  const head = pr.headRepo?.toLowerCase();
-  const sameRepo = head !== undefined && head === repoPath.toLowerCase();
-  const upstream = head !== undefined && info.upstream !== undefined && head === info.upstream.toLowerCase();
-  return (upstream && pr.headIsDefault) || (sameRepo && pr.head === info.defaultBranch) ? "merge_back" : undefined;
-}
 
 const defined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
@@ -495,13 +436,6 @@ function personActs(inner: HostActs, db: HubDb, nowMs: number): HostActs {
   };
 }
 
-/** The task a fleetd branch names: `fleetd/T12-…`, under any prefix (`slot/1/fleetd/T12-…`). */
-function branchTask(head: string): number | undefined {
-  const at = head.lastIndexOf("fleetd/T");
-  const n = at < 0 ? undefined : /^\d+/.exec(head.slice(at + "fleetd/T".length))?.[0];
-  return n === undefined ? undefined : Number(n);
-}
-
 /**
  * Whether an act on `remote` was made during a run of the fleetd task that wrote its PR: its Change's task, else the
  * task its `fleetd/T<n>` branch names when that task is one of this hub's projects with the repo (task numbers are this
@@ -521,7 +455,7 @@ export function agentsAct(db: HubDb, remote: string, act: HostAct, nowMs: number
     const digits = changeTask.slice(1);
     n = /^[+-]?\d+$/.test(digits) ? Number(digits) : undefined;
   } else {
-    const t = act.head === undefined ? undefined : branchTask(act.head);
+    const t = act.head === undefined ? undefined : headTask(act.head);
     n = t !== undefined && taskOnRepo(db, t, remote, path) ? t : undefined;
   }
   if (n === undefined) return false;

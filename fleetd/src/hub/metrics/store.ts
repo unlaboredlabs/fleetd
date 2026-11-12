@@ -3,21 +3,16 @@
 // inside the caller's transaction; the same SQL as Rust.
 import type { Database } from "bun:sqlite";
 import { ROLLUP_DAYS } from "../time/store.ts";
+import { DAY_MS, type MergeRow, type TouchRow } from "./rows.ts";
+
+export { DAY_MS, githubRemote, type MergeRow, SKIPPED, type TouchRow, trainRepo } from "./rows.ts";
 
 /** Landed changes and touches outlive the event log and spans: as long as the time roll-ups. */
 export const DEFAULT_RETENTION_DAYS = ROLLUP_DAYS;
 export const PRUNE_BATCH = 5_000;
-export const DAY_MS = 86_400_000;
 const RETENTION_KEY = "metrics_retention_days";
 /** In `time_cursors`: the event log's oldest event when the projector first ran. Merges are known from there on. */
 export const KNOWN_SINCE = "metrics:known_since";
-export const SKIPPED = "skipped";
-
-/** The repo key of a train's GitHub repo ("acme/web"): its remote, host first ("github.com/acme/web"). */
-export const githubRemote = (repo: string) => `github.com/${repo.toLowerCase()}`;
-
-/** The train's repo of a GitHub remote, the inverse of `githubRemote`. */
-export const trainRepo = (remote: string) => (remote.startsWith("github.com/") ? remote.slice("github.com/".length) : undefined);
 
 export function retentionDays(c: Database): number {
   const row = c.query<{ value: number }, [string]>("SELECT value FROM time_settings WHERE key = ?1").get(RETENTION_KEY);
@@ -40,39 +35,6 @@ export function prune(c: Database, nowMs: number): boolean {
   c.query("DELETE FROM metric_changes WHERE review_passed_ms < ?1").run(cutoff);
   return merges === PRUNE_BATCH || touches === PRUNE_BATCH;
 }
-
-/** One landed change (or a skipped merge). Absent fields leave a stored value as it is. */
-export type MergeRow = {
-  repo: string;
-  unitKey: string;
-  machineId?: string;
-  projectId?: string;
-  prNumber?: number;
-  mergedMs: number;
-  mergedSha?: string;
-  /** A MergeRoute, or "skipped" with `skipWhy`. */
-  route: string;
-  skipWhy?: string;
-  workstreamId?: string;
-  taskId?: string;
-  changeId?: string;
-  batchPr?: number;
-  requestedMs?: number;
-  requestedBasis?: string;
-  prCreatedMs?: number;
-  firstPrMs?: number;
-  reviewPassedMs?: number;
-  authorKind?: string;
-  mergedByKind?: string;
-  additions?: number;
-  deletions?: number;
-  title?: string;
-  url?: string;
-  seenClaim?: string;
-  src: string;
-  /** The merger's login on the git host, for the merge-by-hand touch. Not stored; reads give none. */
-  mergedBy?: string;
-};
 
 const MERGE_COLUMNS = `repo, unit_key, machine_id, project_id, pr_number, merged_ms, merged_sha, route, skip_why,
   workstream_id, task_id, change_id, batch_pr, requested_ms, requested_basis, pr_created_ms, first_pr_ms,
@@ -333,30 +295,6 @@ export function repos(c: Database): RepoRow[] {
       partlyRead: r.partly !== 0,
     }));
 }
-
-/** One act by the person. Idempotent on `(src, srcKey)`. */
-export type TouchRow = {
-  /** "chat", "request", "steer", "decision", "order", "merge", "app" or "host". */
-  src: string;
-  srcKey: string;
-  /** A TouchKind. */
-  kind: string;
-  /** When the act was recorded; the act itself took the `creditMs` before it. */
-  atMs: number;
-  creditMs: number;
-  /** An interval observed as it is (app use): `[atMs, endMs]`. */
-  endMs?: number;
-  machineId?: string;
-  projectId?: string;
-  repo?: string;
-  workstreamId?: string;
-  prNumber?: number;
-  /** The name of the key that made it, or the git host login. */
-  keyId?: string;
-  estimated: boolean;
-  /** On work fleetd didn't write. */
-  outside: boolean;
-};
 
 /** Writes a touch; a later read of the same act replaces what an earlier one said. */
 export function upsertTouch(c: Database, t: TouchRow): void {

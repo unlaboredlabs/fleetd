@@ -23,3 +23,23 @@ export function clip(text: string, max: number): string {
 export function cap<T>(items: T[], max: number): { items: T[]; truncated?: true } {
   return items.length > max ? { items: items.slice(0, max), truncated: true } : { items };
 }
+
+/** The machine-readable line in a batch PR's body naming each member and the head it was built from. */
+export const BATCH_MARKER = "fleetd-batch:";
+
+/** Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from. */
+export function batchHeads(body: string): [number, string | undefined][] {
+  const line = body
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.startsWith(BATCH_MARKER));
+  if (line === undefined) return [];
+  const out: [number, string | undefined][] = [];
+  for (const w of line.slice(BATCH_MARKER.length).split(/\s+/).filter(Boolean)) {
+    const bare = w.replace(/^#+/, "");
+    const at = bare.indexOf("@");
+    const [n, sha] = at < 0 ? [bare, undefined] : [bare.slice(0, at), bare.slice(at + 1).toLowerCase()];
+    if (/^[+-]?\d+$/.test(n)) out.push([Number(n), sha]);
+  }
+  return out;
+}

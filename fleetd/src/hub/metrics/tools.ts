@@ -18,38 +18,9 @@ import { Identities, attributed, REVIEW_MAX_MS } from "./human.ts";
 import * as store from "./store.ts";
 import { sweepArea } from "./sweep.ts";
 import { clock, zone } from "./zone.ts";
+import { GIT_UNKNOWN, HAS_API, HOST_NAMES, HOSTS, INVISIBLE, MAX_MERGES, MAX_REPOS, NEXT } from "./rules.ts";
 
-/** Landed changes listed per read, newest first. */
-export const MAX_MERGES = 1000;
-const MAX_REPOS = 200;
-
-/** What fleetd can't see of the person's time, for the info sheet. */
-const INVISIBLE = [
-  "Thinking and planning away from the keyboard, meetings and chat outside fleetd.",
-  "Time in an editor or IDE, or a Claude Code session not registered with fleetd.",
-  "Reading on the git host's website without leaving a review or comment.",
-  "How long a review took: git hosts keep only when it was submitted.",
-  "Work on machines with no fleetd node, or on a phone.",
-  "Typing in your own Claude Code sessions: fleetd doesn't read their transcripts.",
-  "Reading in the app, until the app reports when it is in use.",
-];
-
-/** What a repo read from git alone can't say (no_host.rs UNKNOWN). */
-export const GIT_UNKNOWN = [
-  "Who merged each change: git doesn't record it.",
-  "Whether a commit with no fleetd trailer was pushed straight or squash-merged from a PR on the host: it reads as pushed straight.",
-  "fleetd's work you merged by hand, when its commits carry no Fleetd-Task trailer and the merge doesn't name its fleetd/T… branch: it reads as merged outside fleetd or pushed straight.",
-  "Reviews and comments on the host, so your minutes on them.",
-  "When each PR was opened, so PR open to merged.",
-  "Bot accounts, except commits whose author ends in [bot].",
-  "Lines changed.",
-];
-
-/** Hosts the sweep has a source for; any other is read from git alone (source/mod.rs has_api). */
-const HAS_API = new Set(["github"]);
-
-const NEXT =
-  "Your minutes count what fleetd sees (chat, approvals, steers, decisions, orders, and reviews and comments on the git host made by your own login); coverage.invisible lists what it can't. A repo read from git alone lists in coverage.repos[].unknown what git can't say, such as who merged. Each repo is read again within a minute of this read.";
+export { GIT_UNKNOWN, MAX_MERGES } from "./rules.ts";
 
 const invalid = (message: string, fix?: string) => new ToolError("invalid", message, fix);
 
@@ -82,23 +53,6 @@ export function repoProjects(c: Database): compute.Projects {
   }
   return out;
 }
-
-const HOSTS: Record<string, GitHost> = {
-  github: "github",
-  gitlab: "gitlab",
-  gitea: "gitea",
-  bitbucket: "bitbucket",
-  azure_devops: "azure_devops",
-  git: "git",
-};
-
-const HOST_NAMES: Record<string, string> = {
-  github: "GitHub",
-  gitlab: "GitLab",
-  gitea: "Gitea",
-  bitbucket: "Bitbucket",
-  azure_devops: "Azure DevOps",
-};
 
 /** The status area's freshness of a source, peeked (D355): as its view shows it. */
 type FreshView = { asOfMs?: number; stale?: { sinceMs: number; reason: string } };

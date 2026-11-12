@@ -1,12 +1,16 @@
 import type { Hub } from "../api/hub.ts";
 import { every } from "../sweep/index.ts";
-import { realSources } from "./github.ts";
+import { systemGh } from "../train/gh.ts";
+import { GitHubSource } from "./github.ts";
 import { run } from "./project.ts";
 import type { HostSources } from "./source.ts";
 import { prune } from "./store.ts";
 import { run as runSweep, sweepArea } from "./sweep.ts";
 
 const PRUNE_EVERY_MS = 3_600_000;
+
+/** The shipped hub's sources: GitHub through the hub's `gh`, under its login (source/mod.rs `HostSources::real`). */
+export const realSources = (): HostSources => ({ github: new GitHubSource(systemGh) });
 
 /**
  * Starts this module's loops (Rust: metrics::start): the projector, the host sweep over `sources` (the hub's `gh` on a

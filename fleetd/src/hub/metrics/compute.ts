@@ -16,7 +16,7 @@ import type {
 } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 import * as human from "./human.ts";
-import { type MergeRow, SKIPPED, type TouchRow } from "./store.ts";
+import { type MergeRow, SKIPPED, type TouchRow } from "./rows.ts";
 import { addDays, dateText, dayStart, type LocalDate, localDate } from "./zone.ts";
 
 /** The day list's bound: a range is clamped to this many calendar days in its zone. */

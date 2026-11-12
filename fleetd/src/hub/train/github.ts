@@ -5,7 +5,9 @@
 import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
-import { TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
+import { BATCH_MARKER, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
+
+export { BATCH_MARKER, batchHeads } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
 import { Budget, limitNote, limitReset, limitText, rateLimited } from "./budget.ts";
 
@@ -91,25 +93,6 @@ export const held = (pull: Pull) => labelled(pull, HOLD_LABEL);
 /** GitHub found it conflicts with its base. Never while GitHub still works it out. */
 export const conflicts = (pull: Pull) => pull.mergeable === false || pull.mergeable_state === "dirty";
 
-/** The machine-readable line in a batch PR's body naming each member and the head it was built from. */
-export const BATCH_MARKER = "fleetd-batch:";
-
-/** Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from. */
-export function batchHeads(body: string): [number, string | undefined][] {
-  const line = body
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.startsWith(BATCH_MARKER));
-  if (line === undefined) return [];
-  const out: [number, string | undefined][] = [];
-  for (const w of line.slice(BATCH_MARKER.length).split(/\s+/).filter(Boolean)) {
-    const bare = w.replace(/^#+/, "");
-    const at = bare.indexOf("@");
-    const [n, sha] = at < 0 ? [bare, undefined] : [bare.slice(0, at), bare.slice(at + 1).toLowerCase()];
-    if (/^[+-]?\d+$/.test(n)) out.push([Number(n), sha]);
-  }
-  return out;
-}
 
 export type WorkflowRun = {
   id: number;

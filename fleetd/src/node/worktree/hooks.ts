@@ -6,18 +6,14 @@ import { isAbsolute, join } from "node:path";
 import { GitError, git } from "./index.ts";
 import type { Env } from "../util.ts";
 
+export { branchTask } from "../../shared/text.ts";
+
 export const TASK_TRAILER = "Fleetd-Task";
 /** In a commit's tree: the repo's pre-push check, `{"check": "<command>"}` (and `"background"`, `"wait"`). */
 export const DECLARED = ".fleetd/pre-push.json";
 /** In the worktree's git dir: the trees the check passed on, one per line. */
 export const CHECKED = "fleetd-checked";
 const DIR = "fleetd-push";
-
-/** The task a fleetd branch names: `fleetd/T12-…` → "T12". */
-export function branchTask(branch: string): string | undefined {
-  const m = /^fleetd\/T([1-9][0-9]*)/.exec(branch);
-  return m ? `T${m[1]}` : undefined;
-}
 
 /** `text` as one shell word. */
 export const quoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;

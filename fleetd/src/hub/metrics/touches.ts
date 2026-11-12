@@ -5,7 +5,10 @@ import type { ChatMessage, HubEvent, Workstream } from "../../shared/contracts.t
 import type { HubDb } from "../store/db.ts";
 import { parseMs } from "../store/time.ts";
 import * as human from "./human.ts";
-import type { MergeRow, TouchRow } from "./store.ts";
+import type { TouchRow } from "./store.ts";
+import { mergedByHand, number } from "./rules.ts";
+
+export { mergedByHand, number } from "./rules.ts";
 
 /** The answers to a request that are the person's act. */
 const ANSWERED = new Set(["approved", "denied", "stored"]);
@@ -13,12 +16,6 @@ const ANSWERED = new Set(["approved", "denied", "stored"]);
 type Data = Record<string, unknown>;
 const isObject = (v: unknown): v is Data => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (d: unknown, key: string) => (isObject(d) && typeof d[key] === "string" ? (d[key] as string) : undefined);
-
-/** "W12" → 12; -1 for anything else, which matches no row. */
-export function number(id: string): number {
-  const n = /^.(\d+)$/.exec(id)?.[1];
-  return n === undefined ? -1 : Number(n);
-}
 
 function touch(kind: string, src: string, srcKey: string, atMs: number, creditMs: number, more: Partial<TouchRow> = {}): TouchRow {
   return { src, srcKey, kind, atMs, creditMs, estimated: false, outside: false, ...more };
@@ -124,20 +121,6 @@ function order(w: Workstream): TouchRow | undefined {
     projectId: w.projectRef.projectId,
     workstreamId: w.workstreamId,
   });
-}
-
-/** A human account merged a PR by hand: keyed on the merger's login, so it counts only when that is the person's. */
-export function mergedByHand(m: MergeRow): TouchRow | undefined {
-  if (m.mergedByKind !== "human" || (m.route !== "fleetd_by_hand" && m.route !== "outside")) return undefined;
-  return touch("merge.by_hand", "merge", `${m.repo}#${m.unitKey}`, m.mergedMs, human.MERGE_BY_HAND_MS, defined({
-    machineId: m.machineId,
-    projectId: m.projectId,
-    repo: m.repo,
-    workstreamId: m.workstreamId,
-    prNumber: m.prNumber,
-    keyId: m.mergedBy,
-    outside: m.route === "outside",
-  }));
 }
 
 export function workstream(db: HubDb, id: string): Workstream | undefined {

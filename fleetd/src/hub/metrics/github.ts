@@ -5,13 +5,11 @@
 // counts through that review, not on its own. What fleetd posted itself (`fleetdPosted`) is not the person's act and
 // isn't returned. Pages stop once past the cursor, and at a bound so a first read of a busy repo can't run away.
 import type { ActorKind } from "../../shared/contracts.ts";
-import { clip } from "../api/refusals.ts";
-import { explain } from "../prs/github.ts";
+import { explain } from "../prs/shapes.ts";
 import { isoMs, parseMs } from "../store/time.ts";
-import { type GhRunner, systemGh } from "../train/gh.ts";
-import { batchHeads } from "../train/github.ts";
-import type { HostAct, HostActKind, HostActs } from "./host_acts.ts";
-import { fleetdPosted, type GitHostSource, HostError, type HostSources, type LandedCommit, type MergedPr, type MergedRead, type RepoInfo, type RepoRef } from "./source.ts";
+import { batchHeads, clip } from "../train/text.ts";
+import type { HostAct, HostActKind, HostActs } from "./source.ts";
+import { fleetdPosted, type GitHostSource, HostError, type LandedCommit, type MergedPr, type MergedRead, type RepoInfo, type RepoRef } from "./source.ts";
 
 /** Pages of merged PRs read at most per sweep: a 90-day first read of a busy repo stops at 2,000 PRs. */
 export const MERGED_PAGES = 20;
@@ -192,8 +190,8 @@ function mergedPr(n: MergedNode): MergedPr | undefined {
 /** A git identity GitHub gives its apps: `name[bot]`, `…[bot]@users.noreply.github.com`. */
 const botIdentity = (a: CommitNode["author"]) => (a?.name?.endsWith("[bot]") ?? false) || (a?.email?.includes("[bot]@") ?? false);
 
-/** The shipped hub's sources: GitHub through the hub's `gh`, under its login (source/mod.rs `HostSources::real`). */
-export const realSources = (): HostSources => ({ github: new GitHubSource(systemGh) });
+/** One `gh` run (train/gh.ts `GhRunner`): the shipped hub's `systemGh` (loops.ts), or what answers its calls elsewhere. */
+export type GhRunner = { run(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> };
 
 export class GitHubSource implements GitHostSource, HostActs {
   constructor(private readonly gh: GhRunner) {}
