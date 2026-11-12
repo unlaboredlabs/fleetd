@@ -1,7 +1,9 @@
 // The paired hub, kept in the platform's secure storage (Keychain, Keystore): its address, its name and this phone's
-// key; the phone's notification key; and which chats are muted, for the notification extension.
+// key; every hub this phone has a key for, the one shown among them; who is signed in to fleetd cloud; the phone's
+// notification key; and which chats are muted, for the notification extension.
 import { getRandomBytes } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
+import type { KeptHub, SavedAccount } from "./cloud/account";
 import type { Paired } from "./hub/pair";
 import { fromBase64, keyPairOf, toBase64, type KeyPair } from "./seal";
 
@@ -31,6 +33,46 @@ export const loadPaired = async (): Promise<Paired | null> => {
 const savePaired = (paired: Paired): Promise<void> => SecureStore.setItemAsync(KEY, JSON.stringify(paired), HUB);
 
 export const forgetPaired = (): Promise<void> => SecureStore.deleteItemAsync(KEY);
+
+// Every hub this phone keeps a key for, the shown one too, as one item of the same class as the shown hub's: a person
+// with fleetd cloud's teams and a hub of their own switches between them in Settings. The shown one stays in
+// "fleetd.hub" as well, which the extensions read.
+const HUBS = "fleetd.hubs";
+const ACCOUNT = "fleetd.account";
+
+const keptOf = (o: unknown): KeptHub | null => {
+  const { hub, key, hubName, cloud } = (typeof o === "object" && o !== null ? o : {}) as Record<string, unknown>;
+  if (typeof hub !== "string" || typeof key !== "string" || hub === "" || key === "") return null;
+  return { hub, key, hubName: typeof hubName === "string" ? hubName : hub, ...(cloud === true ? { cloud: true as const } : {}) };
+};
+
+/** The hubs kept, with `shown` among them: one paired before this list was kept is its only hub. */
+export const loadHubs = async (shown: Paired | null): Promise<KeptHub[]> => {
+  let list: KeptHub[] = [];
+  try {
+    const parsed: unknown = JSON.parse((await SecureStore.getItemAsync(HUBS, HUB)) ?? "[]");
+    list = Array.isArray(parsed) ? parsed.flatMap((o) => keptOf(o) ?? []) : [];
+  } catch {
+    list = [];
+  }
+  return shown === null || list.some((h) => h.hub === shown.hub) ? list : [...list, shown];
+};
+
+export const saveHubs = (hubs: readonly KeptHub[]): Promise<void> =>
+  hubs.length === 0 ? SecureStore.deleteItemAsync(HUBS, HUB) : SecureStore.setItemAsync(HUBS, JSON.stringify(hubs), HUB);
+
+/** Who is signed in to fleetd cloud: the email and WorkOS's session id, nothing else of WorkOS. */
+export const loadAccount = async (): Promise<SavedAccount | null> => {
+  try {
+    const { email, sessionId } = JSON.parse((await SecureStore.getItemAsync(ACCOUNT, HUB)) ?? "null") as Partial<SavedAccount>;
+    return typeof email === "string" && typeof sessionId === "string" ? { email, sessionId } : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveAccount = (account: SavedAccount | null): Promise<void> =>
+  account === null ? SecureStore.deleteItemAsync(ACCOUNT, HUB) : SecureStore.setItemAsync(ACCOUNT, JSON.stringify(account), HUB);
 
 // This phone's notification key pair for the hub (push.ts): only its secret key is kept, under the service the iOS
 // Notification Service Extension reads (plugins/notification-service), after first unlock so a locked phone still opens

@@ -1,19 +1,20 @@
 // Pairing (D232): a welcome with the app's mark and two ways in. Scan QR Code opens the camera on the code the hub
 // shows (`fleetd pair`, or the desktop app), and a valid one pairs in one step; iOS's Camera opens the same link in
-// the app (App.tsx). Enter Code Manually is the hub's address and the code, as the desktop app's connect screen asks;
+// the app (App.tsx). A build given fleetd cloud's values welcomes with Sign In and Use Your Own Hub first (Cloud.tsx),
+// the second opening this welcome again with the two ways to pair. Enter Code Manually is the hub's address and the code, as the desktop app's connect screen asks;
 // a code or a whole pairing link on the clipboard pastes into it.
 import { useHeaderHeight } from "@react-navigation/elements";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { BlurView } from "expo-blur";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
-import * as Device from "expo-device";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { normalizeCode, type PairFailure } from "../desktop";
 import type { PairParams } from "../hubContext";
+import { deviceName } from "../hub/deviceName";
 import { pair, type Paired } from "../hub/pair";
 import { pairLinkStep, parsePairLink } from "../hub/pairLink";
 import { mono, space, TOUCH, type, useTheme } from "../theme";
@@ -22,8 +23,8 @@ import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { ListSection } from "../ui/List";
-
-const deviceName = (): string => Device.deviceName ?? (Platform.OS === "ios" ? "iPhone" : "Android phone");
+import { cloud, Ways, type OnSignedIn } from "./Cloud";
+import { firstScreen } from "../cloud/config";
 
 /** What the clipboard holds for pairing: a whole pairing link, or a code ("ABCD-2345", or the line it's printed in). */
 const pasted = async (): Promise<{ hub?: string; code: string } | undefined> => {
@@ -39,9 +40,11 @@ const pasted = async (): Promise<{ hub?: string; code: string } | undefined> => 
   }
 };
 
-export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams, "Welcome"> & { note: string | undefined }) {
+export function Welcome({ navigation, note, onSignedIn, own = false }: NativeStackScreenProps<PairParams, "Welcome" | "OwnHub"> & { note: string | undefined; onSignedIn: OnSignedIn; own?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  // A build with fleetd cloud's values gives both ways in first; Use Your Own Hub is this same screen with the pairing's.
+  const ways = firstScreen(cloud, own) === "ways";
   return (
     <View style={[styles.welcome, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space.lg) + space.sm }]}>
       <View style={styles.hero}>
@@ -50,16 +53,20 @@ export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams,
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
-        <Text style={[type.body, styles.center, { color: t.secondary }]}>Your projects and approvals, from your own hub.</Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways ? "Your projects and approvals." : "Your projects and approvals, from your own hub."}</Text>
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
-      <View style={styles.actions}>
-        <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
-        <Button label="Enter Code Manually" kind="plain" size="large" onPress={() => navigation.navigate("Pair")} />
-        <Text style={[type.footnote, styles.center, styles.hint, { color: t.secondary }]}>
-          Your hub shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app.
-        </Text>
-      </View>
+      {ways ? (
+        <Ways onOwn={() => navigation.navigate("OwnHub")} onSignedIn={onSignedIn} />
+      ) : (
+        <View style={styles.actions}>
+          <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
+          <Button label="Enter Code Manually" kind="plain" size="large" onPress={() => navigation.navigate("Pair")} />
+          <Text style={[type.footnote, styles.center, styles.hint, { color: t.secondary }]}>
+            Your hub shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app.
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

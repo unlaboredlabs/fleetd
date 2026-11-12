@@ -2,8 +2,9 @@
 import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
+import type { KeptHub, SavedAccount } from "./cloud/account";
 import type { SkillOrigin } from "./desktop";
-import type { Paired } from "./hub/pair";
+import type { OnSignedIn } from "./screens/Cloud";
 import type { AgentMessage } from "./screens/dms/model";
 import type { VaultItemSummary, VaultKind } from "./screens/vault/types";
 import type { Filter } from "./lists";
@@ -13,9 +14,20 @@ import type { Key, State } from "./store";
 export interface HubContextValue {
   readonly session: Session;
   readonly state: State;
-  readonly paired: Paired;
+  /** The hub shown. */
+  readonly paired: KeptHub;
   /** Asks first, then signs this phone out on the hub and forgets it. */
   readonly disconnect: () => void;
+  /** Every hub this phone keeps a key for, the one shown among them. */
+  readonly hubs: readonly KeptHub[];
+  /** Who is signed in to fleetd cloud, or null. */
+  readonly account: SavedAccount | null;
+  /** Shows another hub this phone keeps, whose notifications then come here in this one's place. */
+  readonly switchTo: (hub: KeptHub) => void;
+  /** Keeps a sign-in's teams beside the hubs kept, and shows the first. */
+  readonly signedIn: OnSignedIn;
+  /** Asks first, then drops this phone's key on every team of the account and ends its session. */
+  readonly signOutCloud: () => Promise<void>;
 }
 
 export const HubContext = createContext<HubContextValue | null>(null);
@@ -120,6 +132,8 @@ export type SettingsParams = {
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;
 export type PairParams = {
   Welcome: undefined;
+  /** Use Your Own Hub, from a first screen that offers fleetd cloud's Sign In too: the welcome with the pairing's two ways. */
+  OwnHub: undefined;
   Scan: undefined;
   /** A scanned or opened pairing link's hub and code, which `auto` pairs with at once. */
   Pair: { hub?: string; code?: string; auto?: boolean } | undefined;

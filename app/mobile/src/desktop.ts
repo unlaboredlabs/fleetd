@@ -2,9 +2,9 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its approvals', payments' and linked hubs' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that
-// import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml runs this app's checks
-// when they change.
+// state glyph's frames, the lead's turn line's words, the New screen picker's machines, and fleetd cloud's accounts
+// call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
+// runs this app's checks when they change.
 export type {
   ApprovalDecision,
   AttachmentGetOutput,
@@ -69,7 +69,7 @@ export type {
   VaultScope,
   VaultStatusOutput,
 } from "../../desktop/src/shared/contracts";
-export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../desktop/src/shared/contracts";
+export { ACCOUNTS_APP_REDIRECT, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, type AccountsSignInInput } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";

@@ -9,6 +9,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "types": ["node"],
+    // The repo's fakes (fleetd/test, as fleetd/fakes/accounts), which the tests import, name their imports' .ts.
+    "allowImportingTsExtensions": true,
     // The desktop modules the app imports (src/desktop.ts) find React here, as Metro and vitest do.
     "paths": { "react": ["./node_modules/@types/react"] }
   },

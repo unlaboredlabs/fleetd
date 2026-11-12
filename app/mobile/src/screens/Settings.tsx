@@ -1,6 +1,7 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
-// (how the link is, its address and version), for an admin Restart Hub and its update, the Vault (screens/vault) on a
+// (how the link is, its address and version), the hubs this phone keeps to switch between and the fleetd account
+// (Cloud.tsx), for an admin Restart Hub and its update, the Vault (screens/vault) on a
 // hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
@@ -22,6 +23,7 @@ import { shortVersion } from "../updates";
 import { removeMyPicture, setMyName } from "./manage/api";
 import { errorWords } from "./manage/parts";
 import { fromLibrary } from "./manage/pick";
+import { CloudSettings } from "./Cloud";
 import { RestartHub } from "./RestartHub";
 import { UpdateFleetd } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
@@ -135,6 +137,7 @@ export function Settings() {
           />
         ) : null}
       </ListSection>
+      <CloudSettings />
       <RestartHub />
       <UpdateFleetd />
       {vaultShown(hub) ? (

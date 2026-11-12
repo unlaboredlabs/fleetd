@@ -17,7 +17,7 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("expo-crypto", () => ({ getRandomBytes: (n: number) => new Uint8Array(randomBytes(n)) }));
 
-const { forgetPaired, forgetPush, loadPaired, loadPushDevice, loadPushKeys, pairWith, pushKeys, saveMuted, savePushDevice } = await import("./vault");
+const { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, loadPushDevice, loadPushKeys, pairWith, pushKeys, saveAccount, saveHubs, saveMuted, savePushDevice } = await import("./vault");
 const { toBase64 } = await import("./seal");
 
 beforeEach(() => {
@@ -66,5 +66,35 @@ describe("the muted chats", () => {
     expect(store.get("fleetd.push/fleetd.muted-chats")).toBe('["devbox/ada","devbox/shop"]');
     await saveMuted([]);
     expect(store.get("fleetd.push/fleetd.muted-chats")).toBe("[]");
+  });
+});
+
+describe("the hubs kept, and the fleetd account", () => {
+  const own = { hub: "http://devbox:4790", key: "fleetd_a", hubName: "devbox" };
+  const team = { hub: "https://acme.fleetd.dev", key: "fleetd_b", hubName: "acme", cloud: true as const };
+
+  it("keeps every team's key as the shown hub's is kept: after first unlock, this phone only", async () => {
+    await saveHubs([own, team]);
+    await saveAccount({ email: "ada@example.com", sessionId: "session_1" });
+    expect(access.get("/fleetd.hubs")).toBe(0);
+    expect(access.get("/fleetd.account")).toBe(0);
+    expect(await loadHubs(own)).toEqual([own, team]);
+    expect(await loadAccount()).toEqual({ email: "ada@example.com", sessionId: "session_1" });
+    // Only the email and the session id: nothing else of WorkOS.
+    expect(Object.keys(JSON.parse(store.get("/fleetd.account")!) as object).sort()).toEqual(["email", "sessionId"]);
+  });
+
+  it("a hub paired before the list was kept is its only hub", async () => {
+    expect(await loadHubs(own)).toEqual([own]);
+    expect(await loadHubs(null)).toEqual([]);
+  });
+
+  it("signed out and with nothing left, keeps nothing", async () => {
+    await saveHubs([team]);
+    await saveAccount({ email: "ada@example.com", sessionId: "session_1" });
+    await saveHubs([]);
+    await saveAccount(null);
+    expect(store.has("/fleetd.hubs")).toBe(false);
+    expect(await loadAccount()).toBeNull();
   });
 });

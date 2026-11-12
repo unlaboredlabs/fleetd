@@ -286,6 +286,22 @@ describe("Disconnect", () => {
     expect(await out).toEqual({ ok: true });
   });
 
+  it("counts the hub closing the link on the key it just revoked as signed out", async () => {
+    const hub = fakeHub();
+    const os = fakeOs();
+    const session = new Session({ hub: "http://devbox:4790", key: "fld_abcdefxyz", transport: hub.transport, push: os.deps });
+    session.start();
+    hub.ready();
+    const out = session.signOut();
+    await flush();
+    const key = (keyId: string, prefix: string) => ({ keyId, prefix, kind: "human", name: keyId, grants: [], createdAt: "2026-10-28T10:00:00Z", person: { personId: "pr_ada", name: "Ada" } });
+    hub.answer("people_list", { me: "pr_ada", people: [], invites: [], devices: [key("k3", "fld_abcdef")] });
+    await flush();
+    expect(calls(hub, "device_revoke")).toMatchObject([{ input: { keyId: "k3" } }]);
+    hub.link.close(4401, "key revoked");
+    expect(await out).toEqual({ ok: true });
+  });
+
   it("fails without the hub, for the app to offer forgetting it anyway", async () => {
     const hub = fakeHub();
     const os = fakeOs();
