@@ -32,6 +32,7 @@
     "./fakes/accounts": "./fleetd/test/fake-accounts.ts",
     "./gen/migrations": "./fleetd/src/gen/migrations.ts",
     "./node/screens/settings": "./fleetd/src/node/screens/settings.ts",
+    "./shared/cap_lines": "./fleetd/src/shared/cap_lines.ts",
     "./shared/clock": "./fleetd/src/shared/clock.ts",
     "./shared/errors": "./fleetd/src/shared/errors.ts",
     "./shared/limit_text": "./fleetd/src/shared/limit_text.ts",
