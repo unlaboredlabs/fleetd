@@ -6,7 +6,7 @@ import { build } from "../src/hub/serve/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { FakeNode, nodeKey } from "./fake-node.ts";
-import { hubHome } from "./helpers.ts";
+import { deflateBomb, hubHome } from "./helpers.ts";
 
 const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
@@ -166,6 +166,17 @@ test("a link_deflate node gets compressed frames and its own compressed frames a
   expect((await long).message).toBe("m".repeat(300));
   node.close();
   await node.closed;
+});
+
+test("a link_deflate node's frame that inflates past the cap, or isn't DEFLATE, ends its link as a bad frame", async () => {
+  for (const [machineId, frame, why] of [
+    ["worker-bomb", await deflateBomb(65), `a compressed frame inflates past ${64 << 20} bytes`],
+    ["worker-junk", new Uint8Array(16).fill(0xff), "invalid block type"],
+  ] as const) {
+    const node = await linked(machineId, { capabilities: ["link_deflate"] });
+    node.ws.send(frame);
+    expect(await node.closed).toEqual({ code: 4000, reason: why });
+  }
 });
 
 test("a heartbeat keeps the status; a low disk pauses new agents; silence takes the machine offline", async () => {

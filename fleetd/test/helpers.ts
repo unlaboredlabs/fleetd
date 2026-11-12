@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { sha256 } from "../src/hub/auth/index.ts";
+import { Deflater } from "../src/hub/link/deflate.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { migrate } from "../src/hub/store/migrations.ts";
 import type { Grant } from "../src/shared/contracts.ts";
@@ -70,4 +71,18 @@ export function insertKey(db: HubDb, grants: Grant[], name = "test"): string {
     .query("INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms, kind) VALUES (?, ?, ?, ?, ?, ?, 'agent')")
     .run(`key_${name}`, sha256(key), key.slice(0, 10), name, JSON.stringify(grants), Date.now());
   return key;
+}
+
+/**
+ * A deflate bomb as one link message: `mib` MiB of zeros through a Deflater, a MiB a message, joined into one with each
+ * message's cut `00 00 ff ff` put back between them. A few KiB that inflate to `mib` MiB.
+ */
+export async function deflateBomb(mib: number): Promise<Buffer> {
+  const d = new Deflater();
+  const zeros = "\0".repeat(1 << 20);
+  const tail = Buffer.from([0x00, 0x00, 0xff, 0xff]);
+  const parts: Buffer[] = [];
+  for (let i = 0; i < mib; i++) parts.push(...(i ? [tail] : []), await d.deflate(zeros));
+  d.close();
+  return Buffer.concat(parts);
 }
