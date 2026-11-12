@@ -1,6 +1,6 @@
 // `hub_info`: the hub's own fleetd build, and everything a restart of the hub (or of
 // one machine's node) would cut off now. An update restarts at once anyway: what it cuts off carries on by itself.
-import type { Change, HubBusyItem, HubBusyKind, HubEvent, MachineId, ProjectRef } from "../../shared/contracts.ts";
+import type { HubBusyItem, HubBusyKind, HubEvent, MachineId, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { Requests } from "../approvals/store.ts";
@@ -11,23 +11,9 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { changeRecords } from "../train/index.ts";
-import { edgeStamp } from "../../update/version.ts";
+import { BUSY_MAX, hubStep } from "./state.ts";
 
-/** `HubInfoOutput.busy`'s cap. */
-export const BUSY_MAX = 50;
-
-/** Edge when the version says so (or nightly), stable for any other release build, none for a local build. */
-export function channel(version: string, releaseBuild: boolean): "edge" | "stable" | undefined {
-  if (edgeStamp(version) !== undefined) return "edge";
-  return releaseBuild ? "stable" : undefined;
-}
-
-/** What the hub itself is doing to the Change at the head of its repo's queue, when a restart would cut it off. */
-export function hubStep(change: Change): string | undefined {
-  if (change.state === "rebasing") return `updating PR #${change.prNumber} in ${change.repo} before it merges`;
-  if (change.state === "merging") return `merging PR #${change.prNumber} into ${change.repo}`;
-  return undefined;
-}
+export { BUSY_MAX, channel, hubStep } from "./state.ts";
 
 /** One line of at most 280 UTF-16 units, its whitespace collapsed. */
 function text(s: string): string {

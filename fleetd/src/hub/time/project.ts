@@ -11,6 +11,7 @@ import { profileOf, threadLane, who, writeHub } from "./ingest.ts";
 import { kindCode, kindOf } from "./kinds.ts";
 import { cursor, headUtf16, type Ids, type NewSpan, resetHours, setCursor, type Share, write } from "./store.ts";
 import { orderPath } from "./reads.ts";
+import { mergeExtra, queueKind, requestsLane, workstreamFromSummary } from "./wire.ts";
 
 const CURSOR = "events";
 const BUSY_LOOKBACK_MS = 6 * 3600 * 1000;
@@ -106,13 +107,7 @@ function close(c: Database, key: string, start: number, end: number, extra?: Spa
   } catch {
     old = undefined;
   }
-  let merged = extra ?? old;
-  if (old && extra) {
-    merged = { ...old };
-    if (extra.decidedBy !== undefined) merged.decidedBy = extra.decidedBy;
-    if (extra.answeredBy !== undefined) merged.answeredBy = extra.answeredBy;
-    if (extra.key !== undefined) merged.key = extra.key;
-  }
+  const merged = mergeExtra(old, extra);
   write(c, {
     src: "h",
     srcKey: key,
@@ -163,19 +158,7 @@ function taskIds(c: Database, task: string): Ids {
   };
 }
 
-function queueKind(kind: string | undefined, reason: string | undefined): SpanKind {
-  const k = kind ?? reason ?? "";
-  if (k.startsWith("lease")) return "queue.lease";
-  if (k.includes("offline")) return "queue.offline";
-  if (k.includes("usage")) return "queue.usage";
-  return "queue.slot";
-}
 
-function requestsLane(ids: Ids): string {
-  if (ids.workstreamId !== undefined) return `requests:${ids.workstreamId}`;
-  if (ids.machineId !== undefined && ids.projectId !== undefined) return `requests:${ids.machineId}/${ids.projectId}`;
-  return "requests:fleet";
-}
 
 export function apply(c: Database, e: HubEvent): void {
   const at = atMs(e);
@@ -357,9 +340,3 @@ function getRequest(c: Database, id: string): HumanRequest | undefined {
   }
 }
 
-function workstreamFromSummary(e: HubEvent): string | undefined {
-  const i = e.summary.indexOf(" W");
-  if (i < 0) return undefined;
-  const id = /^[A-Za-z0-9]*/.exec(e.summary.slice(i + 1))?.[0] ?? "";
-  return id.length > 1 && /^[0-9]+$/.test(id.slice(1)) ? id : undefined;
-}
