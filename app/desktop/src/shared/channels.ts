@@ -47,6 +47,20 @@ export const IPC = {
   pairStore: "pair:store",
   /** invoke() → SetupOutcome. Opens `fleetd init` in the system terminal; the one command, with no arguments. */
   pairSetup: "pair:setup",
+  /** invoke() → CloudState. Whether this build offers fleetd cloud's Sign in, and who is signed in. */
+  cloudState: "cloud:state",
+  /** invoke() → SignInOutcome. WorkOS's page in the browser, then the accounts service and a key per team; resolves when it ends. */
+  cloudSignIn: "cloud:sign-in",
+  /** invoke() → void. Stops waiting for the sign-in under way. */
+  cloudCancel: "cloud:cancel",
+  /** invoke() → void. Opens the sign-in page under way again. */
+  cloudReopen: "cloud:reopen",
+  /** invoke() → string | null. The sign-in page under way, for Copy the sign-in link. */
+  cloudLink: "cloud:link",
+  /** invoke() → SignOutOutcome. Drops this device's key on each of the account's hubs, then ends the session. */
+  cloudSignOut: "cloud:sign-out",
+  /** invoke(hub) → ConnectComputerOutcome. A join line from the hub, run in a terminal on this computer. */
+  cloudConnectComputer: "cloud:connect-computer",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /**

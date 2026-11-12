@@ -24,7 +24,13 @@ export const HUB_LIST_BAD = "desktop-hubs.json.bad";
 /** The hubs found again from their keys when the list was lost: they have no name until the person gives one. */
 export const RECOVERED_NOTE = `This app's list of hubs (${HUB_LIST}) couldn't be read, so its hubs were found again from their saved keys, without their names. The old list is kept as ${HUB_LIST_BAD}.`;
 
-const Stored = z.object({ id: z.string().regex(HUB_ID), label: z.string().min(1).max(LABEL_MAX).optional(), color: z.enum(HUB_COLORS).optional() });
+const Stored = z.object({
+  id: z.string().regex(HUB_ID),
+  label: z.string().min(1).max(LABEL_MAX).optional(),
+  color: z.enum(HUB_COLORS).optional(),
+  /** It came with the fleetd cloud account (src/main/cloud): signing out drops it. */
+  cloud: z.literal(true).optional(),
+});
 type Stored = z.infer<typeof Stored>;
 const StoredList = z.object({ version: z.literal(1), hubs: z.array(Stored).min(1).max(50) });
 
@@ -39,7 +45,12 @@ export type HubsMode =
       /** Where each hub's offline cache goes (userData). */
       readonly cacheDir: string;
     }
-  | { readonly kind: "fixture"; readonly fixture: FixtureFile };
+  | {
+      readonly kind: "fixture";
+      readonly fixture: FixtureFile;
+      /** The first hub came with a fleetd cloud account (the fixture's `cloud` section). */
+      readonly cloud?: boolean;
+    };
 
 /** The first hub's cache keeps its old name. */
 export const cacheFileName = (hub: HubId): string => (hub === FIRST_HUB ? "hub-cache.json" : `hub-cache-${hub}.json`);
@@ -124,7 +135,12 @@ export class Hubs {
         { id: FIRST_HUB, label, color, fixture: { ...first, hubs: [] } },
         ...hubs.map((h, i) => ({ id: `h${String(i + 2)}`, label: h.label, color: h.color, fixture: h.fixture })),
       ];
-      this.#entries = files.map(({ id, label: l, color: c }) => ({ id, ...(l === undefined ? {} : { label: l }), ...(c === undefined ? {} : { color: c }) }));
+      this.#entries = files.map(({ id, label: l, color: c }) => ({
+        id,
+        ...(l === undefined ? {} : { label: l }),
+        ...(c === undefined ? {} : { color: c }),
+        ...(id === FIRST_HUB && mode.cloud === true ? { cloud: true as const } : {}),
+      }));
       for (const f of files) this.#services.set(f.id, new HubService({ kind: "fixture", id: f.id, fixture: f.fixture }));
       return;
     }
@@ -161,12 +177,13 @@ export class Hubs {
 
   /** In sidebar order, each with its label: the person's, else its host name until they pick one. */
   list(): HubEntry[] {
-    return this.#entries.map(({ id, label, color }) => {
+    return this.#entries.map(({ id, label, color, cloud }) => {
       const url = this.#services.get(id)?.url() ?? null;
       return {
         id,
         label: label ?? (url === null ? "Hub" : defaultLabel(url)),
         ...(color === undefined ? {} : { color }),
+        ...(cloud === undefined ? {} : { cloud }),
         ...(this.#note === null ? {} : { note: this.#note }),
       };
     });
@@ -231,8 +248,33 @@ export class Hubs {
     const label = cleanLabel(change.label);
     if (label === null) return { ok: false, message: `Name the hub in 1 to ${String(LABEL_MAX)} characters.` };
     if (!this.#entries.some((e) => e.id === id)) return { ok: false, message: "That hub was removed." };
-    this.#entries = this.#entries.map((e) => (e.id === id ? { id, label, ...(change.color === null ? {} : { color: change.color }) } : e));
+    this.#entries = this.#entries.map((e) => (e.id === id ? { id, label, ...(change.color === null ? {} : { color: change.color }), ...(e.cloud === undefined ? {} : { cloud: e.cloud }) } : e));
     return this.#save();
+  }
+
+  /**
+   * A team's key from signing in to fleetd cloud: connected as any hub is (a hub already listed at its address takes
+   * it), and marked as the account's, for sign-out.
+   */
+  connectCloud(request: { readonly url: string; readonly key: string }, label: string): ConnectOutcome {
+    const outcome = this.connect(request, { label });
+    if (!outcome.ok) return outcome;
+    const entry = this.#entries.find((e) => {
+      const url = this.#services.get(e.id)?.url();
+      return url !== undefined && url !== null && sameHub(url, request.url);
+    });
+    if (entry === undefined || entry.cloud === true) return outcome;
+    this.#entries = this.#entries.map((e) => (e === entry ? { ...e, cloud: true } : e));
+    return this.#save();
+  }
+
+  /** The hubs that came with the fleetd cloud account. */
+  cloudHubs(): Array<{ id: HubId; label: string; service: HubService }> {
+    const labels = new Map(this.list().map((h) => [h.id, h.label]));
+    return this.#entries.flatMap((e) => {
+      const service = this.#services.get(e.id);
+      return e.cloud === true && service !== undefined ? [{ id: e.id, label: labels.get(e.id) ?? "Hub", service }] : [];
+    });
   }
 
   /** Forgets the hub's key and cache; the last one stays listed, not paired, for onboarding. */

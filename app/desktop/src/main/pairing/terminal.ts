@@ -3,9 +3,9 @@
 // logins; update says what runs on the hub and restarts it only when nothing does). These are the only commands main
 // runs for the page, and the page can't change them: each request carries no arguments, and main picks the command.
 import { execFile, spawn } from "node:child_process";
-import { accessSync, constants, mkdtempSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import type { SetupOutcome } from "../../shared/pairing";
 
 export interface TerminalDeps {
@@ -20,6 +20,8 @@ export interface TerminalDeps {
   readonly launch: (file: string, args: ReadonlyArray<string>) => Promise<boolean>;
   /** Writes a script Terminal can open (a `.command` file named `name`) and returns its path. */
   readonly writeScript: (text: string, name: string) => string;
+  /** Deletes a script no terminal ran, and its folder. */
+  readonly removeScript: (file: string) => void;
 }
 
 /** Linux terminals, most general first, with what comes before the command to run. */
@@ -84,6 +86,28 @@ const openFleetd = async (deps: TerminalDeps, run: FleetdCommand): Promise<Setup
 
 export const openSetup = (deps: TerminalDeps): Promise<SetupOutcome> => openFleetd(deps, "init");
 
+/**
+ * Connect this computer (src/main/cloud/connect.ts): a hub's join line in a terminal, from a script that deletes
+ * itself first, so the line's one-time code is in no terminal's arguments and nowhere on disk once it runs. The
+ * terminal stays open on what the install said until Return.
+ */
+export const openJoinLine = async (deps: TerminalDeps, line: string): Promise<{ ok: true; terminal: string } | { ok: false }> => {
+  const body = `#!/bin/sh\nrm -f "$0"\nrmdir "$(dirname "$0")" 2>/dev/null\n${line}\necho\nprintf 'Press Return to close. '\nread -r _\n`;
+  if (deps.platform === "darwin") {
+    const file = deps.writeScript(body, "fleetd-join.command");
+    return (await deps.exec("/usr/bin/open", ["-a", "Terminal", file])) ? { ok: true, terminal: "Terminal" } : { ok: false };
+  }
+  if (deps.platform !== "linux") return { ok: false };
+  for (const terminal of LINUX_TERMINALS) {
+    const bin = which(deps, terminal.bin);
+    if (bin === null) continue;
+    const file = deps.writeScript(body, "fleetd-join.sh");
+    if (await deps.launch(bin, [...terminal.args, "/bin/sh", file])) return { ok: true, terminal: "a terminal" };
+    deps.removeScript(file);
+  }
+  return { ok: false };
+};
+
 const executable = (file: string): boolean => {
   try {
     accessSync(file, constants.X_OK);
@@ -113,4 +137,5 @@ export const realTerminalDeps = (): TerminalDeps => ({
     writeFileSync(file, text, { mode: 0o700 });
     return file;
   },
+  removeScript: (file) => rmSync(dirname(file), { recursive: true, force: true }),
 });

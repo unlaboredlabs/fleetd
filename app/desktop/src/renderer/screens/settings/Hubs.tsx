@@ -166,6 +166,7 @@ function HubSetting({ only }: { only: boolean }) {
     <SettingsRow
       reveal={only ? "hubs.hub" : `hubs.${self.id}`}
       title={only ? "Hub" : self.label}
+      hint={self.cloud === true ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
       // The hub's fix may name a command in backticks: shown as code.
       line={<HubText>{line.text}</HubText>}
       lineTone={line.tone}

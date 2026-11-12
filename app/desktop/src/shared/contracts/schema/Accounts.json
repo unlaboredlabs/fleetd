@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "AccountsFailure": {
+      "description": "A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written.",
+      "properties": {
+        "code": {
+          "description": "invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "fix": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "AccountsSignInInput": {
+      "additionalProperties": false,
+      "description": "POST /v1/app/sign-in: what WorkOS sent the browser back with, and this device's name. The service redeems the code with WorkOS itself and keeps no token it got; no auth header.",
+      "properties": {
+        "code": {
+          "description": "WorkOS's authorization code, from the redirect.",
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "codeVerifier": {
+          "description": "The PKCE verifier (RFC 7636) whose S256 challenge the authorize URL carried.",
+          "maxLength": 128,
+          "minLength": 43,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "deviceName": {
+          "description": "Names the key each team's /pair makes: the computer's or phone's name.",
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "redirectUri": {
+          "description": "Exactly the redirect_uri the authorize URL carried: a loopback `http://127.0.0.1:<port>/signin/callback` or `fleetd://signin/callback`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "codeVerifier",
+        "redirectUri",
+        "deviceName"
+      ],
+      "type": "object"
+    },
+    "AccountsSignInOutput": {
+      "description": "200: who signed in and every team they are in, each with a pairing code for its /pair. A first sign-in makes the person's team in the same call.",
+      "properties": {
+        "email": {
+          "maxLength": 320,
+          "minLength": 3,
+          "type": "string"
+        },
+        "sessionId": {
+          "description": "WorkOS's session id, which sign-out ends. The app keeps it and the email, nothing else of WorkOS.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "teams": {
+          "items": {
+            "$ref": "#/$defs/AccountsTeam"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "email",
+        "sessionId",
+        "teams"
+      ],
+      "type": "object"
+    },
+    "AccountsSignOutInput": {
+      "additionalProperties": false,
+      "description": "POST /v1/app/sign-out: the session to end.",
+      "properties": {
+        "sessionId": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "AccountsTeam": {
+      "description": "One team of the person's.",
+      "properties": {
+        "id": {
+          "description": "The team's id in the service.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "description": "The label in its address: `<name>.<base>`.",
+          "maxLength": 63,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pairingCode": {
+          "description": "A pairing code (`ABCD-2345`) for this person on this team: one use, 15 minutes.",
+          "pattern": "^[A-Z0-9]{4}-?[A-Z0-9]{4}$",
+          "type": "string"
+        },
+        "url": {
+          "description": "The team's hub address, an https origin with no path (http only on 127.0.0.1, for tests).",
+          "maxLength": 253,
+          "pattern": "^(https://[^/?#]+|http://127\\.0\\.0\\.1:[0-9]+)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "url",
+        "pairingCode"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/AccountsSignInOutput",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "fleetd cloud's accounts service, the one call an app makes to sign in (and the one to sign out). Each definition is one body: compile `Accounts.json#/$defs/<Name>`."
+}

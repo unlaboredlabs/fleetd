@@ -10,6 +10,8 @@ import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks"
 import { Mark } from "./Mark";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
+import { useCloud } from "./cloud";
+import { BackToWays, useSignIn, Waiting, Ways } from "./SignIn";
 import s from "./onboarding.module.css";
 
 export interface OnboardingProps {
@@ -84,10 +86,11 @@ function Page({ id, title, children }: { id: string; title: string; children: Re
 }
 
 /** First run: what fleetd is, where you are in setting it up, and the two ways in (set it up here, or pair). */
-function Welcome({ id, children }: { id: string; children: ReactNode }) {
+function Welcome({ id, back, children }: { id: string; back?: ReactNode; children: ReactNode }) {
   return (
     <div className={s.screen} data-screen={id}>
       <div className={s.column}>
+        {back}
         <div className={s.welcome}>
           <Mark />
           <Text as="h1" size="xl" strong>
@@ -142,6 +145,10 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   const self = useHub();
   const several = useSeveralHubs();
   const adding = link.add === true;
+  // fleetd cloud, where this build has it: the first screen offers Sign in, and Use your own hub opens this form.
+  const cloud = useCloud();
+  const signIn = useSignIn();
+  const [way, setWay] = useState<"own" | "ways" | null>(null);
   // A new hub's name and colour, when adding one.
   const [name, setName] = useState("");
   const [color, setColor] = useState<HubColor | null>(null);
@@ -360,8 +367,15 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       </Page>
     );
   }
+  if (!cloud.known) return null;
+  if (cloud.state.available) {
+    if (signIn.step.at === "waiting") return <Waiting onCancel={signIn.cancel} />;
+    // A hub found on this computer, or a code `fleetd init` left, opens on its form; Back still shows both ways.
+    const foundHere = form.status !== null || form.autoPending || form.busy || form.error !== null;
+    if (way === "ways" || (way === null && !foundHere)) return <Ways note={signIn.step.note} onSignIn={signIn.start} onOwn={() => setWay("own")} />;
+  }
   return (
-    <Welcome id={id}>
+    <Welcome id={id} back={cloud.state.available ? <BackToWays onBack={() => setWay("ways")} /> : null}>
       {form.setupHere ? <SetupHere /> : null}
       <section className={s.section} aria-labelledby="connect-here">
         <Text as="h2" id="connect-here" size="md" strong>

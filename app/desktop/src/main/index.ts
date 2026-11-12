@@ -16,6 +16,10 @@ import { webSocketTransport } from "./hub/transport";
 import { instrument } from "./instrument";
 import { timedTransport } from "./instrument/perf";
 import { registerIpc } from "./ipc";
+import { realCloud, type Cloud } from "./cloud";
+import { builtCloudConfig } from "./cloud/config";
+import { FixtureCloud, readCloudSection } from "./cloud/fixture";
+import { externalUrl } from "./external";
 import { fixturePairingDeps } from "./pairing/fixture";
 import { PairingService, realPairingDeps } from "./pairing/service";
 import { editMenuTemplate } from "./editMenu";
@@ -128,7 +132,7 @@ const hubMode = (): { mode: HubsMode; fixtureFile: string | null; keyStore: KeyS
     };
   }
   return {
-    mode: { kind: "fixture", fixture: loadFixture(request.name, fixtureDir()) },
+    mode: { kind: "fixture", fixture: loadFixture(request.name, fixtureDir()), cloud: readCloudSection(fixtureFile(request.name))?.hub === true },
     fixtureFile: fixtureFile(request.name),
     keyStore: { kind: "os", where: "the OS keychain" },
   };
@@ -228,6 +232,7 @@ void app.whenReady().then(() => {
   session.defaultSession.setSpellCheckerEnabled(false);
   let mode: HubsMode;
   let pairing: PairingService;
+  let cloud: Cloud;
   let hub: Hubs;
   let fixtureFile: string | null;
   try {
@@ -244,6 +249,14 @@ void app.whenReady().then(() => {
         ? realPairingDeps(FLEETD_DIR, connect, firstRun, chosen.keyStore)
         : fixturePairingDeps(chosen.fixtureFile, connect, firstRun),
     );
+    cloud =
+      chosen.fixtureFile === null
+        ? realCloud(builtCloudConfig(), service, FLEETD_DIR, !RELEASE_BUILD, async (url) => {
+            const checked = externalUrl(url);
+            if (!checked.ok) throw new Error(checked.message);
+            await shell.openExternal(checked.url);
+          })
+        : new FixtureCloud(readCloudSection(chosen.fixtureFile));
   } catch (error) {
     appLog.write({ source: "main", what: "fleetd couldn't start", error: asError(error) });
     console.error(error instanceof Error ? error.message : error);
@@ -340,7 +353,7 @@ void app.whenReady().then(() => {
     },
     marker: join(app.getPath("userData"), "menu-bar-login"),
   });
-  macSetup.current = registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows, macSetupWindow, menuBar }, pairing);
+  macSetup.current = registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows, macSetupWindow, menuBar }, pairing, cloud);
   if (process.platform === "darwin" || (mode.kind === "fixture" && process.env["FLEETD_FIXTURE_MAC"] !== undefined)) menuBar.start();
   // QA opens the popover at once, under a fixture only: it has no menu bar to click.
   if (mode.kind === "fixture" && process.env["FLEETD_FIXTURE_MAC_OPEN"] === "1") void menuBar.look().then(() => menuBar.show({ pinned: true }));
