@@ -1,27 +1,53 @@
 // A stand-in for fleetd cloud's accounts service and the WorkOS sign-in in front of it, for the apps' Sign in tests:
 // the browser's round trip (`authorize`, what WorkOS's page would redirect to), the one call an app makes
 // (POST /v1/app/sign-in, Accounts.json), sign-out, and each team's POST /pair on an origin of its own. It checks what
-// the real ones do: the PKCE verifier against the challenge, a code used once, a pairing code used once.
+// the real ones do: the PKCE verifier against the challenge, a code used once, a pairing code used once. Each team's
+// origin also serves its invites by email (ACCOUNTS_INVITES_PATH) to the keys its /pair made, refusing as the service
+// does: a member's key, an admin naming an owner, not an email, an email already on the team or invited, the team at
+// its limit of people. The email WorkOS would send is a line in `sent`.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   type AccountsFailure,
+  type AccountsInvite,
   type AccountsSignInInput,
   type AccountsSignInOutput,
+  type HubRole,
 } from "../../app/desktop/src/shared/contracts/contracts.ts";
 
 export type FakeTeamOptions = {
   /** Its /pair refuses every code, as a hub whose code ran out does. */
   refusePairing?: boolean;
+  /** Each person's role by email; absent: the first is the owner, the rest members. */
+  roles?: Record<string, HubRole>;
+  /** People and open invites together never go past this (ops' per-team limit). Absent: 50. */
+  peopleLimit?: number;
 };
 
-type Team = { id: string; name: string; url: string; server: Server; codes: Set<string>; refuse: boolean };
+type Team = {
+  id: string;
+  name: string;
+  url: string;
+  server: Server;
+  /** Each open pairing code, and whose. */
+  codes: Map<string, string>;
+  refuse: boolean;
+  roles: Map<string, HubRole>;
+  invites: AccountsInvite[];
+  limit: number;
+};
 
 /** A key one of the teams' /pair handed out. */
-export type FakeKey = { team: string; deviceName: string; key: string };
+export type FakeKey = { team: string; deviceName: string; key: string; email: string };
+
+/** An invitation email WorkOS would have sent. */
+export type FakeInviteEmail = { team: string; email: string; role: HubRole };
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 // Crockford base32 without I L O U, as a hub mints them (app/desktop/src/shared/pairing.ts normalizeCode).
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
@@ -72,6 +98,10 @@ export class FakeAccounts {
   readonly signIns: AccountsSignInInput[] = [];
   /** The next sign-in's answer instead of the real one: a refusal such as a 429. */
   refuseNext: { status: number; failure: AccountsFailure } | null = null;
+  /** Every invitation email sent, in order. */
+  readonly sent: FakeInviteEmail[] = [];
+  /** The time invites are made and run out by, epoch ms. */
+  now: () => number = () => Date.now();
   #server: Server | null = null;
   #origin = "";
   readonly #people = new Map<string, string[]>();
@@ -90,9 +120,20 @@ export class FakeAccounts {
 
   /** A team with its own /pair, and the people in it. A person signing in with no team gets one made. */
   async team(name: string, emails: string[], options: FakeTeamOptions = {}): Promise<string> {
-    const server = createServer((req, res) => void this.#pair(name, req, res));
+    const server = createServer((req, res) => void this.#team(name, req, res));
     const url = await listen(server);
-    this.#teams.set(name, { id: `team_${name}`, name, url, server, codes: new Set(), refuse: options.refusePairing === true });
+    const roles = new Map(emails.map((email, i) => [email, options.roles?.[email] ?? (i === 0 ? "owner" : "member")] as const));
+    this.#teams.set(name, {
+      id: `team_${name}`,
+      name,
+      url,
+      server,
+      codes: new Map(),
+      refuse: options.refusePairing === true,
+      roles,
+      invites: [],
+      limit: options.peopleLimit ?? 50,
+    });
     for (const email of emails) this.#people.set(email, [...(this.#people.get(email) ?? []), name]);
     return url;
   }
@@ -144,6 +185,19 @@ export class FakeAccounts {
     return this.#people.get(email) ?? [];
   }
 
+  /** A team's open invites by email, newest first. */
+  invitesOf(name: string): AccountsInvite[] {
+    const now = this.now();
+    return (this.#teams.get(name)?.invites ?? []).filter((i) => Date.parse(i.expiresAt) > now);
+  }
+
+  /** A key for `email` on team `name`, as its /pair would make one at sign-in, for tests that start signed in. */
+  keyFor(name: string, email: string, deviceName = "test"): string {
+    const key = `fld_fake_${randomBytes(12).toString("hex")}`;
+    this.keys.push({ team: name, deviceName, key, email });
+    return key;
+  }
+
   async #accounts(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const path = new URL(req.url ?? "/", "http://x").pathname;
     if (req.method !== "POST") return fail(res, 404, { code: "not_found", message: "Nothing here." });
@@ -184,25 +238,91 @@ export class FakeAccounts {
       teams: this.teamsOf(grant.email).map((name) => {
         const team = this.#teams.get(name)!;
         const code = pairingCode();
-        team.codes.add(code);
+        team.codes.set(code, grant.email);
         return { id: team.id, name: team.name, url: team.url, pairingCode: code };
       }),
     };
     send(res, 200, answer);
   }
 
+  async #team(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const path = new URL(req.url ?? "/", "http://x").pathname;
+    if (req.method === "POST" && path === "/pair") return this.#pair(name, req, res);
+    if (path === ACCOUNTS_INVITES_PATH || path.startsWith(`${ACCOUNTS_INVITES_PATH}/`)) return this.#invites(name, path, req, res);
+    fail(res, 404, { code: "not_found", message: "Nothing here." });
+  }
+
   async #pair(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
     const team = this.#teams.get(name)!;
-    const path = new URL(req.url ?? "/", "http://x").pathname;
-    if (req.method !== "POST" || path !== "/pair") return fail(res, 404, { code: "not_found", message: "Nothing here." });
     const body = await readBody(req);
     const code = str(body, "code");
     const deviceName = str(body, "deviceName") ?? "";
-    if (team.refuse || code === undefined || !team.codes.delete(code)) {
+    const email = code === undefined ? undefined : team.codes.get(code);
+    if (team.refuse || code === undefined || email === undefined) {
       return fail(res, 401, { code: "pair_code_invalid", message: "That pairing code is unknown or was already used." });
     }
+    team.codes.delete(code);
     const key = `fld_fake_${randomBytes(12).toString("hex")}`;
-    this.keys.push({ team: name, deviceName, key });
+    this.keys.push({ team: name, deviceName, key, email });
     send(res, 200, { key, hubUrl: team.url, hubName: name });
+  }
+
+  /** GET and POST ACCOUNTS_INVITES_PATH, and POST <it>/<inviteId>/revoke, as #26's accounts area answers them. */
+  async #invites(name: string, path: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const team = this.#teams.get(name)!;
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    if (caller === undefined) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    const role = team.roles.get(caller.email);
+    if (role !== "owner" && role !== "admin") {
+      return fail(res, 403, { code: "forbidden", message: "Only an owner or admin invites people.", fix: "Ask an owner or admin of this team." });
+    }
+    const now = this.now();
+    const open = () => team.invites.filter((i) => Date.parse(i.expiresAt) > now);
+    const revoke = /^\/accounts\/v1\/invites\/(inv_[0-9a-f]{10})\/revoke$/u.exec(path)?.[1];
+    if (req.method === "POST" && revoke !== undefined) {
+      if (!open().some((i) => i.inviteId === revoke)) {
+        return fail(res, 404, { code: "not_found", message: `No open invite ${revoke}.`, fix: "List the open invites to see which are left." });
+      }
+      team.invites = team.invites.filter((i) => i.inviteId !== revoke);
+      return send(res, 200, { revoked: revoke });
+    }
+    if (path !== ACCOUNTS_INVITES_PATH) return fail(res, 404, { code: "not_found", message: "Nothing here." });
+    if (req.method === "GET") return send(res, 200, { invites: open().sort((a, b) => b.createdAt.localeCompare(a.createdAt)) });
+    if (req.method !== "POST") return fail(res, 404, { code: "not_found", message: "Nothing here." });
+    const body = await readBody(req);
+    const email = (str(body, "email") ?? "").trim().toLowerCase();
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+      return fail(res, 400, { code: "invalid", message: "That isn't an email address.", fix: "Type the person's email." });
+    }
+    const asked = typeof body === "object" && body !== null ? (body as Record<string, unknown>).role : undefined;
+    const as = asked === undefined ? "member" : asked;
+    if (as !== "owner" && as !== "admin" && as !== "member") {
+      return fail(res, 400, { code: "invalid", message: "The role is owner, admin or member.", fix: "Pick one of them." });
+    }
+    if (as === "owner" && role !== "owner") {
+      return fail(res, 403, { code: "forbidden", message: "Only an owner makes someone an owner.", fix: "Pick admin or member, or ask an owner." });
+    }
+    if (team.roles.has(email)) return fail(res, 409, { code: "already_member", message: `${email} is on this team already.` });
+    if (open().some((i) => i.email === email)) {
+      return fail(res, 409, { code: "already_invited", message: `${email} is invited already.`, fix: "Revoke that invite first to send a new one." });
+    }
+    if (team.roles.size + open().length >= team.limit) {
+      return fail(res, 403, {
+        code: "failed",
+        message: `This team has reached its limit of people (${String(team.limit)}).`,
+        fix: "Remove one first, or ask fleetd's operator for a higher limit.",
+      });
+    }
+    const invite: AccountsInvite = {
+      inviteId: `inv_${randomBytes(5).toString("hex")}`,
+      email,
+      role: as,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + INVITE_TTL_MS).toISOString(),
+    };
+    team.invites.push(invite);
+    this.sent.push({ team: name, email, role: as });
+    send(res, 200, { invite });
   }
 }
