@@ -31,12 +31,14 @@ import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { pinStoreFor, sectionStoreFor } from "./src/prefsStore";
+import { sameHub } from "./src/devices";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { cloud, type OnSignedIn } from "./src/screens/Cloud";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
+import { Devices } from "./src/screens/Devices";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
@@ -47,7 +49,7 @@ import { VaultItem } from "./src/screens/vault/VaultItem";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
 import type { State } from "./src/store";
-import { tapGoesNowhere, tappedStack } from "./src/tapped";
+import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
@@ -271,7 +273,12 @@ let taps = 0;
  * Opens where a tapped notification goes, an approval's chat at its card, a screen's live view over its chat (push.ts
  * chatAt), over the chats list and nothing else (tapped.ts): false while not known yet.
  */
-const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "projects">): boolean => {
+const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "projects">, hub: string): boolean => {
+  // A new sign-in's: this hub's Devices, to sign it out there; another hub's (shown before a switch) just opens the app.
+  if (route.t === "devices") {
+    if (sameHub(route.hub, hub)) nav.reset(devicesStack(nav.getRootState()?.routes ?? []) as Parameters<typeof nav.reset>[0]);
+    return true;
+  }
   const at = chatAt(route, state.requests, state.requestsRead);
   if (at === undefined) return false;
   if (at === null || tapGoesNowhere(state.projects, at)) return true;
@@ -325,8 +332,8 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
       nav.navigate("Home", { screen: "Chats", params: { filter: "needsYou", at: ++taps } });
     }
     if (pending.current === null) return;
-    if (go(pending.current, session.getState())) pending.current = null;
-  }, [session]);
+    if (go(pending.current, session.getState(), paired.hub)) pending.current = null;
+  }, [session, paired.hub]);
   useTappedRoute((route) => {
     pending.current = route;
     tryPending();
@@ -505,6 +512,7 @@ function SettingsScreens() {
   return (
     <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
+      <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />

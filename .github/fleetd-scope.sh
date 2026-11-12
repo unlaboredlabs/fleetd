@@ -16,8 +16,10 @@ paths=(
   # The docs pages generated from the code.
   docs/site/src/content/docs/reference/cli.md docs/site/src/content/docs/reference/agent-tools.md
   docs/site/src/content/docs/what-agents-are-told.md
-  # What another repository imports (fleetd/test/pkg).
-  package.json
+  # What another repository imports (fleetd/test/pkg): the package and the apps' modules it exports.
+  package.json app/desktop/src/shared/hub.ts app/desktop/src/shared/hubs.ts app/desktop/src/shared/pairing.ts
+  app/desktop/src/shared/accounts.ts app/mobile/src/hub/pairLink.ts app/mobile/src/pushPayload.ts app/mobile/src/bytes.ts
+  app/mobile/src/projectKey.ts
 )
 
 run=true

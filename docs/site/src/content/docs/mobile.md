@@ -183,6 +183,12 @@ Above it, an admin has **Restart Hub**, the desktop app's [Restart hub](/docs/se
 hub is back in about a second while agents carry on, and each lead whose profile changed since it started comes back
 on the current one. Members don't see it either.
 
+## Devices {#devices}
+
+**Settings › Devices** lists the devices signed in to the hub as you, newest first, this phone marked. Tap one you don't
+know to sign it out: its key stops working at once. On fleetd cloud, each new sign-in sends a **New sign-in**
+notification to your other phones; tapping it opens this list for that team.
+
 ## Import memory {#import-memory}
 
 **Settings › Import Memory** brings what another assistant knows about you into your own memory, as the desktop app's

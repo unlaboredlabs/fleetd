@@ -14,7 +14,10 @@
     "app/desktop/src/shared/hubs.ts",
     "app/desktop/src/shared/pairing.ts",
     "app/desktop/src/shared/accounts.ts",
-    "app/mobile/src/hub/pairLink.ts"
+    "app/mobile/src/hub/pairLink.ts",
+    "app/mobile/src/pushPayload.ts",
+    "app/mobile/src/bytes.ts",
+    "app/mobile/src/projectKey.ts"
   ],
   "exports": {
     "./contracts": "./app/desktop/src/shared/contracts/contracts.ts",
@@ -22,6 +25,7 @@
     "./apps/pairing": "./app/desktop/src/shared/pairing.ts",
     "./apps/pair_link": "./app/mobile/src/hub/pairLink.ts",
     "./apps/accounts": "./app/desktop/src/shared/accounts.ts",
+    "./apps/push": "./app/mobile/src/pushPayload.ts",
     "./tools": "./fleetd/src/pkg/tools.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",

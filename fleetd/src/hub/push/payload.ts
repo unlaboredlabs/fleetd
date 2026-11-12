@@ -59,6 +59,14 @@ export function httpUrl(url: string): boolean {
 
 export type PushKind = "message" | "approval" | "order" | "alert";
 export type PushCategory = "approve" | "review" | "reply";
+/**
+ * Where tapping goes when it isn't a chat: `devices`, the Devices list of the hub at the payload's `hub` (a new sign-in,
+ * signed out there). An app that doesn't know a route leaves it out and just opens. The hub itself sends none: its keys
+ * come only from a code made on one of the person's own devices already in (pair_code_create, `fleetd pair` on the hub's
+ * machine) or an invite's, for a person with no device yet, so no sign-in here is one they didn't make. fleetd cloud,
+ * where a sign-in is anyone's who gets into the account, sends it with its "New sign-in" notice.
+ */
+export type PushRoute = "devices";
 
 /** The plaintext a notification seals (fleetd-contracts push.rs `PushPayload`). */
 export type PushPayload = {
@@ -73,6 +81,7 @@ export type PushPayload = {
   messageId?: string;
   requestId?: string;
   sessionId?: string;
+  route?: PushRoute;
   urgent?: true;
   quiet?: true;
   category?: PushCategory;
@@ -84,7 +93,7 @@ export type PushPayload = {
 function payloadText(p: PushPayload): string {
   const order: (keyof PushPayload)[] = [
     "v", "kind", "title", "body", "hub", "machineId", "projectId", "threadId", "messageId", "requestId", "sessionId",
-    "urgent", "quiet", "category", "badge", "at",
+    "route", "urgent", "quiet", "category", "badge", "at",
   ];
   const out: Record<string, unknown> = {};
   for (const k of order) if (p[k] !== undefined) out[k] = p[k];

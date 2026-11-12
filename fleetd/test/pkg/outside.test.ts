@@ -80,6 +80,19 @@ test("a project outside the repo installs the package, imports every entry point
   });
   expect(typecheck("prompts.ts")).toEqual({ code: 0, out: "" });
 
+  // A notification as fleetd cloud makes one, sealed with the hub's code, read by the phone's own reader: it opens
+  // whole and tapping it goes to that hub's Devices.
+  writeFileSync(join(project, "push.ts"), PUSH);
+  expect(bun(["push.ts"])).toEqual({
+    code: 0,
+    out: JSON.stringify({
+      route: "devices",
+      shown: { title: "New sign-in", channel: "other", route: { t: "devices", hub: "https://acme.fleetd.test" } },
+      stranger: null,
+    }),
+  });
+  expect(typecheck("push.ts")).toEqual({ code: 0, out: "" });
+
   // A type the package exports is the real one, not `any`: a wrong use fails.
   writeFileSync(join(project, "wrong.ts"), `import { TOOL_LIST } from "fleetd/tools";\nexport const n: number = TOOL_LIST[0]!.name;\n`);
   expect(typecheck("wrong.ts").out).toContain("wrong.ts(2,14): error TS2322");
@@ -160,5 +173,23 @@ console.log(JSON.stringify({
   plainVisit: visitCarriesData({ url: "https://a.example/" }),
   said: autoApprovedText({ tool: "Bash", summary: "ls", input: {} }, "checker", "asked for"),
   logged: autoApprovedEntry({ tool: "Bash", summary: "ls", input: {} }, "yolo", undefined, 0).what,
+}));
+`;
+
+/** A "New sign-in" notice sealed as fleetd cloud seals one, opened and shown by the phone's reader through the package. */
+const PUSH = `
+import { openPayload, shownOf } from "fleetd/apps/push";
+import { payloadJson, type PushPayload } from "fleetd/hub/push/payload";
+import { openSealed, publicKeyOf, seal } from "fleetd/shared/sealed_box_core";
+
+const secret = new Uint8Array(32).fill(7);
+const p: PushPayload = { v: 1, kind: "alert", title: "New sign-in", body: "MacBook signed in to acme as you.", hub: "https://acme.fleetd.test", route: "devices", at: "2026-01-01T00:00:00.000Z" };
+const c = Buffer.from(seal(publicKeyOf(secret), payloadJson(p))).toString("base64");
+const opened = openPayload(c, (box) => openSealed(secret, box));
+const shown = opened === null ? undefined : shownOf(opened);
+console.log(JSON.stringify({
+  route: opened?.route,
+  shown: { title: shown?.title, channel: shown?.channel, route: shown?.route },
+  stranger: openPayload(c, (box) => openSealed(new Uint8Array(32).fill(8), box)),
 }));
 `;

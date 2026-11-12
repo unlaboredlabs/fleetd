@@ -23,6 +23,7 @@ Press and hold a notification, or swipe it left on the lock screen and tap **Opt
 | Money, an irreversible command, a command that uses a secret, a file edit, an email or anything else a lead sends or shares | **Review**, which opens its full card in the app |
 | A lead's message | **Reply**, which sends your text into that chat |
 | A secret, an order, an alert | none: tap it to open the app |
+| A new sign-in as you (fleetd cloud) | none: tap it to open [Settings › Devices](/docs/mobile#devices), where you sign it out |
 
 - Approve, Deny and Reply ask you to unlock the phone first: they act with the phone's own key.
 - Approve shows only when the notification holds everything the card would: the whole command and where it runs.

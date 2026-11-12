@@ -127,6 +127,7 @@ export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps
 export type SettingsParams = {
   Settings: undefined;
   ImportMemory: undefined;
+  Devices: undefined;
 } & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;
