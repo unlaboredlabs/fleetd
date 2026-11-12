@@ -5,40 +5,17 @@
 import type { Database } from "bun:sqlite";
 import type { HubDb } from "../store/db.ts";
 import * as human from "./human.ts";
-import { HostError } from "./source.ts";
+import { type HostAct, type HostActs, HostError } from "./source.ts";
+import { BACKFILL_MS } from "./rules.ts";
+
+export { BACKFILL_MS } from "./rules.ts";
+
+export type { HostAct, HostActKind, HostActs } from "./source.ts";
 import * as store from "./store.ts";
 import type { TouchRow } from "./store.ts";
 
-/** The first read of a repo goes this far back. */
-export const BACKFILL_MS = 90 * store.DAY_MS;
 /** The branches fleetd's write tasks push. */
 const FLEETD_BRANCH = "fleetd/";
-
-/** A review submitted (approve, request changes or comment), or a review comment or a PR comment. */
-export type HostActKind = "review" | "comment";
-
-/** One review or comment, as the host recorded it. */
-export type HostAct = {
-  kind: HostActKind;
-  /** The host's id for it, unique in the repo for its kind. */
-  id: string;
-  prNumber: number;
-  /** When it was submitted. */
-  atMs: number;
-  login?: string;
-  /** Left by a bot account: not a touch. */
-  bot: boolean;
-  /** The PR's head branch, when the host said. */
-  head?: string;
-  /** The PR's changed lines (additions + deletions), for a review's credit. */
-  lines?: number;
-};
-
-/** Reads a repo's reviews and comments. `repo` is the metrics' remote key ("github.com/acme/web"). */
-export interface HostActs {
-  /** Every review and comment submitted at or after `sinceMs`; it throws why the host could not be read. */
-  actsSince(repo: string, sinceMs: number): Promise<HostAct[]>;
-}
 
 /** The host was not read; the message is the host's own words. */
 export class HostReadError extends HostError {

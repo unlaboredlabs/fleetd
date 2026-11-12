@@ -24,7 +24,6 @@ import { getRequested } from "../leads/requested.ts";
 import { link } from "../link/index.ts";
 import type { HubDb } from "../store/db.ts";
 import { parseMs } from "../store/time.ts";
-import { branchTask } from "../../node/worktree/hooks.ts";
 import { BACKFILL_MS } from "./host_acts.ts";
 import { change as changeOf, taskWorkstream } from "./project.ts";
 import { hostOf } from "./source.ts";
@@ -32,6 +31,9 @@ import * as store from "./store.ts";
 import type { MergeRow } from "./store.ts";
 import { failed, sweepArea, write } from "./sweep.ts";
 import { workstream as workstreamOf } from "./touches.ts";
+import { changeTrailer, isSync, subjectPr, subjectTask } from "./rules.ts";
+
+export { changeTrailer, isSync, subjectPr, subjectTask } from "./rules.ts";
 
 /** How long a node has to read a checkout's landed log (executor/repos.rs LANDED_LOG_TIMEOUT). */
 const LANDED_LOG_TIMEOUT_MS = 60_000;
@@ -141,50 +143,6 @@ function mergedBySha(db: HubDb): Map<string, Change[]> {
   }
   return out;
 }
-
-const numbered = (word: string, prefix: string) => word.startsWith(prefix) && /^[1-9][0-9]*$/.test(word.slice(prefix.length));
-
-/** A `Fleetd-Change` trailer's parts: "X12 (T45, W9)" → ["X12", "T45", "W9"]. */
-export function changeTrailer(value: string): [id: string, task: string | undefined, workstream: string | undefined] | undefined {
-  const words = value.split(/[\s(),]+/).filter(Boolean);
-  const id = words[0];
-  if (id === undefined || !numbered(id, "X")) return undefined;
-  let task: string | undefined;
-  let ws: string | undefined;
-  for (const w of words.slice(1)) {
-    if (numbered(w, "T")) task ??= w;
-    else if (numbered(w, "W")) ws ??= w;
-  }
-  return [id, task, ws];
-}
-
-/**
- * The PR a merge commit's subject names: "Merge pull request #12 from …" (GitHub), "Merge pull request 'Fix' (#12) from
- * …" (Gitea).
- */
-export function subjectPr(subject: string): number | undefined {
-  const digits = (s: string) => {
-    const n = /^\d+/.exec(s)?.[0];
-    return n === undefined || Number(n) <= 0 ? undefined : Number(n);
-  };
-  const github = "Merge pull request #";
-  if (subject.startsWith(github)) return digits(subject.slice(github.length));
-  const open = subject.lastIndexOf("(#");
-  if (open < 0) return undefined;
-  const rest = subject.slice(open + 2);
-  const n = digits(rest);
-  return n !== undefined && rest.replace(/^\d+/, "").startsWith(")") ? n : undefined;
-}
-
-/** The fleetd branch a merge commit's subject names: "Merge pull request #12 from acme/fleetd/T45-x", "Merge branch 'fleetd/T45-x'". */
-export function subjectTask(subject: string): string | undefined {
-  const at = subject.indexOf("fleetd/");
-  return at < 0 ? undefined : branchTask(subject.slice(at));
-}
-
-/** A merge of the default branch into itself: `git pull` on it, "Merge branch 'main' of host:repo". */
-export const isSync = (subject: string, branch: string) =>
-  subject.startsWith(`Merge branch '${branch}' of `) || (subject.startsWith("Merge remote-tracking branch '") && subject.includes(`/${branch}'`));
 
 /** The route-free fields every row from git has. */
 function baseRow(remote: string, c: GitCommit, owner: At | undefined): MergeRow {

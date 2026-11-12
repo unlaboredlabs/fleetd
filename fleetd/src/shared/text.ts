@@ -51,3 +51,9 @@ export const keepTail = (text: string, max: number) => (text.length <= max ? tex
 
 /** Standard base64 with its padding, as Rust's `STANDARD` engine decodes it. */
 export const isBase64 = (text: string) => text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
+
+/** The task a fleetd branch names: `fleetd/T12-…` → "T12". */
+export function branchTask(branch: string): string | undefined {
+  const m = /^fleetd\/T([1-9][0-9]*)/.exec(branch);
+  return m ? `T${m[1]}` : undefined;
+}

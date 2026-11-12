@@ -6,7 +6,32 @@
 import type { ActorKind } from "../../shared/contracts.ts";
 import { shortRemote } from "../work/repo_key.ts";
 import { isRemoteRepo } from "./compute.ts";
-import type { HostActs } from "./host_acts.ts";
+
+/** A review submitted (approve, request changes or comment), or a review comment or a PR comment. */
+export type HostActKind = "review" | "comment";
+
+/** One review or comment, as the host recorded it. */
+export type HostAct = {
+  kind: HostActKind;
+  /** The host's id for it, unique in the repo for its kind. */
+  id: string;
+  prNumber: number;
+  /** When it was submitted. */
+  atMs: number;
+  login?: string;
+  /** Left by a bot account: not a touch. */
+  bot: boolean;
+  /** The PR's head branch, when the host said. */
+  head?: string;
+  /** The PR's changed lines (additions + deletions), for a review's credit. */
+  lines?: number;
+};
+
+/** Reads a repo's reviews and comments. `repo` is the metrics' remote key ("github.com/acme/web"). */
+export interface HostActs {
+  /** Every review and comment submitted at or after `sinceMs`; it throws why the host could not be read. */
+  actsSince(repo: string, sinceMs: number): Promise<HostAct[]>;
+}
 
 /** A repo as the sweep reads it. */
 export type RepoRef = {
@@ -94,7 +119,7 @@ export interface GitHostSource {
 
 /**
  * The git host readers the sweep uses, one per host it can read. The shipped hub reads through the hosts' real CLIs;
- * a test or lab hub reads none (or fakes), so it never reaches the network. The real ones are github.ts `realSources`.
+ * a test or lab hub reads none (or fakes), so it never reaches the network. The real ones are loops.ts `realSources`.
  */
 export type HostSources = { github?: GitHostSource };
 

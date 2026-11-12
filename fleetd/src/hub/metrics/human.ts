@@ -2,7 +2,7 @@
 // least time its act could take, as the interval before it was recorded. Touches less than BRIDGE_MS apart join one
 // session, and the minutes are the union of the sessions; the low bound is the union of the credits alone.
 import type { HumanSource } from "../../shared/contracts.ts";
-import type { TouchRow } from "./store.ts";
+import type { TouchRow } from "./rows.ts";
 
 export const MINUTE_MS = 60_000;
 /** Touches closer than this join one session; the gap between them counts. */
