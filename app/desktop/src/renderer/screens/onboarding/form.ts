@@ -147,19 +147,17 @@ export const reduce = (form: Form, action: Action): Form => {
 };
 
 /**
- * A code as it is typed: upper case, and the dash put in after the fourth character, so `abcd2345` shows as
- * `ABCD-2345`. Main still normalizes what is sent (`normalizeCode`), look-alikes included.
+ * A code as it is typed: upper case, and a dash after every fourth character, so `abcd2345` shows as `ABCD-2345` and
+ * a long invite code as `ABCD-2345-WXYZ-6789`. Main still normalizes what is sent (`normalizeCode`), look-alikes
+ * included.
  */
-export const formatCode = (input: string): string => {
-  const raw = input.replace(/[\s-]/gu, "").toUpperCase();
-  return raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
-};
+export const formatCode = (input: string): string => (input.replace(/[\s-]/gu, "").toUpperCase().match(/.{1,4}/gu) ?? []).join("-");
 
 /** Where the caret goes after `formatCode`: after the same number of code characters as before it was typed. */
 export const formatCodeAt = (input: string, caret: number): { readonly value: string; readonly caret: number } => {
   const value = formatCode(input);
   const before = input.slice(0, caret).replace(/[\s-]/gu, "").length;
-  return { value, caret: Math.min(before > 4 ? before + 1 : before, value.length) };
+  return { value, caret: Math.min(before + Math.max(0, Math.ceil(before / 4) - 1), value.length) };
 };
 
 const found = (hub: string): string => `Found your hub at ${hub}. Enter the code from \`fleetd pair\` to connect.`;

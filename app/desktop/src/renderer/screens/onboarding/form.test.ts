@@ -83,12 +83,16 @@ describe("the connect form", () => {
 
   it("keeps the caret after the same characters when a code is edited in the middle", () => {
     // "ABCD-2345" with "x" typed after the B: the dash moves, the caret stays after the x.
-    expect(formatCodeAt("ABxCD-2345", 3)).toEqual({ value: "ABXC-D2345", caret: 3 });
+    expect(formatCodeAt("ABxCD-2345", 3)).toEqual({ value: "ABXC-D234-5", caret: 3 });
     // Typed at the end: past the dash.
     expect(formatCodeAt("ABCD2", 5)).toEqual({ value: "ABCD-2", caret: 6 });
     // A character deleted before the dash.
     expect(formatCodeAt("ABD-2345", 2)).toEqual({ value: "ABD2-345", caret: 2 });
     expect(formatCodeAt("wxyz6789", 8)).toEqual({ value: "WXYZ-6789", caret: 9 });
+    // A long code: each dash counts, and the caret moves past the one a typed character opens.
+    expect(formatCodeAt("WXYZ-6789A", 10)).toEqual({ value: "WXYZ-6789-A", caret: 11 });
+    expect(formatCodeAt("WXYZ-6789-ABCxD-2345", 14)).toEqual({ value: "WXYZ-6789-ABCX-D234-5", caret: 14 });
+    expect(formatCodeAt("", 0)).toEqual({ value: "", caret: 0 });
   });
 
   it("shows a code in capitals with its dash, however it is typed", () => {
@@ -98,6 +102,12 @@ describe("the connect form", () => {
     expect(formatCode("abcd")).toBe("ABCD");
     // Deleting back over the dash leaves the first four, not a dangling dash.
     expect(formatCode("ABCD-")).toBe("ABCD");
+    // A long invite code: a dash after every fourth character, nothing cut off.
+    expect(formatCode("abcd2345wxyz6789")).toBe("ABCD-2345-WXYZ-6789");
+    expect(formatCode("abcd 2345-wxyz6789abcd")).toBe("ABCD-2345-WXYZ-6789-ABCD");
+    expect(formatCode("ABCD-2345-WXYZ-6789-AB")).toBe("ABCD-2345-WXYZ-6789-AB");
+    expect(formatCode("ABCD-2345-")).toBe("ABCD-2345");
+    expect(reduce(initialForm(unpaired, {}), { type: "edit", field: "code", value: "abcd2345wxyz6789abcd" }).code).toBe("ABCD-2345-WXYZ-6789-ABCD");
     expect(reduce(initialForm(unpaired, {}), { type: "edit", field: "code", value: "abcd2345" }).code).toBe("ABCD-2345");
   });
 

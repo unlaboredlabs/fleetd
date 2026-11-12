@@ -29,6 +29,17 @@ describe("pair", () => {
   it("refuses a code that can't be one before asking the hub", async () => {
     const result = await pair(answering(200, {}), "devbox:4790", "nope", "Pixel");
     expect(result).toMatchObject({ ok: false, failure: { message: expect.stringContaining("8 letters and digits") } });
+    const seen: Array<{ url: string; body: unknown }> = [];
+    const partial = await pair(answering(200, {}, seen), "devbox:4790", "ABCD-2345-WXYZ-678", "Pixel");
+    expect(partial).toMatchObject({ ok: false, failure: { message: "A pairing code is 8 letters and digits, like ABCD-2345." } });
+    expect(seen).toEqual([]);
+  });
+
+  it("sends a long invite code in groups of four", async () => {
+    const seen: Array<{ url: string; body: unknown }> = [];
+    const result = await pair(answering(200, { key: "key_1", hubUrl: "http://devbox:4790", hubName: "devbox" }, seen), "devbox:4790", "abcd 2345 wxyz 6789", "Pixel");
+    expect(result).toMatchObject({ ok: true });
+    expect(seen).toMatchObject([{ body: { code: "ABCD-2345-WXYZ-6789" } }]);
   });
 
   it("passes on the hub's own words", async () => {

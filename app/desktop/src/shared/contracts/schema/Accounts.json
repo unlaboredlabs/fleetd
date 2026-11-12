@@ -216,7 +216,7 @@
         },
         "pairingCode": {
           "description": "A pairing code (`ABCD-2345`) for this person on this team: one use, 15 minutes.",
-          "pattern": "^[A-Z0-9]{4}-?[A-Z0-9]{4}$",
+          "pattern": "^[A-Z0-9]{4}(?:-?[A-Z0-9]{4}){1,7}$",
           "type": "string"
         },
         "url": {
