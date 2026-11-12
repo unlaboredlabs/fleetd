@@ -313,6 +313,12 @@ export function decodeInput(tool: string, input: unknown): unknown {
   return decoder(schema)(input ?? {});
 }
 
+/** `output` decoded against `tool`'s answer in the contract; throws a DecodeError with serde's detail. */
+export function decodeOutput(tool: string, output: unknown): unknown {
+  const schema = TOOLS[`${tool}.output`];
+  return schema ? decoder(schema)(output) : output;
+}
+
 /** A node's lead call decoded against `LeadCall` (an internally tagged enum on `op`); throws a DecodeError. */
 export function decodeLeadCall(call: unknown): unknown {
   return decoder(DEFS.LeadCall as Schema)(call);
