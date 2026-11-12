@@ -36,6 +36,8 @@ export interface CloudHub {
   readonly id: string;
   readonly label: string;
   call(tool: string, input: unknown): Promise<CallOutcome>;
+  /** The hub refuses this app's key now (its connection's state is `refused`). */
+  refused(): boolean;
 }
 
 export interface CloudPorts {
@@ -284,11 +286,15 @@ export class CloudAccount {
   }
 }
 
-/** This device's own key on `hub`, revoked there (Devices' Sign out on itself). False when the hub couldn't be asked. */
+/**
+ * This device's own key on `hub`, revoked there (Devices' Sign out on itself). A hub never answers that call: revoking
+ * the key closes the very socket it came on (4401), so the call fails and the hub then refuses the key, which is the
+ * revoke done. False when the hub couldn't be asked, or refused the revoke itself.
+ */
 const revokeOwnKey = async (hub: CloudHub): Promise<boolean> => {
   const people = await hub.call("people_list", {});
   const keyId = people.ok ? (people.output as { thisDevice?: unknown }).thisDevice : undefined;
   if (typeof keyId !== "string") return false;
   const revoked = await hub.call("device_revoke", { keyId });
-  return revoked.ok;
+  return revoked.ok || hub.refused();
 };

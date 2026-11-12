@@ -16,6 +16,10 @@ interface Hub {
   label: string;
   calls: string[];
   offline?: boolean;
+  /** Refuses device_revoke itself (a role that may not), as a hub's tool error. */
+  forbids?: boolean;
+  /** The hub has refused this app's key since. */
+  refused?: boolean;
 }
 
 const setup = (fake: FakeAccounts, over: Partial<CloudPorts> & { email?: string; deny?: boolean } = {}) => {
@@ -47,8 +51,14 @@ const setup = (fake: FakeAccounts, over: Partial<CloudPorts> & { email?: string;
         call: (tool: string, input: unknown): Promise<CallOutcome> => {
           h.calls.push(`${tool} ${JSON.stringify(input)}`);
           if (h.offline === true) return Promise.resolve({ ok: false, error: { code: "offline", message: "Not connected." } });
-          return Promise.resolve({ ok: true, output: tool === "people_list" ? { people: [], devices: [], invites: [], thisDevice: `K-${h.id}` } : { revoked: true } });
+          if (tool === "people_list") return Promise.resolve({ ok: true, output: { people: [], devices: [], invites: [], thisDevice: `K-${h.id}` } });
+          if (h.forbids === true) return Promise.resolve({ ok: false, error: { code: "forbidden", message: "Only an admin may." } });
+          // As a hub does: revoking the caller's own key closes its socket (4401) before any answer, so the call fails
+          // the way the client fails it, and the hub refuses the key from then on.
+          h.refused = true;
+          return Promise.resolve({ ok: false, error: { code: "forbidden", message: "The hub refused the key (unauthorized)." } });
         },
+        refused: () => h.refused === true,
       })),
     forget: (id) => hubs.splice(hubs.findIndex((h) => h.id === id), 1),
     load: () => saved,
@@ -167,15 +177,18 @@ describe("signing in to fleetd cloud", () => {
   it("sign out: this device's key revoked on each team, the hubs dropped, then the session ended", async () => {
     await fake.team("acme", ["sam@acme.example"]);
     await fake.team("side", ["sam@acme.example"]);
+    await fake.team("ops", ["sam@acme.example"]);
     const { account, hubs, saved } = setup(fake);
     await account.signIn();
-    const [acme, side] = hubs;
-    if (acme === undefined || side === undefined) throw new Error("both teams should have connected");
+    const [acme, side, ops] = hubs;
+    if (acme === undefined || side === undefined || ops === undefined) throw new Error("every team should have connected");
     side.offline = true;
+    ops.forbids = true;
     const session = [...fake.sessions][0];
     const out = await account.signOut();
+    // acme never answered its revoke, the hub closed the socket on the key it revoked: that is the revoke done.
     expect(acme.calls).toEqual(["people_list {}", 'device_revoke {"keyId":"K-h1"}']);
-    expect(out).toEqual({ kept: ["side"] });
+    expect(out).toEqual({ kept: ["ops", "side"] });
     expect(hubs).toEqual([]);
     expect(saved()).toBeNull();
     expect(fake.ended).toEqual([session]);

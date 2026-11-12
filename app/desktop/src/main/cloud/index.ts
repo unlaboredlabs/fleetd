@@ -58,7 +58,13 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     open,
     deviceName,
     connect: (url, key, label) => hubs.connectCloud({ url, key }, label),
-    cloudHubs: () => hubs.cloudHubs().map(({ id, label, service }) => ({ id, label, call: (tool, input) => service.call({ tool, input: input as never }) })),
+    cloudHubs: () =>
+      hubs.cloudHubs().map(({ id, label, service }) => ({
+        id,
+        label,
+        call: (tool, input) => service.call({ tool, input: input as never }),
+        refused: () => service.state().phase === "refused",
+      })),
     forget: (id) => hubs.remove(id),
     load: () => load(dir),
     save: (a) => save(dir, a),
