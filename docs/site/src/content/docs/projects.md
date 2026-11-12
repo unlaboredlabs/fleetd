@@ -165,8 +165,9 @@ lines, as a certificate chain or a service account's JSON does. A name that look
 A value is sealed in the app to the hub's own key. The hub keeps it encrypted in the vault and delivers it to the
 project's machine, sealed to that machine's key, whenever it changes or the machine comes back online. The node keeps
 the project's variables in a file of its own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every
-claude it starts for the project from then on. An agent already running gets a change at its next start. Your own
-variables (Settings › You › Vault) reach the orders you start, unless the project or the order has the same name. Every start of an agent is in the vault's activity, by variable name.
+claude it starts for the project from then on. An agent already running gets a change at its next start. An
+[order's variable](/docs/approvals-and-secrets#order-variables) of the same name wins for that order's agents. Every
+start of an agent is in the vault's activity, by variable name.
 
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
 the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
@@ -558,9 +559,9 @@ asked (decision `projects.one-model`, D310): each purchase goes in its purchases
 checkout, the lead never sees it, and the chat says what was paid. Any project's lead can pay, except an archived one's.
 Make it a virtual card with a monthly limit or a low-limit card ([why](/docs/security#agent-reach)).
 
-1. **Pick a card.** In the project's settings, **Payments › Pick a card…** lists the vault's cards the project's work
-   can use: its own, yours shared with it, and the hub's. **Add a
-   card…** and **Import from 1Password…** are beside the list, and pick the card they add. fleetd keeps `vault:<id>`.
+1. **Pick a card.** In the project's settings, **Payments › Pick a card…** lists the team vault's cards, which every
+   project may pay with. **Add a card…** and **Import from 1Password…** are beside the list, and pick the card they
+   add. fleetd keeps `vault:<id>`.
    On a hub without the vault, Payments lists the Credit Card items the project's 1Password token reads instead, and
    keeps their `op://vault/item` reference; a hub with the vault imports that card once.
 2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and

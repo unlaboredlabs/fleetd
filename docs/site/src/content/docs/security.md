@@ -146,13 +146,16 @@ The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted 
   variable names, secret fingerprints and the activity log.
 - **In transit.** The app seals what you type to the hub's own box key, even inside TLS. The hub seals a fill or a
   variable to the one node that uses it, and a reveal to a one-time key the app makes for it.
-- **Use.** A fill goes only to the node hosting that browser session, for an item the session's project, order or
-  person may use, on one of the item's sites; cards only at a purchase recorded in that session. Fills are rate-limited
-  and every use, refusal and reveal is in the activity log, never with a value. Agents have no tool to show, create,
-  change, delete or share an item.
-- **Reveal.** Only from a person's device, by the item's owner (for a project's, its creator or an admin; for the
-  hub's, an admin), behind Touch ID or a system confirm on the desktop and Face ID or the passcode on the phone, at
-  most 30 an hour. On Linux and Windows the desktop's confirm is one click: lock your computer when you leave it.
+- **Use.** A fill goes only to the node hosting that browser session, for an item of the team vault, on one of the
+  item's sites; cards only at a purchase recorded in that session. A hub is one trust group: every project's agents may
+  fill every team item, so give a hub only to people you trust with each other's logins and cards. Fills are
+  rate-limited and every use, refusal and reveal is in the activity log, never with a value. Agents have no tool to
+  show, create, change or delete an item.
+- **Change.** Only who may reveal an item changes or deletes it: otherwise someone could move a login's or an
+  address's sites to a page of their own and have an agent fill there what they can't see. For the same reason,
+  making a secret variable plain, which shows its value in the list, takes who may reveal it.
+- **Reveal.** Only from a person's device, by the item's creator or an admin (an order's variable: its creator),
+  behind Touch ID or a system confirm on the desktop and Face ID or the passcode on the phone, at most 30 an hour. On Linux and Windows the desktop's confirm is one click: lock your computer when you leave it.
 - **Its limit.** Agents run as the same OS user as the node, and on the hub's machine as the hub
   ([above](#agent-reach)): an agent there can read the root key file and the database, so the whole vault, much as it
   could read every node secret before. A passphrase keeps the key off the disk, but not from a process of the same

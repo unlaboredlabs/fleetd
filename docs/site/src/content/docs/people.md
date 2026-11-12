@@ -114,10 +114,11 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
-**Settings › You › Vault** is each person's own too: the logins, cards, addresses and variables your work uses
-([Vault](/docs/vault)). Nobody else lists them or sees their activity, admins included, unless you share one with a
-project, whose agents can then fill it but never see it. The hub's own items (Settings › Hub › Every project › Vault, such as a team
-card) are listed for everyone and changed and shown only by owners and admins.
+**Settings › You › Vault** is the hub's one team vault ([Vault](/docs/vault)): every login, card and address, listed for
+everyone and filled by every project's agents. Anyone adds one; its creator or an owner or admin shows, changes or
+deletes it. A person removed from the hub leaves theirs behind for admins to manage. Variables are each project's. The
+only items that are a person's alone are those the [upgrade to one team vault](/docs/vault#team-vault) set aside on a
+hub with several people: nobody else lists them, admins included, and they go with their person when removed.
 
 **Settings › Your accounts › 1Password** is optional: a 1Password service account token to [import from into the
 vault](/docs/vault#import) (see [Logins from 1Password](/docs/browser-sessions#1password)). Its tools are
