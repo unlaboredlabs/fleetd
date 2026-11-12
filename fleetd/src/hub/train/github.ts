@@ -330,8 +330,9 @@ export function encodeUrl(s: string, path: boolean): string {
   return out;
 }
 
+/** gh's reason in `stderr`: its last line, or the line naming a flag it doesn't know, which comes above its usage. */
 function lastLine(stderr: string): string {
-  const last = stderr.trim().split("\n").at(-1) ?? "";
+  const last = stderr.match(/^unknown flag: .*/m)?.[0] ?? stderr.trim().split("\n").at(-1) ?? "";
   return [...(last.startsWith("gh: ") ? last.slice(4) : last)].slice(0, 500).join("");
 }
 
@@ -417,6 +418,9 @@ export function rulesFromAnswers(rules: unknown, classic: unknown, repo: unknown
 
 export type Sleep = (ms: number) => Promise<void>;
 
+/** `gh api`'s flag (gh 2.97.0 on) to print an answer holding terminal escape sequences. */
+export const ALLOW_ESCAPES = "--allow-escape-sequences";
+
 const CLASSIC_RULE =
   "query($owner: String!, $name: String!, $ref: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { " +
   "branchProtectionRule { requiresApprovingReviews requiredApprovingReviewCount requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
@@ -475,12 +479,13 @@ export class TrainGitHub {
     return this.budget.spread(ms, repo?.split("/")[0]);
   }
 
-  /** `gh api` with `accept`: the answer's text, or `[status, message]` for a non-2xx answer. */
+  /** `gh api` with `accept` and `flags`: the answer's text, or `[status, message]` for a non-2xx answer. */
   async exchange(
     method: string,
     path: string,
     accept: string,
     fields: [string, string][] = [],
+    flags: string[] = [],
   ): Promise<{ ok: true; text: string } | { ok: false; status: number; message: string }> {
     const owner = ownerOf(path, fields);
     const resource = path === "graphql" ? "graphql" : "core";
@@ -492,6 +497,7 @@ export class TrainGitHub {
       // `draft` is a JSON boolean; -f would send the string "true".
       args.push(k === "draft" ? "-F" : "-f", `${k}=${v}`);
     }
+    args.push(...flags);
     const key = method === "GET" && fields.length === 0 ? `${accept}\u0000${path}` : undefined;
     const kept = key !== undefined ? this.answers.get(key) : undefined;
     if (kept) args.push("-H", `If-None-Match: ${kept.etag}`);
@@ -688,9 +694,14 @@ export class TrainGitHub {
     await this.json("POST", `repos/${repo}/actions/runs/${run}/rerun`, [], (v) => v ?? null);
   }
 
-  /** The log of Actions job `job`, as text. */
+  /** The log of Actions job `job`, as text, terminal escape sequences and all: never print it. */
   async jobLog(repo: string, job: number): Promise<string> {
-    const r = await this.exchange("GET", `repos/${repo}/actions/jobs/${job}/logs`, "Accept: application/vnd.github+json");
+    const path = `repos/${repo}/actions/jobs/${job}/logs`;
+    const accept = "Accept: application/vnd.github+json";
+    // Every job log holds escape sequences (GitHub colours its step headers), and gh since 2.97.0 refuses to print a
+    // response with any unless told to; a gh before it doesn't know the flag, and prints the log as it is.
+    let r = await this.exchange("GET", path, accept, [], [ALLOW_ESCAPES]);
+    if (!r.ok && r.message.startsWith(`unknown flag: ${ALLOW_ESCAPES}`)) r = await this.exchange("GET", path, accept);
     if (!r.ok) throw GhError.failed(`the log of job ${job}: ${r.message}`);
     return r.text;
   }
