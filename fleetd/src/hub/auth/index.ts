@@ -6,11 +6,11 @@ import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { HubDb } from "../store/db.ts";
 import { capped, cleanName, OWNER_FALLBACK, roleCap, roleOf } from "../people/roles.ts";
-import { allows, isAgentKey, sha256, stripBearer } from "./allows.ts";
+import { isAgentKey, isoMs, sha256, stripBearer } from "./allows.ts";
 import { Keys } from "./keys.ts";
 import { NodeKeys } from "./nodes.ts";
 
-export { allows, isAgentKey, sha256, stripBearer } from "./allows.ts";
+export { allows, isAgentKey, isoMs, sha256, stripBearer } from "./allows.ts";
 
 const CREATE_KEY_FIX = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
 const KEY_PREFIX = "fld_";
@@ -34,9 +34,6 @@ export type KeyRow = {
 const KEY_QUERY = `SELECT k.key_id, k.name, k.kind, k.prefix, k.grants, k.created_ms, k.last_used_ms, k.revoked_ms,
   p.person_id, p.name AS person_name, p.role AS person_role, p.removed_ms IS NOT NULL AS person_removed
   FROM agent_keys k LEFT JOIN people p ON p.person_id = k.person_id WHERE k.hash = ?`;
-
-/** Milliseconds as the hub writes timestamps: `2026-11-08T14:00:00.000Z`. */
-export const isoMs = (ms: number) => new Date(ms).toISOString();
 
 export class Auth {
   /** Node enroll tokens and node keys. */

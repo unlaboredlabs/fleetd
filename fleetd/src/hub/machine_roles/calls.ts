@@ -37,17 +37,11 @@ import {
   setSession,
 } from "./places.ts";
 import { hashToken } from "./relay.ts";
+import { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
+
+export { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
 
 export const OPS = ["session_route", "session_step"] as const;
-
-/** How long a start on another machine may take: its pool may have to launch a browser or boot a device. */
-export const START_WAIT = 90_000;
-/** An agent-device command for a screen elsewhere: the first in a fresh clone starts its runner there. */
-export const DEVICE_WAIT = 110_000;
-/** Every other call. */
-export const CALL_WAIT = 45_000;
-/** How long the hub gives a runner to end a start nobody will use. */
-export const CANCEL_WAIT = 15_000;
 
 export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);

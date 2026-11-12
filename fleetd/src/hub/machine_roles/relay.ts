@@ -7,27 +7,12 @@
 // token, asks the runner's node to connect it (`relay_dial`), and pipes the two sockets frame for frame until either
 // ends. Nothing here logs a frame, a payload or a token.
 import type { Hub } from "../api/hub.ts";
-import { sha256 } from "../auth/index.ts";
 import { link } from "../link/index.ts";
 import { type RouteContext, type Socket, type SocketHandler, type Route, upgrade, expectUpgrade } from "../http/route.ts";
 import { newRelayToken, type Place, placeByRelay } from "./places.ts";
+import { DIAL_WAIT, GONE_HEADER, goneProof, hashToken, isToken } from "./relay_rules.ts";
 
-/** How long the runner's node has to connect its side of a channel. */
-const DIAL_WAIT = 15_000;
-/** A full-page screenshot or a large DOM is several MB; as the node's own proxy allows. */
-export const MAX_MESSAGE = 128 << 20;
-/** The header of the relay's own refusal of a session that ended. */
-export const GONE_HEADER = "x-fleetd-relay-gone";
-
-/** What the hub keeps of a session's token. */
-export const hashToken = (token: string) => sha256(token);
-
-/**
- * What the relay's refusal of a session that ended carries, from the SHA-256 of its token: only a party that knows
- * the token makes it, so the agent's node tells it from a refusal by something in front of the hub.
- */
-export const goneProof = (tokenHash: string) =>
-  new Bun.CryptoHasher("sha256").update("fleetd relay 1: gone ").update(tokenHash).digest("hex");
+export { DIAL_WAIT, GONE_HEADER, goneProof, hashToken, isToken, MAX_MESSAGE } from "./relay_rules.ts";
 
 /** One side of a channel: the other, once both are there, and what came before the other did. */
 type Side = { peer: Socket | undefined; early: (string | Buffer)[]; closed: boolean };
@@ -40,8 +25,6 @@ export class Relays {
 }
 
 export const relays = (hub: Hub) => hub.area("machine_roles.relays", () => new Relays());
-
-const isToken = (t: string) => /^[0-9a-f]{64}$/.test(t);
 
 function pipeTo(r: Relays, from: Side, message: string | Buffer): void {
   r.tap?.(message);
