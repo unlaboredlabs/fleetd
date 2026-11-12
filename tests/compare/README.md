@@ -63,14 +63,15 @@ module at a time). It is a flag, not read from a short tool list, so a hub that 
 full run. With it, `isolation.ts` and `contract.ts` start no node and add no project (`areas.ts`):
 
 - each team is seeded through the tools the target lists (`areas.ts`'s SEEDS: a global decision, an invited person, a
-  file and the caller's picture made of it, the caller's name, a prompt's hub-wide text, a claim on a repo, the agents
-  cap, an env item in the vault and the vault's unlock, each sealed to `vault_status`'s `hubBoxKey`, and a phone after
-  pushes are turned off, and a profile on the first model `profiles_list` offers), then by the team's own `seed(mark,
-  times)`, if it has one, for rows no listed tool makes (a task, whose start is a lead call; a project, on a machine
-  the team knows that is offline, as one that joined once is). Team A once, team B twice with the canary as `mark`;
+  file and the caller's picture made of it, the caller's name, its pins, chat sections and sidebar order (empty
+  lists), a prompt's hub-wide text, a claim on a repo, the agents cap, an env item in the vault and the vault's
+  unlock, each sealed to `vault_status`'s `hubBoxKey`, and a phone after pushes are turned off, and a profile on the
+  first model `profiles_list` offers), then by the team's own `seed(mark, times)`, if it has one, for rows no listed
+  tool makes (a task, whose start is a lead call; a project, on a machine the team knows that is offline, as one that
+  joined once is). Team A once, team B twice with the canary as `mark`;
 - the two-team cases are made of exactly the tools the target lists, and reads that take words besides ids
-  (`decisions_search` for "decision", `work_list` for the seeded repo, the time reads for the day before the run's
-  clock, which the caller may inject) are made beside the generated ones;
+  (`decisions_search` for "decision", `work_list` for the seeded repo, the time reads and `metrics_get` for the day
+  before the run's clock, which the caller may inject) are made beside the generated ones;
 - the contract checks `/healthz`, that every listed tool is in `McpTools.json`, and each listed tool's answer as its
   `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it (a tool a seed calls is a
   write, whatever its annotation), then the other writes with the team's own ids, then the ones that take away what
@@ -85,14 +86,15 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   resolves, and must refuse the fetch (`failed` or `invalid`); `vault_reveal` reveals the seeded env item's `value` to
   a 32-byte reply key; `claude_hub_api_set` (machines take the key), `hub_link_add` (another hub answers a hello
   first), `claude_account_test`, `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the
-  account or token does their work), `screen_open` and `screen_end` (a node hosts screens) and `skill_update` (it
-  fetches from outside) are skipped, saying why, as is a tool whose seed needs a tool the team doesn't list
-  (`vault_status` for the vault's, `push_relay_set` for the phone). The vault's seeds seal with fleetd's sealed box,
-  from this checkout or from the fleetd package installed in a node_modules directory above a copy of tests/compare
-  (not one in the system's temp directory). Then `/app` on that team, with no machine: `ready` and `snapshot`, every
-  event the hub keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`,
-  `hub_info` or `people_list` first), and a call of a name the team doesn't list, which must come back as an `error`
-  with the call's id; each frame decoded as `AppServerMessage`. The CLI's rows are skipped.
+  account or token does their work), `screen_open` and `screen_end` (a node hosts screens), and the reads `pr_get`,
+  `pr_files` and `pr_diff` (GitHub, which a run doesn't reach) and `skill_update` (it fetches from outside) are
+  skipped, saying why, as is a tool whose seed needs a tool the team doesn't list (`vault_status` for the vault's,
+  `push_relay_set` for the phone). The vault's seeds seal with fleetd's sealed box, from this checkout or from the
+  fleetd package installed in a node_modules directory above a copy of tests/compare (not one in the system's temp
+  directory). Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub keeps (asked from
+  cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`, `hub_info` or `people_list`
+  first), and a call of a name the team doesn't list, which must come back as an `error` with the call's id; each
+  frame decoded as `AppServerMessage`. The CLI's rows are skipped.
 
 A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
 unless `--bin` gives one:

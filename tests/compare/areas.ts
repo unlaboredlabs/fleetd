@@ -84,6 +84,11 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
   ],
   // The caller's own name: a write a read key may make, so listed as read-only, and it needs the name.
   ["person_name_set", (mark, n) => ({ name: `${mark} name ${n}` })],
+  // The caller's pins, chat sections and sidebar order, each a whole list that replaces the last: writes a read key
+  // may make, listed as read-only, which take only their list (empty: the run's chats are none of them).
+  ["chat_pins_set", () => ({ pins: [] })],
+  ["chat_sections_set", () => ({ sections: [] })],
+  ["sidebar_order_set", () => ({ order: [] })],
   // The hub-wide text of a prompt: saving needs the text.
   ["prompt_set", (mark, n) => ({ id: "lead.voice", scope: "global", text: `${mark} voice ${n}` })],
   // A claim, on a repo rather than a project: it names one or the other.
@@ -184,7 +189,7 @@ const ON_MACHINE: ReadonlyArray<readonly [tool: string, input: (ids: Ids, tool: 
   ["onepassword_set", (ids) => sealedForMachine(ids, "areas-1password-token")],
 ];
 
-/** Writes a run with no machine and one hub can't make at all, by why. */
+/** Tools a run with no machine and one hub can't call at all, by why (reads among them). */
 const NOT_HERE: Readonly<Record<string, string>> = {
   claude_hub_api_set: "not called: it seals the key to each machine, which takes it only while online, and no node joins",
   hub_link_add: "not called: the other hub must answer a hello before the link is kept, and the run has no second hub to link to",
@@ -195,6 +200,9 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   vault_import: "not called: a machine holding the person's 1Password token reads 1Password, and no node joins, so no machine holds one",
   screen_open: "not called: it needs a node that hosts screens, and no node joins",
   screen_end: "not called: it ends a person's screen, which only screen_open on a node makes",
+  pr_get: "not called: it reads a pull request from GitHub, which a run doesn't reach",
+  pr_files: "not called: it reads a pull request from GitHub, which a run doesn't reach",
+  pr_diff: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
 };
 
@@ -217,7 +225,7 @@ const BESIDE_IDS: Readonly<Record<string, () => Record<string, unknown>>> = {
 
 /**
  * Reads that take more than ids, `now` the run's clock: every seeded decision's text holds "decision", the work is on
- * REPO, and the time reads cover the day before `now`.
+ * REPO, and the time reads and the metrics cover the day before `now`.
  */
 export const reads = (now: number): Reads => {
   const since = new Date(now - 86_400_000).toISOString();
@@ -227,6 +235,7 @@ export const reads = (now: number): Reads => {
     ["time_spans", { scope: { kind: "fleet" }, since }],
     ["time_breakdown", { scope: { kind: "fleet" }, since }],
     ["time_insights", { scope: { kind: "fleet" }, since }],
+    ["metrics_get", { since, tz: "UTC" }],
   ];
 };
 
@@ -320,6 +329,10 @@ export async function areasContract(team: Team, contract: Contract, valid: (tool
   const read = await harvest(as, known.filter((t) => !done.has(t.name)), contract, READS, idsIn(seeded, contract));
   for (const tool of known.filter((t) => t.annotations?.readOnlyHint === true && !done.has(t.name))) {
     done.add(tool.name);
+    if (tool.name in NOT_HERE) {
+      checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: NOT_HERE[tool.name]! });
+      continue;
+    }
     const answers = read.answers.filter((r) => r.tool === tool.name).map((r) => r.answer);
     if (answers.length === 0) checks.push({ name: `MCP ${tool.name}`, ok: true, skipped: "not called: none of the ids it needs turned up in the team's reads" });
     else decoded(tool.name, answers);

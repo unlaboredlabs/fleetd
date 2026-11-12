@@ -605,3 +605,36 @@ test("a profile of the run's own on a model the hub offers, deleted last, never 
     await target.close();
   }
 });
+
+test("a read that takes no id is asked with what it needs, a write a read key may make is seeded, and a GitHub read says why it isn't", async () => {
+  const asked: Array<[string, unknown]> = [];
+  const tool = (name: string, readOnly: boolean, type: string, answer: unknown): StandInTool => ({
+    name,
+    readOnly,
+    input: input(`${type}Input`),
+    output: {},
+    run: (_team, given) => {
+      asked.push([name, given]);
+      return answer;
+    },
+  });
+  const tools = [
+    tool("metrics_get", true, "MetricsGet", { since: "2026-01-01T00:00:00.000Z", tz: "UTC", tiles: [], days: [] }),
+    tool("chat_pins_set", true, "ChatPinsSet", { pins: [] }),
+    tool("pr_get", true, "PrGet", {}),
+  ];
+  const target = await standIn({ only: tools });
+  try {
+    const checks = await areasContract(await target.team(""), doc, () => undefined, () => Date.parse("2026-01-02T00:00:00.000Z"));
+    expect(checks.filter((c) => c.name.startsWith("MCP ") && c.name !== "MCP tools/list answers")).toEqual([
+      { name: "MCP chat_pins_set decodes as chat_pins_set.output", ok: true },
+      { name: "MCP metrics_get decodes as metrics_get.output", ok: true },
+      { name: "MCP pr_get", ok: true, skipped: "not called: it reads a pull request from GitHub, which a run doesn't reach" },
+    ]);
+    // The metrics cover the day before the clock the run is given.
+    expect(asked.filter(([name]) => name === "metrics_get").map(([, given]) => given)).toContainEqual({ since: "2026-01-01T00:00:00.000Z", tz: "UTC" });
+    expect(asked.map(([name]) => name)).not.toContain("pr_get");
+  } finally {
+    await target.close();
+  }
+});
