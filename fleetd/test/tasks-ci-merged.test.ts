@@ -2,6 +2,7 @@
 // merges, fails on the train or closes, read from the merge train; its checks finishing doesn't.
 import { expect, test } from "bun:test";
 import { type CiReads, type Merge, mergeOf, pollCiWaits, type Read, type Target, targetUrl } from "../src/hub/tasks/ci_wait.ts";
+import { sendRunId } from "../src/hub/executor/sessions.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
 import type { ProjectRef } from "../src/shared/contracts.ts";
 import { P, tasksKit, until } from "./tasks-kit.ts";
@@ -134,5 +135,28 @@ test("a merge read that fails leaves the wait for the next pass, and the poll go
   const healthy = new Reads();
   healthy.merges.set(PR, { kind: "merged" });
   expect(await k.poll(healthy)).toBe(1);
+  k.hub.shutdown.abort();
+});
+
+// Nov 12: T3085's first PR merged while it waited on that merge to open its next; the merge's worktree removal took
+// its scratch dir, and its Postgres, 22 s before the wake continued it.
+test("a merged PR's writer keeps its worktree while a wait of its own will continue it, and loses it once none is left", async () => {
+  const k = await ended();
+  await k.waitMerged(PR);
+  const merged = () => k.thread("pr.merged", "s1", { taskId: "T1", prNumber: 7 });
+  merged();
+  await Bun.sleep(50);
+  expect(k.ports.removed).toEqual([]);
+  // The wake continues it; done again with nothing waiting, its next merge removes the worktree.
+  const reads = new Reads();
+  reads.merges.set(PR, { kind: "merged" });
+  expect(await k.poll(reads)).toBe(1);
+  await until(() => k.t.get("T1")?.state === "running");
+  k.threadRow("s1", "completed", "Opened #9.");
+  k.thread("thread.completed", "s1", { runId: sendRunId({ machineId: "lab-a", threadId: "s1" }, k.ports.sends.at(-1)!.id) });
+  await until(() => k.t.get("T1")?.state === "done");
+  merged();
+  await until(() => k.ports.removed.length === 1);
+  expect(k.ports.removed[0]?.threadId).toBe("s1");
   k.hub.shutdown.abort();
 });

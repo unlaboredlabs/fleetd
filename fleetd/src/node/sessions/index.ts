@@ -308,6 +308,20 @@ const scratchName = (sessionId: string) => createHash("sha256").update(sessionId
 /** The session whose scratch dir `row` uses: the one it took over (`scratchOf`), else its own. */
 const scratchOwner = (row: SessionRow) => row.local.scratchOf ?? row.summary.sessionId;
 
+/** How long after its last change a session with no worktree keeps its scratch dir through the node's starts: as long
+ * as the hub keeps an ended task's worktree by default (`policy.worktree_days`). */
+export const SCRATCH_KEEP_MS = 3 * 86_400_000;
+
+/** The scratch dirs (their names under `tmp/`) the node's start keeps: those of every session that may still come back
+ * to it, between turns or with its process gone. One whose process ran on through the restart (`live`) keeps it; one
+ * with a worktree while the worktree stays (the hub has it removed once its task can't come back: its PR merged with
+ * nothing waiting, or the nightly sweep); one without for SCRATCH_KEEP_MS after its last change. */
+export function scratchKept(rows: SessionRow[], live: Set<string>, now: number): Set<string> {
+  const kept = (r: SessionRow) =>
+    live.has(r.summary.sessionId) || (r.local.baseRef ? !!r.summary.worktreePath : now - Date.parse(r.summary.updatedAt) < SCRATCH_KEEP_MS);
+  return new Set(rows.filter(kept).map((r) => scratchName(scratchOwner(r))));
+}
+
 /** One live session's process, through its host. */
 type Live = {
   generation: number;
@@ -434,8 +448,8 @@ export class SessionService {
     if (stopped) console.warn(`${nowIso()} WARN stopped sessions' hosts no session runs on {"stopped":${stopped}}`);
     const killed = await killOrphans(config.home, protectedPids);
     if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
-    // A killed node's scratch dirs: each session's own TMPDIR stays while its worktree or its process does.
-    const keep = new Set([...service.store.sessions().filter((r) => r.local.baseRef && r.summary.worktreePath).map(scratchOwner), ...adopted].map(scratchName));
+    // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept).
+    const keep = scratchKept(service.store.sessions(), adopted, Date.now());
     let swept = 0;
     for (const name of existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : []) {
       if (keep.has(name)) continue;
@@ -2072,9 +2086,12 @@ export class SessionService {
       const ended = await endLeft(join(this.home, "hosts", id));
       if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
     }
+    const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     // A session's scratch goes with its worktree, or with its process when it has none.
-    if (removeWorktree || !row.local.baseRef) await rm(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
+    if (!row.local.baseRef) await rm(scratch, { recursive: true, force: true });
     if (removeWorktree && row.local.baseRef) {
+      // Only once the worktree is gone: one kept for work found nowhere else (the refusal throws) is the task's to go
+      // on in, its scratch with it (on Nov 12 T3085 lost its scratch to a removal that kept its worktree).
       let deleted = false;
       if (row.local.branch) deleted = await worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef);
       else {
@@ -2082,6 +2099,7 @@ export class SessionService {
         await warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home));
         await worktree.removeDetached(row.local.workspaceRoot, row.local.cwd);
       }
+      await rm(scratch, { recursive: true, force: true });
       this.update(id, (c) => {
         delete c.row.summary.worktreePath;
         if (deleted) delete c.row.summary.branch;
