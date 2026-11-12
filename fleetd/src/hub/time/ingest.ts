@@ -2,47 +2,14 @@
 // with labels, roll-ups and the node's cursor; a node batch is acked only after its commit. Node spans move onto the
 // hub clock and are joined to their task, order or lead here.
 import type { Database } from "bun:sqlite";
-import type { SpanExtra, SpanKind, SpanStatus } from "../../shared/contracts.ts";
-import { kindOf, parseKind } from "./kinds.ts";
+import { kindOf } from "./kinds.ts";
 import { cursor, type Ids, linkParents, type NewSpan, setCursor, type Share, write } from "./store.ts";
+import { type Ack, decodeWire, gap, profileOf, type SpansFrame, type SpanWire, threadLane } from "./wire.ts";
+
+export { type Ack, decodeWire, gap, profileOf, type SpansFrame, type SpanWire, threadLane } from "./wire.ts";
 
 /** A wake explains a lead run that started at most this long after it (the send, then claude picking it up). */
 const WAKE_SLACK_MS = 120_000;
-
-/** A node span as the `spans` frame carries it. */
-export type SpanWire = {
-  key: string;
-  kind: SpanKind;
-  sessionId: string;
-  runId?: string;
-  parent?: string;
-  startMs: number;
-  endMs: number;
-  exclMs?: number;
-  label?: string;
-  exitCode?: number;
-  outBytes?: number;
-  status: SpanStatus;
-  extra?: SpanExtra;
-};
-
-export type SpansFrame = { fromRid: number; toRid: number; spans: unknown[] };
-
-export type Ack = { upto: number; rewind: boolean };
-
-export function gap(now: number, count: number): NewSpan {
-  return {
-    src: "h",
-    srcKey: `gap/${now}`,
-    kind: "gap",
-    startMs: now,
-    endMs: now,
-    ids: {},
-    lane: "fleet",
-    status: "incomplete",
-    extra: { count, reason: "the hub's span writer was full" },
-  };
-}
 
 /** Closes the open hub spans under `prefix`. */
 export function closePrefix(c: Database, prefix: string, end: number): void {
@@ -88,8 +55,6 @@ export function writeHub(c: Database, s: NewSpan): void {
 /** Who a node session is: a task's thread, a lead, or unknown yet. */
 export type Who = { ids: Ids; lead: boolean };
 
-/** A stored task's profile; a row without one is high, as the hub reads it (ProfileName::legacy). */
-export const profileOf = (task: { profile?: unknown }) => (typeof task.profile === "string" ? task.profile : "high");
 
 export function who(c: Database, machine: string, thread: string): Who {
   const task = c
@@ -142,7 +107,6 @@ export function who(c: Database, machine: string, thread: string): Who {
   };
 }
 
-export const threadLane = (machine: string, thread: string) => `thread:${machine}/${thread}`;
 
 /** The orders a lead run served: the newest wake of that lead at or before the run's start. */
 function leadRunOrders(c: Database, machine: string, thread: string, run: string, startMs: number): string[] {
@@ -174,17 +138,6 @@ function leadRunOrders(c: Database, machine: string, thread: string, run: string
   return ws;
 }
 
-/** A span as the node sent it, checked as the contracts would decode it; undefined for one that doesn't. */
-export function decodeWire(raw: unknown): SpanWire | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const w = raw as Record<string, unknown>;
-  const kind = typeof w.kind === "string" ? parseKind(w.kind) : undefined;
-  const int = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0;
-  if (typeof w.key !== "string" || !w.key || kind === undefined || typeof w.sessionId !== "string" || !int(w.startMs) || !int(w.endMs)) {
-    return undefined;
-  }
-  return { ...(w as unknown as SpanWire), kind, status: (w.status as SpanStatus | undefined) ?? "ok" };
-}
 
 /**
  * Stores a frame only when it continues the node's stored cursor, so the cursor (and the node's delete on ack) never

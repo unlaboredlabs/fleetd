@@ -1,7 +1,7 @@
 // Status: one row per project, a state word, its work in groups, agents running and the last merge.
 // Observed only, never an estimate.
 import type { Database } from "bun:sqlite";
-import type { HubEventType, Machine, ProjectRef, ProjectRowState, ProjectStatusRow, StaleMark } from "../../shared/contracts.ts";
+import type { Machine, ProjectRef, ProjectStatusRow, StaleMark } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { hubZone } from "../attention/index.ts";
 import { leadWorking } from "../chat/flow.ts";
@@ -12,51 +12,9 @@ import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { type Fresh, github, train } from "./fresh.ts";
 import { line, read as readGroups } from "./groups.ts";
+import { clock, type Facts, pkey, projectRef, stateOf } from "./row_rules.ts";
 
-const DAY_MS = 24 * 3_600_000;
-
-export const pkey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
-
-export function projectRef(key: string): ProjectRef {
-  const slash = key.indexOf("/");
-  return slash < 0 ? { machineId: key, projectId: "" } : { machineId: key.slice(0, slash), projectId: key.slice(slash + 1) };
-}
-
-/** Event types that can change a row: `fleetd status --watch` reads the rows again after one. */
-export const CHANGES_A_ROW: HubEventType[] = [
-  "machine.online", "machine.offline", "machine.degraded", "machine.guard", "project.added", "project.removed",
-  "chat.message", "chat.waiting", "lead.started", "workstream.created", "workstream.running", "workstream.state",
-  "workstream.done", "task.queued", "task.started", "task.completed", "task.failed", "task.cancelled", "thread.waiting",
-  "thread.usage_limited", "thread.started", "thread.completed", "thread.failed", "thread.interrupted", "request.opened",
-  "request.updated", "review.verdict", "change.queued", "change.ready", "change.needs_rebase", "change.ci_failed",
-  "change.refused", "change.state", "pr.merged", "pr.merged_outside", "usage.breaker", "usage.resumed", "ci.main",
-  "source.stale", "source.fresh",
-] as HubEventType[];
-
-function parts(ms: number, tz: string) {
-  const f = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  });
-  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
-  return { y: p.year, mon: p.month, d: p.day, wd: p.weekday, hm: `${p.hour}:${p.minute}` };
-}
-
-/** "14:02" today, "Thu 14:00" within a week, else "Oct 21 14:00", in the hub's zone. */
-export function clock(ms: number, now: number, tz: string): string {
-  if (Number.isNaN(new Date(ms).getTime())) return isoMs(ms);
-  const t = parts(ms, tz);
-  const n = parts(now, tz);
-  if (t.y === n.y && t.mon === n.mon && t.d === n.d) return t.hm;
-  if (Math.abs(ms - now) < 6 * DAY_MS) return `${t.wd} ${t.hm}`;
-  return `${t.mon} ${t.d} ${t.hm}`;
-}
+export { CHANGES_A_ROW, clock, type Facts, pkey, projectRef, stateOf } from "./row_rules.ts";
 
 /** An offline machine's mark: since its last heartbeat. */
 function machineStale(m: Machine, now: number, tz: string): StaleMark | undefined {
@@ -119,17 +77,6 @@ export function readChanges(c: Database): [Map<string, Merged>, Map<string, numb
     merges.set(pk, { atMs: at, title: title ?? `PR #${prNumber}`, prNumber, ...(prUrl === undefined ? {} : { prUrl }) });
   }
   return [merges, inFlight];
-}
-
-/** What decides a row's state word. */
-export type Facts = { needsYou: boolean; blocked?: string; agents: number; inFlight: number; leadWorking: boolean };
-
-/** Waiting on you first (only you can move it), then blocked, then working; idle when nothing runs or waits. */
-export function stateOf(f: Facts): ProjectRowState {
-  if (f.needsYou) return "waiting_on_you";
-  if (f.blocked !== undefined) return "blocked";
-  if (f.agents > 0 || f.inFlight > 0 || f.leadWorking) return "working";
-  return "idle";
 }
 
 /** A project's 7-day merge fact (metrics `weeks`). */
