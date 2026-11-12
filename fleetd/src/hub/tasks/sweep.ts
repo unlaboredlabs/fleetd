@@ -4,8 +4,7 @@
 // Orphans (G2): a task the hub thinks runs, on a machine whose node is linked, whose thread has had no event for 2 min
 // and no longer runs there: its run's end is applied now, or it fails for its lead to decide on. The other way round,
 // a session the node runs that no task or lead owns is reported once (`thread.orphaned`).
-import type { HubEvent, HubEventType, Task, TaskId, ThreadRef } from "../../shared/contracts.ts";
-import type { StoredThread } from "../store/hub_store.ts";
+import type { HubEvent, HubEventType, Task, TaskId, ThreadRef, ThreadSummary } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 import { WINDOW_MS } from "./breaker.ts";
 import { oneLine } from "./render.ts";
@@ -14,6 +13,8 @@ import { oneLine } from "./render.ts";
 export const ORPHAN_MS = 2 * 60_000;
 
 export const END_EVENTS: HubEventType[] = ["thread.completed", "thread.failed", "thread.interrupted", "thread.usage_limited"];
+/** A run's own thread events the tasks' follower acts on: its start, its wait on a person, its ends. */
+export const RUN_EVENTS: HubEventType[] = ["thread.started", "thread.waiting", ...END_EVENTS];
 
 /** A session no task or lead owns, for the doctor. */
 export type Unowned = { threadId: string; title: string };
@@ -42,8 +43,11 @@ export function storedEvent(seq: number, data: string): HubEvent {
 
 export const renderSummary = (text: string) => oneLine(text, 200);
 
+/** What `syntheticEnd` reads of the hub's row of a thread (the store's `StoredThread`). */
+export type ThreadRow = { thread: ThreadSummary; lastRunId?: string; lastRunStatus?: string };
+
 /** A thread end as the hub's row of the thread says it went, for a run whose end the hub never logged. */
-export function syntheticEnd(task: Task, thread: ThreadRef, row: StoredThread, now: number): HubEvent {
+export function syntheticEnd(task: Task, thread: ThreadRef, row: ThreadRow, now: number): HubEvent {
   const t = row.thread;
   const type: HubEventType =
     row.lastRunStatus === "usage_limited"

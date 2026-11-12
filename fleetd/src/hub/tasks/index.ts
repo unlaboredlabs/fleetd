@@ -40,7 +40,7 @@ import * as baseOf from "./base.ts";
 import { Breakers, type Opened, type Paused, QUIET_MS, WINDOW_MS } from "./breaker.ts";
 import * as duplicates from "./duplicates.ts";
 import { Lock, Notify } from "./lock.ts";
-import { type BranchPrError, holdsPr, shortRemote, taskPrUrl } from "./pr.ts";
+import { type BranchPrError, holdsPr, PR_LOOKUP_GIVE_UP_MS, PR_LOOKUP_TIMEOUT_MS, shortRemote, taskPrUrl } from "./pr.ts";
 import { openCiWaits } from "./ci_wait.ts";
 import {
   hubTaskPorts,
@@ -74,7 +74,7 @@ import {
   taskWaitingLines,
 } from "./render.ts";
 import { resolveProfile } from "./resolve.ts";
-import { clockTime, END_EVENTS, list, ORPHAN_MS, pausedLines, renderSummary, storedEvent, syntheticEnd, type Unowned } from "./sweep.ts";
+import { clockTime, END_EVENTS, list, ORPHAN_MS, pausedLines, RUN_EVENTS, renderSummary, storedEvent, syntheticEnd, type Unowned } from "./sweep.ts";
 import { requestId, StartError, withPending } from "./launch.ts";
 
 /** Who asks: the project's lead, as the lead-call handler attributes it. */
@@ -99,12 +99,7 @@ export type SpawnInput = {
 export type Spawned = { task: Task; note?: string; observed: Observed };
 
 const THREAD_EVENTS: HubEventType[] = [
-  "thread.started",
-  "thread.waiting",
-  "thread.completed",
-  "thread.failed",
-  "thread.interrupted",
-  "thread.usage_limited",
+  ...RUN_EVENTS,
   // M4 usage: a lifted pause lets queued tasks start.
   "usage.resumed",
   // The disk guard: the same, for a machine with room again.
@@ -131,11 +126,8 @@ const OBSERVE_TIMEOUT_MS = 3_000;
 const ALSO_WRITING_PATHS = 5;
 const LIVE_TASKS: TaskState[] = ["queued", "running", "idle"];
 const SCAN_LIMIT = 10_000;
-/** Each step of a finished task's PR lookup: reading its report, its `origin`, the host. */
-const PR_LOOKUP_TIMEOUT_MS = 60_000;
-/** How often pending PR lookups run again, and when one with no answer yet is given up on. */
+/** How often pending PR lookups run again; each step's wait and the give-up are pr.ts's. */
 export const PR_LOOKUP_RETRY_MS = 5 * 60_000;
-const PR_LOOKUP_GIVE_UP_MS = 24 * 3600_000;
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 const projectKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
