@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
-import type { CloudState, ConnectComputerOutcome, InviteOutcome, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -152,6 +152,8 @@ const api: FleetdApi = {
   cloud: {
     state: () => ipcRenderer.invoke(IPC.cloudState) as Promise<CloudState>,
     signIn: () => ipcRenderer.invoke(IPC.cloudSignIn) as Promise<SignInOutcome>,
+    finish: (join) => ipcRenderer.invoke(IPC.cloudFinish, join) as Promise<FinishOutcome>,
+    notMe: () => ipcRenderer.invoke(IPC.cloudNotMe) as Promise<void>,
     cancel: () => ipcRenderer.invoke(IPC.cloudCancel) as Promise<void>,
     reopen: () => ipcRenderer.invoke(IPC.cloudReopen) as Promise<void>,
     link: () => ipcRenderer.invoke(IPC.cloudLink) as Promise<string | null>,

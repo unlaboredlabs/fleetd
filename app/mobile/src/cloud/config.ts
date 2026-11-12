@@ -41,9 +41,6 @@ export const cloudConfig = (accounts: string | undefined, clientId: string | und
 /** This bundle's values. Each is read whole by name, the only way Metro inlines it; a development build may point at a stand-in. */
 export const builtCloudConfig = (): CloudConfig | null => cloudConfig(process.env.EXPO_PUBLIC_FLEETD_ACCOUNTS_URL, process.env.EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID, typeof __DEV__ !== "undefined" && __DEV__);
 
-/** A team's hub address from the accounts service: an https origin, or (in a local build) http on 127.0.0.1. */
-export const teamOrigin = (raw: string, local: boolean): string | null => origin(raw, local);
-
 /**
  * What the first screen offers: both ways in, a line each (decision hosted.first-screen), on a build with the cloud's
  * values; else, and on Use Your Own Hub, the pairing's Scan QR Code and Enter Code Manually as they always were.

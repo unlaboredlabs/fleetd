@@ -56,6 +56,19 @@ export const diskPreviews: PreviewStore = {
   },
 };
 
+/** Deletes `hubs`' picture previews, and only theirs: the hub still shown keeps its own (fleetd cloud's sign-out). */
+export const forgetPreviews = (hubs: readonly string[]): void => {
+  if (hubs.length === 0) return;
+  try {
+    const d = previews();
+    if (!d.exists) return;
+    const prefixes = hubs.map((h) => `${hubName(h)}-`);
+    for (const entry of d.list()) if (entry instanceof File && prefixes.some((p) => entry.name.startsWith(p))) entry.delete();
+  } catch {
+    // Left for iOS to clear when space runs short.
+  }
+};
+
 export const forgetCache = (): void => {
   try {
     const f = file();

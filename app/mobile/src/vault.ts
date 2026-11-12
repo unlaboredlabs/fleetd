@@ -41,9 +41,15 @@ const HUBS = "fleetd.hubs";
 const ACCOUNT = "fleetd.account";
 
 const keptOf = (o: unknown): KeptHub | null => {
-  const { hub, key, hubName, cloud } = (typeof o === "object" && o !== null ? o : {}) as Record<string, unknown>;
+  const { hub, key, hubName, cloud, invited } = (typeof o === "object" && o !== null ? o : {}) as Record<string, unknown>;
   if (typeof hub !== "string" || typeof key !== "string" || hub === "" || key === "") return null;
-  return { hub, key, hubName: typeof hubName === "string" ? hubName : hub, ...(cloud === true ? { cloud: true as const } : {}) };
+  return {
+    hub,
+    key,
+    hubName: typeof hubName === "string" ? hubName : hub,
+    ...(cloud === true ? { cloud: true as const } : {}),
+    ...(invited === true ? { invited: true as const } : {}),
+  };
 };
 
 /** The hubs kept, with `shown` among them: one paired before this list was kept is its only hub. */

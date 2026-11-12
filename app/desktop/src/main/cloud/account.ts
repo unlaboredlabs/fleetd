@@ -1,22 +1,28 @@
 // Sign in to fleetd cloud (hosted-plan §4, cloud-plan §8): WorkOS's sign-in page in the system browser with PKCE,
 // back to a loopback port here (as githubConnect.ts does for GitHub), then one call to the accounts service
 // (contracts: Accounts.json), which redeems WorkOS's code itself and answers the person's teams, each with its
-// address and a one-time pairing code. Each code goes to that team's own POST /pair, as a typed one does, and each
-// key into the keychain beside any other hub's. The app keeps the email and WorkOS's session id, never a WorkOS token.
-// Sign out drops this device's key on each of the account's hubs, then ends the session. One sign-in at a time: a
-// new one, or Cancel, ends the one waiting.
+// address and a one-time pairing code, and apart from them each invitation they haven't answered. The answer is held
+// here, nothing connected, until the page has shown "Signed in as <email>" and asked about each invitation
+// (decision hosted.invites-need-accept): finish then sends each team's code to its own POST /pair, as a typed one
+// does, joins each invitation the person chose (POST ACCOUNTS_ACCEPT_PATH) and pairs it the same way, and keeps each
+// key in the keychain beside any other hub's; Not you drops the answer and ends its session. Only a team the service
+// says the person made (`made`) may open on Connect a computer, which each sign-in says again. A key this replaces on a
+// team, and a previous account's teams, are revoked there first, as Sign out does. The app keeps the email and
+// WorkOS's session id, never a WorkOS token. Sign out drops this device's key on each of the account's hubs, then ends
+// the session. One sign-in at a time: a new one, or Cancel, ends the one waiting.
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { z } from "zod";
-import type { SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
-import { ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH } from "../../shared/contracts";
+import { madeTeam, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../shared/accounts";
+import type { FinishOutcome, SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
+import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, type AccountsTeam } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome } from "../../shared/hub";
 import { cleanLabel } from "../../shared/hubs";
 import type { PairFailure } from "../../shared/pairing";
 import { landing, pkce } from "../loopback";
 import { redeem, type Fetch } from "../pairing/hubHttp";
-import { teamOrigin, type CloudConfig } from "./config";
+import type { CloudConfig } from "./config";
 
 /** How long the browser has to come back. */
 export const WAIT_MS = 10 * 60_000;
@@ -31,10 +37,12 @@ export interface SavedAccount {
 
 export const SavedAccount = z.object({ email: z.string().min(1).max(320), sessionId: z.string().min(1).max(200) });
 
-/** A hub that came with the account: its label, and a call to it. */
+/** A hub that came with the account, or any held at a team's address: its label, and a call to it. */
 export interface CloudHub {
   readonly id: string;
   readonly label: string;
+  /** Its address, as kept; null when it has none. */
+  readonly url: string | null;
   call(tool: string, input: unknown): Promise<CallOutcome>;
   /** The hub refuses this app's key now (its connection's state is `refused`). */
   refused(): boolean;
@@ -49,9 +57,14 @@ export interface CloudPorts {
   /** Shows a page in the system browser. */
   readonly open: (url: string) => Promise<void>;
   readonly deviceName: () => string;
-  /** Saves a team's key and connects to it, listed as one of the account's hubs under `label`. */
-  readonly connect: (url: string, key: string, label: string) => ConnectOutcome;
+  /**
+   * Saves a team's key and connects to it, listed as one of the account's hubs under `label`; `invited`, a team the
+   * person didn't make (the service's word at this sign-in), which never opens on Connect a computer.
+   */
+  readonly connect: (url: string, key: string, label: string, invited: boolean) => ConnectOutcome;
   readonly cloudHubs: () => ReadonlyArray<CloudHub>;
+  /** The hub listed at `origin` that holds a key for it, the account's or not; null when none does. */
+  readonly heldAt: (origin: string) => CloudHub | null;
   readonly forget: (id: string) => void;
   readonly load: () => SavedAccount | null;
   readonly save: (account: SavedAccount | null) => void;
@@ -63,11 +76,24 @@ const failed = (code: string, message: string, fix?: string): { ok: false; failu
   failure: { code, message, ...(fix === undefined ? {} : { fix }) },
 });
 
-const Team = z.object({ id: z.string().min(1), name: z.string().min(1).max(63), url: z.string().min(1), pairingCode: z.string().min(1) });
-const SignedIn = z.object({ email: z.string().min(1).max(320), sessionId: z.string().min(1).max(200), teams: z.array(Team).min(1).max(50) });
 const Refusal = z.object({ code: z.string(), message: z.string().min(1).max(500), fix: z.string().max(500).optional() });
 
 const OFFLINE = failed("offline", "This computer can't reach fleetd.", "Check your connection, then sign in again.");
+
+const UNREADABLE = failed("", "fleetd's sign-in answered in a way this app doesn't understand.", "Update the app, then sign in again.");
+
+/** The service's refusal in its own words, else its status. */
+const refusal = (json: unknown, status: number): { ok: false; failure: PairFailure } => {
+  const r = Refusal.safeParse(json);
+  return r.success ? failed(r.data.code, r.data.message, r.data.fix) : failed("", `fleetd's sign-in answered HTTP ${String(status)}.`, "Try again in a moment.");
+};
+
+/** A sign-in's answer, until the person says it's them. */
+interface Held {
+  readonly config: CloudConfig;
+  readonly answer: SignedIn;
+  readonly deviceName: string;
+}
 
 type Answer = { kind: "code"; code: string } | { kind: "refused"; error: string } | { kind: "cancelled" } | { kind: "timeout" };
 
@@ -102,6 +128,7 @@ export class CloudAccount {
   readonly #ports: CloudPorts;
   #pending: { readonly end: (answer: Answer) => void; url: string | null } | null = null;
   #account: SavedAccount | null;
+  #held: Held | null = null;
 
   constructor(ports: CloudPorts) {
     this.#ports = ports;
@@ -110,6 +137,13 @@ export class CloudAccount {
 
   state(): { available: boolean; email: string | null } {
     return { available: this.#ports.config !== null, email: this.#account?.email ?? null };
+  }
+
+  /** Not them: the answer held goes, and its session ends; nothing was connected. */
+  async notMe(): Promise<void> {
+    const held = this.#held;
+    this.#held = null;
+    if (held !== null) await this.#endSession(held.config, held.answer.sessionId);
   }
 
   /** The sign-in page under way, for "Copy the sign-in link"; null when none is. */
@@ -131,6 +165,7 @@ export class CloudAccount {
     const config = this.#ports.config;
     if (config === null) return failed("", "This app isn't set up to sign in to fleetd.");
     this.cancel();
+    void this.notMe();
     let end: (answer: Answer) => void = () => undefined;
     let ended: Answer | undefined;
     const answer = new Promise<Answer>((resolve) => {
@@ -148,6 +183,8 @@ export class CloudAccount {
       if (answered !== undefined) send(answered, 200, landing(title, line));
       answered = undefined;
     };
+    // The listener's own host, once bound: a request naming any other (a page that rebound its name to 127.0.0.1) is refused.
+    let host = "";
     try {
       // Here, not at the top: importing node:http costs Electron's main process ~10 ms of every launch.
       const { createServer } = await import("node:http");
@@ -155,6 +192,10 @@ export class CloudAccount {
       const state = randomBytes(16).toString("base64url");
       const listener = createServer((req: IncomingMessage, res: ServerResponse) => {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
+        if (host === "" || req.headers.host !== host) {
+          send(res, 400, landing("Nothing here", "This address is fleetd's, for the sign-in's answer only."));
+          return;
+        }
         if (req.method !== "GET" || url.pathname !== ACCOUNTS_LOOPBACK_PATH || answered !== undefined || ended !== undefined) {
           send(res, 404, landing("Nothing here", "This address is fleetd's, for the sign-in's answer only."));
           return;
@@ -174,6 +215,7 @@ export class CloudAccount {
       });
       if (port === null) return failed("", "fleetd couldn't listen on this computer for the sign-in's answer.", "Try again; a firewall that blocks 127.0.0.1 stops it.");
       if (ended?.kind === "cancelled") return { ok: false, cancelled: true };
+      host = `127.0.0.1:${String(port)}`;
       const redirect = `http://127.0.0.1:${String(port)}${ACCOUNTS_LOOPBACK_PATH}`;
       const page = authorizeUrl(config, { redirect, challenge, state });
       pending.url = page;
@@ -188,7 +230,7 @@ export class CloudAccount {
         return failed("refused", "The browser came back without signing you in.", "Nothing was changed. Sign in again.");
       }
       const out = await this.#exchange(config, { code: a.code, codeVerifier: verifier, redirectUri: redirect, deviceName: this.#ports.deviceName() });
-      if (out.ok) finish("Signed in to fleetd", "You can close this tab and go back to fleetd.");
+      if (out.ok) finish("Signed in to fleetd", "You can close this tab and go back to fleetd to finish.");
       else if (!out.cancelled) finish("Not signed in", `${out.failure.message} Go back to fleetd to try again.`);
       return out;
     } finally {
@@ -200,49 +242,106 @@ export class CloudAccount {
     }
   }
 
-  /** The accounts service's answer, then a key from each team's /pair. */
+  /** The accounts service's answer, held for finish: nothing is connected yet. */
   async #exchange(config: CloudConfig, body: { code: string; codeVerifier: string; redirectUri: string; deviceName: string }): Promise<SignInOutcome> {
     let response: Response;
     try {
-      response = await this.#ports.fetch(`${config.accountsUrl}${ACCOUNTS_SIGN_IN_PATH}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-        redirect: "error",
-      });
+      response = await this.#post(config, ACCOUNTS_SIGN_IN_PATH, body);
     } catch {
       return OFFLINE;
     }
     const json = await readJson(response);
-    if (!response.ok) {
-      const refusal = Refusal.safeParse(json);
-      return refusal.success
-        ? failed(refusal.data.code, refusal.data.message, refusal.data.fix)
-        : failed("", `fleetd's sign-in answered HTTP ${String(response.status)}.`, "Try again in a moment.");
+    if (!response.ok) return refusal(json, response.status);
+    const answer = readSignIn(json);
+    if (answer === null) return UNREADABLE;
+    if (answer.teams.length === 0 && answer.invitations.length === 0) {
+      void this.#endSession(config, answer.sessionId);
+      return failed("", "No team of this account could be connected.");
     }
-    const signedIn = SignedIn.safeParse(json);
-    if (!signedIn.success) return failed("", "fleetd's sign-in answered in a way this app doesn't understand.", "Update the app, then sign in again.");
-    const { email, sessionId, teams } = signedIn.data;
-    // A new sign-in replaces the one kept: that session ends, as signing out would end it.
-    const before = this.#account;
-    const outcomes: TeamOutcome[] = [];
-    for (const team of teams) outcomes.push(await this.#pairTeam(team, body.deviceName));
-    if (!outcomes.some((t) => t.ok)) {
-      void this.#endSession(config, sessionId);
-      const first = outcomes[0];
-      return first === undefined || first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
-    }
-    this.#account = { email, sessionId };
-    this.#ports.save(this.#account);
-    if (before !== null && before.sessionId !== sessionId) void this.#endSession(config, before.sessionId);
-    return { ok: true, email, teams: outcomes };
+    this.#held = { config, answer, deviceName: body.deviceName };
+    return {
+      ok: true,
+      arrival: { email: answer.email, invitations: answer.invitations.map(({ name, invitedBy, role }) => ({ name: cleanLabel(name) ?? "fleetd", invitedBy, role })) },
+    };
   }
 
-  async #pairTeam(team: z.infer<typeof Team>, deviceName: string): Promise<TeamOutcome> {
+  /**
+   * It's them: a key from each team's /pair, and from each invitation in `join` (by its place) once the service has
+   * joined it. Each key this replaces is revoked on its team first, and when the account changed, the previous one's
+   * teams this sign-in didn't bring are revoked and dropped. With nothing connected, the session ends and nothing is kept.
+   */
+  async finish(join: readonly number[]): Promise<FinishOutcome> {
+    const held = this.#held;
+    this.#held = null;
+    if (held === null) return failed("", "That sign-in isn't waiting any more.", "Sign in again.");
+    const { config, answer, deviceName } = held;
+    const outcomes: TeamOutcome[] = [];
+    const paired = new Set<string>();
+    const pairOne = async (team: AccountsTeam, accepted: boolean) => {
+      const out = await this.#pairTeam(config, team, deviceName, !madeTeam(team, accepted));
+      outcomes.push(out.outcome);
+      if (out.origin !== null) paired.add(out.origin);
+    };
+    for (const team of answer.teams) await pairOne(team, false);
+    for (const at of [...new Set(join)]) {
+      const invitation = answer.invitations[at];
+      if (invitation === undefined) continue;
+      const joined = await this.#accept(config, invitation.accept);
+      if (joined.ok) await pairOne(joined.team, true);
+      else outcomes.push({ name: cleanLabel(invitation.name) ?? "fleetd", ok: false, failure: joined.failure });
+    }
+    if (!outcomes.some((t) => t.ok)) {
+      void this.#endSession(config, answer.sessionId);
+      const first = outcomes[0];
+      if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
+      return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
+    }
+    const before = this.#account;
+    this.#account = { email: answer.email, sessionId: answer.sessionId };
+    this.#ports.save(this.#account);
+    // A new sign-in replaces the one kept: that session ends, as signing out would end it, and another account's
+    // teams leave this app as they would at its sign-out.
+    if (before !== null && before.sessionId !== answer.sessionId) void this.#endSession(config, before.sessionId);
+    if (before !== null && before.email !== answer.email) {
+      const gone = this.#ports.cloudHubs().filter((hub) => hub.url === null || !paired.has(hub.url));
+      await Promise.all(
+        gone.map(async (hub) => {
+          await revokeOwnKey(hub).catch(() => false);
+          this.#ports.forget(hub.id);
+        }),
+      );
+    }
+    return { ok: true, email: answer.email, teams: outcomes };
+  }
+
+  /** The service joins an invitation the person chose, and answers the team with its pairing code. */
+  async #accept(config: CloudConfig, accept: string): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> {
+    let response: Response;
+    try {
+      response = await this.#post(config, ACCOUNTS_ACCEPT_PATH, { accept });
+    } catch {
+      return OFFLINE;
+    }
+    const json = await readJson(response);
+    if (!response.ok) return refusal(json, response.status);
+    const team = readAccepted(json);
+    return team === null ? UNREADABLE : { ok: true, team };
+  }
+
+  #post(config: CloudConfig, path: string, body: unknown): Promise<Response> {
+    return this.#ports.fetch(`${config.accountsUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      redirect: "error",
+    });
+  }
+
+  async #pairTeam(config: CloudConfig, team: AccountsTeam, deviceName: string, invited: boolean): Promise<{ outcome: TeamOutcome; origin: string | null }> {
     const name = cleanLabel(team.name) ?? "fleetd";
-    const origin = teamOrigin(team.url, this.#ports.local);
-    if (origin === null) return { name, ok: false, failure: { code: "", message: `${name}'s address isn't one this app connects to.`, fix: "Update the app, then sign in again." } };
+    const origin = teamOrigin(team.url, config.accountsUrl, this.#ports.local);
+    if (origin === null) return { origin, outcome: { name, ok: false, failure: { code: "", message: `${name}'s address isn't one this app connects to.`, fix: "Update the app, then sign in again." } } };
     const paired = await redeem(this.#ports.fetch, origin, team.pairingCode, deviceName);
     if (!paired.ok) {
       // /pair's own words assume a hub of your own; a team's code comes from signing in.
@@ -250,15 +349,21 @@ export class CloudAccount {
         paired.failure.code === ""
           ? { code: "offline", message: `Can't reach ${name}.`, fix: "Check your connection, then sign in again." }
           : { code: paired.failure.code, message: `${name} refused this app's code: ${paired.failure.message}`, fix: "Sign in again for a new code." };
-      return { name, ok: false, failure };
+      return { origin: null, outcome: { name, ok: false, failure } };
     }
-    const connected = this.#ports.connect(origin, paired.paired.key, cleanLabel(paired.paired.hubName) ?? name);
-    return connected.ok ? { name, ok: true } : { name, ok: false, failure: { code: "", message: `Got a key for ${name}, but it couldn't be kept: ${connected.message}`, fix: "Sign in again." } };
+    // The key this one replaces leaves the team too, not only this app: a failed revoke doesn't stop the sign-in.
+    const held = this.#ports.heldAt(origin);
+    if (held !== null) await revokeOwnKey(held).catch(() => false);
+    const connected = this.#ports.connect(origin, paired.paired.key, cleanLabel(paired.paired.hubName) ?? name, invited);
+    return connected.ok
+      ? { origin, outcome: { name, ok: true } }
+      : { origin: null, outcome: { name, ok: false, failure: { code: "", message: `Got a key for ${name}, but it couldn't be kept: ${connected.message}`, fix: "Sign in again." } } };
   }
 
   /** Each of the account's hubs drops this device's key and leaves the app, then WorkOS's session ends. */
   async signOut(): Promise<SignOutOutcome> {
     this.cancel();
+    await this.notMe();
     const kept: string[] = [];
     await Promise.all(
       this.#ports.cloudHubs().map(async (hub) => {
@@ -274,15 +379,7 @@ export class CloudAccount {
   }
 
   async #endSession(config: CloudConfig, sessionId: string): Promise<void> {
-    await this.#ports
-      .fetch(`${config.accountsUrl}${ACCOUNTS_SIGN_OUT_PATH}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-        signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-        redirect: "error",
-      })
-      .catch(() => undefined);
+    await this.#post(config, ACCOUNTS_SIGN_OUT_PATH, { sessionId }).catch(() => undefined);
   }
 }
 

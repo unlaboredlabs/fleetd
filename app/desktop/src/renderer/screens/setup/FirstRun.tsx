@@ -1,5 +1,6 @@
 // `#/` on a hub with no projects yet. On a team of fleetd cloud with no machine yet, its owners and admins connect a
-// computer first. Otherwise, for owners and admins while a required setup step is left, it is setup's welcome; once
+// computer first, unless this device joined the team by an invitation: someone else's team never opens on connecting
+// this computer to it (a machine still joins from Settings › Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's welcome; once
 // none is, and for everyone else, Get started (add a project). Its own chunk, with setup's.
 import { useState } from "react";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
@@ -17,7 +18,8 @@ export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   const steps = role.administers && served;
   useFreshSetup(steps);
   const setup = useToolQuery("setup_list", noInput, { enabled: steps });
-  const cloud = useHub().cloud === true;
+  const hub = useHub();
+  const cloud = hub.cloud === true && hub.invited !== true;
   const fresh = useData((d) => d.fresh);
   const machines = useData((d) => Object.keys(d.machines).length);
   // Once shown, Connect a computer stays until the person moves on, so the machine that joins is greeted there.

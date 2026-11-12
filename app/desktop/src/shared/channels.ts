@@ -49,8 +49,12 @@ export const IPC = {
   pairSetup: "pair:setup",
   /** invoke() → CloudState. Whether this build offers fleetd cloud's Sign in, and who is signed in. */
   cloudState: "cloud:state",
-  /** invoke() → SignInOutcome. WorkOS's page in the browser, then the accounts service and a key per team; resolves when it ends. */
+  /** invoke() → SignInOutcome. WorkOS's page in the browser, then the accounts service's answer, held until finish; resolves when it ends. */
   cloudSignIn: "cloud:sign-in",
+  /** invoke(join: number[]) → FinishOutcome. It's them: a key per team of the account, and per invitation joined (by its place). */
+  cloudFinish: "cloud:finish",
+  /** invoke() → void. Not them: the answer held is dropped and its session ended, nothing connected. */
+  cloudNotMe: "cloud:not-me",
   /** invoke() → void. Stops waiting for the sign-in under way. */
   cloudCancel: "cloud:cancel",
   /** invoke() → void. Opens the sign-in page under way again. */

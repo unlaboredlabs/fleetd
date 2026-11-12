@@ -24,6 +24,8 @@ export interface HubEntry {
   readonly note?: string | undefined;
   /** It came with the fleetd cloud account: a team of the person's, which signing out takes off this app. */
   readonly cloud?: true | undefined;
+  /** The person didn't make this team, as the last sign-in said (decision hosted.invites-need-accept): it never opens on Connect a computer. */
+  readonly invited?: true | undefined;
 }
 
 /** A label as typed, trimmed and with its runs of space made one; null when nothing is left or it's too long. */

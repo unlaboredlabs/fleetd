@@ -62,6 +62,9 @@ export const SLEPT_SHOWN_MS = 3600000;
 /** The accounts service's sign-in, under its origin (fleetd cloud's `https://accounts.<base>`): POST, JSON. */
 export const ACCOUNTS_SIGN_IN_PATH = "/v1/app/sign-in";
 
+/** The accounts service's accept of an invitation the sign-in answered: POST, JSON. */
+export const ACCOUNTS_ACCEPT_PATH = "/v1/app/accept";
+
 /** The accounts service's sign-out: POST, JSON, always 204. */
 export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 
@@ -74,9 +77,19 @@ export const ACCOUNTS_LOOPBACK_PATH = "/signin/callback";
 /** Where it sends it back on the phone. */
 export const ACCOUNTS_APP_REDIRECT = "fleetd://signin/callback";
 
+/** POST /v1/app/accept: an invitation the person chose to join, by the accept value the sign-in answered. No auth header. */
+export type AccountsAcceptInput = {
+  accept: string;
+};
+
+/** 200: the team joined, as the sign-in answers its teams, with a pairing code for its /pair. */
+export type AccountsAcceptOutput = {
+  team: AccountsTeam;
+};
+
 /** A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written. */
 export type AccountsFailure = {
-  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
+  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
   code: string;
   fix?: string;
   message: string;
@@ -93,7 +106,18 @@ export type AccountsInvite = {
   role: HubRole;
 };
 
-/** POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, who joins at their next sign-in with that email. Only an owner names an owner. */
+/** A pending invitation to a team, which the app asks the person about before joining it: "<invitedBy> invited you to <name>". */
+export type AccountsInvitation = {
+  /** Joins the team when sent to POST /v1/app/accept: one use, 15 minutes; each sign-in answers a fresh one. */
+  accept: string;
+  /** The inviter's email, never a name they typed. An invitation whose inviter has no email on record is left out. */
+  invitedBy: string;
+  /** The team's name, as AccountsTeam's. */
+  name: string;
+  role: HubRole;
+};
+
+/** POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, whose next sign-in with that email asks them whether to join. Only an owner names an owner. */
 export type AccountsInviteCreateInput = {
   email: string;
   /** Absent: member. */
@@ -127,11 +151,14 @@ export type AccountsSignInInput = {
   redirectUri: string;
 };
 
-/** 200: who signed in and every team they are in, each with a pairing code for its /pair. A first sign-in makes the person's team in the same call. */
+/** 200: who signed in, every team they are in, each with a pairing code for its /pair, and apart from them each invitation they haven't answered, which joins nothing until the person accepts it (POST /v1/app/accept). A first sign-in with no invitation pending makes the person's team in the same call. */
 export type AccountsSignInOutput = {
   email: string;
+  /** Absent: none. Each pending invitation to a team, not joined: it carries no pairing code. */
+  invitations?: AccountsInvitation[];
   /** WorkOS's session id, which sign-out ends. The app keeps it and the email, nothing else of WorkOS. */
   sessionId: string;
+  /** The person's own teams: never one they were only invited to. Empty only while an invitation is pending. */
   teams: AccountsTeam[];
 };
 
@@ -144,6 +171,8 @@ export type AccountsSignOutInput = {
 export type AccountsTeam = {
   /** The team's id in the service. */
   id: string;
+  /** True: the person made this team, at their own first sign-in. False: they joined it (an invitation accepted, here or on another device). The apps open a team on Connect a computer only when it is true; absent, as an older service answers, only a team not joined through POST /v1/app/accept at this sign-in. */
+  made?: boolean;
   /** The label in its address: `<name>.<base>`. */
   name: string;
   /** A pairing code (`ABCD-2345`, or a longer one in groups of four: `ABCD-2345-WXYZ-6789`) for this person on this team: one use, 15 minutes. */

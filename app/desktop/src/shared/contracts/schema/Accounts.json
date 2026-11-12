@@ -1,10 +1,38 @@
 {
   "$defs": {
+    "AccountsAcceptInput": {
+      "additionalProperties": false,
+      "description": "POST /v1/app/accept: an invitation the person chose to join, by the accept value the sign-in answered. No auth header.",
+      "properties": {
+        "accept": {
+          "maxLength": 200,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accept"
+      ],
+      "type": "object"
+    },
+    "AccountsAcceptOutput": {
+      "description": "200: the team joined, as the sign-in answers its teams, with a pairing code for its /pair.",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/AccountsTeam"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
     "AccountsFailure": {
       "description": "A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written.",
       "properties": {
         "code": {
-          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
+          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
           "minLength": 1,
           "type": "string"
         },
@@ -21,6 +49,40 @@
       "required": [
         "code",
         "message"
+      ],
+      "type": "object"
+    },
+    "AccountsInvitation": {
+      "description": "A pending invitation to a team, which the app asks the person about before joining it: \"<invitedBy> invited you to <name>\".",
+      "properties": {
+        "accept": {
+          "description": "Joins the team when sent to POST /v1/app/accept: one use, 15 minutes; each sign-in answers a fresh one.",
+          "maxLength": 200,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "invitedBy": {
+          "description": "The inviter's email, never a name they typed. An invitation whose inviter has no email on record is left out.",
+          "maxLength": 320,
+          "minLength": 3,
+          "type": "string"
+        },
+        "name": {
+          "description": "The team's name, as AccountsTeam's.",
+          "maxLength": 63,
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "required": [
+        "name",
+        "invitedBy",
+        "role",
+        "accept"
       ],
       "type": "object"
     },
@@ -59,7 +121,7 @@
     },
     "AccountsInviteCreateInput": {
       "additionalProperties": false,
-      "description": "POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, who joins at their next sign-in with that email. Only an owner names an owner.",
+      "description": "POST /accounts/v1/invites on the team's own address, with an owner's or admin's device key: WorkOS emails the person, whose next sign-in with that email asks them whether to join. Only an owner names an owner.",
       "properties": {
         "email": {
           "maxLength": 254,
@@ -155,7 +217,7 @@
       "type": "object"
     },
     "AccountsSignInOutput": {
-      "description": "200: who signed in and every team they are in, each with a pairing code for its /pair. A first sign-in makes the person's team in the same call.",
+      "description": "200: who signed in, every team they are in, each with a pairing code for its /pair, and apart from them each invitation they haven't answered, which joins nothing until the person accepts it (POST /v1/app/accept). A first sign-in with no invitation pending makes the person's team in the same call.",
       "properties": {
         "email": {
           "maxLength": 320,
@@ -173,7 +235,16 @@
             "$ref": "#/$defs/AccountsTeam"
           },
           "maxItems": 50,
-          "minItems": 1,
+          "minItems": 0,
+          "type": "array",
+          "description": "The person's own teams: never one they were only invited to. Empty only while an invitation is pending."
+        },
+        "invitations": {
+          "description": "Absent: none. Each pending invitation to a team, not joined: it carries no pairing code.",
+          "items": {
+            "$ref": "#/$defs/AccountsInvitation"
+          },
+          "maxItems": 50,
           "type": "array"
         }
       },
@@ -207,6 +278,10 @@
           "maxLength": 64,
           "minLength": 1,
           "type": "string"
+        },
+        "made": {
+          "description": "True: the person made this team, at their own first sign-in. False: they joined it (an invitation accepted, here or on another device). The apps open a team on Connect a computer only when it is true; absent, as an older service answers, only a team not joined through POST /v1/app/accept at this sign-in.",
+          "type": "boolean"
         },
         "name": {
           "description": "The label in its address: `<name>.<base>`.",
@@ -251,5 +326,5 @@
   },
   "$ref": "#/$defs/AccountsSignInOutput",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "fleetd cloud's accounts service: the one call an app makes to sign in (and the one to sign out), and a team's invites by email on its own address. Each definition is one body: compile `Accounts.json#/$defs/<Name>`."
+  "description": "fleetd cloud's accounts service: the call an app makes to sign in, the one that joins a team it was invited to, and the one to sign out, and a team's invites by email on its own address. Each definition is one body: compile `Accounts.json#/$defs/<Name>`."
 }

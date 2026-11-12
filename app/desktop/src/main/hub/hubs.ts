@@ -30,6 +30,8 @@ const Stored = z.object({
   color: z.enum(HUB_COLORS).optional(),
   /** It came with the fleetd cloud account (src/main/cloud): signing out drops it. */
   cloud: z.literal(true).optional(),
+  /** The person didn't make this team (the service's word at the last sign-in): it never opens on Connect a computer. */
+  invited: z.literal(true).optional(),
 });
 type Stored = z.infer<typeof Stored>;
 const StoredList = z.object({ version: z.literal(1), hubs: z.array(Stored).min(1).max(50) });
@@ -177,13 +179,14 @@ export class Hubs {
 
   /** In sidebar order, each with its label: the person's, else its host name until they pick one. */
   list(): HubEntry[] {
-    return this.#entries.map(({ id, label, color, cloud }) => {
+    return this.#entries.map(({ id, label, color, cloud, invited }) => {
       const url = this.#services.get(id)?.url() ?? null;
       return {
         id,
         label: label ?? (url === null ? "Hub" : defaultLabel(url)),
         ...(color === undefined ? {} : { color }),
         ...(cloud === undefined ? {} : { cloud }),
+        ...(invited === undefined ? {} : { invited }),
         ...(this.#note === null ? {} : { note: this.#note }),
       };
     });
@@ -248,24 +251,40 @@ export class Hubs {
     const label = cleanLabel(change.label);
     if (label === null) return { ok: false, message: `Name the hub in 1 to ${String(LABEL_MAX)} characters.` };
     if (!this.#entries.some((e) => e.id === id)) return { ok: false, message: "That hub was removed." };
-    this.#entries = this.#entries.map((e) => (e.id === id ? { id, label, ...(change.color === null ? {} : { color: change.color }), ...(e.cloud === undefined ? {} : { cloud: e.cloud }) } : e));
+    this.#entries = this.#entries.map((e) => (e.id === id ? { id, label, ...(change.color === null ? {} : { color: change.color }), ...(e.cloud === undefined ? {} : { cloud: e.cloud }), ...(e.invited === undefined ? {} : { invited: e.invited }) } : e));
     return this.#save();
   }
 
   /**
    * A team's key from signing in to fleetd cloud: connected as any hub is (a hub already listed at its address takes
-   * it), and marked as the account's, for sign-out.
+   * it), and marked as the account's, for sign-out; `invited`, a team the person didn't make, as each sign-in says.
    */
-  connectCloud(request: { readonly url: string; readonly key: string }, label: string): ConnectOutcome {
+  connectCloud(request: { readonly url: string; readonly key: string }, label: string, invited = false): ConnectOutcome {
     const outcome = this.connect(request, { label });
     if (!outcome.ok) return outcome;
-    const entry = this.#entries.find((e) => {
-      const url = this.#services.get(e.id)?.url();
-      return url !== undefined && url !== null && sameHub(url, request.url);
+    const entry = this.#at(request.url);
+    if (entry === undefined || (entry.cloud === true && (entry.invited === true) === invited)) return outcome;
+    this.#entries = this.#entries.map((e) => {
+      if (e !== entry) return e;
+      const { invited: _was, ...rest } = e;
+      return { ...rest, cloud: true, ...(invited ? { invited: true as const } : {}) };
     });
-    if (entry === undefined || entry.cloud === true) return outcome;
-    this.#entries = this.#entries.map((e) => (e === entry ? { ...e, cloud: true } : e));
     return this.#save();
+  }
+
+  #at(url: string): Stored | undefined {
+    return this.#entries.find((e) => {
+      const at = this.#services.get(e.id)?.url();
+      return at !== undefined && at !== null && sameHub(at, url);
+    });
+  }
+
+  /** The hub listed at `url` that holds a key, the account's or not. */
+  heldAt(url: string): { id: HubId; label: string; service: HubService } | null {
+    const entry = this.#at(url);
+    const service = entry === undefined ? undefined : this.#services.get(entry.id);
+    if (entry === undefined || service === undefined || service.keyed() === null) return null;
+    return { id: entry.id, label: this.list().find((h) => h.id === entry.id)?.label ?? "Hub", service };
   }
 
   /** The hubs that came with the fleetd cloud account. */

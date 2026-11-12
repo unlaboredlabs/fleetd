@@ -4,15 +4,21 @@
 // the real ones do: the PKCE verifier against the challenge, a code used once, a pairing code used once. Each team's
 // origin also serves its invites by email (ACCOUNTS_INVITES_PATH) to the keys its /pair made, refusing as the service
 // does: a member's key, an admin naming an owner, not an email, an email already on the team or invited, the team at
-// its limit of people. The email WorkOS would send is a line in `sent`.
+// its limit of people. The email WorkOS would send is a line in `sent`. An open invite joins nothing at sign-in: the
+// answer lists it apart, with its inviter's email and a one-use accept value, and only POST ACCOUNTS_ACCEPT_PATH with
+// that value makes the person one of the team (decision hosted.invites-need-accept). A person with no team and an
+// invitation pending gets no team of their own made. Each team entry says whether the person made it (`made`): the
+// first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   type AccountsFailure,
+  type AccountsInvitation,
   type AccountsInvite,
   type AccountsSignInInput,
   type AccountsSignInOutput,
@@ -38,6 +44,10 @@ type Team = {
   refuse: boolean;
   roles: Map<string, HubRole>;
   invites: AccountsInvite[];
+  /** Who sent each invite, by its id. */
+  invitedBy: Map<string, string>;
+  /** Who made the team: the first person named. */
+  maker: string | undefined;
   limit: number;
 };
 
@@ -100,6 +110,8 @@ export class FakeAccounts {
   refuseNext: { status: number; failure: AccountsFailure } | null = null;
   /** Every invitation email sent, in order. */
   readonly sent: FakeInviteEmail[] = [];
+  /** Each invitation joined through the accept call, as `<team> <email>`, in order. */
+  readonly accepted: string[] = [];
   /** The time invites are made and run out by, epoch ms. */
   now: () => number = () => Date.now();
   #server: Server | null = null;
@@ -107,6 +119,8 @@ export class FakeAccounts {
   readonly #people = new Map<string, string[]>();
   readonly #teams = new Map<string, Team>();
   readonly #codes = new Map<string, { email: string; challenge: string; redirectUri: string; used: boolean }>();
+  /** Each accept value a sign-in answered: its team, invite and person; gone once used. */
+  readonly #accepts = new Map<string, { team: string; inviteId: string; email: string }>();
 
   /** The accounts service's origin, once started. */
   get url(): string {
@@ -132,6 +146,8 @@ export class FakeAccounts {
       refuse: options.refusePairing === true,
       roles,
       invites: [],
+      invitedBy: new Map(),
+      maker: emails[0],
       limit: options.peopleLimit ?? 50,
     });
     for (const email of emails) this.#people.set(email, [...(this.#people.get(email) ?? []), name]);
@@ -185,6 +201,44 @@ export class FakeAccounts {
     return this.#people.get(email) ?? [];
   }
 
+  /** An invite to team `name` for `email` from `by`, as an owner's POST would make it, with no email sent. */
+  invite(name: string, email: string, by: string, role: HubRole = "member"): AccountsInvite {
+    const team = this.#teams.get(name);
+    if (team === undefined) throw new Error(`no team ${name}`);
+    const now = this.now();
+    const invite: AccountsInvite = {
+      inviteId: `inv_${randomBytes(5).toString("hex")}`,
+      email,
+      role,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + INVITE_TTL_MS).toISOString(),
+    };
+    team.invites.push(invite);
+    team.invitedBy.set(invite.inviteId, by);
+    return invite;
+  }
+
+  /** The open invites for `email` across the teams, each with a fresh accept value. */
+  #invitationsOf(email: string): AccountsInvitation[] {
+    const now = this.now();
+    return [...this.#teams.values()].flatMap((team) =>
+      team.invites
+        .filter((i) => i.email === email && Date.parse(i.expiresAt) > now)
+        .map((i) => {
+          const accept = randomBytes(18).toString("base64url");
+          this.#accepts.set(accept, { team: team.name, inviteId: i.inviteId, email });
+          return { name: team.name, invitedBy: team.invitedBy.get(i.inviteId) ?? "", role: i.role, accept };
+        }),
+    );
+  }
+
+  /** A pairing code for `email` on `team`, as an answer's team entry, saying whether `email` made the team. */
+  #entry(team: Team, email: string): AccountsSignInOutput["teams"][number] {
+    const code = pairingCode();
+    team.codes.set(code, email);
+    return { id: team.id, name: team.name, url: team.url, pairingCode: code, made: team.maker === email };
+  }
+
   /** A team's open invites by email, newest first. */
   invitesOf(name: string): AccountsInvite[] {
     const now = this.now();
@@ -207,6 +261,7 @@ export class FakeAccounts {
       if (id !== undefined && this.sessions.delete(id)) this.ended.push(id);
       return send(res, 204);
     }
+    if (path === ACCOUNTS_ACCEPT_PATH) return this.#accept(body, res);
     if (path !== ACCOUNTS_SIGN_IN_PATH) return fail(res, 404, { code: "not_found", message: "Nothing here." });
     const input = {
       code: str(body, "code"),
@@ -229,20 +284,38 @@ export class FakeAccounts {
       return fail(res, 401, { code: "signin_refused", message: "That sign-in wasn't accepted.", fix: "Sign in again." });
     }
     grant.used = true;
-    if (this.teamsOf(grant.email).length === 0) await this.team(grant.email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team", [grant.email]);
+    const invitations = this.#invitationsOf(grant.email);
+    if (this.teamsOf(grant.email).length === 0 && invitations.length === 0) {
+      await this.team(grant.email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team", [grant.email]);
+    }
     const sessionId = `session_${randomBytes(8).toString("hex")}`;
     this.sessions.add(sessionId);
     const answer: AccountsSignInOutput = {
       email: grant.email,
       sessionId,
-      teams: this.teamsOf(grant.email).map((name) => {
-        const team = this.#teams.get(name)!;
-        const code = pairingCode();
-        team.codes.set(code, grant.email);
-        return { id: team.id, name: team.name, url: team.url, pairingCode: code };
-      }),
+      teams: this.teamsOf(grant.email).map((name) => this.#entry(this.#teams.get(name)!, grant.email)),
+      ...(invitations.length === 0 ? {} : { invitations }),
     };
     send(res, 200, answer);
+  }
+
+  /** POST ACCOUNTS_ACCEPT_PATH: the invitation joined, once, and the team answered with a pairing code. */
+  #accept(body: unknown, res: ServerResponse): void {
+    const value = str(body, "accept") ?? "";
+    const held = this.#accepts.get(value);
+    this.#accepts.delete(value);
+    const team = held === undefined ? undefined : this.#teams.get(held.team);
+    const invite = team?.invites.find((i) => i.inviteId === held?.inviteId && Date.parse(i.expiresAt) > this.now());
+    if (held === undefined || team === undefined || invite === undefined) {
+      return fail(res, 401, { code: "accept_refused", message: "That invitation can't be joined any more.", fix: "Sign in again to see your invitations." });
+    }
+    // Every accept value of the same invite goes with it.
+    for (const [k, v] of this.#accepts) if (v.inviteId === invite.inviteId) this.#accepts.delete(k);
+    team.invites = team.invites.filter((i) => i !== invite);
+    team.roles.set(held.email, invite.role);
+    this.#people.set(held.email, [...this.teamsOf(held.email), team.name]);
+    this.accepted.push(`${team.name} ${held.email}`);
+    send(res, 200, { team: this.#entry(team, held.email) });
   }
 
   async #team(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -322,6 +395,7 @@ export class FakeAccounts {
       expiresAt: new Date(now + INVITE_TTL_MS).toISOString(),
     };
     team.invites.push(invite);
+    team.invitedBy.set(invite.inviteId, caller.email);
     this.sent.push({ team: name, email, role: as });
     send(res, 200, { invite });
   }

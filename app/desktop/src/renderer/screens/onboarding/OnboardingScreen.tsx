@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
+import { CLOUD_TEAM_LINK, inDomain } from "../../../shared/accounts";
 import type { HubState } from "../../../shared/hub";
 import { cleanLabel, LABEL_MAX, type HubColor, type PairTarget } from "../../../shared/hubs";
 import { keyStoreLine, LOCAL_HUB, protocolFit, type PairFailure, type PairOutcome, type SetupOutcome } from "../../../shared/pairing";
@@ -11,7 +12,7 @@ import { Mark } from "./Mark";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
 import { useCloud } from "./cloud";
-import { BackToWays, useSignIn, Waiting, Ways } from "./SignIn";
+import { AfterBrowser, BackToWays, useSignIn, Waiting, Ways } from "./SignIn";
 import s from "./onboarding.module.css";
 
 export interface OnboardingProps {
@@ -246,8 +247,11 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   };
 
   const welcome = form.firstRun && link.code === undefined && link.another !== true;
+  // A link to a team of fleetd cloud: its address reads as fleetd's own, so the form says whose it may be.
+  const cloudTeam = link.code !== undefined && link.hub !== undefined && inDomain(link.hub, cloud.state.domain);
   const connect = (
     <>
+      {cloudTeam ? <Prose text={CLOUD_TEAM_LINK} /> : null}
       {form.notice === null ? null : <Prose text={form.notice} />}
       {form.status === null ? null : <Prose text={form.status} tone="quiet" />}
       <form className={s.fields} onSubmit={(e) => void submit(e)} noValidate>
@@ -370,6 +374,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   if (!cloud.known) return null;
   if (cloud.state.available) {
     if (signIn.step.at === "waiting") return <Waiting onCancel={signIn.cancel} />;
+    if (signIn.step.at !== "start") return <AfterBrowser signIn={signIn} />;
     // A hub found on this computer, or a code `fleetd init` left, opens on its form; Back still shows both ways.
     const foundHere = form.status !== null || form.autoPending || form.busy || form.error !== null;
     if (way === "ways" || (way === null && !foundHere)) return <Ways note={signIn.step.note} onSignIn={signIn.start} onOwn={() => setWay("own")} />;

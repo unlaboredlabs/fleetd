@@ -69,7 +69,18 @@ export type {
   VaultScope,
   VaultStatusOutput,
 } from "../../desktop/src/shared/contracts";
-export { ACCOUNTS_APP_REDIRECT, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, type AccountsSignInInput } from "../../desktop/src/shared/contracts";
+export {
+  ACCOUNTS_ACCEPT_PATH,
+  ACCOUNTS_APP_REDIRECT,
+  ACCOUNTS_SIGN_IN_PATH,
+  ACCOUNTS_SIGN_OUT_PATH,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_PART_BYTES,
+  type AccountsInvitation,
+  type AccountsSignInInput,
+  type AccountsTeam,
+} from "../../desktop/src/shared/contracts";
+export { cloudDomain, madeTeam, invitationLine, invitationTitle, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../desktop/src/shared/accounts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { serves } from "../../desktop/src/shared/hub";
 export { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";

@@ -136,6 +136,8 @@ export const fixtures = [
   "cloud-first-screen",
   "cloud-sign-in-refused",
   "cloud-sign-in-timeout",
+  "cloud-signed-in",
+  "cloud-invited",
   "cloud-connect",
   "cloud-connect-no-terminal",
   "cloud-account",
@@ -2449,6 +2451,29 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Sign in again" }).waitFor({ timeout: 10_000 });
     },
   },
+  // Back from the browser: the account named first ("Signed in as", Not you? Sign out), then each invitation asked
+  // about, Join or Not now, before anything connects.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-signed-in", "cloud-invited"],
+    variant: "signed-in",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByText("Signed in as sam@example.com").waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-invited"],
+    variant: "invited",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByText("eve@example.com invited you to security").waitFor({ timeout: 10_000 });
+    },
+  },
   {
     id: "onboarding",
     route: "#/onboarding",
@@ -2473,6 +2498,28 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
+  // Sign in from Settings: who signed in, then the invitation, each in a dialog before anything connects.
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["cloud-account-signed-out"],
+    variant: "signed-in",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("dialog").getByText("Signed in as sam@example.com").waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["cloud-account-signed-out"],
+    variant: "invited",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("dialog").getByText("eve@example.com invited you to security").waitFor({ timeout: 10_000 });
+    },
+  },
   // A team's owner on fleetd cloud, whose hub_info leaves out the hub's own controls: no Restart hub on its row; Hub ›
   // Machines with one line where Updates was; Add machine's ways in without SSH, saying how machines join; Setup with
   // only the team's accounts.

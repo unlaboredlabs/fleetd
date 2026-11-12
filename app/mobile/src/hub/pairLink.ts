@@ -2,6 +2,7 @@
 // app and `fleetd pair` show. The app's scanner reads it, and so does iOS's Camera, which opens the app with it. Parsed
 // by hand: React Native's URL has no searchParams. It imports the desktop's pairing module itself, not the ../desktop
 // barrel, so it loads outside the phone too (the package's `fleetd/apps/pair_link`), with no React.
+import { CLOUD_TEAM_LINK, inDomain } from "../../../desktop/src/shared/accounts";
 import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../../desktop/src/shared/pairing";
 
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
@@ -70,7 +71,11 @@ export type LinkStep =
   /** From the app's own scanner, which the person opened to pair: pair now. */
   | { readonly t: "pair"; readonly hub: string; readonly code: string };
 
-export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null): LinkStep => {
+/**
+ * `cloudDomain`: the domain fleetd cloud's teams live under, from the build's accounts address (null without one): a
+ * link to a host under it is a team anyone can make, and the question says so.
+ */
+export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null): LinkStep => {
   const link = parsePairLink(text);
   if (link === null) return { t: "ignore" };
   if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another hub, disconnect under Settings first, then scan its code again." };
@@ -81,6 +86,8 @@ export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWi
     hub: link.hub,
     code: link.code,
     title: `Connect to ${link.hub.replace(/^https?:\/\//u, "")}?`,
-    message: `This phone pairs with the hub at ${link.hub}, which then sees it and sends it notifications. Connect only to a hub you or your team run.`,
+    message: inDomain(link.hub, cloudDomain)
+      ? `${CLOUD_TEAM_LINK} This phone then gets its notifications.`
+      : `This phone pairs with the hub at ${link.hub}, which then sees it and sends it notifications. Connect only to a hub you or your team run.`,
   };
 };

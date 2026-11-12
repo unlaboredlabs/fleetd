@@ -1,12 +1,28 @@
 // Sign in to fleetd cloud against the repo's stand-in accounts service and WorkOS page (fleetd/test/fake-accounts.ts):
 // the system's auth session is played by the fake's `authorize`, the round trip the person makes on WorkOS's page.
-// Then sign-out, its revoke of this phone's own key on a hub that closes the link on it, and the first screen.
+// Back from it, the person is asked who signed in and about each invitation before anything pairs. Then sign-out, its
+// revoke of this phone's own key on a hub that closes the link on it, and the first screen.
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeAccounts } from "../../../../fleetd/test/fake-accounts.ts";
 import { fakeHub } from "../hub/fake";
-import { afterSignIn, authorizeUrl, needsComputer, pkce, queryOf, revokeOver, signIn, signOutAll, type AuthResult, type KeptHub, type SignInPorts } from "./account";
-import { builtCloudConfig, cloudConfig, firstScreen, teamOrigin, type CloudConfig } from "./config";
+import {
+  afterSignIn,
+  authorizeUrl,
+  needsComputer,
+  pkce,
+  queryOf,
+  revokeDropped,
+  revokeOver,
+  signIn,
+  signInAsking,
+  signOutAll,
+  type AfterSignInAsk,
+  type AuthResult,
+  type KeptHub,
+  type SignInPorts,
+} from "./account";
+import { builtCloudConfig, cloudConfig, firstScreen, type CloudConfig } from "./config";
 
 const random = (n: number) => new Uint8Array(randomBytes(n));
 
@@ -37,11 +53,29 @@ const ports = (email: string, answer?: (url: string) => AuthResult): SignInPorts
   };
 };
 
+/** The person's answers after the page, and every question asked, in order. */
+const answering = (me = true, join: (name: string) => boolean = () => false): AfterSignInAsk & { asked: string[] } => {
+  const asked: string[] = [];
+  return {
+    asked,
+    signedInAs: (email) => {
+      asked.push(`Signed in as ${email}`);
+      return Promise.resolve(me);
+    },
+    invitation: (i) => {
+      asked.push(`${i.invitedBy} invited you to ${i.name} as ${i.role}`);
+      return Promise.resolve(join(i.name));
+    },
+  };
+};
+
 describe("Sign In", () => {
   it("one team: the page with PKCE, one call to the accounts service, and the team's key from its own /pair", async () => {
     const url = await fake.team("acme", ["ada@example.com"]);
     const p = ports("ada@example.com");
-    const out = await signIn(p);
+    const ask = answering();
+    const out = await signInAsking(p, ask);
+    expect(ask.asked).toEqual(["Signed in as ada@example.com"]);
     expect(out).toMatchObject({ ok: true, account: { email: "ada@example.com" } });
     if (!out.ok) return;
     expect(fake.sessions.has(out.account.sessionId)).toBe(true);
@@ -57,16 +91,16 @@ describe("Sign In", () => {
   it("several teams: every one becomes a hub this phone keeps, beside a hub of the person's own", async () => {
     await fake.team("acme", ["ada@example.com"]);
     await fake.team("lab", ["ada@example.com"]);
-    const out = await signIn(ports("ada@example.com"));
+    const out = await signInAsking(ports("ada@example.com"), answering());
     if (!out.ok) throw new Error("not signed in");
     expect(out.teams.map((t) => t.ok && t.hub.hubName)).toEqual(["acme", "lab"]);
     const own: KeptHub = { hub: "http://devbox:4790", key: "fld_own", hubName: "devbox" };
     const stale: KeptHub = { hub: "https://old.example", key: "fld_old", hubName: "old", cloud: true };
-    expect(afterSignIn([own, stale], out.teams).map((h) => h.hubName)).toEqual(["devbox", "acme", "lab"]);
+    expect(afterSignIn([own, stale], out.teams).hubs.map((h) => h.hubName)).toEqual(["devbox", "acme", "lab"]);
   });
 
   it("a first sign-in's team has no computer yet: the chats list says to connect one from the desktop", async () => {
-    const out = await signIn(ports("new@example.com"));
+    const out = await signInAsking(ports("new@example.com"), answering());
     if (!out.ok) throw new Error("not signed in");
     const team = out.teams[0];
     if (team?.ok !== true) throw new Error("no team");
@@ -106,14 +140,83 @@ describe("Sign In", () => {
   it("a team's hub that won't pair is named; with none paired, the session ends", async () => {
     await fake.team("acme", ["ada@example.com"]);
     await fake.team("lab", ["ada@example.com"], { refusePairing: true });
-    const some = await signIn(ports("ada@example.com"));
+    const some = await signInAsking(ports("ada@example.com"), answering());
     expect(some).toMatchObject({ ok: true, teams: [{ name: "acme", ok: true }, { name: "lab", ok: false, failure: { message: "lab refused this phone's code." } }] });
 
     const unreached = { ...ports("ada@example.com") };
     unreached.fetch = (url, init) => (url.endsWith("/pair") ? Promise.reject(new TypeError("Network request failed")) : fetch(url, init));
-    const none = await signIn(unreached);
+    const none = await signInAsking(unreached, answering());
     expect(none).toMatchObject({ ok: false, failure: { code: "offline", message: "Can't reach acme." } });
     await vi.waitFor(() => expect(fake.ended).toHaveLength(1));
+  });
+
+  it("an invitation pairs nothing until Join: asked after who signed in, Not Now leaves it for the next sign-in", async () => {
+    await fake.team("ada", ["ada@example.com"]);
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "ada@example.com", "eve@other.example", "admin");
+    const later = answering();
+    const out = await signInAsking(ports("ada@example.com"), later);
+    expect(later.asked).toEqual(["Signed in as ada@example.com", "eve@other.example invited you to acme as admin"]);
+    expect(out).toMatchObject({ ok: true, teams: [{ name: "ada", ok: true }] });
+    expect(fake.keys.map((k) => k.team)).toEqual(["ada"]);
+    expect(fake.accepted).toEqual([]);
+    const join = answering(true, (name) => name === "acme");
+    const again = await signInAsking(ports("ada@example.com"), join);
+    expect(again).toMatchObject({ ok: true, teams: [{ name: "ada", ok: true }, { name: "acme", ok: true }] });
+    expect(fake.accepted).toEqual(["acme ada@example.com"]);
+    expect(fake.keys.map((k) => k.team)).toEqual(["ada", "ada", "acme"]);
+    // Someone else's fresh team, joined by invitation (the service's made: false): its chats list never says to connect a
+    // computer to it.
+    if (!again.ok) throw new Error("not signed in");
+    const [own, joined] = again.teams.map((t) => (t.ok ? t.hub : null));
+    if (own === null || own === undefined || joined === null || joined === undefined) throw new Error("both teams should have paired");
+    expect([own.invited, joined.invited]).toEqual([undefined, true]);
+    const empty = { projects: {}, machines: [] };
+    expect(needsComputer(own, empty)).toBe(true);
+    expect(needsComputer(joined, empty)).toBe(false);
+    // A later sign-in brings it among the person's teams, and the service still says they didn't make it.
+    const third = await signInAsking(ports("ada@example.com"), answering());
+    expect(third.ok && third.teams.map((t) => t.ok && [t.name, t.hub.invited])).toEqual([["ada", undefined], ["acme", true]]);
+  });
+
+  it("no team of their own and one invitation: still asked, and Not Now pairs nothing and ends the session", async () => {
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "new@example.com", "eve@other.example");
+    const ask = answering();
+    const out = await signInAsking(ports("new@example.com"), ask);
+    expect(ask.asked).toEqual(["Signed in as new@example.com", "eve@other.example invited you to acme as member"]);
+    expect(out).toMatchObject({ ok: false, failure: { code: "none_joined" } });
+    expect(fake.keys).toEqual([]);
+    expect(fake.teamsOf("new@example.com")).toEqual([]);
+    await vi.waitFor(() => expect(fake.ended).toHaveLength(1));
+  });
+
+  it("Sign Out at Signed in as: nothing asked after, nothing paired, the session ended", async () => {
+    await fake.team("acme", ["ada@example.com"]);
+    fake.invite("acme", "ada@example.com", "eve@other.example");
+    const ask = answering(false);
+    expect(await signInAsking(ports("ada@example.com"), ask)).toEqual({ ok: false, cancelled: true });
+    expect(ask.asked).toEqual(["Signed in as ada@example.com"]);
+    expect(fake.keys).toEqual([]);
+    await vi.waitFor(() => expect(fake.ended).toHaveLength(1));
+  });
+
+  it("revokes each key a sign-in replaces and an earlier account's teams, and a hub that can't be told doesn't stop it", async () => {
+    await fake.team("acme", ["ada@example.com"]);
+    const out = await signInAsking(ports("ada@example.com"), answering());
+    if (!out.ok) throw new Error("not signed in");
+    const own: KeptHub = { hub: "http://devbox:4790", key: "fld_own", hubName: "devbox" };
+    const acme = out.teams[0]?.ok === true ? out.teams[0].hub : null;
+    if (acme === null) throw new Error("no team");
+    const replaced: KeptHub = { ...acme, key: "fld_before" };
+    const other: KeptHub = { hub: "https://kim.fleetd.dev", key: "fld_kim", hubName: "kim", cloud: true };
+    const { hubs, dropped } = afterSignIn([own, replaced, other], out.teams);
+    expect(hubs.map((h) => h.key)).toEqual(["fld_own", acme.key]);
+    expect(dropped.map((h) => h.key)).toEqual(["fld_before", "fld_kim"]);
+    const revoked: string[] = [];
+    const unreached = await revokeDropped((h) => (revoked.push(h.key), h.hubName === "kim" ? Promise.reject(new Error("offline")) : Promise.resolve(true)), dropped);
+    expect(revoked).toEqual(["fld_before", "fld_kim"]);
+    expect(unreached).toEqual(["kim"]);
   });
 
   it("keeps the page's link to WorkOS's own parameters, the verifier's S256 challenge among them", () => {
@@ -137,7 +240,7 @@ describe("Sign Out", () => {
   const own: KeptHub = { hub: "http://devbox:4790", key: "fld_own", hubName: "devbox" };
 
   it("revokes the key on every team kept, not only the one shown, then ends the session; the own hub stays", async () => {
-    const out = await signIn(ports("new@example.com"));
+    const out = await signInAsking(ports("new@example.com"), answering());
     if (!out.ok) throw new Error("not signed in");
     const revoked: string[] = [];
     const left = await signOutAll(
@@ -210,8 +313,5 @@ describe("the build's values", () => {
     expect(cloudConfig("https://user@accounts.fleetd.dev", "c", false)).toBeNull();
     expect(cloudConfig("http://127.0.0.1:4100", "c", false)).toBeNull();
     expect(cloudConfig("http://127.0.0.1:4100", "c", true)?.accountsUrl).toBe("http://127.0.0.1:4100");
-    expect(teamOrigin("https://Acme.fleetd.dev", false)).toBe("https://acme.fleetd.dev");
-    expect(teamOrigin("https://acme.fleetd.dev/?x=1", false)).toBeNull();
-    expect(teamOrigin("http://10.0.0.1", true)).toBeNull();
   });
 });

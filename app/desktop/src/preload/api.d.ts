@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { CloudState, ConnectComputerOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { CloudState, ConnectComputerOutcome, FinishOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -165,8 +165,12 @@ export interface FleetdApi {
   /** fleetd cloud's Sign in (src/main/cloud). A build without the cloud's values answers `available: false`. */
   readonly cloud: {
     state(): Promise<CloudState>;
-    /** The whole sign-in, browser and all; resolves when it ends. Never rejects. */
+    /** The browser's part of a sign-in and the service's answer, held until finish or notMe; resolves when it ends. Never rejects. */
     signIn(): Promise<SignInOutcome>;
+    /** It's them: connects the account's teams and the invitations joined, by their places in the arrival. Never rejects. */
+    finish(join: number[]): Promise<FinishOutcome>;
+    /** Not them: drops the answer held and ends its session; nothing was connected. */
+    notMe(): Promise<void>;
     cancel(): Promise<void>;
     /** Opens the sign-in page under way again. */
     reopen(): Promise<void>;
