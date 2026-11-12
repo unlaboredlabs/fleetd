@@ -195,10 +195,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   }, [takes]);
   const control = (to: "human" | "agent") => {
     setAsking(to);
-    void setControl(layer, x.id, to).then((ok) => {
-      setAsking(null);
-      if (!ok) toast({ title: to === "human" ? "Couldn’t take over" : "Couldn’t hand back", description: "The hub didn’t take it. Try again.", key: `control:${x.id}` });
-    });
+    void setControl(layer, x.id, to).then(() => setAsking(null));
   };
   const own = x.openedBy !== undefined;
   const [ending, setEnding] = useState(false);

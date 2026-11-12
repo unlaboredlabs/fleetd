@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { addressOf, framePoint, isPaste, keyInput, modifiersOf } from "./live";
+import { describe, expect, it, vi } from "vitest";
+import type { DataLayer } from "../../src/data/queries";
+import type * as ui from "../../ui";
+import { toast } from "../../ui";
+import { addressOf, framePoint, isPaste, keyInput, modifiersOf, setControl } from "./live";
+
+vi.mock("../../ui", async (actual) => ({ ...(await actual<typeof ui>()), toast: vi.fn() }));
 
 const keys = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
 
@@ -51,5 +56,14 @@ describe("the address bar", () => {
     expect(addressOf("")).toBeUndefined();
     expect(addressOf("   ")).toBeUndefined();
     expect(addressOf("what is fleetd")).toBeUndefined();
+  });
+});
+
+describe("taking a page over", () => {
+  it("says the hub's reason when it refuses, not a generic line", async () => {
+    const message = "devbox's node isn't connected, or is too old for takeover.";
+    const layer = { call: () => Promise.resolve({ ok: false, error: { code: "machine_offline", message } }) } as unknown as DataLayer;
+    expect(await setControl(layer, "B1", "human")).toBe(false);
+    expect(toast).toHaveBeenCalledWith({ title: "Couldn’t take over", description: message, key: "control:B1" });
   });
 });

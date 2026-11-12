@@ -15,7 +15,7 @@ import type { Hub } from "../api/hub.ts";
 import { opener } from "../machine_roles/screens.ts";
 import { partCall, sessionCall, takeoverCall } from "./check.ts";
 import { live } from "./live.ts";
-import type { LeadCaller } from "../lead_calls/types.ts";
+import type { HostedCaller, LeadCaller } from "../lead_calls/types.ts";
 import { leadCalls } from "../lead_calls/index.ts";
 import { announce, deleteAside, dirOf, filePath, get, getOn, putOn, saveAsking, setAside, storedBytes } from "./store.ts";
 
@@ -24,6 +24,18 @@ export const OPS = ["browser_session", "browser_recording_part", "browser_takeov
 export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);
   for (const op of OPS) calls.register(op, (caller, call) => answer(hub, caller, call));
+  calls.setScreens((machineId, threadId, sessionId) => heldBy(hub, machineId, threadId, sessionId));
+}
+
+/**
+ * The agent screen `sessionId` was opened for, while it is unfinished on `machineId` under `threadId`: its session
+ * keeps reporting it after that session stopped being its project's lead.
+ */
+function heldBy(hub: Hub, machineId: string, threadId: string, sessionId: string): HostedCaller | undefined {
+  const s = get(hub, sessionId);
+  if (!s || s.threadId !== threadId || s.projectRef.machineId !== machineId) return undefined;
+  if (s.state !== "live" && s.state !== "uploading") return undefined;
+  return { projectRef: s.projectRef, agent: s.taskId === undefined ? { kind: "lead" } : { kind: "task", taskId: s.taskId }, threadId };
 }
 
 const invalid = (message: string, fix?: string) => new ToolError("invalid", message, fix);

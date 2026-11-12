@@ -7,6 +7,7 @@ import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type Pointe
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
+import { toast } from "../../ui";
 import { screenMark } from "./timing";
 
 /** The newest frame of the last few sessions shown: a view that comes back shows its page at once, then live again. */
@@ -42,11 +43,16 @@ export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | und
 
 /**
  * Takes the session over (`human`) or hands it back (`agent`); the hub answers with the session as it now is, which
- * replaces it in the list at once (its browser.session event reads the list again anyway).
+ * replaces it in the list at once (its browser.session event reads the list again anyway). A refusal shows as a
+ * toast with the hub's reason, for the person to act on.
  */
 export async function setControl(layer: DataLayer, sessionId: string, control: "human" | "agent"): Promise<boolean> {
   const outcome = await layer.call("browser_control", { sessionId, control });
-  if (!outcome.ok) return false;
+  if (!outcome.ok) {
+    const title = control === "human" ? "Couldn’t take over" : "Couldn’t hand back";
+    toast({ title, description: outcome.error.message, key: `control:${sessionId}` });
+    return false;
+  }
   const now = outcome.output.session;
   layer.queryClient.setQueriesData<BrowserSessionsOutput>({ queryKey: ["call", "browser_sessions"] }, (old) =>
     old === undefined ? old : { ...old, sessions: old.sessions.map((s) => (s.sessionId === now.sessionId ? now : s)) },
