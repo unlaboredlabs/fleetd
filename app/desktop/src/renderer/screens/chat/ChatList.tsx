@@ -27,6 +27,7 @@ import { ArtifactCard } from "../artifacts/ArtifactCard";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
 import { InlineText } from "./text";
+import { FoldLine } from "./lens/Lens";
 import s from "./view.module.css";
 
 function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
@@ -214,6 +215,8 @@ const RowView = memo(function RowView(props: {
       );
     case "message":
       return <MessageView row={r} mineLatest={props.mineLatest} enter={props.enter} />;
+    case "fold":
+      return <FoldLine fold={r.fold} open={r.open} />;
   }
 });
 

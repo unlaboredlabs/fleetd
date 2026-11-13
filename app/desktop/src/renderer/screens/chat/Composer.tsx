@@ -15,7 +15,7 @@ interface ProjectRef {
 
 import { ArrowUp, Check, Paperclip, Reply, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
@@ -51,9 +51,11 @@ export interface ChatComposerProps {
   onCancelReply?: () => void;
   /** Docked to the box's top, inside its outline (and its focus ring), over the words. */
   top?: ReactNode;
+  /** A lens on one order is open: what you send is about it. */
+  about?: ChatAbout | undefined;
 }
 
-export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, top }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, top, about }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -129,7 +131,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     const text = replyTo === undefined || replyTo.quote === "" ? checked.text : replyText(replyTo.quote, checked.text);
     const reply = replyTo === undefined ? {} : { replyTo: { messageId: replyTo.id, part: replyTo.part } };
     const named = skills.named(checked.text);
-    void chat.send(projectKey, { text, ...reply, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}), ...(named.length > 0 ? { skills: named } : {}) });
+    void chat.send(projectKey, { text, ...reply, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}), ...(named.length > 0 ? { skills: named } : {}), ...(about === undefined ? {} : { about: about.workstreamId }) });
   };
 
   // A reply goes to the box: the cursor follows it.
@@ -319,7 +321,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           ref={box}
           className={c.input}
           aria-label="Message the lead"
-          placeholder={placeholder(working, away)}
+          placeholder={placeholder(working, away, about?.title)}
           rows={1}
           value={draft.text}
           autoFocus={autoFocus}

@@ -45,11 +45,11 @@ export interface ChatActions {
    */
   /**
    * `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. `now` (⌘Enter):
-   * a working lead stops its running step for it.
+   * a working lead stops its running step for it. `about`: sent from a lens, the order it is about.
    */
   send(
     key: ProjectKey,
-    input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean; replyTo?: ChatReplyTo; skills?: readonly string[] },
+    input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean; replyTo?: ChatReplyTo; skills?: readonly string[]; about?: string },
     clientRequestId?: string,
   ): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
@@ -59,6 +59,11 @@ export interface ChatActions {
   probeStop(): void;
   /** Stops the lead's turn now; the chat's own events then say it stopped. */
   stop(key: ProjectKey): Promise<StopOutcome>;
+  /**
+   * Moves a message to another open order, or to none (`workstreamId` absent): chat_about_set, a tagged chat's About….
+   * The hub's copy shows at once; undefined once it has, else why not.
+   */
+  retag(key: ProjectKey, messageId: string, workstreamId: string | undefined): Promise<HubError | undefined>;
 }
 
 const TRANSIENT = new Set(["timeout", "offline", "disconnected"]);
@@ -186,6 +191,7 @@ export const createChatActions = (
       ...(row.now === true ? { now: true } : {}),
       ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
       ...(row.skills !== undefined && row.skills.length > 0 ? { skills: [...row.skills] } : {}),
+      ...(row.about === undefined ? {} : { about: row.about }),
       // The person's zone, so their lead reads when they wrote on their clock and schedules in it.
       ...zone(),
     };
@@ -238,6 +244,7 @@ export const createChatActions = (
       ...(input.now === true ? { now: true } : {}),
       ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
       ...(input.skills !== undefined && input.skills.length > 0 ? { skills: input.skills } : {}),
+      ...(input.about === undefined ? {} : { about: input.about }),
     };
     return sendRow(key, row);
   };
@@ -316,7 +323,20 @@ export const createChatActions = (
     return { t: "failed", error: r.error };
   };
 
-  const actions: ChatActions = { open, close, loadOlder, send, retry, discard: dropRow, probeStop, stop };
+  const retag: ChatActions["retag"] = async (key, messageId, workstreamId) => {
+    const generation = store.getState().generation;
+    const r = await call("chat_about_set", { projectRef: refOf(key), messageId, ...(workstreamId === undefined ? {} : { workstreamId }) });
+    if (!r.ok) return r.error;
+    // Its chat.message event carries the same copy again.
+    const { message } = r.output;
+    update((st) => {
+      const chat = st.chats[key];
+      return chat !== undefined && (chat.loaded || chat.cached === true) && st.generation === generation ? { chats: { ...st.chats, [key]: mergeOwn(chat, message) } } : {};
+    });
+    return undefined;
+  };
+
+  const actions: ChatActions = { open, close, loadOlder, send, retry, discard: dropRow, probeStop, stop, retag };
   /** The chat on screen, which the disk cache keeps first. */
   const focus = (): ProjectKey | null => focused;
   return { actions, onState, focus };

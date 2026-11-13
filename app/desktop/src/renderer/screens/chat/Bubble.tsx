@@ -3,7 +3,7 @@
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
-import { Check, Paperclip, Reply, Send, SmilePlus } from "lucide-react";
+import { Check, Paperclip, Reply, Send, SmilePlus, Tag } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
@@ -44,6 +44,8 @@ import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
 import { Message } from "./text";
+import { TagLine } from "./lens/Lens";
+import { aboutOf, partAbout } from "./lens/tags";
 import s from "./view.module.css";
 
 /**
@@ -227,6 +229,11 @@ function BubbleLine(props: {
   const reply = () => actions?.reply({ id: item.id, part: Number(bubble.key), quote: quoteOf(bubble.text) });
   const words = bubble.text.trim() !== "";
   const answers = lead && actions !== undefined;
+  // A tagged chat's About…: any message the hub has, moved to an open order or to none.
+  const tags = actions?.tags;
+  const retags = tags !== undefined && item.message !== undefined && item.state !== "streaming";
+  // Of a message about several orders, this bubble's.
+  const about = partAbout(item, bubble.key)?.workstreamId ?? aboutOf(item);
   const menu = () => (
     <>
       {words ? (
@@ -250,11 +257,25 @@ function BubbleLine(props: {
           </ContextMenuSub>
         </>
       ) : null}
+      {retags && (words || answers) ? <ContextMenuSeparator /> : null}
+      {retags ? (
+        <ContextMenuSub label="About…" icon={<Tag />}>
+          {tags.open.map((o) => (
+            <ContextMenuItem key={o.workstreamId} hint={about === o.workstreamId ? <Check aria-label="On" /> : undefined} onSelect={() => tags.retag(item.id, o.workstreamId)}>
+              {o.title}
+            </ContextMenuItem>
+          ))}
+          {tags.open.length > 0 ? <ContextMenuSeparator /> : null}
+          <ContextMenuItem hint={about === undefined ? <Check aria-label="On" /> : undefined} onSelect={() => tags.retag(item.id, undefined)}>
+            Nothing
+          </ContextMenuItem>
+        </ContextMenuSub>
+      ) : null}
     </>
   );
   return (
     <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
-      <ContextMenu menu={menu} disabled={!words && !answers}>
+      <ContextMenu menu={menu} disabled={!words && !answers && !retags}>
         <div
           ref={box}
           // Focusable from script while it is what Show went to; not a tab stop of its own.
@@ -323,7 +344,13 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   const mine = isMineRow(r);
   const lead = i.author === "lead" && !r.history;
   const body = r.reply?.body;
-  const bubbles = useMemo((): readonly Bubble[] => (body !== undefined ? [{ kind: "text", key: "0", text: body }] : bubblesOf(i)), [i, body]);
+  // In a lens, of a message about several orders, only the lens's bubbles.
+  const only = r.parts;
+  const bubbles = useMemo((): readonly Bubble[] => {
+    const all: readonly Bubble[] = body !== undefined ? [{ kind: "text", key: "0", text: body }] : bubblesOf(i);
+    return only === undefined ? all : all.filter((b) => only.includes(b.key));
+  }, [i, body, only]);
+  const tags = actions?.tags;
   const marks = useTapbacks(actions === undefined ? "" : projectKey(actions.project));
   const typing = i.state === "streaming";
   const files = i.attachments.length > 0;
@@ -344,7 +371,9 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
         data-author={i.author}
         data-mine={mine ? "" : undefined}
       >
-        {r.head && !mine && i.author !== "lead" ? (
+        {r.tag !== undefined ? (
+          <TagLine by={r.head && !mine && i.author !== "lead" ? (r.by ?? authorLabel(i)) : undefined} tag={r.tag} mine={mine} from={i.id} />
+        ) : r.head && !mine && i.author !== "lead" ? (
           <div className={s.head} data-head>
             <Text size="xs" tone="quiet">
               {r.by ?? authorLabel(i)}
@@ -361,24 +390,30 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
         {typing ? (
           <TypingLine enter={enter} />
         ) : (
-          bubbles.map((b, n) => (
-            <BubbleLine
-              key={b.key}
-              item={i}
-              bubble={b}
-              first={r.run && n === 0}
-              last={r.end && n === bubbles.length - 1 && !files}
-              lead={lead}
-              answer={r.answered?.[b.key]}
-              tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
-              enter={enter}
-              step={n}
-              opening={n === 0}
-              mine={mine}
-              receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
-              worked={n === bubbles.length - 1 ? r.worked : undefined}
-            />
-          ))
+          bubbles.map((b, n) => {
+            // A message about several orders: a bubble whose order isn't the one before it says which, as a run would.
+            const own = n > 0 && tags?.named === true ? partAbout(i, b.key) : undefined;
+            const turns = own !== undefined && own.workstreamId !== tags?.lens && own.workstreamId !== partAbout(i, bubbles[n - 1]?.key ?? "")?.workstreamId;
+            return [
+              turns ? <TagLine key={`tag:${b.key}`} tag={{ order: own }} mine={mine} from={i.id} inner /> : null,
+              <BubbleLine
+                key={b.key}
+                item={i}
+                bubble={b}
+                first={(r.run && n === 0) || turns}
+                last={r.end && n === bubbles.length - 1 && !files}
+                lead={lead}
+                answer={r.answered?.[b.key]}
+                tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
+                enter={enter}
+                step={n}
+                opening={n === 0}
+                mine={mine}
+                receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
+                worked={n === bubbles.length - 1 ? r.worked : undefined}
+              />,
+            ];
+          })
         )}
         {lead && !typing && actions?.skips === i.id ? (
           <div className={cx(s.skip, tail.className)} style={tail.style}>
