@@ -94,15 +94,24 @@ it("leaves the top bar to the title when nothing needs you: no state word, no ag
   expect(host.querySelector("header")?.textContent).toBe("storefront");
 });
 
-it("says a red main as a warning, not a block, and a block or the lead's question before it", async () => {
+it("says a red main as the island's red dot, its reason whole in the island's card, and no block", async () => {
   const warning = "`e2e (webkit)` is red on main, fix in progress";
   await mount({ state: "working", warning });
-  // The check's name is set as code, its backticks not shown.
-  expect(host.querySelector('[data-attention="warning"]')?.textContent).toBe("e2e (webkit) is red on main, fix in progress");
-  expect(host.querySelector('[data-attention="warning"] code')?.textContent).toBe("e2e (webkit)");
+  const island = host.querySelector("[data-band] [data-island]");
+  const press = island?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  expect(press?.getAttribute("aria-label")).toBe("main is red");
+  // No words in the band: a dot, and nothing in what-needs-you's capsule.
+  expect(press?.textContent).toBe("");
+  expect(line()).toBeNull();
+  act(() => press?.click());
+  // Opened: the reason, the check's name set as code, its backticks not shown.
+  const card = island?.querySelector("[data-island-card]");
+  expect(card?.textContent).toBe("e2e (webkit) is red on main, fix in progress");
+  expect(card?.querySelector("code")?.textContent).toBe("e2e (webkit)");
   act(() => root?.unmount());
   await mount({ state: "blocked", blockedReason: "devbox is offline", warning });
   expect(line()).toBe("Blocked: devbox is offline");
+  expect(host.querySelector("[data-island] button")?.getAttribute("aria-label")).toBe("main is red");
 });
 
 it("offers Resume on the blocked line when its machine's usage pause is why, and Resume calls usage_resume", async () => {
@@ -128,16 +137,18 @@ it("says only that it is blocked when the hub gave no reason, and nothing when i
   expect(line()).toBeNull();
 });
 
-it("says what the lead is doing on one line in the composer's band, never as a row of the conversation", async () => {
+it("says what the lead is doing in the island over the composer, never as a row of the conversation", async () => {
+  const reading = { activity: { kind: "read" as const, path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }, since: AT };
+  await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: reading }));
+  const island = host.querySelector("[data-band] > [data-island]");
+  // Its file's name as code; the whole name is held, the shown copy cut to the room it has.
+  expect(island?.querySelector("button")?.getAttribute("aria-label")).toBe("Reading `half-cent-edge-cases.ts`");
+  expect([...(island?.querySelectorAll("code") ?? [])].map((c) => c.textContent)).toContain("half-cent-edge-cases.ts");
+  expect(host.querySelector("[data-index] [data-island]")).toBeNull();
+  act(() => root?.unmount());
+  // Only working or thinking, the lead's avatar says it: the island has nothing to say, and isn't drawn.
   await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
-  // With no agents at work, in a capsule of its own across the band (the live strip's while they run).
-  const line = host.querySelector("[data-band] > [data-alone] > [data-turn-line]");
-  expect(line?.getAttribute("data-turn")).toBe("running");
-  expect(line?.hasAttribute("data-shown")).toBe(true);
-  expect(line?.querySelector("[role='status']")?.textContent).toBe("Working");
-  expect(host.querySelector("[data-index] [data-turn-line], [data-index] [role='status']")).toBeNull();
-  // Its glyph and the scan over its words step on the app's beat.
-  expect(document.documentElement.dataset["beat"]).toBeDefined();
+  expect(host.querySelector("[data-island]")).toBeNull();
 });
 
 it("floats the composer as an island over the conversation, which runs on behind it rather than ending above it", async () => {
@@ -150,7 +161,7 @@ it("floats the composer as an island over the conversation, which runs on behind
   expect(list).not.toBeNull();
   expect(island?.contains(list ?? null)).toBe(false);
   expect(island?.parentElement?.contains(list ?? null)).toBe(true);
-  // The band the live strip floats in sits over the pill, outside it: nothing docks inside the box any more.
+  // The band the island floats in sits over the pill, outside it: nothing docks inside the box any more.
   const band = island?.querySelector("[data-band]");
   expect(band?.nextElementSibling?.hasAttribute("data-composer")).toBe(true);
   expect(island?.querySelector("[data-composer] [data-band]")).toBeNull();

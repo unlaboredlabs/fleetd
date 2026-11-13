@@ -21,7 +21,7 @@ vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "darwin", fixture: null }))
 /** What a key may render: the box's own component and its words under the tools. */
 const COMPOSER = new Set(["ChatComposer", "Text"]);
 /** Rendered as the screen mounts, and never again for a key. */
-const EXPENSIVE = ["ChatScreen", "AttentionLine", "ChatList", "RowView", "MessageView", "Markdown", "TurnLine"];
+const EXPENSIVE = ["ChatScreen", "AttentionLine", "ChatList", "RowView", "MessageView", "Markdown", "Island"];
 
 let root: Root | undefined;
 const host = document.createElement("div");
@@ -88,7 +88,7 @@ const mount = async () => {
   act(() => {
     send(live());
     send(snapshot(1));
-    send({ t: "live", frame: { at: AT, full: true, lanes: [liveLane(leadLaneId(project), "working")] } });
+    send({ t: "live", frame: { at: AT, full: true, lanes: [liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "edit", path: "src/a.ts" }, since: AT } })] } });
   });
   for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
@@ -112,7 +112,7 @@ it("renders the composer and nothing else while you type", async () => {
   // The screen is all there, so a render of any of it below would count.
   for (const name of EXPENSIVE) expect(renders.counts.get(name), name).toBeGreaterThan(0);
   expect(host.querySelectorAll("[data-index]").length).toBeGreaterThanOrEqual(8);
-  expect(host.querySelector("[data-turn-line][data-turn='running']")).not.toBeNull();
+  expect(host.querySelector("[data-island]")).not.toBeNull();
 
   const box = host.querySelector<HTMLTextAreaElement>("textarea[aria-label^='Message']");
   if (box === null) throw new Error("no composer");

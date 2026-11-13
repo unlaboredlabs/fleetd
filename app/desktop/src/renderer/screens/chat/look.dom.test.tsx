@@ -178,9 +178,10 @@ it("ranks below what the lead waits on you for", async () => {
   expect(line()).not.toContain("to look at");
 });
 
-it("keeps a red main in view after it", async () => {
+it("keeps a red main in view beside it, as the island's dot", async () => {
   await mount([msg(1, { text: "The new checkout is up." })], { nudges: [nudge(1, "the new checkout")] }, { state: "working", warning: "`e2e (webkit)` is red on main" });
-  expect(line()).toMatch(/1 to look at: the new checkout.*Show.*Dismiss.*e2e \(webkit\) is red on main/);
+  expect(line()).toBe("1 to look at: the new checkoutShowDismiss");
+  expect(host.querySelector("[data-band] [data-island] button")?.getAttribute("aria-label")).toBe("main is red");
 });
 
 it("shows one again when the lead flags it again after you saw it", async () => {
