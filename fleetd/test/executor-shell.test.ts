@@ -133,6 +133,17 @@ test("rows delivered again emit nothing", () => {
   expect(feed(twice, beforeTurns())).toEqual(once);
 });
 
+test("a finished turn's armed Monitor reaches the stored thread, and goes with it once it ends", () => {
+  const state = beforeTurns();
+  const stored: StoredThread[] = [];
+  const apply = (s: SessionSummary) => stored.push(...applyMachineEvent(state, AFTER, updated(s), { machineId: MACHINE, now: NOW, stored: new Map(), baseline: false }).threads);
+  apply({ ...aDone(), watchingUntil: "2026-10-17T10:33:00Z" });
+  expect(state.threads.get("s-a")?.summary.watchingUntil).toBe("2026-10-17T10:33:00.000Z");
+  expect(stored.at(-1)?.summary.watchingUntil).toBe("2026-10-17T10:33:00.000Z");
+  apply(aDone());
+  expect(stored.at(-1)?.summary.watchingUntil).toBeUndefined();
+});
+
 test("a queued run is starting, so a send waits behind it", () => {
   const state = beforeTurns();
   feed([[11, updated(row("c", 4, run("c1", "queued", 1), { status: "running", activeRunId: "c1" }))]], state);

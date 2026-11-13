@@ -84,6 +84,9 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
   if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
   if (startsWithAny(type, WORK_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "work_list" });
+  // A chat's agent card that isn't in the live list reads its task by id: read again on that task's own events.
+  const taskId = type.startsWith("task.") ? dataField(event, "taskId") : undefined;
+  if (taskId !== undefined) out.push({ tool: "task_get", where: { taskId } });
   const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });

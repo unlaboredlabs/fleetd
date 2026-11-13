@@ -22492,6 +22492,10 @@
         },
         "usageLimitResetAt": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "watchingUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Until when a Monitor its agent armed may still wake it after its turn ends; absent when none is armed, and from older nodes."
         }
       },
       "required": [

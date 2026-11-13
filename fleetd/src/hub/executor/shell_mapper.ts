@@ -41,6 +41,8 @@ export type Summary = {
   lastProgressAt: string;
   model?: string;
   effort?: string;
+  /** Until when a Monitor its agent armed may still wake it (the node's `watchingUntil`). */
+  watchingUntil?: string;
   stale: boolean;
   asOf: string;
 };
@@ -64,6 +66,7 @@ function ordered(s: Summary): Summary {
   out.lastProgressAt = s.lastProgressAt;
   if (s.model !== undefined) out.model = s.model;
   if (s.effort !== undefined) out.effort = s.effort;
+  if (s.watchingUntil !== undefined) out.watchingUntil = s.watchingUntil;
   out.stale = s.stale;
   out.asOf = s.asOf;
   return out as Summary;
@@ -248,6 +251,7 @@ export function toThreadSummary(machineId: string, s: SessionSummary, prev: Summ
     lastProgressAt: normalizeIso(s.updatedAt),
     model: s.model,
     effort: s.effort,
+    ...(s.watchingUntil !== undefined ? { watchingUntil: normalizeIso(s.watchingUntil) } : {}),
     stale: false,
     asOf: now,
   };

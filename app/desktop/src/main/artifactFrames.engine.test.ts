@@ -124,8 +124,14 @@ const run = async (html: string, settleMs: number, sandboxed = true): Promise<Re
       child.on("exit", (code) => reject(new Error(`electron exited ${String(code)}\n${err}`)));
     });
   } finally {
-    child.kill();
-    rmSync(dir, { recursive: true, force: true });
+    // Electron writes its profile in `dir` until it has exited, and its helpers a moment longer: removing the dir
+    // right after the kill failed with ENOTEMPTY when the page answered at once (the chart's 0 ms settle).
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((done) => child.once("exit", done));
+      child.kill();
+      await Promise.race([exited, new Promise((done) => setTimeout(done, 5_000))]);
+    }
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 };
 

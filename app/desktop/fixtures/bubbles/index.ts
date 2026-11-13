@@ -1,6 +1,6 @@
 // The chat as a messaging app (fixtures/bubbles), in storefront's chat on the typical hub (its PRs answer pr_get):
 // a casual exchange whose lead replies the hub split into bubbles, a pause, and your reply to one of them; a chart, a
-// bar chart and a table; a PR card with its diff; and the lead asking, with an approve-or-deny and a pick-one ask
+// bar chart and a table; a PR card with its diff; agent cards; and the lead asking, with an approve-or-deny and a pick-one ask
 // (answered) and a checklist; and messages sent from Shortcuts and the Share Sheet. The typing bubble is
 // chat-streaming's and stream-long's.
 import { firstProject, writeChat, type Draft } from "../kit/chat.ts";
@@ -141,6 +141,47 @@ const SOURCES: Draft[] = [
   lead(29, "Got it: dates on the right, totals under them. I’ll match it."),
 ];
 
+/**
+ * Agent cards for agents no live list holds: a reader in the project's second repo between two wakes of its own
+ * Monitor, which the hub has running again (W648), and a task this hub never had.
+ */
+const AGENT_TASK = "T3842";
+const AGENTS: Draft[] = [
+  you(12, "where does the deploy run?"),
+  lead(11, "In one agent, the one that ran the deploy:", { v: 1, kind: "agent", taskId: AGENT_TASK }, "It wakes on each line of the deploy log."),
+  you(10, "and the old one from last week?"),
+  lead(9, { v: 1, kind: "agent", taskId: "T9999" }),
+];
+
+const agentCards = (base: Fixture): Fixture => {
+  const f = chat(base, "bubbles-agent", "Agent cards for a Monitor-woken reader no live list holds, and for a task the hub doesn't have.", AGENTS);
+  const ref = firstProject(f);
+  f.answer(
+    "task_get",
+    { taskId: AGENT_TASK },
+    {
+      task: {
+        taskId: AGENT_TASK,
+        title: "Cloud: the deploy to the three hosts, prepared and checked",
+        kind: "read",
+        state: "running",
+        attempt: 8,
+        createdAt: "2026-10-18T23:32:57.586Z",
+        startedAt: "2026-10-18T23:32:58.360Z",
+        projectRef: ref,
+        repoId: "R2",
+        workstreamId: "W44",
+        prompt: "Deploy the cloud build to the three hosts.",
+        threadRef: { machineId: ref.machineId, threadId: "th-deploy" },
+        result: { status: "done", tail: "I'm watching deploy.log.", endCause: "completed", at: "2026-10-19T10:05:11.583Z" },
+      },
+      next: "",
+    },
+  );
+  f.fail("task_get", { taskId: "T9999" }, { code: "not_found", message: "No task T9999.", fix: "Call tasks_list to see tasks." });
+  return f;
+};
+
 const chat = (base: Fixture, name: string, note: string, drafts: Draft[], opts: { needsYou?: boolean } = {}): Fixture => {
   const f = Fixture.from(base, name, note);
   writeChat(f, firstProject(f), drafts, opts);
@@ -153,6 +194,7 @@ export default defineGroup({
     chat(base("typical"), "bubbles-charts", "The lead answers with a line chart, a bar chart and a table.", CHARTS),
     chat(base("typical"), "bubbles-pr", "The lead shows a PR as a live card and the part of its diff that matters.", PR),
     chat(base("typical"), "bubbles-sources", "Your messages from Shortcuts and the Share Sheet, each saying so under it.", SOURCES),
+    agentCards(base("typical")),
     chat(base("typical"), "bubbles-ask", "The lead asks you to approve, after a pick-one ask you answered, under a checklist.", ASK, { needsYou: true }),
   ],
 });

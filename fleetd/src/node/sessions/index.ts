@@ -593,6 +593,10 @@ export class SessionService {
     const before = { summary: JSON.stringify({ ...row.summary, updatedAt: "" }), runs: runs.map((r) => JSON.stringify(r)), updatedAt: row.summary.updatedAt };
     const c: Change = { row, runs, events: [], at: nowIso(), announce: false };
     const out = f(c);
+    // The hub reads the session's armed Monitors off its summary: an order with a finished agent one may wake stays open.
+    const until = Math.max(...(c.row.local.monitors ?? []).map((m) => m.untilMs));
+    if (Number.isFinite(until)) c.row.summary.watchingUntil = new Date(until).toISOString();
+    else delete c.row.summary.watchingUntil;
     state.settle(c.row.summary, c.runs, c.at);
     if (!c.row.summary.pendingPermission) delete c.row.local.queuedPrompts;
     const changed = c.runs.filter((r, i) => before.runs[i] !== JSON.stringify(r));

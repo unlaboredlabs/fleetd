@@ -550,6 +550,15 @@ test("a run closes once its turn ends with nothing in flight, in every project; 
   db.run(`INSERT INTO ci_waits (task_id, url, created_ms) VALUES ('T${task}', 'https://github.com/acme/shop/pull/7', 0)`);
   await stillOpen("a done agent waiting on CI");
   db.run("DELETE FROM ci_waits");
+  // Between two wakes of a Monitor of its own, its node says until when one may still wake it (T3842 of W644).
+  db.run(`UPDATE tasks SET thread_id = 'th-agent', data = json_object('threadRef', json_object('machineId', '${PROJECT.machineId}', 'threadId', 'th-agent')) WHERE n = ${task}`);
+  const agent = (watchingUntil: number) =>
+    store(hub).threadUpsert({
+      thread: { machineId: PROJECT.machineId, threadId: "th-agent", projectId: "p-cloud", status: "completed", lastProgressAt: isoMs(clock.now()), watchingUntil: isoMs(watchingUntil) } as never,
+    });
+  agent(clock.now() + 30 * MIN);
+  await stillOpen("a done agent a Monitor of its own may still wake");
+  agent(clock.now() - MIN);
   db.run(
     `INSERT INTO requests (project_key, kind, state, created_ms, data) VALUES ('${PROJECT.machineId}/${PROJECT.projectId}', 'approval', 'open', 0, json_object('workstreamId', '${w}'))`,
   );

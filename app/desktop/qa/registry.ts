@@ -183,10 +183,11 @@ export const fixtures = [
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
   // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
-  // diff, the lead asking, and messages from Shortcuts and the Share Sheet.
+  // diff, agent cards, the lead asking, and messages from Shortcuts and the Share Sheet.
   "bubbles-casual",
   "bubbles-charts",
   "bubbles-pr",
+  "bubbles-agent",
   "bubbles-ask",
   "bubbles-sources",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
@@ -1976,7 +1977,7 @@ export const screens: readonly Screen[] = [
   },
   // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
   // PR card with its diff, and an ask waiting on you.
-  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
   // A tapback put on one of the lead's bubbles, from the button its hover shows.
   {
     id: "chat",

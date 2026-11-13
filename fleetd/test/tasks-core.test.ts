@@ -185,6 +185,23 @@ test("a message continues an ended task in its thread; a running one is steered;
   k.hub.shutdown.abort();
 });
 
+test("a finished task its own Monitor wakes is running again, and says so for the apps' agents lists", async () => {
+  const k = tasksKit();
+  void k.t.run();
+  await k.spawn("Deploy", "read");
+  k.thread("thread.completed", "s1", { runId: "r1", endCause: "completed" });
+  await until(() => k.t.get("T1")?.state === "done");
+  const started = typesOf(k, "task.started").length;
+  // Its Monitor prints a line: claude starts a turn of its own, with no message of fleetd's.
+  k.threadRow("s1", "running");
+  k.thread("thread.started", "s1", { runId: "t1-woke-1" });
+  await until(() => k.t.get("T1")?.state === "running");
+  await until(() => typesOf(k, "task.started").length > started);
+  expect(typesOf(k, "task.started").at(-1)?.summary).toBe("T1 continued in its own thread (attempt 1): Deploy");
+  expect(typesOf(k, "task.started").at(-1)?.data).toMatchObject({ taskId: "T1" });
+  k.hub.shutdown.abort();
+});
+
 test("a cancel the node can't carry out keeps the task and its slot", async () => {
   const k = tasksKit();
   await k.spawn("Work");
