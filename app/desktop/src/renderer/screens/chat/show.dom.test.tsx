@@ -223,9 +223,10 @@ it("counts an approval on a page not loaded yet, and Show goes to it once that p
   });
   // The newest page asks nothing; the hub's list says what still waits.
   expect(line()).toContain("1 command to approve");
-  expect(host.textContent).not.toContain("./deploy.sh");
+  expect(host.textContent).not.toContain("prod deploy");
   await show();
   act(() => release());
-  await vi.waitFor(() => expect(marked().join("")).toContain("./deploy.sh"));
-  expect(focused()).toContain("./deploy.sh");
+  // The card leads with its reason; the command itself stays behind Show command.
+  await vi.waitFor(() => expect(marked().join("")).toContain("prod deploy"));
+  expect(focused()).toContain("prod deploy");
 });
