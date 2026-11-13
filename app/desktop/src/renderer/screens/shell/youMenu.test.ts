@@ -64,6 +64,8 @@ describe("the hub's line", () => {
     expect(menu({ hub: { ...down, waking: NOW - 2_000 } })).toEqual([{ key: "hub", mark: "quiet", text: "devbox", name: "devbox", aside: "Reconnecting…", does: { to: "hubs" } }]);
     expect(read({ hub: { phase: "connecting", hub: HUB, attempt: 0, waking: NOW - 9_000 } })).toEqual(["devbox · Reconnecting…"]);
     expect(read({ hub: { ...down, waking: NOW - 10_000 } })).toEqual(["Can't reach devbox · Retry"]);
+    // Past them, redials about once a second (main/hub/client.ts) keep the same words between attempts and during one.
+    expect(read({ hub: { phase: "connecting", hub: HUB, attempt: 12, waking: NOW - 12_000 } })).toEqual(["Can't reach devbox · Trying…"]);
   });
 
   it("says an update going on or just in as a quiet word at its end, never a line of its own", () => {

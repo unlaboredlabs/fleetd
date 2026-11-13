@@ -760,6 +760,22 @@ describe("HubClient after a wake", () => {
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 1000 });
   });
 
+  it("counts each fast redial as one more failed attempt, so the screens never read one as a first connect", () => {
+    const { client, frames } = asleep();
+    client.woke();
+    frames.length = 0;
+    vi.advanceTimersByTime(WAKE_FAST_MS);
+    const states = frames.flatMap((f) => (f.t === "state" ? [f.state] : []));
+    const dials = states.flatMap((s) => (s.phase === "connecting" ? [s.attempt] : []));
+    // The tailnet still down past the quiet seconds: connecting and retrying by turns, about once a second.
+    expect(dials.length).toBeGreaterThan(100);
+    expect(dials).toEqual(dials.map((_, i) => i + 1));
+    expect(states.filter((s) => s.phase === "retrying")).toHaveLength(dials.length);
+    // Counted, but no step of the backoff: once the fast time is over it waits its first step.
+    while (!(client.state.phase === "retrying" && client.state.retryAt > Date.now())) vi.advanceTimersByTime(1);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
+  });
+
   it("says a hub it was just connected to may still be coming back, never to check its address or update it", () => {
     const { client } = asleep();
     client.woke();

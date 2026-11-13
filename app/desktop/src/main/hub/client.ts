@@ -95,7 +95,10 @@ export class HubClient implements HubSource {
   #state: HubState;
   #connection: Connection | null = null;
   #ready = false;
+  /** The attempts since the link was last up: the screens read 0 as a first connect, and more as one that failed. */
   #attempt = 0;
+  /** Of #attempt, those dialled fast after a wake: counted, so the screens say it failed, but no step of the backoff. */
+  #fastDials = 0;
   /** When the hub closed the link to restart or stop, epoch ms, until a link is ready again: it redials quickly meanwhile. */
   #restarting: number | null = null;
   /** The build it restarts into, when the close said it updates. */
@@ -162,6 +165,7 @@ export class HubClient implements HubSource {
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#attempt = 0;
+    this.#fastDials = 0;
     this.#connect();
   }
 
@@ -200,6 +204,7 @@ export class HubClient implements HubSource {
     connection?.close();
     this.#dropLink();
     this.#attempt = 0;
+    this.#fastDials = 0;
     this.#connect();
   }
 
@@ -492,18 +497,24 @@ export class HubClient implements HubSource {
     this.#clearTimers();
     if (this.#stopped) return;
     const now = Date.now();
-    if (wasReady && now - this.#readyAt >= STABLE_MS) this.#attempt = 0;
+    const quick = this.#restarting !== null && now - this.#restarting < RESTART_REDIAL_MS;
+    if ((wasReady && now - this.#readyAt >= STABLE_MS) || quick) {
+      this.#attempt = 0;
+      this.#fastDials = 0;
+    }
     // Just after a wake, again at once, WAKE_REDIAL_EVERY_MS after the last attempt began at the soonest, the backoff
     // left at its start for after. Restarting, every RESTART_REDIAL_EVERY_MS until RESTART_REDIAL_MS, then the backoff
     // from its start. Otherwise ±25 %, so many apps behind one hub that dropped them don't come back in lockstep.
     const waking = this.#waking(now);
-    const quick = this.#restarting !== null && now - this.#restarting < RESTART_REDIAL_MS;
-    if (quick) this.#attempt = 0;
+    if (waking) {
+      this.#attempt++;
+      this.#fastDials++;
+    }
     const retryIn = waking
       ? Math.max(0, WAKE_REDIAL_EVERY_MS - (now - this.#dialAt))
       : quick
         ? RESTART_REDIAL_EVERY_MS
-        : Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+        : Math.round(backoff(this.#attempt++ - this.#fastDials) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
     this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: now + retryIn, ...this.#awayFields() });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
