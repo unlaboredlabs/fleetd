@@ -2,8 +2,8 @@
 // origin and the WorkOS client id the sign-in page is opened with, as the desktop's MAIN_VITE_FLEETD_ACCOUNTS_URL and
 // MAIN_VITE_FLEETD_WORKOS_CLIENT_ID (app/desktop/src/main/cloud/config.ts). A build sets them as
 //   EXPO_PUBLIC_FLEETD_ACCOUNTS_URL=https://accounts.fleetd.dev EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID=client_…
-// and Metro inlines them (Expo's public env). Releases set neither, so a released app offers only its own hub's
-// pairing and depends on nothing fleetd runs. Parsed by hand: React Native's URL has no searchParams.
+// and Metro inlines them (Expo's public env). Releases and their over-the-air updates set both (mobile-release.yml,
+// build-release.yml); a build without them offers only its own hub's pairing and depends on nothing fleetd runs. Parsed by hand: React Native's URL has no searchParams.
 
 /** WorkOS's own sign-in page (AuthKit, PKCE): its address is WorkOS's, not fleetd's. */
 export const WORKOS_AUTHORIZE_URL = "https://api.workos.com/user_management/authorize";

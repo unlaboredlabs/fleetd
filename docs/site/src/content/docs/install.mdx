@@ -77,15 +77,28 @@ For example, to install without the wizard:
 curl -fsSL https://fleetd.sh | sh -s -- --no-init
 ```
 
-Expected output:
+Expected output, on Linux with a display:
 
 ```text
-fleetd: installed the CLI: /home/ada/.fleetd/bin/fleetd
-fleetd: installed the app: /home/ada/.local/share/fleetd/app/fleetd-desktop.AppImage (menu entry: /home/ada/.local/share/applications/fleetd-desktop.desktop)
-
-Next, run:
-  fleetd init
+┌   fleetd install
+│
+✓  Platform  linux x64
+✓  Release   edge · 0.0.0-edge.202611131109+17d2c3b
+✓  Download  the CLI · 112.5 MB
+✓  Checksum  sha256 1b3542bdf1a1… matches the release
+✓  Install   ~/.fleetd/bin/fleetd
+✓  PATH      ~/.local/bin/fleetd
+✓  Download  the app · 130.7 MB
+✓  Checksum  sha256 63744761017d… matches the release
+✓  Install   ~/.local/share/fleetd/app/fleetd-desktop.AppImage
+✓  Menu      ~/.local/share/applications/fleetd-desktop.desktop
+│
+└  Installed fleetd 0.0.0-edge.202611131109+17d2c3b
+   Next, run fleetd init
 ```
+
+Each step shows as it runs, and a download as a progress bar with its percent and size. Piped into a file, in CI, or
+with `NO_COLOR` or `TERM=dumb`, the same steps print as plain lines, with no bar or colors.
 
 :::note
 Releases are Edge builds for now: the newest build of main, published after each merge. `FLEETD_CHANNEL=stable` picks

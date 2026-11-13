@@ -19,7 +19,8 @@
 // - FLEETD_ANDROID_KEYSTORE: a keystore that signs release builds (plugins/android-signing.js), else debug-signed.
 // - EXPO_PUBLIC_FLEETD_ACCOUNTS_URL and EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID: fleetd cloud's accounts service and WorkOS
 //   client id, both public, which Metro inlines into the bundle (src/cloud/config.ts). With both, the first screen
-//   offers Sign In beside Use Your Own Hub; releases set neither until fleetd cloud opens, and are the self-hosted app.
+//   offers Sign In beside Use Your Own Hub. Releases set both (mobile-release.yml, and build-release.yml for their
+//   over-the-air updates); a build without them is the self-hosted app.
 //
 // The runtime version is the native fingerprint, which takes in this config (not the build number): the release's
 // update job (build-release.yml) resolves it with the same settings, so a build gets only bundles made for it, and a
