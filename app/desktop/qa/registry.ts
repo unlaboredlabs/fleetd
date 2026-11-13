@@ -2118,6 +2118,25 @@ export const screens: readonly Screen[] = [
       await page.getByText("purged 412 objects").waitFor();
     },
   },
+  // A command's card opens with the command hidden; Show command opens it: a multi-line script on its lines with no
+  // mark, one whose carriage return is marked under the warning, and words that hide or reorder text.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-hidden"],
+    variant: "inline-command",
+    open: async (page) => {
+      const card = (text: string) => page.getByRole("region", { name: "Command to approve" }).filter({ hasText: text });
+      for (const text of ["Clear the build cache", "Tag and push the 2.4.0 release", "Clean the build cache"]) {
+        const c = card(text);
+        await expect(c.locator("pre")).toHaveCount(0);
+        await c.getByRole("button", { name: "Show command" }).click();
+        await c.getByRole("button", { name: "Hide command" }).waitFor();
+      }
+      await expect(card("Tag and push the 2.4.0 release").getByText("Contains hidden characters")).toHaveCount(0);
+      await expect(card("Clean the build cache").getByText("⟨U+000D⟩")).toBeVisible();
+    },
+  },
   // Every answer fails: one plain line with Retry, and the typed secret stays in its field.
   {
     id: "chat",

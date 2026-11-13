@@ -1,16 +1,18 @@
-// One open approval as one calm card: who asks and what, every field that decides it in full (what runs, who it
-// reaches, as whom, what it says: the card is what the person approves), context such as where a command runs behind
-// Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line, its words in the
-// label's ink beside the orange symbol, as iOS draws a warning. A character that hides or reorders text shows as its
-// mark (⟨U+202E⟩), each field isolated, under a line saying so. Shown inline in its chat, where it is answered; once
-// answered, one line says how it went (ApprovalOutcomeLine). A press taps; the success buzz waits for the hub's yes.
+// One open approval as one calm card: who asks and what, every field that decides it in full (who it reaches, as
+// whom, what it says: the card is what the person approves), a raw input behind Details, a command itself behind Show
+// command (closed on every card: its reason, risk and folder are what a person approves on), and Approve and Deny.
+// Money, irreversible and secret-using asks say so in a quiet line, its words in the label's ink beside the orange
+// symbol, as iOS draws a warning. A character that hides or reorders text shows as its mark (⟨U+202E⟩), each field
+// isolated, under a line saying so, shown while the command is closed too. Shown inline in its chat, where it is
+// answered; once answered, one line says how it went (ApprovalOutcomeLine). A press taps; the success buzz waits for
+// the hub's yes.
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../chatView";
 import { HIDDEN_WARNING, marked, type HubError, type HumanRequest } from "../desktop";
 import { exactRuns, FSI, markRuns, PDI, type Run } from "../exact";
-import { approvalOutcome, approvalView, fieldCopy, type ApprovalField, type ApprovalOutcome, type ApprovalView } from "../lists";
+import { approvalOutcome, approvalView, fieldCopy, moreWords, type ApprovalField, type ApprovalOutcome, type ApprovalView } from "../lists";
 import { mono, space, type, useTheme } from "../theme";
 import { useAnnounce, useAnnounceChange } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
@@ -104,7 +106,7 @@ export function ApprovalCard({
           hitSlop={10}
           style={styles.details}
         >
-          <Text style={[type.subhead, { color: t.accent }]}>{open ? "Less" : "Details"}</Text>
+          <Text style={[type.subhead, { color: t.accent }]}>{moreWords(request, open)}</Text>
           <Icon name="chevronDown" size={12} color={t.accent} weight="semibold" style={open ? styles.flip : undefined} />
         </Pressable>
       )}
@@ -209,7 +211,7 @@ function Value({ field: f }: { field: ApprovalField }) {
     return f.words.map((w, i) => (
       <Text key={i}>
         {i === 0 ? null : " "}
-        <Exact text={w} ltr />
+        <Exact text={w} lines={f.lines === true} ltr />
       </Text>
     ));
   }

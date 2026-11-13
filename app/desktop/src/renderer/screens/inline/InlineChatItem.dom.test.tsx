@@ -274,6 +274,61 @@ describe("an answered item", () => {
   });
 });
 
+describe("a command's card", () => {
+  const toggle = (): HTMLButtonElement => one("section > div button[aria-expanded]") as HTMLButtonElement;
+
+  it("leads with the reason, the risk, where it runs and the answers; one click shows the whole command, another hides it", async () => {
+    const hub = await render("Q4");
+    const text = host.textContent;
+    expect(text).toContain("Run the database migration on the staging box");
+    expect(text).toContain("Can't be undone");
+    expect(text).toContain("on devbox in /srv/storefront · stops after 10 min");
+    expect(has("Approve")).toBe(true);
+    expect(has("Deny")).toBe(true);
+    expect(host.querySelector("pre")).toBeNull();
+    expect(text).not.toContain("pnpm run migrate");
+    expect(toggle().textContent).toBe("Show command");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+
+    await click(toggle());
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(toggle().textContent).toBe("Hide command");
+    expect(one("pre").textContent).toBe("pnpm run migrate --env staging");
+
+    // A key on the row is the row's: Enter there never approves.
+    await press(toggle(), "Enter");
+    await settle();
+    expect(hub.answers).toEqual([]);
+
+    await click(toggle());
+    expect(toggle().textContent).toBe("Show command");
+    expect(host.querySelector("pre")).toBeNull();
+  });
+
+  it("opens closed on every card, whatever the last one was", async () => {
+    const hub = await render("Q4");
+    await click(toggle());
+    expect(host.querySelector("pre")).not.toBeNull();
+    await hub.show("Q7");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector("pre")).toBeNull();
+  });
+
+  it("once answered, opens back up with the command hidden and the output shown", async () => {
+    await render("Q5");
+    await click(one("button[aria-expanded]") as HTMLButtonElement);
+    const text = host.textContent;
+    expect(text).toContain("Clear the staging CDN cache; each purge is billed");
+    expect(text).toContain("Costs money");
+    expect(text).toContain("on devbox · stops after 2 min");
+    expect(text).toContain("purged 412 objects");
+    expect(toggle().textContent).toBe("Show command");
+    expect([...host.querySelectorAll("pre")].map((p) => p.textContent)).toEqual(["purged 412 objectsdone in 3.1s"]);
+    await click(toggle());
+    expect([...host.querySelectorAll("pre")].map((p) => p.textContent)).toEqual(["./scripts/purge-cdn.sh --all", "purged 412 objectsdone in 3.1s"]);
+  });
+});
+
 describe("a request the hub reopens", () => {
   // As requests_list holds it: the item's state, and its evidence (why it is open again) as the note.
   const request = (requestId: string, state: string, evidence?: string, answeredAt?: string) => ({
@@ -526,8 +581,11 @@ describe("an approval whose fields hide or reorder text", () => {
 
   it("draws each as its mark under a warning, the command word by word, each isolated", async () => {
     const hub = await render("Q20");
+    // The warning stands while the command is closed; opening it shows the marks.
     expect(host.textContent).toContain("Contains hidden characters");
-    expect(marks()).toEqual(["⟨U+202E⟩", "⟨U+202C⟩", "⟨U+2066⟩"]);
+    expect(marks()).toEqual(["⟨U+2066⟩"]);
+    await click(button("Show command"));
+    expect(marks()).toEqual(["⟨U+2066⟩", "⟨U+202E⟩", "⟨U+202C⟩"]);
     // Every argument is its own left-to-right isolate, quoted where it needs it, so no word reorders the next.
     const words = [...one("pre").querySelectorAll('code > bdi[dir="ltr"]')].map((w) => w.textContent);
     expect(words).toEqual(["rm", "-rf", "build/cache", "'⟨U+202E⟩~ fr- mr⟨U+202C⟩'", "--", "'שלום.txt'", "'עולם.txt'"]);
@@ -539,6 +597,23 @@ describe("an approval whose fields hide or reorder text", () => {
     await click(button("Yes, run it"));
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q20", decision: "approve" }]);
+  });
+
+  it("shows a multi-line command on its lines, with no mark and no warning for its line breaks", async () => {
+    await render("Q26");
+    expect(host.textContent).not.toContain("Contains hidden characters");
+    await click(button("Show command"));
+    expect(marks()).toEqual([]);
+    expect(one("pre").textContent).toBe("sh -c 'set -e\ncd /srv/app\ngit fetch origin\ngit tag -a v2.4.0 -m '\\''Release 2.4.0'\\'' origin/main\ngit push origin v2.4.0'");
+  });
+
+  it("still warns of a carriage return in a multi-line command while it is closed, and marks it once opened", async () => {
+    await render("Q27");
+    expect(host.textContent).toContain("Contains hidden characters");
+    expect(host.querySelector("pre")).toBeNull();
+    await click(button("Show command"));
+    expect(marks()).toEqual(["⟨U+000D⟩"]);
+    expect(one("pre").textContent).toBe("sh -c 'set -e\nrm -rf /srv/app/build⟨U+000D⟩echo cleaning cache'");
   });
 
   it("marks them in everything a tool sends", async () => {

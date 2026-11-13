@@ -4,7 +4,7 @@
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
 import { marked } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
@@ -357,6 +357,36 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
   );
 }
 
+/**
+ * A gated command, exactly as it runs, behind one quiet row: the card leads with its reason, and the command is a
+ * click away, closed again on every card. Each word isolated, so a right-to-left word can't swap the order its
+ * neighbours read in; a word's line breaks show as lines.
+ */
+function CommandDetail({ argv }: { argv: readonly string[] }) {
+  const [open, setOpen] = useState(false);
+  const Icon = open ? ChevronDown : ChevronRight;
+  return (
+    <>
+      <button type="button" className={s.fold} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon className={s.chevron} aria-hidden />
+        <Text size="xs" tone="inherit">
+          {open ? "Hide command" : "Show command"}
+        </Text>
+      </button>
+      {open ? (
+        <Code code={shellLine(argv)} bare>
+          {argv.map((a, i) => (
+            <Fragment key={i}>
+              {i === 0 ? null : " "}
+              <Exact text={shellWord(a)} lines ltr />
+            </Fragment>
+          ))}
+        </Code>
+      ) : null}
+    </>
+  );
+}
+
 /** A proposed project, as it would be made: its repo or none and its folder. The machine is the card's own line. */
 function ProposalDetail({ made }: { made: Proposal }) {
   return (
@@ -517,13 +547,12 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       </Text>
       <HiddenWarning
         fields={[
-          ...(gated?.argv ?? []),
           gated?.cwd,
           ...(gated?.secretEnv ?? []).flatMap((e) => [e.name, e.secretKey]),
           permission?.toolName,
           preview?.title,
         ]}
-        lines={[gated?.reason, permission?.summary, preview?.input]}
+        lines={[...(gated?.argv ?? []), gated?.reason, permission?.summary, preview?.input]}
       />
       {checker === undefined ? null : (
         <Text as="p" size="sm" tone={blocked ? "danger" : "quiet"} className={cx(s.line)} data-checker={checker.verdict}>
@@ -532,17 +561,6 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       )}
       {permission?.screenshot === undefined ? null : <Media media={{ attachmentId: permission.screenshot, caption: "What the page shows" }} clip={false} />}
       <div className={s.detail}>
-        {/* Each word isolated, so a right-to-left word can't swap the order its neighbours read in. */}
-        {gated !== undefined ? (
-          <Code code={shellLine(gated.argv)} bare>
-            {gated.argv.map((a, i) => (
-              <Fragment key={i}>
-                {i === 0 ? null : " "}
-                <Exact text={shellWord(a)} ltr />
-              </Fragment>
-            ))}
-          </Code>
-        ) : null}
         {made !== undefined ? <ProposalDetail made={made} /> : null}
         {preview !== undefined ? <PreviewDetail preview={preview} /> : null}
         {gated === undefined && permission !== undefined && preview === undefined ? (
@@ -570,6 +588,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
                 {prose(line)}
               </Text>
             ))}
+        {gated === undefined ? null : <CommandDetail key={item.requestId} argv={gated.argv} />}
       </div>
       {/* Why it is open again (approved while the node was offline) or why it failed. */}
       {item.note === undefined || item.note.trim() === "" ? null : (

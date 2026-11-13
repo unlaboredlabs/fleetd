@@ -89,7 +89,9 @@ export type Piece = { readonly text: string; readonly mark?: undefined } | { rea
 
 /**
  * `text` as runs of what shows as written and, for each hidden character, its mark (`text` keeps the character).
- * `lines`: a body or a block of lines, whose \n breaks the line as written; anywhere else a \n is marked.
+ * `lines`: a body or a block of lines (a command's word among them), whose \n breaks the line as written; anywhere else
+ * a \n is marked. Only \n: a \r returns over what a terminal showed before it, and \v, \f, NEL and the line and
+ * paragraph separators break a line in some views and not in others, so each stays marked.
  */
 export const pieces = (text: string, lines = false): Piece[] => {
   const cs = Array.from(text);

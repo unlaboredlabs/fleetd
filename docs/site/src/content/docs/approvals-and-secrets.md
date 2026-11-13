@@ -23,15 +23,16 @@ Everything else the lead needs from you is a plain question in the chat. See
 When a lead needs an irreversible step, one that costs money, or one that uses a credential, it files the exact
 command as a [gated command](/docs/glossary#gated-command).
 
-![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", shows the migration command on devbox with the secret it gets, and Approve and Deny. Above it, an earlier run and a denied permission request, each folded to one line.](/docs/img/chat-command.png)
+![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", says it runs on devbox with the secret it gets, has a Show command row, and Approve and Deny. Above it, an earlier run and a denied permission request, each folded to one line.](/docs/img/chat-command.png)
 
-1. The item shows the command, the reason and the machine.
+1. The item shows the reason, what is at stake and where it runs. Click "Show command" to see the exact command, and
+   again to hide it; every card opens with it hidden.
 2. Click Approve to run it, or Deny to refuse. A command marked "Can't be undone" asks once more: click "Yes, run
    it". With the item focused, Enter approves and Esc denies.
 3. The node runs exactly the stored command, in the project's workspace. It is killed after the lead's timeout: 30
    minutes unless the lead asked for more, at most 4 hours.
 4. The exit code and output go back to the lead. The item folds to one line, such as "Approved, ran in 12s"; click
-   it to see the command and its output again.
+   it to see the card and its output again.
 
 If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
 back. If an answer doesn't go through, the item says why in one line; click Retry.
@@ -50,7 +51,9 @@ Some characters change how text reads without showing: control characters, line 
 right-to-left overrides and other bidi controls, and zero-width characters. A command or an email holding one could
 read differently on the card from what runs or goes out. Every approval card, on the desktop and on the phone, shows
 each one as a mark such as ⟨U+202E⟩ and says **Contains hidden characters**. Each value also keeps its own direction,
-so a right-to-left word can't reorder the words around it. Accents, emoji and other scripts show as written.
+so a right-to-left word can't reorder the words around it. Accents, emoji and other scripts show as written, and a
+multi-line command shows on its lines: a plain line break isn't marked, but a carriage return is. The warning shows
+while the command is hidden too.
 
 The marks only change how the card shows a value. Approve runs or sends the exact text.
 

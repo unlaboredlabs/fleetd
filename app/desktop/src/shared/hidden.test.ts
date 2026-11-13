@@ -97,4 +97,22 @@ describe("hidden characters on an approval card", () => {
     expect(marked("Hi\r\nAna x", true)).toBe("Hi⟨U+000D⟩\nAna⟨U+2028⟩x");
     expect(hasHidden("Hi Ana,\nSee you.")).toBe(true);
   });
+
+  it("shows a multi-line command's lines as lines, and still marks a break that can hide or redraw text", () => {
+    const script = "set -e\ngh run list -R $R\necho done";
+    expect(hasHidden(script, true)).toBe(false);
+    expect(pieces(script, true)).toEqual([{ text: script }]);
+    // A carriage return draws over what came before it in a terminal; the others break a line only in some views.
+    for (const [what, text, shown] of [
+      ["carriage return", "echo safe\rrm -rf ~", "echo safe⟨U+000D⟩rm -rf ~"],
+      ["vertical tab", "ls\u000Bx", "ls⟨U+000B⟩x"],
+      ["form feed", "ls\u000Cx", "ls⟨U+000C⟩x"],
+      ["next line", "ls\u0085x", "ls⟨U+0085⟩x"],
+      ["line separator", "ls x", "ls⟨U+2028⟩x"],
+      ["paragraph separator", "ls x", "ls⟨U+2029⟩x"],
+    ] as const) {
+      expect(marked(`set -e\n${text}`, true), what).toBe(`set -e\n${shown}`);
+      expect(hasHidden(`set -e\n${text}`, true), what).toBe(true);
+    }
+  });
 });
