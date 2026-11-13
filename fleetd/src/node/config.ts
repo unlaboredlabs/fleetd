@@ -19,6 +19,8 @@ export type NodeConfig = {
   buildSlots?: number;
   /** True once the hub has accepted this node's key. */
   enrolled: boolean;
+  /** The hub removed this machine: the node isn't enrolled any more, and waits until it joins again. */
+  removed?: boolean;
   browser?: Record<string, unknown>;
   device?: Record<string, unknown>;
   ios?: Record<string, unknown>;

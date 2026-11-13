@@ -30,6 +30,11 @@ export const CLOSE = {
 /** The longest close reason a WebSocket carries; the hub cuts a longer one short. */
 export const REASON_MAX_BYTES = 123;
 
+/** What an UNAUTHORIZED close says, and only says, for a machine the hub removed: its node stops as enrolled. A hub
+ * that doesn't know a node for another reason (an import, which leaves keys behind) says it isn't enrolled. */
+export const REMOVED = "was removed from this hub";
+export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: its node key is revoked`;
+
 /** Both directions every 15 s. */
 export const HEARTBEAT_INTERVAL_SECS = 15;
 /** A link silent this long is offline. */

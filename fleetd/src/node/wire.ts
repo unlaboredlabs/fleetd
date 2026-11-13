@@ -18,7 +18,7 @@ export type {
   NodeFrame,
   SecretResult,
 } from "../shared/node_link.ts";
-export { CLOSE, HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, protocolBehind } from "../shared/node_link.ts";
+export { CLOSE, HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, protocolBehind, REMOVED } from "../shared/node_link.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 export type Obj = Record<string, unknown>;

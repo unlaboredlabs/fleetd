@@ -261,6 +261,16 @@ describe("opening the window again", () => {
     const worker = ports({ node: { enrolled: true, machineId: "laptop", hub: "http://devbox.example.ts.net:4790" } });
     expect(await new MacSetup(worker.p, () => undefined).status()).toEqual({ kind: "fresh" });
   });
+
+  it("opens on a new code for a Mac its hub removed, saying so, never on the removed node's checks", async () => {
+    const { p } = ports({ node: { enrolled: false, removed: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
+    const status = await new MacSetup(p, () => undefined).status();
+    expect(status).toMatchObject({ kind: "spent", failure: { message: "devbox removed this Mac, so its agents can't use it now." } });
+    expect(JSON.stringify(status)).toContain("type a new code");
+    // A join that stopped before it enrolled is no removal: nothing to say.
+    const stopped = ports({ node: { enrolled: false, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
+    expect(await new MacSetup(stopped.p, () => undefined).status()).toEqual({ kind: "fresh" });
+  });
 });
 
 describe("the checks", () => {
