@@ -1,6 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../shared/hub";
-import { DEFLATE_UP_BYTES, HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, PONG_WAIT_MS, READY_TIMEOUT_MS, RESUME_MAX_EVENTS, STABLE_MS } from "./client";
+import {
+  ADVICE_AFTER_MS,
+  DEFLATE_UP_BYTES,
+  HubClient,
+  MAX_FRAME_BYTES,
+  PING_EVERY_MS,
+  PONG_WAIT_MS,
+  READY_TIMEOUT_MS,
+  RESUME_MAX_EVENTS,
+  STABLE_MS,
+  WAKE_FAST_MS,
+  WAKE_READY_TIMEOUT_MS,
+} from "./client";
 import type { ConnectionEvents, Transport } from "./transport";
 
 /** A hub on the other end of a fake transport: records what the client sends, lets the test answer. */
@@ -631,5 +643,140 @@ describe("HubClient", () => {
     await expect(inFlight).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });
     expect(hub.urls).toHaveLength(2);
     expect(client.state.phase).toBe("connecting");
+  });
+});
+
+// A laptop waking (scripts/wake-repro.ts has the same on real sockets): powerMonitor's resume, or the network back, calls
+// woke(). Until the tailnet is back, the hub accepts nothing it answers: each attempt then is held, as a SYN or an
+// upgrade lost on a tunnel coming up, while a dial made once it is back gets through at once.
+describe("HubClient after a wake", () => {
+  /** A live link for `ms`, each ping answered. */
+  const awake = (hub: FakeHub, ms: number) => {
+    for (let left = ms; left > 0; left -= PING_EVERY_MS) {
+      vi.advanceTimersByTime(Math.min(left, PING_EVERY_MS));
+      hub.pong();
+    }
+  };
+
+  /** Live for a while, then asleep: the link goes silent, nothing said. */
+  const asleep = () => {
+    const t = setup();
+    t.client.start();
+    t.hub.ready(10);
+    t.hub.frame({ t: "event", seq: 11, type: "x" });
+    awake(t.hub, STABLE_MS);
+    t.frames.length = 0;
+    return t;
+  };
+
+  /** Wakes, the network usable `stallMs` later; how long after that the link is live. */
+  const wakeInto = ({ hub, client }: ReturnType<typeof asleep>, stallMs: number): number => {
+    const usableAt = Date.now() + stallMs;
+    let answered = hub.urls.length;
+    client.woke();
+    for (let ms = 0; ms < 3 * WAKE_FAST_MS && client.state.phase !== "live"; ms += 10) {
+      // A dial made once the network is usable is answered; one made before it never is.
+      if (hub.urls.length > answered) {
+        answered = hub.urls.length;
+        if (Date.now() >= usableAt) hub.ready(11);
+      }
+      vi.advanceTimersByTime(10);
+    }
+    return Date.now() - usableAt;
+  };
+
+  it("drops the dead link at once and dials again in the same moment", () => {
+    const t = asleep();
+    t.client.woke();
+    expect(t.hub.closedByClient).toBe(1);
+    expect(t.hub.urls).toHaveLength(2);
+    expect(t.client.state).toMatchObject({ phase: "connecting", waking: Date.now() });
+  });
+
+  it("is live within about a second of the network being usable, however long it took", () => {
+    // Tailscale on a Mac can take most of a minute after a sleep.
+    for (const stallMs of [0, 400, 3_000, 7_700, 34_000, 95_500]) {
+      const lag = wakeInto(asleep(), stallMs);
+      expect(lag, `network usable ${String(stallMs)} ms after the wake`).toBeLessThanOrEqual(WAKE_READY_TIMEOUT_MS + 10);
+    }
+  });
+
+  it("resumes the stream after the last event the old link applied: what it missed comes as events", () => {
+    const t = asleep();
+    wakeInto(t, 3_000);
+    expect(t.hub.sent).toContainEqual({ t: "events", cursor: 11 });
+    expect(t.frames).toContainEqual(expect.objectContaining({ t: "snapshot", resumed: true }));
+  });
+
+  it("gives a link as slow as the last one room to make it", () => {
+    const { hub, client } = setup();
+    client.start();
+    vi.advanceTimersByTime(2_000);
+    hub.ready();
+    awake(hub, STABLE_MS);
+    client.woke();
+    vi.advanceTimersByTime(3 * 2_000 - 1);
+    expect(hub.urls).toHaveLength(2);
+    hub.ready();
+    expect(client.state.phase).toBe("live");
+  });
+
+  it("keeps a link that came up since: macOS unlocks the screen right after it resumes", () => {
+    const t = asleep();
+    wakeInto(t, 0);
+    const dials = t.hub.urls.length;
+    t.client.woke();
+    expect(t.hub.urls).toHaveLength(dials);
+    expect(t.client.state.phase).toBe("live");
+  });
+
+  it("drops a link that came up just before the computer slept", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(1_000);
+    client.woke();
+    expect(hub.closedByClient).toBe(1);
+    expect(hub.urls).toHaveLength(2);
+  });
+
+  it("backs off as before once the time to dial fast after the wake is over", () => {
+    const { hub, client } = asleep();
+    const wokeAt = Date.now();
+    client.woke();
+    // About one a second: each attempt ends at its short deadline, and the next goes out at once.
+    while (!(client.state.phase === "retrying" && client.state.retryAt > Date.now())) vi.advanceTimersByTime(1);
+    expect(Date.now() - wokeAt).toBeGreaterThanOrEqual(WAKE_FAST_MS);
+    expect(Date.now() - wokeAt).toBeLessThan(WAKE_FAST_MS + WAKE_READY_TIMEOUT_MS);
+    const dials = hub.urls.length;
+    expect(dials - 1).toBe(WAKE_FAST_MS / WAKE_READY_TIMEOUT_MS);
+    // Then the backoff's first step, on the full deadline.
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
+    vi.advanceTimersByTime(500);
+    expect(hub.urls).toHaveLength(dials + 1);
+    vi.advanceTimersByTime(READY_TIMEOUT_MS - 1);
+    expect(client.state.phase).toBe("connecting");
+    vi.advanceTimersByTime(1);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 1000 });
+  });
+
+  it("says a hub it was just connected to may still be coming back, never to check its address or update it", () => {
+    const { client } = asleep();
+    client.woke();
+    vi.advanceTimersByTime(WAKE_READY_TIMEOUT_MS);
+    expect(client.state).toMatchObject({ phase: "retrying", reason: "devbox:4790 didn't answer in time" });
+    expect(client.state.phase === "retrying" ? client.state.fix : "").not.toMatch(/address|fleetd update/u);
+    // Failing a long while, it may be the address or the hub after all.
+    vi.advanceTimersByTime(ADVICE_AFTER_MS);
+    while (client.state.phase !== "retrying") vi.advanceTimersByTime(100);
+    expect(client.state).toMatchObject({ phase: "retrying", reason: "devbox:4790 doesn't answer (timed out)" });
+  });
+
+  it("names the wake only to the screens of an app that was connected", () => {
+    const { client } = setup();
+    client.start();
+    client.woke();
+    expect(client.state).toMatchObject({ phase: "connecting" });
+    expect(client.state).not.toHaveProperty("waking");
   });
 });

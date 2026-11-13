@@ -42,15 +42,18 @@ const unreachable = (host: string, cause: string): Loss => ({
 
 const TLS = /^(CERT_|ERR_TLS_|ERR_SSL_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|UNABLE_TO_(GET|VERIFY)_|EPROTO$)/u;
 
-/** From the socket error, or the close code when there was none. `wasOpen`: the link had connected first. */
-export const explainLoss = (hub: string, code: number, reason: string, error: SocketError | undefined, wasOpen: boolean): Loss => {
+/**
+ * From the socket error, or the close code when there was none. `wasOpen`: the link had connected first. `known`: the
+ * app was connected to this hub a moment ago, so its address is right: no fix sends the person to check it.
+ */
+export const explainLoss = (hub: string, code: number, reason: string, error: SocketError | undefined, wasOpen: boolean, known = false): Loss => {
   const host = hubHost(hub);
   const errCode = error?.code ?? "";
   switch (errCode) {
     case "ECONNREFUSED":
       return {
         reason: `Nothing is listening at ${host}`,
-        fix: "Start the hub on that machine (`fleetd doctor` there says why it's down), or check the address and port.",
+        fix: `Start the hub on that machine (\`fleetd doctor\` there says why it's down)${known ? "." : ", or check the address and port."}`,
       };
     case "ENOTFOUND":
     case "EAI_AGAIN":
@@ -59,7 +62,9 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
         reason: `${host.replace(/:\d+$/u, "")} can't be found`,
         fix: onTailnet(host)
           ? "Check Tailscale is connected on this computer; tailnet names only resolve while it is."
-          : "Check the hub address for typos, and that this computer is on the same network as the hub.",
+          : known
+            ? "Check this computer is on a network that can reach the hub."
+            : "Check the hub address for typos, and that this computer is on the same network as the hub.",
       };
     case "ETIMEDOUT":
     case "EHOSTUNREACH":
@@ -103,22 +108,36 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
       return { reason: "The hub hit an internal error", fix: "Run `fleetd doctor` on the hub; its log has the details." };
   }
   if (wasOpen) return { reason: `The connection to ${host} dropped`, fix: `The hub may have restarted, or the network changed. ${RECONNECTS}` };
-  if (error !== undefined) return { reason: `Can't connect to ${host}: ${error.message.replace(/\.$/u, "")}`, fix: "Check the hub is running (`fleetd doctor` on the hub) and the address is right." };
+  if (error !== undefined) {
+    return { reason: `Can't connect to ${host}: ${error.message.replace(/\.$/u, "")}`, fix: `Check the hub is running (\`fleetd doctor\` on the hub)${known ? "." : " and the address is right."}` };
+  }
   return { reason: `The connection to ${host} ended`, fix: RECONNECTS };
 };
 
-/** The app gave up on a link itself: the hub never finished connecting, or went silent. */
-export const explainAbandon = (hub: string, why: "not-ready" | "silent"): Loss => {
+/**
+ * The app gave up on a link itself: the hub never finished connecting, or went silent. `opened`: the WebSocket upgrade
+ * had gone through, so something did answer at the address; `known` as explainLoss's. Only a hub never connected to,
+ * or failing a long while, that answered and still never finished is said to be maybe the wrong service or too old.
+ */
+export const explainAbandon = (hub: string, why: "not-ready" | "silent", opened = true, known = false): Loss => {
   const host = hubHost(hub);
-  return why === "not-ready"
-    ? {
-        reason: `${host} accepted the connection but never finished it`,
-        fix: "Check the address is your fleetd hub's (not another service on that port), and update the hub with `fleetd update` if it's old.",
-      }
-    : {
-        reason: `${host} stopped answering`,
-        fix: onTailnet(host)
-          ? `The hub's machine may be asleep, or Tailscale dropped. ${RECONNECTS}`
-          : `The hub's machine may be asleep or off the network. ${RECONNECTS}`,
-      };
+  if (why === "silent") {
+    return {
+      reason: `${host} stopped answering`,
+      fix: onTailnet(host)
+        ? `The hub's machine may be asleep, or Tailscale dropped. ${RECONNECTS}`
+        : `The hub's machine may be asleep or off the network. ${RECONNECTS}`,
+    };
+  }
+  if (known) {
+    return {
+      reason: `${host} didn't answer in time`,
+      fix: onTailnet(host) ? `Tailscale may still be coming back on this computer. ${RECONNECTS}` : `The network may still be coming back. ${RECONNECTS}`,
+    };
+  }
+  if (!opened) return unreachable(host, "timed out");
+  return {
+    reason: `${host} accepted the connection but never finished it`,
+    fix: "Check the address is your fleetd hub's (not another service on that port), and update the hub with `fleetd update` if it's old.",
+  };
 };

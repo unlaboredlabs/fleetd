@@ -2,7 +2,7 @@ import type { AddressInfo } from "node:net";
 import { constants, createDeflateRaw, type DeflateRaw } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
-import { deflated, inflater, webSocketTransport, type ConnectionEvents } from "./transport";
+import { deflated, inflater, sharedLookup, webSocketTransport, type ConnectionEvents } from "./transport";
 
 /** The hub's side of `deflate`: one raw DEFLATE stream per connection, each message sync-flushed, its tail cut off. */
 const deflater = (): ((text: string) => Promise<Buffer>) => {
@@ -104,6 +104,14 @@ describe("webSocketTransport", () => {
     connection.close();
   });
 
+  it("dials a hub by name through the shared lookup", async () => {
+    const url = await listen((socket) => socket.send("hello"));
+    const r = record();
+    const connection = webSocketTransport(url.replace("127.0.0.1", "localhost"), r.events);
+    await expect.poll(() => r.texts).toEqual(["hello"]);
+    connection.close();
+  });
+
   it("drops the link when a Binary frame won't inflate", async () => {
     const url = await listen((socket) => {
       socket.send(Buffer.from([0xff, 0xff, 0xff, 0xff, 0xff]));
@@ -114,5 +122,22 @@ describe("webSocketTransport", () => {
     expect(await r.close).toBe(1006);
     // Nothing after the bad frame is read: the stream can't be trusted from there.
     expect(r.texts).toEqual([]);
+  });
+});
+
+describe("sharedLookup", () => {
+  it("asks the resolver once for dials that overlap, and again once that answer is in", async () => {
+    const asked: Array<(error: Error | null, addresses: Array<{ address: string; family: number }>) => void> = [];
+    const lookup = sharedLookup((_name, _options, done) => asked.push(done));
+    const one = new Promise((resolve) => lookup("devbox.example.ts.net", { all: true }, (_e, addresses) => resolve(addresses)));
+    const two = new Promise((resolve) => lookup("devbox.example.ts.net", {}, (_e, address, family) => resolve([address, family])));
+    expect(asked).toHaveLength(1);
+    asked[0]?.(null, [{ address: "100.64.0.7", family: 4 }]);
+    await expect(one).resolves.toEqual([{ address: "100.64.0.7", family: 4 }]);
+    await expect(two).resolves.toEqual(["100.64.0.7", 4]);
+    const failed = new Promise((resolve) => lookup("devbox.example.ts.net", {}, (e) => resolve(e?.code)));
+    expect(asked).toHaveLength(2);
+    asked[1]?.(Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" }), []);
+    await expect(failed).resolves.toBe("ENOTFOUND");
   });
 });

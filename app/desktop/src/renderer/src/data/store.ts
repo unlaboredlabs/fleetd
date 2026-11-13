@@ -28,7 +28,7 @@ import {
   type ToolName,
   type ToolOutput,
 } from "../../../shared/contracts";
-import type { HubFrame, HubState, BrowserFrame } from "../../../shared/hub";
+import { WAKE_QUIET_MS, type HubFrame, type HubState, type BrowserFrame } from "../../../shared/hub";
 import { compareVersions } from "../../../shared/pairing";
 import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import type { AgentRow, ScreenThumb } from "../../../shared/contracts";
@@ -82,7 +82,8 @@ export interface DataState {
   readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
   /**
    * A snapshot arrived since the link last went down: what the store holds is current. A hub that closed to restart
-   * keeps it for RESTART_HOLD_MS, so the screens keep what they show through the few hundred ms it is away.
+   * keeps it for RESTART_HOLD_MS, so the screens keep what they show through the few hundred ms it is away; a link
+   * dialled again after a wake for WAKE_QUIET_MS, as a tailnet comes back.
    */
   readonly fresh: boolean;
   /** The fleetd the hub ran on its last live link (its ready frame), kept through drops. */
@@ -216,9 +217,14 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       // None of it may show beside, be written as, or be sent to another hub (a new generation drops calls in flight).
       if (pairingChanged(s.hub, frame.state)) return [{ ...initialState(), hub: frame.state, generation: s.generation + 1 }, {}];
       const live = frame.state.phase === "live";
-      // The hub closed to restart: what is held stays current for a while, and only then is marked as of the close.
-      const restarting = frame.state.phase === "connecting" || frame.state.phase === "retrying" ? frame.state.restarting : undefined;
-      const fresh = s.fresh && (live || (restarting !== undefined && nowMs - restarting < RESTART_HOLD_MS));
+      // The hub closed to restart, or the computer woke: what is held stays current for a while, and only then is marked
+      // as of the close or the wake.
+      const away = frame.state.phase === "connecting" || frame.state.phase === "retrying" ? frame.state : undefined;
+      const restarting = away?.restarting;
+      const waking = away?.waking;
+      const fresh =
+        s.fresh &&
+        (live || (restarting !== undefined && nowMs - restarting < RESTART_HOLD_MS) || (waking !== undefined && nowMs - waking < WAKE_QUIET_MS));
       const version = frame.state.phase === "live" ? (frame.state.version ?? s.version) : s.version;
       // Back on a newer build: an update went in (by this window, another, or the hub's own automatic one).
       const updated = s.version !== undefined && version !== undefined && compareVersions(version, s.version) === 1 ? { from: s.version, to: version, at: nowMs } : s.updated;
@@ -228,7 +234,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           hub: frame.state,
           features: frame.state.phase === "live" ? (frame.state.features ?? []) : s.features,
           fresh,
-          asOf: s.fresh && !fresh ? (restarting ?? nowMs) : s.asOf,
+          asOf: s.fresh && !fresh ? (restarting ?? waking ?? nowMs) : s.asOf,
           version,
           updated,
           live: live ? s.live : { ...s.live, stale: true },

@@ -278,6 +278,9 @@ export const fixtures = [
   "offline-held",
   "offline-reread",
   "offline-reread-failed",
+  // ...and a reconnect after a wake: quiet for its first seconds, then said without sending anyone to check the address.
+  "offline-waking",
+  "offline-waking-long",
   // ...and the inline items' chat from the cache, with no hub (fixtures/inline).
   "inline-offline",
   // The sequences that blanked the window (fixtures/resilience): a hub restart mid-chat, a burst of plan items with
@@ -970,6 +973,38 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/Reconnecting…/u)).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry now" })).toBeDisabled();
       await expect(page.locator("[data-say]").getByText(/^Offline, as of/u)).toBeVisible();
+    },
+  },
+  // W654: the computer woke and the link is dialled again. For its first seconds: no banner, the chat as it was (no
+  // offline chip), and Stop still there to press.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-waking"],
+    variant: "waking",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-banner="reconnecting"]')).toHaveCount(0);
+      await expect(page.locator("[data-say]").getByText(/^Offline/u)).toHaveCount(0);
+      await expect(page.getByText("Offline: stop the lead and its agents once the hub is back.")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeEnabled();
+    },
+  },
+  // ...and a minute on: offline as of the wake, why, and that it reconnects by itself; never the address or update advice.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-waking-long"],
+    variant: "waking-long",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const banner = page.locator('[data-banner="reconnecting"]');
+      await expect(banner).toContainText("didn't answer in time");
+      await expect(banner).toContainText("reconnects by itself");
+      await expect(banner).not.toContainText("fleetd update");
+      await expect(banner).not.toContainText("address");
+      await expect(page.locator("[data-say]").getByText(/^Offline, as of/u)).toBeVisible();
+      await expect(page.getByText("Offline: stop the lead and its agents once the hub is back.")).toBeVisible();
     },
   },
   // Back online before the chat is read again: marked as last known, never as current; and when that read failed,

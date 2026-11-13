@@ -9,7 +9,7 @@ import type { MachineStatus } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
 import { clockAt, type Act } from "../updates/model";
 import type { Quiet } from "../updates/quiet";
-import { hubName, restartOf } from "./model";
+import { hubName, restartOf, wakeQuiet } from "./model";
 
 /** A dot in its state's colour; `ring`: the dot opened while the hub restarts; `update`: an update to take. */
 export type LineMark = "success" | "warning" | "danger" | "quiet" | "ring" | "update";
@@ -86,6 +86,8 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
     if (restart.phase === "long") return { ...named, mark: "ring", text: `${name} is still updating`, action: "Retry", does: { to: "retry" } };
     return { ...named, mark: "ring", text: name, aside: restart.to === null ? "Restarting…" : "Updating…", ...hubs };
   }
+  // Back from a sleep, the first seconds of the reconnect are no outage either.
+  if (wakeQuiet(hub, now)) return { ...named, mark: "quiet", text: name, aside: "Reconnecting…", ...hubs };
   // The first dial is the usual start. From the second on it is out of reach, in the same words between attempts and
   // during one, so the line doesn't flip on every redial.
   if (hub.phase === "connecting" && hub.attempt <= 1) return { ...named, mark: "quiet", text: `Connecting to ${name}…`, ...hubs };

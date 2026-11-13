@@ -6,11 +6,16 @@
 // - offline-reread: the hub answers again, but storefront's chat hasn't been read on this connection yet: it stays
 //   marked as last known, never as current.
 // - offline-reread-failed: that read failed, so the chat says why, with Retry.
+// - offline-waking: the computer woke and the link that was live is being dialled again (main/hub/client.ts woke()),
+//   its first attempts not answered yet: for the first seconds nothing says so, and the chat is shown as it was.
+// - offline-waking-long: the same a minute on: the banner says so, as of the wake, without sending the person to check
+//   the hub's address or update it (a hub this app was just connected to); the composer's line says Stop waits.
 import { firstProject } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
+import { explainAbandon } from "../../src/main/hub/explain.ts";
 import { heldCache } from "./held.ts";
 import { OFFLINE_SENDS } from "./sends.ts";
 
@@ -56,6 +61,17 @@ const reread = (base: Fixture, name: string, note: string, history: (f: Fixture,
   return f.settleAt(BACK_MS + 1300);
 };
 
+/** `typical` (its lead at work), then the computer sleeps for the night and wakes `awayMs` before the fixture's now. */
+const waking = (base: Fixture, name: string, note: string, awayMs: number): Fixture => {
+  const f = Fixture.from(base, name, note);
+  const hub = f.state.phase === "live" ? f.state.hub : "";
+  const now = Date.parse(f.now);
+  // The words main gives a hub it was just connected to that doesn't answer in time (src/main/hub/explain.ts).
+  const loss = explainAbandon(hub, "not-ready", false, true);
+  f.later(300, "state", { phase: "retrying", hub, ...loss, retryAt: now + 500, waking: now - awayMs });
+  return f.settleAt(1200);
+};
+
 export default defineGroup({
   fixtures: (base) => [
     (() => {
@@ -66,6 +82,8 @@ export default defineGroup({
       f.cache = heldCache(f, f.state.phase === "retrying" ? f.state.hub : "");
       return f;
     })(),
+    waking(base("typical"), "offline-waking", "The computer just woke; the link that was live is dialled again and hasn't answered yet.", 2_000),
+    waking(base("typical"), "offline-waking-long", "The computer woke a minute ago and the hub still doesn't answer.", 60_000),
     reread(base("chat-long"), "offline-reread", "Back online; storefront's chat from the cache isn't read again yet, so it is marked as last known.", (f, input) => {
       const page = f.output("chat_history", input);
       // Longer than any QA run: the read is still out when the shot is taken.

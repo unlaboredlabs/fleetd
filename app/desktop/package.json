@@ -28,6 +28,7 @@
     "site:showcase": "QA_SCALE=3 playwright test -c qa/playwright.config.ts --project=showcase --workers=1",
     "site:pebble": "node scripts/site-pebble.ts",
     "fixtures": "node fixtures/build.ts",
+    "wake-repro": "esbuild scripts/wake-repro.ts --bundle --platform=node --format=esm --external:bufferutil --external:utf-8-validate \"--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=out/wake-repro.mjs --log-level=warning && node out/wake-repro.mjs",
     "perf": "node fixtures/build.ts && node perf/run.ts",
     "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
     "debug-guard-check": "node scripts/debug-guard-check.ts",

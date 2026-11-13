@@ -55,6 +55,27 @@ describe("connection", () => {
     expect(work(s)?.orders).toEqual(["W1"]);
   });
 
+  it("keeps the screens on what they held for the first 10 s of a reconnect after a wake, then marks them as of the wake", () => {
+    const T = Date.parse("2026-10-19T10:00:00.000Z");
+    const at = (s: DataState, frame: HubFrame, ms: number) => applyFrame(s, frame, T + ms)[0];
+    const waking = (ms: number): HubFrame => ({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "devbox:4710 didn't answer in time", retryAt: T + ms, waking: T } });
+    const start = withBoard(run([live(), snapshot(10)]));
+    let s = at(start, { t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 0, waking: T } }, 0);
+    s = at(s, waking(1_000), 1_000);
+    s = at(s, waking(9_999), 9_999);
+    expect(selectConnection(s).view).toBe("live");
+    expect(work(s)?.orders).toEqual(["W1"]);
+    s = at(s, waking(10_000), 10_000);
+    expect(selectConnection(s).view).toBe("skeleton");
+    expect(s.asOf).toBe(T);
+
+    // Back within the first seconds: never marked, and the resumed snapshot keeps the board.
+    s = at(at(start, waking(0), 0), live(), 3_000);
+    expect(selectConnection(s).view).toBe("live");
+    s = run([snapshot(10, true)], s);
+    expect(work(s)?.orders).toEqual(["W1"]);
+  });
+
   it("shows skeletons at once for a drop that isn't a restart", () => {
     const s = run([{ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } }], withBoard(run([live(), snapshot(10)])));
     expect(selectConnection(s).view).toBe("skeleton");

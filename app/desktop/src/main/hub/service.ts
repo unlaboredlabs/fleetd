@@ -205,7 +205,7 @@ export class HubService {
   }
 
   systemResumed(): void {
-    this.#source?.reconnectNow();
+    this.#source?.woke();
   }
 
   connect(request: { readonly url: string; readonly key: string }): ConnectOutcome {

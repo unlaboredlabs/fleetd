@@ -60,6 +60,12 @@ describe("the hub's line", () => {
     expect(read({ hub: away(130_000, "0.9.3") })).toEqual(["Can't reach devbox · Retry"]);
   });
 
+  it("says a reconnect after a wake quietly for its first seconds, then as any outage", () => {
+    expect(menu({ hub: { ...down, waking: NOW - 2_000 } })).toEqual([{ key: "hub", mark: "quiet", text: "devbox", name: "devbox", aside: "Reconnecting…", does: { to: "hubs" } }]);
+    expect(read({ hub: { phase: "connecting", hub: HUB, attempt: 0, waking: NOW - 9_000 } })).toEqual(["devbox · Reconnecting…"]);
+    expect(read({ hub: { ...down, waking: NOW - 10_000 } })).toEqual(["Can't reach devbox · Retry"]);
+  });
+
   it("says an update going on or just in as a quiet word at its end, never a line of its own", () => {
     expect(read({ quiet: quiet("updating", {}) })).toEqual(["devbox · Updating…"]);
     expect(read({ quiet: quiet("updated", { at: Date.parse("2026-10-19T09:00:00Z") }) })).toEqual(["devbox · Updated 09:00"]);
