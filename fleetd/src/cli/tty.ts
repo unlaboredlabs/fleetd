@@ -1,5 +1,8 @@
 // The little of cliclack the CLI uses in a terminal: log lines, intro/outro, confirm, select, input, a spinner and a
 // progress bar. Plain lines and prompts read a line at a time; outside a terminal no command calls these.
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { isatty } from "node:tty";
+
 const bar = "\x1b[90m│\x1b[0m";
 const color = (code: number, text: string) => `\x1b[${code}m${text}\x1b[0m`;
 const out = (text: string) => void process.stderr.write(text);
@@ -22,21 +25,65 @@ export const intro = (title: string) => out(`${color(90, "┌")}  ${color(7, ` $
 export const outro = (text: string) => out(`${bar}\n${color(90, "└")}  ${text}\n\n`);
 export const outroCancel = (text: string) => out(`${bar}\n${color(90, "└")}  ${color(31, text)}\n\n`);
 
-/** Reads one line from stdin; undefined when it ends (Ctrl-D) or is interrupted. */
+/** The terminal can't be read (an error, not Ctrl-D): a prompt takes its default instead. */
+export class NoTerminal extends Error {}
+
+let terminalFd: number | undefined;
+
+/**
+ * The person's terminal, as an fd to read prompts from and to hand commands run at it (a login): stdin, unless stdin
+ * is /dev/tty itself, as `curl … | sh` hands init `</dev/tty`. Bun on macOS can't watch /dev/tty with kqueue (EINVAL,
+ * kqueue), so a Bun program given it (claude) dies at its first read; the terminal's own device (/dev/ttys003) works.
+ */
+export function terminal(): number {
+  if (terminalFd !== undefined) return terminalFd;
+  terminalFd = 0;
+  try {
+    const alias = statSync("/dev/tty").rdev;
+    if (!isatty(0) || fstatSync(0).rdev !== alias) return terminalFd;
+    const name = Bun.spawnSync(["ps", "-o", "tty=", "-p", String(process.pid)], { stdin: "ignore", stderr: "ignore" }).stdout.toString().trim();
+    if (!/^[\w/]+$/.test(name) || name.includes("..")) return terminalFd;
+    const fd = openSync(`/dev/${name}`, "r+");
+    if (isatty(fd) && fstatSync(fd).rdev !== alias) terminalFd = fd;
+    else closeSync(fd);
+  } catch {}
+  return terminalFd;
+}
+
+const pending: number[] = [];
+
+/**
+ * Reads one line from the terminal (stdin) with blocking reads; undefined when it ends (Ctrl-D). Never through a
+ * stream: Bun's stream reader registers the fd with kqueue, which macOS refuses for /dev/tty. A read that fails throws
+ * NoTerminal.
+ */
 export async function readLine(): Promise<string | undefined> {
-  const { createInterface } = await import("node:readline");
-  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
-  return new Promise((resolve) => {
-    let done = false;
-    rl.once("line", (l) => {
-      done = true;
-      rl.close();
-      resolve(l);
-    });
-    rl.once("close", () => {
-      if (!done) resolve(undefined);
-    });
-  });
+  const buf = Buffer.alloc(256);
+  for (;;) {
+    const nl = pending.indexOf(10);
+    if (nl >= 0) {
+      const bytes = pending.splice(0, nl + 1);
+      return Buffer.from(bytes.slice(0, -1)).toString("utf8").replace(/\r$/, "");
+    }
+    const n = readSome(buf);
+    if (n === 0) {
+      if (pending.length === 0) return undefined;
+      return Buffer.from(pending.splice(0)).toString("utf8");
+    }
+    pending.push(...buf.subarray(0, n));
+  }
+}
+
+function readSome(buf: Buffer): number {
+  for (;;) {
+    try {
+      return readSync(terminal(), buf, 0, buf.length, null);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EAGAIN") Bun.sleepSync(20);
+      else if (code !== "EINTR") throw new NoTerminal(String(code ?? error));
+    }
+  }
 }
 
 /**
@@ -47,28 +94,23 @@ export async function readHidden(prompt: string): Promise<string | undefined> {
   const stdin = process.stdin;
   if (!stdin.isTTY) return readLine();
   out(prompt);
+  // Raw mode only changes the terminal's settings; the keys are read as readLine reads, never through the stream.
   stdin.setRawMode(true);
-  stdin.resume();
   try {
-    return await new Promise((resolve) => {
-      let text = "";
-      const done = (value: string | undefined) => {
-        stdin.off("data", onData);
-        resolve(value);
-      };
-      const onData = (chunk: Buffer) => {
-        for (const ch of chunk.toString("utf8")) {
-          if (ch === "\r" || ch === "\n") return done(text);
-          if (ch === "\u0003" || ch === "\u0004") return done(undefined);
-          if (ch === "\u007f" || ch === "\b") text = [...text].slice(0, -1).join("");
-          else if (ch >= " ") text += ch;
-        }
-      };
-      stdin.on("data", onData);
-    });
+    const buf = Buffer.alloc(64);
+    let text = "";
+    for (;;) {
+      const n = readSome(buf);
+      if (n === 0) return undefined;
+      for (const ch of buf.subarray(0, n).toString("utf8")) {
+        if (ch === "\r" || ch === "\n") return text;
+        if (ch === "\u0003" || ch === "\u0004") return undefined;
+        if (ch === "\u007f" || ch === "\b") text = [...text].slice(0, -1).join("");
+        else if (ch >= " ") text += ch;
+      }
+    }
   } finally {
     stdin.setRawMode(false);
-    stdin.pause();
     out("\n");
   }
 }
