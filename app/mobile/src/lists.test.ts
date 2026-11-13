@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists, rowLine } from "./lists";
+import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists, moreWords, rowLine } from "./lists";
 import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
@@ -146,7 +146,7 @@ describe("approvals", () => {
     expect(out.map((r) => r.requestId)).toEqual(["r1", "r2"]);
   });
 
-  it("shows a gated command in full", () => {
+  it("leads a gated command with why, its risk and where it runs, the whole command behind Show command", () => {
     expect(approvalView(gated("r1"), "storefront")).toEqual({
       title: "storefront wants to run a command",
       who: "storefront",
@@ -154,13 +154,34 @@ describe("approvals", () => {
       risk: "irreversible",
       fields: [
         { label: "Why", value: "Ship the checkout fix", prose: true, lines: true },
-        { label: "Command", value: "vercel deploy --prod", mono: true, words: ["vercel", "deploy", "--prod"] },
-        { label: "In", value: "/home/devbox/shop", mono: true, more: true },
-        { label: "Kind", value: "irreversible", more: true },
+        { label: "Command", value: "vercel deploy --prod", mono: true, words: ["vercel", "deploy", "--prod"], lines: true, more: true },
+        { label: "In", value: "/home/devbox/shop", mono: true },
         { label: "Asked", value: "Deploy the fix", lines: true },
       ],
       hidden: false,
     });
+    // Closed on every card, short or long; the row says what it opens.
+    expect(moreWords(gated("r1"), false)).toBe("Show command");
+    expect(moreWords(gated("r1"), true)).toBe("Hide command");
+    expect(moreWords(asked("r2"), false)).toBe("Details");
+    expect(moreWords(asked("r2"), true)).toBe("Less");
+  });
+
+  it("shows a multi-line command on its lines, warning only of a break that can hide or redraw text", () => {
+    const script = (s: string): HumanRequest => ({ ...asked("r1"), gated: { argv: ["sh", "-c", s], class: "irreversible", reason: "Tag the release", timeoutSec: 60, cwd: "/srv/app" } });
+    const plain = approvalView(script("set -e\ngit fetch origin\ngit push origin v2.4.0"), "storefront");
+    expect(plain.hidden).toBe(false);
+    const command = plain.fields.find((f) => f.label === "Command");
+    expect(command?.words).toEqual(["sh", "-c", "'set -e\ngit fetch origin\ngit push origin v2.4.0'"]);
+    // As the card draws it: the line breaks as written, no mark.
+    const drawn = (command?.words ?? []).flatMap((w) => exactRuns(w, { lines: command?.lines === true, ltr: true }));
+    expect(drawn.some((r) => r.mark)).toBe(false);
+    expect(drawn.map((r) => r.text).join("")).toContain("set -e\ngit fetch origin");
+    // A carriage return, a vertical tab, a form feed, NEL or a line separator still warns, the command closed or not.
+    for (const c of ["\r", "\u000B", "\u000C", "\u0085", "\u2028", "\u2029"]) {
+      expect(approvalView(script(`set -e\nrm -rf build${c}echo ok`), "storefront").hidden, JSON.stringify(c)).toBe(true);
+    }
+    expect(approvalView(script("set -e\necho \u200Bok"), "storefront").hidden).toBe(true);
   });
 
   it("keeps a tool's whole input on the card, as its summary is only a first line", () => {

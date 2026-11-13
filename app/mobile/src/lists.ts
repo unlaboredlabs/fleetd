@@ -211,12 +211,12 @@ export interface ApprovalView {
   /** Marked on the card: it spends money, can't be undone, or uses a secret. */
   readonly risk: "money" | "irreversible" | "credential" | undefined;
   /**
-   * `more`: context shown under Details (where a command runs, its kind, the raw input behind a preview). Everything
-   * that decides the answer (what runs, who it reaches, as whom, what it says) is always on the card's face, in full:
-   * the card is what the person approves. `prose`: the asker's own words (why), whose `code` spans may be drawn as
-   * code; every other field shows exactly as written, backticks and all, as it would go out. `lines`: its \n breaks
-   * the line (a body, a block of JSON); anywhere else a \n is a hidden character. `words`: a command's arguments, each
-   * quoted where it needs it, which the card isolates one by one.
+   * `more`: shown under Details (the raw input behind a preview), or for a command under Show command (the command
+   * itself, whose reason, risk and folder stay on the card's face). Everything else that decides the answer (who it
+   * reaches, as whom, what it says) is always on the card's face, in full. `prose`: the asker's own words (why), whose
+   * `code` spans may be drawn as code; every other field shows exactly as written, backticks and all, as it would go
+   * out. `lines`: its \n breaks the line (a body, a block of JSON, a multi-line command); anywhere else a \n is a
+   * hidden character. `words`: a command's arguments, each quoted where it needs it, which the card isolates one by one.
    */
   readonly fields: ReadonlyArray<ApprovalField>;
   /** Some field holds a character that hides or reorders text (shared/hidden.ts): the card says so, and marks each. */
@@ -254,10 +254,10 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     wants = "wants to run a command";
     risk = r.gated.class;
     add("Why", r.gated.reason, { prose: true, lines: true });
+    // The reason is what a person approves on; the exact command, a shell blob as often as not, is one tap away.
     const words = r.gated.argv.map(shellWord);
-    add("Command", words.join(" "), { mono: true, words });
-    add("In", r.gated.cwd, { mono: true, more: true });
-    add("Kind", r.gated.class, { more: true });
+    add("Command", words.join(" "), { mono: true, words, lines: true, more: true });
+    add("In", r.gated.cwd, { mono: true });
     add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
   } else if (preview !== undefined) {
     // The hub words it to follow "<the project> wants to": "Use create_page on docs".
@@ -283,6 +283,9 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   const hidden = hasHidden(who) || hasHidden(wants) || fields.some((f) => (f.words ?? [f.value]).some((v) => hasHidden(v, f.lines === true)));
   return { title: `${who} ${wants}`, who, wants, risk, fields, hidden };
 };
+
+/** The card's row that shows its `more` fields and hides them again: a command's own words, or Details. */
+export const moreWords = (r: HumanRequest, open: boolean): string => (r.gated !== undefined ? (open ? "Hide command" : "Show command") : open ? "Less" : "Details");
 
 /** An approval in a chat once its card is gone: how it went, in a few words. */
 export interface ApprovalOutcome {

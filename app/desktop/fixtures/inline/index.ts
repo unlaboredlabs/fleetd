@@ -8,8 +8,8 @@
 // message to send, a page to delete, and a send already approved. inline-checker is a project's chat with its
 // approval checker at work (fixtures/inline/checker.json). inline-secure is a project's secure input
 // (fixtures/inline/secure.json): one to type in a sealed field. inline-hidden holds
-// approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
-// email in several languages shown as written. inline-propose is a chat with a lead's proposals for a new project
+// approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, an
+// email in several languages shown as written, and two multi-line commands: one on its lines, one with a carriage return. inline-propose is a chat with a lead's proposals for a new project
 // (fixtures/inline/propose.json): two waiting, and one approved, one declined and one that could not be made.
 import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";

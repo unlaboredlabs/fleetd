@@ -780,6 +780,7 @@ function InlineApproval({ chatKey, item }: { chatKey: Key; item: CommandApproval
   return (
     <View style={[styles.card, styles.groupGap]}>
       <ApprovalCard
+        key={open.requestId}
         request={open}
         projectTitle={project?.title}
         picture={project}
