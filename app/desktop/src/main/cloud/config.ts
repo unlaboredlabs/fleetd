@@ -1,8 +1,8 @@
 // The two public values that turn fleetd cloud's Sign in on, fixed when the bundle is built and never read at run
 // time: the accounts service's origin and the WorkOS client id the sign-in page is opened with. A build sets them as
 //   MAIN_VITE_FLEETD_ACCOUNTS_URL=https://accounts.fleetd.dev MAIN_VITE_FLEETD_WORKOS_CLIENT_ID=client_… pnpm build
-// and electron-vite inlines them. Releases set neither, so a released app offers only Use your own hub and depends on
-// nothing fleetd runs.
+// and electron-vite inlines them. Releases set both (.github/workflows/build-release.yml, now that fleetd cloud is
+// open); a build without them offers only Use your own hub and depends on nothing fleetd runs.
 import { RELEASE_BUILD } from "../build";
 
 /** WorkOS's own sign-in page (AuthKit, PKCE): its address is WorkOS's, not fleetd's. */

@@ -23,6 +23,15 @@ on:
 permissions:
   contents: read
 
+# fleetd cloud's Sign in, inlined into the desktop app (MAIN_VITE_*) and the phone app's over-the-air updates
+# (EXPO_PUBLIC_*): the accounts service and the production WorkOS client id, both public. mobile-release.yml sets the
+# same pair for the phone's native builds. Removing both pairs turns Sign in off again in the next release.
+env:
+  MAIN_VITE_FLEETD_ACCOUNTS_URL: https://accounts.fleetd.dev
+  MAIN_VITE_FLEETD_WORKOS_CLIENT_ID: client_01M75KC5MJ3MV0ECKD55KPR1G2
+  EXPO_PUBLIC_FLEETD_ACCOUNTS_URL: https://accounts.fleetd.dev
+  EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID: client_01M75KC5MJ3MV0ECKD55KPR1G2
+
 jobs:
   plan:
     runs-on: ubuntu-latest

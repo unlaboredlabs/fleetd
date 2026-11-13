@@ -32,6 +32,10 @@ env:
   FLEETD_UPDATES_CHANNEL: ${{ inputs.channel }}
   FLEETD_UPDATES_URL: ${{ vars.FLEETD_UPDATES_URL }}
   FLEETD_BUILD_NUMBER: ${{ github.run_number }}
+  # fleetd cloud's Sign in (src/cloud/config.ts): the accounts service and the production WorkOS client id, both
+  # public. build-release.yml sets the same pair for the over-the-air updates, which must match these builds.
+  EXPO_PUBLIC_FLEETD_ACCOUNTS_URL: https://accounts.fleetd.dev
+  EXPO_PUBLIC_FLEETD_WORKOS_CLIENT_ID: client_01M75KC5MJ3MV0ECKD55KPR1G2
 
 jobs:
   signing:
