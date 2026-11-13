@@ -2,6 +2,7 @@
 // are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
+import { isFold, type FoldLine, type Tag } from "./chatTags";
 import { workedFor, type ChatItem } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
@@ -22,35 +23,40 @@ const BLOCK_WORDS: Readonly<Record<string, string>> = {
   clip: "A clip",
 };
 
-export const bubbles = (item: Pick<ChatItem, "text" | "message">): readonly Bubble[] => {
+export const bubbles = (item: Pick<ChatItem, "text" | "message">): readonly Bubble[] => partBubbles(item).map((b) => b.bubble);
+
+/** A message's bubbles, each with the part it came from (a tagged chat's per-bubble order is the part's). */
+export const partBubbles = (item: Pick<ChatItem, "text" | "message">): ReadonlyArray<{ readonly bubble: Bubble; readonly part: number }> => {
   const parts = item.message?.parts;
-  if (parts === undefined || parts.length === 0 || item.message?.state === "streaming") return item.text.trim() === "" ? [] : [{ kind: "text", text: item.text }];
-  return parts.flatMap((p): Bubble[] => {
-    const block = p.block;
-    if (block === undefined) {
-      const text = item.text.slice(p.start, p.end).trim();
-      // A block that didn't show, alone in its part: a card saying so, as for a kind the phone doesn't draw.
-      const [only, ...more] = parseMarkdown(text);
-      if (only !== undefined && more.length === 0 && isBlockFence(only)) return [{ kind: "block", text: UNSHOWN }];
-      return text === "" ? [] : [{ kind: "text", text }];
-    }
-    switch (block.kind) {
-      case "ask":
-        return [{ kind: "ask", question: block.question, options: block.options ?? ["Approve", "Deny"] }];
-      case "pr":
-        return [{ kind: "pr", repo: block.repo, number: block.number, title: block.title }];
-      case "checklist":
-        return [{ kind: "checklist", title: block.title, items: block.items }];
-      case "table":
-        return [{ kind: "table", title: block.title, columns: block.columns, rows: block.rows }];
-      case "image":
-        return [{ kind: "image", attachmentId: block.attachmentId, name: block.caption ?? "Image", caption: block.caption }];
-      case "file":
-        return [{ kind: "file", attachmentId: block.attachmentId, name: block.name ?? block.caption ?? "File", mime: block.mime ?? "", bytes: block.bytes ?? 0 }];
-      default:
-        return [{ kind: "block", text: `${BLOCK_WORDS[block.kind] ?? "Something"} the desktop app shows.` }];
-    }
-  });
+  if (parts === undefined || parts.length === 0 || item.message?.state === "streaming") return item.text.trim() === "" ? [] : [{ bubble: { kind: "text", text: item.text }, part: 0 }];
+  return parts.flatMap((p, part) => partBubble(item.text, p).map((bubble) => ({ bubble, part })));
+};
+
+const partBubble = (text: string, p: NonNullable<NonNullable<ChatItem["message"]>["parts"]>[number]): Bubble[] => {
+  const block = p.block;
+  if (block === undefined) {
+    const words = text.slice(p.start, p.end).trim();
+    // A block that didn't show, alone in its part: a card saying so, as for a kind the phone doesn't draw.
+    const [only, ...more] = parseMarkdown(words);
+    if (only !== undefined && more.length === 0 && isBlockFence(only)) return [{ kind: "block", text: UNSHOWN }];
+    return words === "" ? [] : [{ kind: "text", text: words }];
+  }
+  switch (block.kind) {
+    case "ask":
+      return [{ kind: "ask", question: block.question, options: block.options ?? ["Approve", "Deny"] }];
+    case "pr":
+      return [{ kind: "pr", repo: block.repo, number: block.number, title: block.title }];
+    case "checklist":
+      return [{ kind: "checklist", title: block.title, items: block.items }];
+    case "table":
+      return [{ kind: "table", title: block.title, columns: block.columns, rows: block.rows }];
+    case "image":
+      return [{ kind: "image", attachmentId: block.attachmentId, name: block.caption ?? "Image", caption: block.caption }];
+    case "file":
+      return [{ kind: "file", attachmentId: block.attachmentId, name: block.name ?? block.caption ?? "File", mime: block.mime ?? "", bytes: block.bytes ?? 0 }];
+    default:
+      return [{ kind: "block", text: `${BLOCK_WORDS[block.kind] ?? "Something"} the desktop app shows.` }];
+  }
 };
 
 /** A message's files, as bubbles of their own after its words: pictures shown, anything else as a file to open. */
@@ -221,8 +227,13 @@ const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
 export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
-  /** `worked`: the reply a turn ended with, how long the turn took ("4m 12s"), shown with its time (ui/Reveal.tsx). */
-  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string }
+  /**
+   * `worked`: the reply a turn ended with, how long the turn took ("4m 12s"), shown with its time (ui/Reveal.tsx).
+   * `tag`: the tagged chat's line over a run of bubbles (chatTags.ts), on its first.
+   */
+  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string; readonly tag?: Tag }
+  /** A closed order's messages as one line, where it landed (chatTags.ts). */
+  | { readonly t: "fold"; readonly id: string; readonly line: FoldLine }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
@@ -233,7 +244,8 @@ export type ThreadRow =
 export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
   if (a === b) return true;
   if (a.t !== b.t || a.id !== b.id) return false;
-  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.worked === b.worked && sameItem(a.item, b.item);
+  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.worked === b.worked && a.tag?.key === b.tag?.key && a.tag?.order?.title === b.tag?.order?.title && sameItem(a.item, b.item);
+  if (a.t === "fold" && b.t === "fold") return a.line.open === b.line.open && a.line.fold.count === b.line.fold.count && a.line.fold.title === b.line.fold.title && a.line.fold.state === b.line.fold.state && a.line.at === b.line.at;
   if (a.t === "day" && b.t === "day") return a.at === b.at;
   return true;
 };
@@ -269,28 +281,51 @@ const REPLY_SLACK_MS = 2_000;
  * apps' date chips.
  */
 export const threadRows = (
-  items: readonly ChatItem[],
+  items: readonly (ChatItem | FoldLine)[],
   worked?: { readonly since: number; readonly until: number },
   readSeq?: number,
   clock: Pick<Clock, "timeZone"> = {},
+  tagOf?: (item: ChatItem) => Tag | undefined,
 ): ThreadRow[] => {
   const rows: ThreadRow[] = [];
   const reply =
     worked === undefined
       ? -1
-      : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
+      : items.findLastIndex((i) => !isFold(i) && i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
   const stamp = worked === undefined ? undefined : workedFor(worked.until - worked.since);
   let prev: ChatItem | undefined;
+  let prevTag: Tag | undefined;
   let prevDay = 0;
-  const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
+  let any = false;
+  const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => !isFold(i) && i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
   for (const [i, item] of items.entries()) {
     if (i === firstUnread) rows.push({ t: "unread", id: "unread" });
     const day = dayAt(item.at, clock);
-    if (prev === undefined || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    if (!any || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    any = true;
     prevDay = day;
+    if (isFold(item)) {
+      rows.push({ t: "fold", id: item.id, line: item });
+      // What follows it starts a burst of its own.
+      prev = undefined;
+      continue;
+    }
     const side = sideOf(item);
-    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), ...(i === reply && stamp !== undefined ? { worked: stamp } : {}) });
+    const tag = tagOf?.(item);
+    // A new tag starts a run of its own, its line over its first bubble.
+    // Compared with the line as the message before left it: its last bubble's order.
+    const first = i === firstUnread || !joins(prev, item) || tag?.key !== prevTag?.endKey;
+    rows.push({
+      t: "item",
+      id: item.clientRequestId ?? item.id,
+      item,
+      side,
+      first,
+      ...(i === reply && stamp !== undefined ? { worked: stamp } : {}),
+      ...(first && tag !== undefined ? { tag } : {}),
+    });
     prev = item;
+    prevTag = tag;
   }
   return rows;
 };

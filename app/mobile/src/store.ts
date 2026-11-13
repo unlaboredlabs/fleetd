@@ -117,6 +117,8 @@ export interface State {
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
   /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
   readonly running: Readonly<Record<Key, number>>;
+  /** The open orders (orders_board): a tagged chat's tags, lens and About… menu (chatTags.ts). */
+  readonly orders: readonly OrderCard[];
 }
 
 export const initial = (hub: HubState): State => ({
@@ -148,6 +150,7 @@ export const initial = (hub: HubState): State => ({
   turnWorked: {},
   screens: {},
   running: {},
+  orders: [],
 });
 
 export type Action =
@@ -168,6 +171,8 @@ export type Action =
   | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
   | { readonly t: "board"; readonly orders: readonly OrderCard[] }
+  /** A message moved to another order (chat_about_set's answer), before its event comes. */
+  | { readonly t: "retagged"; readonly key: Key; readonly message: ChatMessage }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
   /** One screen as the hub answered a change of control with it. */
   | { readonly t: "screen"; readonly session: BrowserSession }
@@ -270,7 +275,11 @@ export const reduce = (s: State, a: Action): State => {
       return sends.length === rows.length ? s : { ...s, sends: { ...s.sends, [a.key]: sends } };
     }
     case "board":
-      return { ...s, running: runningOf(a.orders) };
+      return { ...s, running: runningOf(a.orders), orders: a.orders };
+    case "retagged": {
+      const chat = s.chats[a.key];
+      return chat === undefined ? s : withChat(s, a.key, mergeMessages(chat, [a.message]));
+    }
     case "requests": {
       const answering = Object.keys(s.cut).length === 0 ? s.answering : Object.fromEntries(Object.entries(s.answering).filter(([id]) => s.cut[id] === undefined));
       return { ...s, requests: a.requests.filter((r) => r.state === "open"), requestsRead: true, answering, cut: {} };
