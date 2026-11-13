@@ -76,6 +76,7 @@ test("with the switch off nothing changes: no tags, markers stay, no prompt line
   const set = prompts(hub.db).current(PROJECT);
   const off = renderLeadStart(set, PROJECT, "Shop", [], "", "", "", undefined);
   expect(off.system).not.toContain("[W12]");
+  expect(off.system).not.toContain("A question rings only the person it is for");
   expect(off.system).not.toContain("{{tags}}");
   const human = { author: "human", text: "hi", createdAt: "2026-11-08T10:00:00Z" } as ChatMessage;
   expect(forLead(set, human, undefined, "", "Dana Park", "Sun 8 Nov")).toStartWith("Dana Park writes in your chat (Sun 8 Nov):");
@@ -227,6 +228,17 @@ test("switch on: the lead's prompt carries the design's lines, and a person's me
   expect(on.system).toContain("don't start a bubble with a person's name.");
   expect(on.system).toContain("start each with the order's id in brackets, [W12]. fleetd hides it.");
   expect(on.system).toContain("is a person's correction: take it as theirs, and act on it if it changes the work.");
+  // A landing closes its order's fold, so it is a bubble about that order, not the one batched line.
+  expect(on.system).toContain("Landings: a short bubble per order, starting with its [W12] when the wake lands more than one");
+  expect(on.system).toContain("the chat folds its messages into that bubble");
+  expect(on.system).toContain("A question rings only the person it is for: who asked for the order your turn worked on, else the person you are answering.");
+  // The lines sit under "When to speak", before "Plain words".
+  const speak = on.system.indexOf("## When to speak");
+  const plain = on.system.indexOf("## Plain words");
+  for (const line of ["don't start a bubble", "Landings: a short bubble", "A question rings only", "is a person's correction"]) {
+    const at = on.system.indexOf(line);
+    expect(at > speak && at < plain).toBe(true);
+  }
   const human = { author: "human", text: "hi", createdAt: "2026-11-08T10:00:00Z" } as ChatMessage;
   expect(forLead(set, { ...human, about: { workstreamId: "W12", title: "Apple Pay" } }, undefined, "", "Alice Chen", "Sun 8 Nov", true)).toStartWith(
     "Alice Chen writes in your chat about Apple Pay (W12) (Sun 8 Nov):",

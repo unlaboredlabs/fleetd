@@ -13,6 +13,8 @@ const AUTOMATIONS =
 export const TAG_LINES = [
   "- Work a person asks for becomes an order, as now. Your bubbles are tagged with the order your turn worked on, and the chat shows who each is for: don't start a bubble with a person's name.",
   "- When one message covers more than one order, write a bubble per order and start each with the order's id in brackets, [W12]. fleetd hides it. A quick answer stays untagged.",
+  "- Landings: a short bubble per order, starting with its [W12] when the wake lands more than one, in place of the one batched line. Once the order is closed, the chat folds its messages into that bubble: say the outcome there.",
+  "- A question rings only the person it is for: who asked for the order your turn worked on, else the person you are answering. Anyone may still answer it. When it needs someone else, name them in it.",
   "- A wake line \"… moved a message (…) from X to Y\" is a person's correction: take it as theirs, and act on it if it changes the work.",
 ].join("\n");
 
