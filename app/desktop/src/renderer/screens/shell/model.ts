@@ -1,6 +1,6 @@
 // What the frame shows, as plain view data: the sidebar's projects with their two marks, the home project, the
 // connection line. Pure, so it is unit-tested. The rows are the data layer's (selectShownProjects), in its order.
-import type { HubState } from "../../../shared/hub";
+import { WAKE_QUIET_MS, type HubState } from "../../../shared/hub";
 import { RESTART_HOLD_MS } from "../../src/data/store";
 import type { ProjectRow } from "../../src/data/selectors";
 import type { ProjectKey } from "./routes";
@@ -170,6 +170,10 @@ export const restartOf = (hub: HubState, now: number): Restart | null => {
   const phase = to === null ? (away < RESTART_HOLD_MS ? "quiet" : "outage") : away < LONG_RESTART_MS ? "quiet" : away < OUTAGE_MS ? "long" : "outage";
   return { phase, since: hub.restarting, to };
 };
+
+/** The link is being dialled again after a wake, and it hasn't been WAKE_QUIET_MS yet: nothing says it's away. */
+export const wakeQuiet = (hub: HubState, now: number): boolean =>
+  (hub.phase === "connecting" || hub.phase === "retrying") && hub.waking !== undefined && now - hub.waking < WAKE_QUIET_MS;
 
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "");

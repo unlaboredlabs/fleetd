@@ -4,7 +4,7 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { useNow } from "../live/clock";
 import { useCommands } from "../palette";
-import { restartOf } from "../shell/model";
+import { restartOf, wakeQuiet } from "../shell/model";
 import { useOfflineAsOf } from "../shell/offline";
 import { sentence, type Reaching } from "./form";
 import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
@@ -42,10 +42,11 @@ export function ConnectionBanner() {
   const version = ready ?? (probe?.answers === true ? probe.version : undefined);
   const behind = version === undefined ? [] : olderNodes(machines, version, nowMs);
   // A hub that closed to restart is said by the hub row, then the restart line (shell/RestartLine), until it has
-  // been away 2 minutes: an outage from then on. Read against the clock at each redial's state.
+  // been away 2 minutes: an outage from then on. A reconnect after a wake says nothing for its first seconds, while the
+  // network comes back. Read against the clock at each redial's state.
   // eslint-disable-next-line react-hooks/purity
-  const restart = useMemo(() => restartOf(state, Date.now()), [state]);
-  if (restart !== null && restart.phase !== "outage") return null;
+  const [restart, waking] = useMemo(() => [restartOf(state, Date.now()), wakeQuiet(state, Date.now())] as const, [state]);
+  if ((restart !== null && restart.phase !== "outage") || waking) return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;

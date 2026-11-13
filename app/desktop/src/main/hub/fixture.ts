@@ -18,9 +18,9 @@ const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string
 
 const State = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
-  z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
+  z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0), waking: z.number().optional() }),
   z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int(), version: z.string().optional(), features: z.array(z.string()).readonly().optional() }),
-  z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
+  z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number(), waking: z.number().optional() }),
   z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
 ]);
 
@@ -302,6 +302,10 @@ export class FixtureSource implements HubSource {
   refreshLive(): void {}
 
   shown(): void {}
+
+  woke(): void {}
+
+  probe(): void {}
 
   // Retry now while waiting out a retry: the attempt starts and, with no hub behind a fixture, keeps running.
   reconnectNow(): void {

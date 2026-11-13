@@ -205,7 +205,11 @@ export class HubService {
   }
 
   systemResumed(): void {
-    this.#source?.reconnectNow();
+    this.#source?.woke();
+  }
+
+  linkInDoubt(): void {
+    this.#source?.probe();
   }
 
   connect(request: { readonly url: string; readonly key: string }): ConnectOutcome {

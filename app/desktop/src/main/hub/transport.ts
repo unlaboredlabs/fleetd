@@ -1,4 +1,5 @@
-import type { Socket } from "node:net";
+import { lookup as dnsLookup, type LookupAddress } from "node:dns";
+import type { LookupFunction, Socket } from "node:net";
 import { constants, createInflateRaw, deflateRawSync, type InflateRaw } from "node:zlib";
 import WebSocket from "ws";
 import type { SocketError } from "./explain";
@@ -83,10 +84,50 @@ export const inflater = (): ((data: Buffer) => Promise<string>) => {
     });
 };
 
+type Resolve = (hostname: string, options: { family: number; hints?: number | undefined }, done: (error: Error | null, addresses: LookupAddress[]) => void) => void;
+
+const resolveAll: Resolve = (hostname, options, done) => dnsLookup(hostname, { ...options, all: true }, done);
+
+/**
+ * A lookup that runs one getaddrinfo per name at a time: a dial while one runs takes its answer. getaddrinfo can't be
+ * called off and holds one of libuv's four threads until it gives up, which a resolver that doesn't answer (a tailnet's
+ * just after a wake) makes half a minute: a dial a second would fill the pool, and every file read in main wait behind.
+ */
+export const sharedLookup = (resolve: Resolve = resolveAll): LookupFunction => {
+  const running = new Map<string, Promise<LookupAddress[]>>();
+  return (hostname, options, callback) => {
+    const family = options.family === "IPv4" ? 4 : options.family === "IPv6" ? 6 : (options.family ?? 0);
+    const key = `${hostname} ${String(family)}`;
+    let answer = running.get(key);
+    if (answer === undefined) {
+      const asked = new Promise<LookupAddress[]>((ok, fail) => {
+        resolve(hostname, { family, hints: options.hints }, (error, addresses) => (error === null ? ok(addresses) : fail(error)));
+      });
+      answer = asked;
+      running.set(key, asked);
+      const done = () => {
+        if (running.get(key) === asked) running.delete(key);
+      };
+      asked.then(done, done);
+    }
+    answer.then(
+      (addresses) => {
+        const first = addresses[0];
+        if (options.all === true) callback(null, addresses);
+        else if (first === undefined) callback(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: "ENOTFOUND" }), "");
+        else callback(null, first.address, first.family);
+      },
+      (error: unknown) => callback(error as NodeJS.ErrnoException, ""),
+    );
+  };
+};
+
+const lookup = sharedLookup();
+
 /** Node's built-in WebSocket can't ping, so `ws`. */
 export const webSocketTransport: Transport = (url, events, headers) => {
   if (url.startsWith("wss:")) trustSystemCAs();
-  const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024, ...(headers === undefined ? {} : { headers: { ...headers } }) });
+  const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024, lookup, ...(headers === undefined ? {} : { headers: { ...headers } }) });
   let closed = false;
   let error: SocketError | undefined;
   const inflate = inflater();

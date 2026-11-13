@@ -47,7 +47,7 @@ const ISLAND_CLEAR = 8;
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
   // Out of reach, between attempts or during one after a failure (not the first connect, which is loading).
-  const offline = useData((d) => d.hub.phase === "retrying" || (d.hub.phase === "connecting" && d.hub.attempt > 0));
+  const offline = useData((d) => !d.fresh && (d.hub.phase === "retrying" || (d.hub.phase === "connecting" && d.hub.attempt > 0)));
   const [sent, setSent] = useState(0);
   /**
    * Show: a message brought into view (again on each press). From the waiting line, what the lead waits on, with its

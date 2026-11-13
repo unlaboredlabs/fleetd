@@ -28,7 +28,7 @@ import type { MacSetup } from "./macSetup";
 import { MenuBar, menuTemplate, POPOVER_WIDTH } from "./menuBar";
 import { trayIcon } from "./trayIcon";
 import { Notifier } from "./notify";
-import { watchOnline } from "./online";
+import { watchWake } from "./online";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
@@ -371,8 +371,7 @@ void app.whenReady().then(() => {
     hub.windowFocused();
     updater.focused();
   });
-  powerMonitor.on("resume", () => hub.systemResumed());
-  const stopOnline = watchOnline(() => net.isOnline(), () => hub.systemResumed());
+  const stopOnline = watchWake(powerMonitor, () => net.isOnline(), () => hub.systemResumed(), () => hub.linkInDoubt());
   const stopPresence = startPresence({
     on: () => presence.on,
     focused: () => BrowserWindow.getFocusedWindow() !== null,

@@ -5,8 +5,12 @@
 // refused (close 4401, or an error before `ready`) or the client is stopped. The event long-poll is silent when
 // nothing happens, so the client pings and drops a link whose ping goes unanswered: a half-open socket (Wi-Fi or
 // tailnet gone without a sleep, a NAT that forgot it) must not keep showing as live, nor wait on TCP's own retries.
+// A wake (woke(): the computer resumed) drops the link at once and dials again on a short deadline, about once a second
+// for WAKE_FAST_MS; the screen unlocking or the network coming back (probe()) ping the link first and do that only if it
+// doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
+// back would otherwise hold the next one off for all of READY_TIMEOUT_MS, though a fresh dial gets through at once.
 import type { BrowserInput } from "../../shared/contracts";
-import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
+import { WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
 import {
   appUrl,
@@ -29,6 +33,25 @@ import { explainAbandon, explainLoss, type Loss, type SocketError } from "./expl
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`: covers a TCP connect into a black hole, a stalled upgrade and an unanswered auth. */
 export const READY_TIMEOUT_MS = 15_000;
+/**
+ * The same just after a wake, or three times the last link's own, whichever is longer: a link as slow as before still
+ * makes it, and one that went out before the network was usable is dropped for a fresh one within about a second.
+ */
+export const WAKE_READY_TIMEOUT_MS = 1_000;
+/** On an unlock or the network back, a live link that doesn't answer a ping in this long is taken as dead. */
+export const WAKE_PROBE_MS = 1_000;
+/** Just after a wake, attempts start at least this far apart: one failing at once (no route yet) doesn't spin. */
+export const WAKE_REDIAL_EVERY_MS = 500;
+/**
+ * How long after a wake it dials that way, until a link is ready: Tailscale can take most of a minute to come back after
+ * a Mac sleeps. Then the backoff from its start. The screens stay quiet for the first WAKE_QUIET_MS of it.
+ */
+export const WAKE_FAST_MS = 120_000;
+/**
+ * A hub this app was connected to this recently has the right address and a fleetd that speaks to it: a failure says
+ * so (the network, the hub's machine) rather than send the person to check the address or update the hub.
+ */
+export const ADVICE_AFTER_MS = WAKE_FAST_MS;
 export const PING_EVERY_MS = 15_000;
 /** A ping with nothing heard since (no byte, no pong) for this long: the link is dead. */
 export const PONG_WAIT_MS = 10_000;
@@ -75,11 +98,25 @@ export class HubClient implements HubSource {
   #state: HubState;
   #connection: Connection | null = null;
   #ready = false;
+  /** The attempts since the link was last up: the screens read 0 as a first connect, and more as one that failed. */
   #attempt = 0;
+  /** Of #attempt, those dialled fast after a wake: counted, so the screens say it failed, but no step of the backoff. */
+  #fastDials = 0;
   /** When the hub closed the link to restart or stop, epoch ms, until a link is ready again: it redials quickly meanwhile. */
   #restarting: number | null = null;
   /** The build it restarts into, when the close said it updates. */
   #updatingTo: string | null = null;
+  /** When the link was last dialled again for a wake (woke()), epoch ms, until a link is ready again. */
+  #wakeAt: number | null = null;
+  /** The link up now was dialled for a wake. */
+  #wokeLink = false;
+  /** A link has been ready since start(). */
+  #everReady = false;
+  /** When the last ready link dropped, epoch ms, until one is ready again. */
+  #downSince: number | null = null;
+  /** When this attempt dialled, and how long the last link took from dialling to `ready`. */
+  #dialAt = 0;
+  #handshakeMs = 0;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #stopped = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
@@ -97,11 +134,13 @@ export class HubClient implements HubSource {
   /** Whether any window shows (shown()); the live feed is asked for only then. */
   #shown = true;
   #readyAt = 0;
-  /** When anything last came from the hub on this connection. */
+  /** When anything last came from the hub on this connection, and how many times anything has. */
   #heardAt = 0;
+  #heardCount = 0;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   #pongTimer: ReturnType<typeof setTimeout> | null = null;
+  #probeTimer: ReturnType<typeof setTimeout> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
   /** The hub serves browser sessions (ready's `browser_sessions`): only then go browser_watch and browser_input. */
@@ -131,6 +170,7 @@ export class HubClient implements HubSource {
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#attempt = 0;
+    this.#fastDials = 0;
     this.#connect();
   }
 
@@ -138,6 +178,7 @@ export class HubClient implements HubSource {
     this.#stopped = true;
     this.#restarting = null;
     this.#updatingTo = null;
+    this.#wakeAt = null;
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -145,7 +186,45 @@ export class HubClient implements HubSource {
     this.#failPending("disconnected", "The app disconnected from the hub.");
   }
 
-  /** Drops the link and dials again at once, e.g. after the machine wakes, when the socket may be half-open. */
+  /**
+   * The computer woke from sleep: the link is most likely half-open, and an attempt running may have gone out before the
+   * network was usable. Both are dropped and it dials at once, then fast (see the top). A link dialled for a wake that
+   * came up in the last WAKE_QUIET_MS is kept.
+   */
+  woke(): void {
+    if (this.#stopped) return;
+    if (this.#ready && this.#wokeLink && Date.now() - this.#readyAt < WAKE_QUIET_MS) return;
+    this.#redialForWake();
+  }
+
+  /**
+   * The screen unlocked or the network came back: the link may be fine (an unlock with no sleep), or dead. A live one
+   * is pinged and kept, calls in flight with it, if anything at all comes back within WAKE_PROBE_MS; otherwise it goes
+   * as on a wake. One not live dials at once, then fast.
+   */
+  probe(): void {
+    if (this.#stopped) return;
+    if (!this.#ready) return this.#redialForWake();
+    if (this.#probeTimer !== null) return;
+    const heard = this.#heardCount;
+    this.#connection?.ping();
+    this.#probeTimer = setTimeout(() => {
+      this.#probeTimer = null;
+      if (this.#ready && this.#heardCount === heard) this.#redialForWake();
+    }, WAKE_PROBE_MS);
+  }
+
+  #heard(): void {
+    this.#heardAt = Date.now();
+    this.#heardCount++;
+  }
+
+  #redialForWake(): void {
+    this.#wakeAt = Date.now();
+    this.reconnectNow();
+  }
+
+  /** Drops the link and dials again at once: Retry now, and a wake. */
   reconnectNow(): void {
     if (this.#stopped) return;
     this.#clearTimers();
@@ -154,6 +233,7 @@ export class HubClient implements HubSource {
     connection?.close();
     this.#dropLink();
     this.#attempt = 0;
+    this.#fastDials = 0;
     this.#connect();
   }
 
@@ -242,14 +322,15 @@ export class HubClient implements HubSource {
       this.#setState({ phase: "refused", hub: this.#options.hub, message: url.message });
       return;
     }
-    this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt, ...this.#restartingField() });
+    this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt, ...this.#awayFields() });
+    this.#dialAt = Date.now();
     let opened = false;
     const connection = this.#options.transport(url.url, {
       onOpen: () => {
         if (this.#connection !== connection) return;
         opened = true;
         this.#deflateUp = false;
-        this.#heardAt = Date.now();
+        this.#heard();
         // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
         // than a round trip after `ready`; refused, the hub closes before it reads them. A hub that took the auth on
         // the upgrade has sent `ready` and the snapshot already, and takes these two as answered.
@@ -261,11 +342,11 @@ export class HubClient implements HubSource {
       },
       onText: (text) => {
         if (this.#connection !== connection) return;
-        this.#heardAt = Date.now();
+        this.#heard();
         this.#onFrame(parseServerFrame(text));
       },
       onHeard: () => {
-        if (this.#connection === connection) this.#heardAt = Date.now();
+        if (this.#connection === connection) this.#heard();
       },
       onClose: (code, reason, error) => {
         if (this.#connection !== connection) return;
@@ -275,10 +356,21 @@ export class HubClient implements HubSource {
       },
     }, upgradeHeaders(this.#options.key));
     this.#connection = connection;
+    const deadline = this.#waking(this.#dialAt) ? Math.min(Math.max(WAKE_READY_TIMEOUT_MS, 3 * this.#handshakeMs), READY_TIMEOUT_MS) : READY_TIMEOUT_MS;
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;
-      this.#abandon(explainAbandon(this.#options.hub, "not-ready"));
-    }, READY_TIMEOUT_MS);
+      this.#abandon(explainAbandon(this.#options.hub, "not-ready", opened, this.#known()));
+    }, deadline);
+  }
+
+  /** Within WAKE_FAST_MS of a wake, no link ready since. */
+  #waking(now: number): boolean {
+    return this.#wakeAt !== null && now - this.#wakeAt < WAKE_FAST_MS;
+  }
+
+  /** Connected to this hub a moment ago: its address is right, and it speaks to this app. */
+  #known(): boolean {
+    return this.#everReady && this.#downSince !== null && Date.now() - this.#downSince < ADVICE_AFTER_MS;
   }
 
   /** Every PING_EVERY_MS a ping; when nothing at all is heard in the PONG_WAIT_MS after it, the link is given up. */
@@ -308,6 +400,11 @@ export class HubClient implements HubSource {
       case "ready": {
         this.#ready = true;
         this.#readyAt = Date.now();
+        this.#handshakeMs = this.#readyAt - this.#dialAt;
+        this.#everReady = true;
+        this.#downSince = null;
+        this.#wokeLink = this.#wakeAt !== null;
+        this.#wakeAt = null;
         this.#restarting = null;
         this.#updatingTo = null;
         this.#cursor = null;
@@ -421,20 +518,33 @@ export class HubClient implements HubSource {
       this.#restarting ??= Date.now();
       this.#updatingTo ??= updatingTo(reason);
     }
-    this.#lost(explainLoss(this.#options.hub, code, reason, error, opened));
+    this.#lost(explainLoss(this.#options.hub, code, reason, error, opened, this.#known()));
   }
 
   #lost({ reason, fix }: Loss): void {
     const wasReady = this.#dropLink();
     this.#clearTimers();
     if (this.#stopped) return;
-    if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
-    // Restarting, every RESTART_REDIAL_EVERY_MS until RESTART_REDIAL_MS, then the backoff from its start. Otherwise ±25 %,
-    // so many apps behind one hub that dropped them don't come back in lockstep.
-    const quick = this.#restarting !== null && Date.now() - this.#restarting < RESTART_REDIAL_MS;
-    if (quick) this.#attempt = 0;
-    const retryIn = quick ? RESTART_REDIAL_EVERY_MS : Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
-    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: Date.now() + retryIn, ...this.#restartingField() });
+    const now = Date.now();
+    const quick = this.#restarting !== null && now - this.#restarting < RESTART_REDIAL_MS;
+    if ((wasReady && now - this.#readyAt >= STABLE_MS) || quick) {
+      this.#attempt = 0;
+      this.#fastDials = 0;
+    }
+    // Just after a wake, again at once, WAKE_REDIAL_EVERY_MS after the last attempt began at the soonest, the backoff
+    // left at its start for after. Restarting, every RESTART_REDIAL_EVERY_MS until RESTART_REDIAL_MS, then the backoff
+    // from its start. Otherwise ±25 %, so many apps behind one hub that dropped them don't come back in lockstep.
+    const waking = this.#waking(now);
+    if (waking) {
+      this.#attempt++;
+      this.#fastDials++;
+    }
+    const retryIn = waking
+      ? Math.max(0, WAKE_REDIAL_EVERY_MS - (now - this.#dialAt))
+      : quick
+        ? RESTART_REDIAL_EVERY_MS
+        : Math.round(backoff(this.#attempt++ - this.#fastDials) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: now + retryIn, ...this.#awayFields() });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
       this.#connect();
@@ -445,6 +555,7 @@ export class HubClient implements HubSource {
   #dropLink(): boolean {
     const wasReady = this.#ready;
     this.#ready = false;
+    if (wasReady) this.#downSince = Date.now();
     if (this.#cursor !== null) this.#resumeFrom = this.#cursor;
     this.#cursor = null;
     this.#firstSnapshot = false;
@@ -481,7 +592,9 @@ export class HubClient implements HubSource {
     if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
     if (this.#heartbeat !== null) clearInterval(this.#heartbeat);
     if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
+    if (this.#probeTimer !== null) clearTimeout(this.#probeTimer);
     this.#pongTimer = null;
+    this.#probeTimer = null;
     this.#retryTimer = null;
     this.#resumeTimer = null;
     this.#readyTimer = null;
@@ -507,10 +620,12 @@ export class HubClient implements HubSource {
     this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
   }
 
-  #restartingField(): { restarting?: number; updatingTo?: string } {
+  /** Why the link is away, for the screens to hold what they show: a restart, or a wake from a link that had been live. */
+  #awayFields(): { restarting?: number; updatingTo?: string; waking?: number } {
     return {
       ...(this.#restarting === null ? {} : { restarting: this.#restarting }),
       ...(this.#updatingTo === null ? {} : { updatingTo: this.#updatingTo }),
+      ...(this.#wakeAt === null || !this.#everReady ? {} : { waking: this.#wakeAt }),
     };
   }
 

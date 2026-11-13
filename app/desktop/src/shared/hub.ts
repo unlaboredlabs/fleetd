@@ -5,13 +5,21 @@ export type { BrowserFrame, HubEvent, LiveFrame };
 /** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
 export type Snapshot = FleetStatus;
 
+/**
+ * After a wake (HubState's `waking`), main redials fast for this long, and the screens hold what they showed without an
+ * offline word: a tailnet needs a moment to come back, and a reconnect then is about to succeed.
+ */
+export const WAKE_QUIET_MS = 10_000;
+
 /** The connection as the UI should present it. The key itself never leaves main. */
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }
   /**
    * `restarting`: when the hub closed the link to restart or stop (close 1001 or 1012), epoch ms; `updatingTo`: the
    * build it restarts into when the close said it updates ("updating to <version>"). Both stay until a link is ready
-   * again; absent for any other drop and at launch.
+   * again; absent for any other drop and at launch. `waking`: when the computer woke, its screen unlocked or the
+   * network came back and the link that had been live was dialled again, epoch ms, until a link is ready again: the
+   * screens keep what they show and say nothing for WAKE_QUIET_MS.
    */
   | {
       readonly phase: "connecting";
@@ -19,6 +27,7 @@ export type HubState =
       readonly attempt: number;
       readonly restarting?: number | undefined;
       readonly updatingTo?: string | undefined;
+      readonly waking?: number | undefined;
     }
   /**
    * `version`: the hub's fleetd version from its ready frame, absent from hubs before it; `features`: what newer the
@@ -34,6 +43,7 @@ export type HubState =
       readonly retryAt: number;
       readonly restarting?: number | undefined;
       readonly updatingTo?: string | undefined;
+      readonly waking?: number | undefined;
     }
   /** The hub refused the key (close 4401 or an auth error). Nothing retries until a new key is saved. */
   | { readonly phase: "refused"; readonly hub: string; readonly message: string };

@@ -139,6 +139,8 @@ describe("reaching the hub", () => {
     expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, fix: null, retryAt: null });
     expect(reaching({ phase: "retrying", hub, reason: last.reason, fix: last.fix, retryAt: 5 }, null)).toMatchObject({ reason: last.reason, fix: last.fix });
     expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ ...last, retryAt: null });
+    // A wake's fast redials (main/hub/client.ts) count up too: the banner keeps its reason through each.
+    expect(reaching({ phase: "connecting", hub, attempt: 12, waking: 1 }, last)).toEqual({ ...last, retryAt: null });
     expect(reaching({ phase: "connecting", hub: "http://other:4790", attempt: 3 }, last).reason).toBeNull();
   });
 });
