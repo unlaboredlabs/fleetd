@@ -94,6 +94,8 @@ const SYMBOLS = {
   moveUp: ["arrow.up", "arrow_upward"],
   moveDown: ["arrow.down", "arrow_downward"],
   noSection: ["folder.badge.minus", "folder_off"],
+  // A tagged chat's About…: which order a message is about.
+  tag: ["tag", "label"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

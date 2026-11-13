@@ -4,8 +4,9 @@
 // person's pinned chats and their sections sync with the hub on each snapshot (pins.ts, sections.ts). A project's or
 // agent's live screen is watched one at a time: its frames go to the live view's listener alone (onFrame), never
 // through the state, which would draw the whole app again with each.
-import { loadRun, mergeMessages, serves, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
+import { loadRun, mergeMessages, serves, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
 import type { Navigation } from "./screen";
+import type { LensSend } from "./chatTags";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
 import { memorySections, Sections, type Section, type SectionStore } from "./sections";
@@ -274,16 +275,27 @@ export class Session {
    * A new message, with the files already uploaded (upload.ts) and the bubble it replies to; queued under its own id
    * while there is no link, and sent when it comes back.
    */
-  send(key: Key, text: string, extra: { readonly attachments?: readonly AttachmentRef[]; readonly replyTo?: ChatReplyTo | undefined } = {}): void {
-    const row: ChatSend = {
+  send(key: Key, text: string, extra: { readonly attachments?: readonly AttachmentRef[]; readonly replyTo?: ChatReplyTo | undefined; readonly about?: string | undefined } = {}): void {
+    const row: LensSend = {
       clientRequestId: this.#newId(),
       text,
       attachments: extra.attachments ?? [],
       at: new Date(this.#now()).toISOString(),
       state: { t: "sending" },
       ...(extra.replyTo === undefined ? {} : { replyTo: extra.replyTo }),
+      ...(extra.about === undefined ? {} : { about: extra.about }),
     };
     void this.#send(key, row);
+  }
+
+  /**
+   * Moves a message to another of the project's open orders, or to none (`workstreamId` undefined): the bubble menu's
+   * About… in a tagged chat. The hub's copy replaces the message at once; its event says so to every other screen.
+   */
+  async retag(key: Key, messageId: string, workstreamId: string | undefined): Promise<Typed<"chat_about_set">> {
+    const r = await this.#client.call("chat_about_set", { projectRef: refOf(key), messageId, ...(workstreamId === undefined ? {} : { workstreamId }) });
+    if (r.ok) this.#dispatch({ t: "retagged", key, message: r.output.message });
+    return r;
   }
 
   readonly #files = new Map<string, Promise<Typed<"attachment_get">>>();
@@ -435,7 +447,7 @@ export class Session {
     return r.ok;
   }
 
-  async #send(key: Key, row: ChatSend): Promise<void> {
+  async #send(key: Key, row: LensSend): Promise<void> {
     this.#dispatch({ t: "send", key, row });
     const r = await this.#client.call("chat_send", {
       projectRef: refOf(key),
@@ -443,6 +455,7 @@ export class Session {
       clientRequestId: row.clientRequestId,
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
       ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
+      ...(row.about === undefined ? {} : { about: row.about }),
       ...deviceZone(),
     });
     this.#dispatch(
