@@ -51,6 +51,24 @@ Each project's lead talks to you in that project's chat. It is told to:
 - Start the work a reply asks for in the same turn, opening a new order for it when none is open. It never asks you
   to send it as an order.
 
+### The tagged chat, a trial {#tagged-chat}
+
+A project's **Tagged chat** switch (Settings › Projects › the project › Trial; off by default) has the hub tag each
+chat message with the order it is about and the person it is for, fold a closed order's messages into the line where
+it landed, and let a person move a message to another order (**About…** in its menu). Anyone on the hub who may use
+the project can turn it on or off; a tool client does it with `project_settings_set` and `chatTags: true`.
+
+While it is on, each message you write reaches the lead with what it is about: "Alice Chen writes in your chat about
+Apple Pay (W12)", or "…, not about an order". The lead is also told to:
+
+- Leave people's names off the start of its bubbles: the chat shows whom each is for.
+- Write a bubble per order when one message covers several, each starting with the order's id, `[W12]`. fleetd hides
+  the marker and tags the bubble.
+- Say each landing in its own bubble starting with its order's `[W12]`, not one batched line, so the order folds
+  into it once closed.
+- Know that a question rings only the person it is for: who asked for the order, else the person it is answering.
+- Take "Sam moved a message from Search speed to Price filter" in its next wake as that person's correction.
+
 ### Your time and time zone {#your-time}
 
 Each message you write reaches the lead with when you wrote it, on your clock: "The human writes in your chat (Tue 3
