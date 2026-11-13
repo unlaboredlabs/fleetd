@@ -250,13 +250,15 @@ the app, or pass `--force`.
 For a machine that joined with `fleetd pair --worker`, only the key is revoked:
 
 ```text
-laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.
+laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; its node stops when it next reaches the hub.
 revoked laptop's node key; the hub refuses that node from now on.
 erased laptop's 2 projects: their chats, memory, skills, files, orders and tasks.
 the hub forgot laptop's sessions, checkouts and settings (214 rows); the factory metrics stay as history.
 ```
 
-Stop its node on that machine yourself:
+Its node stops as that machine when it next reaches the hub: it marks itself removed in its `node.json`, and its
+service waits there for a new join (a new code from `fleetd pair --worker`), dialling nothing. To take its service off
+the machine too:
 
 <Tabs syncKey="os">
 <TabItem label="macOS">

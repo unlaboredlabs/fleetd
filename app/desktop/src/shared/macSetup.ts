@@ -88,7 +88,8 @@ export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; re
 /**
  * What main knows of this Mac's setup as the window opens, so a window closed partway opens on what happened: nothing
  * yet; a code the hub took for a join not run yet; a join running; a node joined as the agents' Mac (from node.json);
- * or a code spent with nothing joined (cancelled, its token expired, or the join failed), with what to do.
+ * or nothing joined after all (a code cancelled, its token expired, a join that failed, or this Mac removed from its
+ * hub), with what to do.
  */
 export type MacSetupStatus =
   | { readonly kind: "fresh" }

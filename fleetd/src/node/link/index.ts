@@ -18,6 +18,7 @@ import {
   HEARTBEAT_TIMEOUT_SECS,
   HUB_CAP,
   protocolBehind,
+  REMOVED,
   type HubFrame,
   type NodeFrame,
 } from "../wire.ts";
@@ -38,9 +39,13 @@ export const LINK_MAX_FRAME_BYTES = 64 << 20;
 /** The largest frame of any other kind. */
 export const LINK_MAX_OTHER_FRAME_BYTES = 16 << 20;
 
-/** The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch). */
+/** The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch). `removed`: the hub
+ * removed this machine, so the node is no longer enrolled with it. */
 export class LinkFatal extends Error {
-  constructor(readonly reason: string) {
+  constructor(
+    readonly reason: string,
+    readonly removed = false,
+  ) {
     super(`hub refused this node: ${reason}`);
   }
 }
@@ -453,7 +458,7 @@ function runLinkOnce(
       // After the frames that came before it.
       reads = reads.then(() => {
         if (code === CLOSE.UNAUTHORIZED || code === CLOSE.PROTOCOL_MISMATCH)
-          return finish({ kind: "fatal", fatal: new LinkFatal(reason || `closed with ${code}`) });
+          return finish({ kind: "fatal", fatal: new LinkFatal(reason || `closed with ${code}`, code === CLOSE.UNAUTHORIZED && reason.includes(REMOVED)) });
         const why = `hub closed the link (${code} ${reason})`.trim();
         finish(code === CLOSE.RESTART ? { kind: "restarting", why } : { kind: "lost", why });
       });

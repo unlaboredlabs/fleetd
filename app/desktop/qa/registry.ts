@@ -2787,6 +2787,24 @@ export const screens: readonly Screen[] = [
       await page.getByText("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer").waitFor({ timeout: 5_000 });
     },
   },
+  // A node that never reports its checks (555555): once it's had its time, Restart, and Start over with a new code. The
+  // page's clock runs on from the join, then jumps past the wait.
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "no-checks",
+    open: async (page) => {
+      await page.clock.install();
+      await page.reload();
+      await page.getByRole("textbox").first().fill("555555");
+      await page.getByRole("heading", { name: "Starting the node" }).waitFor({ timeout: 20_000 });
+      await page.clock.fastForward(46_000);
+      await page.getByRole("button", { name: "Start over with a new code" }).waitFor({ timeout: 10_000 });
+    },
+  },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
     id: "onboarding",

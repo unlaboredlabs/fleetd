@@ -183,7 +183,8 @@ ends with a Test that turns green check by check. Each failure says what to do. 
 admin's Terminal; its checks say so when it's missing. A Mac without Xcode yet still finishes setup: only its iOS
 simulators wait for it, and its [Xcode check](#no-xcode) stays amber with an **Open the App Store** button. Close the window partway and open it again from the
 **fleetd** menu: it opens on where setup stands (still joining, the checks of a Mac joined already, or a code spent
-with nothing joined and what to do next).
+with nothing joined and what to do next). A node that hasn't reported its checks 45 seconds after it joined gets
+**Restart the node** and **Start over with a new code**: a new code joins the Mac again in its place.
 
 Versions never stop it. The Mac gets the hub's own build and channel. On Edge, once a newer build is out, the Mac gets
 that one, and the last screen says your hub is behind: **Update the hub** is right there when this app is signed in to
@@ -401,6 +402,19 @@ enrolled: the `mac_one_node` check fails until you remove it with `fleetd machin
 the account it ran in, `launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node` (which deletes its
 worktrees, unpushed work included). The fleetd app can stay: it's a client, not a node. A project that lived on the
 Mac runs no agents there any more: add it on another machine, whose agents then use the Mac.
+
+## Removed from the hub {#removed}
+
+**Remove** in Settings › Hub › Machines (or `fleetd machine remove <name>` on the hub) revokes the Mac's node key, and
+the hub keeps that key as removed. The node hears it at its next heartbeat, or as it links again when the Mac was off:
+it writes `"enrolled": false, "removed": true` in its `node.json` and stops as that machine. Its LaunchAgent starts it
+again, and it waits there for a new join, dialling nothing. **Set up this Mac for agents** then opens on a new code,
+saying the hub removed this Mac; joining with one (the same hub or another) replaces the old node and goes on to the
+permissions and the Test as on a new Mac. To take fleetd off the Mac instead, run `launchctl bootout
+gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node` in its account.
+
+A hub that never knew the node's key (one [moved](/docs/moving-a-hub) to a new machine, which leaves the machines' keys
+behind) only says the node isn't enrolled, and the node keeps trying until it joins again.
 
 ## What stays shared {#shared}
 
