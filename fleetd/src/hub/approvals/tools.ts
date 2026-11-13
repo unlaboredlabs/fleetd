@@ -6,6 +6,7 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
+import { requestFor } from "../chat/whom.ts";
 import { type ApprovalCaller, approvals } from "./index.ts";
 
 export function register(tools: Registry): void {
@@ -32,7 +33,13 @@ export function register(tools: Registry): void {
       states: input.state ? [input.state] : undefined,
       limit,
     });
-    const requests: HumanRequest[] = listed.filter((r) => allows(caller, "read", r.projectRef.machineId));
+    // An open one says whom it waits on, so each app marks only its own person's.
+    const requests: HumanRequest[] = listed
+      .filter((r) => allows(caller, "read", r.projectRef.machineId))
+      .map((r) => {
+        const person = r.state === "open" ? requestFor(hub, r) : undefined;
+        return person ? { ...r, for: person } : r;
+      });
     return { requests };
   });
 }

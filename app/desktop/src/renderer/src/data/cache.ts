@@ -30,6 +30,8 @@ export interface HubCache {
   readonly sends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
   /** What the sidebar's marks count (DataState.openRequests); absent in a cache written before it was kept. */
   readonly openRequests?: readonly OpenRequest[];
+  /** Who you are on the hub (DataState.me), so held marks stay yours offline; absent in an older cache. */
+  readonly me?: string;
 }
 
 /** How many chats, and how much of each, the cache keeps. */
@@ -83,6 +85,7 @@ export const toCache = (s: DataState, hub: string, nowMs: number, focus: Project
     chats,
     sends,
     ...(s.openRequests === undefined ? {} : { openRequests: s.openRequests }),
+    ...(s.me === undefined ? {} : { me: s.me }),
   };
 };
 
@@ -142,6 +145,7 @@ export const restoreCache = (s: DataState, cache: HubCache): DataState => {
     chats: { ...chats, ...s.chats },
     chatSends: { ...chatSends, ...s.chatSends },
     openRequests: s.openRequests ?? (Array.isArray(cache.openRequests) ? cache.openRequests : undefined),
+    me: s.me ?? (typeof cache.me === "string" ? cache.me : undefined),
   };
 };
 
@@ -190,7 +194,7 @@ export const keepCache = (store: DataStore, io: CacheIo, focus: () => ProjectKey
     }
     // Only what the cache holds: streamed text, live frames and the board change far more often and aren't in it.
     const changed =
-      s.projects !== prev.projects || s.chatStates !== prev.chatStates || s.openRequests !== prev.openRequests || messagesChanged(s.chats, prev.chats);
+      s.projects !== prev.projects || s.chatStates !== prev.chatStates || s.openRequests !== prev.openRequests || s.me !== prev.me || messagesChanged(s.chats, prev.chats);
     if (changed && timer === undefined) timer = setTimeout(write, WRITE_EVERY_MS);
   });
   // Going away while current: the cache says it was current until now.

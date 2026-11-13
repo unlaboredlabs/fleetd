@@ -8,7 +8,9 @@ import type { Database } from "bun:sqlite";
 import type {
   ChatMessage,
   HubEvent,
+  HumanRequest,
   PersonId,
+  PersonRef,
   ProjectRef,
   PushDevice,
   PushPlatform,
@@ -20,6 +22,7 @@ import { openRequests } from "../approvals/index.ts";
 import { Requests } from "../approvals/store.ts";
 import { base32 } from "../auth/nodes.ts";
 import { chat } from "../chat/index.ts";
+import { orderPerson, requestFor } from "../chat/whom.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { ownerOn } from "../people/store.ts";
@@ -30,6 +33,7 @@ import {
   DEFAULT_RELAY,
   isLine,
   type Notice,
+  type NoticeShape,
   noticeOf,
   noticeShape,
   type Outcome,
@@ -175,19 +179,44 @@ export const seal = (publicKey: Uint8Array, plain: Uint8Array) => B64(sealBox(pu
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 /**
- * The app icon's badge for `person`: each open request and each chat waiting on them with none open, of the projects
- * whose notifications are theirs.
+ * The app icon's badge for `person`: each open request for them, and each chat waiting on them with none of theirs
+ * open. A chat waiting on no one in particular counts for its project's `recipients`.
  */
 export function badge(hub: Hub, person: PersonId): number {
   const open = openRequests(hub, 1000);
   let count = 0;
   for (const project of store(hub).projectsShown()) {
     const r = { machineId: project.machineId, projectId: project.projectId };
-    if (!recipients(hub.db.conn, r).includes(person)) continue;
-    const requests = open.filter((q) => sameRef(q.projectRef, r)).length;
-    count += requests > 0 ? requests : chat(hub).state(r, false).needsYou ? 1 : 0;
+    const requests = open.filter((q) => sameRef(q.projectRef, r) && requestFor(hub, q)?.personId === person).length;
+    if (requests > 0) {
+      count += requests;
+      continue;
+    }
+    const state = chat(hub).state(r, false);
+    if (!state.needsYou) continue;
+    const waits = state.needsYouFor ?? recipients(hub.db.conn, r);
+    if (waits.includes(person)) count += 1;
   }
   return count;
+}
+
+/** `person` while still on the hub, else who an event about `project` is for (`recipients`). */
+function forOrRecipients(c: Database, person: PersonRef | undefined, project: ProjectRef | undefined): PersonId[] {
+  if (person && c.query("SELECT 1 FROM people WHERE person_id = ? AND removed_ms IS NULL").get(person.personId)) return [person.personId];
+  return recipients(c, project);
+}
+
+/**
+ * Who a notification is for (threads-design): a lead message's `for`; a card's person (`requestFor`); a landing's or
+ * stop's order's starter, else the owner; anything else, or one whose person left, the project's `recipients`.
+ */
+function peopleFor(hub: Hub, event: HubEvent, shape: NoticeShape, message: ChatMessage | undefined, request: HumanRequest | undefined): PersonId[] {
+  const c = hub.db.conn;
+  if (shape.kind === "message") return forOrRecipients(c, message?.for, shape.project);
+  if (shape.kind === "approval") return forOrRecipients(c, request ? requestFor(hub, request) : undefined, shape.project);
+  const order = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
+  if (shape.kind === "order" && typeof order === "string") return forOrRecipients(c, orderPerson(hub, order), shape.project);
+  return recipients(c, shape.project);
 }
 
 /** A lead's final message the event was too big to carry, read from the chat. */
@@ -215,10 +244,11 @@ export function notice(hub: Hub, event: HubEvent): Notice | undefined {
     message = shape.message ?? (shape.seq === undefined ? undefined : messageAt(hub, shape.project, shape.seq));
   }
   const [tz, quietHours] = quietPolicy((k) => decisions(hub).globalValue(k));
+  const request = shape.kind === "approval" ? new Requests(hub.db).get(shape.requestId) : undefined;
   return noticeOf(event, shape, {
     message,
-    request: shape.kind === "approval" ? new Requests(hub.db).get(shape.requestId) : undefined,
-    people: recipients(hub.db.conn, project),
+    request,
+    people: peopleFor(hub, event, shape, message, request),
     title: project ? store(hub).projectGet(project)?.title : undefined,
     quietNow: quietUntil(hub.clock.now(), tz, quietHours) !== undefined,
     hubUrl: hub.url(),
@@ -226,8 +256,8 @@ export function notice(hub: Hub, event: HubEvent): Notice | undefined {
 }
 
 /**
- * Who an event about `project` (undefined: about no project) is for: a project's, the person who last wrote in its
- * chat, else the hub's owner; about no project, the hub's owners and admins.
+ * Who an event about `project` (undefined: about no project) is for when it names no person of its own: a project's,
+ * the person who last wrote in its chat, else the hub's owner; about no project, the hub's owners and admins.
  */
 export function recipients(c: Database, project: ProjectRef | undefined): PersonId[] {
   if (!project) {

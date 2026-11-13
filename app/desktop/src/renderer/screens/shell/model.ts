@@ -40,6 +40,8 @@ export interface RequestIn {
   readonly projectRef: ProjectKey;
   readonly kind: "secret" | "approval";
   readonly state: string;
+  /** The person it waits on (requests_list's `for`); absent: anyone. */
+  readonly for?: { readonly personId: string } | undefined;
 }
 
 /** What the rows' marks read besides the project rows. */
@@ -72,7 +74,9 @@ const plural = (n: number, one: string, many: string): string => `${String(n)} $
 
 /** The most pressing reason first: a secret or an approval blocks a run now; a reply, then a block outside the work. */
 const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined => {
-  const open = marks.requests?.filter((r) => r.state === "open" && projectId(r.projectRef) === key);
+  // A teammate's card shows in the chat, but marks only their sidebar.
+  const mine = (r: RequestIn) => r.for === undefined || marks.me === undefined || r.for.personId === marks.me;
+  const open = marks.requests?.filter((r) => r.state === "open" && projectId(r.projectRef) === key && mine(r));
   const secrets = open?.filter((r) => r.kind === "secret").length ?? 0;
   const approvals = open?.filter((r) => r.kind === "approval").length ?? 0;
   if (secrets > 0) return { word: "secret", count: secrets, label: `The lead needs ${plural(secrets, "secret", "secrets")} from you` };

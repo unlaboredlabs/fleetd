@@ -3,7 +3,7 @@
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -34,12 +34,22 @@ export interface Lists {
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
-const openFor = (key: Key, requests: readonly HumanRequest[] | undefined, kind: HumanRequest["kind"]): number =>
-  requests?.filter((r) => r.state === "open" && r.kind === kind && keyOf(r.projectRef) === key).length ?? 0;
+/**
+ * Whether a request waits on you (`me`, hub_info's): it says no one in particular (`for`), or you, or who you are isn't
+ * known yet. A teammate's shows in the chat, but marks only their phone.
+ */
+export const mine = (r: HumanRequest, me: string | undefined): boolean => r.for === undefined || me === undefined || r.for.personId === me;
 
-const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] | undefined): string | undefined => {
-  const secrets = openFor(key, requests, "secret");
-  const approvals = openFor(key, requests, "approval");
+/** Whether a chat's lead waits on you: it needs someone, and you are among those it is for (`needsYouFor`), or no one in particular. */
+export const waitsOnMe = (chat: ProjectChatState | undefined, me: string | undefined): boolean =>
+  chat?.needsYou === true && (chat.needsYouFor === undefined || me === undefined || chat.needsYouFor.includes(me));
+
+const openFor = (key: Key, requests: readonly HumanRequest[] | undefined, kind: HumanRequest["kind"], me: string | undefined): number =>
+  requests?.filter((r) => r.state === "open" && r.kind === kind && keyOf(r.projectRef) === key && mine(r, me)).length ?? 0;
+
+const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] | undefined, me: string | undefined): string | undefined => {
+  const secrets = openFor(key, requests, "secret", me);
+  const approvals = openFor(key, requests, "approval", me);
   if (approvals > 0) return `${plural(approvals, "approval", "approvals")} waiting`;
   if (secrets > 0) return `${plural(secrets, "secret", "secrets")} to enter on the desktop`;
   return needsYou ? "Waiting for your reply" : undefined;
@@ -108,7 +118,7 @@ const previewFor = (s: Partial<Pick<State, "chats" | "sends" | "latest">>, key: 
 const byRecent = (a: Row, b: Row): number => b.at.localeCompare(a.at) || a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key);
 
 /** Undefined until the projects loaded: not "no projects". The chats read so far give the rows' previews. */
-export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest">>): Lists | undefined => {
+export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest" | "me">>): Lists | undefined => {
   if (s.projects === undefined) return undefined;
   const rows = Object.entries(s.projects)
     .map(([key, project]): Row => {
@@ -117,9 +127,9 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
         key,
         project,
         archived: isArchived(project),
-        want: wantOf(key, chat?.needsYou === true, s.requests),
+        want: wantOf(key, waitsOnMe(chat, s.me), s.requests, s.me),
         working: chat?.leadWorking === true,
-        approvals: openFor(key, s.requests, "approval"),
+        approvals: openFor(key, s.requests, "approval", s.me),
         preview: previewFor(s, key),
         empty: (s.chats?.[key]?.messages.length ?? s.latest?.[key]?.length) === 0,
         at: chat?.lastMessageAt ?? project.lastActivityAt,

@@ -232,6 +232,19 @@ describe("one state word per project", () => {
     expect(projectStateWord(false, false, "working")).toBe("working");
     expect(projectStateWord(false, true, "idle")).toBe("working");
   });
+
+  it("marks what waits on a teammate only on their app, once hub_info says who you are", () => {
+    let s = withBoard(run([live(), snapshot(1)]), []);
+    const state = { projectRef: project, needsYou: true, needsYouFor: ["p_dana"], leadWorking: false, lastSeq: 9 };
+    s = run([{ t: "event", event: { seq: 2, at: "2026-10-19T10:00:00.000Z", type: "chat.waiting", summary: "", data: state } }], s);
+    // Who you are isn't known yet: as before, it waits on you.
+    expect(selectNeedsYou("devbox/storefront")(s)).toBe(true);
+    const me = (personId: string) =>
+      ingest(s, { tool: "hub_info", input: {}, output: { me: { personId, name: "x", role: "member", createdAt: "2026-10-19T09:00:00.000Z" } } as never });
+    expect(selectNeedsYou("devbox/storefront")(me("p_sam"))).toBe(false);
+    expect(selectProjectRow("devbox/storefront")(me("p_sam"))?.needsYou).toBe(false);
+    expect(selectNeedsYou("devbox/storefront")(me("p_dana"))).toBe(true);
+  });
 });
 
 describe("the project list", () => {

@@ -140,6 +140,22 @@ describe("sidebar projects", () => {
     expect(homeProject(projects, null)?.key).toEqual("devbox/api");
     expect(homeProject([], "devbox/api")).toBeNull();
   });
+
+  it("marks a teammate's card only on their sidebar", () => {
+    const requests = [
+      { projectRef: { machineId: "devbox", projectId: "api" }, kind: "approval" as const, state: "open", for: { personId: "p_dana" } },
+      { projectRef: { machineId: "devbox", projectId: "web" }, kind: "secret" as const, state: "open" },
+    ];
+    const want = (me: string) => (toSidebar([row("api"), row("web")], { requests, me }) ?? []).map((p) => [p.project.title, p.want?.word]);
+    expect(want("p_sam")).toEqual([
+      ["api", undefined],
+      ["web", "secret"],
+    ]);
+    expect(want("p_dana")).toEqual([
+      ["api", "approve"],
+      ["web", "secret"],
+    ]);
+  });
 });
 
 describe("hubName", () => {

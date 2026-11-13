@@ -35,6 +35,7 @@ import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { DraftReply } from "../drafts";
 import { changeDraft } from "../draftsStore";
 import { openingChat, refOf, type Key } from "../store";
+import { waitsOnMe } from "../lists";
 import { parseInline } from "../markdown";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
@@ -182,7 +183,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const linkWord = useHubWord().word;
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
-  const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
+  const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : waitsOnMe(chatState, state.me) ? "Waiting for you" : quiet;
   // Its bot: done a moment after the lead's turn ends, as the desktop's chat title.
   const bot = useBot(chatKey, useJustDone(working));
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);

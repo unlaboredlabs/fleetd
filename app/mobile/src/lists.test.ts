@@ -81,6 +81,20 @@ describe("lists", () => {
     expect(out?.needsYou.map((r) => [r.project.title, r.approvals, r.preview])).toEqual([["storefront", 2, undefined]]);
     expect(out?.chats.map((r) => [r.preview, r.working, r.at])).toEqual([["Booked the table.", true, "2026-10-28T12:00:00Z"]]);
   });
+
+  it("marks what waits on a teammate only on their phone: their approval, their question", () => {
+    const projects = { "m1/shop": project("shop", "Shop"), "m1/blog": project("blog", "Blog") };
+    const chatStates = { "m1/blog": { projectRef: { machineId: "m1", projectId: "blog" }, needsYou: true, needsYouFor: ["p_dana"], leadWorking: false, lastSeq: 3 } };
+    const requests = [{ ...asked("Q1"), for: { personId: "p_dana", name: "Dana" } }];
+    const want = (me: string | undefined) => lists({ projects, chatStates, requests, me })?.needsYou.map((r) => [r.project.title, r.want, r.approvals]);
+    expect(want("p_sam")).toEqual([]);
+    expect(want("p_dana")).toEqual([
+      ["Blog", "Waiting for your reply", 0],
+      ["Shop", "1 approval waiting", 1],
+    ]);
+    // Who you are isn't known yet: everything shows, as before.
+    expect(want(undefined)?.length).toBe(2);
+  });
 });
 
 describe("a long chat's preview", () => {

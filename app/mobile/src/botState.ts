@@ -3,12 +3,13 @@
 // planning alone: thinking), it has a new reply for you (done: a list row's unread, or a turn that just ended), else
 // idle. Pure, so it is unit-tested.
 import { botStateOf, doingWords, type BotState } from "./desktop";
+import { mine, waitsOnMe } from "./lists";
 import { keyOf, type Key, type State } from "./store";
 import { leadActivityOf } from "./turn";
 
-export const botOf = (s: Pick<State, "chatStates" | "requests" | "leadActivity" | "running">, key: Key, done = false): BotState => {
+export const botOf = (s: Pick<State, "chatStates" | "requests" | "leadActivity" | "running"> & Partial<Pick<State, "me">>, key: Key, done = false): BotState => {
   const chat = s.chatStates[key];
-  const needs = chat?.needsYou === true || (s.requests?.some((r) => r.state === "open" && keyOf(r.projectRef) === key) ?? false);
+  const needs = waitsOnMe(chat, s.me) || (s.requests?.some((r) => r.state === "open" && keyOf(r.projectRef) === key && mine(r, s.me)) ?? false);
   const activity = leadActivityOf(s, key);
   const doing = chat?.leadWorking !== true ? undefined : activity === undefined ? "working" : doingWords(activity);
   return botStateOf({ needs, blocked: false, running: s.running[key] ?? 0, doing, done });

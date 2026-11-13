@@ -8,7 +8,7 @@
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
-import type { AgentLane, LiveLane, Machine, MachineLive, PrRef, ProjectSummary } from "../../../shared/contracts";
+import type { AgentLane, LiveLane, Machine, MachineLive, PrRef, ProjectChatState, ProjectSummary } from "../../../shared/contracts";
 import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
@@ -206,6 +206,13 @@ export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle"
  * "blocked" (a cause outside the work) and a "working" the agents count can't see (PRs in review, CI or the
  * train), and its "waiting on you" never counts on its own.
  */
+/**
+ * Whether a chat waits on you (`me`, hub_info's): it needs someone, and you are among those it is for
+ * (ProjectChatState.needsYouFor), or it says no one in particular, or who you are isn't known yet.
+ */
+export const waitsOnMe = (chat: ProjectChatState | undefined, me: string | undefined): boolean =>
+  chat?.needsYou === true && (chat.needsYouFor === undefined || me === undefined || chat.needsYouFor.includes(me));
+
 export const projectStateWord = (needsYou: boolean, working: boolean, rowState?: string): ProjectStateWord => {
   if (needsYou) return "waiting_on_you";
   if (rowState === "blocked") return "blocked";
@@ -244,8 +251,8 @@ let lastRows: readonly ProjectRow[] | undefined;
 let lastLive: ReadonlyMap<ProjectKey, ProjectRow> = new Map();
 
 export const selectProjectList = memo(
-  (s) => [s.fresh, s.projects, s.chatStates, selectWorkByProject(s), s.live.lanes],
-  (fresh, projects, chats, work, liveLanes): readonly ProjectRow[] | undefined => {
+  (s) => [s.fresh, s.projects, s.chatStates, selectWorkByProject(s), s.live.lanes, s.me],
+  (fresh, projects, chats, work, liveLanes, me): readonly ProjectRow[] | undefined => {
     if (!fresh || work === undefined) return (lastRows = undefined);
     const before = new Map((lastRows ?? []).map((r) => [r.key, r]));
     const rows = Object.entries(projects)
@@ -253,7 +260,7 @@ export const selectProjectList = memo(
         const running = (work[key] ?? noWork).lanes.filter((l) => l.role !== "lead" && active(l.status)).length;
         const chat = chats[key];
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
-        const needsYou = chat?.needsYou === true;
+        const needsYou = waitsOnMe(chat, me);
         const working = running > 0 || leadWorking;
         const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chat?.lastSeq };
         const prior = before.get(key);
@@ -277,14 +284,14 @@ export const selectProjectList = memo(
  * is held.
  */
 export const selectShownProjects = memo(
-  (s) => [selectProjectList(s), s.fresh, s.projects, s.chatStates],
-  (live, fresh, projects, chats): readonly ProjectRow[] | undefined => {
+  (s) => [selectProjectList(s), s.fresh, s.projects, s.chatStates, s.me],
+  (live, fresh, projects, chats, me): readonly ProjectRow[] | undefined => {
     if (live !== undefined) return live;
     const held = Object.entries(projects);
     if (held.length === 0) return undefined;
     return held
       .map(([key, project]): ProjectRow => {
-        const needsYou = chats[key]?.needsYou === true;
+        const needsYou = waitsOnMe(chats[key], me);
         const before = fresh ? lastLive.get(key) : undefined;
         const running = before?.running ?? 0;
         const working = before?.working ?? false;
@@ -312,7 +319,7 @@ export const selectNeedsYouTotal = memo(
 );
 
 export const selectNeedsYou = perKey((key) => (s: DataState): boolean | undefined =>
-  s.fresh && key in s.projects ? s.chatStates[key]?.needsYou === true : undefined,
+  s.fresh && key in s.projects ? waitsOnMe(s.chatStates[key], s.me) : undefined,
 );
 
 /** Whether the project's lead is at work now: typing then steers it rather than starting a turn. */

@@ -166,6 +166,10 @@
           "$ref": "#/$defs/Timestamp",
           "description": "An approved command: when its result came back (ran or failed), so a client can say how long it took."
         },
+        "for": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "An open request, as requests_list serves it: the person it waits on (its order's starter, else the person the lead\nwas answering, else the hub's owner). Absent from an older hub."
+        },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
           "description": "approval of a gated run: exactly the bytes the node runs."
