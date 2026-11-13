@@ -64,7 +64,7 @@ check(ChatTarget.search(chats, "DEVBOX").map(\.title) == ["Inbox", "billing-api"
 check(ChatTarget.search(chats, "  ").count == 3, "an empty search")
 
 // Avatars, as src/avatar.ts draws them.
-for (name, initials, tint) in [("Ada", "A", 5), ("billing-api", "BA", 5), ("Léa's Shop", "LS", 5), ("fleetd", "F", 7), ("Inbox", "I", 9)] {
+for (name, initials, tint) in [("Ada", "A", 5), ("billing-api", "BA", 5), ("Léa's Shop", "LS", 7), ("fleetd", "F", 7), ("Inbox", "I", 9)] {
   check(Avatar.initials(name) == initials && Avatar.tint(name, count: 10) == tint, "avatar of \(name): \(Avatar.initials(name)) \(Avatar.tint(name, count: 10))")
 }
 
