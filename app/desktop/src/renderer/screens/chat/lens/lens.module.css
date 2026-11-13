@@ -15,9 +15,9 @@
 .mine {
   align-self: flex-end;
 }
-/* Inside a message: the room a run has above it (.messageHead's 14px, less the message's 3px gap). */
+/* Inside a message: the room a run has above it (.messageHead's 14px and .message's 3px, less the 3px between bubbles). */
 .inner {
-  padding-top: 11px;
+  padding-top: 14px;
 }
 .who {
   flex: none;

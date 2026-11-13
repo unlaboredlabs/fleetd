@@ -230,6 +230,8 @@ export function chatRows(i: RowsInput): Row[] {
   const nameOf = (p: { personId: string; name: string }) => nameNow(p, i.names);
   // Under an opened fold's line, a closed order's messages from whenever: no day or time over them, and no New.
   let inFold = false;
+  /** Whom the lead's last run was to, in a lens. */
+  let lensFor: string | undefined;
   steps.forEach((step) => {
     if (step.kind === "fold") {
       const at = stampOf(step.at, i.nowMs, i.timeZone);
@@ -286,7 +288,11 @@ export function chatRows(i: RowsInput): Row[] {
         authorLabel(prev, i.me, i.names) !== label ||
         Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS ||
         (tags?.named === true && tagKey(prev) !== tagKey(item));
-      const tag = run && tags !== undefined ? tagOf(item, tags, i.me, nameOf) : undefined;
+      const named = run && tags !== undefined ? tagOf(item, tags, i.me, nameOf) : undefined;
+      // In a lens, whom the lead writes to shows once, and again only when that changes: its runs are mostly to one person.
+      const whom = item.author === "lead" ? (item.message?.for?.personId ?? "") : undefined;
+      const tag = tags?.lens !== undefined && whom !== undefined && run && whom === lensFor ? (named?.order === undefined ? undefined : { order: named.order }) : named;
+      if (whom !== undefined && run) lensFor = whom;
       const parts = step.parts;
       out.push({
         kind: "message",

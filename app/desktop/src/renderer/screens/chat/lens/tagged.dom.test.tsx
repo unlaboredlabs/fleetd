@@ -109,7 +109,7 @@ const mount = async (on: boolean) => {
                 : tool === "orders_board"
                   ? { orders: [card(PAY), card(SEARCH)], trains: [], at: AT }
                   : tool === "chat_send"
-                    ? { message: msg(8, { author: "human", person: SAM, text: String((input as { text: string }).text) }) }
+                    ? { message: msg(8, { author: "human", person: SAM, text: (input as { text: string }).text }) }
                     : tool === "chat_about_set"
                       ? { message: { ...MESSAGES[5], about: PAY, updatedAt: "2026-10-19T10:05:00.000Z" } }
                       : {};

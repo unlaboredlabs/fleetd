@@ -2042,6 +2042,7 @@ export const screens: readonly Screen[] = [
       await fold.click();
       await expect(fold).toHaveAttribute("aria-expanded", "true");
       await expect(page.getByText("Receipts should show the store’s VAT number.")).toBeVisible();
+      await page.mouse.move(0, 0);
     },
   },
   // ...a lens on one order, from its tag: only its messages (of the one about two orders, only its bubble), its
@@ -2057,6 +2058,8 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /about Search speed/u);
       await expect(page.getByText("On it: two writers")).toBeHidden();
       await expect(page.getByText("Search is slow because")).toBeVisible();
+      // Off the bubbles, so no hover shows in the shot.
+      await page.mouse.move(0, 0);
     },
   },
   // ...and closed: the whole chat again, the lens's capsule gone.

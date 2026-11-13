@@ -371,8 +371,9 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
         data-author={i.author}
         data-mine={mine ? "" : undefined}
       >
-        {r.tag !== undefined ? (
-          <TagLine by={r.head && !mine && i.author !== "lead" ? (r.by ?? authorLabel(i)) : undefined} tag={r.tag} mine={mine} from={i.id} />
+        {r.tag !== undefined || (tags !== undefined && r.head && !mine && i.author !== "lead") ? (
+          // A tagged chat's names sit as its tags do, level with the bubbles' words.
+          <TagLine by={r.head && !mine && i.author !== "lead" ? (r.by ?? authorLabel(i)) : undefined} tag={r.tag ?? {}} mine={mine} from={i.id} />
         ) : r.head && !mine && i.author !== "lead" ? (
           <div className={s.head} data-head>
             <Text size="xs" tone="quiet">

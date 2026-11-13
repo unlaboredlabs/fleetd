@@ -100,10 +100,11 @@ describe("the tagged chat", () => {
     });
     items.push(split);
     const r = rows(items, { named: true, lens: "W3" });
-    expect(shown(r)).toEqual(["m6", "m7 [to Dana]", "m10 [to Dana]"]);
+    // Whom the lead writes to, once while it stays the same.
+    expect(shown(r)).toEqual(["m6", "m7 [to Dana]", "m10"]);
     expect(r.find((x) => x.kind === "message" && x.item.id === "m10")).toMatchObject({ parts: ["1"] });
     // No fold in a lens: a closed order's messages all show.
-    expect(shown(rows(busy(), { named: true, lens: "W1" }))).toEqual(["m1", "m2 [to Dana]", "card:m3", "m8 [to Dana]"]);
+    expect(shown(rows(busy(), { named: true, lens: "W1" }))).toEqual(["m1", "m2 [to Dana]", "card:m3", "m8"]);
   });
 
   it("takes a send from a lens into the lens before the hub has it", () => {
@@ -115,6 +116,6 @@ describe("the tagged chat", () => {
   it("starts a new run when the order changes, even from the same author a minute on", () => {
     seq = 0;
     const r = rows([msg("lead", { about: PAY }), msg("lead", { about: PAY }), msg("lead", { about: SEARCH })], { named: true });
-    expect(r.filter((x) => x.kind === "message").map((x) => x.kind === "message" && x.run)).toEqual([true, false, true]);
+    expect(r.flatMap((x) => (x.kind === "message" ? [x.run] : []))).toEqual([true, false, true]);
   });
 });
