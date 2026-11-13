@@ -28,11 +28,213 @@ set -eu
 
 REPO="unlaboredlabs/fleetd"
 
-say() { printf '%s\n' "fleetd: $*"; }
-warn() { printf '%s\n' "fleetd: $*" >&2; }
+# Output. On a terminal (stdout and stderr both one, and no NO_COLOR, TERM=dumb or CI) each step shows as it runs, with
+# a spinner, or a progress bar while it downloads, and turns into a ✓ line when done, as `fleetd init`'s checklist
+# does; green is the one accent, details are dim. Anywhere else each step is one plain line, with no escape codes.
+ui_init() {
+  rich=0
+  if [ -t 1 ] && [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ -z "${CI:-}" ]; then
+    case "${TERM:-dumb}" in dumb) ;; *) rich=1 ;; esac
+  fi
+  # live: a step's line is on the screen without its newline. job: the background command it shows. why: what it said
+  # on stderr when it failed.
+  live=0
+  job=""
+  why=""
+  tick=0.1
+  barw=24
+  [ "$rich" = 1 ] || return 0
+  sleep 0.1 2>/dev/null || tick=1
+  cols="$(stty size </dev/tty 2>/dev/null | cut -d' ' -f2)"
+  case "$cols" in "" | *[!0-9]*) cols=80 ;; esac
+  # The bar's line is 56 columns beside it; a narrower terminal gets a shorter bar, or none, rather than a wrapped line.
+  barw=$((cols - 58))
+  [ "$barw" -le 24 ] || barw=24
+  [ "$barw" -ge 8 ] || barw=0
+}
+
+paint() { if [ "$rich" = 1 ]; then printf '\033[%sm%s\033[0m' "$1" "$2"; else printf '%s' "$2"; fi; }
+dim() { paint 2 "$1"; }
+
+# unlive: clear a step's line still being drawn, so what comes next starts on an empty line.
+unlive() {
+  [ "$live" = 1 ] || return 0
+  printf '\r\033[2K'
+  live=0
+}
+
+# row <mark> <title> <detail>: a step's line. The titles line up, as a column.
+row() { printf '%s  %s%s' "$1" "$(paint 1 "$(printf '%-10s' "$2")")" "$(dim "$3")"; }
+
+# draw <mark> <title> <detail>: a step while it runs, redrawn in place.
+draw() {
+  printf '\r\033[2K%s' "$(row "$@")"
+  live=1
+}
+
+# done_step <title> <detail>: a step that's done.
+done_step() {
+  unlive
+  printf '%s\n' "$(row "$(paint 32 ✓)" "$1" "$2")"
+}
+
+# say: a note. warn and die: on stderr, die's first line the error, then why (what a step that just failed said), then
+# what to do about it.
+say() {
+  unlive
+  if [ "$rich" = 1 ]; then printf '%s  %s\n' "$(dim │)" "$*"; else printf '%s\n' "fleetd: $*"; fi
+}
+warn() {
+  unlive
+  if [ "$rich" = 1 ]; then
+    printf '%s\n' "$*" | {
+      IFS= read -r first
+      printf '%s  %s\n' "$(paint 33 !)" "$first"
+      while IFS= read -r l; do printf '   %s\n' "$(dim "$l")"; done
+    } >&2
+  else
+    printf '%s\n' "fleetd: $*" >&2
+  fi
+}
 die() {
-  warn "$*"
+  unlive
+  if [ "$rich" = 1 ]; then
+    printf '%s\n' "$*" | {
+      IFS= read -r first
+      printf '%s  %s\n' "$(paint 31 ✗)" "$(paint 1 "$first")"
+      [ -z "$why" ] || printf '%s\n' "$why" | while IFS= read -r l; do printf '   %s\n' "$(dim "$l")"; done
+      while IFS= read -r l; do printf '   %s\n' "$l"; done
+    } >&2
+  else
+    printf '%s\n' "fleetd: $*" >&2
+  fi
   exit 1
+}
+
+# header <title>: the frame's top, as `fleetd init` opens its own.
+header() {
+  [ "$rich" = 1 ] || return 0
+  printf '%s  \033[7m %s \033[0m\n%s\n' "$(dim ┌)" "$1" "$(dim │)"
+}
+
+# footer <line> [<line>]: the frame's bottom, under the steps.
+footer() {
+  if [ "$rich" = 1 ]; then
+    printf '%s\n%s  %s\n' "$(dim │)" "$(dim └)" "$1"
+    [ -z "${2:-}" ] || printf '   %s\n' "$2"
+    printf '\n'
+  else
+    printf '\n%s\n' "$1"
+    [ -z "${2:-}" ] || printf '%s\n' "$2"
+  fi
+}
+
+# tilde <path>: <path> as ~/… under $HOME.
+# shellcheck disable=SC2088 # the tilde is printed for the user to read
+tilde() {
+  case "$1" in
+    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# size <bytes>: 113.0 MB, 512 KB.
+size() {
+  if [ "$1" -ge 1000000 ]; then
+    printf '%d.%d MB' $(($1 / 1000000)) $(($1 / 100000 % 10))
+  elif [ "$1" -ge 1000 ]; then
+    printf '%d KB' $(($1 / 1000))
+  else
+    printf '%d B' "$1"
+  fi
+}
+
+# run_live <draw> <command>...: <command> in the background, with <draw> <spinner frame> on its line ten times a
+# second until it ends; its status. Its stderr, which would draw across that line, is kept in $why when it fails, for
+# die to show under the error. The cursor hides meanwhile (and comes back on exit, see main's trap).
+run_live() {
+  ui_draw="$1"
+  shift
+  printf '\033[?25l'
+  "$@" 2>"$tmp/live.err" &
+  job=$!
+  n=0
+  while kill -0 "$job" 2>/dev/null; do
+    case $((n % 4)) in 0) f=◒ ;; 1) f=◐ ;; 2) f=◓ ;; *) f=◑ ;; esac
+    n=$((n + 1))
+    "$ui_draw" "$(paint 32 "$f")"
+    sleep "$tick"
+  done
+  rc=0
+  wait "$job" || rc=$?
+  job=""
+  unlive
+  printf '\033[?25h'
+  why=""
+  [ "$rc" = 0 ] || why="$(cat "$tmp/live.err")"
+  return "$rc"
+}
+
+# spin <title> <detail> <command>...: <command> as a step with a spinner on a terminal; elsewhere just <command>.
+spin() {
+  if [ "$rich" = 0 ]; then
+    shift 2
+    "$@"
+    return
+  fi
+  spin_title="$1"
+  spin_detail="$2"
+  shift 2
+  run_live spin_draw "$@"
+}
+spin_draw() { draw "$1" "$spin_title" "$spin_detail"; }
+
+# download <url> <dest> <what>: curl <url> to <dest>; on a terminal with a progress bar of the bytes on disk against
+# the last Content-Length curl got (a redirect's comes first), or only the bytes when there is none.
+download() {
+  dl_dest="$2"
+  dl_what="$3"
+  dl_total=0
+  dl_got=0
+  if [ "$rich" = 0 ]; then
+    curl -fsSL --retry 3 -o "$2" "$1" || return
+  else
+    rm -f "$tmp/headers" "$2"
+    run_live download_draw curl -fsSL --retry 3 -D "$tmp/headers" -o "$2" "$1" || return
+  fi
+  [ ! -f "$2" ] || dl_got=$(($(wc -c <"$2")))
+  done_step Download "$dl_what · $(size "$dl_got")"
+}
+download_draw() {
+  [ ! -f "$dl_dest" ] || dl_got=$(($(wc -c <"$dl_dest")))
+  # Until the body flows the headers can still change: a redirect's Content-Length is the redirect's own.
+  if [ "$dl_got" = 0 ] || [ "$dl_total" = 0 ]; then
+    dl_total="$(awk 'tolower($1) == "content-length:" { n = $2 + 0 } END { print n + 0 }' "$tmp/headers" 2>/dev/null || echo 0)"
+  fi
+  if [ "$dl_total" -gt 0 ] && [ "$dl_got" -le "$dl_total" ]; then
+    pct=$((dl_got * 100 / dl_total))
+    bar=""
+    if [ "$barw" -gt 0 ]; then
+      fill=$((dl_got * barw / dl_total))
+      on=""
+      off=""
+      i=0
+      while [ "$i" -lt "$fill" ]; do
+        on="$on━"
+        i=$((i + 1))
+      done
+      while [ "$i" -lt "$barw" ]; do
+        off="$off━"
+        i=$((i + 1))
+      done
+      bar="$(paint 32 "$on")$(paint 90 "$off")  "
+    fi
+    printf '\r\033[2K%s  %s%s  %s%s%s' "$1" "$(paint 1 "$(printf '%-10s' Download)")" "$(dim "$dl_what")" "$bar" \
+      "$(printf '%3d%%' "$pct")" "$(dim "  $(size "$dl_got") / $(size "$dl_total")")"
+    live=1
+  else
+    draw "$1" Download "$dl_what · $(size "$dl_got")"
+  fi
 }
 
 usage() {
@@ -60,7 +262,8 @@ sha256() {
   elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | cut -d' ' -f1
   else
-    die "need sha256sum or shasum to verify downloads"
+    die "need sha256sum or shasum to verify downloads
+Install coreutils with this machine's package manager, then run the installer again."
   fi
 }
 
@@ -88,36 +291,49 @@ lists() {
   curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
 }
 
-# fetch <asset> <dest>: download one release asset and check it. Edge republishes its names in place, and a reader can
-# get one build's checksums and another's bytes under them, so a release.json that pins <asset> names its build's own
-# copy, which never changes: its checksum and bytes are always one build's. A release without pins is checked against
-# SHA256SUMS: one going up replaces its assets first and SHA256SUMS last, so a mismatch reads both again, twice, 10 s
-# apart, before it refuses.
+# fetch <asset> <dest> <what>: download one release asset and check it. Edge republishes its names in place, and a
+# reader can get one build's checksums and another's bytes under them, so a release.json that pins <asset> names its
+# build's own copy, which never changes: its checksum and bytes are always one build's. A release without pins is
+# checked against SHA256SUMS: one going up replaces its assets first and SHA256SUMS last, so a mismatch reads both
+# again, twice, 10 s apart, before it refuses.
 fetch() {
   expected="$(pin "$1")"
   if [ -n "$expected" ]; then
     file="$(pinned "$1" "$expected")"
-    curl -fsSL --retry 3 -o "$2" "$base/$file" || die "download failed: $base/$file"
+    download "$base/$file" "$2" "$3" || die "download failed: $base/$file
+Check this machine's connection and run the installer again."
     actual="$(sha256 "$2")"
-    [ "$actual" = "$expected" ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
+    [ "$actual" = "$expected" ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing
+Run the installer again; if it keeps failing, report it at https://github.com/$REPO/issues."
+    checked "$actual"
     return 0
   fi
-  [ -f "$tmp/SHA256SUMS" ] || curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+  [ -f "$tmp/SHA256SUMS" ] || curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
+Check this machine's connection and run the installer again."
   tries=0
   while :; do
     expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
     [ -n "$expected" ] || return 1
-    curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
+    download "$base/$1" "$2" "$3" || die "download failed: $base/$1
+Check this machine's connection and run the installer again."
     actual="$(sha256 "$2")"
-    [ "$actual" != "$expected" ] || return 0
+    if [ "$actual" = "$expected" ]; then
+      checked "$actual"
+      return 0
+    fi
     rm -f "$2"
     tries=$((tries + 1))
-    [ "$tries" -le 2 ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
+    [ "$tries" -le 2 ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing
+Run the installer again; if it keeps failing, report it at https://github.com/$REPO/issues."
     warn "checksum mismatch for $1, perhaps a new release going up; checking again in 10 s"
     sleep 10
-    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
+Check this machine's connection and run the installer again."
   done
 }
+
+# checked <sha256>: the download matched the release's checksum.
+checked() { done_step Checksum "sha256 $(printf '%s' "$1" | cut -c1-12)… matches the release"; }
 
 # swap <new> <dest>: put a new file or directory in place by renaming, never by writing into the old one. A running
 # binary keeps its old inode; macOS kills a process whose signed binary is overwritten in place.
@@ -135,7 +351,7 @@ swap() {
 install_cli() {
   asset="fleetd-bun-$os-$arch"
   mkdir -p "$bin_dir"
-  if ! fetch "$asset" "$bin_dir/.fleetd.new"; then
+  if ! fetch "$asset" "$bin_dir/.fleetd.new" "the CLI"; then
     rm -f "$bin_dir/.fleetd.new"
     warn "no CLI for $os-$arch on the $channel channel yet; skipping it"
     return 0
@@ -145,28 +361,33 @@ install_cli() {
   mkdir -p "$HOME/.local/bin"
   link="$HOME/.local/bin/fleetd"
   if [ -e "$link" ] && [ ! -L "$link" ]; then
+    done_step Install "$(tilde "$bin_dir/fleetd")"
     warn "$link exists and is not ours; leaving it (fleetd is at $bin_dir/fleetd)"
   else
     ln -sfn "$bin_dir/fleetd" "$link"
+    done_step Install "$(tilde "$bin_dir/fleetd")"
+    case ":$PATH:" in
+      *":$HOME/.local/bin:"*) done_step PATH "$(tilde "$link")" ;;
+      *) done_step PATH "$(tilde "$link") · $(tilde "$HOME/.local/bin") isn't on your PATH yet" ;;
+    esac
   fi
-  say "installed the CLI: $bin_dir/fleetd"
   installed=1
 }
 
 install_app_macos() {
-  if ! fetch fleetd-desktop-macos-universal.zip "$tmp/app.zip"; then
+  if ! fetch fleetd-desktop-macos-universal.zip "$tmp/app.zip" "the app"; then
     warn "no desktop app on the $channel channel yet; skipping it"
     return 0
   fi
   mkdir -p "$tmp/app" "$HOME/Applications"
-  ditto -x -k "$tmp/app.zip" "$tmp/app"
+  spin Unpack "the app" ditto -x -k "$tmp/app.zip" "$tmp/app"
   [ -d "$tmp/app/fleetd.app" ] || die "the app archive has no fleetd.app"
   rm -rf "$HOME/Applications/.fleetd.app.new"
   mv "$tmp/app/fleetd.app" "$HOME/Applications/.fleetd.app.new"
   gpui=0
   [ -e "$HOME/Applications/fleetd.app/Contents/MacOS/fleetd-app" ] && gpui=1
   swap "$HOME/Applications/.fleetd.app.new" "$HOME/Applications/fleetd.app"
-  say "installed the app: ~/Applications/fleetd.app"
+  done_step Install "$(tilde "$HOME/Applications/fleetd.app")"
   [ "$gpui" = 0 ] || replaced_gpui
   installed=1
 }
@@ -190,7 +411,7 @@ fuse2() {
 }
 
 install_app_linux() {
-  if ! fetch fleetd-desktop-linux-x86_64.AppImage "$tmp/fleetd-desktop.AppImage"; then
+  if ! fetch fleetd-desktop-linux-x86_64.AppImage "$tmp/fleetd-desktop.AppImage" "the app"; then
     warn "no desktop app for linux-$arch on the $channel channel yet; skipping it"
     return 0
   fi
@@ -208,9 +429,10 @@ install_app_linux() {
   fi
   swap "$app_dir.new" "$app_dir"
   launch="$app_dir/fleetd-desktop.AppImage"
+  nofuse=0
   if ! fuse2; then
     launch="env APPIMAGE_EXTRACT_AND_RUN=1 $launch"
-    warn "this machine has no FUSE 2 (libfuse.so.2), which the app's AppImage mounts itself with, so its menu entry unpacks it at each start instead. For a quicker start, install it (sudo apt install libfuse2t64 on Ubuntu 24.04 and later, libfuse2 before), then run this installer again. From a terminal: APPIMAGE_EXTRACT_AND_RUN=1 $app_dir/fleetd-desktop.AppImage"
+    nofuse=1
   fi
   # Named after the app's Wayland app_id / WM_CLASS (desktopName in app/desktop/package.json), so its windows get
   # this entry's name and icon. %u hands a fleetd:// pairing link to the app.
@@ -234,7 +456,12 @@ DESKTOP
   if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$apps_dir" 2>/dev/null || true
   fi
-  say "installed the app: $app_dir/fleetd-desktop.AppImage (menu entry: $apps_dir/fleetd-desktop.desktop)"
+  done_step Install "$(tilde "$app_dir/fleetd-desktop.AppImage")"
+  done_step Menu "$(tilde "$apps_dir/fleetd-desktop.desktop")"
+  [ "$nofuse" = 0 ] || warn "no FUSE 2 here (libfuse.so.2), so the app unpacks itself at each start
+For a quicker start, install it: sudo apt install libfuse2t64 (libfuse2 before
+Ubuntu 24.04), then run this installer again.
+From a terminal: APPIMAGE_EXTRACT_AND_RUN=1 $(tilde "$app_dir/fleetd-desktop.AppImage")"
   [ "$gpui" = 0 ] || replaced_gpui
   installed=1
 }
@@ -250,7 +477,8 @@ uninstall() {
   # fleetd.desktop is the GPUI app's menu entry.
   rm -rf "$HOME/Applications/fleetd.app" "$app_dir" "$apps_dir/fleetd.desktop" "$apps_dir/fleetd-desktop.desktop"
   rmdir "$app_dir_parent" 2>/dev/null || true
-  say "removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
+  done_step Remove "the fleetd CLI and app"
+  footer "Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
 }
 
 # agents_mac_user: --mac joins the agents' Mac from the account logged in at its screen (an admin's is fine), where
@@ -259,9 +487,9 @@ agents_mac_user() {
   [ "$(uname -s)" = Darwin ] || die "--mac is for the agents' Mac: run the join line on a Mac, logged in at its screen"
   # launchd runs the node in the user's gui domain, which only a login at the Mac's screen makes (su and ssh don't).
   if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
-    die "$(id -un) isn't logged in on this Mac's screen, and launchd runs fleetd's node only inside that login (su
-and ssh don't make one). Log in as $(id -un) at the Mac (Apple menu › Lock Screen, then pick $(id -un); or over
-Screen Sharing), open Terminal there, and paste the join line again; nothing was changed."
+    die "$(id -un) isn't logged in on this Mac's screen, and launchd runs fleetd's node only inside that login
+su and ssh don't make one. Log in as $(id -un) at the Mac (Apple menu › Lock Screen, then pick $(id -un); or
+over Screen Sharing), open Terminal there, and paste the join line again; nothing was changed."
   fi
   want_app=no
 }
@@ -282,6 +510,7 @@ join_hub() {
 }
 
 main() {
+  ui_init
   want_app=auto
   do_uninstall=0
   run_init=1
@@ -339,6 +568,7 @@ main() {
   apps_dir="$data_home/applications"
 
   if [ "$do_uninstall" = 1 ]; then
+    header "fleetd uninstall"
     uninstall
     return 0
   fi
@@ -351,7 +581,7 @@ main() {
   case "$(uname -m)" in
     x86_64 | amd64) arch=x64 ;;
     arm64 | aarch64) arch=arm64 ;;
-    *) die "unsupported CPU: $(uname -m)" ;;
+    *) die "unsupported CPU: $(uname -m) (fleetd runs on x86_64 and arm64)" ;;
   esac
   # An Intel shell under Rosetta on Apple silicon still gets the native build.
   if [ "$os" = darwin ] && [ "$arch" = x64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 1 ]; then
@@ -377,6 +607,7 @@ main() {
     *) die "FLEETD_CHANNEL must be edge or stable, not $channel" ;;
   esac
   base="${FLEETD_BASE_URL:-$default_base}"
+  header "fleetd install"
 
   if [ "$os" = darwin ] && [ "$want_app" != no ]; then
     macos="$(sw_vers -productVersion 2>/dev/null || true)"
@@ -387,12 +618,17 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
   curl -fsSL https://fleetd.sh | sh -s -- --no-app" ;;
     esac
   fi
-  command -v curl >/dev/null 2>&1 || die "need curl"
+  platform="$os $arch"
+  [ "$os" != darwin ] || platform="macOS $(sw_vers -productVersion 2>/dev/null || true) $arch"
+  done_step Platform "$platform"
+  command -v curl >/dev/null 2>&1 || die "need curl to download fleetd
+Install it with this machine's package manager (sudo apt install curl, say), then run the installer again."
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t fleetd)"
-  trap 'rm -rf "$tmp"' EXIT
+  # A download still running in the background goes with the script, and so does the hidden cursor.
+  trap 'rm -rf "$tmp"; [ -z "$job" ] || kill "$job" 2>/dev/null; unlive; [ "$rich" = 0 ] || printf "\033[?25h"' EXIT
   trap 'exit 1' INT TERM
   # release.json first: it names the channel's build and pins its assets (fetch). A release without one has SHA256SUMS.
-  if ! lists; then
+  if ! spin Release "looking for the $channel release" lists; then
     # Until the first edge build is out, the nightly release has the newest; from then on it is a copy of edge.
     if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
       base="https://github.com/$REPO/releases/download/nightly"
@@ -402,8 +638,14 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
       warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
       base="https://github.com/$REPO/releases/latest/download"
     fi
-    lists || die "could not download $base/release.json or $base/SHA256SUMS (is there a $channel release yet?)"
+    spin Release "looking for the $channel release" lists ||
+      die "could not download $base/release.json or $base/SHA256SUMS
+Check this machine's connection, and that the $channel channel has a release, then run the installer again."
   fi
+  version=""
+  [ ! -f "$tmp/release.json" ] ||
+    version="$(tr -d '\n' < "$tmp/release.json" | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  done_step Release "$channel${version:+ · $version}"
 
   # The edge release holds the hub's build until main moves on: then this machine gets the newer one, and says so.
   if [ "$channel" = edge ] && [ -n "$hub_version" ] && [ -f "$tmp/release.json" ]; then
@@ -428,19 +670,24 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
       install_app_linux
     fi
   fi
-  [ "$installed" = 1 ] || die "nothing to install from $base"
+  [ "$installed" = 1 ] || die "nothing to install from $base
+There is no fleetd build for $os-$arch on the $channel channel yet."
 
   if [ ! -x "$bin_dir/fleetd" ]; then
     [ -z "$join" ] || die "no fleetd CLI here to join $join with"
+    footer "Installed the fleetd app."
     return 0
   fi
+  summary="Installed fleetd${version:+ $version}"
   if [ -n "$join" ]; then
+    footer "$summary. Joining the hub at $join"
     join_hub
     return
   fi
   # `curl | sh` has the script on stdin, so the wizard reads the terminal itself. Without one (CI, a pipe), or with
   # --no-init, only the next command is printed. The binary is in place either way; Ctrl-C in the wizard leaves it.
   if [ "$run_init" = 1 ] && [ -t 2 ] && (: </dev/tty) 2>/dev/null; then
+    footer "$summary. Setting it up with fleetd init"
     status=0
     "$bin_dir/fleetd" init </dev/tty || status=$?
     return "$status"
@@ -450,7 +697,13 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
     *":$HOME/.local/bin:"*) next="fleetd init" ;;
     *) next="~/.local/bin/fleetd init" ;;
   esac
-  printf '\nNext, run:\n  %s\n' "$next"
+  if [ "$rich" = 1 ]; then
+    footer "$summary" "Next, run $(paint 1 "$next")"
+  else
+    footer "$summary in $(tilde "$bin_dir/fleetd")" "
+Next, run:
+  $next"
+  fi
 }
 
 main "$@"
