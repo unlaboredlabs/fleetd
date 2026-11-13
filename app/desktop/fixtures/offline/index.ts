@@ -61,16 +61,22 @@ const reread = (base: Fixture, name: string, note: string, history: (f: Fixture,
   return f.settleAt(BACK_MS + 1300);
 };
 
-/** `typical` (its lead at work), then the computer sleeps for the night and wakes `awayMs` before the fixture's now. */
+/**
+ * `typical` (its lead at work); the computer sleeps for the night and wakes `awayMs` before the fixture's now, once the
+ * chat is up (QA opens the route once the fixture settles): its reads had landed long before the sleep.
+ */
 const waking = (base: Fixture, name: string, note: string, awayMs: number): Fixture => {
   const f = Fixture.from(base, name, note);
   const hub = f.state.phase === "live" ? f.state.hub : "";
   const now = Date.parse(f.now);
   // The words main gives a hub it was just connected to that doesn't answer in time (src/main/hub/explain.ts).
   const loss = explainAbandon(hub, "not-ready", false, true);
-  f.later(300, "state", { phase: "retrying", hub, ...loss, retryAt: now + 500, waking: now - awayMs });
-  return f.settleAt(1200);
+  f.later(WOKE_MS, "state", { phase: "retrying", hub, ...loss, retryAt: now + 500, waking: now - awayMs });
+  return f.settleAt(500);
 };
+
+/** When the wake comes: after the chat has opened and read its history. */
+const WOKE_MS = 4000;
 
 export default defineGroup({
   fixtures: (base) => [

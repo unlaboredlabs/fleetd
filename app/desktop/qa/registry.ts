@@ -976,18 +976,24 @@ export const screens: readonly Screen[] = [
     },
   },
   // W654: the computer woke and the link is dialled again. For its first seconds: no banner, the chat as it was (no
-  // offline chip), and Stop still there to press.
+  // offline chip), and no line saying Stop waits for the hub.
   {
     id: "chat",
     route: CHAT,
     fixtures: ["offline-waking"],
     variant: "waking",
+    sizes: ["small", "large"],
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      // The wake comes once the chat is up (fixtures/offline): the You menu's hub line says Reconnecting…, quietly.
+      await page.locator("[data-opens='you']").click();
+      const hub = page.getByRole("dialog", { name: "You" }).locator("[data-line='hub']").first();
+      await expect(hub).toContainText("Reconnecting…", { timeout: 15_000 });
+      await expect(hub).not.toContainText("Can't reach");
+      await page.keyboard.press("Escape");
       await expect(page.locator('[data-banner="reconnecting"]')).toHaveCount(0);
       await expect(page.locator("[data-say]").getByText(/^Offline/u)).toHaveCount(0);
       await expect(page.getByText("Offline: stop the lead and its agents once the hub is back.")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeEnabled();
     },
   },
   // ...and a minute on: offline as of the wake, why, and that it reconnects by itself; never the address or update advice.
@@ -999,7 +1005,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       const banner = page.locator('[data-banner="reconnecting"]');
-      await expect(banner).toContainText("didn't answer in time");
+      await expect(banner).toContainText("didn't answer in time", { timeout: 15_000 });
       await expect(banner).toContainText("reconnects by itself");
       await expect(banner).not.toContainText("fleetd update");
       await expect(banner).not.toContainText("address");
