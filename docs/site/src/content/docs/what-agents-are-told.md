@@ -64,7 +64,8 @@ Apple Pay (W12)", or "…, not about an order". The lead is also told to:
 - Leave people's names off the start of its bubbles: the chat shows whom each is for.
 - Write a bubble per order when one message covers several, each starting with the order's id, `[W12]`. fleetd hides
   the marker and tags the bubble.
-- Say each landing in a bubble about its order, not one batched line, so the order folds into it once closed.
+- Say each landing in its own bubble starting with its order's `[W12]`, not one batched line, so the order folds
+  into it once closed.
 - Know that a question rings only the person it is for: who asked for the order, else the person it is answering.
 - Take "Sam moved a message from Search speed to Price filter" in its next wake as that person's correction.
 

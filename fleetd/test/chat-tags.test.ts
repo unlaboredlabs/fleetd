@@ -193,6 +193,29 @@ test("switch on: a closed order folds into its last message, and a later message
   done();
 });
 
+test("switch on: a wake that closes one order and works on another lands only a marked landing in the fold", () => {
+  const { hub, done } = rig(true);
+  touched(hub, PROJECT, "W3");
+  const found = lead(hub, "Found it: images are 2 MB.", "lead:lead-1:a");
+  // The landing wake: W3 closes while the lead keeps W4 moving, so the turn touched two orders.
+  touched(hub, PROJECT, "W3");
+  touched(hub, PROJECT, "W4");
+  close(hub, 3);
+  // Unmarked, the landing is about no order, and W3 folds into the bubble before it.
+  const bare = lead(hub, "Search speed is live.", "lead:lead-1:b");
+  expect(bare.about).toBeUndefined();
+  refold(hub, PROJECT, "W3");
+  expect(chat(hub).byId(found.messageId)?.fold?.workstreamId).toBe("W3");
+  expect(chat(hub).byId(bare.messageId)?.fold).toBeUndefined();
+  // Marked, as the lead's landing line says, it is about W3 and takes the fold.
+  const landed = lead(hub, "[W3] Search speed is live.", "lead:lead-1:c");
+  expect(landed.text).toBe("Search speed is live.");
+  expect(landed.about).toEqual({ workstreamId: "W3", title: "Search speed" });
+  expect(chat(hub).byId(found.messageId)?.fold).toBeUndefined();
+  expect(chat(hub).byId(landed.messageId)?.fold).toEqual({ workstreamId: "W3", title: "Search speed", state: "done", count: 2 });
+  done();
+});
+
 test("switch on: chat_about_set moves a message to another open order, refolds, and tells the lead with its next wake", async () => {
   const { hub, call, wakes, done } = rig(true);
   touched(hub, PROJECT, "W3");
@@ -229,7 +252,7 @@ test("switch on: the lead's prompt carries the design's lines, and a person's me
   expect(on.system).toContain("start each with the order's id in brackets, [W12]. fleetd hides it.");
   expect(on.system).toContain("is a person's correction: take it as theirs, and act on it if it changes the work.");
   // A landing closes its order's fold, so it is a bubble about that order, not the one batched line.
-  expect(on.system).toContain("Landings: a short bubble per order, starting with its [W12] when the wake lands more than one");
+  expect(on.system).toContain("Landings: a short bubble per order, always starting with its [W12], in place of the one batched line.");
   expect(on.system).toContain("the chat folds its messages into that bubble");
   expect(on.system).toContain("A question rings only the person it is for: who asked for the order your turn worked on, else the person you are answering.");
   // The lines sit under "When to speak", before "Plain words".
