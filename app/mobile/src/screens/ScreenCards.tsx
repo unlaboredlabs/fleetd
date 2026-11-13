@@ -40,7 +40,7 @@ function Card({ card, who, onOpen }: { card: ScreenCard; who: string; onOpen: ()
   const title = cardTitle(card, who);
   const line = card.reason ?? card.purpose;
   const button = asking ? "Open" : yours ? "Open" : "Watch";
-  const state = yours ? "You have control" : card.control === "handing_back" ? "Handing back" : asking ? "Waiting for you" : "Live";
+  const state = yours ? "You have control" : card.control === "handing_back" ? "Handed back" : asking ? "Waiting for you" : "Live";
   return (
     <Pressable
       accessibilityRole="button"

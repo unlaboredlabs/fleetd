@@ -511,7 +511,7 @@ export class Broker {
     session.stepAt("request_takeover", { reason }, true, undefined, 0);
     return {
       message:
-        "Asked: it shows under waiting on you. Carry on with what you can; while a person has control your browser commands answer so, and after they hand it back your next one sees the page as they left it.",
+        "Asked: it shows under waiting on you. Carry on with what you can, or end your turn: you are told the moment they hand it back, and your next browser command then sees the page as they left it.",
     };
   }
 

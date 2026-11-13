@@ -96,6 +96,8 @@ describe("a session's words", () => {
   it("says what the agent does while a person has the page, and why it waits when it asks", () => {
     expect(nowLine(session("y", "yours", 0))).toBe("Waits, and sees the page as you leave it");
     expect(nowLine(session("a", "asking", 0, { handoff: { reason: "a code", at: 0 } }))).toBe("Waiting for you to take over");
+    // Handed back is done on the hub's side: what's left is the agent's next step, and the line says so.
+    expect(nowLine(session("h", "handingBack", 0))).toBe("Handed back: the agent picks it up at its next step");
     expect(isLive(session("y", "yours", 0))).toBe(true);
     expect(isLive(session("e", "ended", 0))).toBe(false);
   });

@@ -3,6 +3,10 @@ import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { live } from "../src/hub/browser/live.ts";
 import { endOutlived, get, prune, tellNodes } from "../src/hub/browser/store.ts";
 import { Pace } from "../src/hub/browser/pace.ts";
+import { handedBackLine, tellHandedBack } from "../src/hub/browser/tools.ts";
+import { steerTasks } from "../src/hub/steer/index.ts";
+import { TaskRecords } from "../src/hub/tasks/records.ts";
+import type { Task } from "../src/shared/contracts.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
 import { addMachine, addProject, agent, as, caller, fakeSocket, testHub, tick } from "./screens_helpers.ts";
 
@@ -93,6 +97,47 @@ test("takeover goes to the node and changes only once it reports", async () => {
   expect(await t.tools.call(t.hub, caller("operate"), "browser_control", { sessionId: S1, control: "human" })).toMatchObject({
     error: { error: { code: "forbidden" } },
   });
+});
+
+test("handing back tells the agent at once, rather than leaving the screen to its next command", async () => {
+  setup();
+  // The agent asked for the person, then ended its turn: only the hand-back can bring it back.
+  const task = TaskRecords.create(t.hub.db.conn, {
+    taskId: "T0",
+    projectRef: { machineId: "devbox", projectId: "p1" },
+    workstreamId: "W1",
+    title: "sign in",
+    kind: "read",
+    prompt: "sign in",
+    state: "done",
+    attempt: 1,
+    createdAt: "2026-11-08T11:00:00.000Z",
+    endedAt: "2026-11-08T12:00:00.000Z",
+  } as Task).taskId;
+  const told: { taskId: string; text: string; by: string }[] = [];
+  steerTasks(t.hub).message = async (by, taskId, text) => {
+    told.push({ taskId, text, by: by.by });
+  };
+  const who = agent("devbox", "p1", task);
+  await t.calls.call(who, report("live"));
+  await t.calls.call(who, { op: "browser_takeover", sessionId: S1, reason: "the emailed code" });
+  const person = caller("operate", { kind: "human", name: "laptop" });
+  const take = t.tools.call(t.hub, person, "browser_control", { sessionId: S1, control: "human" });
+  await tick();
+  await t.calls.call(who, report("live", { control: "human" }));
+  await take;
+  expect(told).toEqual([]);
+  const back = t.tools.call(t.hub, person, "browser_control", { sessionId: S1, control: "agent" });
+  await tick();
+  await t.calls.call(who, report("live", { control: "handing_back" }));
+  expect(await back).toMatchObject({ output: { session: { control: "handing_back" } } });
+  await tick();
+  expect(told).toEqual([{ taskId: task, text: handedBackLine(S1), by: "human:laptop" }]);
+  // A failed task isn't started again for it.
+  const session = get(t.hub, S1)!;
+  TaskRecords.put(t.hub.db.conn, { task: { ...TaskRecords.get(t.hub.db.conn, task)!.task, state: "failed" } });
+  await tellHandedBack(t.hub, session, "human:laptop");
+  expect(told).toHaveLength(1);
 });
 
 test("one node frame reaches every watcher; a slow one skips to the newest, and the slowest's budget is told", async () => {

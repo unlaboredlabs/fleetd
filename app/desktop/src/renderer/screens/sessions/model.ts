@@ -8,9 +8,9 @@ import { fmtElapsed, parseMs } from "../live/format";
 
 /**
  * Where a session stands. `asking`: the agent asked a person to take over, and waits. `yours`: a person took over; the
- * agent waits and sees the page as they leave it. `handingBack`: until the agent's next step sees the page. `saving`:
- * ended, its recording on its way to the hub. `lost`: the node couldn't record or upload it. `expired`: retention
- * deleted its recording.
+ * agent waits and sees the page as they leave it. `handingBack`: handed back, and its agent told at once; until its
+ * next step picks the page up. `saving`: ended, its recording on its way to the hub. `lost`: the node couldn't record
+ * or upload it. `expired`: retention deleted its recording.
  */
 export type SessionState = "starting" | "running" | "asking" | "yours" | "handingBack" | "saving" | "ended" | "lost" | "expired";
 
@@ -178,7 +178,7 @@ export const STATE_WORD: Readonly<Record<SessionState, string>> = {
   running: "live",
   asking: "needs you",
   yours: "you’re in control",
-  handingBack: "handing back",
+  handingBack: "handed back",
   saving: "saving",
   ended: "ended",
   lost: "lost",
@@ -358,7 +358,7 @@ export const nowLine = (s: BrowserSession): string => {
     case "yours":
       return s.openedBy === undefined ? "Waits, and sees the page as you leave it" : "Drive it: your clicks and keys go to the screen";
     case "handingBack":
-      return "Looking at the page as you left it";
+      return "Handed back: the agent picks it up at its next step";
     case "saving":
       return "Saving the recording";
     case "lost":

@@ -491,7 +491,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               )}
             </GlassGroup>
           ) : control === "handing_back" ? (
-            <Action label={`Handing Back to ${who}…`} busy />
+            <Action label={`Handed Back to ${who}`} />
           ) : (
             <Action label="Take Over" icon="hand" prominent busy={asking === "human"} onPress={() => void setControl("human")} />
           )}

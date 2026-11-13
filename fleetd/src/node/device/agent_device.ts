@@ -27,7 +27,7 @@ const SKILL_SHA256 = "ad3b4ccbd2d43c3baae80a5b0d5aaad14becffb49fabccb6c93d61d44d
 
 /** What the wrapper says while a person has control. */
 export const PAUSED =
-  "A person has control of the device now. Wait for them to hand it back (carry on with other work meanwhile); your next agent-device command after that sees the screen as they left it.";
+  "A person has control of the device now. You are told the moment they hand it back (carry on with other work meanwhile, or end your turn); your next agent-device command after that sees the screen as they left it.";
 
 export const installDir = (home: string) => join(deviceDir(home), "agent-device");
 /** The directory put first on a session's PATH: it holds only the `agent-device` wrapper. */

@@ -23,7 +23,7 @@ const DOM_MAX_BYTES = 2 << 20;
 const CAPTURES_WAIT = 30_000;
 
 export const PAUSED =
-  "A person has control of the browser now. Wait for them to hand it back (carry on with other work meanwhile); your next command after that sees the page as they left it.";
+  "A person has control of the browser now. You are told the moment they hand it back (carry on with other work meanwhile, or end your turn); your next command after that sees the page as they left it.";
 
 /** Where a watched session's frames go, and the budget the hub last named for it. */
 export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined };
