@@ -128,6 +128,19 @@ button.press:hover::before {
 .count {
   font-variant-numeric: tabular-nums;
 }
+/* A band squeezed past any use (the chat beside a wide panel in a small window): the glyphs go first, then the lead's
+   step, so what is left, how many agents and the red dot, stays inside the glass. */
+@container (width < 160px) {
+  .glyphs {
+    display: none;
+  }
+}
+@container (width < 240px) {
+  .step,
+  .words {
+    display: none;
+  }
+}
 .red {
   flex: none;
   width: 7px;

@@ -128,7 +128,9 @@ function FitName({ name }: { name: string }) {
     const press = island?.firstElementChild;
     const ro = new ResizeObserver(() => {
       setFits(Math.max(MIN_CHARS, Math.floor((el.clientWidth - pad) / charWidth(code))));
-      if (island && press instanceof HTMLElement) island.style.minWidth = `${String(Math.ceil(press.offsetWidth - el.offsetWidth + least))}px`;
+      if (!island || !(press instanceof HTMLElement)) return;
+      // Hidden in a band too narrow for the step (island.module.css), the name sets no floor.
+      island.style.minWidth = el.offsetWidth === 0 ? "" : `${String(Math.ceil(press.offsetWidth - el.offsetWidth + least))}px`;
     });
     ro.observe(el);
     return () => {
