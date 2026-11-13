@@ -248,6 +248,35 @@ const withTurns = (f: Fixture): Fixture => {
   return turn;
 };
 
+/**
+ * live-band-quiet, live-band-crowded, live-band-long (W651, the island over the composer): the lead writing with two
+ * agents at work (the island says only the agents); the lead reading with twenty agents while main is red with a long
+ * reason; and the same reading a file whose name is too long for any band, cut in the middle.
+ */
+const LONG_RED = "`staple`, `rust (darwin)` are red on main, fix in progress for `staple` in acme/storefront#231, `rust (darwin)` re-running once";
+const forBand = (f: Fixture, name: string, warning: string | undefined, activity: JsonObject): Fixture => {
+  const band = Fixture.from(f, name, `${f.note} For the island over the composer.`);
+  const lanes = band.live[0]?.["lanes"];
+  band.live = [
+    {
+      ...band.live[0],
+      lanes: (Array.isArray(lanes) ? lanes : []).map((l) => {
+        const lane = l as JsonObject;
+        return typeof lane["laneId"] === "string" && lane["laneId"].startsWith("lead:") ? { ...lane, activity: { ...(lane["activity"] as JsonObject), activity } } : lane;
+      }),
+    },
+  ];
+  // The hub can stop the lead, so Stop shows beside Send, as it does on a real hub.
+  band.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
+  if (warning !== undefined) {
+    for (const a of band.answers("status_get")) {
+      const rows = (a.output as JsonObject)["rows"];
+      if (Array.isArray(rows) && rows[0] !== undefined) rows[0] = { ...(rows[0] as JsonObject), warning };
+    }
+  }
+  return band;
+};
+
 export default defineGroup({
   fixtures: (base) => [
     fromBase(base("typical"), 0),
@@ -258,5 +287,11 @@ export default defineGroup({
     withLead(fromBase(base("typical"), 20)),
     withQuestion(fromBase(base("typical"), 1)),
     withTurns(fromBase(base("typical"), 3)),
+    forBand(withLead(fromBase(base("typical"), 2)), "live-band-quiet", undefined, { kind: "writing" }),
+    forBand(withLead(fromBase(base("typical"), 20)), "live-band-crowded", LONG_RED, { kind: "read", path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }),
+    forBand(withLead(fromBase(base("typical"), 20)), "live-band-long", LONG_RED, {
+      kind: "read",
+      path: "src/checkout/summary/rounding/half-cent-edge-cases-for-every-currency-and-locale-the-storefront-supports-today-and-tomorrow.ts",
+    }),
   ],
 });

@@ -1,0 +1,212 @@
+/* The island over the composer (Island.tsx): the composer's glass, as tall as the band's capsules
+   (--island-capsule-h), round-ended, centred in the band and as wide as what it says; its words the band's size.
+   Neutral colors: the agents' glyphs in the text's color, amber only for one waiting on you, red only for a red main. */
+
+/* Not positioned itself: its card is placed against the band, as wide as the composer. It never gives way below what
+   it says; with a file name, only as far as the name can be cut (FitName sets that floor), so beside what needs you
+   that capsule's words truncate first. */
+.island {
+  display: flex;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.island[data-fit],
+.island[data-fit] .press,
+.island[data-fit] .step {
+  min-width: 0;
+}
+/* The glass on a layer of its own under the words, the lift on the capsule: a key press in the composer under it never
+   blurs it again (chat/view.module.css .say). */
+.press::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim);
+  pointer-events: none;
+}
+button.press:hover::before {
+  background: color-mix(in srgb, var(--glass) 100%, var(--glass-hover));
+}
+/* With nothing to open, only words: no pointer. */
+.press[data-still] {
+  cursor: default;
+}
+.island[data-open] .press::before {
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge-open),
+    inset 0 1px 0 var(--glass-rim);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .press::before {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
+}
+
+.press {
+  all: unset;
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  height: var(--island-capsule-h);
+  padding: 0 var(--space-4);
+  border-radius: calc(var(--island-capsule-h) / 2);
+  box-shadow: var(--glass-lift);
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* `all: unset` drops the app's focus outline too (base.css :focus-visible). */
+.press:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The lead's step: its words stay whole; only a file name gives way, cut in the middle (FitName). */
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+}
+.words {
+  flex: none;
+}
+.name {
+  display: inline-grid;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* The whole name, unseen, holds its width; the cut copy lies over it. */
+.name > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.name > :first-child {
+  visibility: hidden;
+}
+/* The copy shown hugs its own words, so its chip ends where they do. */
+.name > :last-child {
+  justify-self: start;
+}
+
+/* The agents: a glyph each, then the count. */
+.fleet {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.glyph {
+  display: inline-grid;
+  place-items: center;
+}
+.glyph > [data-state] {
+  color: var(--text);
+}
+.needs > [data-state] {
+  color: var(--warning);
+}
+.count {
+  font-variant-numeric: tabular-nums;
+}
+/* A band squeezed past any use (the chat beside a wide panel in a small window): the glyphs go first, then the lead's
+   step, so what is left, how many agents and the red dot, stays inside the glass. */
+@container (width < 160px) {
+  .glyphs {
+    display: none;
+  }
+}
+@container (width < 240px) {
+  .step,
+  .words {
+    display: none;
+  }
+}
+.red {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--danger-fill);
+}
+
+/* The card a click opens, over the conversation and as wide as the composer (placed against the band): the same
+   glass, a little denser to read on. */
+.card {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: min(420px, 50vh);
+  padding: var(--space-1) 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--glass) 70%, var(--raised));
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+  overflow: hidden;
+  font-size: var(--text-xs);
+  animation: cardIn var(--dur-base) var(--ease-out);
+}
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.reason {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  color: var(--text);
+}
+.reason > .red {
+  transform: translateY(-1px);
+}
+.dms {
+  align-self: flex-start;
+  margin: var(--space-1) var(--space-4) var(--space-2);
+  color: var(--quiet);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.dms:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.dms:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}
