@@ -278,6 +278,20 @@ export async function join_(args: JoinArgs): Promise<number> {
   return runNodeProcess(home, config, args.token, !!args.enrollOnly);
 }
 
+/** The hub removed this machine: node.json says so and isn't enrolled any more, so nothing dials the hub as that
+ * machine again until it joins with a new code. False when it can't be written (the node exits as refused). */
+export function markRemoved(home: string): boolean {
+  try {
+    const config = readConfig(home);
+    if (config === undefined) return false;
+    writeConfig(home, { ...config, enrolled: false, removed: true });
+    return true;
+  } catch (error) {
+    console.warn(`cannot mark the node removed in its config: ${String(error)}`);
+    return false;
+  }
+}
+
 /** Keeps the link up for a node that has joined. */
 export async function run(args: { home?: string }): Promise<number> {
   const home = args.home ?? defaultNodeHome();
@@ -304,7 +318,9 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
       try {
         const config = readConfig(home);
         if (config?.enrolled) return config;
-        error = `this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first`;
+        error = config?.removed
+          ? `${config.machineId} was removed from ${config.hub}: it joins again with a new code (fleetd init --join, or Set up this Mac in the app)`
+          : `this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first`;
       } catch {
         error = `node config in ${home} is unreadable`;
       }
@@ -563,6 +579,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     (refused) => {
       if (refused) {
         process.stderr.write(`fleetd: ${refused.message}\n`);
+        // Removed: the node stops as that machine. Its service starts it again, to wait for a new join (`enrolled`).
+        if (refused.removed && markRemoved(home)) return resolveDone(0);
         resolveDone(1);
       } else resolveDone(0);
     },

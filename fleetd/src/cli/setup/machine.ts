@@ -13,6 +13,7 @@ import { VERSION } from "../../shared/version.ts";
 import { build, HttpFeed, REPO, sums, type Sums, verified } from "../../update/index.ts";
 import { edgeStamp } from "../../update/version.ts";
 import type { HubDb } from "../../hub/store/db.ts";
+import { revokeNodeKey } from "../../hub/auth/nodes.ts";
 import { eraseIn } from "../../hub/project_lead/erase.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
 import { ArgError, parse } from "../args.ts";
@@ -742,7 +743,7 @@ export async function remove(
   let remoteOk = true;
   if (record === undefined) {
     progress.say(
-      `${machineId} was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.`,
+      `${machineId} was not set up by fleetd machine add from this hub, so only its key is revoked here; its node stops when it next reaches the hub.`,
     );
   } else {
     const target: SshTarget = {
@@ -784,7 +785,7 @@ export async function remove(
     const projects = store.projectsList(machineId);
     for (const p of projects) await erase(hub.db, home, { machineId, projectId: p.projectId } as ProjectRef);
     erased = projects.length;
-    revoked = hub.db.conn.query("DELETE FROM node_keys WHERE machine_id = ?").run(machineId).changes > 0;
+    revoked = revokeNodeKey(hub.db, machineId, Date.now());
     rows = store.machineRemove(machineId);
   } catch (error) {
     if (error instanceof NotImplemented) throw error;

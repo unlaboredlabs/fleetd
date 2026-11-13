@@ -4,7 +4,7 @@
 // rest of the checks are green from the start. Two codes play a version difference: 111111, an Edge hub the edge
 // release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
 // 222222, a hub newer than this app, whose answer it can't read. 333333 joins a Mac with no Xcode yet, 444444 one whose
-// Xcode-beta.app isn't selected.
+// Xcode-beta.app isn't selected, and 555555 one whose node never reports its checks (one its hub refuses, say).
 //
 // FLEETD_FIXTURE_MAC opens on a Mac joined already, for the menu bar's popover (menuBar.ts): `busy`, every check green
 // and agents at work on storefront (two simulators and a build, beside the sessions-page fixture's Mac screen); or
@@ -112,6 +112,8 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
   /** The node's own build: behind the hub's on an `attention` Mac. */
   let macVersion = "0.9.0";
   let xcodeWaits: ReadonlyArray<object> | undefined;
+  /** 555555: the node joins, but never writes its checks. */
+  let silent = false;
   const asked = new Map<MacPane, number>(opened === undefined ? [] : [["accessibility", started - 3_600_000], ...(opened === "busy" ? [["screen_recording", started - 3_600_000] as const] : [])]);
   if (opened === "attention") hubVersion = "0.9.2";
   const granted = (pane: MacPane) => {
@@ -152,6 +154,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       hubVersion = behind ? OLD_EDGE : "0.9.0";
       const answer = { hubUrl: HUB, hubName: "devbox", machineId: "mac", token: "fle_fixture", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), version: hubVersion, existing: false };
       xcodeWaits = XCODE_WAITS[code];
+      silent = code === "555555";
       return later(
         600,
         code === "000000"
@@ -195,6 +198,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       if (file.endsWith("node.json")) {
         return Promise.resolve({ text: JSON.stringify({ enrolled: true, agentsMac: true, machineId: "mac", hub: HUB }), writtenAt: joinedAt });
       }
+      if (silent) return Promise.resolve(undefined);
       if (file.endsWith("mac-activity.json")) {
         return Promise.resolve({ text: JSON.stringify(opened === "busy" ? busyActivity(started) : { simulators: [], jobs: [] }), writtenAt: Date.now() });
       }
