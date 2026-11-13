@@ -141,8 +141,10 @@ it("says what the lead is doing in the island over the composer, never as a row 
   const reading = { activity: { kind: "read" as const, path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }, since: AT };
   await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: reading }));
   const island = host.querySelector("[data-band] > [data-island]");
-  // Its file's name as code; the whole name is held, the shown copy cut to the room it has.
-  expect(island?.querySelector("button")?.getAttribute("aria-label")).toBe("Reading `half-cent-edge-cases.ts`");
+  // Its file's name as code; the whole name is held, the shown copy cut to the room it has. With no agents, main green
+  // and no DMs its card would be empty: it says the step, and is no button.
+  expect(island?.querySelector("[role='group']")?.getAttribute("aria-label")).toBe("Reading `half-cent-edge-cases.ts`");
+  expect(island?.querySelector("button")).toBeNull();
   expect([...(island?.querySelectorAll("code") ?? [])].map((c) => c.textContent)).toContain("half-cent-edge-cases.ts");
   expect(host.querySelector("[data-index] [data-island]")).toBeNull();
   act(() => root?.unmount());

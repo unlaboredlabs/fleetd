@@ -30,8 +30,12 @@
     inset 0 1px 0 var(--glass-rim);
   pointer-events: none;
 }
-.press:hover::before {
+button.press:hover::before {
   background: color-mix(in srgb, var(--glass) 100%, var(--glass-hover));
+}
+/* With nothing to open, only words: no pointer. */
+.press[data-still] {
+  cursor: default;
 }
 .island[data-open] .press::before {
   box-shadow:
