@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { aboutChoices, foldCount, isFold, openOrdersOf, ordersOf, sendAbout, tagOf, taggedItems, type FoldLine, type TagView } from "./chatTags";
+import { aboutChoices, foldCount, isFold, openOrdersOf, ordersOf, reveal, sendAbout, tagOf, taggedItems, type FoldLine, type TagView } from "./chatTags";
 import { sameRow, threadRows, type ThreadRow } from "./chatView";
 import { chatItems, emptyChat, type ChatItem, type ChatMessage, type OrderCard } from "./desktop";
 import { fakeHub } from "./hub/fake";
@@ -190,6 +190,29 @@ describe("taggedItems: folds", () => {
   });
 });
 
+describe("reveal", () => {
+  const fold = { ...VAT, state: "done" as const, count: 2 };
+  const thread = items([message(1, { about: VAT }), message(2, { about: VAT, fold }), message(3, { about: APPLE }), message(4)]);
+
+  it("leaves a message that shows, or isn't there, as it is", () => {
+    expect(reveal(thread, "m3", none)).toBeUndefined();
+    expect(reveal(thread, "m9", none)).toBeUndefined();
+    expect(reveal(thread, "m3", { ...none, lens: "W1" })).toBeUndefined();
+  });
+
+  it("opens the fold a message is in", () => {
+    const r = reveal(thread, "m1", none);
+    expect(r?.lens).toBeUndefined();
+    expect([...(r?.opened ?? [])]).toEqual(["W3"]);
+    expect(ids(taggedItems(thread, { ...none, opened: r!.opened }))).toContain("m1");
+  });
+
+  it("closes a lens the message isn't in, opening its fold too when it is folded", () => {
+    expect(reveal(thread, "m4", { ...none, lens: "W1" })).toEqual({ lens: undefined, opened: none.opened });
+    expect([...(reveal(thread, "m2", { ...none, lens: "W1" })?.opened ?? [])]).toEqual(["W3"]);
+  });
+});
+
 describe("threadRows in a tagged chat", () => {
   const tags = (i: ChatItem) => tagOf(i, view());
   const tagged = (rows: readonly ThreadRow[]) => rows.flatMap((r) => (r.t === "item" ? [`${r.id}:${r.first ? "first" : "-"}:${r.tag?.order?.title ?? ""}`] : [r.t]));
@@ -197,6 +220,18 @@ describe("threadRows in a tagged chat", () => {
   it("puts the tag over the first bubble of each run, a new tag starting a run", () => {
     const list = items([message(1, { about: APPLE }), message(2, { about: APPLE }), message(3, { about: SEARCH })]);
     expect(tagged(threadRows(list, undefined, undefined, { timeZone: "UTC" }, tags))).toEqual(["day", "m1:first:Apple Pay", "m2:-:", "m3:first:Search speed"]);
+  });
+
+  it("tags the next message when it goes back to an order after one about several", () => {
+    const parts = [
+      { start: 0, end: 3, about: APPLE },
+      { start: 4, end: 9, about: SEARCH },
+    ];
+    const list = items([message(1, { text: "Two things", parts }), message(2, { about: APPLE }), message(3, { about: APPLE })]);
+    expect(tagged(threadRows(list, undefined, undefined, { timeZone: "UTC" }, tags))).toEqual(["day", "m1:first:Apple Pay", "m2:first:Apple Pay", "m3:-:"]);
+    // Ending on the order the next one is about, it goes on the same run.
+    const back = items([message(1, { text: "Two things", parts: [...parts].reverse() }), message(2, { about: APPLE })]);
+    expect(tagged(threadRows(back, undefined, undefined, { timeZone: "UTC" }, tags))).toEqual(["day", "m1:first:Search speed", "m2:-:"]);
   });
 
   it("is as before with no tags", () => {

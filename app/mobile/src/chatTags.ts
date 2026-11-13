@@ -46,9 +46,14 @@ export const ordersOf = (message: ChatMessage | undefined): readonly string[] =>
 /** What a message is about as its first bubble says it: the tag over its run. */
 export const aboutOf = (message: ChatMessage | undefined): ChatAbout | undefined => message?.about ?? message?.parts?.find((p) => p.about !== undefined)?.about;
 
-/** The quiet line over a run of bubbles: who (when it isn't you) and what. `key` tells two lines apart. */
+/**
+ * The quiet line over a run of bubbles: who (when it isn't you) and what. `key` tells two lines apart; `endKey` is the
+ * line as the message's last bubble leaves it (a message about several orders shows each bubble's own), which the next
+ * message's line is compared with.
+ */
 export interface Tag {
   readonly key: string;
+  readonly endKey: string;
   /** "Dana Park" over another person's message, "to Dana" over the lead's to them, an agent's name over its own. */
   readonly who: string | undefined;
   readonly order: ChatAbout | undefined;
@@ -82,7 +87,9 @@ export const tagOf = (item: Pick<ChatItem, "author" | "message">, view: TagView)
     who = to !== undefined && to.personId !== view.me ? `to ${firstName(to.name)}` : undefined;
   }
   if (who === undefined && order === undefined) return undefined;
-  return { key: `${who ?? ""}|${order?.workstreamId ?? ""}`, who, order };
+  const last = m?.about === undefined ? m?.parts?.findLast((p) => p.about !== undefined)?.about : undefined;
+  const end = last === undefined || last.workstreamId === view.lens ? order : last;
+  return { key: `${who ?? ""}|${order?.workstreamId ?? ""}`, endKey: `${who ?? ""}|${end?.workstreamId ?? ""}`, who, order };
 };
 
 /** A closed order's landing line, where its messages fold: `open` once tapped, with them under it. */
@@ -176,6 +183,26 @@ export const taggedItems = (
     if (!folded.has(i.id)) out.push(i);
   }
   return out;
+};
+
+/**
+ * What makes a hidden message show, for a jump to it (a search hit, a push, a tapped quote): the lens closed when it
+ * isn't about the lens's order, and its order's fold opened when it is folded. Undefined when it shows already, or isn't
+ * in the chat.
+ */
+export const reveal = (
+  items: readonly ChatItem[],
+  messageId: string,
+  o: Parameters<typeof taggedItems>[1],
+): { readonly lens: string | undefined; readonly opened: ReadonlySet<string> } | undefined => {
+  const item = items.find((i) => i.message?.messageId === messageId);
+  if (item === undefined) return undefined;
+  const shows = (lens: string | undefined, opened: ReadonlySet<string>) => taggedItems(items, { ...o, lens, opened }).includes(item);
+  if (shows(o.lens, o.opened)) return undefined;
+  if (shows(undefined, o.opened)) return { lens: undefined, opened: o.opened };
+  const opened = new Set(o.opened);
+  for (const id of ordersOf(item.message)) opened.add(id);
+  return shows(undefined, opened) ? { lens: undefined, opened } : undefined;
 };
 
 /** The About… menu's choices: the open orders, the one it is about now ticked, then Nothing. */

@@ -313,7 +313,8 @@ export const threadRows = (
     const side = sideOf(item);
     const tag = tagOf?.(item);
     // A new tag starts a run of its own, its line over its first bubble.
-    const first = i === firstUnread || !joins(prev, item) || tag?.key !== prevTag?.key;
+    // Compared with the line as the message before left it: its last bubble's order.
+    const first = i === firstUnread || !joins(prev, item) || tag?.key !== prevTag?.endKey;
     rows.push({
       t: "item",
       id: item.clientRequestId ?? item.id,

@@ -30,7 +30,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
-import { aboutChoices, aboutOf, foldCount, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type FoldLine, type OpenOrder, type Tag } from "../chatTags";
+import { aboutChoices, aboutOf, foldCount, openOrdersOf, reveal, sendAbout, tagOf, taggedItems, type ChatAbout, type FoldLine, type OpenOrder, type Tag } from "../chatTags";
 import { aimOf, attachmentBubbles, bubbleTime, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
@@ -173,6 +173,19 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and a lens's
   // capsule under it.
   const top = (Platform.OS === "ios" ? insets.top + BAR : 0) + (lens === null ? 0 : LENS_ROOM);
+  // A message a jump goes to (a search hit, a push, a tapped quote) that the lens or a fold hides: the lens closed, or
+  // its fold opened; true when it was hidden.
+  const showHidden = (messageId: string): boolean => {
+    const r = tagsOn ? reveal(items, messageId, { lens: lensId, opened, me, sendAbout: sendsAbout }) : undefined;
+    if (r === undefined) return false;
+    // The jump goes there, not back to where the lens was opened from.
+    if (r.lens === undefined) {
+      lensFrom.current = undefined;
+      setLens(null);
+    }
+    setOpened(r.opened);
+    return true;
+  };
 
   // Which bubbles enter with motion: what arrives while the chat is open and live (arrivals.ts).
   const arrivals = useRef<Arrivals | undefined>(undefined);
@@ -350,6 +363,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       if (!chat.loadingOlder) void session.loadOlder(chatKey);
       return;
     }
+    // Folded into a finished order, or outside the lens: shown first, then landed on as the thread draws again.
+    if (found !== undefined && showHidden(found)) return;
     const first = landed.current === null;
     landed.current = wanted;
     const target = found;
@@ -438,8 +453,16 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   };
 
   // What the actions read, as of the last draw.
-  const now = useRef({ items, title, send, scrollToRow, chatKey, openOrders });
-  now.current = { items, title, send, scrollToRow, chatKey, openOrders };
+  const now = useRef({ items, title, send, scrollToRow, chatKey, openOrders, showHidden });
+  now.current = { items, title, send, scrollToRow, chatKey, openOrders, showHidden };
+  // A jump to a message that was hidden: made once the thread has drawn it.
+  const jumping = useRef<string | null>(null);
+  useEffect(() => {
+    const to = jumping.current;
+    if (to === null) return;
+    jumping.current = null;
+    if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === to, 0.5)) setLit(to);
+  });
 
   // A lens: on, the thread shows its order from the newest end; off, it goes back to the bubble whose tag opened it.
   const lensFrom = useRef<string | undefined>(undefined);
@@ -463,6 +486,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       openImage: setImage,
       jumpTo: (messageId) => {
         if (now.current.scrollToRow((r) => r.t === "item" && r.item.message?.messageId === messageId, 0.5)) setLit(messageId);
+        else if (now.current.showHidden(messageId)) jumping.current = messageId;
       },
       whoWrote: (messageId) => (now.current.items.find((i) => i.id === messageId)?.author === "human" ? "You" : now.current.title),
       answer: (text) => now.current.send(text),
@@ -1018,7 +1042,7 @@ function ItemView({
         const says = i > 0 && own !== undefined && own.workstreamId !== before?.workstreamId && own.workstreamId !== lens ? own : undefined;
         return (
           <Fragment key={i}>
-            {says === undefined ? null : <TagLine tag={{ key: says.workstreamId, who: undefined, order: says }} mine={false} onLens={lensOn} />}
+            {says === undefined ? null : <TagLine tag={{ key: says.workstreamId, endKey: says.workstreamId, who: undefined, order: says }} mine={false} onLens={lensOn} />}
             <BubbleView
               bubble={b}
               canAnswer={canAnswer}
@@ -1406,7 +1430,7 @@ const pickAbout = (open: readonly OpenOrder[], current: string | undefined, go: 
     Alert.alert("About", undefined, [
       ...shown.map((i) => ({ text: choices[i]?.label ?? "", onPress: () => chosen(i) })),
       more ? { text: "More", onPress: () => page(from + 2) } : { text: "Cancel", style: "cancel" as const },
-    ]);
+    ], { cancelable: true });
   };
   page(0);
 };
