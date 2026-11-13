@@ -3,10 +3,11 @@
 //
 // The hub tags (`about`, a bubble's own `about`, `fold`); the app only reads. A tag's words show only while two or
 // more of the project's orders are open: in a one-order chat everything is about it. A fold hides a closed order's
-// messages behind one line where its landing was said, except an approval or secret still open and your own message
-// the lead hasn't answered. A lens keeps one order's messages, and of a message about several orders only its bubbles.
+// messages behind one line where its landing was said, except an approval or secret still open, a question of the
+// lead's still unanswered, and your own message the lead hasn't answered. A lens keeps one order's messages, and of a message about several orders only its bubbles.
 import type { ChatAbout, ChatFold } from "../../../../shared/contracts";
 import type { ChatItem } from "../../../src/data/chat";
+import { bubblesOf, countQuestions } from "../bubbles";
 
 export interface Tags {
   /** Two or more of the project's orders are open: the tags name them. */
@@ -24,6 +25,9 @@ export const aboutOf = (item: ChatItem): string | undefined => item.message?.abo
 
 /** A lead message about several orders: each bubble's own, by its key (bubblesOf's, the part's index). */
 export const partAbout = (item: ChatItem, key: string): ChatAbout | undefined => item.message?.parts?.[Number(key)]?.about;
+
+/** The order whose fold a message goes in once that order closes: its own, or, about several, the last of them. */
+export const foldOrder = (item: ChatItem): string | undefined => aboutOf(item) ?? partOrders(item).at(-1);
 
 const partOrders = (item: ChatItem): readonly string[] =>
   (item.message?.parts ?? []).flatMap((p) => (p.about === undefined ? [] : [p.about.workstreamId]));
@@ -110,7 +114,8 @@ export function stepsOf(items: readonly ChatItem[], tags: Tags, isMine: (item: C
   if (folds.size === 0) return items.map((item, n) => ({ kind: "item", item, n }));
   const lastLead = items.findLastIndex((i) => i.author === "lead");
   const folding = (item: ChatItem, n: number): string | undefined => {
-    if (item.kind === "secret" || item.kind === "gated" ? tags.openItems?.has(item.id) === true : false) return undefined;
+    if ((item.kind === "secret" || item.kind === "gated") && (tags.openItems?.has(item.id) === true || item.message?.item?.state === "open")) return undefined;
+    if (asking(items, n)) return undefined;
     // Yours with nothing from the lead after it: still waiting, so in sight.
     if (isMine(item) && n > lastLead) return undefined;
     const about = aboutOf(item);
@@ -140,4 +145,23 @@ export function stepsOf(items: readonly ChatItem[], tags: Tags, isMine: (item: C
     if (into[n] === undefined) out.push({ kind: "item", item, n });
   });
   return out;
+}
+
+/**
+ * A lead message still asking, which stays in sight: an ask block or a question, with no person's message after it
+ * that replies to it, is about its order, or is from the person it asks.
+ */
+function asking(items: readonly ChatItem[], n: number): boolean {
+  const item = items[n];
+  if (item?.author !== "lead" || item.kind !== "message") return false;
+  if (!bubblesOf(item).some((b) => (b.kind === "block" ? b.block.kind === "ask" : countQuestions(b.text) > 0))) return false;
+  const order = aboutOf(item);
+  const whom = item.message?.for?.personId;
+  return !items
+    .slice(n + 1)
+    .some(
+      (i) =>
+        i.author === "human" &&
+        (i.message?.replyTo?.messageId === item.id || (order !== undefined && aboutOf(i) === order) || (whom !== undefined && i.message?.person?.personId === whom)),
+    );
 }

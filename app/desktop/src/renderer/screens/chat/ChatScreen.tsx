@@ -12,6 +12,7 @@ import { BubbleActionsContext, type BubbleActions, type ReplyTarget, type TagAct
 import { Button, FrameTitle, IdChip, StatusChip, Text, toast } from "../../ui";
 import type { ChatAbout } from "../../../shared/contracts";
 import { LensCapsule } from "./lens/Lens";
+import { foldOrder } from "./lens/tags";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -158,6 +159,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const target = shown?.id ?? (sent === 0 ? message : undefined);
   const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
+  // A jump to a message the tagged chat hides (a notification's, Show, a quote, a link to a card): out of a lens on
+  // another order, or into the fold it is in, so the message has a row to open at. Once per jump: a fold you close
+  // again, or a lens you open later, stays as you left it.
+  const [jumped, setJumped] = useState<string>();
+  const jump = target === undefined ? undefined : `${target} ${String(shown?.n ?? 0)}`;
+  if (tags !== undefined && rows !== undefined && target !== undefined && jump !== jumped) {
+    const item = rowIndexOf(rows, target) !== undefined ? undefined : items?.find((i) => i.id === target);
+    const order = item === undefined ? undefined : foldOrder(item);
+    if (rowIndexOf(rows, target) !== undefined) setJumped(jump);
+    // Out of the lens first; the whole chat then shows whether it is folded too.
+    else if (item !== undefined && looking !== undefined) setLooking(undefined);
+    else if (item !== undefined) {
+      setJumped(jump);
+      if (order !== undefined && !unfolded.has(order)) setUnfolded(new Set(unfolded).add(order));
+    }
+  }
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);

@@ -88,8 +88,8 @@ const card = (o: typeof PAY): OrderCard => ({
   total: 1,
 });
 
-/** The chat with MESSAGES, as Sam, on a project whose trial is `on`; what it called, by tool. */
-const mount = async (on: boolean) => {
+/** The chat with MESSAGES, as Sam, on a project whose trial is `on`, opened at `message` (a notification's); what it called. */
+const mount = async (on: boolean, message?: string) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const calls: Array<{ tool: string; input: Record<string, unknown> }> = [];
   const page = { messages: MESSAGES, moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, leadWorking: false, lastSeq: 7 } };
@@ -126,7 +126,7 @@ const mount = async (on: boolean) => {
     root?.render(
       <DataProvider layer={layer}>
         <TooltipProvider>
-          <ChatScreen project={project} />
+          <ChatScreen project={project} {...(message === undefined ? {} : { message })} />
         </TooltipProvider>
       </DataProvider>,
     );
@@ -142,7 +142,20 @@ const mount = async (on: boolean) => {
   for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
   await vi.waitFor(() => expect(host.querySelectorAll('[data-entry="message"]').length).toBeGreaterThan(0));
   if (on) await vi.waitFor(() => expect(host.querySelector("[data-tag]")).not.toBeNull());
-  return calls;
+  /** The same chat, opened at another message, as a notification does. */
+  const open = async (at: string) => {
+    act(() => {
+      root?.render(
+        <DataProvider layer={layer}>
+          <TooltipProvider>
+            <ChatScreen project={project} message={at} />
+          </TooltipProvider>
+        </DataProvider>,
+      );
+    });
+    await settle();
+  };
+  return Object.assign(calls, { open });
 };
 
 /** Each message's words as shown, with its line over it in brackets (its parts joined by the dot CSS draws). */
@@ -239,4 +252,25 @@ it("moves a bubble to another open order from its menu's About…", async () => 
   await settle();
   expect(calls.find((c) => c.tool === "chat_about_set")?.input).toEqual({ projectRef: project, messageId: "m6", workstreamId: "W2" });
   await vi.waitFor(() => expect(shown()).toContain("[to Dana·Apple Pay] Looking: an agent is timing search."));
+});
+
+it("opens the fold a notification's message is in, once: folded again, it stays folded", async () => {
+  await mount(true, "m2");
+  await vi.waitFor(() => expect(shown()).toContain("[to Dana] Small fix, one writer on it."));
+  const fold = host.querySelector<HTMLButtonElement>('[data-entry="fold"] button');
+  expect(fold?.getAttribute("aria-expanded")).toBe("true");
+  act(() => fold?.click());
+  await settle();
+  expect(fold?.getAttribute("aria-expanded")).toBe("false");
+  expect(shown()).not.toContain("[to Dana] Small fix, one writer on it.");
+});
+
+it("leaves a lens for a message about another order, as a notification opens it", async () => {
+  const chat = await mount(true);
+  act(() => button("Only Search speed").click());
+  await settle();
+  expect(shown()).not.toContain("[Apple Pay] On it: one writer at checkout.");
+  await chat.open("m4");
+  await vi.waitFor(() => expect(shown()).toContain("[Apple Pay] On it: one writer at checkout."));
+  expect(host.querySelector("textarea")?.placeholder).toBe("Message the lead");
 });

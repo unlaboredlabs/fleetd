@@ -4,7 +4,7 @@
 // you about (a showcase, something to try, a risk), until seen. Pure.
 import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { bubblesOf } from "./bubbles";
+import { bubblesOf, countQuestions } from "./bubbles";
 import { plural, shortClock } from "./format";
 import { dayLabel, isMine } from "./model";
 
@@ -34,11 +34,7 @@ export interface Unloaded {
 
 const openItem = (i: ChatItem): boolean => (i.kind === "secret" || i.kind === "gated") && i.message?.item?.state === "open";
 
-/** Numbered items at the start of a line ("1. …", "2) …"): the lead asks its questions as a numbered list. */
-export const countQuestions = (text: string): number => {
-  const numbered = text.split("\n").filter((l) => /^ {0,3}\d{1,2}[.)]\s+\S/.test(l)).length;
-  return numbered > 0 ? numbered : text.includes("?") ? 1 : 0;
-};
+export { countQuestions } from "./bubbles";
 
 const when = (iso: string, nowMs: number, timeZone?: string): string => {
   const clock = shortClock(iso, timeZone);

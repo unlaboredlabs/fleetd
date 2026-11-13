@@ -54,6 +54,12 @@ export function readable(block: ChatBlock): boolean {
   return false;
 }
 
+/** Numbered items at the start of a line ("1. …", "2) …"): the lead asks its questions as a numbered list. */
+export const countQuestions = (text: string): number => {
+  const numbered = text.split("\n").filter((l) => /^ {0,3}\d{1,2}[.)]\s+\S/.test(l)).length;
+  return numbered > 0 ? numbered : text.includes("?") ? 1 : 0;
+};
+
 /** The bubbles of a message, in order; none while it streams (the typing bubble stands in). */
 export function bubblesOf(item: ChatItem): readonly Bubble[] {
   if (item.state === "streaming") return [];

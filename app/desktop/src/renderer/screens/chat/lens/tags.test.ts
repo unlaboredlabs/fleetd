@@ -39,7 +39,7 @@ const busy = () => {
   return [
     msg("human", { person: DANA, about: VAT }),
     msg("lead", { for: DANA, about: VAT }),
-    msg("lead", { for: DANA, about: VAT, item: { kind: "command_approval", requestId: "Q1", machineId: "devbox", state: "open" } as never }, "gated"),
+    msg("lead", { for: DANA, about: VAT, item: { kind: "command_approval", requestId: "Q1", machineId: "devbox", state: "ran" } as never }, "gated"),
     msg("human", { person: ME, about: PAY }),
     msg("lead", { for: ME, about: PAY }),
     msg("human", { person: DANA, about: SEARCH }),
@@ -77,6 +77,20 @@ describe("the tagged chat", () => {
     expect(r).toContain("card:m3");
     expect(r.at(-1)).toBe("m10 [Receipts show the VAT number]");
     expect(r.indexOf("card:m3")).toBeLessThan(r.indexOf("fold:Receipts show the VAT number"));
+  });
+
+  it("keeps a question of the lead's still unanswered out of the fold, and folds one a person answered", () => {
+    seq = 0;
+    const items = [
+      msg("human", { person: DANA, about: VAT }),
+      msg("lead", { for: DANA, about: VAT, text: "Backfill the old receipts too?" }),
+      msg("lead", { for: DANA, about: VAT, text: "Should the PDF show it as well?" }),
+      msg("human", { person: DANA, about: VAT, text: "yes" }),
+      msg("lead", { for: DANA, about: VAT, text: "It’s live. Want it on the emails too?", fold: { ...VAT, state: "done", count: 5 } }),
+      msg("lead", { for: ME }),
+    ];
+    // m2 and m3 were answered by Dana's m4; the landing m5 still asks.
+    expect(shown(rows(items, { named: true }))).toEqual(["fold:Receipts show the VAT number", "m5 [to Dana · Receipts show the VAT number]", "m6"]);
   });
 
   it("opens a fold under its line, oldest first, without naming the order it already names", () => {
