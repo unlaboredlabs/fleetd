@@ -85,8 +85,9 @@ export const pkce = (random: (bytes: number) => Uint8Array): { verifier: string;
   return { verifier, challenge: base64url(sha256(utf8Encode(verifier))) };
 };
 
-/** WorkOS's sign-in page for this app, with PKCE and the app's redirect. `prompt=login` makes AuthKit ask every time:
- * without it, a browser already signed in to AuthKit came straight back to fleetd:// with a code, no page shown. */
+/** WorkOS's sign-in page for this app, with PKCE and the app's redirect. `max_age=0` (WorkOS's documented way) and
+ * `prompt=login` make AuthKit ask every time: without them, a browser already signed in to AuthKit came straight back
+ * to fleetd:// with a code, no page shown. */
 export const authorizeUrl = (config: CloudConfig, p: { challenge: string; state: string }): string => {
   const q: Array<[string, string]> = [
     ["client_id", config.clientId],
@@ -94,6 +95,7 @@ export const authorizeUrl = (config: CloudConfig, p: { challenge: string; state:
     ["response_type", "code"],
     ["provider", "authkit"],
     ["prompt", "login"],
+    ["max_age", "0"],
     ["state", p.state],
     ["code_challenge", p.challenge],
     ["code_challenge_method", "S256"],

