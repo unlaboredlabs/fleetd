@@ -114,6 +114,8 @@ export const MACHINE_KEEPS = [
   "pair_codes",
   // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
   "vault_audit",
+  // The key the machine was removed with: its node, back with it, is told so and stops (revokeNodeKey).
+  "removed_node_keys",
 ] as const;
 
 /** `machineRemove`'s deletes, in the caller's transaction. How many rows went. */

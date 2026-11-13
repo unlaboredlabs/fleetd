@@ -425,7 +425,7 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
           title={state.resumed === true ? "Checking this Mac" : "Starting the node"}
           line={
             view.late
-              ? "The node hasn't reported its checks yet. Restart it; if that doesn't help, log out of this Mac and back in."
+              ? "The node hasn't reported its checks yet. Restart it; if that doesn't help, log out of this Mac and back in, or start over with a new code."
               : state.resumed === true
                 ? `This Mac is ${state.found.machineId}, ${state.found.hubName}'s agents' Mac, already. Its node is running its checks.`
                 : "It checks this Mac as it starts: a few seconds."
@@ -438,7 +438,15 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
           </Text>
         </div>
         {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
-        {view.late ? <div className={s.actions}>{restart}</div> : null}
+        {view.late ? (
+          <div className={s.actions}>
+            {restart}
+            {/* A node that never reports (refused by its hub, say): a new code joins this Mac again, replacing it. */}
+            <Button variant="ghost" size="md" disabled={state.restarting} onClick={() => dispatch({ type: "startOver" })}>
+              Start over with a new code
+            </Button>
+          </div>
+        ) : null}
       </>
     );
   }
