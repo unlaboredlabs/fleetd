@@ -26,6 +26,7 @@ import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { show } from "../intake/attachments.ts";
 import { parts as partsOf } from "./parts.ts";
+import { refold, tagLead } from "./tags.ts";
 import { messageFor } from "./whom.ts";
 import {
   AGENT_PER_MINUTE,
@@ -201,6 +202,7 @@ export class Chat {
       if (n.for !== undefined) message.for = n.for;
       if (n.client !== undefined) message.client = n.client;
       if (n.replyTo !== undefined) message.replyTo = n.replyTo;
+      if (n.about !== undefined) message.about = n.about;
       if (n.item !== undefined) message.item = n.item;
       if (n.history !== undefined) message.history = n.history;
       this.stampFor(message);
@@ -214,6 +216,7 @@ export class Chat {
       if (n.skills && n.skills.length > 0) message.skills = n.skills;
       const parts = show(c, r, author === "lead" && !n.streaming ? partsOf(text) : undefined);
       if (parts) message.parts = parts;
+      tagLead(this.hub, message);
       c.query("UPDATE chat_messages SET data = ?1 WHERE n = ?2").run(serialize(message), rowid);
       return { message, created: true };
     });
@@ -235,6 +238,7 @@ export class Chat {
     if (created) {
       this.landed(n.source, n.nudge, message);
       this.announce(message);
+      this.folds(message);
     }
     return { message, created };
   }
@@ -500,6 +504,7 @@ export class Chat {
       m.text = final;
       m.state = "final";
       m.updatedAt = now;
+      tagLead(this.hub, m);
       this.stampFor(m);
       return true;
     };
@@ -510,7 +515,14 @@ export class Chat {
       out = message;
     }
     this.announce(out);
+    this.folds(out);
     return out;
+  }
+
+  /** A message about a closed order: its fold moves to it. */
+  private folds(message: ChatMessage): void {
+    const orders = new Set([message.about, ...(message.parts ?? []).map((p) => p.about)].flatMap((a) => (a ? [a.workstreamId] : [])));
+    for (const id of orders) refold(this.hub, message.projectRef, id);
   }
 
   /** The project's title, as everything a person reads names it; never its id. */

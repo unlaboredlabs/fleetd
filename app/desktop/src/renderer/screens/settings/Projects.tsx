@@ -2,7 +2,7 @@
 // picture (Picture.tsx), its bot's color (BotColor.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
 // its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
-// (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
+// (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
 // seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
 // sealed in main, and only its fingerprint ever comes back.
@@ -25,7 +25,7 @@ import { McpServersSection } from "./Integrations";
 import { ApprovalsSetting } from "./Approvals";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
-import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import { PictureSetting } from "./Picture";
 import { BotColorSetting } from "./BotColor";
 import {
@@ -183,6 +183,9 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           <Problem text={blocked} />
         </SettingsRow>
       </SettingsSection>
+      <SettingsSection title="Trial">
+        <ChatTagsSetting projectRef={ref} on={summary?.chatTags === true} />
+      </SettingsSection>
       <RemoveProjectDialog project={deleting} onClose={() => setDeleting(null)} onRemoved={onDeleted} />
     </>
   );
@@ -267,6 +270,32 @@ function NameSetting({ settings }: { settings: Settings }) {
           ) : null}
         </>
       }
+    />
+  );
+}
+
+/** The tagged chat's trial (`chatTags`, off by default): the hub tags each chat message with the order it is about. */
+function ChatTagsSetting({ projectRef, on }: { projectRef: Ref; on: boolean }) {
+  const hubCall = useHubCall();
+  const [picked, setPicked] = useState<{ on: boolean; over: boolean } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const shown = picked !== null && picked.over === on ? picked.on : on;
+  const flip = (next: boolean) => {
+    const mine = { on: next, over: on };
+    setPicked(mine);
+    setProblem(null);
+    hubCall("project_settings_set", { ...projectRef, chatTags: next }).catch((e: unknown) => {
+      setPicked((p) => (p === mine ? null : p));
+      setProblem(errorText(e));
+    });
+  };
+  return (
+    <SwitchRow
+      title="Tagged chat"
+      checked={shown}
+      line={problem !== null ? <span role="alert">{problem}</span> : null}
+      lineTone="danger"
+      onCheckedChange={flip}
     />
   );
 }

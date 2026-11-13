@@ -9,6 +9,13 @@ import type { PromptSet } from "../prompts/set.ts";
 const AUTOMATIONS =
   '## Automations\nAn order that says "From automation" is a run of one of this project\'s automations: start its work without asking the human first; reviews, the train and approvals still apply. For recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` (which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`.';
 
+/** The lead's lines while its project's chat tags are on (a trial; artifact threads-design), under "When to speak". */
+export const TAG_LINES = [
+  "- Work a person asks for becomes an order, as now. Your bubbles are tagged with the order your turn worked on, and the chat shows who each is for: don't start a bubble with a person's name.",
+  "- When one message covers more than one order, write a bubble per order and start each with the order's id in brackets, [W12]. fleetd hides it. A quick answer stays untagged.",
+  "- A wake line \"… moved a message (…) from X to Y\" is a person's correction: take it as theirs, and act on it if it changes the work.",
+].join("\n");
+
 /** The prompt a lead starts from: `assistant.start` for one doing its own work, else `lead.start`. */
 export const startPrompt = (ownWork: boolean) => (ownWork ? "assistant.start" : "lead.start");
 
@@ -28,9 +35,11 @@ export function renderLeadStart(
   memory: string,
   people: string,
   folder: string | undefined,
+  tagged = false,
 ): LeadStart {
   const start = set.render(startPrompt(folder !== undefined), {
     people,
+    tags: tagged ? `\n${TAG_LINES}` : "",
     project: title,
     projectRef: `${r.machineId}/${r.projectId}`,
     folder: folder ?? "",

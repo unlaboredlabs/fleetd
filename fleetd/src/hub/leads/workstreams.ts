@@ -11,6 +11,7 @@ import { leadWiring, unlanded } from "./ports.ts";
 import { isClosed, LeadRecords } from "./records.ts";
 import { runHuman, setRequested } from "./requested.ts";
 import { titleOf } from "./stored.ts";
+import { tagAsked } from "../chat/tags.ts";
 
 export type IntakeInput = {
   projectRef: ProjectRef;
@@ -88,6 +89,8 @@ export class Workstreams {
     const human = lead ? runHuman(this.hub.db, r, lead.threadId, now) : undefined;
     // Who started it: the writer of the message the lead was answering.
     if (human?.person) this.records.workstreamPut({ ...w, startedBy: human.person });
+    // The message the order was opened from is about it, when the project's chat tags are on.
+    if (human) tagAsked(this.hub, r, w.workstreamId, human.atMs, human.person);
     setRequested(this.hub.db, w, human ? { atMs: human.atMs, basis: "chat" } : { atMs: parseMs(w.createdAt) ?? now, basis: "opened" });
   }
 

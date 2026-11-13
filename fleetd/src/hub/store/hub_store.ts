@@ -177,6 +177,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     archivedAt: _archivedAt,
     avatar: _avatar,
     avatarColor: _avatarColor,
+    chatTags: _chatTags,
     icon: _icon,
     ...project
   } = stored;
@@ -187,6 +188,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.createdBy) out.createdBy = kept.createdBy;
   if (kept.archivedAt !== undefined) out.archivedAt = kept.archivedAt;
   if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
+  if (kept.chatTags) out.chatTags = true;
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
   out.icon = icon.of(conn, r);
@@ -201,6 +203,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     archivedAt: _archivedAt,
     avatar: _avatar,
     avatarColor: _avatarColor,
+    chatTags: _chatTags,
     icon: _icon,
     ...row
   } = project;

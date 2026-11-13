@@ -18,6 +18,8 @@ export type LineKind =
   | "recovery_paused"
   /** A finished task's PR, found after its result line went out (D67): rides along with the next wake too. */
   | "quiet"
+  /** A person moved a chat message to another order (`chat_about_set`): rides along with the next wake. */
+  | "retag"
   /** The lead's own turn was cut off by its node stopping or restarting. */
   | "cut_off"
   /** Work a project asked another project for opened, closed, merged or failed (hub/project_lead/bridge.rs). */
@@ -34,7 +36,7 @@ export type LeadWakes = {
 };
 
 /** `Trigger.quiet()`: never wakes the lead alone. */
-export const quiet = (t: Trigger) => t.kind === "line" && (t.line === "recovery" || t.line === "quiet");
+export const quiet = (t: Trigger) => t.kind === "line" && (t.line === "recovery" || t.line === "quiet" || t.line === "retag");
 
 /** `Trigger::train(line)`. */
 export const trainLine = (text: string): Trigger => ({ kind: "line", line: "train", text });

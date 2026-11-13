@@ -2,6 +2,7 @@
 // message's shape, its row's JSON, and when a chat needs the person.
 import type {
   ArtifactPublished,
+  ChatAbout,
   AttachmentRef,
   ChatAuthor,
   ChatClient,
@@ -63,6 +64,8 @@ export type NewMessage = {
   for?: PersonRef;
   client?: ChatClient;
   replyTo?: ChatReplyTo;
+  /** What it is about, while the project's chat tags are on (tags.ts). */
+  about?: ChatAbout;
   delivery?: ChatDelivery;
   /** A human message not yet in the lead's session. */
   held?: boolean;
@@ -116,6 +119,8 @@ export function serialize(m: ChatMessage): string {
     "artifact",
     "vaultImport",
     "nudge",
+    "about",
+    "fold",
   ];
   for (const k of rest) if (m[k] !== undefined && m[k] !== null) o[k] = m[k];
   return JSON.stringify(o);

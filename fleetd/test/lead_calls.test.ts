@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { turnOrders } from "../src/hub/chat/about.ts";
 import { normalize, projectIndexForCwd } from "../src/hub/lead_calls/cwd.ts";
 import { LeadCalls, leadCalls, onLeadCallFrame, type LeadCaller, type LeadResultFrame } from "../src/hub/lead_calls/index.ts";
 import { check, checkCall, checkFanOut, NODE_OPS, WORKER_OPS } from "../src/hub/lead_calls/policy.ts";
@@ -189,4 +190,15 @@ test("the policy's lists and the fan-out cap", () => {
   expect(() => checkFanOut(31, 4)).not.toThrow();
   expect(() => checkFanOut(32, 4)).toThrow("This project already has 32 open tasks, the most one lead may have at once (32).");
   expect(() => checkFanOut(40, 28)).not.toThrow();
+});
+
+test("a lead's call for an order is what its turn touched; a task's call and a read touch nothing", async () => {
+  const p1 = { machineId: "devbox", projectId: "p1" };
+  const at = hub.clock.now() + 1;
+  const before = turnOrders(hub, p1, at).length;
+  await answer("/work/app", { ...SPAWN, workstreamId: "W7" }, "th-lead");
+  expect(turnOrders(hub, p1, hub.clock.now() + 1)).toContain("W7");
+  await answer("/work/app", { op: "ask_lead", question: "?" }, "th-task");
+  await answer("/work/app", DECIDE, "th-lead");
+  expect(turnOrders(hub, p1, hub.clock.now() + 1).length).toBe(before + 1);
 });

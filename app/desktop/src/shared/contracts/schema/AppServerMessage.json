@@ -2223,6 +2223,10 @@
           "$ref": "#/$defs/BotColor",
           "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default."
         },
+        "chatTags": {
+          "description": "Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off.",
+          "type": "boolean"
+        },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
           "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it\nwas recorded."

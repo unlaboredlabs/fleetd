@@ -1,5 +1,5 @@
 // The lead chat's tools (nudges.rs): chat_send, chat_history, chat_stop,
-// project_stop and chat_nudge_clear.
+// project_stop, chat_nudge_clear and chat_about_set.
 import type { ChatNudgeCleared, ChatStopInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
@@ -9,6 +9,7 @@ import { requireHuman } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
 import { chatStop, ensure, projectStop, send, state } from "./flow.ts";
 import { chat } from "./index.ts";
+import { retag } from "./tags.ts";
 
 export function register(tools: Registry): void {
   tools.add("chat_send", (hub, caller, input) => send(hub, caller, input));
@@ -19,6 +20,15 @@ export function register(tools: Registry): void {
     if (store(hub).projectGet(r)) await ensure(hub, r);
     const page = chat(hub).page(r, input.before, input.after, input.limit ?? 50);
     return { messages: page.messages, moreBefore: page.moreBefore, moreAfter: page.moreAfter, state: state(hub, r) };
+  });
+
+  // A person moves a message to another order, or to none, while the project's chat tags are on.
+  tools.add("chat_about_set", (hub, caller, input) => {
+    requireHuman(caller, "chat_about_set");
+    const r = input.projectRef;
+    requireRole(caller, "operate", r.machineId);
+    const message = retag(hub, r, input.messageId, input.workstreamId, caller.person?.name ?? caller.name);
+    return { message, next: "The lead hears of it with its next wake." };
   });
 
   tools.add("project_stop", (hub, caller, input) => projectStop(hub, caller, input));

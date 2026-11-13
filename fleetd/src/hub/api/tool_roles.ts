@@ -177,6 +177,7 @@ export const TOOLS = {
   chat_send: { scope: "operate", module: "src/hub/chat" },
   chat_history: { scope: "read", module: "src/hub/chat" },
   chat_nudge_clear: { scope: "operate", module: "src/hub/chat" },
+  chat_about_set: { scope: "operate", module: "src/hub/chat" },
   project_stop: { scope: "operate", module: "src/hub/chat" },
   hub_info: { scope: "read", module: "src/hub/info" },
   hub_update: { scope: "admin", module: "src/hub/update" },

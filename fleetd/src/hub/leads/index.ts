@@ -18,6 +18,7 @@ import { archivedNote, LeadWakes, triggerLines } from "./lead_wakes.ts";
 import { leadState } from "./lead_state.ts";
 import { leadWiring } from "./ports.ts";
 import { renderLeadStart, reposBlock, startPrompt, whole } from "./prompt.ts";
+import { chatTagsOn } from "../project_lead/store.ts";
 import { LeadRecords, type StoredLead } from "./records.ts";
 import { clip } from "./text.ts";
 import { ofChat, short, told } from "./zone.ts";
@@ -393,6 +394,7 @@ export class Leads {
       Memory.of(this.hub).injected(r, true, youForLead(this.hub.db)),
       leadPeople(this.hub.db),
       ownWork ? project.workspaceRoot : undefined,
+      chatTagsOn(this.hub.db.conn, r),
     );
     let prompt = start.first;
     const repos = reposBlock(r, project.repos ?? []);
