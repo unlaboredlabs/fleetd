@@ -3455,6 +3455,10 @@
           "$ref": "#/$defs/ChatDelivery",
           "description": "A human message: how it reached the lead."
         },
+        "for": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A lead message or inline item: the person it is for, whose needs-you and phone it reaches (the order's starter,\nelse the person the lead was answering; an item of an order nobody started, the hub's owner). Absent: nobody in\nparticular."
+        },
         "history": {
           "$ref": "#/$defs/ChatHistorySource",
           "description": "From before the chat: where this history message came from."
@@ -3664,6 +3668,10 @@
     "ChatOpenItem": {
       "description": "An inline item that waits on the human: which message, and what it asks for.",
       "properties": {
+        "for": {
+          "$ref": "#/$defs/PersonId",
+          "description": "The person it waits on (its message's `for`); absent: anyone."
+        },
         "kind": {
           "$ref": "#/$defs/ChatOpenItemKind"
         },
@@ -8317,6 +8325,10 @@
         "finishedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "An approved command: when its result came back (ran or failed), so a client can say how long it took."
+        },
+        "for": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "An open request, as requests_list serves it: the person it waits on (its order's starter, else the person the lead\nwas answering, else the hub's owner). Absent from an older hub."
         },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
@@ -16174,6 +16186,14 @@
         "needsYou": {
           "description": "The lead's last message waits for a human reply, or an inline item is open.",
           "type": "boolean"
+        },
+        "needsYouFor": {
+          "description": "Who what waits is for, when `needsYou`: each open item's and each unanswered question's person. Absent: it waits on\neveryone (something with no `for`, or an older hub).",
+          "items": {
+            "$ref": "#/$defs/PersonId"
+          },
+          "maxItems": 100,
+          "type": "array"
         },
         "nudges": {
           "description": "The nudges still waiting to be seen, oldest first: what the app shows as \"N to look at\". Absent when none is.",

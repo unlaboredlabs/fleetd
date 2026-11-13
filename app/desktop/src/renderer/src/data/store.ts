@@ -129,12 +129,16 @@ export interface DataState {
    * across drops, reconnects and in the disk cache, like the projects: held rows show their marks as last known.
    */
   readonly openRequests?: readonly OpenRequest[] | undefined;
+  /** Who you are on this hub (hub_info's me): what waits on someone else marks nothing here. Undefined until read. */
+  readonly me?: string | undefined;
 }
 
 export interface OpenRequest {
   readonly projectRef: ProjectRef;
   readonly kind: RequestKind;
   readonly state: "open";
+  /** The person it waits on; absent from an older hub, or a cache from before it said. */
+  readonly for?: { readonly personId: string } | undefined;
 }
 
 /** How long the screens keep what they show after the hub closed to restart, before its skeletons: a hub is back
@@ -512,9 +516,13 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
     }
     case "requests_list": {
       if (call.input.state !== "open" || call.input.projectRef !== undefined) return s;
-      const openRequests = call.output.requests.map((r): OpenRequest => ({ projectRef: r.projectRef, kind: r.kind, state: "open" }));
+      const openRequests = call.output.requests.map(
+        (r): OpenRequest => ({ projectRef: r.projectRef, kind: r.kind, state: "open", ...(r.for ? { for: { personId: r.for.personId } } : {}) }),
+      );
       return { ...s, openRequests };
     }
+    case "hub_info":
+      return call.output.me?.personId === s.me ? s : { ...s, me: call.output.me?.personId };
     case "agents_list":
       // Whole-fleet reads only: a project's own list would drop every other project's agents.
       return call.input.projectRef === undefined ? { ...s, agents: call.output.agents } : s;

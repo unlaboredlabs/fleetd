@@ -48,6 +48,7 @@ import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
+import { requestFor } from "./whom.ts";
 
 export { forLead, stopLine } from "./lead_text.ts";
 
@@ -448,7 +449,7 @@ export async function showRequest(hub: Hub, id: string): Promise<void> {
   try {
     await ensure(hub, r);
     const item = chatItem(request);
-    if (!chat(hub).updateItem(request.requestId, item)) chat(hub).item(r, item);
+    if (!chat(hub).updateItem(request.requestId, item)) chat(hub).item(r, item, requestFor(hub, request));
     state(hub, r);
   } catch (error) {
     console.warn(`chat: request ${id} not shown:`, error);

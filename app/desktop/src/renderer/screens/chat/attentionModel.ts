@@ -51,14 +51,16 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // A loaded item goes by its own state, which may be newer than the hub's list; the rest by the list, oldest first,
   // which comes before what's loaded.
   const loaded = new Set(items.map((i) => i.id));
-  const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
+  // What waits on a teammate (its `for`) shows in the chat, not here.
+  const mine = (person: string | undefined) => person === undefined || me === undefined || person === me;
+  const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request") && mine(o.for));
   // A secure input is a secret too, said as what it is once its page is loaded.
   const kindOf = (i: ChatItem) => {
     const item = i.message?.item;
     if (i.kind !== "gated") return item?.kind === "secret_request" && item.secureInput !== undefined ? "input" : "secret";
     return "command";
   };
-  const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter(openItem).map((i) => ({ id: i.id, kind: kindOf(i) }))];
+  const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter((i) => openItem(i) && mine(i.message?.for?.personId)).map((i) => ({ id: i.id, kind: kindOf(i) }))];
   if (open.length > 0) {
     const count = (kind: string) => open.filter((i) => i.kind === kind).length;
     const [approvals, inputs, secrets] = [count("command"), count("input"), count("secret")];
@@ -73,7 +75,7 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // does a teammate's message (`me`: the person this app acts as).
   const since = items.findLastIndex((i) => isMine(i, me) && i.kind === "message") + 1;
   for (const ask of items.slice(since).reverse()) {
-    if (ask.author !== "lead" || ask.kind !== "message") continue;
+    if (ask.author !== "lead" || ask.kind !== "message" || !mine(ask.message?.for?.personId)) continue;
     // Each bubble that asks: an ask block, or words with a question in them.
     const asking = bubblesOf(ask)
       .map((b) => ({ key: b.key, n: b.kind === "block" ? (b.block.kind === "ask" ? 1 : 0) : countQuestions(b.text) }))

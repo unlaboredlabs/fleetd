@@ -13,6 +13,7 @@ import type {
   ChatOpenItem,
   ChatOpenNudge,
   MemoryRefreshed,
+  PersonRef,
   ProjectChatState,
   ProjectRef,
   RememberedItem,
@@ -25,6 +26,7 @@ import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { show } from "../intake/attachments.ts";
 import { parts as partsOf } from "./parts.ts";
+import { messageFor } from "./whom.ts";
 import {
   AGENT_PER_MINUTE,
   ATTACHMENTS_MAX,
@@ -35,14 +37,17 @@ import {
   EVENT_MESSAGE_MAX,
   itemOpen,
   jsTake,
-  needsYou,
   type NewMessage,
   nudgeWaiting,
   parse,
   PENDING_MS,
   serialize,
   textOf,
+  waitsOn,
 } from "./rules.ts";
+
+/** How many of the latest lead and people's messages a question for one person may still wait in. */
+const WAIT_WINDOW = 100;
 
 export {
   AGENT_PER_MINUTE,
@@ -193,10 +198,12 @@ export class Chat {
         if (by.length > 0 && !/[\r\n]/.test(by)) message.by = by;
       }
       if (n.person !== undefined) message.person = n.person;
+      if (n.for !== undefined) message.for = n.for;
       if (n.client !== undefined) message.client = n.client;
       if (n.replyTo !== undefined) message.replyTo = n.replyTo;
       if (n.item !== undefined) message.item = n.item;
       if (n.history !== undefined) message.history = n.history;
+      this.stampFor(message);
       if (n.remembered !== undefined) message.remembered = n.remembered;
       if (n.memoryRefreshed !== undefined) message.memoryRefreshed = n.memoryRefreshed;
       if (n.worktreesKept !== undefined) message.worktreesKept = n.worktreesKept;
@@ -210,6 +217,16 @@ export class Chat {
       c.query("UPDATE chat_messages SET data = ?1 WHERE n = ?2").run(serialize(message), rowid);
       return { message, created: true };
     });
+  }
+
+  /**
+   * A lead's final message is for the person its turn worked for (whom.ts): set once, as it lands. A message the
+   * person set, an item, history or a reply still streaming gets none here.
+   */
+  private stampFor(m: ChatMessage): void {
+    if (m.author !== "lead" || m.state !== "final" || m.for !== undefined || m.item !== undefined || m.history !== undefined) return;
+    const person = messageFor(this.hub, m.projectRef, parseMs(m.createdAt) ?? this.now());
+    if (person) m.for = person;
   }
 
   /** Adds a message and announces it. The same request or source returns the stored message, announced once. */
@@ -228,8 +245,8 @@ export class Chat {
   }
 
   /** An inline item (a secret to enter, a command to approve) as a lead message. */
-  item(r: ProjectRef, item: ChatItem): ChatMessage {
-    return this.add(r, { author: "lead", item, source: `item:${(item as { requestId: string }).requestId}` }).message;
+  item(r: ProjectRef, item: ChatItem, person?: PersonRef): ChatMessage {
+    return this.add(r, { author: "lead", item, source: `item:${(item as { requestId: string }).requestId}`, ...(person ? { for: person } : {}) }).message;
   }
 
   /** An item's new state, in place. */
@@ -483,6 +500,7 @@ export class Chat {
       m.text = final;
       m.state = "final";
       m.updatedAt = now;
+      this.stampFor(m);
       return true;
     };
     let out = this.update(message.messageId, done);
@@ -642,21 +660,43 @@ export class Chat {
       .flatMap((m): ChatOpenItem[] => {
         if (!m.item || !itemOpen(m.item)) return [];
         const kind = (m.item as { kind?: string }).kind === "command_approval" ? "command_approval" : "secret_request";
-        return [{ messageId: m.messageId, kind } as ChatOpenItem];
+        return [{ messageId: m.messageId, kind, ...(m.for ? { for: m.for.personId } : {}) } as ChatOpenItem];
       })
       .slice(0, CHAT_OPEN_ITEMS_MAX);
-    const considered = [...this.sinceHuman(r), ...open];
+    const waits = waitsOn(this.asked(r), open, (p) => this.onHub(p));
     const last = recent[recent.length - 1];
     const nudges = this.nudgesListed(r);
     return {
       projectRef: r,
-      needsYou: needsYou(considered),
+      needsYou: waits.needsYou,
+      ...(waits.for ? { needsYouFor: waits.for } : {}),
       leadWorking,
       lastSeq: last?.seq ?? 0,
       ...(last ? { lastMessageAt: last.createdAt } : {}),
       ...(openItems.length > 0 ? { openItems } : {}),
       ...(nudges.length > 0 ? { nudges } : {}),
     } as ProjectChatState;
+  }
+
+  /**
+   * What a question may still wait in, oldest first: the lead's and people's messages since a person last wrote, or the
+   * last WAIT_WINDOW of them when that is more; history left out.
+   */
+  private asked(r: ProjectRef): ChatMessage[] {
+    const tail = this.many(
+      `SELECT data FROM (SELECT seq, data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+       AND json_extract(data, '$.author') IN ('lead', 'human') AND json_extract(data, '$.history') IS NULL
+       ORDER BY seq DESC LIMIT ?3) ORDER BY seq`,
+      r.machineId,
+      r.projectId,
+      WAIT_WINDOW,
+    );
+    const first = tail[0]?.seq ?? Number.POSITIVE_INFINITY;
+    return [...this.sinceHuman(r).filter((m) => m.seq < first), ...tail];
+  }
+
+  private onHub(person: string): boolean {
+    return !!this.db.conn.query("SELECT 1 FROM people WHERE person_id = ? AND removed_ms IS NULL").get(person);
   }
 
   /** The lead's messages after the human's last one written in the chat, oldest first; history left out. */
@@ -692,6 +732,7 @@ export class Chat {
   tellState(state: ProjectChatState): void {
     const now = JSON.stringify([
       state.needsYou,
+      state.needsYouFor ?? null,
       state.leadWorking,
       (state.openItems ?? []).map((i) => i.messageId),
       (state.nudges ?? []).map((n) => n.messageId),

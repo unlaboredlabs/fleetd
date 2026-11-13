@@ -561,6 +561,10 @@
     "ChatOpenItem": {
       "description": "An inline item that waits on the human: which message, and what it asks for.",
       "properties": {
+        "for": {
+          "$ref": "#/$defs/PersonId",
+          "description": "The person it waits on (its message's `for`); absent: anyone."
+        },
         "kind": {
           "$ref": "#/$defs/ChatOpenItemKind"
         },
@@ -2080,6 +2084,14 @@
         "needsYou": {
           "description": "The lead's last message waits for a human reply, or an inline item is open.",
           "type": "boolean"
+        },
+        "needsYouFor": {
+          "description": "Who what waits is for, when `needsYou`: each open item's and each unanswered question's person. Absent: it waits on\neveryone (something with no `for`, or an older hub).",
+          "items": {
+            "$ref": "#/$defs/PersonId"
+          },
+          "maxItems": 100,
+          "type": "array"
         },
         "nudges": {
           "description": "The nudges still waiting to be seen, oldest first: what the app shows as \"N to look at\". Absent when none is.",

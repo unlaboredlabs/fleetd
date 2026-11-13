@@ -12,6 +12,7 @@ import type {
   ChatNudge,
   ChatReplyTo,
   MemoryRefreshed,
+  PersonId,
   PersonRef,
   RememberedItem,
   SetupChanged,
@@ -58,6 +59,8 @@ export type NewMessage = {
   skills?: string[];
   by?: string;
   person?: PersonRef;
+  /** A lead message's or item's person (`ChatMessage.for`); absent on a lead's final message: the hub works it out. */
+  for?: PersonRef;
   client?: ChatClient;
   replyTo?: ChatReplyTo;
   delivery?: ChatDelivery;
@@ -98,6 +101,7 @@ export function serialize(m: ChatMessage): string {
     "delivery",
     "by",
     "person",
+    "for",
     "client",
     "replyTo",
     "item",
@@ -136,23 +140,32 @@ export const asksInABlock = (m: ChatMessage) => (m.parts ?? []).some((p) => p.bl
 
 export const itemOpen = (item: ChatItem) => (item as { state?: string }).state === "open";
 
+/** Whether `messages` need someone, by `waitsOn`'s rule, every person counted as on the hub. */
+export const needsYou = (messages: ChatMessage[]): boolean => waitsOn(messages, messages, () => true).needsYou;
+
+/** Who a chat waits on: `needsYou`, and `for`, each waiting thing's person, absent when one has none. */
+export type WaitsOn = { needsYou: boolean; for?: PersonId[] };
+
 /**
- * The needs-you rule: an inline item waits for an answer, or any lead message since the human last wrote asks
- * something. History and a reply still streaming don't count.
+ * The needs-you rule, per person (threads-design): an open item waits on its `for`; a lead question with a `for` waits
+ * until that person writes after it or anyone replies to it; one without waits until anyone writes, as before.
+ * `messages` are the chat's lead and human messages oldest first, `open` its open items; a `for` no longer on the hub
+ * (`onHub` false) counts as anyone's. History and a reply still streaming don't count.
  */
-export function needsYou(messages: ChatMessage[]): boolean {
-  if (messages.some((m) => m.item !== undefined && itemOpen(m.item))) return true;
-  let since = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i] as ChatMessage;
-    if (m.author === "human" && m.history === undefined) {
-      since = i + 1;
-      break;
-    }
-  }
-  return messages
-    .slice(since)
-    .some((m) => m.author === "lead" && m.history === undefined && m.state === "final" && (asksQuestion(m.text) || asksInABlock(m)));
+export function waitsOn(messages: ChatMessage[], open: ChatMessage[], onHub: (person: PersonId) => boolean): WaitsOn {
+  const waiting: (PersonId | undefined)[] = open.filter((m) => m.item !== undefined && itemOpen(m.item)).map((m) => m.for?.personId);
+  messages.forEach((m, i) => {
+    if (m.author !== "lead" || m.history !== undefined || m.state !== "final" || m.item !== undefined) return;
+    if (!asksQuestion(m.text) && !asksInABlock(m)) return;
+    const later = messages.slice(i + 1).filter((h) => h.author === "human" && h.history === undefined);
+    const who = m.for?.personId;
+    const answered = who === undefined ? later.length > 0 : later.some((h) => h.person?.personId === who || h.replyTo?.messageId === m.messageId);
+    if (!answered) waiting.push(who);
+  });
+  if (waiting.length === 0) return { needsYou: false };
+  const people = waiting.map((p) => (p !== undefined && onHub(p) ? p : undefined));
+  if (people.some((p) => p === undefined)) return { needsYou: true };
+  return { needsYou: true, for: [...new Set(people as PersonId[])] };
 }
 
 /** Whether a nudge still waits at `now`: not cleared, and less than a day old. */

@@ -133,10 +133,15 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-- A project's messages go to the person who last wrote in that project's chat, else the hub's owner.
-- Approvals, failed fetches, machines down under running work and usage limits: what the hub already marks as
-  needing you. Money and irreversible commands are urgent.
-- Orders that landed or stopped.
+Each goes to the person it is for, not to everyone on the project:
+
+- The lead's messages go to the person whose order it worked on, else the person it was answering.
+- Approvals and secrets go to the person who started their order. An order nobody started (an automation's, the
+  train's) goes to the hub's owner. One outside any order goes to the person the lead was answering.
+- Orders that landed or stopped go to the person who started them, else the hub's owner.
+- Failed fetches, machines down under running work and usage limits: what the hub already marks as needing you. They
+  go to the person who last wrote in that project's chat, else the hub's owner. Money and irreversible commands are
+  urgent.
 - During the hub's quiet hours a notification arrives without a sound, unless it is urgent.
 
 A phone signed out of the hub, or whose person was removed, gets nothing more.

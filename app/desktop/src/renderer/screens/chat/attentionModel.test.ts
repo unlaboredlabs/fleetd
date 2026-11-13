@@ -109,6 +109,18 @@ describe("what the lead waits on", () => {
     expect(countQuestions("We shipped 2. Next?")).toBe(1);
     expect(countQuestions("All merged.")).toBe(0);
   });
+
+  it("leaves out what waits on a teammate: their question, their card, loaded or not", () => {
+    const dana = { personId: "p_dana", name: "Dana" };
+    const forDana = { for: dana } as unknown as ChatMessage;
+    const question = item("b", "lead", "Resize or lazy-load?", at(19, 9, 2), { message: forDana });
+    const card = inline("c", "gated", "open");
+    const theirs = { ...card, message: { ...card.message, for: dana } as ChatMessage };
+    expect(waitingOn([item("a", "human", "search is slow"), question, theirs], LOADED, NOW, "UTC", "p_sam")).toBeUndefined();
+    expect(waitingOn([item("a", "human", "search is slow"), question], { older: false, open: [{ messageId: "m9", kind: "command_approval", for: "p_dana" }] }, NOW, "UTC", "p_sam")).toBeUndefined();
+    expect(waitingOn([item("a", "human", "search is slow"), question, theirs], LOADED, NOW, "UTC", "p_dana")?.what).toBe("1 command to approve");
+    expect(waitingOn([item("a", "human", "search is slow"), question], LOADED, NOW, "UTC", "p_dana")?.what).toBe("1 question, asked at 09:02");
+  });
 });
 
 describe("what there is to look at", () => {

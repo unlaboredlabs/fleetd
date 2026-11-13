@@ -1532,6 +1532,12 @@ export type ChatMessage = {
   createdAt: Timestamp;
   /** A human message: how it reached the lead. */
   delivery?: ChatDelivery;
+  /**
+   * A lead message or inline item: the person it is for, whose needs-you and phone it reaches (the order's starter,
+   * else the person the lead was answering; an item of an order nobody started, the hub's owner). Absent: nobody in
+   * particular.
+   */
+  for?: PersonRef;
   /** From before the chat: where this history message came from. */
   history?: ChatHistorySource;
   item?: ChatItem;
@@ -1637,6 +1643,8 @@ export type ChatNudgeCleared = KnownChatNudgeCleared | (string & {});
 
 /** An inline item that waits on the human: which message, and what it asks for. */
 export type ChatOpenItem = {
+  /** The person it waits on (its message's `for`); absent: anyone. */
+  for?: PersonId;
   kind: ChatOpenItemKind;
   messageId: ChatMessageId;
 };
@@ -3494,6 +3502,11 @@ export type HumanRequest = {
   exitCode?: number;
   /** An approved command: when its result came back (ran or failed), so a client can say how long it took. */
   finishedAt?: Timestamp;
+  /**
+   * An open request, as requests_list serves it: the person it waits on (its order's starter, else the person the lead
+   * was answering, else the hub's owner). Absent from an older hub.
+   */
+  for?: PersonRef;
   /** approval of a gated run: exactly the bytes the node runs. */
   gated?: GatedRunSpec;
   kind: RequestKind;
@@ -5962,6 +5975,11 @@ export type ProjectChatState = {
   leadWorking: boolean;
   /** The lead's last message waits for a human reply, or an inline item is open. */
   needsYou: boolean;
+  /**
+   * Who what waits is for, when `needsYou`: each open item's and each unanswered question's person. Absent: it waits on
+   * everyone (something with no `for`, or an older hub).
+   */
+  needsYouFor?: PersonId[];
   /** The nudges still waiting to be seen, oldest first: what the app shows as "N to look at". Absent when none is. */
   nudges?: ChatOpenNudge[];
   /**

@@ -21,6 +21,16 @@ describe("a project's bot on the phone", () => {
     expect(botOf(asked, KEY)).toBe("needs");
   });
 
+  it("needs only the person a question or a card is for", () => {
+    const theirs = {
+      ...base,
+      chatStates: { [KEY]: { projectRef: ref, needsYou: true, needsYouFor: ["p_dana"], leadWorking: false } },
+      requests: [{ requestId: "Q1", projectRef: ref, kind: "approval", state: "open", text: "", createdAt: "", for: { personId: "p_dana", name: "Dana" } }],
+    } as never;
+    expect(botOf({ ...(theirs as object), me: "p_sam" } as never, KEY)).toBe("idle");
+    expect(botOf({ ...(theirs as object), me: "p_dana" } as never, KEY)).toBe("needs");
+  });
+
   it("works while its agents do, its lead idle or thinking, as the desktop's", () => {
     const agents = { ...base, running: { [KEY]: 2 } };
     expect(botOf(agents, KEY)).toBe("working");
