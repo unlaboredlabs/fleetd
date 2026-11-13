@@ -45,7 +45,7 @@ import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { leadMessages, leadSource, order, question, QUIET, said, steer } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
-import { humanAbout, refold, settleRun, tagsOn } from "./tags.ts";
+import { humanAbout, refold, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
@@ -826,7 +826,7 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
     // person since moved to no order.
     if (RUN_ENDS.includes(event.type)) {
       try {
-        settleRun(hub, r, thread.threadId, parseMs(event.at) ?? nowMs(hub.clock));
+        settleEnded(hub, r, thread.threadId, event.seq);
       } catch (error) {
         console.warn("chat: the run's tags not settled:", error);
       }

@@ -169,6 +169,15 @@ export function settleRun(hub: Hub, r: ProjectRef, thread: string, endMs: number
   if (tagged) refold(hub, r, order);
 }
 
+/**
+ * The lead's run ended with event `seq`: settled as of when the hub logged it. The event's own `at` is the node's last
+ * progress, earlier than the log's time, and the run's window is bounded by the log's.
+ */
+export function settleEnded(hub: Hub, r: ProjectRef, thread: string, seq: number): void {
+  const logged = hub.db.all<{ created_ms: number }>("SELECT created_ms FROM events WHERE seq = ?1", [seq])[0];
+  if (logged) settleRun(hub, r, thread, logged.created_ms);
+}
+
 /** Every message of `r`'s chat about `workstreamId`, or folding it, oldest first. */
 function aboutRows(hub: Hub, r: ProjectRef, workstreamId: WorkstreamId): ChatMessage[] {
   return hub.db

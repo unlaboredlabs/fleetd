@@ -10,7 +10,7 @@ import { touched } from "../src/hub/chat/about.ts";
 import { mirror } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { forLead } from "../src/hub/chat/lead_text.ts";
-import { humanAbout, refold, settleRun, tagAsked } from "../src/hub/chat/tags.ts";
+import { humanAbout, refold, settleEnded, settleRun, tagAsked } from "../src/hub/chat/tags.ts";
 import { renderLeadStart } from "../src/hub/leads/prompt.ts";
 import { setChatTags } from "../src/hub/project_lead/store.ts";
 import { prompts } from "../src/hub/prompts/store.ts";
@@ -155,14 +155,14 @@ test("switch on: a run is settled once, so a message a person moved to no order 
   touched(hub, PROJECT, "W3");
   const chips = chat(hub).add(PROJECT, { author: "human", text: "the chips overlap", person: DANA, delivery: "turn" }).message;
   clock.ms += 1000;
-  events(hub).append({ at: new Date(clock.ms).toISOString(), type: "thread.completed", machineId: PROJECT.machineId, threadId: "lead-1", summary: "done", data: { threadId: "lead-1" } } as never);
-  const end = clock.ms;
-  settleRun(hub, PROJECT, "lead-1", end);
+  // The run's end as a node reports it: its `at` is the session's last progress, before the hub logs it.
+  const ended = events(hub).append({ at: new Date(clock.ms - 50).toISOString(), type: "thread.completed", machineId: PROJECT.machineId, threadId: "lead-1", summary: "done", data: { threadId: "lead-1" } } as never);
+  settleEnded(hub, PROJECT, "lead-1", ended.seq);
   expect(chat(hub).byId(chips.messageId)?.about?.workstreamId).toBe("W3");
   await call("chat_about_set", { projectRef: PROJECT, messageId: chips.messageId });
   // The same run's end again (a later mirror, a node back): nothing is tagged again.
   clock.ms += 5000;
-  settleRun(hub, PROJECT, "lead-1", end);
+  settleEnded(hub, PROJECT, "lead-1", ended.seq);
   settleRun(hub, PROJECT, "lead-1", clock.ms);
   await mirror(hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
   expect(chat(hub).byId(chips.messageId)?.about).toBeUndefined();
