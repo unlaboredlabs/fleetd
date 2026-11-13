@@ -461,7 +461,7 @@ const bandIsOneRow =
     const band = await page.locator("[data-band]").evaluate((el) => {
       const token = (name: string) => parseFloat(getComputedStyle(el).getPropertyValue(name));
       const draw = document.createElement("canvas").getContext("2d");
-      const capsules = [...el.querySelectorAll("[data-island] > button, [data-say]")].filter((c) => c.getClientRects().length > 0);
+      const capsules = [...el.querySelectorAll("[data-island] > :first-child, [data-say]")].filter((c) => c.getClientRects().length > 0);
       const words: Array<{ text: string; size: string; baseline: number }> = [];
       const icons: Array<{ icon: string; middle: number }> = [];
       for (const capsule of capsules) {
@@ -520,7 +520,7 @@ const bandIsOneRow =
 const islandHolds = async (page: Page) => {
   const seen = await page.locator("[data-band]").evaluate((band) => {
     const box = (r: DOMRect) => ({ left: r.left, right: r.right, top: r.top, height: r.height });
-    const island = band.querySelector("[data-island] > button");
+    const island = band.querySelector("[data-island] > :first-child");
     const pill = document.querySelector("[data-composer] > div");
     const leaves = [...(island?.querySelectorAll("*") ?? [])]
       .filter((e) => e.children.length === 0 && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().width > 0)

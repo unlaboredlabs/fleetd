@@ -3,7 +3,7 @@
 // "Thinking"); a glyph per agent at work (three at most, those waiting on you first, in the attention color) and how
 // many; a red dot while main is red. Nothing to say, nothing drawn. A click (or Enter) opens a card above it: main's
 // reason in full, a row per agent (live/Lanes), and the count of the agents' DMs, a way to Activity's log of them; a
-// second click, a press outside or Escape closes it. A file name too long for the room is cut once, in the middle.
+// second click, a press outside or Escape closes it. With none of those (the lead's step alone), it is no button. A file name too long for the room is cut once, in the middle.
 import { useId, useLayoutEffect, useRef, useState, useEffect } from "react";
 import { cx, InlineCode, StateGlyph, Text, type GlyphState } from "../../ui";
 import { useData } from "../../src/data/react";
@@ -30,6 +30,9 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
   const strip = loaded === undefined || loaded.agents === 0 ? undefined : loaded;
   const doing = useData((st) => leadDoing(st, projectKey(project)));
   const step = doing === undefined || BARE.has(doing) ? undefined : sentenceCase(doing);
+  const dms = countWords(useDmTotal(project));
+  // The card has something to show: the agents, main's reason or the agents' DMs. Without, the island is no button.
+  const opens = strip !== undefined || warning !== undefined || dms !== undefined;
   const box = useRef<HTMLDivElement>(null);
   const cardId = useId();
   const [open, setOpen] = useState(false);
@@ -45,6 +48,13 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
   if (strip === undefined && step === undefined && warning === undefined) return null;
   const label = [step, strip === undefined ? undefined : stripHeadline(strip), warning === undefined ? undefined : "main is red"].filter(Boolean).join(" · ");
   const close = () => setOpen(false);
+  const says = (
+    <>
+      {step === undefined ? null : <Step words={step} />}
+      {strip === undefined ? null : <Fleet strip={strip} />}
+      {warning === undefined ? null : <span className={s.red} aria-hidden />}
+    </>
+  );
   return (
     <div
       ref={box}
@@ -59,12 +69,16 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
         }
       }}
     >
-      <button type="button" className={s.press} aria-label={label} aria-expanded={open} aria-controls={open ? cardId : undefined} onClick={() => setOpen((o) => !o)}>
-        {step === undefined ? null : <Step words={step} />}
-        {strip === undefined ? null : <Fleet strip={strip} />}
-        {warning === undefined ? null : <span className={s.red} aria-hidden />}
-      </button>
-      {open ? <Card id={cardId} project={project} strip={strip} warning={warning} onClose={close} /> : null}
+      {opens ? (
+        <button type="button" className={s.press} aria-label={label} aria-expanded={open} aria-controls={open ? cardId : undefined} onClick={() => setOpen((o) => !o)}>
+          {says}
+        </button>
+      ) : (
+        <span className={s.press} role="group" aria-label={label} data-still="">
+          {says}
+        </span>
+      )}
+      {open && opens ? <Card id={cardId} strip={strip} warning={warning} dms={dms} project={project} onClose={close} /> : null}
     </div>
   );
 }
@@ -148,8 +162,7 @@ function Fleet({ strip }: { strip: Strip }) {
 }
 
 /** Opened above the island: main's reason in full, the agents a row each, and the agents' DMs. */
-function Card({ id, project, strip, warning, onClose }: { id: string; project: ProjectRef; strip: Strip | undefined; warning: string | undefined; onClose: () => void }) {
-  const dms = countWords(useDmTotal(project));
+function Card({ id, project, strip, warning, dms, onClose }: { id: string; project: ProjectRef; strip: Strip | undefined; warning: string | undefined; dms: string | undefined; onClose: () => void }) {
   return (
     <div id={id} className={s.card} data-island-card="">
       {warning === undefined ? null : (
