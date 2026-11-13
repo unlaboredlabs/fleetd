@@ -563,7 +563,7 @@ export class Desktops implements Screens {
     session.logStep("request_takeover", { reason }, true);
     return {
       message:
-        "Asked: it shows under waiting on you. Carry on with what you can; while a person has control your desktop actions answer so, and after they hand it back take a screenshot first.",
+        "Asked: it shows under waiting on you. Carry on with what you can, or end your turn: you are told the moment they hand it back; then take a screenshot first.",
     };
   }
 

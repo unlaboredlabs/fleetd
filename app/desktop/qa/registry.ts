@@ -3069,7 +3069,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Take over", exact: true }).click();
       await page.getByRole("application").focus();
       await page.keyboard.press("ControlOrMeta+Shift+Enter");
-      await expect(page.getByText("handing back", { exact: true })).toBeVisible();
+      await expect(page.getByText("handed back", { exact: true })).toBeVisible();
     },
   },
   // ...and in a window of its own, the pop-out for taking over: the session alone, its page yours.

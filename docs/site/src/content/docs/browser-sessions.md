@@ -71,8 +71,8 @@ someone watches, and a slow connection skips frames rather than falling behind. 
 desktop say, gets the screen's newest frame at once, even on a page that isn't changing.
 **Take over** gives you the mouse and keyboard on the page once the screen's machine confirms it. While you have
 control, the agent's `agent-browser` commands answer that a person has control, and the agent carries on with other
-work. **Hand back** returns control: the
-agent's next command sees the page as you left it, what you typed included. The recording's action log says who took
+work. **Hand back** returns control at once: the screen shows **handed back** and the agent is told right away,
+waking it if it ended its turn to wait for you. Its next command sees the page as you left it, what you typed included. The recording's action log says who took
 over and when, but not what you typed.
 
 While a browser is yours, the frame's bar is its address bar. Type an address and press Enter to go there (a bare

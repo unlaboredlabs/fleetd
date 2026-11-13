@@ -12,7 +12,10 @@ import { runnerOf } from "../machine_roles/places.ts";
 import { waitsOf } from "../machine_roles/screens.ts";
 import { live, runsOn } from "./live.ts";
 import { link } from "../link/index.ts";
+import { writeQueue } from "../queue/index.ts";
+import { steerTasks } from "../steer/index.ts";
 import { store } from "../store/hub_store.ts";
+import { TaskRecords } from "../tasks/records.ts";
 import { get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
 
 /** How long browser_control waits for the node to say it acted. */
@@ -85,14 +88,41 @@ async function browserControl(hub: Hub, caller: Caller, input: { sessionId: stri
     await changeControl(hub, session, runsOn(hub, session), input.control, next, person(caller));
     session = get(hub, id);
     if (!session) throw notFound(id);
+    if (next === "handing_back") void tellHandedBack(hub, session, person(caller));
   }
   return {
     session,
     next:
       next === "human"
         ? "You have control: send browser_input; hand it back with control agent."
-        : "The agent drives again from its next command; it sees the page as you left it.",
+        : "The agent is told now and drives again from its next command; it sees the page as you left it.",
   };
+}
+
+/** What a session's agent is told when the person hands its screen back. */
+export const handedBackLine = (id: string) =>
+  `The person handed screen ${id} back to you: carry on with it now. Your next command there sees it as they left it.`;
+
+/**
+ * Tells the agent of `session` at once that the person handed its screen back, rather than leaving the screen handed
+ * back until the agent happens to send its next command: a running task at its next tool boundary, a task that ended
+ * its turn waiting (on the person, a Monitor) continued with it, a lead straight in its thread as a steer is.
+ */
+export async function tellHandedBack(hub: Hub, session: BrowserSession, by: string): Promise<void> {
+  const line = handedBackLine(session.sessionId);
+  try {
+    if (session.taskId !== undefined) {
+      // A failed or cancelled task isn't started again for it.
+      const state = TaskRecords.get(hub.db.conn, session.taskId)?.task.state;
+      if (state !== "running" && state !== "idle" && state !== "done") return;
+      await steerTasks(hub).message({ projectRef: session.projectRef, by }, session.taskId, line);
+    } else if (session.openedBy === undefined) {
+      const thread = { machineId: session.projectRef.machineId, threadId: session.threadId };
+      await writeQueue(hub).send(thread, line, `handback:${session.sessionId}:${crypto.randomUUID()}`, undefined, { mode: "boundary" });
+    }
+  } catch (e) {
+    console.warn(`screen ${session.sessionId} handed back, its agent not told: ${(e as Error).message}`);
+  }
 }
 
 /**

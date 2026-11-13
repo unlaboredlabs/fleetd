@@ -1143,7 +1143,7 @@ No parameters.
 
 ### request_takeover
 
-Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands answer that a person has control; after they hand it back, your next command sees the page as they left it.
+Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile, or end your turn: while they drive, your agent-browser commands answer that a person has control; when they hand it back you are told at once, and your next command sees the page as they left it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1699,7 +1699,7 @@ No parameters.
 
 ### request_takeover (task)
 
-Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands answer that a person has control; after they hand it back, your next command sees the page as they left it.
+Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile, or end your turn: while they drive, your agent-browser commands answer that a person has control; when they hand it back you are told at once, and your next command sees the page as they left it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
