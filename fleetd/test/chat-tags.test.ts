@@ -126,7 +126,7 @@ test("switch on: an approval card is about its request's order", () => {
 });
 
 test("switch on: a person's message takes its lens or the tag of the bubble it answers, else its turn's order", () => {
-  const { hub, done } = rig(true);
+  const { hub, clock, done } = rig(true);
   touched(hub, PROJECT, "W3");
   const reply = lead(hub, "Looking.", "lead:lead-1:a");
   expect(humanAbout(hub, PROJECT, undefined, reply, 0)?.workstreamId).toBe("W3");
@@ -140,7 +140,7 @@ test("switch on: a person's message takes its lens or the tag of the bubble it a
   expect(chat(hub).byId(asked.messageId)?.about?.workstreamId).toBe("W3");
   // The run's end: an untagged message it took in is about the one order it touched.
   const more = chat(hub).add(PROJECT, { author: "human", text: "also on phones", person: DANA, delivery: "turn" }).message;
-  hub.clock.ms += 1000;
+  clock.ms += 1000;
   events(hub).append({ at: new Date(hub.clock.now()).toISOString(), type: "thread.completed", machineId: PROJECT.machineId, threadId: "lead-1", summary: "done", data: { threadId: "lead-1" } } as never);
   settleRun(hub, PROJECT, "lead-1", hub.clock.now());
   expect(chat(hub).byId(more.messageId)?.about?.workstreamId).toBe("W3");
