@@ -8,6 +8,7 @@
 import type { MachineId, ProjectRef, ThreadId, ThreadRef } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
+import { callOrder, TOUCHING_OPS, touched } from "../chat/about.ts";
 import { outsideEveryProject, projectIndexForCwd } from "./cwd.ts";
 import { decodeFrame } from "./decode.ts";
 import { checkCall } from "./policy.ts";
@@ -179,7 +180,13 @@ export class LeadCalls {
     checkCall(agent, frame.call);
     const caller: LeadCaller = { by: leadBy(projectRef), projectRef, agent, via: machineId };
     if (frame.threadId !== undefined) caller.threadId = frame.threadId;
-    return await handler(caller, frame.call);
+    const result = await handler(caller, frame.call);
+    // What the lead's turn did for an order is what its chat messages are about (chat/about.ts).
+    if (agent.kind === "lead" && TOUCHING_OPS.includes(frame.call.op)) {
+      const order = callOrder(this.hub, frame.call as Record<string, unknown>, result);
+      if (order !== undefined) touched(this.hub, projectRef, order);
+    }
+    return result;
   }
 
   /**

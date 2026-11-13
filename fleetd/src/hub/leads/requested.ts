@@ -17,21 +17,7 @@ const LOG_KEPT_MS = 30 * 24 * 60 * 60 * 1000;
  * the project's lead last ended a run, or the one sent with `now` that interrupted it.
  */
 export function runHuman(db: HubDb, r: ProjectRef, thread: string, nowMs: number): { atMs: number; person?: PersonRef } | undefined {
-  // The lead's earlier threads count too: a fresh lead's first run follows the old one's last.
-  const ends = db.all<{ created_ms: number; type: string }>(
-    `SELECT created_ms, type FROM events
-     WHERE type IN ('thread.completed', 'thread.failed', 'thread.interrupted', 'thread.usage_limited')
-       AND machine_id = $machine AND created_ms <= $now
-       AND json_extract(data, '$.threadId') IN (
-         SELECT $thread UNION SELECT json_extract(data, '$.threadId') FROM events
-         WHERE type = 'lead.started' AND machine_id = $machine
-           AND json_extract(data, '$.projectId') = $project)
-     ORDER BY seq DESC LIMIT 2`,
-    { machine: r.machineId, project: r.projectId, thread, now: nowMs },
-  );
-  const floor = ends[1]?.created_ms ?? nowMs - LOG_KEPT_MS;
-  const since = ends[0]?.created_ms ?? floor;
-  const interrupted = ends[0]?.type === "thread.interrupted";
+  const { floor, since, interrupted } = runWindow(db, r, thread, nowMs);
   const messages = db.all<{ created_ms: number; delivery: string | null; person: string | null }>(
     `SELECT created_ms, json_extract(data, '$.delivery') AS delivery, json_extract(data, '$.person') AS person FROM chat_messages
      WHERE machine_id = ?1 AND project_id = ?2 AND created_ms > ?3 AND created_ms <= ?4 AND held = 0
@@ -49,6 +35,27 @@ export function runHuman(db: HubDb, r: ProjectRef, thread: string, nowMs: number
     person = undefined;
   }
   return { atMs: found.created_ms, ...(person ? { person } : {}) };
+}
+
+/**
+ * The lead's running turn as the event log bounds it: `since`, when its last run ended (the running one began after);
+ * `floor`, when the run before that ended; and whether the last one was interrupted (a message sent with `now`).
+ */
+export function runWindow(db: HubDb, r: ProjectRef, thread: string, nowMs: number): { floor: number; since: number; interrupted: boolean } {
+  // The lead's earlier threads count too: a fresh lead's first run follows the old one's last.
+  const ends = db.all<{ created_ms: number; type: string }>(
+    `SELECT created_ms, type FROM events
+     WHERE type IN ('thread.completed', 'thread.failed', 'thread.interrupted', 'thread.usage_limited')
+       AND machine_id = $machine AND created_ms <= $now
+       AND json_extract(data, '$.threadId') IN (
+         SELECT $thread UNION SELECT json_extract(data, '$.threadId') FROM events
+         WHERE type = 'lead.started' AND machine_id = $machine
+           AND json_extract(data, '$.projectId') = $project)
+     ORDER BY seq DESC LIMIT 2`,
+    { machine: r.machineId, project: r.projectId, thread, now: nowMs },
+  );
+  const floor = ends[1]?.created_ms ?? nowMs - LOG_KEPT_MS;
+  return { floor, since: ends[0]?.created_ms ?? floor, interrupted: ends[0]?.type === "thread.interrupted" };
 }
 
 /** Stamps a lead-opened order with when it was asked for. */
