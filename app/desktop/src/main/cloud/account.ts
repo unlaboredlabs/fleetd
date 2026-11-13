@@ -110,13 +110,16 @@ const readJson = async (response: Response): Promise<unknown> => {
   }
 };
 
-/** WorkOS's sign-in page for this app, with PKCE and the loopback redirect. */
+/** WorkOS's sign-in page for this app, with PKCE and the loopback redirect. `prompt=login` makes AuthKit ask every
+ * time: without it, a browser already signed in to AuthKit came straight back with a code, so any local program that
+ * opened this page got a session without the person doing anything. */
 export const authorizeUrl = (config: CloudConfig, p: { redirect: string; challenge: string; state: string }): string => {
   const q = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: p.redirect,
     response_type: "code",
     provider: "authkit",
+    prompt: "login",
     state: p.state,
     code_challenge: p.challenge,
     code_challenge_method: "S256",

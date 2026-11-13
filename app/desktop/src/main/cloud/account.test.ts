@@ -7,7 +7,7 @@ import { FakeAccounts } from "../../../../../fleetd/test/fake-accounts.ts";
 import { IPC } from "../../shared/channels";
 import type { CallOutcome } from "../../shared/hub";
 import { parseRequest } from "../../shared/ipc";
-import { CloudAccount, type CloudPorts, type SavedAccount } from "./account";
+import { authorizeUrl, CloudAccount, type CloudPorts, type SavedAccount } from "./account";
 import { cloudConfig } from "./config";
 
 /** The app's side of each team: its key and label, and what each hub was asked at sign-out. */
@@ -106,6 +106,21 @@ describe("signing in to fleetd cloud", () => {
     expect(parseRequest(IPC.cloudConnectComputer, ["hub", "curl evil | sh"]).ok).toBe(false);
   });
 
+  it("WorkOS's page always asks: prompt=login, so a browser already signed in to AuthKit doesn't come straight back", () => {
+    const config = { accountsUrl: fake.url, clientId: fake.clientId, authorizeUrl: fake.authorizeUrl };
+    const page = new URL(authorizeUrl(config, { redirect: "http://127.0.0.1:1/signin/callback", challenge: "ch", state: "st" }));
+    expect(Object.fromEntries(page.searchParams)).toEqual({
+      client_id: fake.clientId,
+      redirect_uri: "http://127.0.0.1:1/signin/callback",
+      response_type: "code",
+      provider: "authkit",
+      prompt: "login",
+      state: "st",
+      code_challenge: "ch",
+      code_challenge_method: "S256",
+    });
+  });
+
   it("first sign-in: WorkOS's page with PKCE, the person's new team made, its key kept, and only the email and session kept", async () => {
     const { account, hubs, pages, opened, saved } = setup(fake);
     expect(account.state()).toEqual({ available: true, email: null });
@@ -118,6 +133,7 @@ describe("signing in to fleetd cloud", () => {
     expect(out).toEqual({ ok: true, email: "sam@acme.example", teams: [{ name: "sam", ok: true }] });
     const page = new URL(opened[0] ?? "");
     expect(page.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(page.searchParams.get("prompt")).toBe("login");
     expect(page.searchParams.get("redirect_uri")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/signin\/callback$/u);
     expect(fake.signIns[0]?.deviceName).toBe("devbox");
     expect(hubs.map((h) => [h.label, h.key])).toEqual([["sam", fake.keys[0]?.key]]);

@@ -219,7 +219,7 @@ describe("Sign In", () => {
     expect(unreached).toEqual(["kim"]);
   });
 
-  it("keeps the page's link to WorkOS's own parameters, the verifier's S256 challenge among them", () => {
+  it("keeps the page's link to WorkOS's own parameters, the verifier's S256 challenge and prompt=login among them", () => {
     const { verifier, challenge } = pkce(random);
     expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     const q = queryOf(authorizeUrl(config, { challenge, state: "st" }));
@@ -228,6 +228,7 @@ describe("Sign In", () => {
       redirect_uri: "fleetd://signin/callback",
       response_type: "code",
       provider: "authkit",
+      prompt: "login",
       state: "st",
       code_challenge: challenge,
       code_challenge_method: "S256",
