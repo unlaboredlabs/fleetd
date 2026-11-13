@@ -371,7 +371,7 @@ void app.whenReady().then(() => {
     hub.windowFocused();
     updater.focused();
   });
-  const stopOnline = watchWake(powerMonitor, () => net.isOnline(), () => hub.systemResumed());
+  const stopOnline = watchWake(powerMonitor, () => net.isOnline(), () => hub.systemResumed(), () => hub.linkInDoubt());
   const stopPresence = startPresence({
     on: () => presence.on,
     focused: () => BrowserWindow.getFocusedWindow() !== null,

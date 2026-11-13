@@ -21,8 +21,10 @@ export interface HubSource {
   resync(): void;
   /** Retry now: drop the link and dial again at once. */
   reconnectNow(): void;
-  /** The computer woke, its screen unlocked or the network came back: the socket may be half-open. */
+  /** The computer woke from sleep: the socket is most likely half-open. */
   woke(): void;
+  /** The screen unlocked or the network came back: the socket may be fine, or half-open. */
+  probe(): void;
   /** This minute's app presence, sent only on a live link and never answered. */
   presence(frame: PresenceFrame): void;
   /** The browser session whose frames to forward, or null for none; kept across reconnects. */

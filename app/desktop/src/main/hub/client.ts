@@ -5,8 +5,9 @@
 // refused (close 4401, or an error before `ready`) or the client is stopped. The event long-poll is silent when
 // nothing happens, so the client pings and drops a link whose ping goes unanswered: a half-open socket (Wi-Fi or
 // tailnet gone without a sleep, a NAT that forgot it) must not keep showing as live, nor wait on TCP's own retries.
-// A wake (woke(): the computer resumed, its screen unlocked, the network came back) drops the link at once and dials
-// again on a short deadline, about once a second for WAKE_FAST_MS: an attempt that went out before the tailnet was
+// A wake (woke(): the computer resumed) drops the link at once and dials again on a short deadline, about once a second
+// for WAKE_FAST_MS; the screen unlocking or the network coming back (probe()) ping the link first and do that only if it
+// doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
 // back would otherwise hold the next one off for all of READY_TIMEOUT_MS, though a fresh dial gets through at once.
 import type { BrowserInput } from "../../shared/contracts";
 import { WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
@@ -37,6 +38,8 @@ export const READY_TIMEOUT_MS = 15_000;
  * makes it, and one that went out before the network was usable is dropped for a fresh one within about a second.
  */
 export const WAKE_READY_TIMEOUT_MS = 1_000;
+/** On an unlock or the network back, a live link that doesn't answer a ping in this long is taken as dead. */
+export const WAKE_PROBE_MS = 1_000;
 /** Just after a wake, attempts start at least this far apart: one failing at once (no route yet) doesn't spin. */
 export const WAKE_REDIAL_EVERY_MS = 500;
 /**
@@ -131,11 +134,13 @@ export class HubClient implements HubSource {
   /** Whether any window shows (shown()); the live feed is asked for only then. */
   #shown = true;
   #readyAt = 0;
-  /** When anything last came from the hub on this connection. */
+  /** When anything last came from the hub on this connection, and how many times anything has. */
   #heardAt = 0;
+  #heardCount = 0;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   #pongTimer: ReturnType<typeof setTimeout> | null = null;
+  #probeTimer: ReturnType<typeof setTimeout> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
   /** The hub serves browser sessions (ready's `browser_sessions`): only then go browser_watch and browser_input. */
@@ -182,16 +187,40 @@ export class HubClient implements HubSource {
   }
 
   /**
-   * The computer woke, its screen unlocked or the network came back: the link may be half-open, and an attempt running
-   * may have gone out before the network was usable. Both are dropped and it dials at once, then fast (see the top).
-   * A link dialled for a wake that came up in the last WAKE_QUIET_MS is kept: macOS unlocks the screen right after it
-   * resumes.
+   * The computer woke from sleep: the link is most likely half-open, and an attempt running may have gone out before the
+   * network was usable. Both are dropped and it dials at once, then fast (see the top). A link dialled for a wake that
+   * came up in the last WAKE_QUIET_MS is kept.
    */
   woke(): void {
     if (this.#stopped) return;
-    const now = Date.now();
-    if (this.#ready && this.#wokeLink && now - this.#readyAt < WAKE_QUIET_MS) return;
-    this.#wakeAt = now;
+    if (this.#ready && this.#wokeLink && Date.now() - this.#readyAt < WAKE_QUIET_MS) return;
+    this.#redialForWake();
+  }
+
+  /**
+   * The screen unlocked or the network came back: the link may be fine (an unlock with no sleep), or dead. A live one
+   * is pinged and kept, calls in flight with it, if anything at all comes back within WAKE_PROBE_MS; otherwise it goes
+   * as on a wake. One not live dials at once, then fast.
+   */
+  probe(): void {
+    if (this.#stopped) return;
+    if (!this.#ready) return this.#redialForWake();
+    if (this.#probeTimer !== null) return;
+    const heard = this.#heardCount;
+    this.#connection?.ping();
+    this.#probeTimer = setTimeout(() => {
+      this.#probeTimer = null;
+      if (this.#ready && this.#heardCount === heard) this.#redialForWake();
+    }, WAKE_PROBE_MS);
+  }
+
+  #heard(): void {
+    this.#heardAt = Date.now();
+    this.#heardCount++;
+  }
+
+  #redialForWake(): void {
+    this.#wakeAt = Date.now();
     this.reconnectNow();
   }
 
@@ -301,7 +330,7 @@ export class HubClient implements HubSource {
         if (this.#connection !== connection) return;
         opened = true;
         this.#deflateUp = false;
-        this.#heardAt = Date.now();
+        this.#heard();
         // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
         // than a round trip after `ready`; refused, the hub closes before it reads them. A hub that took the auth on
         // the upgrade has sent `ready` and the snapshot already, and takes these two as answered.
@@ -313,11 +342,11 @@ export class HubClient implements HubSource {
       },
       onText: (text) => {
         if (this.#connection !== connection) return;
-        this.#heardAt = Date.now();
+        this.#heard();
         this.#onFrame(parseServerFrame(text));
       },
       onHeard: () => {
-        if (this.#connection === connection) this.#heardAt = Date.now();
+        if (this.#connection === connection) this.#heard();
       },
       onClose: (code, reason, error) => {
         if (this.#connection !== connection) return;
@@ -563,7 +592,9 @@ export class HubClient implements HubSource {
     if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
     if (this.#heartbeat !== null) clearInterval(this.#heartbeat);
     if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
+    if (this.#probeTimer !== null) clearTimeout(this.#probeTimer);
     this.#pongTimer = null;
+    this.#probeTimer = null;
     this.#retryTimer = null;
     this.#resumeTimer = null;
     this.#readyTimer = null;

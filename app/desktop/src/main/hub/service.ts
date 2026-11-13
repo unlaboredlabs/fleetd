@@ -208,6 +208,10 @@ export class HubService {
     this.#source?.woke();
   }
 
+  linkInDoubt(): void {
+    this.#source?.probe();
+  }
+
   connect(request: { readonly url: string; readonly key: string }): ConnectOutcome {
     if (this.#source instanceof FixtureSource) return this.#source.connectAnswer;
     if (this.#mode.kind !== "hub") return { ok: false, message: "Not available." };

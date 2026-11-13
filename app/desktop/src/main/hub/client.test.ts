@@ -11,6 +11,7 @@ import {
   RESUME_MAX_EVENTS,
   STABLE_MS,
   WAKE_FAST_MS,
+  WAKE_PROBE_MS,
   WAKE_READY_TIMEOUT_MS,
 } from "./client";
 import type { ConnectionEvents, Transport } from "./transport";
@@ -786,6 +787,45 @@ describe("HubClient after a wake", () => {
     vi.advanceTimersByTime(ADVICE_AFTER_MS);
     while (client.state.phase !== "retrying") vi.advanceTimersByTime(100);
     expect(client.state).toMatchObject({ phase: "retrying", reason: "devbox:4790 doesn't answer (timed out)" });
+  });
+
+  it("keeps a healthy link through a screen unlock with no sleep, and the call in flight on it", async () => {
+    const { hub, client } = asleep();
+    const inFlight = client.call({ tool: "x", input: {} });
+    const id = hub.sent.at(-1)?.["id"];
+    client.probe();
+    expect(hub.pings).toBeGreaterThan(0);
+    hub.pong();
+    vi.advanceTimersByTime(WAKE_PROBE_MS);
+    hub.frame({ t: "result", id, output: "done" });
+    await expect(inFlight).resolves.toEqual({ ok: true, output: "done" });
+    expect(hub.closedByClient).toBe(0);
+    expect(hub.urls).toHaveLength(1);
+    expect(client.state.phase).toBe("live");
+  });
+
+  it("redials a link that doesn't answer the unlock's ping, then as fast as after a wake", () => {
+    const t = asleep();
+    const usableAt = Date.now();
+    t.client.probe();
+    vi.advanceTimersByTime(WAKE_PROBE_MS - 1);
+    expect(t.hub.urls).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(t.hub.closedByClient).toBe(1);
+    expect(t.hub.urls).toHaveLength(2);
+    expect(t.client.state).toMatchObject({ phase: "connecting", waking: Date.now() });
+    t.hub.ready(11);
+    expect(t.client.state.phase).toBe("live");
+    expect(Date.now() - usableAt).toBe(WAKE_PROBE_MS);
+  });
+
+  it("dials at once on an unlock or the network back while the link is down", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.close(1006);
+    expect(client.state.phase).toBe("retrying");
+    client.probe();
+    expect(hub.urls).toHaveLength(2);
   });
 
   it("names the wake only to the screens of an app that was connected", () => {

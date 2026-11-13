@@ -335,6 +335,11 @@ export class Hubs {
     for (const service of this.all()) service.systemResumed();
   }
 
+  /** The screen unlocked or the network came back: each live link is pinged, and redialled if it doesn't answer. */
+  linkInDoubt(): void {
+    for (const service of this.all()) service.linkInDoubt();
+  }
+
   stop(): void {
     for (const service of this.all()) service.stop();
   }
