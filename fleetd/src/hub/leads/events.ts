@@ -53,7 +53,9 @@ export type Event =
   | { kind: "request"; request: string; what: string; outcome: string; tail?: string }
   | { kind: "cap_raised"; maxAgents: number; free: number }
   | { kind: "decision_overturned"; decision: string; key: string; was: string; replacedBy?: [string, string]; why: string }
-  | { kind: "checklist_removed"; items: [number, string][] };
+  | { kind: "checklist_removed"; items: [number, string][] }
+  /** A person moved a chat message to another order (`chat_about_set`): their correction of its tag. */
+  | { kind: "retagged"; who: string; message: string; from: string; to: string; text: string };
 
 const quote = (text: string) => `"${oneLine(text, 300)}"`;
 
@@ -171,6 +173,8 @@ export function renderEvent(e: Event): string {
           [],
         ];
       }
+      case "retagged":
+        return [`- ${e.who} moved a message (${e.message}) from ${e.from} to ${e.to}: ${quote(e.text)}`, []];
     }
   })();
   return [head, ...rest].join("\n");

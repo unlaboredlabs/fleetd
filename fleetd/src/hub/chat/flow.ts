@@ -45,6 +45,7 @@ import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { leadMessages, leadSource, order, question, QUIET, said, steer } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
+import { humanAbout, refold, settleRun, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
@@ -219,7 +220,9 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
     attachments.check(hub, caller, ids);
     await ensure(hub, r);
     // Only a lead message of this chat is answered; any other names nothing, and the text goes as it is.
-    const replyTo = input.replyTo && repliedIn(hub, r, input.replyTo) ? input.replyTo : undefined;
+    const answered = input.replyTo ? repliedIn(hub, r, input.replyTo) : undefined;
+    const replyTo = answered ? input.replyTo : undefined;
+    const about = writer.author === "human" ? humanAbout(hub, r, input.about, answered, replyTo?.part) : undefined;
     // A link the person wrote is a site they gave their project: allowed before its lead reads the message.
     if (writer.author === "human") allowPasted(hub, r, input.text, writer.by);
     const added = chat(hub).add(r, {
@@ -232,6 +235,7 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
       ...(writer.person ? { person: writer.person } : {}),
       ...(writer.client ? { client: writer.client } : {}),
       ...(replyTo ? { replyTo } : {}),
+      ...(about ? { about } : {}),
       delivery: "queued",
       held: true,
     });
@@ -301,7 +305,7 @@ async function go(hub: Hub, r: ProjectRef, message: ChatMessage, now: boolean): 
     if (starts) {
       const files = await filesOf(hub, r, message).catch(() => undefined);
       if (files !== undefined) {
-        first = forLead(prompts(hub.db).current(r), message, replied(hub, message), files, writerName(hub.db, message.person), when(hub, message));
+        first = forLead(prompts(hub.db).current(r), message, replied(hub, message), files, writerName(hub.db, message.person), when(hub, message), tagsOn(hub, r));
       }
     }
     if (first !== undefined && (await area.freshIfDue(r, first).catch(() => undefined))) {
@@ -386,7 +390,7 @@ const replied = (hub: Hub, message: ChatMessage) => (message.replyTo ? repliedIn
 async function deliver(hub: Hub, r: ProjectRef, thread: ThreadRef, message: ChatMessage, now: boolean): Promise<boolean> {
   const files = (await filesOf(hub, r, message)) + skillsOf(hub, r, message);
   const set = prompts(hub.db).forThread(thread.machineId, thread.threadId);
-  const text = forLead(set, message, replied(hub, message), files, writerName(hub.db, message.person), when(hub, message));
+  const text = forLead(set, message, replied(hub, message), files, writerName(hub.db, message.person), when(hub, message), tagsOn(hub, r));
   const out = await writeQueue(hub).send(thread, text, `chat:${message.messageId}`, undefined, { mode: now ? "now" : "plain" });
   return out.queued;
 }
@@ -626,6 +630,11 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
         console.warn("chat: cut-off reply not finished:", error);
       }
     }
+    try {
+      settleRun(hub, r, thread.threadId, nowMs(hub.clock));
+    } catch (error) {
+      console.warn("chat: the run's tags not settled:", error);
+    }
   }
   try {
     state(hub, r);
@@ -768,6 +777,8 @@ const FOLLOWED: HubEventType[] = [
   "request.opened",
   "request.updated",
   "agents.cap",
+  "workstream.done",
+  "workstream.state",
 ];
 
 /** One followed event. */
@@ -784,6 +795,15 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
     }
     case "write.expired":
       return expired(hub, event.data);
+    case "workstream.done":
+    case "workstream.state": {
+      // A closed order's messages fold into the last one about it.
+      const id = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
+      if (typeof id === "string" && event.machineId !== undefined && event.projectId !== undefined) {
+        refold(hub, { machineId: event.machineId, projectId: event.projectId }, id);
+      }
+      return;
+    }
     case "machine.online": {
       const machine = event.machineId;
       if (machine === undefined) return;

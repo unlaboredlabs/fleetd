@@ -11,6 +11,8 @@ export type Kept = {
   archivedAt?: Timestamp;
   /** Absent: slate, the default. */
   avatarColor?: BotColor;
+  /** Its chat's tags trial is on; absent: off. */
+  chatTags?: true;
 };
 
 type KeptRow = {
@@ -18,13 +20,14 @@ type KeptRow = {
   created_by_name: string | null;
   archived_ms: number | null;
   avatar_color: string | null;
+  chat_tags: number | null;
 };
 
 /** Undefined for a project with no row of its own. */
 export function kept(db: Database, r: ProjectRef): Kept | undefined {
   const row = db
     .query<KeptRow, [string, string]>(
-      `SELECT created_by_key, created_by_name, archived_ms, avatar_color FROM project_settings
+      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, chat_tags FROM project_settings
          WHERE machine_id = ? AND project_id = ?`,
     )
     .get(r.machineId, r.projectId);
@@ -33,7 +36,24 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.created_by_key !== null) out.createdBy = { keyId: row.created_by_key, name: row.created_by_name ?? "" };
   if (row.archived_ms !== null) out.archivedAt = isoMs(row.archived_ms);
   if (row.avatar_color !== null) out.avatarColor = row.avatar_color;
+  if (row.chat_tags === 1) out.chatTags = true;
   return out;
+}
+
+/** Whether the project's chat tags trial is on. */
+export function chatTagsOn(db: Database, r: ProjectRef): boolean {
+  const row = db
+    .query<{ v: number | null }, [string, string]>("SELECT chat_tags AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return row?.v === 1;
+}
+
+/** Turns the project's chat tags trial on or off; off is kept as none. */
+export function setChatTags(db: Database, r: ProjectRef, on: boolean): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, chat_tags) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET chat_tags = excluded.chat_tags`,
+  ).run(r.machineId, r.projectId, on ? 1 : null);
 }
 
 /** Gives the project's bot `color`; slate, the default, is kept as none. */

@@ -34,7 +34,7 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { setAvatarColor } from "../project_lead/store.ts";
+import { chatTagsOn, setAvatarColor, setChatTags } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -305,6 +305,10 @@ export function register(tools: Registry): void {
     if (input.title !== undefined && input.title !== project.title) await rename(hub, project, input.title);
     // An older app's onlyMe is dropped as the call is decoded: every project is everyone's on the hub (D491).
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
+    if (input.chatTags !== undefined && input.chatTags !== chatTagsOn(hub.db.conn, r)) {
+      setChatTags(hub.db.conn, r, input.chatTags);
+      announce(hub, r, `${project.title}'s chat tags are ${input.chatTags ? "on" : "off"}`, { chatTags: input.chatTags });
+    }
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the project use these settings.";

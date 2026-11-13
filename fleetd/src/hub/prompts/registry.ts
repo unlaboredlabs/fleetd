@@ -39,7 +39,7 @@ export const ENTRIES: RegistryEntry[] = [
     title: "Lead",
     sentWhen: "lead start and every fresh lead start, followed by the state block",
     default: d0,
-    placeholders: "project!=the project's title; projectRef!=<machineId>/<projectId>; people=nothing, or a sentence naming the hub's people when it has more than one",
+    placeholders: "project!=the project's title; projectRef!=<machineId>/<projectId>; people=nothing, or a sentence naming the hub's people when it has more than one; tags=nothing, or the tagged chat's lines when the project's chat tags are on",
     rules: [
       { id: "never-write-code", label: "the lead never writes code", needle: "never write code", enforced: "prompt" },
       { id: "ask-big-calls", label: "asks the human only for product, money or irreversible calls", needle: "product, money or irreversible calls", enforced: "prompt" },
@@ -149,7 +149,7 @@ export const ENTRIES: RegistryEntry[] = [
     title: "Chat: the human",
     sentWhen: "with each chat message the human sends the lead",
     default: d7,
-    placeholders: "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person, with where it came from when not an app or the CLI (via Shortcuts, via the share sheet); when=when they wrote it, on their clock: \"Tue 3 Nov 2026, 18:05 Europe/Berlin\" (their device's zone, else policy.tz, else the hub machine's, which it then names)",
+    placeholders: "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person, with where it came from when not an app or the CLI (via Shortcuts, via the share sheet); about=nothing, or while the project's chat tags are on \" about <order title> (W12)\" or \", not about an order\"; when=when they wrote it, on their clock: \"Tue 3 Nov 2026, 18:05 Europe/Berlin\" (their device's zone, else policy.tz, else the hub machine's, which it then names)",
     rules: [],
   },
   {

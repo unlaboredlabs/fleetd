@@ -1413,6 +1413,26 @@ export type ChartSeries = {
 
 export type ChartType = "line" | "bar" | "area";
 
+/**
+ * What a chat message or bubble is about: an order, by its id and its short title (the tag's words). Set by the hub, only
+ * while the project's chat tags are on (`ProjectSummary.chatTags`).
+ */
+export type ChatAbout = {
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
+/**
+ * A closed order's fold, on the one message of the chat where its bubbles collapse: the last message about it. Every
+ * other message whose `about` (or a bubble's) is this order folds into it, except an inline item still open.
+ */
+export type ChatFold = {
+  count: number;
+  state: WorkstreamState;
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
 export type KnownChatAuthor = "human" | "lead" | "agent" | "system";
 /** KnownChatAuthor, or a value from a newer hub. */
 export type ChatAuthor = KnownChatAuthor | (string & {});
@@ -1482,6 +1502,19 @@ export type ChatFile = {
   name: string;
 };
 
+export type ChatAboutSetInput = {
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+  /** The open order it is about now; absent: about no order. */
+  workstreamId?: WorkstreamId;
+};
+
+export type ChatAboutSetOutput = {
+  message: ChatMessage;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type ChatHistoryInput = {
   after?: number;
   before?: number;
@@ -1516,6 +1549,8 @@ export type ChatItem = SecretRequestItem & {
 };
 
 export type ChatMessage = {
+  /** The order it is about; absent: none, or the project's chat tags are off. */
+  about?: ChatAbout;
   /**
    * A system line "Published …": a lead or task published an artifact (`artifact_publish`); the app shows a
    * card that opens it.
@@ -1547,6 +1582,8 @@ export type ChatMessage = {
    */
   memoryRefreshed?: MemoryRefreshed;
   messageId: ChatMessageId;
+  /** The order it is about is closed, and its bubbles fold here. */
+  fold?: ChatFold;
   /** The lead flagged it for the person's look (`nudge`). */
   nudge?: ChatNudge;
   /**
@@ -1666,6 +1703,8 @@ export type ChatOpenNudge = {
  * markdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).
  */
 export type ChatPart = {
+  /** This bubble's own order, when the lead's message names more than one (each bubble opening with `[W12]`). */
+  about?: ChatAbout;
   block?: ChatBlock;
   end: number;
   start: number;
@@ -1746,6 +1785,8 @@ export type ChatReplyTo = {
 export type ChatRequestId = string;
 
 export type ChatSendInput = {
+  /** Sent from a lens on one order: the message is about it. Kept only while the project's chat tags are on. */
+  about?: WorkstreamId;
   /** From attachment_put. */
   attachments?: AttachmentId[];
   /** A human key: where it is written. Absent means the app. */
@@ -6339,6 +6380,8 @@ export type ProjectSettingsGetOutput = {
 export type ProjectSettingsSetInput = {
   /** Its bot's color, from the palette; slate is the default. */
   avatarColor?: BotColor;
+  /** Turns its chat's tags on or off (a trial; off by default). */
+  chatTags?: boolean;
   machineId: MachineId;
   projectId: ProjectId;
   /**
@@ -6480,6 +6523,8 @@ export type ProjectSummary = {
   avatar?: string;
   /** Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default. */
   avatarColor?: BotColor;
+  /** Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off. */
+  chatTags?: boolean;
   /**
    * The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it
    * was recorded.
@@ -9768,6 +9813,7 @@ export interface ToolMap {
   browser_sessions: { input: BrowserSessionsInput; output: BrowserSessionsOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
+  chat_about_set: { input: ChatAboutSetInput; output: ChatAboutSetOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_nudge_clear: { input: ChatNudgeClearInput; output: ChatNudgeClearOutput };
   chat_pins_get: { input: ChatPinsGetInput; output: ChatPinsGetOutput };

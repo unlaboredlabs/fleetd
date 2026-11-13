@@ -3031,6 +3031,61 @@
       ],
       "type": "string"
     },
+    "ChatAbout": {
+      "description": "What a chat message or bubble is about: an order, by its id and its short title (the tag's words). Set by the hub, only\nwhile the project's chat tags are on (`ProjectSummary.chatTags`).",
+      "properties": {
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ChatAboutSetInput": {
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The open order it is about now; absent: about no order."
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "ChatAboutSetOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
     "ChatAuthor": {
       "oneOf": [
         {
@@ -3286,6 +3341,35 @@
       ],
       "type": "object"
     },
+    "ChatFold": {
+      "description": "A closed order's fold, on the one message of the chat where its bubbles collapse: the last message about it. Every\nother message whose `about` (or a bubble's) is this order folds into it, except an inline item still open.",
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title",
+        "state",
+        "count"
+      ],
+      "type": "object"
+    },
     "ChatHistoryInput": {
       "properties": {
         "after": {
@@ -3417,6 +3501,10 @@
     },
     "ChatMessage": {
       "properties": {
+        "about": {
+          "$ref": "#/$defs/ChatAbout",
+          "description": "The order it is about; absent: none, or the project's chat tags are off."
+        },
         "artifact": {
           "$ref": "#/$defs/ArtifactPublished",
           "description": "A system line \"Published …\": a lead or task published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
@@ -3454,6 +3542,10 @@
         "delivery": {
           "$ref": "#/$defs/ChatDelivery",
           "description": "A human message: how it reached the lead."
+        },
+        "fold": {
+          "$ref": "#/$defs/ChatFold",
+          "description": "The order it is about is closed, and its bubbles fold here."
         },
         "for": {
           "$ref": "#/$defs/PersonRef",
@@ -3720,6 +3812,10 @@
     "ChatPart": {
       "description": "One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as\nmarkdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).",
       "properties": {
+        "about": {
+          "$ref": "#/$defs/ChatAbout",
+          "description": "This bubble's own order, when the lead's message names more than one (each bubble opening with `[W12]`)."
+        },
         "block": {
           "$ref": "#/$defs/ChatBlock"
         },
@@ -3918,6 +4014,10 @@
     },
     "ChatSendInput": {
       "properties": {
+        "about": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "Sent from a lens on one order: the message is about it. Kept only while the project's chat tags are on."
+        },
         "attachments": {
           "description": "From attachment_put.",
           "items": {
@@ -10913,6 +11013,12 @@
         "changes_list.output": {
           "$ref": "#/$defs/ChangesListOutput"
         },
+        "chat_about_set.input": {
+          "$ref": "#/$defs/ChatAboutSetInput"
+        },
+        "chat_about_set.output": {
+          "$ref": "#/$defs/ChatAboutSetOutput"
+        },
         "chat_history.input": {
           "$ref": "#/$defs/ChatHistoryInput"
         },
@@ -12025,6 +12131,8 @@
         "cap_set.output",
         "changes_list.input",
         "changes_list.output",
+        "chat_about_set.input",
+        "chat_about_set.output",
         "chat_history.input",
         "chat_history.output",
         "chat_nudge_clear.input",
@@ -17133,6 +17241,10 @@
           "$ref": "#/$defs/BotColor",
           "description": "Its bot's color, from the palette; slate is the default."
         },
+        "chatTags": {
+          "description": "Turns its chat's tags on or off (a trial; off by default).",
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -17498,6 +17610,10 @@
         "avatarColor": {
           "$ref": "#/$defs/BotColor",
           "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default."
+        },
+        "chatTags": {
+          "description": "Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off.",
+          "type": "boolean"
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
