@@ -138,13 +138,20 @@ export function tagAsked(hub: Hub, r: ProjectRef, workstreamId: WorkstreamId, at
   if (row) tagIfUntagged(hub, `m${row.n}`, about);
 }
 
+/** The run ends already settled, per lead thread: each run is settled once. */
+const settled = (hub: Hub) => hub.area("chat_tags_settled", () => new Map<string, number>());
+
 /**
- * The lead's run of thread `thread` just ended: the people's messages it took in that have no tag yet are about the
- * one order it touched, and so are its own replies still untagged; the closed orders it tagged fold again.
+ * The lead's run of thread `thread` just ended, at `endMs`: the people's messages it took in that have no tag yet are
+ * about the one order it touched, and so are its own replies still untagged; the closed orders it tagged fold again.
+ * Once per run: a message a person since moved to no order stays there.
  */
-export function settleRun(hub: Hub, r: ProjectRef, thread: string, nowMs: number): void {
+export function settleRun(hub: Hub, r: ProjectRef, thread: string, endMs: number): void {
   if (!tagsOn(hub, r)) return;
-  const { floor, since } = runWindow(hub.db, r, thread, nowMs);
+  const { floor, since } = runWindow(hub.db, r, thread, endMs);
+  const done = settled(hub);
+  if ((done.get(thread) ?? -1) >= since) return;
+  done.set(thread, since);
   // The run that just ended holds the moment before its end.
   const order = turnOrder(hub, r, since - 1);
   if (order === undefined) return;

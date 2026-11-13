@@ -7,6 +7,7 @@ import type { Trigger } from "../src/hub/api/lead_lines.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { Requests } from "../src/hub/approvals/store.ts";
 import { touched } from "../src/hub/chat/about.ts";
+import { mirror } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { forLead } from "../src/hub/chat/lead_text.ts";
 import { humanAbout, refold, settleRun, tagAsked } from "../src/hub/chat/tags.ts";
@@ -146,6 +147,25 @@ test("switch on: a person's message takes its lens or the tag of the bubble it a
   expect(chat(hub).byId(more.messageId)?.about?.workstreamId).toBe("W3");
   const filter = lead(hub, "[W4] The filter is live.", "lead:lead-1:f");
   expect(humanAbout(hub, PROJECT, undefined, filter, 0)).toBeUndefined();
+  done();
+});
+
+test("switch on: a run is settled once, so a message a person moved to no order stays there", async () => {
+  const { hub, clock, call, done } = rig(true);
+  touched(hub, PROJECT, "W3");
+  const chips = chat(hub).add(PROJECT, { author: "human", text: "the chips overlap", person: DANA, delivery: "turn" }).message;
+  clock.ms += 1000;
+  events(hub).append({ at: new Date(clock.ms).toISOString(), type: "thread.completed", machineId: PROJECT.machineId, threadId: "lead-1", summary: "done", data: { threadId: "lead-1" } } as never);
+  const end = clock.ms;
+  settleRun(hub, PROJECT, "lead-1", end);
+  expect(chat(hub).byId(chips.messageId)?.about?.workstreamId).toBe("W3");
+  await call("chat_about_set", { projectRef: PROJECT, messageId: chips.messageId });
+  // The same run's end again (a later mirror, a node back): nothing is tagged again.
+  clock.ms += 5000;
+  settleRun(hub, PROJECT, "lead-1", end);
+  settleRun(hub, PROJECT, "lead-1", clock.ms);
+  await mirror(hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
+  expect(chat(hub).byId(chips.messageId)?.about).toBeUndefined();
   done();
 });
 

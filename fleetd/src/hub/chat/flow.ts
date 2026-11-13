@@ -630,11 +630,6 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
         console.warn("chat: cut-off reply not finished:", error);
       }
     }
-    try {
-      settleRun(hub, r, thread.threadId, nowMs(hub.clock));
-    } catch (error) {
-      console.warn("chat: the run's tags not settled:", error);
-    }
   }
   try {
     state(hub, r);
@@ -781,6 +776,9 @@ const FOLLOWED: HubEventType[] = [
   "workstream.state",
 ];
 
+/** The events that end a lead's run. */
+const RUN_ENDS: HubEventType[] = ["thread.completed", "thread.failed", "thread.interrupted"];
+
 /** One followed event. */
 async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
   const signal = hub.shutdown.signal;
@@ -822,7 +820,18 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
   if (!r) return;
   if (event.type === "lead.started") await sendHeld(hub, r);
   else if (event.type === "thread.started") state(hub, r);
-  else await mirror(hub, r, thread);
+  else {
+    await mirror(hub, r, thread);
+    // Once per run, as its end comes: a later mirror (a node back, a request answered) must not tag again what a
+    // person since moved to no order.
+    if (RUN_ENDS.includes(event.type)) {
+      try {
+        settleRun(hub, r, thread.threadId, parseMs(event.at) ?? nowMs(hub.clock));
+      } catch (error) {
+        console.warn("chat: the run's tags not settled:", error);
+      }
+    }
+  }
 }
 
 /**
