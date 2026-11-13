@@ -242,6 +242,21 @@ test("a node removed from the hub is ended at its next heartbeat", async () => {
   expect(await node.closed).toEqual({ code: 4001, reason: "worker-8 was removed from this hub: its node key is revoked" });
 });
 
+test("a removed machine's node, back with its key, is told it was removed; another key under that name isn't enrolled", async () => {
+  const node = await linked("worker-12");
+  node.close();
+  await node.closed;
+  hub.auth.nodes.revokeNode("worker-12");
+  const back = new FakeNode(url, { machineId: "worker-12", key: node.key });
+  expect(await back.closed).toEqual({ code: 4001, reason: "worker-12 was removed from this hub: its node key is revoked" });
+  const other = new FakeNode(url, { machineId: "worker-12" });
+  expect(await other.closed).toEqual({ code: 4001, reason: "worker-12 is not enrolled: run fleetd pair --worker worker-12 on the hub" });
+  // Enrolled again with a new code, the same key links.
+  const again = await linked("worker-12", { key: node.key });
+  again.close();
+  await again.closed;
+});
+
 test("onLinked hears each welcome; a slept node's span is kept", async () => {
   const heard: string[] = [];
   const off = links.onLinked(({ machineId, hello }) => heard.push(`${machineId} ${hello.nodeVersion}`));

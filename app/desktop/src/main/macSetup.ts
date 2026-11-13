@@ -376,8 +376,8 @@ export async function restartNode(ports: MacSetupPorts): Promise<MacRestartOutco
   return ran.code === 0 ? { ok: true } : { ok: false, failure: cliFailure(ran.output) };
 }
 
-/** This Mac's node as node.json has it, when it is enrolled as the agents' Mac: what the window reopens on. */
-export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undefined> {
+/** This Mac's node.json, when it is the agents' Mac's: undefined for none, or another node's. */
+async function macNode(ports: MacSetupPorts): Promise<{ enrolled: unknown; removed: unknown; machineId: string; hub: string; hubName: string } | undefined> {
   const file = await ports.readFile(path.join(ports.fleetdDir, "node", "node.json"));
   let node: unknown;
   try {
@@ -386,15 +386,30 @@ export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undef
     return undefined;
   }
   if (typeof node !== "object" || node === null) return undefined;
-  const { enrolled, agentsMac, machineId, hub } = node as Record<string, unknown>;
-  if (enrolled !== true || agentsMac !== true || typeof machineId !== "string" || typeof hub !== "string") return undefined;
+  const { enrolled, removed, agentsMac, machineId, hub } = node as Record<string, unknown>;
+  if (agentsMac !== true || typeof machineId !== "string" || typeof hub !== "string") return undefined;
   let hubName = hub;
   try {
     hubName = new URL(hub).hostname.split(".")[0] ?? hub;
   } catch {
     // An address with no scheme: shown as it is.
   }
+  return { enrolled, removed, machineId, hub, hubName };
+}
+
+/** This Mac's node as node.json has it, when it is enrolled as the agents' Mac: what the window reopens on. */
+export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undefined> {
+  const node = await macNode(ports);
+  if (node?.enrolled !== true) return undefined;
+  const { hub, hubName, machineId } = node;
   return { hubUrl: hub, hubName, machineId, existing: true, here: { kind: "node", machineId, hub } };
+}
+
+/** The hub removed this Mac (its node wrote so in node.json, and stopped): the window opens on a new code, saying so. */
+export async function removedHere(ports: MacSetupPorts): Promise<MacSetupFailure | undefined> {
+  const node = await macNode(ports);
+  if (node === undefined || node.enrolled === true || node.removed !== true) return undefined;
+  return { message: `${node.hubName} removed this Mac, so its agents can't use it now.`, fix: "To set it up again, type a new code from Add machine › A Mac for agents on your main machine." };
 }
 
 /** How long "not signed in to the hub here" stands before it is asked again. */
@@ -468,6 +483,10 @@ export class MacSetup {
     if (this.#join !== undefined && pending !== undefined) return { kind: "joining", found: pending.found };
     const joined = await joinedHere(this.#ports);
     if (joined !== undefined) return { kind: "joined", found: joined };
+    if (pending === undefined) {
+      const removed = await removedHere(this.#ports);
+      if (removed !== undefined) return { kind: "spent", failure: removed };
+    }
     if (pending !== undefined) {
       if (Date.parse(pending.expiresAt) > this.#ports.now()) return { kind: "traded", found: pending.found };
       this.#pending = undefined;

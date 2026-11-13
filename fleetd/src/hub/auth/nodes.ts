@@ -195,6 +195,24 @@ export class NodeKeys {
 
   /** Forgets the machine's node key, so its node is refused from its next link on; false if it had none. */
   revokeNode(machineId: string): boolean {
-    return this.db.conn.query("DELETE FROM node_keys WHERE machine_id = ?").run(machineId).changes > 0;
+    return revokeNodeKey(this.db, machineId, this.clock.now());
   }
+
+  /** Whether `pubKey` is the key the hub removed `machineId` with: its node is told it was removed, not unknown. */
+  removedKey(machineId: string, pubKey: string): boolean {
+    return this.db.conn.query("SELECT 1 FROM removed_node_keys WHERE machine_id = ? AND pub_key = ?").get(machineId, pubKey) !== null;
+  }
+}
+
+/** Forgets the machine's node key and keeps it as removed (removedKey), in one step: `fleetd machine remove` and the
+ * hub's machine_remove. False if it had none. */
+export function revokeNodeKey(db: HubDb, machineId: string, nowMs: number): boolean {
+  return db.transaction((conn) => {
+    conn
+      .query(
+        "INSERT INTO removed_node_keys (machine_id, pub_key, removed_ms) SELECT machine_id, pub_key, ? FROM node_keys WHERE machine_id = ? ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key, removed_ms = excluded.removed_ms",
+      )
+      .run(nowMs, machineId);
+    return conn.query("DELETE FROM node_keys WHERE machine_id = ?").run(machineId).changes > 0;
+  });
 }

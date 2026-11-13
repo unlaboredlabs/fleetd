@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The chat's ways into the panel: the live strip opens its agents in the Agents tab, and a PR named in the chat opens that PR there.
+// The chat's ways into the panel: the island's card opens its agents in the Agents tab, and a PR named in the chat opens that PR there.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -8,9 +8,9 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, card, lane, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { LiveStrip } from "../live";
 import { useRoute } from "../shell/navigation";
 import { PanelSlot, useProjectPanel } from "../shell/panel";
+import { Island } from "./Island";
 import { InlineText, Message } from "./text";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,9 +60,10 @@ const openExternal = vi.fn();
 let host: HTMLDivElement;
 let root: Root | undefined;
 
-// The panel's chunk and the markdown parser, loaded once up front as the app's first opening would.
+// The panel's chunks (its frame and its tabs' panes) and the markdown parser, loaded once up front as the app's first
+// opening would: on a busy machine a pane still loading when a step looks reads as the panel not opening.
 beforeAll(async () => {
-  await Promise.all([import("../panel/ProjectPanel"), import("../../ui/markdown/MarkdownBody")]);
+  await Promise.all([import("../panel/ProjectPanel"), import("../panel/panes"), import("../../ui/markdown/MarkdownBody")]);
 });
 
 beforeEach(() => {
@@ -83,7 +84,7 @@ function Harness({ text }: { text: string }) {
   const panel = useProjectPanel(useRoute());
   return (
     <TooltipProvider>
-      <LiveStrip project={project} lead={<span data-lead="" />} />
+      <Island project={project} warning={undefined} />
       <div data-testid="message">
         <Message text={text} project={project} />
       </div>
@@ -136,62 +137,61 @@ const follow = async (a: HTMLAnchorElement | undefined) => {
   await settle();
 };
 
-it("opens an agent, the panel's agents and its PRs from the strip's lanes, even when the panel was closed", async () => {
+it("opens an agent, the panel's agents and its PRs from the island's card, even when the panel was closed", async () => {
   await mount("");
   act(() => host.querySelector<HTMLButtonElement>("button[data-opens='panel'][aria-pressed='true']")?.click());
   expect(panel()).toBeNull();
 
-  // The lead's turn line is the strip's first item, inside its capsule.
-  const strip = host.querySelector("section[aria-label='1 agent working']");
-  expect(strip?.querySelector("[data-strip]")?.firstElementChild?.hasAttribute("data-lead")).toBe(true);
+  // The island: a glyph for the agent and how many, its words for a screen reader.
+  const island = host.querySelector("[data-island]");
+  const toggle = island?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  expect(toggle?.getAttribute("aria-label")).toBe("1 agent working");
+  expect(toggle?.textContent).toBe("1");
+  expect(island?.querySelector("ul")).toBeNull();
 
-  // A click on the strip opens its lanes: a row per agent, and the PRs they are on.
-  const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
-  expect(toggle?.textContent).toBe("1 agent working");
-  expect(strip?.querySelector("ul")).toBeNull();
+  // A click opens its card: a row per agent, and the PRs they are on.
   act(() => toggle?.click());
   expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-  const lanes = () => [...(strip?.querySelectorAll<HTMLAnchorElement>("ul[aria-label='Agents at work'] a") ?? [])];
+  const lanes = () => [...(island?.querySelectorAll<HTMLAnchorElement>("ul[aria-label='Agents at work'] a") ?? [])];
   expect(lanes().map((a) => a.getAttribute("href"))).toEqual([`${CHAT}/agents/T1`]);
 
-  // An agent opens in the panel's agents, and the lanes close behind it.
+  // An agent opens in the panel's agents, and the card closes behind it.
   const agent = lanes()[0];
   act(() => agent?.click());
   await follow(agent);
   expect(window.location.hash).toBe(`${CHAT}/agents/T1`);
   expect(panel()?.querySelector("[data-screen^='agents.work']")).not.toBeNull();
-  expect(strip?.querySelector("ul")).toBeNull();
+  expect(island?.querySelector("ul")).toBeNull();
 
-  // The now-line is a way to the same agent; the opened lanes name the PR it is on and lead to the panel's list.
-  expect(strip?.querySelector<HTMLAnchorElement>(`a[href='${CHAT}/agents/T1']`)).not.toBeNull();
+  // Opened again, the card names the PR the agent is on and leads to the panel's list.
   act(() => toggle?.click());
-  const onPr = [...(strip?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "#12");
+  const onPr = [...(island?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "#12");
   await follow(onPr);
   expect(panel()?.querySelector("[data-screen^='prs.detail']")).not.toBeNull();
-  await follow([...(strip?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "Open in the panel"));
+  await follow([...(island?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "Open in the panel"));
   expect(window.location.hash).toBe(`${CHAT}/agents`);
   expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
 });
 
-it("closes the strip's lanes on a second click, a press outside it, or Escape; Tab reaches them after the toggle", async () => {
+it("closes the island's card on a second click, a press outside it, or Escape; Tab reaches it after the island", async () => {
   await mount("");
-  const strip = host.querySelector("section[aria-label='1 agent working']");
-  const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
-  const opened = () => strip?.querySelector("ul[aria-label='Agents at work']") != null;
+  const island = host.querySelector("[data-island]");
+  const toggle = island?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  const opened = () => island?.querySelector("ul[aria-label='Agents at work']") != null;
 
   act(() => toggle?.click());
   expect(opened()).toBe(true);
-  // The toggle comes before the lanes, so Tab goes from it into them.
-  const focusable = [...(strip?.querySelectorAll<HTMLElement>("button, a") ?? [])];
-  const lanes = strip?.querySelector("ul");
-  expect(focusable.indexOf(toggle as HTMLElement)).toBeLessThan(focusable.findIndex((el) => lanes?.contains(el) === true));
+  // The island comes before its card, so Tab goes from it into the card.
+  const focusable = [...(island?.querySelectorAll<HTMLElement>("button, a") ?? [])];
+  const card = island?.querySelector("ul");
+  expect(focusable.indexOf(toggle as HTMLElement)).toBeLessThan(focusable.findIndex((el) => card?.contains(el) === true));
   act(() => toggle?.click());
   expect(opened()).toBe(false);
 
   // A press inside leaves it open; one outside closes it.
   act(() => toggle?.click());
   act(() => {
-    strip?.querySelector("ul")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+    island?.querySelector("ul")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
   });
   expect(opened()).toBe(true);
   act(() => {

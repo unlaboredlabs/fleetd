@@ -159,6 +159,15 @@ test("a refusal (4001, 4002) ends the loop with the hub's reason; retrying would
   const hub = fakeHub({ refuse: [4001, "unknown key"] });
   const fatal = await runNode(options(hub.url, home.dir));
   expect(fatal?.message).toBe("hub refused this node: unknown key");
+  expect(fatal?.removed).toBe(false);
+  hub.server.stop(true);
+  home.done();
+});
+
+test("a refusal that says the hub removed this machine is the removal, which stops the node as enrolled", async () => {
+  const home = tempHome();
+  const hub = fakeHub({ refuse: [4001, "mac-1 was removed from this hub: its node key is revoked"] });
+  expect((await runNode(options(hub.url, home.dir)))?.removed).toBe(true);
   hub.server.stop(true);
   home.done();
 });

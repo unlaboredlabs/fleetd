@@ -186,6 +186,30 @@ it("opened again on a joined Mac, reads its checks one at a time: a read still o
   expect(health).toHaveBeenCalledTimes(2);
 });
 
+it("opened again on a node that never reports its checks: Start over goes back to a new code", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  const found = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "node" as const, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } };
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found }));
+  await open();
+  expect(host.textContent).toContain("Waiting for its first checks…");
+  expect(button("Start over with a new code")).toBeUndefined();
+  await act(async () => {
+    vi.advanceTimersByTime(46_000);
+    await Promise.resolve();
+  });
+  expect(host.textContent).toContain("start over with a new code");
+  expect(button("Restart the node")).toBeDefined();
+  await act(async () => {
+    button("Start over with a new code")?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(host.querySelector("[data-step='code']")).not.toBeNull();
+  vi.useRealTimers();
+  await typeCode();
+  expect(redeem).toHaveBeenCalledTimes(1);
+});
+
 const button = (label: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === label);
 
 it("an app older than the hub says so in one line, with its Update button", async () => {

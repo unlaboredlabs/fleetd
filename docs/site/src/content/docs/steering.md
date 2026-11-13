@@ -65,7 +65,7 @@ back. Past that time it is **expired**.
 
 ## Steer one agent {#agents}
 
-Open an agent from **Agents** (or the agents strip in its project's chat) and type in the box under its work. Enter
+Open an agent from **Agents** (or the island above its project's message box) and type in the box under its work. Enter
 sends at its next step; ⌘Enter stops its current step. Your recent steers to it show above the box with their
 receipts. From a terminal, `fleetd steer T88 "…"` does the same.
 

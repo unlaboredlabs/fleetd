@@ -43,6 +43,7 @@ import {
   type NodeHello,
   type NodeLoad,
   protocolBehind,
+  removedReason,
   REPLY_OF,
   REPLY_TAGS,
   type RequestTag,
@@ -516,6 +517,8 @@ export class Link {
       throw new Refused(CLOSE.UNAUTHORIZED, "the hub could not read the enrolled key");
     }
     if (key === undefined) {
+      // A removed machine's node stops as enrolled (src/node/index.ts); any other waits for the hub to know it.
+      if (nodes.removedKey(machineId, hello.pubKey)) throw new Refused(CLOSE.UNAUTHORIZED, removedReason(machineId));
       throw new Refused(CLOSE.UNAUTHORIZED, `${machineId} is not enrolled: run fleetd pair --worker ${machineId} on the hub`);
     }
     if (key !== hello.pubKey) throw new Refused(CLOSE.UNAUTHORIZED, `key does not match the key enrolled for ${machineId}`);
@@ -664,7 +667,7 @@ export class Link {
         throw new Refused(CLOSE.BAD_FRAME, "hello after welcome");
       case "hb":
         if (this.forgetIfRevoked(machineId, id)) {
-          throw new Refused(CLOSE.UNAUTHORIZED, `${machineId} was removed from this hub: its node key is revoked`);
+          throw new Refused(CLOSE.UNAUTHORIZED, removedReason(machineId));
         }
         this.heartbeat(machineId, frame);
         break;

@@ -82,7 +82,7 @@ export const fixtures = [
   "machines-warning",
   "machines-one",
   "machines-unwell",
-  // F2: the lead chat's live strip with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
+  // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
   "live-1",
@@ -92,6 +92,10 @@ export const fixtures = [
   "live-20-lead",
   // ...and with 1 beside the band's other capsule: the lead's question, waiting on you.
   "live-1-question",
+  // W651: the island over the composer, quiet, crowded (a long red main), and with a file name too long for any band.
+  "live-band-quiet",
+  "live-band-crowded",
+  "live-band-long",
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
@@ -255,7 +259,7 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
-  // W533: agents' DMs to each other, on an agent's work, in Activity and on the lead chat's strip (fixtures/dms).
+  // W533: agents' DMs to each other, on an agent's work, in Activity and in the lead chat's island (fixtures/dms).
   "dms-relays",
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
@@ -447,17 +451,17 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
 };
 
 /**
- * The band over the chat's composer reads as one row: its capsules (the live strip, what needs you) are as tall as the
+ * The band over the chat's composer reads as one row: its capsules (the island, what needs you) are as tall as the
  * tokens say (--island-capsule-h) with the same rounding, their tops and bottoms on one line in a band of its own
- * height (--island-band-h), their words one size on one baseline, and their icons (the chevron, the ×) on one centre.
+ * height (--island-band-h), their words one size on one baseline, and their icons (the ×) on one centre.
  */
 const bandIsOneRow =
-  (...capsules: ReadonlyArray<"strip" | "say">) =>
+  (...capsules: ReadonlyArray<"island" | "say">) =>
   async (page: Page) => {
     const band = await page.locator("[data-band]").evaluate((el) => {
       const token = (name: string) => parseFloat(getComputedStyle(el).getPropertyValue(name));
       const draw = document.createElement("canvas").getContext("2d");
-      const capsules = [...el.querySelectorAll("[data-strip], [data-say]")].filter((c) => c.getClientRects().length > 0);
+      const capsules = [...el.querySelectorAll("[data-island] > :first-child, [data-say]")].filter((c) => c.getClientRects().length > 0);
       const words: Array<{ text: string; size: string; baseline: number }> = [];
       const icons: Array<{ icon: string; middle: number }> = [];
       for (const capsule of capsules) {
@@ -487,9 +491,8 @@ const bandIsOneRow =
         capsuleH: token("--island-capsule-h"),
         capsules: capsules.map((c) => {
           const r = c.getBoundingClientRect();
-          // The strip's row takes its rounding from the capsule it is the whole of while closed.
-          const round = getComputedStyle(c.matches("[data-strip]") ? (c.parentElement ?? c) : c).borderTopLeftRadius;
-          return { name: c.matches("[data-strip]") ? "strip" : "say", top: r.top, bottom: r.bottom, height: r.height, round };
+          const round = getComputedStyle(c).borderTopLeftRadius;
+          return { name: c.matches("[data-say]") ? "say" : "island", top: r.top, bottom: r.bottom, height: r.height, round };
         }),
         words,
         icons,
@@ -509,43 +512,57 @@ const bandIsOneRow =
   };
 
 /**
- * The lead's turn line, with no agents at work, lies in a capsule as wide as the composer's pill (the end given to
- * Latest ↓ when it shows), never as a patch of its words' width over what scrolls behind (the human's report, W609:
- * "Thinking 15s" lying on a picture). At the end, the last message ends above that capsule.
+ * The island over the composer (W651; the human's report on the strip before it: "the dms part outflows"): centred
+ * over the composer's pill and inside it, as tall as the band's capsules, everything in it inside its glass with room
+ * to spare, and a file name too long for the room cut once in the middle, its start and end kept, never at the
+ * capsule's edge. At the end, the last message ends above the band.
  */
-const turnLineInCapsule = async (page: Page) => {
-  const band = await page.locator("[data-band]").evaluate((el) => {
-    const box = (e: Element | null | undefined) => {
-      if (!e) return undefined;
-      const r = e.getBoundingClientRect();
-      return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top) };
-    };
-    const line = el.querySelector("[data-turn-line]");
-    const capsule = line?.closest("[data-strip], [data-alone]");
-    const latest = el.querySelector("[data-say] ~ * > button");
+const islandHolds = async (page: Page) => {
+  const seen = await page.locator("[data-band]").evaluate((band) => {
+    const box = (r: DOMRect) => ({ left: r.left, right: r.right, top: r.top, height: r.height });
+    const island = band.querySelector("[data-island] > :first-child");
+    const pill = document.querySelector("[data-composer] > div");
+    const leaves = [...(island?.querySelectorAll("*") ?? [])]
+      .filter((e) => e.children.length === 0 && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().width > 0)
+      .map((e) => ({ text: e.textContent, ...box(e.getBoundingClientRect()) }));
+    const names = [...(island?.querySelectorAll("code") ?? [])];
     const list = document.querySelector('[aria-label="Conversation with the lead"]');
     const last = [...(list?.querySelectorAll("[data-index]") ?? [])].at(-1);
     const end = list === null ? undefined : list.scrollHeight - list.scrollTop - list.clientHeight;
     return {
-      turn: line?.getAttribute("data-turn") ?? undefined,
-      capsule: box(capsule),
-      // The glass is the capsule's layer under its words (the strip's on the dock around its row).
-      glass: capsule ? getComputedStyle(capsule.matches("[data-strip]") ? (capsule.parentElement ?? capsule) : capsule, "::before").backgroundColor : undefined,
-      pill: box(el.nextElementSibling),
-      latest: box(latest),
-      gap: parseFloat(getComputedStyle(el).columnGap),
+      island: island ? box(island.getBoundingClientRect()) : undefined,
+      pill: pill ? box(pill.getBoundingClientRect()) : undefined,
+      band: box(band.getBoundingClientRect()),
+      capsuleH: parseFloat(getComputedStyle(band).getPropertyValue("--island-capsule-h")),
+      leaves,
+      // The whole name (unseen, holding its width) and the copy shown, and whether the shown one overflows its box.
+      name: names.length === 2 ? { whole: names[0]?.textContent ?? "", shown: names[1]?.textContent ?? "", over: (names[1]?.scrollWidth ?? 0) > (names[1]?.clientWidth ?? 0) + 1 } : undefined,
       lastBottom: last === undefined ? undefined : Math.max(...[...last.querySelectorAll("*")].map((k) => k.getBoundingClientRect().bottom)),
       atEnd: end !== undefined && end <= 1,
     };
   });
-  const seen = JSON.stringify(band);
-  expect(band.turn, `the turn runs: ${seen}`).toBe("running");
-  expect(band.capsule, `the turn line lies in a capsule: ${seen}`).toBeDefined();
-  expect(band.glass, `of glass: ${seen}`).not.toBe("rgba(0, 0, 0, 0)");
-  expect(band.capsule?.left, `its left edge on the pill's: ${seen}`).toBe(band.pill?.left);
-  const right = band.latest === undefined ? band.pill?.right : (band.latest.left - band.gap);
-  expect(Math.abs((band.capsule?.right ?? 0) - (right ?? 0)), `its right edge on the pill's, or at Latest ↓: ${seen}`).toBeLessThanOrEqual(1);
-  if (band.atEnd) expect(band.lastBottom, `at the end, the last message ends above it: ${seen}`).toBeLessThan(band.capsule?.top ?? 0);
+  const said = JSON.stringify(seen, null, 1);
+  const { island, pill } = seen;
+  if (island === undefined || pill === undefined) throw new Error(`no island over the composer: ${said}`);
+  expect(island.height, `as tall as the band's capsules: ${said}`).toBe(seen.capsuleH);
+  expect(island.left, `inside the pill's left edge: ${said}`).toBeGreaterThanOrEqual(pill.left - 0.5);
+  expect(island.right, `inside the pill's right edge: ${said}`).toBeLessThanOrEqual(pill.left + (pill.right - pill.left) + 0.5);
+  expect(Math.abs(island.left - pill.left - (pill.right - island.right)), `centred over the pill: ${said}`).toBeLessThanOrEqual(1);
+  for (const leaf of seen.leaves) {
+    expect(leaf.left, `"${leaf.text}" keeps room from the island's left edge: ${said}`).toBeGreaterThanOrEqual(island.left + 8);
+    expect(leaf.right, `"${leaf.text}" keeps room from the island's right edge: ${said}`).toBeLessThanOrEqual(island.right - 8);
+  }
+  if (seen.name !== undefined) {
+    const { whole, shown, over } = seen.name;
+    expect(over, `the name shown fits its box: ${said}`).toBe(false);
+    if (shown !== whole) {
+      const [head = "", tail = ""] = shown.split("…");
+      expect(shown.split("…"), `cut once, in the middle: ${said}`).toHaveLength(2);
+      expect(whole.startsWith(head) && whole.endsWith(tail), `its start and end kept: ${said}`).toBe(true);
+      expect(Math.abs(head.length - tail.length), `as much of each: ${said}`).toBeLessThanOrEqual(1);
+    }
+  }
+  if (seen.atEnd) expect(seen.lastBottom, `at the end, the last message ends above the band: ${said}`).toBeLessThan(island.top);
 };
 
 /**
@@ -587,25 +604,40 @@ const filterIsOneLine = async (page: Page) => {
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
 export const screens: readonly Screen[] = [
-  // F2 (A4): the live strip, a glass capsule floating just over the project's composer island. live-0 draws no strip.
-  // One line: the turn line (-lead), the dots, the headline and the now-line on the left, the DMs count (live-1 and
-  // live-20) at the right beside the chevron; in the narrowest window the now-line goes.
+  // F2 (A4), W651: the island, a small glass capsule centred just over the composer: what the lead does now when it
+  // says more than its avatar does, a glyph per agent and how many, a red dot for a red main. live-0 and live-1 (the
+  // lead idle or only working) draw it with the agents alone; live-band-long's file name is cut in the middle.
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-0", "live-1", "live-3", "live-20", "live-1-lead", "live-20-lead"],
+    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-crowded", "live-band-long"],
     sizes: [...defaultSizes, "narrow"],
-    variant: "strip",
+    variant: "island",
+    check: islandHolds,
   },
-  // W533: the only trace of agents' DMs in the lead chat: their count at the strip's end.
+  // ...and with no agent, no step worth saying and main green: nothing over the composer.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-0"],
+    variant: "island-none",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator("[data-island]")).toHaveCount(0);
+    },
+  },
+  // W533: the agents' DMs to each other, in the lead chat: their count in the island's card, a way to Activity's log.
   {
     id: "chat",
     route: CHAT,
     fixtures: ["dms-relays"],
     variant: "dm-count",
-    open: (page) => expect(page.getByRole("link", { name: "5 DMs between agents" })).toBeVisible(),
+    open: async (page) => {
+      await page.locator("[data-island] > button").click();
+      await expect(page.getByRole("link", { name: "5 DMs between agents" })).toBeVisible();
+    },
   },
-  // W581: the band's two capsules, the strip and the lead's question waiting on you (Show, ×), read as one row.
+  // W581: the band's two capsules, the island and the lead's question waiting on you (Show, ×), read as one row.
   {
     id: "chat",
     route: CHAT,
@@ -613,9 +645,9 @@ export const screens: readonly Screen[] = [
     sizes: [...defaultSizes, "narrow"],
     variant: "band",
     open: (page) => expect(page.locator("[data-say]").getByRole("button", { name: "Show" })).toBeVisible(),
-    check: bandIsOneRow("strip", "say"),
+    check: bandIsOneRow("island", "say"),
   },
-  // ...and the × hides the question's capsule: the strip takes its room, and neither the band nor the composer moves.
+  // ...and the × hides the question's capsule: neither the band nor the composer moves.
   {
     id: "chat",
     route: CHAT,
@@ -629,16 +661,17 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("[data-say]")).toBeHidden();
       expect([await band.boundingBox(), await box.boundingBox()]).toEqual(before);
     },
-    check: bandIsOneRow("strip"),
+    check: bandIsOneRow("island"),
   },
-  // A click on the strip opens its lanes above it, a row per agent.
+  // A click on the island opens its card above it: main's reason in full, a row per agent, the agents' DMs.
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-3", "live-20"],
-    variant: "strip-open",
+    fixtures: ["live-3", "live-20", "live-band-crowded"],
+    sizes: [...defaultSizes, "narrow"],
+    variant: "island-open",
     open: async (page) => {
-      await page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u }).click();
+      await page.locator("[data-island] > button").click();
       await expect(page.getByRole("list", { name: "Agents at work" })).toBeVisible();
     },
   },
@@ -761,13 +794,23 @@ export const screens: readonly Screen[] = [
       await expect(box).toHaveValue("1 yes, 2 literal");
     },
   },
-  // The lead at work: on one line in the composer's band, what it is doing now, what its turn did so far and how long
-  // it has worked; lead-long ellipsizes, lead-counting only counts; lead-worked: the turn is over, and its reply wears
-  // how long it took.
-  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
-  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: its line has a
-  // capsule of its own across the band, at the end and scrolled up over the pictures.
-  { id: "chat", route: CHAT, fixtures: ["lead-pictures"], variant: "turn-alone", check: turnLineInCapsule },
+  // The lead at work: in the island over the composer, what it is doing now (lead-long: a file name cut in the middle);
+  // lead-counting only works, so the island says nothing for it; lead-worked: the turn is over, and its reply wears how
+  // long it took.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long"], variant: "activity", check: islandHolds },
+  { id: "chat", route: CHAT, fixtures: ["lead-counting", "lead-worked"], variant: "activity" },
+  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: the avatar says it,
+  // so nothing floats over the composer, at the end and scrolled up over the pictures.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-pictures"],
+    variant: "turn-alone",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator("[data-island]")).toHaveCount(0);
+    },
+  },
   {
     id: "chat",
     route: CHAT,
@@ -779,8 +822,8 @@ export const screens: readonly Screen[] = [
       await page.getByRole("list", { name: "Conversation with the lead" }).hover();
       await page.mouse.wheel(0, -200);
       await expect(page.getByRole("button", { name: /Latest/u })).toBeVisible();
+      await expect(page.locator("[data-island]")).toHaveCount(0);
     },
-    check: turnLineInCapsule,
   },
   // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to
   // what it was.
@@ -835,9 +878,10 @@ export const screens: readonly Screen[] = [
       await page.locator("[data-attention]").getByRole("button", { name: "Show" }).click();
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
-    check: bandIsOneRow("strip", "say"),
+    check: bandIsOneRow("island", "say"),
   },
-  // A red main is a warning over the composer, in the hub's words, not a block (checkout's `ios sessions`).
+  // A red main is the island's red dot, not a block, and its card says it in the hub's words (checkout's
+  // `ios sessions`).
   {
     id: "chat",
     route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
@@ -845,7 +889,9 @@ export const screens: readonly Screen[] = [
     variant: "red-main",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator('[data-attention="warning"]')).toHaveText("ios sessions is red on main, fix in progress");
+      const island = page.locator("[data-island]");
+      await island.getByRole("button", { name: "main is red" }).click();
+      await expect(island.locator("[data-island-card]")).toHaveText("ios sessions is red on main, fix in progress");
     },
   },
   // A project blocked by its machine's usage pause: the reason over the composer, with Resume (search, on buildbox).
@@ -891,7 +937,7 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("[data-say]").getByRole("button", { name: "Show" })).toBeVisible();
       await inBackground(page);
     },
-    check: bandIsOneRow("strip", "say"),
+    check: bandIsOneRow("island", "say"),
   },
   {
     id: "chat.composer",
@@ -947,21 +993,20 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("[data-say]").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
-  // An agent in the strip's lanes opens in the panel's agents, where its work is (the chat doesn't draw it itself):
-  // the panel is closed first, so the shot shows the strip opening it.
+  // An agent in the island's card opens in the panel's agents, where its work is (the chat doesn't draw it itself):
+  // the panel is closed first, so the shot shows the island's card opening it.
   {
     id: "chat",
     route: CHAT,
     fixtures: ["live-3", "live-20"],
-    variant: "strip-to-panel",
+    variant: "island-to-panel",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await page.locator('[data-opens="panel"]').click();
       await panel.waitFor({ state: "detached" });
-      // Scoped to the strip: the sidebar's project button also says "3 agents working".
-      const strip = page.getByRole("region", { name: /agents? working/u });
-      await strip.getByRole("button", { name: /agents? working/u }).click();
-      await strip.getByRole("list", { name: "Agents at work" }).getByRole("link").first().click();
+      const island = page.locator("[data-island]");
+      await island.locator("> button").click();
+      await island.getByRole("list", { name: "Agents at work" }).getByRole("link").first().click();
       await panel.locator('[data-screen^="agents.work"]').waitFor();
       await expect(page).toHaveURL(/\/agents\/T\d+$/u);
     },
@@ -1203,7 +1248,7 @@ export const screens: readonly Screen[] = [
       }, `${CHAT}/activity`);
     }, (page) => page.getByLabel("Loading the activity")),
   },
-  // W533: Activity's DMs log, as the strip's count opens it, with a DM to three and the guard's refused wake opened;
+  // W533: Activity's DMs log, as the island's card opens it, with a DM to three and the guard's refused wake opened;
   // and All, where a pair's DMs of an hour fold into one row and the refused wake has its own line. The filter names
   // DMs there: one line in its box at every size, the panel 320 px wide in the small window and 420 in the medium.
   {
@@ -2740,6 +2785,24 @@ export const screens: readonly Screen[] = [
       for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
       await page.getByText("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer").waitFor({ timeout: 5_000 });
+    },
+  },
+  // A node that never reports its checks (555555): once it's had its time, Restart, and Start over with a new code. The
+  // page's clock runs on from the join, then jumps past the wait.
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "no-checks",
+    open: async (page) => {
+      await page.clock.install();
+      await page.reload();
+      await page.getByRole("textbox").first().fill("555555");
+      await page.getByRole("heading", { name: "Starting the node" }).waitFor({ timeout: 20_000 });
+      await page.clock.fastForward(46_000);
+      await page.getByRole("button", { name: "Start over with a new code" }).waitFor({ timeout: 10_000 });
     },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
