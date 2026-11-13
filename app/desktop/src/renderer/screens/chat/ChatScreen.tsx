@@ -8,8 +8,11 @@
 // picture and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings);
 // an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
-import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
+import { BubbleActionsContext, type BubbleActions, type ReplyTarget, type TagActions } from "./actions";
+import { Button, FrameTitle, IdChip, StatusChip, Text, toast } from "../../ui";
+import type { ChatAbout } from "../../../shared/contracts";
+import { LensCapsule } from "./lens/Lens";
+import { foldOrder } from "./lens/tags";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -74,6 +77,32 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Whose messages are yours: in a chat the team shares, someone else's show their name.
   const me = useHubRole().me?.personId;
   const names = usePersonNames();
+  // The tagged chat (the project's trial): tags name its open orders, closed ones fold, a lens shows one order.
+  const tagsOn = useData((d) => d.projects[key]?.chatTags === true);
+  const board = useData((d) => d.orders);
+  const orders = useMemo(
+    (): readonly ChatAbout[] =>
+      tagsOn
+        ? Object.values(board ?? {})
+            .filter((o) => projectKey(o.projectRef) === key && o.state === "open")
+            .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .map((o) => ({ workstreamId: o.workstreamId, title: o.title }))
+        : [],
+    [tagsOn, board, key],
+  );
+  /** The lens, and the message whose tag opened it: closing it goes back there. Never kept: a reload drops it. */
+  const [looking, setLooking] = useState<{ about: ChatAbout; from: string }>();
+  const lens = tagsOn ? looking?.about : undefined;
+  const phase = useData((d) => (lens === undefined ? undefined : d.orders?.[lens.workstreamId]?.phaseDetail));
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  const openItems = useData((d) => d.chatStates[key]?.openItems);
+  const tags = useMemo(
+    () =>
+      tagsOn
+        ? { named: orders.length >= 2, lens: lens?.workstreamId, opened: unfolded, openItems: new Set(openItems?.map((o) => o.messageId)) }
+        : undefined,
+    [tagsOn, orders, lens, unfolded, openItems],
+  );
   if (view !== undefined && (arrived?.items !== view.items || arrived.live !== live)) {
     // Stamped as it comes in: a row mounted much later shows still.
     // eslint-disable-next-line react-hooks/purity
@@ -93,11 +122,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             seenSeq,
             me,
             names,
+            tags,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, worked, seenSeq, me, names],
+    [view, worked, seenSeq, me, names, tags],
   );
   // Rows that say what they said keep their object, so a streamed word draws its own row and not the whole list.
   const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});
@@ -106,7 +136,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const rows = next.rows;
   const items = view?.items;
   const older = view?.hasOlder === true;
-  const openItems = useData((d) => d.chatStates[key]?.openItems);
   const waiting = useMemo(
     // "asked at 09:02" (or "yesterday at …") is read when the chat changes; nothing ticks while it waits.
     // eslint-disable-next-line react-hooks/purity
@@ -130,6 +159,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const target = shown?.id ?? (sent === 0 ? message : undefined);
   const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
+  // A jump to a message the tagged chat hides (a notification's, Show, a quote, a link to a card): out of a lens on
+  // another order, or into the fold it is in, so the message has a row to open at. Once per jump: a fold you close
+  // again, or a lens you open later, stays as you left it.
+  const [jumped, setJumped] = useState<string>();
+  const jump = target === undefined ? undefined : `${target} ${String(shown?.n ?? 0)}`;
+  if (tags !== undefined && rows !== undefined && target !== undefined && jump !== jumped) {
+    const item = rowIndexOf(rows, target) !== undefined ? undefined : items?.find((i) => i.id === target);
+    const order = item === undefined ? undefined : foldOrder(item);
+    if (rowIndexOf(rows, target) !== undefined) setJumped(jump);
+    // Out of the lens first; the whole chat then shows whether it is folded too.
+    else if (item !== undefined && looking !== undefined) setLooking(undefined);
+    else if (item !== undefined) {
+      setJumped(jump);
+      if (order !== undefined && !unfolded.has(order)) setUnfolded(new Set(unfolded).add(order));
+    }
+  }
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);
@@ -184,6 +229,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const showNext = () => {
     const next = targets?.[(showing + 1) % targets.length];
     if (next === undefined) return;
+    // What it waits on may be about another order: the whole chat shows it.
+    setLooking(undefined);
     const at = Date.now();
     setShown((p) => ({ id: next.id, part: next.part, n: (p?.n ?? 0) + 1, at }));
   };
@@ -231,6 +278,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const showLook = () => {
     const next = looks[0];
     if (next === undefined) return;
+    setLooking(undefined);
     const at = Date.now();
     setShown((p) => ({ id: next.id, part: next.part, n: (p?.n ?? 0) + 1, at }));
     clear(next, false);
@@ -239,6 +287,51 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     const next = looks[0];
     if (next !== undefined) clear(next, true);
   };
+  const closeLens = useCallback(() => {
+    const from = looking?.from;
+    setLooking(undefined);
+    // Back to the whole chat where the lens was opened from.
+    if (from !== undefined) setShown((p) => ({ id: from, n: (p?.n ?? 0) + 1 }));
+  }, [looking]);
+  const tagActions = useMemo(
+    (): TagActions | undefined =>
+      tagsOn
+        ? {
+            named: orders.length >= 2,
+            lens: lens?.workstreamId,
+            open: orders,
+            look: (about, from) => {
+              setShown(undefined);
+              setLooking({ about, from });
+            },
+            retag: (messageId, workstreamId) => {
+              void layer.chat.retag(key, messageId, workstreamId).then((error) => {
+                if (error !== undefined) toast({ title: "Couldn’t move the message", description: error.message, key: `retag:${messageId}` });
+              });
+            },
+            toggleFold: (id) =>
+              setUnfolded((was) => {
+                const next = new Set(was);
+                if (!next.delete(id)) next.add(id);
+                return next;
+              }),
+          }
+        : undefined,
+    [tagsOn, orders, lens, layer, key],
+  );
+  // Esc closes the lens, unless something in the chat took it first (a reply over the box) or the focus is elsewhere.
+  const screen = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (lens === undefined) return;
+    const onKey = (e: KeyboardEvent) => {
+      const at = document.activeElement;
+      if (e.key !== "Escape" || e.defaultPrevented || (at !== null && at !== document.body && screen.current?.contains(at) !== true)) return;
+      e.preventDefault();
+      closeLens();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lens, closeLens]);
   const actions = useMemo(
     (): BubbleActions => ({
       project,
@@ -253,8 +346,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       shown: mark,
       lookAt,
       seen,
+      tags: tagActions,
     }),
-    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen],
+    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen, tagActions],
   );
 
   const panel = usePanelHandle();
@@ -281,6 +375,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
 
   return (
     <div
+      ref={screen}
       className={s.screen}
       // The conversation scrolls on under the top row's glass and leaves its room itself; anything else starts below.
       data-under={under || undefined}
@@ -304,7 +399,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                 controls: "project-panel",
               }
         }
-      />
+      >
+        {lens === undefined ? null : <LensCapsule about={lens} phase={phase} onClose={closeLens} />}
+      </FrameTitle>
       {notice ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
         <div className={s.notice} role="alert">
@@ -342,7 +439,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <EmptyChat project={project} title={title} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
-            <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
+            <ChatList key={lens?.workstreamId ?? ""} rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
           </BubbleActionsContext.Provider>
         )}
         <div className={s.fade} aria-hidden />
@@ -379,6 +476,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               onSent={onSent}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(undefined)}
+              about={lens}
             />
           </div>
         )}

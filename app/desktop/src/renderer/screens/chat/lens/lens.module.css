@@ -1,0 +1,165 @@
+/* The tagged chat: the line over a run, a closed order's fold, the lens's capsule. Quiet words; no rules, no fills. */
+
+/* Over a run, level with its bubbles' words: who, then the order, a step quieter. */
+.tag {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 76%;
+  min-width: 0;
+  padding: 0 13px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+.mine {
+  align-self: flex-end;
+}
+/* Inside a message: the room a run has above it (.messageHead's 14px and .message's 3px, less the 3px between bubbles). */
+.inner {
+  padding-top: 14px;
+}
+.who {
+  flex: none;
+  white-space: nowrap;
+}
+.order {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.who + .order::before {
+  content: "·";
+  margin-inline-end: 6px;
+}
+.order:hover {
+  color: var(--text);
+}
+.order:focus-visible,
+.fold:focus-visible,
+.close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* A closed order's fold: centred like a day's words, a dot for how it ended. */
+.foldRow {
+  display: flex;
+  justify-content: center;
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: var(--space-4) var(--pad) var(--space-1);
+}
+.fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.fold:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.dot.stopped {
+  background: var(--faint);
+}
+.foldTitle {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.count {
+  flex: none;
+  color: var(--faint);
+}
+.count::before {
+  content: "·";
+  margin-inline-end: 6px;
+}
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-inline-start: -2px;
+  color: var(--faint);
+  transition: transform var(--dur-quick) var(--ease-snap);
+}
+.fold[aria-expanded="true"] > .chevron {
+  transform: rotate(90deg);
+}
+
+/* The lens's capsule sits by the chat's pill, which then gives up the row's far end to it. */
+:global([data-glass]):has(+ .lens) {
+  margin-inline-end: 0;
+}
+.lens {
+  flex: 0 1 auto;
+  gap: var(--space-2);
+  margin-inline-end: auto;
+  padding-inline: var(--space-4) var(--space-1-5);
+  font-size: var(--text-sm);
+}
+.lensTitle {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: var(--weight-strong);
+}
+.lensPhase {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--quiet);
+}
+.close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--quiet);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.close:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .order,
+  .fold,
+  .chevron {
+    transition: none;
+  }
+}

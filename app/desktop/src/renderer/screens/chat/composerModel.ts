@@ -17,8 +17,11 @@ export interface KeyLike {
 export const sendsOn = (e: KeyLike): boolean => e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing;
 
 /** `away`: the hub restarting, by name; what is sent waits for it. */
-export const placeholder = (working: boolean | undefined, away?: string): string =>
-  away !== undefined ? `Message the lead · sends when ${away} is back` : working === true ? "Message the lead. It reads this at its next step." : "Message the lead";
+export const placeholder = (working: boolean | undefined, away?: string, about?: string): string => {
+  // From a lens: the order it goes about.
+  const to = about === undefined ? "Message the lead" : `Message the lead about ${about}`;
+  return away !== undefined ? `${to} · sends when ${away} is back` : working === true ? `${to}. It reads this at its next step.` : to;
+};
 
 /** ↑ with nothing in the box (no words, no files) brings back your last message, as in a shell. */
 export const recallsOn = (e: KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean }, box: { readonly text: string; readonly attached: readonly unknown[] }): boolean =>

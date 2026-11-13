@@ -201,6 +201,8 @@ export interface ChatSend {
   readonly replyTo?: ChatReplyTo;
   /** The skills named with `$name`, which the lead's copy lists. */
   readonly skills?: readonly string[];
+  /** Sent from a lens on one order: chat_send's `about`, the order's id, kept for every resend. */
+  readonly about?: string;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
   readonly reached?: boolean;
 }
@@ -277,6 +279,8 @@ export interface ChatItem {
   readonly leadWaiting?: string | undefined;
   /** The hub's message: inline items, migrated history and the rest of its fields. */
   readonly message?: ChatMessage | undefined;
+  /** A send the hub doesn't have yet, from a lens: the order it is about, by id (the hub's copy says it in `message.about`). */
+  readonly about?: string | undefined;
 }
 
 const noAttachments: readonly AttachmentRef[] = [];
@@ -314,6 +318,7 @@ const sendItem = (r: ChatSend): ChatItem => ({
   state: r.state.t === "sending" ? "pending" : r.state.t,
   error: r.state.t === "failed" ? r.state.error : undefined,
   clientRequestId: r.clientRequestId,
+  ...(r.about === undefined ? {} : { about: r.about }),
 });
 
 /**

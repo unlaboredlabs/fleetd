@@ -188,6 +188,10 @@ export const fixtures = [
   "stream-long",
   // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
   // diff, agent cards, the lead asking, and messages from Shortcuts and the Share Sheet.
+  // The tagged chat (fixtures/tags): Sam and Dana's, three orders open and one folded; one order open; the trial off.
+  "tags-busy",
+  "tags-one-order",
+  "tags-off",
   "bubbles-casual",
   "bubbles-charts",
   "bubbles-pr",
@@ -2023,6 +2027,66 @@ export const screens: readonly Screen[] = [
   // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
   // PR card with its diff, and an ask waiting on you.
   { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
+  // The tagged chat (a project's trial): a quiet line over each run names its order and, over the lead's, whom it is
+  // for; the closed order folds into its landing line. With one order open no tag names it; with the trial off the chat
+  // is today's.
+  { id: "chat", route: CHAT, fixtures: ["tags-busy", "tags-one-order", "tags-off"], variant: "tags", open: (page) => expect(page.locator("[data-entry=message]").first()).toBeVisible() },
+  // ...the fold opened: the closed order's messages, its approval card among them, under its line.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["tags-busy"],
+    variant: "tags-unfolded",
+    open: async (page) => {
+      const fold = page.locator("[data-entry=fold]").getByRole("button");
+      await fold.click();
+      await expect(fold).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByText("Receipts should show the store’s VAT number.")).toBeVisible();
+      await page.mouse.move(0, 0);
+    },
+  },
+  // ...a lens on one order, from its tag: only its messages (of the one about two orders, only its bubble), its
+  // capsule by the chat's pill, and the box sending about it.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["tags-busy"],
+    variant: "tags-lens",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Only Search speed" }).first().click();
+      await expect(page.getByRole("button", { name: "Show the whole chat" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /about Search speed/u);
+      await expect(page.getByText("On it: two writers")).toBeHidden();
+      await expect(page.getByText("Search is slow because")).toBeVisible();
+      // Off the bubbles, so no hover shows in the shot.
+      await page.mouse.move(0, 0);
+    },
+  },
+  // ...and closed: the whole chat again, the lens's capsule gone.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["tags-busy"],
+    variant: "tags-lens-closed",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Only Search speed" }).first().click();
+      await page.getByRole("button", { name: "Show the whole chat" }).click();
+      await expect(page.getByRole("button", { name: "Show the whole chat" })).toBeHidden();
+      await expect(page.getByText("On it: two writers")).toBeVisible();
+    },
+  },
+  // A bubble's menu, About…: the open orders, a check on its own, and Nothing.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["tags-busy"],
+    variant: "tags-about",
+    open: async (page) => {
+      await page.locator('[data-bubble="text"]').filter({ hasText: "Looking: an agent is timing" }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "About…" }).hover();
+      await expect(page.getByRole("menuitem", { name: "Nothing" })).toBeVisible();
+    },
+  },
   // A tapback put on one of the lead's bubbles, from the button its hover shows.
   {
     id: "chat",
