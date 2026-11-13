@@ -104,6 +104,48 @@ test("without join options it only installs when there is no terminal", async ()
   expect(out.stdout).toContain("Next, run:");
 });
 
+// Piped, as `curl … | sh` into a log or CI, each step is one plain line, with no bar, spinner or escape code.
+test("without a terminal each step is one plain line, with no escape codes", async () => {
+  const r = release();
+  const out = await r.sh('cat "$INSTALLER" | sh -s -- --no-init');
+  expect(out.code, out.stderr).toBe(0);
+  expect(out.stdout + out.stderr).not.toContain("\x1b");
+  const lines = out.stdout.split("\n");
+  for (const want of [
+    /^✓  Platform  (linux|macOS [0-9.]*) (x64|arm64)$/,
+    /^✓  Release   edge$/,
+    /^✓  Download  the CLI · \d+ B$/,
+    /^✓  Checksum  sha256 [0-9a-f]{12}… matches the release$/,
+    /^✓  Install   ~\/\.fleetd\/bin\/fleetd$/,
+    /^✓  PATH      ~\/\.local\/bin\/fleetd/,
+    /^Installed fleetd in ~\/\.fleetd\/bin\/fleetd$/,
+    /^Next, run:$/,
+  ]) {
+    expect(lines.some((l) => want.test(l)), `${want} in:\n${out.stdout}`).toBe(true);
+  }
+});
+
+// On a terminal the steps tick in color, and the cursor the bar hides comes back; NO_COLOR, CI or TERM=dumb keep the
+// plain lines there too. util-linux's `script` gives the installer its terminal.
+test.skipIf(process.platform !== "linux" || !Bun.which("script"))("on a terminal it draws, unless told not to", async () => {
+  const onTty = async (env: string) => {
+    const r = release();
+    const out = await r.sh(`${env} script -qec 'sh "$INSTALLER" --no-init' /dev/null`);
+    expect(out.code, out.stdout).toBe(0);
+    expect(out.stdout, env).toContain("Next, run");
+    return out.stdout;
+  };
+  const drawn = await onTty("TERM=xterm-256color NO_COLOR= CI=");
+  expect(drawn).toContain("\x1b[32m✓\x1b[0m");
+  expect(drawn).toContain("\x1b[?25l");
+  expect(drawn.lastIndexOf("\x1b[?25h"), "the cursor shows again").toBeGreaterThan(drawn.lastIndexOf("\x1b[?25l"));
+  for (const env of ["TERM=xterm-256color NO_COLOR=1 CI=", "TERM=xterm-256color NO_COLOR= CI=true", "TERM=dumb NO_COLOR= CI="]) {
+    const plain = await onTty(env);
+    expect(plain, env).not.toContain("\x1b");
+    expect(plain, env).toContain("✓  Download  the CLI");
+  }
+});
+
 test("join options that cannot work stop before anything is downloaded", async () => {
   for (const [args, says] of [
     ["--join http://hub:4790", "--join and --code go together"],
