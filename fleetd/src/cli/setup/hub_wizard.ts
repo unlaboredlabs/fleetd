@@ -8,6 +8,7 @@ import type { HubDb } from "../../hub/store/db.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
 import { type GitIdentity, homeDir, isNoreply, type MachineRecord, parseGitIdentity, readSetup, resolveHome } from "../common.ts";
 import { mint } from "../pair.ts";
+import { terminal } from "../tty.ts";
 import { listKeys, openHub } from "../store.ts";
 import type { Checklist } from "./checklist.ts";
 import {
@@ -73,7 +74,7 @@ function hubEnvRun(program: string, args: string[]): { code: number; stdout: str
 function attached(list: Checklist, program: string, args: string[]): boolean {
   list.stopSpinner();
   try {
-    return Bun.spawnSync([program, ...args], { stdio: ["inherit", "inherit", "inherit"] }).exitCode === 0;
+    return Bun.spawnSync([program, ...args], { stdio: [terminal(), "inherit", "inherit"] }).exitCode === 0;
   } catch {
     return false;
   }

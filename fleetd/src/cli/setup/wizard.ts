@@ -39,69 +39,58 @@ export type InitOptions = {
 /** The person pressed Esc or Ctrl-C at a prompt. */
 export class Stopped extends Error {}
 
-/** Prompts, one at a time. Without a terminal (or with --yes) each answers its default. */
+/**
+ * Prompts, one at a time. Without a terminal (or with --yes) each answers its default; so does one whose terminal
+ * can't be read, and the prompts after it.
+ */
 export class Ui {
-  constructor(readonly interactive: boolean) {}
-  async confirm(list: Checklist, prompt: string, fallback: boolean): Promise<boolean> {
+  constructor(public interactive: boolean) {}
+  /** A prompt's answer; its fallback when the terminal can't be read, Stopped when the person cancels. */
+  private async ask<T>(list: Checklist, fallback: T, prompt: () => Promise<T>): Promise<T> {
     if (!this.interactive) return fallback;
     list.stopSpinner();
     try {
-      return await tty.confirm(prompt, fallback);
-    } catch {
-      throw new Stopped();
+      return await prompt();
+    } catch (error) {
+      if (!(error instanceof tty.NoTerminal)) throw new Stopped();
+      this.interactive = false;
+      process.stderr.write("\n");
+      return fallback;
     } finally {
       list.prompted();
     }
   }
+  confirm(list: Checklist, prompt: string, fallback: boolean): Promise<boolean> {
+    return this.ask(list, fallback, () => tty.confirm(prompt, fallback));
+  }
   /** Whether to run something interactive now (a login): only when a person is at the terminal and says yes. */
   offerToRun(list: Checklist, prompt: string): Promise<boolean> {
-    return this.interactive ? this.confirm(list, prompt, true) : Promise.resolve(false);
+    return this.ask(list, false, () => tty.confirm(prompt, true));
   }
-  async input(list: Checklist, prompt: string, fallback: string, placeholder: string, check: (s: string) => string | undefined): Promise<string> {
-    if (!this.interactive) return fallback;
-    list.stopSpinner();
-    try {
+  input(list: Checklist, prompt: string, fallback: string, placeholder: string, check: (s: string) => string | undefined): Promise<string> {
+    return this.ask(list, fallback, async () => {
       const answer = await tty.input(prompt, {
         ...(fallback !== "" ? { initial: fallback } : placeholder !== "" ? { placeholder } : {}),
         validate: (s) => check(s.trim()),
       });
       return answer.trim();
-    } catch {
-      throw new Stopped();
-    } finally {
-      list.prompted();
-    }
+    });
   }
-  async multi<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T[]): Promise<T[]> {
-    if (!this.interactive) return fallback;
-    list.stopSpinner();
-    try {
-      return await tty.multiselect(prompt, items.map(([value, label, hint]) => ({ value, label, hint })), fallback);
-    } catch {
-      throw new Stopped();
-    } finally {
-      list.prompted();
-    }
+  multi<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T[]): Promise<T[]> {
+    return this.ask(list, fallback, () => tty.multiselect(prompt, items.map(([value, label, hint]) => ({ value, label, hint })), fallback));
   }
-  async select<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T): Promise<T> {
-    if (!this.interactive) return fallback;
-    list.stopSpinner();
-    try {
-      const initial = Math.max(0, items.findIndex(([v]) => v === fallback));
-      return await tty.select(prompt, items.map(([value, label, hint]) => ({ value, label, hint })), initial);
-    } catch {
-      throw new Stopped();
-    } finally {
-      list.prompted();
-    }
+  select<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T): Promise<T> {
+    const initial = Math.max(0, items.findIndex(([v]) => v === fallback));
+    return this.ask(list, fallback, () => tty.select(prompt, items.map(([value, label, hint]) => ({ value, label, hint })), initial));
   }
 }
 
-/** `why. Fix: what` split; a problem without a fix is its own fix. */
+/** `why. Fix: what` split; a problem without a fix is its own fix, the same text (callers compare them). */
 export function splitFix(problem: string): [string, string] {
   const at = problem.indexOf(" Fix: ");
   if (at >= 0) return [problem.slice(0, at).trim().replace(/\.+$/, ""), problem.slice(at + 6).trim().replace(/\.+$/, "")];
-  return [problem.trim().replace(/\.+$/, ""), problem.trim()];
+  const said = problem.trim().replace(/\.+$/, "");
+  return [said, said];
 }
 
 // ---- what this machine is ----
@@ -444,7 +433,9 @@ export async function workerClaude(ui: Ui, list: Checklist, added: Added) {
       return;
     }
     if (offered || !(await ui.offerToRun(list, `claude on ${added.machineId} isn't logged in. Log in now?`))) {
-      list.failed(title, "not logged in", fix);
+      // Nobody to ask (no terminal, --yes): the login is left to the person, with its command, not a failure.
+      if (!offered && !ui.interactive) list.todo(title, "not logged in", `log claude in on ${added.machineId}`, fix);
+      else list.failed(title, "not logged in", fix);
       return;
     }
     offered = true;

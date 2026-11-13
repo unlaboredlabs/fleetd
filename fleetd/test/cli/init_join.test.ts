@@ -45,6 +45,8 @@ async function join_(mint: (fleet: Fleet) => Promise<string> = named, args = ["-
   const proc = Bun.spawn([bunBin, "init", "--join", fleet.hubUrl, "--code", code, ...args, "--no-service"], {
     cwd: worker.cwd,
     env: { ...worker.env(), PATH: `${bin}:${process.env.PATH ?? ""}` },
+    // stdin a pipe, as `curl … | sh` without a terminal leaves it: nothing can be asked.
+    stdin: new Blob(["y\n"]),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -62,6 +64,10 @@ test("a worker joins with the code", async () => {
   expect(joined.node.machineId).toBe("builder-1");
   expect(joined.shown.stderr).toContain("\nJoin a hub  1/2\n\nWorker  2/2\n–  builder-1 enrolled; its node isn't started (--no-service)\n");
   expect(joined.shown.stderr).toContain("start builder-1's node: $HOME/bin/fleetd node run --home $HOME/node");
+  // With nobody to ask, claude's login is a step left to the person with its command, and the run ends clean.
+  expect(joined.shown.stderr).toContain("–  claude on builder-1 not logged in\n");
+  expect(joined.shown.stderr).toContain("log claude in on builder-1: $HOME/stand-in/claude auth login");
+  expect(joined.shown.code).toBe(0);
 }, 60_000);
 
 test("a line minted for no machine joins under this computer's name, made unique when another has it", async () => {
