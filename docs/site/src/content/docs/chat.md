@@ -14,7 +14,7 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the island above the message box shows three agents at work. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
@@ -162,7 +162,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, above the message box | One row: a dot per agent, how many are working or need you, and what the busiest one is doing now. Click it for a row per agent and the PRs they are on; click an agent to see its work in the panel's [Agents](/docs/desktop-app#agents). |
+| The island, above the message box | What the lead is doing now when it's more than thinking, a mark per agent at work and how many, and a red dot while main is red. Click it for main's reason, a row per agent and the PRs they are on; click an agent to see its work in the panel's [Agents](/docs/desktop-app#agents). |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 | Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image, a file. Click Open on a pull request or an agent to see it in the panel. |
@@ -208,7 +208,7 @@ Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish
 **Shipping**, in the panel beside the chat (⌥⌘B shows the panel), lists the project's PRs: those that need a look, what [merges now](/docs/desktop-app#train) and the line behind it, the other open ones, then, folded, those merged
 or closed, most recent first, each with its checks and its reviews. **Load more** at the end
 reads older ones, back to the repo's first PR. A PR named in the chat
-("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
+("#221", "PR #221" or its GitHub link), in the island above the message box or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
 (⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
 
 Click a PR to read it in the list's place; **All pull requests** or Esc goes back.

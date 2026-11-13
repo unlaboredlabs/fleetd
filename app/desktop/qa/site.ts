@@ -18,7 +18,7 @@ export interface SiteShot {
 }
 
 export const siteShots: readonly SiteShot[] = [
-  { file: "docs/site/public/img/chat.png", screen: "chat", variant: "strip", fixture: "live-3" },
+  { file: "docs/site/public/img/chat.png", screen: "chat", variant: "island", fixture: "live-3" },
   { file: "docs/site/public/img/chat-history.png", screen: "chat", variant: "history", fixture: "chat-long" },
   { file: "docs/site/public/img/max-agents.png", screen: "settings.agents", variant: "from-panel", fixture: "settings-agents" },
   { file: "docs/site/public/img/chat-command.png", screen: "chat", variant: "inline-chat", fixture: "chat-gated" },

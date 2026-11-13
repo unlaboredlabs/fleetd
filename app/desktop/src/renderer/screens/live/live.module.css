@@ -1,259 +1,14 @@
 /*
- * The live strip, a glass capsule floating in the band over the chat's composer island: one slim row as wide as the
- * island, its edges on the pill's, that never changes width (the lead's turn line is its first item, TurnLine). Opened
- * (by a click, never by hovering, so the conversation never moves under a passing pointer), its lanes grow it upward
- * into a glass card over the conversation, which doesn't move. Motion
- * only on a change, never a loop (the app draws no frames while nothing changes): a dot pulses once as it appears or
- * its agent's state changes, then holds still, and a new now-line rolls in; with reduced motion, neither.
+ * The agents at work, a row each (AgentRows.tsx), in the island's card over the composer (chat/island.module.css): a dot
+ * per agent (at work in its role's tint, waiting on you in the attention color, on hold faint, queued hollow), its
+ * role, task and what it is doing now. Over the rows, the PRs they are on and a way to the panel's list.
  */
 
-.dock {
-  /* Half the row's height: round ends, as the top row's capsules have. */
-  --corner: calc(var(--island-capsule-h) / 2);
-  position: relative;
-  /* The band's whole width; Latest ↓ (scrolled up) takes its room at the end. */
-  flex: 1 1 auto;
-  min-width: 0;
-  /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
-  display: flex;
-  flex-direction: column-reverse;
-  border-radius: var(--corner);
-  isolation: isolate;
-  box-shadow: var(--glass-lift);
-}
-/* The top row's glass (ui/layout .capsule): the page blurred through a tint, a hairline and rim inside its edge, and
-   the soft lift on the dock itself, off the blurred layer. A blurred layer is drawn again, blur and all, whenever its
-   surface meets a change, and with the lift on it that surface reached over the composer's words: every key press
-   blurred the capsule again. */
-.dock::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--glass);
-  backdrop-filter: var(--glass-blur);
-  box-shadow:
-    inset 0 0 0 1px var(--glass-edge),
-    inset 0 1px 0 var(--glass-rim);
-  pointer-events: none;
-}
-@media (prefers-reduced-transparency: reduce) {
-  .dock::before {
-    background: var(--raised);
-    backdrop-filter: none;
-  }
-}
-
-.strip {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  /* The band's capsules share one height (tokens.css). */
-  min-height: var(--island-capsule-h);
-  padding: 0 var(--space-3);
-}
-
-/* Dots and the headline; its hit area stretches over the whole row, under the now-line's link. */
-.toggle {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 0 1 auto;
-  min-width: 0;
-  color: var(--quiet);
-  cursor: pointer;
-}
-.toggle::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--corner);
-}
-.toggle:hover,
-.dock[data-open] .toggle {
-  color: var(--text);
-}
-/* `all: unset` drops the app's focus outline too, so the row and the links put it back (base.css :focus-visible). */
-.toggle:focus-visible::after,
-.now:focus-visible,
-.lane:focus-visible,
-.all:focus-visible,
-.pr:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.toggle:focus-visible {
-  outline: none;
-}
-.headline {
-  min-width: 0;
-}
-
-/* In a narrow band (the chat beside a panel, Latest beside the strip) the dots give way first, cut at the capsule's
-   edge, before the headline does: they are only a picture of what it says. */
-.dots {
-  flex: 0 1000 auto;
-  min-width: 10px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: currentColor;
-}
-.needsYou {
-  color: var(--warning);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 22%, transparent);
-}
-.onHold {
-  color: var(--faint);
-}
-.queued {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--faint);
-}
-.more {
-  margin-left: 2px;
-  font-size: var(--text-xs);
-  line-height: 1;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-/* Each agent's glyph (StateGlyph), in a 10 px cell; a new one fades in. */
-.glyph {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  animation: glyphIn var(--dur-row-in) var(--ease-snap) backwards;
-}
-@keyframes glyphIn {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-}
-
-/* The now-line: what the busiest agent is doing, above the toggle's stretched hit area. */
-.now {
-  all: unset;
-  /* In the strip's quiet voice: what the agent does (parts.tsx ActivityLine) reads in quiet text, its machine text
-     at the strip's size; waiting on you keeps its attention color. */
-  --text: var(--quiet);
-  --text-sm: var(--text-xs);
-  position: relative;
-  z-index: 1;
-  /* A width of its own in the capsule: the line fits itself to its box (parts.tsx), so its box can't come from its
-     text. It takes the room the items before it leave, up to 320 px, so it gives way before the turn line and the
-     headline do: they are cut only once it is at its least. */
-  flex: 1 1 0;
-  max-width: 320px;
-  /* Narrower, a role and a step don't fit: it goes instead (below). */
-  min-width: 120px;
-  overflow: hidden;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-.now:empty {
-  pointer-events: none;
-}
-.roll {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  animation: roll 360ms var(--ease-out);
-}
-/* The role gives way before the activity does: it shrinks to an ellipsis. */
-.roll > :first-child {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-/* Too narrow a band (the chat beside a wide panel, with Latest beside the strip) has no room for a useful now-line:
-   the headline takes it all. */
-@container (width < 520px) {
-  .now {
-    display: none;
-  }
-}
-.now:hover .roll {
-  text-decoration: underline;
-  text-decoration-color: var(--faint);
-}
-@keyframes roll {
-  from {
-    opacity: 0;
-    transform: translateY(var(--row-rise));
-  }
-}
-
-/* The agents' DMs to each other: a count at the row's end beside the chevron, quiet until pointed at. The room left
-   in a wide band goes before it, so what the agents do reads from the left and the count from the right. */
-.dms {
-  position: relative;
-  z-index: 1;
-  flex: none;
-  margin-left: auto;
-  color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  text-decoration: none;
-  white-space: nowrap;
-  border-radius: var(--radius-sm);
-}
-/* "between agents" goes where the now-line does (above): the count alone says it there. */
-@container (width < 520px) {
-  .between {
-    display: none;
-  }
-}
-.dms:hover {
-  color: var(--text);
-  text-decoration: underline;
-}
-.dms:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.chevron {
-  flex: none;
-  /* With no count, the room left goes before the chevron instead. */
-  margin-left: auto;
-  color: var(--faint);
-  pointer-events: none;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.dms + .chevron {
-  margin-left: 0;
-}
-.dock[data-open] .chevron {
-  transform: rotate(180deg);
-}
-
-/* The lanes: opened above the row, inside the tray, which grows upward with them. */
+/* The lanes: a row per agent, in the island's card. */
 .lanes {
   display: flex;
   flex-direction: column;
-  max-height: min(360px, 40vh);
-  border-bottom: 1px solid var(--hairline);
-  animation: open var(--dur-base) var(--ease-out);
-}
-@keyframes open {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
+  min-height: 0;
 }
 .lanesHead {
   flex: none;
@@ -310,13 +65,29 @@
   text-decoration: underline;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dots > .dot,
-  .roll,
-  .lanes {
-    animation: none;
-  }
-  .chevron {
-    transition: none;
-  }
+/* `all: unset` drops the app's focus outline too, so the links put it back (base.css :focus-visible). */
+.lane:focus-visible,
+.all:focus-visible,
+.pr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.needsYou {
+  color: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.onHold {
+  color: var(--faint);
+}
+.queued {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
 }

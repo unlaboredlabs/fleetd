@@ -4,7 +4,7 @@ import { applyFrame, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
 import { selectProjectRow } from "../../src/data/selectors";
 import { projectKey } from "./lanes";
-import { NOW_DWELL_MS, nowAgent, selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
+import { selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const project = { machineId: "devbox", projectId: "storefront" } as const;
@@ -114,11 +114,8 @@ describe("the live strip", () => {
   });
 });
 
-describe("the strip's dots and now-line", () => {
-  const busy = (laneId: string, samples: number[], activity: NonNullable<AgentLane["live"]>["activity"] = { activity: { kind: "thinking" }, since: T0 }) =>
-    lane(laneId, "working", { live: { laneId, status: "working", activity, spark: { endAt: T0, samples } } });
-
-  it("has a dot per agent: waiting on you first, then at work, on hold and queued, the board's order within", () => {
+describe("the island's glyphs and the card's rows", () => {
+  it("has a glyph per agent: waiting on you first, then at work, on hold and queued, the board's order within", () => {
     const s = stripOf([
       lane("Q", "queued"),
       lane("A", "working"),
@@ -138,51 +135,6 @@ describe("the strip's dots and now-line", () => {
     // Each agent's line is the agents view's.
     expect(s.lanes[0]?.line).toMatchObject({ words: "waiting on you: approve npm install", tone: "warning" });
     expect(s.lanes[0]?.role).toBe("reviewer");
-  });
-
-  it("puts the busiest agent at work first: most recent work, then tool work over thinking, then the board's order", () => {
-    const edit = { activity: { kind: "edit" as const, path: "src/a.ts" }, since: T0 };
-    const s = stripOf([
-      busy("calm", [1, 1, 1]),
-      // Old work, past the last 16 seconds, doesn't count.
-      busy("was", [90, 90, 90, 0, 0, 0, 0, 0, 0, 0, 0]),
-      busy("hot", [20, 30, 40]),
-      busy("thinks", [2, 2, 2]),
-      busy("edits", [2, 2, 2], edit),
-      lane("W", "waiting"),
-    ]);
-    expect(s.now).toEqual(["hot", "edits", "thinks", "calm", "was"]);
-  });
-
-  it("counts only an agent's last 16 seconds of work: a sparkline a quiet lane last sent is behind the others", () => {
-    const ago = (s: number) => new Date(Date.parse(T0) - s * 1000).toISOString();
-    const spark = (laneId: string, samples: number[], endAt: string) =>
-      lane(laneId, "working", { live: { laneId, status: "working", spark: { endAt, samples } } });
-    const s = stripOf([
-      // Very busy, but its sparkline stopped 20 seconds ago: past the window, it counts for nothing.
-      spark("old", [90, 90, 90, 90, 90, 90, 90, 90], ago(20)),
-      // 4 seconds behind: the window starts two buckets later for it, so its two busy ones are out and 6 × 5 count.
-      spark("behind", [90, 90, 5, 5, 5, 5, 5, 5], ago(4)),
-      spark("now", [4, 4, 4, 4, 4, 4, 4, 4], T0),
-      spark("none", [], T0),
-    ]);
-    expect(s.now).toEqual(["now", "behind", "old", "none"]);
-  });
-
-  it("with no agent at work, says what the agent waiting on you waits for; with only queued ones, nothing", () => {
-    expect(stripOf([lane("Q", "queued"), lane("W", "waiting"), lane("P", "parked")]).now).toEqual(["W"]);
-    expect(stripOf([lane("Q", "queued"), lane("P", "parked")]).now).toEqual([]);
-  });
-
-  it("stays on the agent it shows for a while, so the line turns over gently, never flickering", () => {
-    const at = 1_000_000;
-    expect(nowAgent(["A", "B"], undefined, at)).toBe("A");
-    // B got busier a moment after A came on: A stays until its turn is up, then B takes the line.
-    expect(nowAgent(["B", "A"], { laneId: "A", since: at }, at + NOW_DWELL_MS - 1)).toBe("A");
-    expect(nowAgent(["B", "A"], { laneId: "A", since: at }, at + NOW_DWELL_MS)).toBe("B");
-    // An agent that stopped working gives the line up at once.
-    expect(nowAgent(["B"], { laneId: "A", since: at }, at + 1)).toBe("B");
-    expect(nowAgent([], { laneId: "A", since: at }, at + 1)).toBeUndefined();
   });
 
   it("redraws when an agent's activity changes, not when only its tokens do", () => {

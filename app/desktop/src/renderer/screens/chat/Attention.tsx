@@ -1,17 +1,16 @@
 // What needs you, in the top bar after the chat's title, which is otherwise just the title. While the lead waits on
 // you: what for, and Show, which brings it into view and marks it; with more than one place to go, each press goes to
-// the next and the line says which ("1 of 2"). The palette and the live strip's "waiting on you" row reach the same
+// the next and the line says which ("1 of 2"). The palette reaches the same
 // Show through the chat.showWaiting command. Otherwise, while the project is blocked, why: the hub's reason, so you
 // know before sending into it, and Resume when its machine's usage pause is the reason. Otherwise what there is to
 // look at, which the lead flagged (a showcase, something to try, a risk) or an agent suggested trying: how many, the
-// oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss, then the hub's warning if any.
-// Otherwise the hub's warning, which stops nothing (a check red on main). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
+// oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss. A red main, which stops nothing,
+// is the island's (Island.tsx). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
 // Questions (not an approval or a secret, which the lead can't go on without) have an × that hides them from the bar
 // until the lead asks again; the chat remembers it (hiddenWait).
 import { X } from "lucide-react";
 import { Button, Text, Tooltip } from "../../ui";
 import { useCommands } from "../palette";
-import { HubText } from "../projects/HubText";
 import { ResumeButton } from "./Resume";
 import type { LookAt, Waiting } from "./attentionModel";
 import s from "./view.module.css";
@@ -19,7 +18,6 @@ import s from "./view.module.css";
 export function AttentionLine({
   waiting,
   blocked,
-  warning,
   which,
   resume,
   onShow,
@@ -30,8 +28,6 @@ export function AttentionLine({
 }: {
   waiting: Waiting | undefined;
   blocked: string | undefined;
-  /** A red main and whether a fix is under way: the train keeps merging, so it is no block. */
-  warning?: string | undefined;
   /** "1 of 2": the one Show last went to, when there is more than one. */
   which?: string | undefined;
   /** The machine whose usage pause blocks the project. */
@@ -69,26 +65,6 @@ export function AttentionLine({
         <Button variant="link" onClick={onDismiss} aria-label={`Dismiss: ${look.reason}`}>
           Dismiss
         </Button>
-        {/* A red main stays in view after it: the look ranks first, and both truncate before their buttons do. */}
-        {warning === undefined ? null : (
-          <>
-            <Text size="xs" tone="quiet" aria-hidden>
-              ·
-            </Text>
-            <Text size="xs" tone="warning" className={s.attentionWords} data-warning>
-              <HubText>{warning}</HubText>
-            </Text>
-          </>
-        )}
-      </div>
-    );
-  }
-  if (waiting === undefined && blocked === undefined) {
-    return warning === undefined ? null : (
-      <div className={s.attention} data-attention="warning">
-        <Text size="xs" tone="warning" className={s.attentionWords}>
-          <HubText>{warning}</HubText>
-        </Text>
       </div>
     );
   }

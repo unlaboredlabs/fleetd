@@ -51,11 +51,10 @@
   left: 50%;
   transform: translateX(-50%);
 }
-/* In the island's band: at its end, a glass capsule like the strip's, which gives way to it. */
+/* In the island's band: a glass capsule like the island's, beside it. */
 .latestSlot {
   flex: none;
   display: flex;
-  margin-inline-start: auto;
 }
 .latestSlot:empty {
   display: none;
@@ -123,12 +122,14 @@
 .island > * {
   pointer-events: auto;
 }
-/* Over the pill: a band as tall as a capsule and its gaps, empty or not, where the live strip floats while agents run
-   (and what the lead is doing beside it). The capsules sit on its bottom, a gap over the pill; the strip's lanes open
-   it upward, over the conversation, which keeps its place (ChatScreen counts the band at its own height). */
+/* Over the pill: a band as tall as a capsule and its gaps, empty or not, where the island (Island.tsx) and what needs
+   you float, together in its middle. The capsules sit on its bottom, a gap over the pill; the island's card opens
+   upward from it, over the conversation, which keeps its place (ChatScreen counts the band at its own height). */
 .band {
+  position: relative;
   display: flex;
   align-items: flex-end;
+  justify-content: center;
   gap: var(--space-1-5);
   box-sizing: border-box;
   min-height: var(--island-band-h);
@@ -863,196 +864,11 @@ span.changeUndo {
   text-underline-offset: 2px;
 }
 
-/*
- * The lead's turn line (TurnLine.tsx): the live strip's first item while agents run (live.module.css), else alone in
- * a capsule of its own (.alone): one line, 20 px tall. It is as wide as what it says
- * (TurnLine measures it and sets it at once); what follows it slides to its new place and its words are cut by a clip
- * sliding with it, all on transforms (TurnLine slide). Beside others it takes at most a little over half the row (two
- * fifths of the strip's).
- * Gone, it has no width and gives back the row's gap (--turn-gap). Over the conversation scrolled up, its capsule's
- * glass keeps it legible.
- */
-.turnLine {
-  --turn-gap: var(--space-1-5);
-  position: relative;
-  /* In a crowded row it gives way with what follows it, down to its glyph; its words ellipsize. */
-  flex: 0 1 auto;
-  box-sizing: border-box;
-  width: 0;
-  min-width: 0;
-  max-width: 100%;
-  height: 20px;
-  pointer-events: none;
-}
-.turnLine:not(:last-child) {
-  max-width: 55%;
-}
-/* In the strip it keeps its few words whole while the headline's tail gives way ("· 1 on hold · 1 queued"); a long
-   one takes at most two fifths of the row, and its file name ellipsizes. */
-:global([data-strip]) > .turnLine {
-  --turn-gap: var(--space-3);
-  flex-shrink: 0;
-  max-width: 40%;
-}
-/*
- * With no agents at work, the line has the strip's capsule to itself while it says something (or fades what it said):
- * the same glass across the band, its edges on the pill's, Latest ↓ and what needs you taking their room at its end,
- * so it reads as the chrome it is over whatever scrolls behind it, never as a patch lying on a picture. Its width
- * doesn't follow the words (D406). Idle, it is nothing, and gives back the band's gap.
- */
-.band > .alone {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: none;
-  min-width: 0;
-  margin-inline-end: calc(-1 * var(--space-1-5));
-  border-radius: calc(var(--island-capsule-h) / 2);
-  isolation: isolate;
-  pointer-events: none;
-}
-.band > .alone:has(> [data-shown]) {
-  flex: 1 1 auto;
-  min-height: var(--island-capsule-h);
-  padding: 0 var(--space-3);
-  margin-inline-end: 0;
-  box-shadow: var(--glass-lift);
-}
-/* The strip's glass (live.module.css .dock::before), on a layer of its own under the words. */
-.alone:has(> [data-shown])::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--glass);
-  backdrop-filter: var(--glass-blur);
-  box-shadow:
-    inset 0 0 0 1px var(--glass-edge),
-    inset 0 1px 0 var(--glass-rim);
-}
-@media (prefers-reduced-transparency: reduce) {
-  .alone:has(> [data-shown])::before {
-    background: var(--raised);
-    backdrop-filter: none;
-  }
-}
-.turnLine[data-turn] {
-  min-width: 14px;
-}
-/* The words' clip, as wide as the line, with room around it for the patch's soft edge; TurnLine sizes and slides it
-   while the line changes width. */
-.turnClip {
-  position: absolute;
-  box-sizing: content-box;
-  inset: -10px 0 -10px -10px;
-  padding: 10px 0 10px 10px;
-  overflow: hidden;
-}
-.turnRow {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: var(--space-2);
-  height: 20px;
-  border-radius: var(--radius-sm);
-}
-.turnGlyph {
-  display: flex;
-  flex: none;
-  justify-content: center;
-  width: 14px;
-  opacity: 0;
-  transition: opacity 200ms var(--ease-out);
-}
-.turnLine[data-turn] .turnGlyph {
-  opacity: 1;
-}
-.turnWords {
-  position: relative;
-  flex: 1 1 0;
-  align-self: stretch;
-  min-width: 0;
-}
-/* A wording: it rises in as the one before it rises out, in place, over the same 200 ms. */
-.turnLayer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: 100%;
-  height: 20px;
-  white-space: nowrap;
-  font-size: var(--text-xs);
-  line-height: 20px;
-  animation: turnIn 200ms var(--ease-out) both;
-}
-/* Leaving, it keeps the room it had, though the line may be narrower now: the clip cuts it as it slides. */
-.turnLayer[data-leaving] {
-  max-width: none;
-  animation: turnOut 200ms var(--ease-out) both;
-}
-.turnSizer {
-  max-width: none;
-  visibility: hidden;
-  animation: none;
-}
-.turnSizer .turnNow {
-  max-width: none;
-}
-@keyframes turnIn {
-  from {
-    opacity: 0;
-    transform: translateY(var(--row-rise));
-  }
-}
-@keyframes turnOut {
-  to {
-    opacity: 0;
-    transform: translateY(calc(-1 * var(--row-rise)));
-  }
-}
-/* What it does now, then what the turn did, quiet: the tally ellipsizes, never the count after it. */
-.turnSaid {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--quiet);
-}
-/* Cut short, what it does now ends in an ellipsis too, a file name included, never mid-letter at the clip. */
-.turnNow {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: top;
-  color: var(--text);
-  font-weight: 500;
-}
-.turnNow.turnDone {
-  font-weight: 400;
-}
-.turnCount {
-  flex: none;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* What the lead waits on, why the project is blocked, what to look at: off the top bar, a glass capsule in the band
    over the composer, where you act on it. Nothing to say, nothing shown. Its lift is on the capsule and its glass on
    a layer under its words, so the shadow is no part of the blurred surface: a key press in the composer under it never
-   re-blurs it. One row with the live strip beside it: as tall (tokens.css), as round, and its words and links the
-   strip's size, on its baseline. */
+   re-blurs it. One row with the island beside it: as tall (tokens.css), as round, and its words and links the
+   island's size, on its baseline. */
 .say {
   position: relative;
   z-index: 0;

@@ -1,9 +1,9 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead, fleet
 // activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a gated
 // command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass island
-// over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, the live
-// strip as a capsule (its first item a line saying what the lead is doing, TurnLine), and a capsule saying what needs
-// you (what the lead waits on you for, a block, what there is to look at, a red main), shown only when something does.
+// over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, the island
+// (what the lead does now, the agents at work, a red main as a dot; Island.tsx), and a capsule saying what needs you
+// (what the lead waits on you for, a block, what there is to look at), shown only when something does.
 // The conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its
 // picture and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings);
 // an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
@@ -15,13 +15,13 @@ import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
 import { Boundary } from "../../src/Boundary";
-import { LiveStrip, useNow } from "../live";
+import { useNow } from "../live";
 import { AttentionLine } from "./Attention";
 import { lookingAt, sameLooks, waitingOn, type LookAt } from "./attentionModel";
 import { hideWait, useHiddenWait } from "./hiddenWait";
 import { leadLastTurnSince, leadLastTurnUntil, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
-import { TurnLine } from "./TurnLine";
+import { Island } from "./Island";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
@@ -54,7 +54,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const needsYou = useData(selectNeedsYou(projectKey(project)));
   const view = data.view;
   const asOf = useAsOfWords(view?.asOf);
-  const strip = data.strip;
   const workedSince = useData((d) => leadLastTurnSince(d, projectKey(project)));
   const workedUntil = useData((d) => leadLastTurnUntil(d, projectKey(project)));
   const worked = useMemo(
@@ -106,8 +105,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   if (next !== kept) setKept(next);
   const rows = next.rows;
   const items = view?.items;
-  // The lead's turn line: the live strip's first item while agents run, else on its own in the band.
-  const turnLine = <TurnLine project={project} writing={items?.at(-1)?.state === "streaming"} />;
   const older = view?.hasOlder === true;
   const openItems = useData((d) => d.chatStates[key]?.openItems);
   const waiting = useMemo(
@@ -167,7 +164,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       const pill = el.lastElementChild;
       if (!(pill instanceof HTMLElement)) return;
       st.style.setProperty("--island-h", `${String(pill.offsetHeight)}px`);
-      // The band's own height, not as tall as it is now: the strip's lanes open upward over the conversation.
+      // The band's own height, not as tall as it is now: the island's card opens upward over the conversation.
       const band = parseFloat(getComputedStyle(st).getPropertyValue("--island-band-h")) || 0;
       const room = st.clientHeight - (el.offsetTop + pill.offsetTop) + band + ISLAND_CLEAR;
       st.style.setProperty("--island-inset", `${String(room)}px`);
@@ -277,6 +274,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     ],
     [],
   );
+  // A red main: the island's dot, its reason in the island's card. The train keeps merging, so it is no block.
+  const warning = view?.held === true ? undefined : data.warning;
   const notice = view?.held === true && !view.offline && data.loadError !== undefined;
   const under = !data.missing && rows !== undefined && !empty && !notice;
 
@@ -348,27 +347,19 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         )}
         <div className={s.fade} aria-hidden />
         {data.missing ? null : (
-          // The island: the band, where the live strip floats as a capsule while agents run, over the pill. Drawn over
-          // the conversation by design (data-floats, for the QA checks).
+          // The island: the band, where the island and what needs you float, over the pill. Drawn over the
+          // conversation by design (data-floats, for the QA checks).
           <div ref={island} className={s.island} data-floats="">
             <div className={s.band} data-band="">
-              {strip ? (
-                <Boundary part="the live strip">
-                  <LiveStrip project={project} lead={turnLine} />
-                </Boundary>
-              ) : (
-                // No agents at work: the line in a capsule of its own, the strip's glass across the band (view.module.css).
-                <div className={s.alone} data-alone="">
-                  {turnLine}
-                </div>
-              )}
+              <Boundary part="the island">
+                <Island project={project} warning={warning} />
+              </Boundary>
               <span className={s.say} data-say="">
                 {view?.held === true ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
                 <AttentionLine
                   waiting={barWaiting}
                   // As the held chip says: a held chat doesn't say what the project is now.
                   blocked={view?.held === true ? undefined : data.blocked}
-                  warning={view?.held === true ? undefined : data.warning}
                   which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
                   resume={view?.held === true ? undefined : data.usagePausedOn}
                   onShow={showNext}
