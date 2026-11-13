@@ -120,8 +120,9 @@ const BUSY_THREAD = new Set(["running", "waiting"]);
 
 /**
  * Whether anything of a run's order is still in flight: an agent of it (not a reviewer) queued, running or waiting,
- * one of its done agents still waiting on CI or a merge, an approval or secret request of it open, or a PR of it on
- * the train.
+ * one of its done agents still waiting on CI or a merge or on a Monitor of its own that may wake it (its thread's
+ * `watchingUntil`, which a done task between two of its Monitor's wakes has), an approval or secret request of it
+ * open, or a PR of it on the train.
  */
 function inFlight(hub: Hub, r: ProjectRef, w: string): boolean {
   const [m, p] = [r.machineId, r.projectId];
@@ -136,6 +137,12 @@ function inFlight(hub: Hub, r: ProjectRef, w: string): boolean {
       `SELECT 1 FROM ci_waits c JOIN tasks t ON ('T' || t.n) = c.task_id
          WHERE t.machine_id = ? AND t.project_id = ? AND t.workstream_id = ? LIMIT 1`,
       [m, p, w],
+    ) ||
+    any(
+      `SELECT 1 FROM tasks t JOIN threads th ON th.machine_id = json_extract(t.data, '$.threadRef.machineId') AND th.thread_id = t.thread_id
+         WHERE t.machine_id = ? AND t.project_id = ? AND t.workstream_id = ? AND t.state = 'done'
+           AND json_extract(th.data, '$.watchingUntil') > ? LIMIT 1`,
+      [m, p, w, isoMs(hub.clock.now())],
     ) ||
     any(
       `SELECT 1 FROM requests WHERE project_key = ? AND state IN ('open', 'approved')

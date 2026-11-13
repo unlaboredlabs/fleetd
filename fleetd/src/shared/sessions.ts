@@ -486,6 +486,8 @@ export type SessionSummary = {
   worktreePath?: string;
   recreatedFrom?: WorktreeSource;
   recreatedAt?: Timestamp;
+  /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
+  watchingUntil?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };

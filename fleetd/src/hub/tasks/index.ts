@@ -1389,6 +1389,8 @@ export class Tasks {
           next.recovery = kept as TaskRecovery;
         }
         this.put({ task: next });
+        // Said, so the apps' agents lists read it again: a task a Monitor of its own woke is running, not done.
+        this.emit(next, "task.started", `${task.taskId} continued in its own thread (attempt ${task.attempt}): ${task.title}`);
         // What was sent to it while it waited goes to the run that continued it, never dropped.
         if (held !== undefined) await this.deliver(next, threadRef, held);
         return;

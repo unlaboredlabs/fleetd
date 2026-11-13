@@ -279,6 +279,9 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
   service.onItemEnded = (session, item) => ended.push(`${session}/${item.id}`);
   await until("the armed Monitor", () => service.store.session("s1")?.local.monitors?.length === 1);
   expect(ended).toEqual(["s1/mon-r9"]);
+  // The hub reads its deadline off the summary: an order whose finished agent it may still wake stays open.
+  const armedUntil = service.store.session("s1")!.local.monitors![0]!.untilMs;
+  expect(summary("s1")?.watchingUntil).toBe(new Date(armedUntil).toISOString());
   await until("the run", () => summary("s1")?.latestRun?.id === "r9" && summary("s1")?.latestRun?.status === "completed");
   // Its claude dies while it waits.
   process.kill(service.store.session("s1")!.local.pid!, "SIGKILL");
@@ -287,6 +290,7 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
     'Your Monitor "ci" was lost when your claude process exited. Check what you were waiting for again.',
   );
   expect(service.store.session("s1")?.local.monitors).toBeUndefined();
+  expect(summary("s1")?.watchingUntil).toBeUndefined();
 });
 
 test("a session whose host ran on through a node restart is re-adopted and keeps going", async () => {
