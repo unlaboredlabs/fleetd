@@ -347,7 +347,24 @@ export async function settle(page: Page) {
     const qa = window as QaWindow;
     if (qa.__qaResized === undefined) addEventListener("resize", () => (qa.__qaResized = true));
     await document.fonts.ready;
-    const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
+    const until = performance.now() + 3_000;
+    // A frame the renderer drew, not a tick of the page's clock: a fixture's fixed time (launch) has Playwright's clock
+    // stand in for requestAnimationFrame with a timer, which can fire three times on a starved macOS runner while it
+    // draws nothing, and the check then measures a layout whose ResizeObservers haven't run (the island's file name
+    // shown uncut, W663). A new ResizeObserver reports at the next rendering update, the one that delivers the page's
+    // own; the deadline still bounds the wait.
+    const frame = () =>
+      new Promise((done) => {
+        const ro = new ResizeObserver(() => {
+          ro.disconnect();
+          done(null);
+        });
+        ro.observe(document.documentElement);
+        setTimeout(() => {
+          ro.disconnect();
+          done(null);
+        }, Math.max(0, until - performance.now()));
+      });
     const layout = () => {
       let sig = `${document.body.scrollWidth}x${document.body.scrollHeight}`;
       for (const el of document.body.getElementsByTagName("*")) {
@@ -356,7 +373,6 @@ export async function settle(page: Page) {
       }
       return sig;
     };
-    const until = performance.now() + 3_000;
     let last = layout();
     let still = 0;
     while (still < 3 && performance.now() < until) {
