@@ -1,6 +1,6 @@
 // hub/intake: attachments in pieces, their sweep, type checks and text kept as UTF-8, reads whole, in pieces and as
-// previews, Office text, and the chat_image / chat_file lead calls against a fake node (crates/fleetd/src/hub/intake's
-// tests and chat_image_tests.rs).
+// previews, Office text, and the chat_file lead call against a fake node (crates/fleetd/src/hub/intake's tests and
+// chat_image_tests.rs).
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
