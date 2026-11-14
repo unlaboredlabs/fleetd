@@ -10,7 +10,7 @@ export const SWEEP_EVERY_MS = 600_000;
 /**
  * Starts this module's loops (Rust: intake::attachments::run_sweep) and registers its lead call (chat_file). It also
  * answers the approvals' `ownImage`: a confirm step's screenshot shows on its card only when it is the asking
- * project's own file, which then becomes the project's (wire_approvals.rs `navi_image`, `claim_own`).
+ * project's own file, which then becomes the project's (Rust: wire_approvals.rs, `claim_own`).
  */
 export function start(hub: Hub): void {
   registerLeadCalls(hub);

@@ -1491,7 +1491,7 @@ export type ChatDelta = {
 
 /**
  * A file sent in the chat, as the Artifacts tab lists it beside the artifacts: one a person attached, or one its lead
- * or agents showed (`chat_image`, `chat_file`). Its bytes come from `attachment_get`.
+ * or agents showed (`chat_file`). Its bytes come from `attachment_get`.
  */
 export type ChatFile = {
   /** When it was uploaded. */
