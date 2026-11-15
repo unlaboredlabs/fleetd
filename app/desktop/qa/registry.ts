@@ -107,6 +107,8 @@ export const fixtures = [
   "lead-worked",
   // With no agents at work, the line has a capsule of its own, over late pictures scrolled up (fixtures/lead).
   "lead-pictures",
+  // W669: start, then a steer, nothing from the lead yet: Stop, and the lead's glyph alone in the island (fixtures/lead).
+  "lead-steered",
   // The night's memory refresh line: its summary, opened to its changes (fixtures/lead).
   "lead-memory",
   // The nightly cleanup's line for the worktrees it kept: its summary, opened to each (fixtures/lead).
@@ -573,6 +575,15 @@ const islandHolds = async (page: Page) => {
   if (seen.atEnd) expect(seen.lastBottom, `at the end, the last message ends above the band: ${said}`).toBeLessThan(island.top);
 };
 
+/** The island says the lead works by its glyph alone (W669): no words, nothing to open. */
+const leadGlyphAlone = async (page: Page) => {
+  const island = page.locator("[data-band] > [data-island]");
+  await expect(island).toBeVisible();
+  await expect(island.locator("[data-state='working'], [data-state='thinking']")).toHaveCount(1);
+  await expect(island).toHaveText("");
+  await expect(island.locator("button")).toHaveCount(0);
+};
+
 /**
  * History's filter while it names a kind (the human's report, W621: a 24 px icon over the button's top edge with "DMs"
  * pushed under it): its icon at the button's 14 px and its label lie inside its box on one centre line, the icon
@@ -803,12 +814,12 @@ export const screens: readonly Screen[] = [
     },
   },
   // The lead at work: in the island over the composer, what it is doing now (lead-long: a file name cut in the middle);
-  // lead-counting only works, so the island says nothing for it; lead-worked: the turn is over, and its reply wears how
+  // lead-counting only works, so the island has its glyph alone; lead-worked: the turn is over, and its reply wears how
   // long it took.
-  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long"], variant: "activity", check: islandHolds },
-  { id: "chat", route: CHAT, fixtures: ["lead-counting", "lead-worked"], variant: "activity" },
-  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: the avatar says it,
-  // so nothing floats over the composer, at the end and scrolled up over the pictures.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting"], variant: "activity", check: islandHolds },
+  { id: "chat", route: CHAT, fixtures: ["lead-worked"], variant: "activity" },
+  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: the island has its
+  // glyph alone, no words, at the end and scrolled up over the pictures.
   {
     id: "chat",
     route: CHAT,
@@ -816,8 +827,24 @@ export const screens: readonly Screen[] = [
     variant: "turn-alone",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator("[data-island]")).toHaveCount(0);
+      await leadGlyphAlone(page);
     },
+    check: islandHolds,
+  },
+  // The human's screenshot (W669): "start", then "1-16" as a steer, nothing from the lead yet. The composer shows Stop
+  // and says the lead reads it at its next step; the island shows the lead at work, its glyph alone.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-steered"],
+    variant: "steered",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /It reads this at its next step/u);
+      await leadGlyphAlone(page);
+    },
+    check: islandHolds,
   },
   {
     id: "chat",
@@ -830,7 +857,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("list", { name: "Conversation with the lead" }).hover();
       await page.mouse.wheel(0, -200);
       await expect(page.getByRole("button", { name: /Latest/u })).toBeVisible();
-      await expect(page.locator("[data-island]")).toHaveCount(0);
+      await leadGlyphAlone(page);
     },
   },
   // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to

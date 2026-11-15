@@ -327,8 +327,14 @@ export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undef
   s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
 );
 
-/** Offline, the lead was working when last known: Stop shows, disabled, with why. */
-export const selectHeldLeadWorking = perKey((key) => (s: DataState): boolean => !s.fresh && s.chatStates[key]?.leadWorking === true);
+/**
+ * The lead at work as its chat shows it: live, or last known so while offline ("held": Stop shows, disabled, with
+ * why). The composer's Stop and the island's glyph both read this one, so Stop never shows without the island saying
+ * the lead works.
+ */
+export const selectLeadAtWork = perKey((key) => (s: DataState): "live" | "held" | undefined =>
+  selectLeadWorking(key)(s) === true ? "live" : !s.fresh && s.chatStates[key]?.leadWorking === true ? "held" : undefined,
+);
 
 /** The hub can stop a lead mid-turn: false until it said so on this connection. */
 export const selectCanStop = (s: DataState): boolean => s.fresh && s.chatStop === true;

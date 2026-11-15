@@ -162,7 +162,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The island, above the message box | What the lead is doing now when it's more than thinking, a mark per agent at work and how many, and a red dot while main is red. Click it for main's reason, a row per agent and the PRs they are on; click an agent to see its work in the panel's [Agents](/docs/desktop-app#agents). |
+| The island, above the message box | Whenever the lead works: what it's doing when that's more than thinking, else a small working mark; a mark per agent at work and how many, and a red dot while main is red. Click it for main's reason, a row per agent and the PRs they are on; click an agent to see its work in the panel's [Agents](/docs/desktop-app#agents). |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 | Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image, a file. Click Open on a pull request or an agent to see it in the panel. |
