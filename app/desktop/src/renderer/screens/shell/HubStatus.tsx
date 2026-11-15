@@ -3,9 +3,10 @@
 // Disconnect are there). What is off is one more row each, plain words then the one action a click takes: Retry, Pair
 // again, Update, Try again, Open (a machine's page, Hub › Machines › Updates), Finish (Hub › Setup). A row a member can do nothing about ends
 // in who to ask and isn't a button. With several hubs each has its rows, its own under the name the person gave it.
+// This app's own update is no hub's: one row below them all (AppRow).
 // The sidebar has no row for the hub, so the most pressing thing off also marks your avatar (linkMark, useWorkMark).
 import { ArrowUp } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
@@ -13,8 +14,9 @@ import { Dot } from "../../ui";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { OPTIONS, openOption } from "../settings";
 import { useQuiet, useUpdateAct } from "../updates";
+import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
-import { machinesLine, menuLines, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuMachine } from "./youMenu";
+import { appLine, machinesLine, menuLines, offersWhole, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
 
@@ -73,6 +75,37 @@ export function MenuRow({ mark, end, onClick, name, children, ...rest }: { mark:
   );
 }
 
+/** A line as its row: its mark, its words, and its action or quiet word at the end; a button when a click does something. */
+function LineRow({ line, act }: { line: MenuLine; act: (does: LineDoes) => void }) {
+  const { does } = line;
+  return (
+    <MenuRow
+      mark={<Mark mark={line.mark} />}
+      data-line={line.key}
+      data-mark={line.mark}
+      name={line.name}
+      onClick={does === undefined ? undefined : () => act(does)}
+      end={line.action !== undefined ? <span className={h.action}>{line.action}</span> : line.aside !== undefined ? <span className={h.aside}>{line.aside}</span> : undefined}
+    >
+      {line.text}
+    </MenuRow>
+  );
+}
+
+/**
+ * This app's own update, once below the hubs, whichever it is paired with; nothing while there is none to say, or
+ * while a hub's row offers its `whole` update, which ends in this app's restart.
+ */
+export function AppRow({ whole }: { whole: boolean }) {
+  const line = appLine(useAppUpdate(), whole);
+  const update = useUpdateAct();
+  // Its one action is the update's own, which changes the row where it is.
+  const act = (does: LineDoes) => {
+    if (does.to === "update") update(does.act);
+  };
+  return line === null ? null : <LineRow line={line} act={act} />;
+}
+
 /** This hub's machines as the menu reads them; undefined until they are known. */
 const useMenuMachines = (): readonly MenuMachine[] | undefined => useData(selectMachines)?.map((m) => m.machine);
 
@@ -100,16 +133,24 @@ export const useWorkMark = (): HubMark | null => {
   return live ? workMark([machinesLine(machines, admin), setupLine(setupLeft, admin)], label) : null;
 };
 
-/** One hub's rows in the menu under your name, in its scope. `close` shuts the menu. */
-export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
+/** One hub's rows in the menu under your name, in its scope. `close` shuts the menu; `whole` hears whether they offer
+ * the hub's whole update (AppRow). */
+export function HubRows({ hub, close, whole }: { hub: HubState; close: () => void; whole: (on: boolean) => void }) {
   const work = useWork();
-  const quiet = useQuiet(hub);
+  // This app's own update is the menu's one row below the hubs, never one of each hub's.
+  const quiet = useQuiet(hub, false);
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
   const lines = menuLines({ hub, quiet, ...work, now: Date.now() });
   const layer = useDataLayer();
   const self = useHub();
   const several = work.label !== null;
+  const offers = offersWhole(lines);
+  // Before the menu paints, so this app's own row never shows for a frame beside the Update that takes it too.
+  useLayoutEffect(() => {
+    whole(offers);
+    return () => whole(false);
+  }, [whole, offers]);
   const update = useUpdateAct();
   const act = (does: LineDoes) => {
     // Retry and an update's action change the row where it is; the rest go somewhere.
@@ -126,28 +167,9 @@ export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
 
   return (
     <div role="group" className={h.hub} aria-label={several ? self.label : "Hub"} data-hub-card={hub.phase}>
-      {lines.map((line) => {
-        const { does } = line;
-        return (
-          <MenuRow
-            key={line.key}
-            mark={<Mark mark={line.mark} />}
-            data-line={line.key}
-            data-mark={line.mark}
-            name={line.name}
-            onClick={does === undefined ? undefined : () => act(does)}
-            end={
-              line.action !== undefined ? (
-                <span className={h.action}>{line.action}</span>
-              ) : line.aside !== undefined ? (
-                <span className={h.aside}>{line.aside}</span>
-              ) : undefined
-            }
-          >
-            {line.text}
-          </MenuRow>
-        );
-      })}
+      {lines.map((line) => (
+        <LineRow key={line.key} line={line} act={act} />
+      ))}
     </div>
   );
 }

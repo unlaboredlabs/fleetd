@@ -19,8 +19,9 @@ const useExpiry = (at: number | undefined): number => {
 };
 
 /** The one status every updates surface shows (model.ts), from main's update state, the hub's ready frame, its
- * machines, its run, the build it has ready, Update automatically, and whether this person updates the hub. */
-export const useUpdateStatus = (): Status => {
+ * machines, its run, the build it has ready, Update automatically, and whether this person updates the hub; without
+ * this app's own update when `withApp` is false (the account menu's hub rows). */
+export const useUpdateStatus = (withApp = true): Status => {
   const app = useAppUpdate();
   const state = useData((s) => s.hub);
   const known = useData((s) => s.machines);
@@ -41,7 +42,7 @@ export const useUpdateStatus = (): Status => {
   const finished = run?.finishedAt === undefined ? undefined : Date.parse(run.finishedAt);
   const expired = useExpiry(run === null || finished === undefined ? undefined : finished + shownFor(run));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `expired` reads the clock again.
-  return useMemo(() => updateStatus({ app, hub: { url, version }, machines, run, flow, ready, auto, administers, updates }), [app, url, version, machines, run, flow, ready, auto, administers, updates, expired]);
+  return useMemo(() => updateStatus({ app, hub: { url, version }, machines, run, flow, ready, auto, administers, updates, withApp }), [app, url, version, machines, run, flow, ready, auto, administers, updates, withApp, expired]);
 };
 
 /** The update flow's effects in this window: the hub's calls, its timers and this app's own updater. */
@@ -77,9 +78,10 @@ export const useUpdateAct = (): ((act: Act) => void) => {
 };
 
 /** The word under your name and the menu's note (quiet.ts): read against the clock as the hub's state changes (each
- * redial while it restarts), and again when "Updated" has said it long enough. */
-export const useQuiet = (hub: HubState): Quiet | null => {
-  const status = useUpdateStatus();
+ * redial while it restarts), and again when "Updated" has said it long enough. A hub's rows in the menu leave this
+ * app's own update out (`withApp` false): the menu says it once, below them. */
+export const useQuiet = (hub: HubState, withApp = true): Quiet | null => {
+  const status = useUpdateStatus(withApp);
   const updated = useData((s) => s.updated);
   const update = useData((s) => s.update);
   const administers = useSettledAdministers();

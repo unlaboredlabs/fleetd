@@ -79,6 +79,9 @@ export interface StatusInput {
   /** The hub is updated from here (it serves hub_update). False on fleetd cloud, which updates itself: only this
    * app's own update is said. True when absent. */
   readonly updates?: boolean;
+  /** This app's own update is said too. False in the account menu's hub rows: it is one app and one restart whatever
+   * hubs it is paired with, so the menu says it once, in a row of the app's (shell/youMenu.ts appLine). True when absent. */
+  readonly withApp?: boolean;
 }
 
 const channelOf = (version: string): "edge" | "stable" => (isEdge(version) ? "edge" : "stable");
@@ -167,7 +170,7 @@ const appUpdating = (state: UpdatesState | null): Say => {
 };
 
 /** This app's own update, in the same words as the hub's; null with nothing to say. */
-const appStatus = (state: UpdatesState): Say | null => {
+export const appStatus = (state: UpdatesState): Say | null => {
   const app = state.app;
   switch (app.kind) {
     case "available":
@@ -224,8 +227,8 @@ export const CLOUD_UPDATES = "fleetd cloud updates itself.";
 
 const count = (n: number): string => (n === 1 ? "1 machine" : `${String(n)} machines`);
 
-export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true, updates = true }: StatusInput): Status => {
-  const own = app === null ? null : appStatus(app);
+export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true, updates = true, withApp = true }: StatusInput): Status => {
+  const own = app === null || !withApp ? null : appStatus(app);
   const connected = hub.url !== null;
   const of = connected ? target(hub, app) : null;
   const newest = !connected ? null : (ready ?? (behind(hub.version, of) ? of : null));

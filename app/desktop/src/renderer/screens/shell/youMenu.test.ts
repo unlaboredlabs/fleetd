@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { HubState } from "../../../shared/hub";
-import type { Quiet } from "../updates/quiet";
-import { hubLine, linkMark, machinesLine, menuLines, setupLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
+import type { AppUpdate, UpdatesState } from "../../../shared/updates";
+import { updateStatus } from "../updates/model";
+import { quietOf, type Quiet } from "../updates/quiet";
+import { appLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
 
 const HUB = "https://devbox.example.ts.net:4790";
 const NOW = Date.parse("2026-10-19T09:03:07.195Z");
@@ -167,5 +169,51 @@ describe("the mark on your picture", () => {
     expect(workMark(lines, null)).toEqual({ tone: "warning", why: "buildbox is offline" });
     expect(workMark([null, setupLine(2, true)], "Acme")).toEqual({ tone: "warning", why: "2 setup steps left (Acme)" });
     expect(workMark([null, null], null)).toBeNull();
+  });
+});
+
+describe("this app's own update, with two hubs", () => {
+  const MINE = "0.6.0-edge.202610221030+4f1c2ab";
+  const NEXT = "0.6.0-edge.202610231030+9e07d31";
+  const app = (kind: AppUpdate, cli = MINE): UpdatesState => ({ current: MINE, app: kind, release: { cli, app: NEXT } });
+  const CLOUD: HubState = { ...live, hub: "https://weishang.fleetd.dev" };
+  /** The menu as You.tsx lays it out: a self-run hub and a fleetd cloud team (no hub_update), each with its rows, then this app's. */
+  const rows = (state: UpdatesState, admin = true) => {
+    const hubs = [
+      { hub: live, label: "devbox", updates: true },
+      { hub: CLOUD, label: "weishang", updates: false },
+    ].flatMap(({ hub, label, updates }) => {
+      const status = updateStatus({ app: state, hub: { url: hub.hub, version: MINE }, updates, administers: admin, withApp: false, now: NOW, timeZone: "UTC" });
+      return menu({ hub, label, admin, quiet: quietOf({ status, hub, administers: admin, now: NOW }) });
+    });
+    const own = appLine(state, offersWhole(hubs));
+    return [...hubs, ...(own === null ? [] : [own])].map((l) => [l.text, l.action ?? l.aside].filter((x) => x !== undefined).join(" · "));
+  };
+
+  it("says Restart to update once, below the hubs, as the app's row and no hub's", () => {
+    expect(rows(app({ kind: "ready", version: NEXT }))).toEqual(["devbox", "weishang", "Update available · Restart to update"]);
+    expect(rows(app({ kind: "ready", version: NEXT }), false)).toEqual(["devbox", "weishang", "Update available · Restart to update"]);
+    expect(appLine(app({ kind: "ready", version: NEXT }))).toEqual({ key: "app", mark: "update", text: "Update available", action: "Restart to update", does: { to: "update", act: "app" } });
+  });
+
+  it("says its download, its restart and its failure once too", () => {
+    expect(rows(app({ kind: "available", version: NEXT, percent: 40, restart: true }))).toEqual(["devbox", "weishang", "Updating this app…"]);
+    expect(rows(app({ kind: "failed", during: "download", reason: "The download stopped." }))).toEqual(["devbox", "weishang", "This app didn't update · Try again"]);
+    expect(rows(app({ kind: "manual", version: NEXT }))).toEqual(["devbox", "weishang", "Update available · Download"]);
+  });
+
+  it("keeps a self-run hub's own update under that hub, and never gives a cloud team one", () => {
+    expect(rows(app({ kind: "current" }, NEXT))).toEqual(["devbox", "Update available · Update", "weishang"]);
+    // The hub's Update ends in this app's restart, so this app's own offer waits for it; a member has no Update, so it shows.
+    expect(rows(app({ kind: "ready", version: NEXT }, NEXT))).toEqual(["devbox", "Update available · Update", "weishang"]);
+    expect(rows(app({ kind: "ready", version: NEXT }, NEXT), false)).toEqual(["devbox", "weishang", "Update available · Restart to update"]);
+    expect(rows(app({ kind: "failed", during: "download", reason: "The download stopped." }, NEXT))).toEqual(["devbox", "Update available · Update", "weishang", "This app didn't update · Try again"]);
+  });
+
+  it("says nothing of it with none to say, and on the web, which has none", () => {
+    expect(rows(app({ kind: "current" }))).toEqual(["devbox", "weishang"]);
+    expect(rows(app({ kind: "checking" }))).toEqual(["devbox", "weishang"]);
+    expect(appLine({ current: MINE, app: { kind: "unsupported" }, release: null })).toBeNull();
+    expect(appLine(null)).toBeNull();
   });
 });

@@ -3,16 +3,18 @@
 // refused this app's key, an update going on, one just in, a machine that didn't update (the owner can try again),
 // the hub's own update put back as a member reads it (who to ask, as when no machine is online or every one is
 // degraded), everything at once, and hubs and a machine with the longest names, whose rows cut the name short and
-// never what is wrong. Each is Sam's hub (fixtures/admin) with one thing changed, so the menu's shots differ only in
+// never what is wrong; and this app's own update beside Sam's hub and a fleetd cloud team, said once. Each is Sam's hub (fixtures/admin) with one thing changed, so the menu's shots differ only in
 // what they are about.
 import { answerHub, bob, sam } from "../admin/index.ts";
-import { Fixture } from "../kit/fixture.ts";
+import { LEFT_OUT } from "../cloud/index.ts";
+import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
 import steps from "../setup/steps.json" with { type: "json" };
 
 const OLDER = "0.6.0-edge.202610201030+1c0ffee";
+const MINE = "0.6.0-edge.202610221030+4f1c2ab";
 const NEXT = "0.6.0-edge.202610231030+9e07d31";
 
 /** The setup steps of a hub with Claude still to log in: one required step left. */
@@ -138,6 +140,18 @@ export default defineGroup({
         const acme = Fixture.from(base("status-rows"), "menu-long-offline-acme", "A hub with a 40-character label, out of reach.");
         acme.state = { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 };
         f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
+      }),
+      made("app-update", "Two hubs, Sam's own and the fleetd cloud team weishang, both up to date, and this app has an update: Restart to update.", (f) => {
+        f.label = "devbox";
+        f.color = "green";
+        // The hub and its machines on this app's build, the channel's newest; this app has the next one downloaded.
+        if (f.state.phase === "live") f.state = { ...f.state, version: MINE };
+        if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, nodeVersion: MINE } : m));
+        f.appUpdate = { current: MINE, app: { kind: "ready", version: NEXT }, release: { cli: MINE, app: NEXT } };
+        const team = hub("app-update-cloud", "The fleetd cloud team weishang, which updates itself: hub_info leaves the hub's update out.");
+        team.state = { phase: "live", hub: "https://weishang.fleetd.dev", protocol: PROTOCOL, version: "0.9.0" };
+        team.drop("hub_info").answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, me: sam, people: 4, url: "https://weishang.fleetd.dev", leftOut: LEFT_OUT });
+        f.hubs = [{ label: "weishang", color: "amber", fixture: team }];
       }),
       made("everything", "Everything at once, as Sam: an update that didn't go in, a machine offline, a setup step left.", (f) => {
         update(f, "machine");

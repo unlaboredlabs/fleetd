@@ -14,7 +14,7 @@ import type { JsonObject } from "../kit/json.ts";
 const TEAM = "https://acme.fleetd.dev";
 
 /** What fleetd cloud's hub_info leaves out: the tools of its port map's `left out:` rows. */
-const LEFT_OUT = [
+export const LEFT_OUT = [
   "hub_update",
   "hub_update_settings",
   "hub_update_status",
