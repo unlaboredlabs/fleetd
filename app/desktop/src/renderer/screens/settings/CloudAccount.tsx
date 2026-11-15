@@ -8,6 +8,7 @@ import { useHubs } from "../../src/data/react";
 import { refreshCloud, useCloud } from "../onboarding/cloud";
 import { invitedLine, invitedTitle, missedTeams, useSignIn } from "../onboarding/SignIn";
 import { SettingsRow, SettingsSection } from "./parts";
+import { onWeb } from "../../src/web";
 
 export function CloudAccountSettings() {
   const { state } = useCloud();
@@ -16,6 +17,8 @@ export function CloudAccountSettings() {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [kept, setKept] = useState<readonly string[]>([]);
+  // Why the last sign-out didn't happen (the web app's, when fleetd cloud can't be reached): still signed in.
+  const [notOut, setNotOut] = useState<string | null>(null);
   if (!state.available) return null;
   const step = signIn.step;
   const waiting = step.at === "waiting" || step.at === "finishing";
@@ -25,8 +28,10 @@ export function CloudAccountSettings() {
   const signOut = () => {
     setConfirm(false);
     setBusy(true);
+    setNotOut(null);
     void window.fleetd.cloud.signOut().then((out) => {
       setKept(out.kept);
+      setNotOut(out.failure === undefined ? null : out.failure.fix === undefined ? out.failure.message : `${out.failure.message} ${out.failure.fix}`);
       setBusy(false);
       void refreshCloud();
     });
@@ -69,6 +74,13 @@ export function CloudAccountSettings() {
             </Text>
           </span>
         ))}
+        {notOut === null ? null : (
+          <span role="alert">
+            <Text size="sm" tone="danger">
+              {notOut}
+            </Text>
+          </span>
+        )}
         {kept.length === 0 ? null : (
           <span role="status">
             <Text size="sm" tone="warning">
@@ -113,7 +125,11 @@ export function CloudAccountSettings() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Sign out of fleetd?"
-        description={`This app drops its key on ${teams.length === 0 ? "your fleetd teams" : names} and stops showing their work. Agents keep running, and your own hubs stay as they are.`}
+        description={
+          onWeb()
+            ? "This browser stops showing your teams' work until you sign in again. Agents keep running."
+            : `This app drops its key on ${teams.length === 0 ? "your fleetd teams" : names} and stops showing their work. Agents keep running, and your own hubs stay as they are.`
+        }
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Cancel</Button>

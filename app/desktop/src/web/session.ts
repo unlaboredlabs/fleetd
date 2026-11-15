@@ -104,3 +104,21 @@ export const teamPath = (teamId: string, path = ""): string => `/t/${encodeURICo
  * that names it (`?at=`) still finds it after a reload.
  */
 export const teamHubId = (teamId: string): string => teamId.toLowerCase().replace(/[^a-z0-9]/gu, "").slice(0, 16) || "team";
+
+/** FNV-1a of the whole id, in base 36: what tells apart two teams whose ids begin alike. */
+const hashOf = (text: string): string => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(36).padStart(7, "0");
+};
+
+/**
+ * Each team's hub id, every one its own: teams whose ids come to the same teamHubId (`acme-corporation-eu` and
+ * `acme-corporation-us`) each get its start and a hash of its whole id instead, whatever order the session lists them in.
+ */
+export const teamHubIds = (teamIds: readonly string[]): ReadonlyMap<string, string> => {
+  const base = new Map(teamIds.map((id) => [id, teamHubId(id)]));
+  const counts = new Map<string, number>();
+  for (const id of base.values()) counts.set(id, (counts.get(id) ?? 0) + 1);
+  return new Map([...base].map(([team, id]) => [team, (counts.get(id) ?? 0) > 1 ? `${id.slice(0, 9)}${hashOf(team)}` : id]));
+};

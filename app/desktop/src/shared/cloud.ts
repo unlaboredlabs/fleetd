@@ -45,6 +45,8 @@ export type FinishOutcome =
 /** Signed out. `kept` names each team whose hub couldn't be told to drop this device's key (it was offline). */
 export interface SignOutOutcome {
   readonly kept: ReadonlyArray<string>;
+  /** The web app's sign-out didn't reach fleetd cloud: the session goes on, and the person is told why. */
+  readonly failure?: PairFailure;
 }
 
 /** Connect this computer: a terminal opened with the join line, or why not and the line to run. */

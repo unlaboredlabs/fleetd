@@ -30,7 +30,7 @@ import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServ
 import { sessionHash } from "../shared/sessionHash";
 import { saveVaultItem, unlockVault } from "../main/vault";
 import { WebHub } from "./hub";
-import { readSession, signInPath, teamHubId, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
+import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
 /** What a desktop-only part answers here; the screens hide those parts, so it is a last word, not a control. */
 export const NEEDS_DESKTOP = "This needs the fleetd desktop app.";
@@ -103,7 +103,8 @@ export const frameUrl = (answer: unknown, origin: string): string | null => {
 /** The shell for a signed-in session, and its teams' hubs (for followBrowser). */
 export const createWebShell = (session: WebSession, deps: WebDeps): { readonly api: FleetdApi; readonly hubs: readonly WebHub[] } => {
   const teams = new Map<HubId, WebTeam>();
-  for (const team of session.teams) teams.set(teamHubId(team.id), team);
+  const ids = teamHubIds(session.teams.map((t) => t.id));
+  for (const team of session.teams) teams.set(ids.get(team.id) ?? teamHubId(team.id), team);
   let names = readNames(deps.storage);
   const entries = (): readonly HubEntry[] =>
     [...teams].map(([id, team]) => {
@@ -293,7 +294,12 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       reopen: () => Promise.resolve(),
       link: () => Promise.resolve(null),
       signOut: async () => {
-        await webCall(deps.fetch, "POST", "/web/sign-out");
+        const out = await webCall(deps.fetch, "POST", "/web/sign-out");
+        // Signed out already (a 401) is signed out; any other failure leaves the session as it was, and says so.
+        if (!out.ok && out.signedOut !== true) {
+          const { code, message, fix } = out.failure;
+          return { kept: [], failure: { code, message: `Not signed out: ${message}`, ...(fix === undefined ? {} : { fix }) } };
+        }
         deps.go("/");
         return { kept: [] };
       },
