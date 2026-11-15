@@ -3,11 +3,13 @@
 // refused the key, not paired), an update to take or one that didn't go in, and for an admin a machine that is
 // offline and setup steps left. A member never reads an admin's line; where the problem is theirs too, the line ends
 // in who to ask instead of an action. An update's line is the update status's own title and button (updates/quiet.ts),
-// the words Settings › Hub › Machines › Updates says. The hub's address, Disconnect, versions and the setup steps themselves are
+// the words Settings › Hub › Machines › Updates says. This app's own update is one app's and one restart's, so it is a
+// row of its own below the hubs (appLine), never one under each hub. The hub's address, Disconnect, versions and the setup steps themselves are
 // in Settings (You › Hubs & devices, Hub › Machines › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
 import type { MachineStatus } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
-import { clockAt, type Act } from "../updates/model";
+import type { UpdatesState } from "../../../shared/updates";
+import { appStatus, clockAt, type Act } from "../updates/model";
 import type { Quiet } from "../updates/quiet";
 import { hubName, restartOf, wakeQuiet } from "./model";
 import { onWeb } from "../../src/web";
@@ -26,7 +28,7 @@ export type LineDoes =
   | { readonly to: "update"; readonly act: Act };
 
 export interface MenuLine {
-  readonly key: "hub" | "update" | "machines" | "setup";
+  readonly key: "hub" | "update" | "machines" | "setup" | "app";
   readonly mark: LineMark;
   readonly text: string;
   /** The hub's or machine's name in `text`, the one part the row may cut short when it is long; never what is wrong. */
@@ -109,6 +111,22 @@ export const updateLine = (quiet: Quiet | null): MenuLine | null => {
   // Nothing to press from here: an admin's page says which machine and what to do, and anyone else is told who to ask.
   if (note.details) return { ...line, action: "Open", does: { to: "updates" } };
   return quiet.kind === "failed" ? { ...line, aside: ASK } : null;
+};
+
+/** Whether a hub's lines offer its whole update (Update, Try again), which ends in this app's own restart. */
+export const offersWhole = (lines: readonly MenuLine[]): boolean => lines.some((l) => l.does?.to === "update" && l.does.act === "update");
+
+/**
+ * This app's own update, the menu's one row of it whatever hubs it is paired with: one to take or one that didn't go
+ * in, in the status's own title with its one button, and one going on in its title alone. One to take waits while a
+ * hub offers its `whole` update, which takes this app's too. Null on the web, which has none.
+ */
+export const appLine = (state: UpdatesState | null, whole = false): MenuLine | null => {
+  const said = state === null ? null : appStatus(state);
+  if (said === null || (said.kind !== "available" && said.kind !== "updating" && said.kind !== "failed")) return null;
+  if (whole && said.kind === "available") return null;
+  const line = { key: "app", mark: said.kind === "failed" ? "danger" : "update", text: said.title } as const;
+  return said.action === undefined ? line : { ...line, action: said.action.label, does: { to: "update", act: said.action.act } };
 };
 
 /**

@@ -353,6 +353,7 @@ export const fixtures = [
   "menu-long-refused",
   "menu-long-offline",
   "menu-everything",
+  "menu-app-update",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -2391,9 +2392,10 @@ export const screens: readonly Screen[] = [
   // The menu under your name, open (W607). All being well it is who you are, a dot beside the hub's name and Settings,
   // for the owner and for a member. What is off is one more row with the one thing to do: a setup step left, a
   // machine offline, the hub out of reach, a second hub out of reach or refusing this app's key, an update to take
-  // (the hub's, and this app's own to restart into), going on, just in, or one that didn't go in (a member is told who
-  // to ask, as when no machine is online or every one is degraded), everything at once, and hubs and a machine with
-  // 40-character names, where only the name is cut short. One size: the menu is as wide in every window.
+  // (the hub's, and this app's own to restart into, once beside a self-run hub and a cloud team), going on, just in,
+  // or one that didn't go in (a member is told who to ask, as when no machine is online or every one is degraded),
+  // everything at once, and hubs and a machine with 40-character names, where only the name is cut short. One size:
+  // the menu is as wide in every window.
   {
     id: "shell",
     route: "#/",
@@ -2416,6 +2418,7 @@ export const screens: readonly Screen[] = [
       "menu-long-refused",
       "menu-long-offline",
       "menu-everything",
+      "menu-app-update",
     ],
     variant: "you-menu",
     sizes: ["small"],

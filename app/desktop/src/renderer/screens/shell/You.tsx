@@ -1,18 +1,18 @@
 // The sidebar's foot (W530): you, and two places to go. Your picture and name open a small menu (W607): who you are,
-// a row per hub (a dot and its name, all being well; HubStatus.tsx) and Settings. What is off is one more row each,
-// with the one thing to do, and shows without opening anything, quietly: an update's one word under your name while
-// it runs and a while after (updates/quiet.ts: "Updating…", "Updated", "Not updated", or "Update" with one to take), and
-// a small mark on your picture while a hub is really unreachable or refused your key (for an admin, also while a
-// machine is offline or setup steps are left), its words in the tooltip. Screens and Factory are the round buttons
-// beside: Screens marked while one needs you.
+// a row per hub (a dot and its name, all being well; HubStatus.tsx), this app's own update once below them, and
+// Settings. What is off is one more row each, with the one thing to do, and shows without opening anything, quietly:
+// an update's one word under your name while it runs and a while after (updates/quiet.ts: "Updating…", "Updated",
+// "Not updated", or "Update" with one to take), and a small mark on your picture while a hub is really unreachable or
+// refused your key (for an admin, also while a machine is offline or setup steps are left), its words in the tooltip.
+// Screens and Factory are the round buttons beside: Screens marked while one needs you.
 import { Factory, MonitorSmartphone, Settings } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { Avatar, Kbd, Popover, PopoverContent, PopoverTrigger, Tooltip } from "../../ui";
 import { useHubRole } from "../admin/role";
 import { UpdateWord, useQuiet } from "../updates";
-import { HubRows, MenuRow, useWorkMark } from "./HubStatus";
+import { AppRow, HubRows, MenuRow, useWorkMark } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import type { Screen } from "./routes";
@@ -99,6 +99,9 @@ export function You({ screen, factory, go }: YouProps) {
   const quiet = useQuiet(hub);
   const mark = worst([...useLinkMarks(), useWorkMark()]);
   const [open, setOpen] = useState(false);
+  // The hubs whose rows offer their whole update, which ends in this app's restart: its own row waits meanwhile.
+  const [whole, setWhole] = useState<ReadonlySet<string>>(() => new Set());
+  const offers = useCallback((id: string, on: boolean) => setWhole((was) => (was.has(id) === on ? was : on ? new Set([...was, id]) : new Set([...was].filter((h) => h !== id)))), []);
   const name = me?.name ?? "You";
   const said = [name, quiet === null ? null : quiet.word.text, mark?.why].filter((x) => x != null).join(", ");
 
@@ -133,9 +136,10 @@ export function You({ screen, factory, go }: YouProps) {
           </div>
           {hubs.map((h) => (
             <HubScope key={h.id} hub={h}>
-              <OneHub close={() => setOpen(false)} />
+              <OneHub close={() => setOpen(false)} offers={offers} />
             </HubScope>
           ))}
+          <AppRow whole={whole.size > 0} />
           <MenuRow
             mark={<Settings aria-hidden />}
             end={<Kbd>{display("settings.open", platform)}</Kbd>}
@@ -166,7 +170,9 @@ export function You({ screen, factory, go }: YouProps) {
 }
 
 /** One hub's rows, in its scope, with its own live state. */
-function OneHub({ close }: { close: () => void }) {
+function OneHub({ close, offers }: { close: () => void; offers: (id: string, on: boolean) => void }) {
   const hub = useHubState();
-  return <HubRows hub={hub} close={close} />;
+  const { id } = useHub();
+  const whole = useCallback((on: boolean) => offers(id, on), [offers, id]);
+  return <HubRows hub={hub} close={close} whole={whole} />;
 }
