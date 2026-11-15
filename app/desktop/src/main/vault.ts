@@ -6,6 +6,7 @@
 // that passed counts for that item for the next 30 seconds, so showing then copying asks once. A copy never passes the
 // value through the renderer: main writes it to the clipboard and empties it a minute later, unless something else was
 // copied since. Nothing here logs a value or keeps one.
+import { fromBase64, toBase64 } from "../shared/base64";
 import type { ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
 import type { VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
@@ -43,9 +44,9 @@ const hubKey = async (call: Call): Promise<{ ok: true; key: Uint8Array } | { ok:
   const status = await call("vault_status", {});
   if (!status.ok) return status;
   const out = status.output as { hubBoxKey?: unknown; locked?: unknown };
-  const key = typeof out.hubBoxKey === "string" ? Buffer.from(out.hubBoxKey, "base64") : Buffer.alloc(0);
-  if (key.length !== 32) return refused("The hub sent no box key to seal to.", "Update fleetd on the hub, then try again.", "failed");
-  return { ok: true, key: new Uint8Array(key) };
+  const key = typeof out.hubBoxKey === "string" ? fromBase64(out.hubBoxKey) : null;
+  if (key?.length !== 32) return refused("The hub sent no box key to seal to.", "Update fleetd on the hub, then try again.", "failed");
+  return { ok: true, key };
 };
 
 /** `value` as JSON sealed to `key`, base64; the plaintext bytes wiped after. */
@@ -53,7 +54,7 @@ const sealJson = async (key: Uint8Array, value: unknown): Promise<string> => {
   const sodium = await sodiumReady();
   const plain = new TextEncoder().encode(JSON.stringify(value));
   try {
-    return Buffer.from(sodium.crypto_box_seal(plain, key)).toString("base64");
+    return toBase64(sodium.crypto_box_seal(plain, key));
   } finally {
     plain.fill(0);
   }
@@ -99,12 +100,12 @@ const openFields = async (request: VaultRevealRequest, call: Call): Promise<Vaul
   const sodium = await sodiumReady();
   const keys = sodium.crypto_box_keypair();
   try {
-    const out = await call("vault_reveal", { itemId: request.itemId, fields: request.fields, replyKey: Buffer.from(keys.publicKey).toString("base64") });
+    const out = await call("vault_reveal", { itemId: request.itemId, fields: request.fields, replyKey: toBase64(keys.publicKey) });
     if (!out.ok) return out;
     const sealed = (out.output as { sealed?: unknown }).sealed;
     let plain: Uint8Array;
     try {
-      plain = sodium.crypto_box_seal_open(Buffer.from(typeof sealed === "string" ? sealed : "", "base64"), keys.publicKey, keys.privateKey);
+      plain = sodium.crypto_box_seal_open(fromBase64(typeof sealed === "string" ? sealed : "") ?? new Uint8Array(0), keys.publicKey, keys.privateKey);
     } catch {
       return refused("The hub's answer didn't open here.", "Try again; if it keeps failing, update fleetd on the hub.", "failed");
     }

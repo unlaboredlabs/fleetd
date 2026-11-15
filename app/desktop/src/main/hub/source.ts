@@ -1,7 +1,13 @@
 import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
-import type { PresenceFrame } from "../presence";
+
+/** A minute's app presence (main/presence.ts): sent on a live link, never answered. */
+export interface PresenceFrame {
+  readonly focused: boolean;
+  readonly input: boolean;
+  readonly project?: ChatScope;
+}
 
 /** Where hub frames come from: the real connection, or a fixture file. HubService fans its frames out to windows. */
 export interface HubSource {

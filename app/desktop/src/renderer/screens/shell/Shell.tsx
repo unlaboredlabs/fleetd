@@ -36,6 +36,7 @@ import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
+import { onWeb } from "../../src/web";
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
@@ -199,7 +200,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself. With several hubs, only when none of them can be used: one with a
   // refused key says so in its own status row.
-  const blocked = hubs.every((h) => {
+  // On the web the hubs are the account's teams, never unpaired, and a refused one sends the tab to Sign in (src/web).
+  const blocked = !onWeb() && hubs.every((h) => {
     const state = h.id === route.at ? hub : rows.get(h.id)?.state;
     return state === undefined || needsOnboarding(state);
   });

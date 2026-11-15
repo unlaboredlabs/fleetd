@@ -6,6 +6,7 @@
 // opens in the browser as a Markdown link does: the page's own scripts can't open anything.
 import { useEffect, useRef, useState } from "react";
 import { linkOf } from "../../../shared/artifactLink";
+import { useDataLayer } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import s from "./artifacts.module.css";
 
@@ -14,9 +15,10 @@ export function HtmlFrame({ html, title }: { html: string; title: string }) {
   const [framed, setFramed] = useState<{ html: string; url: string; key: string } | { html: string; failed: true } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const frame = useRef<HTMLIFrameElement>(null);
+  const { hub } = useDataLayer();
   useEffect(() => {
     let live = true;
-    window.fleetd.artifactFrame(html).then(
+    window.fleetd.artifactFrame(html, hub).then(
       ({ url, key }) => {
         if (live) setFramed({ html, url, key });
       },
@@ -27,7 +29,7 @@ export function HtmlFrame({ html, title }: { html: string; title: string }) {
     return () => {
       live = false;
     };
-  }, [html, attempt]);
+  }, [html, hub, attempt]);
   const shown = framed?.html === html ? framed : null;
   const key = shown !== null && "key" in shown ? shown.key : null;
   useEffect(() => {

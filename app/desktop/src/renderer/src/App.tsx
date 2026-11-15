@@ -2,6 +2,7 @@ import { lazy, Suspense, useSyncExternalStore } from "react";
 import { Shell } from "../screens/shell/Shell";
 import { parseHash } from "../screens/shell/routes";
 import { HubScope, useHubs } from "./data/react";
+import { onWeb } from "./web";
 
 // A session's own window (main opens it on `#/session/…`) shows that session alone; every other window is the app.
 const SessionWindow = lazy(() => import("../screens/sessions/SessionWindow").then((m) => ({ default: m.SessionWindow })));
@@ -10,7 +11,8 @@ const MacSetup = lazy(() => import("../screens/macSetup/MacSetup").then((m) => (
 // The agents' Mac's menu bar popover too (main opens it on `#/menubar`): it picks its own hub.
 const MenuBarWindow = lazy(() => import("../screens/menuBar/MenuBar").then((m) => ({ default: m.MenuBarWindow })));
 type OwnWindow = "mac-setup" | "menubar";
-const ownWindowOf = (hash: string): OwnWindow | null => (hash.startsWith("#/mac-setup") ? "mac-setup" : hash.startsWith("#/menubar") ? "menubar" : null);
+// Neither is a page of the web app (src/web): a browser has no Mac to set up, nor a menu bar.
+const ownWindowOf = (hash: string): OwnWindow | null => (onWeb() ? null : hash.startsWith("#/mac-setup") ? "mac-setup" : hash.startsWith("#/menubar") ? "menubar" : null);
 // Once on one, the window stays on it, whatever the shell then makes of the route. Heard before the shell's own
 // listener is (it registers as it mounts), so its redirect of a route it doesn't know never wins.
 let ownWindow = ownWindowOf(window.location.hash);

@@ -14,7 +14,7 @@
 #   the lab scenarios on it.
 # - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
 #   width. The identifier check runs on every call; it reads every tracked file, and the untracked ones not ignored.
-# - desktop: app/desktop's case clashes, typecheck, lint and unit tests.
+# - desktop: app/desktop's case clashes, typecheck, lint, unit tests and the web app's bundle.
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
 # - qa: desktop-qa.yml's screens, all shards in one run. It takes long, so it runs only when named. With no check named,
@@ -222,6 +222,7 @@ if wanted desktop app/desktop .github/workflows/ci.yml; then
   step desktop pnpm -C app/desktop typecheck
   step desktop pnpm -C app/desktop lint
   step desktop pnpm -C app/desktop test
+  step desktop pnpm -C app/desktop build:web
 fi
 
 # pnpm fixtures, unless what it reads is what it last built from (scripts/fixtures-key.ts, CI's cache key for them).

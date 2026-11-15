@@ -13,6 +13,11 @@ import type { UpdatesState } from "../shared/updates";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
+  /**
+   * Which shell the page runs in: the desktop app (this preload), or a browser (fleetd cloud's web app, src/web/shell.ts),
+   * where the desktop-only parts answer that they need the app and the screens hide them (renderer/src/web.ts).
+   */
+  readonly shell: "desktop" | "web";
   readonly platform: "darwin" | "linux" | "win32" | "other";
   /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
   readonly fixture: string | null;
@@ -24,8 +29,11 @@ export interface FleetdApi {
   readonly version: string;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
-  /** Hands main an HTML artifact; the address of the sandboxed page to frame (no network, no reach into the app). */
-  artifactFrame(html: string): Promise<{ url: string; key: string }>;
+  /**
+   * Hands main an HTML artifact; the address of the sandboxed page to frame (no network, no reach into the app). `hub`:
+   * the team it is from, whose own address serves the page on the web; the desktop needs none.
+   */
+  artifactFrame(html: string, hub?: HubId): Promise<{ url: string; key: string }>;
   readonly secret: {
     /** Main seals `value` to `boxPubKey` and submits it to `hub`; the value is never sent back or shown again. */
     submit(hub: HubId, request: SecretRequest): Promise<SecretOutcome>;

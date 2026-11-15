@@ -125,7 +125,7 @@ function Note({ note }: { note: SignInNote }) {
 }
 
 /** The centred column the welcome and the wait share, so the character and the title hold their place. */
-function Stage({ id, children }: { id: string; children: ReactNode }) {
+export function Stage({ id, children }: { id: string; children: ReactNode }) {
   return (
     <div className={s.stageScreen} data-screen={id}>
       <div className={s.stage}>{children}</div>

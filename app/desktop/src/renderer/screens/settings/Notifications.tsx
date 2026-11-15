@@ -5,6 +5,7 @@ import { Button } from "../../ui";
 import { setNotificationPrefs, useNotificationPrefs, type NotificationPrefs } from "../shell/notificationPrefs";
 import type { NotifyKind } from "../shell/notifier";
 import { SettingsRow, SettingsSection, SwitchRow } from "./parts";
+import { onWeb } from "../../src/web";
 
 const mac = window.fleetd.platform === "darwin";
 
@@ -45,11 +46,15 @@ export function Notifications() {
           // A live region from the start, so the line is read out when it appears.
           <span role="status">
             {test === "sent"
-              ? mac
+              ? onWeb()
+                ? "Sent. Nothing showed? Allow notifications for this site in your browser."
+                : mac
                 ? "Sent. Nothing showed? Allow fleetd in System Settings, Notifications."
                 : "Sent. Nothing showed? Check your desktop's notification settings."
               : test === "unsupported"
-                ? "This system doesn’t show notifications."
+                ? onWeb()
+                  ? "This browser doesn’t show notifications, or they’re blocked for this site."
+                  : "This system doesn’t show notifications."
                 : null}
           </span>
         }

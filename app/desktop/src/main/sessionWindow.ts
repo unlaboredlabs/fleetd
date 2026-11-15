@@ -4,10 +4,9 @@
 // session; asked again, it comes forward. Main builds the route from the ids, never from a URL the page sends.
 import type { BrowserWindow } from "electron";
 import type { SessionWindowRequest } from "../shared/ipc";
+import { sessionHash } from "../shared/sessionHash";
 
-/** The route a session's window opens on. */
-export const sessionHash = ({ machineId, projectId, session, hub }: SessionWindowRequest): string =>
-  `#/session/${[machineId, projectId, session].map(encodeURIComponent).join("/")}${hub === undefined ? "" : `?at=${hub}`}`;
+export { sessionHash } from "../shared/sessionHash";
 
 export class SessionWindows {
   readonly #open = new Map<string, BrowserWindow>();

@@ -10,6 +10,7 @@ import type { HubState } from "../../../shared/hub";
 import { clockAt, type Act } from "../updates/model";
 import type { Quiet } from "../updates/quiet";
 import { hubName, restartOf, wakeQuiet } from "./model";
+import { onWeb } from "../../src/web";
 
 /** A dot in its state's colour; `ring`: the dot opened while the hub restarts; `update`: an update to take. */
 export type LineMark = "success" | "warning" | "danger" | "quiet" | "ring" | "update";
@@ -72,7 +73,8 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
   }
   const name = label ?? (hub.hub === "" ? "the hub" : hubName(hub.hub));
   const named = { ...line, name };
-  if (hub.phase === "refused") return { ...named, mark: "danger", text: `${name} refused the key`, action: "Pair again", does: { to: "pair" } };
+  // On the web a key comes with the sign-in, so a refused one is signed in again (HubStatus).
+  if (hub.phase === "refused") return { ...named, mark: "danger", text: `${name} refused the key`, action: onWeb() ? "Sign in again" : "Pair again", does: { to: "pair" } };
   const hubs = { does: { to: "hubs" } } as const;
   if (hub.phase === "live") {
     // An update going on or just in is a quiet word here, never a line of its own.

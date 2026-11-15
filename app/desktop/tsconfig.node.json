@@ -7,5 +7,5 @@
     "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "scripts/**/*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "../../fleetd/test/fake-accounts.ts"]
+  "include": ["electron.vite.config.ts", "vite.web.config.ts", "vitest.config.ts", "scripts/**/*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "../../fleetd/test/fake-accounts.ts"]
 }

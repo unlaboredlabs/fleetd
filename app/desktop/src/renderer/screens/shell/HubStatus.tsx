@@ -16,6 +16,7 @@ import { useQuiet, useUpdateAct } from "../updates";
 import { navigate } from "./navigation";
 import { machinesLine, menuLines, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
+import { onWeb } from "../../src/web";
 
 const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 
@@ -88,7 +89,8 @@ const useWork = () => {
   const self = useHub();
   const several = useSeveralHubs();
   const admin = useSettledAdministers();
-  return { label: several ? self.label : null, admin, machines: useMenuMachines(), setupLeft: useSetupLeft(admin) };
+  // A team on the web is named by its label even alone: its address is fleetd cloud's, not a host of yours.
+  return { label: several || onWeb() ? self.label : null, admin, machines: useMenuMachines(), setupLeft: useSetupLeft(admin) };
 };
 
 /** What else marks your avatar for the hub in scope, while it answers: a machine that needs someone, then setup steps left. */
@@ -114,7 +116,8 @@ export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
     if (does.to === "retry") return layer.retryNow();
     if (does.to === "update") return update(does.act);
     close();
-    if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
+    if (does.to === "pair" && onWeb()) window.location.assign("/web/sign-in");
+    else if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
     else if (does.to === "setup") navigate({ id: "settings", tab: "hub.setup", at: self.id });
     else if (does.to === "updates") navigate({ id: "settings", tab: "hub.updates", at: self.id });
     else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });

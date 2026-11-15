@@ -32,7 +32,8 @@
     "perf": "node fixtures/build.ts && node perf/run.ts",
     "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
     "debug-guard-check": "node scripts/debug-guard-check.ts",
-    "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
+    "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build",
+    "build:web": "vite build -c vite.web.config.ts --logLevel warn && node scripts/web-check.ts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",

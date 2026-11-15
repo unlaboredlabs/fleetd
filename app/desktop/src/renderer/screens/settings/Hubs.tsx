@@ -18,6 +18,7 @@ import { useServes, useSettledAdministers } from "../admin/role";
 import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
 import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { onWeb } from "../../src/web";
 
 /** Settings › You › Hubs & devices: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
@@ -28,12 +29,15 @@ export function HubsSettings() {
       reveal="hubs.add"
       hint="The hubs this app is paired with. It acts as you on each. With two hubs or more, a hub's name shows above its projects and beside its work."
       aside={
-        <AddButton
-          label="Add a hub"
-          onClick={() => {
-            window.location.hash = "#/onboarding?add";
-          }}
-        />
+        // The web app is fleetd cloud's: its hubs are the account's teams, and pairing one of your own is the desktop app's.
+        onWeb() ? undefined : (
+          <AddButton
+            label="Add a hub"
+            onClick={() => {
+              window.location.hash = "#/onboarding?add";
+            }}
+          />
+        )
       }
     >
       {/* Main's word about the list itself (one that couldn't be read, its hubs found again), said once. */}
@@ -163,11 +167,12 @@ function HubSetting({ only }: { only: boolean }) {
   const line = (step.at === "failed" ? null : restartLine(step)) ?? phaseLine(state);
   const failed = step.at === "failed" ? restartLine(step) : null;
   const busy = step.at === "asking" || step.at === "restarting";
-  const again = state.phase === "unpaired" || state.phase === "refused";
+  const again = !onWeb() && (state.phase === "unpaired" || state.phase === "refused");
   return (
     <SettingsRow
       reveal={only ? "hubs.hub" : `hubs.${self.id}`}
-      title={only ? "Hub" : self.label}
+      // A team on the web goes by its name, one or several.
+      title={only && !onWeb() ? "Hub" : self.label}
       hint={self.cloud === true ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
       // The hub's fix may name a command in backticks: shown as code.
       line={<HubText>{line.text}</HubText>}
@@ -190,7 +195,7 @@ function HubSetting({ only }: { only: boolean }) {
               Restart hub…
             </Button>
           ) : null}
-          {hub ? <DangerButton onClick={() => setConfirm(true)}>{only ? "Disconnect and forget key" : "Remove…"}</DangerButton> : null}
+          {hub && !onWeb() ? <DangerButton onClick={() => setConfirm(true)}>{only ? "Disconnect and forget key" : "Remove…"}</DangerButton> : null}
         </>
       }
     >

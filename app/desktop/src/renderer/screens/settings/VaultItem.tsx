@@ -32,6 +32,7 @@ import {
 } from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
+import { onWeb } from "../../src/web";
 
 const DOTS = "••••••••";
 
@@ -73,6 +74,8 @@ export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemS
   useEffect(() => hide, [hide]);
 
   const plain = item.kind === "env" && !isSecretEnv(item);
+  // A value is shown or copied only behind Touch ID or Face ID: in the desktop and phone apps, not in a browser.
+  const reveals = item.canReveal && !onWeb();
   const trashed = item.deletedMs !== undefined;
   const fields = presentFields(item);
   const title = titleOf(item);
@@ -115,7 +118,7 @@ export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemS
       data={{ "data-vault-item": item.itemId }}
       aside={
         <div className={s.inline}>
-          {plain || !item.canReveal || trashed ? null : shown === null ? (
+          {plain || !reveals || trashed ? null : shown === null ? (
             <Button size="sm" variant="ghost" icon={<Eye size={14} />} disabled={!live || busy} onClick={show}>
               {busy ? "Showing…" : "Show"}
             </Button>
@@ -145,7 +148,7 @@ export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemS
             data={{ "data-revealed": value === undefined ? undefined : "" }}
             line={value === undefined ? <span aria-label="Hidden">{DOTS}</span> : value === "" ? "Empty" : <span className={v.value}>{value}</span>}
             control={
-              (plain || item.canReveal) && !trashed && value !== "" ? (
+              (plain || reveals) && !trashed && value !== "" ? (
                 <Button size="sm" variant="ghost" iconOnly aria-label={`Copy the ${f.label.toLowerCase()}`} title="Copy" disabled={!live} onClick={() => copy(f)}>
                   <Copy />
                 </Button>
@@ -154,6 +157,7 @@ export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemS
           />
         );
       })}
+      {item.canReveal && !reveals && !plain && !trashed ? <GroupNote>Showing or copying it needs the fleetd desktop or phone app.</GroupNote> : null}
       {!item.canReveal && !plain && !trashed ? (
         <GroupNote>{item.kind === "env" ? "Only its creator or an admin can show it. Agents still get it." : "Only its creator or an admin can show it. Agents still fill it."}</GroupNote>
       ) : null}

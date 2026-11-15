@@ -6,6 +6,7 @@
 // notes/electron-routes.md has the table. With several hubs, a route names its hub as `?at=<id>` (navigation.ts).
 import { HUB_ID, type HubId } from "../../../shared/hubs";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
+import { onWeb } from "../../src/web";
 
 export type { PanelTab } from "../panel/tabs";
 
@@ -261,6 +262,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       };
     }
     case "onboarding":
+      // Pairing a hub is the desktop app's; the web app's teams come with the sign-in.
+      if (onWeb()) return HOME;
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     case "setup":
       return { id: "setup", view: a ?? null };

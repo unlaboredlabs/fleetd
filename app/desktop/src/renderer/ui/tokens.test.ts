@@ -113,7 +113,9 @@ describe("the frame", () => {
     expect(px("top-bar-height")).toBe(TOP_BAR);
   });
   it("the room left for the traffic lights clears all three", () => {
-    // Three 14 px buttons 20 px apart, then a gap as wide as their margin.
-    expect(px("traffic-lights-inset")).toBe(TRAFFIC_LIGHTS.x + 54 + 10);
+    // Three 14 px buttons 20 px apart, then a gap as wide as their margin. The Mac's rule: the web app's leaves none.
+    const mac = /:root\[data-platform="darwin"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
+    expect(Number(/--traffic-lights-inset:\s*(\d+)px/u.exec(mac)?.[1])).toBe(TRAFFIC_LIGHTS.x + 54 + 10);
+    expect(/:root\[data-shell="web"\]\s*\{\s*--traffic-lights-inset:\s*0px;\s*\}/u.test(css)).toBe(true);
   });
 });

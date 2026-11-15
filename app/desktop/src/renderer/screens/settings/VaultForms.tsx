@@ -15,6 +15,7 @@ import { VAULT_READS, vaultError } from "./vaultParts";
 import { brandName, brandOf, check, clearable, draftOf, emptyDraft, fieldsOf, kindWords, placeOf, titleOf, vaultErrorWords, type Draft, type Whose } from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
+import { onWeb } from "../../src/web";
 
 /** Searching 1Password and reading items from it may install its SDK on a machine first. */
 const ONEPASSWORD_MS = 240_000;
@@ -152,12 +153,19 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
               </Text>
             ) : null}
             <SecretInput label="Value" mono multiline value={f("value")} masked editing={editing && draft.secret} placeholder={draft.secret ? "" : "Shown as it is"} onChange={set("value")} />
-            <Switch
-              label="Secret"
-              description={draft.secret ? "Masked in every list and log. You can show it again behind Touch ID." : "Shown as it is, in lists too."}
-              checked={draft.secret}
-              onCheckedChange={(secret) => setDraft((d) => ({ ...d, secret }))}
-            />
+            {editing && !draft.plainBefore && onWeb() ? (
+              // Made plain, its value would show: fleetd cloud refuses that to a browser, as it refuses Show.
+              <Text size="xs" tone="quiet">
+                Secret. Making it plain needs the fleetd desktop or phone app.
+              </Text>
+            ) : (
+              <Switch
+                label="Secret"
+                description={draft.secret ? "Masked in every list and log. You can show it again behind Touch ID." : "Shown as it is, in lists too."}
+                checked={draft.secret}
+                onCheckedChange={(secret) => setDraft((d) => ({ ...d, secret }))}
+              />
+            )}
           </>
         ) : (
           <>

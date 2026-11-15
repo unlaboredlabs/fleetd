@@ -9,6 +9,7 @@ import { useCommands } from "../palette";
 import { useFlowDeps } from "./hooks";
 import { loadRun, READY_EVERY_MS } from "./flow";
 import { appUpdate, openUpdates, runApp, useAppUpdate } from "./state";
+import { onWeb } from "../../src/web";
 
 /** Found already, or nothing to find: a check would only repeat it. */
 const settled = (): boolean => {
@@ -51,6 +52,7 @@ export function UpdatesHost({ commands = true }: { commands?: boolean }) {
     },
     { id: "app.restartToUpdate", title: "Restart to update", group: "actions" as const, keywords: ["update", "install"], enabled: () => ready, run: () => runApp("install") },
   ];
-  useCommands(commands ? list : [], [commands, ready, admin, hub]);
+  // The web app updates as fleetd cloud serves it: nothing to check or restart into.
+  useCommands(commands && !onWeb() ? list : [], [commands, ready, admin, hub]);
   return null;
 }

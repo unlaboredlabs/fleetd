@@ -9,6 +9,7 @@ import { YourName } from "./Name";
 import { Notifications } from "./Notifications";
 import { PageHead, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import s from "./settings.module.css";
+import { onWeb } from "../../src/web";
 
 export function General() {
   const { mode, setMode } = useTheme();
@@ -23,7 +24,8 @@ export function General() {
             title="Appearance"
             control={<Segmented label="Appearance" options={THEME_MODES} value={mode} onChange={setMode} />}
           />
-          <PresenceSetting />
+          {/* App presence is the desktop app's: main reads the OS's idle time. */}
+          {onWeb() ? null : <PresenceSetting />}
         </SettingsSection>
         <Notifications />
         <Versions />
