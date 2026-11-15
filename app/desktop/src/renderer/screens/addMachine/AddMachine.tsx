@@ -54,6 +54,7 @@ import { Head } from "./Head";
 import { MacCode } from "./MacCode";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
+import { onWeb } from "../../src/web";
 
 const MAC_LINE = "For iOS builds and simulators.";
 
@@ -285,19 +286,22 @@ function Choose(props: {
         }
       />
       <ul className={s.rows}>
-        <li className={s.row}>
-          <div className={s.rowText}>
-            <Text>This computer</Text>
-            <Text size="sm" tone="quiet">
-              {hereLine(here)}
-            </Text>
-          </div>
-          {here?.kind === "node" || here?.kind === "other-hub" ? null : (
-            <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
-              {here?.joined ? "Repair" : "Add this computer"}
-            </Button>
-          )}
-        </li>
+        {/* The computer a browser runs on can't be made a machine from the page: its line below does it. */}
+        {onWeb() ? null : (
+          <li className={s.row}>
+            <div className={s.rowText}>
+              <Text>This computer</Text>
+              <Text size="sm" tone="quiet">
+                {hereLine(here)}
+              </Text>
+            </div>
+            {here?.kind === "node" || here?.kind === "other-hub" ? null : (
+              <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
+                {here?.joined ? "Repair" : "Add this computer"}
+              </Button>
+            )}
+          </li>
+        )}
         {props.ssh ? (
           <li className={s.row}>
             <div className={s.rowText}>

@@ -75,6 +75,7 @@ export default defineConfig({
             "people",
             "desktop-app",
             "mobile",
+            "web-app",
             "phone-notifications",
             "several-hubs",
             "status",

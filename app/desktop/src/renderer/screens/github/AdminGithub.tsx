@@ -26,6 +26,7 @@ import { ConfirmRemove } from "../settings/claudeParts";
 import { when } from "../live/when";
 import { dayWords, listWords } from "./words";
 import s from "./github.module.css";
+import { onWeb } from "../../src/web";
 
 const noInput = {};
 
@@ -294,7 +295,12 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
             Cancel
           </Button>
         ) : null}
-        {connect ? (
+        {connect && onWeb() ? (
+          // GitHub's sign-in comes back to 127.0.0.1, where only the desktop app listens.
+          <Text size="sm" tone="quiet">
+            Connect your GitHub in the fleetd desktop app first, then install it here.
+          </Text>
+        ) : connect ? (
           <Button variant="primary" disabled={busy !== null} onClick={() => void connectGithub()}>
             {busy === "connect" ? "Waiting for GitHub…" : "Connect GitHub"}
           </Button>

@@ -67,6 +67,7 @@ const vibrancy = process.argv.includes("--fleetd-vibrancy");
 const softwareCompositing = process.argv.includes("--fleetd-software-compositing");
 
 const api: FleetdApi = {
+  shell: "desktop",
   fixture,
   vibrancy,
   softwareCompositing,

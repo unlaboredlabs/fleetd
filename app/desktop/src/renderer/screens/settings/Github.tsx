@@ -8,11 +8,12 @@ import type { GithubAccount, GithubAppGetOutput } from "../../../shared/contract
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
-import { Button } from "../../ui";
+import { Button, Text } from "../../ui";
 import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { onWeb } from "../../src/web";
 
 const noInput = {};
 
@@ -81,7 +82,12 @@ function Account({ info }: { info: GithubAppGetOutput }) {
               Cancel
             </Button>
           ) : null}
-          {me === undefined || lapsed ? (
+          {(me === undefined || lapsed) && onWeb() ? (
+            // GitHub's sign-in comes back to 127.0.0.1, where only the desktop app listens.
+            <Text size="sm" tone="quiet">
+              Connect it in the fleetd desktop app.
+            </Text>
+          ) : me === undefined || lapsed ? (
             <Button variant="primary" disabled={waiting} onClick={() => void connect()}>
               {waiting ? "Waiting for GitHub…" : lapsed ? "Connect again" : "Connect GitHub"}
             </Button>

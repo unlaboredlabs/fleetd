@@ -1,6 +1,7 @@
 // Secret requests and a project's secret environment variables: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
+import { fromBase64, toBase64 } from "../shared/base64";
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
 import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
@@ -19,14 +20,14 @@ export const seal = async (boxPubKey: string, value: string): Promise<{ ok: true
     if (plain.length > SECRET_MAX_BYTES) {
       return refused(`The secret is over ${SECRET_MAX_BYTES} bytes.`, "Send a shorter value, or put a file on the machine and send its path.");
     }
-    const key = Buffer.from(boxPubKey.trim(), "base64");
-    if (key.length !== 32 || key.toString("base64") !== boxPubKey.trim()) {
+    const key = fromBase64(boxPubKey.trim());
+    if (key?.length !== 32 || toBase64(key) !== boxPubKey.trim()) {
       return refused("The machine's box key is not a 32-byte key.", "Restart the node on that machine so it reports its key again.");
     }
     // Loaded on the first secret, not at startup: libsodium instantiates its WebAssembly on import.
     const { default: sodium } = await import("libsodium-wrappers");
     await sodium.ready;
-    return { ok: true, sealed: Buffer.from(sodium.crypto_box_seal(plain, key)).toString("base64") };
+    return { ok: true, sealed: toBase64(sodium.crypto_box_seal(plain, key)) };
   } finally {
     plain.fill(0);
   }

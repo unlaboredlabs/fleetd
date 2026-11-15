@@ -11,6 +11,7 @@ import { Button, copyText, StateGlyph, Text } from "../../ui";
 import { untilLine } from "../addMachine/model";
 import { errorText, useHubCall } from "../settings/hub";
 import s from "./connectComputer.module.css";
+import { onWeb } from "../../src/web";
 
 /** Now, and again every 15 s, for the line's expiry. */
 const useNow = (): number => {
@@ -80,7 +81,8 @@ function Connect() {
             Your agents run on it, with its Claude login and your code. fleetd hosts only the hub.
           </Text>
         </div>
-        {opened ? (
+        {/* A browser opens no terminal: the line below is the way, on this computer too. */}
+        {onWeb() ? null : opened ? (
           <div className={s.status} role="status">
             <StateGlyph state="thinking" />
             <div className={s.words}>
@@ -110,7 +112,7 @@ function Connect() {
         )}
         <section className={s.other} aria-label="On another computer">
           <Text as="h2" size="sm" strong tone="quiet">
-            {noTerminal === null ? "On another computer" : "On this or another computer"}
+            {onWeb() ? "On your computer" : noTerminal === null ? "On another computer" : "On this or another computer"}
           </Text>
           {error !== null ? (
             <span role="alert">

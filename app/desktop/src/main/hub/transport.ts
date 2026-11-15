@@ -3,34 +3,10 @@ import type { LookupFunction, Socket } from "node:net";
 import { constants, createInflateRaw, deflateRawSync, type InflateRaw } from "node:zlib";
 import WebSocket from "ws";
 import type { SocketError } from "./explain";
+import type { Transport } from "./link";
 import { trustSystemCAs } from "../trust";
 
-/**
- * What a connection reports. `onClose` comes exactly once, also after a failed connect (code 1006); `error` is the
- * socket error before it, which says why (refused, not found, TLS…) where the code can't.
- */
-export interface ConnectionEvents {
-  onOpen(): void;
-  onText(text: string): void;
-  /** Anything came: a pong, the hub's own ping, or the bytes of a frame still arriving. The link is alive. */
-  onHeard(): void;
-  onClose(code: number, reason: string, error?: SocketError): void;
-}
-
-export interface Connection {
-  /** A frame as Text, or with `compress` as a Binary the hub inflates (only once its `ready` listed `deflate`). */
-  send(text: string, compress?: boolean): void;
-  /** A WebSocket ping; the hub (axum) answers with a pong. */
-  ping(): void;
-  /** Drops the link at once, without waiting on a closing handshake a dead peer would never answer. */
-  close(): void;
-}
-
-/**
- * Opens one connection to a hub's /app socket URL, `headers` on its upgrade request. The real one is a WebSocket; tests
- * use a fake.
- */
-export type Transport = (url: string, events: ConnectionEvents, headers?: Readonly<Record<string, string>>) => Connection;
+export type { Connection, ConnectionEvents, Transport } from "./link";
 
 /** The most one compressed frame may inflate to, as the hub's own cap. */
 export const INFLATE_MAX_BYTES = 64 * 1024 * 1024;

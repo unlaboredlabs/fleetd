@@ -4,16 +4,13 @@
 // OS's idle time, so no key or click is ever read, and nothing on screen is sent. Turned off, nothing is sent at all.
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { ChatScope } from "../shared/ipc";
+import type { PresenceFrame } from "./hub/source";
 
 export const PRESENCE_EVERY_MS = 60_000;
 /** Input this recent means the person is there. */
 export const INPUT_WITHIN_S = 60;
 
-export interface PresenceFrame {
-  readonly focused: boolean;
-  readonly input: boolean;
-  readonly project?: ChatScope;
-}
+export type { PresenceFrame } from "./hub/source";
 
 /** The switch, in a file of its own so main knows it before any window loads. On unless it was turned off. */
 export class PresenceSetting {

@@ -25,9 +25,8 @@ import {
   type ClientMessage,
   type ServerFrame,
 } from "./protocol";
-import type { PresenceFrame } from "../presence";
-import type { HubSource } from "./source";
-import type { Connection, Transport } from "./transport";
+import type { HubSource, PresenceFrame } from "./source";
+import type { Connection, Transport } from "./link";
 import { explainAbandon, explainLoss, type Loss, type SocketError } from "./explain";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
@@ -73,6 +72,8 @@ export const upgradeHeaders = (key: string): Record<string, string> => ({
 export const DEFLATE_UP_BYTES = 16 * 1024;
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
+/** No Buffer: the web app runs this client in the browser too (src/web). */
+const utf8 = new TextEncoder();
 /** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
 const PRESENCE_ID = "p";
 
@@ -244,7 +245,8 @@ export class HubClient implements HubSource {
     const id = `c${++this.#nextCallId}`;
     const { tool, input } = request;
     const text = JSON.stringify({ t: "call", id, tool, input } satisfies ClientMessage);
-    if (Buffer.byteLength(text) > MAX_FRAME_BYTES) {
+    // A UTF-16 unit is at most three bytes: only a frame that could be over is encoded to count.
+    if (text.length * 3 > MAX_FRAME_BYTES && utf8.encode(text).byteLength > MAX_FRAME_BYTES) {
       return Promise.resolve(fail("invalid", `The ${tool} request is too large to send.`));
     }
     return new Promise<CallOutcome>((resolve) => {

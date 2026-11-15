@@ -9,6 +9,7 @@ import { useDataLayer } from "../../src/data/react";
 import { ContextMenu, ContextMenuItem, cx, toast, Tooltip } from "../../ui";
 import type { ProjectRef } from "./slots";
 import p from "./picture.module.css";
+import { onWeb } from "../../src/web";
 
 /** A picture on the hub; its name is said once it is known (an image block's comes with its bytes). */
 export type PictureFile = { readonly attachmentId: string; readonly name: string | undefined };
@@ -38,6 +39,8 @@ export function usePicture(project: ProjectRef | undefined, file: PictureFile) {
       const out = await run((request) => window.fleetd.files.download(hub, request).catch(failed));
       if (out === undefined) return;
       if (!out.ok) toast({ tone: "danger", title: `Couldn’t save ${name}`, description: out.message });
+      // The browser keeps where it saved it; only the desktop app can show the file in its folder.
+      else if (onWeb()) toast({ tone: "success", title: `Downloaded ${out.name}` });
       else toast({ tone: "success", title: `Saved ${out.name} to Downloads`, action: { label: window.fleetd.platform === "darwin" ? "Show in Finder" : "Show in folder", onClick: () => void show(out.path) } });
     },
     /** Where the person picks, as a file card's Save does. */
