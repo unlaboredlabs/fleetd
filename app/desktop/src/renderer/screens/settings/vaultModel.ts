@@ -508,3 +508,7 @@ export const vaultErrorWords = (e: { readonly reason?: string | undefined }): st
   if (e.reason === "vault_key_missing") return "The vault's key is missing on the hub. An owner restores it with the recovery code (fleetd vault restore-key).";
   return undefined;
 };
+
+/** What the Secret switch says it means. A value is shown again only behind Touch ID or Face ID: never in a browser. */
+export const secretLine = (secret: boolean, web: boolean): string =>
+  !secret ? "Shown as it is, in lists too." : web ? "Masked in every list and log. Showing it again needs the fleetd desktop or phone app." : "Masked in every list and log. You can show it again behind Touch ID.";

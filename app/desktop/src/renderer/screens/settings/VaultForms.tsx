@@ -12,7 +12,7 @@ import { navigate } from "../shell/navigation";
 import { useHubCall, useRefetch } from "./hub";
 import { parseDotEnv, withKind, type EnvKind } from "./projectModel";
 import { VAULT_READS, vaultError } from "./vaultParts";
-import { brandName, brandOf, check, clearable, draftOf, emptyDraft, fieldsOf, kindWords, placeOf, titleOf, vaultErrorWords, type Draft, type Whose } from "./vaultModel";
+import { brandName, brandOf, check, clearable, draftOf, emptyDraft, fieldsOf, kindWords, placeOf, secretLine, titleOf, vaultErrorWords, type Draft, type Whose } from "./vaultModel";
 import s from "./settings.module.css";
 import v from "./vault.module.css";
 import { onWeb } from "../../src/web";
@@ -161,7 +161,7 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
             ) : (
               <Switch
                 label="Secret"
-                description={draft.secret ? "Masked in every list and log. You can show it again behind Touch ID." : "Shown as it is, in lists too."}
+                description={secretLine(draft.secret, onWeb())}
                 checked={draft.secret}
                 onCheckedChange={(secret) => setDraft((d) => ({ ...d, secret }))}
               />

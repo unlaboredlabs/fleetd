@@ -22,7 +22,7 @@ interface Call {
 }
 
 /** A fleetd cloud on the other end of fetch and the socket: records what the page asks, answers as told. */
-const setup = (answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 })) => {
+const setup = (answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 }), session: WebSession = SESSION) => {
   const calls: Call[] = [];
   const sockets: Array<{ url: string; events: ConnectionEvents; sent: Array<Record<string, unknown>>; headers: Readonly<Record<string, string>> | undefined }> = [];
   const transport: Transport = (url, events, headers) => {
@@ -59,7 +59,7 @@ const setup = (answer: (path: string, init?: RequestInit) => Response = () => ne
     platform: "darwin",
     version: "test",
   };
-  const { api, hubs } = createWebShell(SESSION, deps);
+  const { api, hubs } = createWebShell(session, deps);
   return { api, hubs, calls, sockets, went, opened, saved, stored, block: () => (blocked = true) };
 };
 
@@ -94,6 +94,22 @@ describe("the web shell", () => {
     expect((await api.hubs.list())[0]).toEqual({ id: ACME, label: "Acme Inc", cloud: true, color: "green" });
     expect(heard).toHaveLength(1);
     expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [SESSION.teams[0]?.id ?? ""]: { label: "Acme Inc", color: "green" } });
+  });
+
+  it("keeps two teams whose ids begin alike as two hubs, each with its own socket", () => {
+    const twins: WebSession = {
+      ...SESSION,
+      teams: [
+        { id: "acme-corporation-eu", name: "acme-eu", url: "https://acme-eu.fleetd.dev" },
+        { id: "acme-corporation-us", name: "acme-us", url: "https://acme-us.fleetd.dev" },
+      ],
+    };
+    const { api, sockets } = setup(undefined, twins);
+    const listed = api.hubs.initial;
+    expect(listed.map((h) => h.label)).toEqual(["acme-eu", "acme-us"]);
+    expect(new Set(listed.map((h) => h.id)).size).toBe(2);
+    for (const h of listed) api.hub.subscribe(h.id, () => undefined);
+    expect(sockets.map((s) => s.url)).toEqual(["wss://app.fleetd.dev/t/acme-corporation-eu/app", "wss://app.fleetd.dev/t/acme-corporation-us/app"]);
   });
 
   it("opens each team's socket on this origin, with no key: the cookie is the auth", () => {
@@ -178,6 +194,15 @@ describe("the web shell", () => {
     expect(header(calls[0]?.init, "authorization")).toBeNull();
     expect(header(calls[0]?.init, "x-fleetd-web")).toBe("1");
     expect(calls[0]?.init?.credentials).toBe("same-origin");
+  });
+
+  it("says a sign-out that didn't reach the cloud failed, and stays", async () => {
+    const t = setup(() => json({ code: "failed", message: "Something broke." }, 503));
+    expect(await t.api.cloud.signOut()).toEqual({ kept: [], failure: { code: "failed", message: "Not signed out: Something broke." } });
+    expect(t.went).toEqual([]);
+    const gone = setup(() => new Response(null, { status: 401 }));
+    expect(await gone.api.cloud.signOut()).toEqual({ kept: [] });
+    expect(gone.went).toEqual(["/"]);
   });
 
   it("signs out at the cloud, then goes to the start", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VaultAuditEntry, VaultItemSummary } from "../../../shared/contracts";
 import {
   auditLine,
+  secretLine,
   brandOf,
   check,
   draftOf,
@@ -255,5 +256,14 @@ describe("activity and errors", () => {
     expect(importOutcome({ state: "imported", imported: 1 })).toBe("Imported 1 item into the vault");
     expect(vaultErrorWords({ reason: "vault_locked" })).toMatch(/locked/u);
     expect(vaultErrorWords({ reason: "other" })).toBeUndefined();
+  });
+});
+
+describe("secretLine", () => {
+  it("promises a reveal behind Touch ID only where there is one: never in the web app", () => {
+    expect(secretLine(true, false)).toMatch(/Touch ID/u);
+    expect(secretLine(true, true)).not.toMatch(/Touch ID/u);
+    expect(secretLine(true, true)).toMatch(/desktop or phone app/u);
+    expect(secretLine(false, true)).toBe(secretLine(false, false));
   });
 });

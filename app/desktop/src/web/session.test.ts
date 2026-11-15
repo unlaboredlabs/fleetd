@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, signInPath, teamHubId, webCall, type Fetch } from "./session";
+import { readSession, signInPath, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -49,5 +49,15 @@ describe("signInPath and teamHubId", () => {
   it("makes a team's id a hub id the routes take", () => {
     expect(teamHubId("3F2B9C1E-0000-4000-8000-000000000001")).toBe("3f2b9c1e00004000");
     expect(teamHubId("---")).toBe("team");
+  });
+
+  it("keeps two teams whose ids begin alike apart, in any order, and leaves the rest as they were", () => {
+    const ids = teamHubIds(["acme-corporation-eu", "acme-corporation-us", "a-b", "ab", "side"]);
+    const values = [...ids.values()];
+    expect(new Set(values).size).toBe(5);
+    for (const id of values) expect(id).toMatch(/^[a-z0-9]{1,16}$/u);
+    expect(ids.get("side")).toBe("side");
+    const again = teamHubIds(["ab", "side", "acme-corporation-us", "a-b", "acme-corporation-eu"]);
+    expect([...again].toSorted()).toEqual([...ids].toSorted());
   });
 });
