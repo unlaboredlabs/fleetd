@@ -1,12 +1,14 @@
 // The island over the composer (W651): one small glass capsule, centred in the band, as wide as what it says. What the
-// lead does now, only when its words say more than its avatar's motion does ("Reading `rounding.ts`", never a bare
-// "Thinking"); a glyph per agent at work (three at most, those waiting on you first, in the attention color) and how
-// many; a red dot while main is red. Nothing to say, nothing drawn. A click (or Enter) opens a card above it: main's
+// lead does now, in words only when they say more than its avatar's motion does ("Reading `rounding.ts`", never a bare
+// "Thinking"), else its glyph alone while nothing else in it says work, so it is drawn whenever the composer shows Stop
+// (W669); a glyph per agent at work (three at most, those waiting on you first, in the attention color) and how many;
+// a red dot while main is red. Nothing to say, nothing drawn. A click (or Enter) opens a card above it: main's
 // reason in full, a row per agent (live/Lanes), and the count of the agents' DMs, a way to Activity's log of them; a
 // second click, a press outside or Escape closes it. With none of those (the lead's step alone), it is no button. A file name too long for the room is cut once, in the middle.
 import { useId, useLayoutEffect, useRef, useState, useEffect } from "react";
 import { cx, InlineCode, StateGlyph, Text, type GlyphState } from "../../ui";
 import { useData } from "../../src/data/react";
+import { selectLeadAtWork } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { useDmTotal } from "../dms/hooks";
 import { countWords } from "../dms/model";
@@ -30,6 +32,10 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
   const strip = loaded === undefined || loaded.agents === 0 ? undefined : loaded;
   const doing = useData((st) => leadDoing(st, projectKey(project)));
   const step = doing === undefined || BARE.has(doing) ? undefined : sentenceCase(doing);
+  // The lead at work, as the composer's Stop has it (live, or last known offline), with no words and no agents' glyphs
+  // to say so: its glyph, still while offline.
+  const atWork = useData(selectLeadAtWork(projectKey(project)));
+  const lead = atWork === undefined || step !== undefined || strip !== undefined ? undefined : atWork;
   const dms = countWords(useDmTotal(project));
   // The card has something to show: the agents, main's reason or the agents' DMs. Without, the island is no button.
   const opens = strip !== undefined || warning !== undefined || dms !== undefined;
@@ -45,12 +51,18 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
-  if (strip === undefined && step === undefined && warning === undefined) return null;
-  const label = [step, strip === undefined ? undefined : stripHeadline(strip), warning === undefined ? undefined : "main is red"].filter(Boolean).join(" · ");
+  if (strip === undefined && step === undefined && lead === undefined && warning === undefined) return null;
+  const leadLabel = lead === undefined ? undefined : sentenceCase(doing ?? "working");
+  const label = [step ?? leadLabel, strip === undefined ? undefined : stripHeadline(strip), warning === undefined ? undefined : "main is red"].filter(Boolean).join(" · ");
   const close = () => setOpen(false);
   const says = (
     <>
       {step === undefined ? null : <Step words={step} />}
+      {lead === undefined ? null : (
+        <span className={s.glyph}>
+          <StateGlyph state={doing === "thinking" ? "thinking" : "working"} size="sm" still={lead === "held"} />
+        </span>
+      )}
       {strip === undefined ? null : <Fleet strip={strip} />}
       {warning === undefined ? null : <span className={s.red} aria-hidden />}
     </>

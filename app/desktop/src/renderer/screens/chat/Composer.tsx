@@ -19,7 +19,7 @@ import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
-import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
+import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, StateGlyph, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
@@ -70,9 +70,11 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   // Asked for until the lead's turn ends (or the call says it can't): Stop stays pressed meanwhile.
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string>();
-  // Offline, a lead last known to be working keeps its Stop, disabled, with why under the box.
-  const stopOffline = useData(selectHeldLeadWorking(projectKey));
-  const showStop = (working === true && canStop) || stopOffline;
+  // The island over the box reads the same: Stop never shows without it saying the lead works. Offline, a lead last
+  // known to be working keeps its Stop, disabled, with why under the box.
+  const atWork = useData(selectLeadAtWork(projectKey));
+  const stopOffline = atWork === "held";
+  const showStop = (atWork === "live" && canStop) || stopOffline;
 
   // The turn ended: a new one starts with Stop unpressed.
   const [wasWorking, setWasWorking] = useState(working);

@@ -5,7 +5,8 @@
 // over, and the reply wears how long it took. lead-memory: the night's memory refresh line, after the lead's
 // reply, with the changes it made to MEMORY.md and a topic file. lead-worktrees: the night's cleanup line for the
 // worktrees it kept, before the memory refresh's. lead-pictures: the lead thinking with no agents at work, after a reply
-// ending in two pictures that load late.
+// ending in two pictures that load late. lead-steered: the human's screenshot (W669), two messages sent, the second as a
+// steer while the turn they started runs, and nothing from the lead yet.
 import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -92,6 +93,39 @@ function leadAtWork(f: Fixture, turn: Turn): Fixture {
     f.events.push(event("task.started", mid + (startS - mid) / 4 - i, `${taskId} started`, { taskId, workstreamId: "W20", createdAt: t(mid + (startS - mid) / 4 + 30 - i) }));
   }
   if (turn.endS !== undefined) f.events.push(event("chat.waiting", turn.endS, "The lead is idle", { ...state, leadWorking: false }));
+  return f;
+}
+
+/**
+ * The turn the person's "start" began, "1-16" steered into it, no agents at work and nothing from the lead yet: no
+ * reply, no open call. The composer shows Stop, and the island the lead's glyph alone.
+ */
+function leadSteered(f: Fixture): Fixture {
+  leadAtWork(f, { orders: 0, agents: 0, startS: 20, replyS: 300 });
+  f.update("orders_board", (out) => ({ ...obj(out), orders: arr(obj(out)["orders"]).filter((o) => obj(obj(o)["projectRef"])["projectId"] !== STOREFRONT.projectId) }));
+  const t = (s: number) => at(f.now, -s * 1000);
+  const msg = (seq: number, author: "human" | "lead", text: string, s: number, delivery?: string): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef: STOREFRONT,
+    seq,
+    author,
+    text,
+    attachments: [],
+    createdAt: t(s),
+    state: "final",
+    ...(delivery === undefined ? {} : { by: "laptop", clientRequestId: `seed-${seq}`, delivery }),
+  });
+  const messages = [
+    msg(1, "human", "Plan the checkout items from the proposal.", 420, "turn"),
+    msg(2, "lead", "The proposal has 16 items. Say start when you want them built, and which ones.", 300),
+    msg(3, "human", "start", 20, "turn"),
+    msg(4, "human", "1-16", 12, "steer"),
+  ];
+  const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: true, lastSeq: messages.length, lastMessageAt: t(12) });
+  for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
+  f.answer("chat_history", { projectRef: STOREFRONT }, { messages, moreBefore: false, moreAfter: false, state });
+  // The hub can stop a lead: Stop shows beside Send.
+  f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
   return f;
 }
 
@@ -310,6 +344,7 @@ export default defineGroup({
       { orders: 1, agents: 3, startS: 460, replyS: 250, endS: 240 },
     ),
     leadPictures(Fixture.from(base("typical"), "lead-pictures", "storefront's lead thinking, no agents at work, after a reply that ends in two pictures whose bytes come late.")),
+    leadSteered(Fixture.from(base("typical"), "lead-steered", "storefront's lead mid-turn after start and a steer, 1-16, with nothing from it yet and no agents at work.")),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
     worktreesKept(Fixture.from(base("typical"), "lead-worktrees", "storefront's chat with the night's cleanup line: 6 worktrees kept for unsaved work.")),
     setupChanged(Fixture.from(base("typical"), "lead-setup", "storefront's chat with its lead's setup changes: a repo added, the project renamed, a variable undone.")),

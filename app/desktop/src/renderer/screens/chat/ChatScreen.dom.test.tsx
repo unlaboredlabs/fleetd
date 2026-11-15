@@ -32,18 +32,22 @@ afterEach(() => {
   host.remove();
 });
 
-/** The chat on a live hub whose Status row for the project is `row`, its lead's lane `lead` when given. */
-const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof liveLane>) => {
+/**
+ * The chat on a live hub whose Status row for the project is `row`, its lead's lane `lead` when given. `working`: the
+ * hub's chat state says the lead works (by default, when it has a lane); `messages`: the chat's, oldest first.
+ */
+const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof liveLane>, at: { working?: boolean; messages?: readonly unknown[] } = {}) => {
+  const working = at.working ?? lead !== undefined;
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const answers: Readonly<Record<string, unknown>> = {
     status_get: { rows: [{ projectRef: project, title: "storefront", asOf: AT, agentsRunning: 0, state: "idle", ...row }] },
     orders_board: { orders: [] },
     usage_resume: { resumed: 2, status: { machineId: project.machineId, breaker: { state: "closed" } } },
     chat_history: {
-      messages: [{ messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Add dark mode", createdAt: AT }],
+      messages: at.messages ?? [{ messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Add dark mode", createdAt: AT }],
       moreBefore: false,
       moreAfter: false,
-      state: { projectRef: project, needsYou: false, leadWorking: lead !== undefined, lastSeq: 1 },
+      state: { projectRef: project, needsYou: false, leadWorking: working, lastSeq: at.messages?.length ?? 1 },
     },
   };
   const hub: HubApi = {
@@ -58,7 +62,7 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
   };
   const layer = createDataLayer(hub);
   // The shell opens the chat it shows; the lead's lines show only in a loaded one.
-  if (lead !== undefined) layer.chat.open(projectKey(project));
+  if (working) layer.chat.open(projectKey(project));
   root = createRoot(host);
   act(() => {
     root?.render(
@@ -147,10 +151,39 @@ it("says what the lead is doing in the island over the composer, never as a row 
   expect(island?.querySelector("button")).toBeNull();
   expect([...(island?.querySelectorAll("code") ?? [])].map((c) => c.textContent)).toContain("half-cent-edge-cases.ts");
   expect(host.querySelector("[data-index] [data-island]")).toBeNull();
-  act(() => root?.unmount());
-  // Only working or thinking, the lead's avatar says it: the island has nothing to say, and isn't drawn.
-  await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
-  expect(host.querySelector("[data-island]")).toBeNull();
+});
+
+/** The lead's Stop beside Send, and the island over the composer. */
+const stop = () => host.querySelector("button[aria-label='Stop the lead and its agents']");
+const island = () => host.querySelector("[data-band] > [data-island]");
+
+// The human's screenshot (2026-11-15): "start", then "1-16" sent as a steer while the turn ran, nothing from the lead
+// yet. The composer showed Stop and "It reads this at its next step.", the band over it nothing at all: the island
+// said only a step with more words than "Working", so a turn with none (or only thinking) drew no island.
+it("shows the lead at work in the island whenever the composer shows Stop, with no words where its step has none", async () => {
+  const human = (seq: number, text: string, delivery: string) => ({ messageId: `m${String(seq)}`, projectRef: project, seq, author: "human", state: "final", text, createdAt: AT, delivery });
+  const steered = [human(1, "start", "turn"), human(2, "1-16", "steer")];
+  const states: readonly [string, Parameters<typeof mount>[1], Parameters<typeof mount>[2]][] = [
+    ["a turn with no step yet, after a steer", undefined, { working: true, messages: steered }],
+    ["a turn with no step yet", undefined, { working: true }],
+    ["a lane at work with no activity", liveLane(leadLaneId(project), "working"), {}],
+    ["thinking", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }), {}],
+    ["writing", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "writing" }, since: AT } }), {}],
+  ];
+  for (const [state, lead, at] of states) {
+    await mount({ state: "working" }, lead, at);
+    expect(stop(), state).not.toBeNull();
+    expect(island(), state).not.toBeNull();
+    // Only its glyph, at work: no caption the avatar's motion already says.
+    expect(island()?.querySelector("[data-state='working'], [data-state='thinking']"), state).not.toBeNull();
+    expect(island()?.textContent, state).toBe("");
+    expect(island()?.querySelector("button"), state).toBeNull();
+    act(() => root?.unmount());
+  }
+  // Idle: no Stop, no island.
+  await mount({ state: "idle" });
+  expect(stop()).toBeNull();
+  expect(island()).toBeNull();
 });
 
 it("floats the composer as an island over the conversation, which runs on behind it rather than ending above it", async () => {

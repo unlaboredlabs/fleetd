@@ -3,7 +3,7 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "./chat-contract";
 import { live, snapshot } from "./fixtures.test-util";
 import { createDataLayer, type Batch, type HubApi } from "./queries";
-import { selectCanStop, selectChat, selectLeadWorking, selectNeedsYou } from "./selectors";
+import { selectCanStop, selectChat, selectLeadAtWork, selectLeadWorking, selectNeedsYou } from "./selectors";
 
 type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
 
@@ -278,6 +278,24 @@ describe("chat history", () => {
     fake.send(chatEvent(2, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: true, lastSeq: 2 }));
     expect(selectNeedsYou(KEY)(layer.store.getState())).toBe(false);
     expect(selectLeadWorking(KEY)(layer.store.getState())).toBe(true);
+  });
+
+  it("the lead at work, which Stop and the island both read: live, then held through a drop, gone once it is idle", async () => {
+    const { fake, layer } = await connected();
+    const atWork = () => selectLeadAtWork(KEY)(layer.store.getState());
+    expect(atWork()).toBeUndefined();
+    // A turn the person's message started, with nothing from the lead yet: no lane, no activity, only chat.waiting.
+    fake.send(chatEvent(2, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: true, lastSeq: 2 }));
+    expect(atWork()).toBe("live");
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    expect(atWork()).toBe("held");
+  });
+
+  it("the lead at work ends with its turn", async () => {
+    const { fake, layer } = await connected();
+    fake.send(chatEvent(2, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: true, lastSeq: 2 }));
+    fake.send(chatEvent(3, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: false, lastSeq: 2 }));
+    expect(selectLeadAtWork(KEY)(layer.store.getState())).toBeUndefined();
   });
 });
 
