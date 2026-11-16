@@ -4,7 +4,8 @@ import { executors } from "../src/hub/executor/index.ts";
 import { get } from "../src/hub/browser/store.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
-import { autoSessions, place, type Runner } from "../src/hub/machine_roles/places.ts";
+import { autoSessions, liveOn, place, prune, type Runner, START_MS } from "../src/hub/machine_roles/places.ts";
+import { runsOn } from "../src/hub/browser/live.ts";
 import { goneProof, GONE_HEADER, hashToken, relays } from "../src/hub/machine_roles/relay.ts";
 import { addMachine, addProject, agent, caller, testHub, tick } from "./screens_helpers.ts";
 
@@ -297,6 +298,47 @@ test("the agents' Mac: mac_where names it, mac_send passes a sealed step on and 
   await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "mac1", macTool: false });
   expect((await t.calls.call(who, { op: "mac_where" })).error?.code).toBe("machine_offline");
   await tick();
+});
+
+test("a mac sim start goes with a screen of its own: the Mac reports it in the agent's name, and it carries none of its calls", async () => {
+  setup();
+  addMachine(t.hub, "mac1", { agentsMac: true, boxPubKey: KEY });
+  t.link.link("mac1", ["mac_tool"]);
+  const who = agent("devbox", "p1", "T4");
+  const frames: Record<string, unknown>[] = [];
+  t.link.answer = async (_machine: string, frame: Record<string, unknown>) => {
+    frames.push(frame);
+    return { id: (frame as { id: string }).id, sealed: "answer" };
+  };
+  await t.calls.call(who, { op: "mac_send", machineId: "mac1", threadId: "t1", sealed: "c3RlcA==" });
+  expect(frames[0]!.screen).toBeUndefined();
+  await t.calls.call(who, { op: "mac_send", machineId: "mac1", threadId: "t1", sealed: "c3RlcA==", sim: true });
+  const screen = frames[1]!.screen as { hostKey: string; sessionId: string };
+  expect(screen.hostKey).toMatch(/^H[0-9a-f]{32}$/);
+  expect(screen.sessionId).toMatch(/^B[0-9a-f]{32}$/);
+  // The Mac reports under the key, as a runner reports a session it hosts: in the agent's name.
+  expect(t.calls.hosts("mac1", screen.hostKey)).toEqual({
+    agent: { kind: "task", taskId: "T4" },
+    projectRef: { machineId: "devbox", projectId: "p1" },
+    threadId: "t1",
+  });
+  expect(t.calls.hosts("box2", screen.hostKey)).toBeUndefined();
+  await t.calls.call(
+    { ...who, threadId: "t1" },
+    { op: "browser_session", sessionId: screen.sessionId, kind: "ios", threadId: "t1", purpose: "iPhone 17 · T4", state: "live", startedAt: "2026-11-08T12:00:00.000Z" },
+  );
+  expect(get(t.hub, screen.sessionId)).toMatchObject({ kind: "ios", taskId: "T4", state: "live" });
+  // Watching it goes to the Mac.
+  expect(runsOn(t.hub, get(t.hub, screen.sessionId)!)).toBe("mac1");
+  // The agent's own session calls stay on its machine, and the screen takes no slot on the Mac.
+  const step = { op: "session_step", threadId: "t1", item: { kind: "command", text: "agent-browser open" } };
+  expect((await t.calls.call(agent("devbox", "p1"), step)).result).toEqual({ forwarded: false });
+  expect(liveOn(t.hub.db.conn, "mac1", t.clock.now())).toBe(0);
+  // A start that lent none (queued, refused, held already) leaves a place nobody reported: it goes.
+  await t.calls.call(who, { op: "mac_send", machineId: "mac1", threadId: "t1", sealed: "c3RlcA==", sim: true });
+  expect(t.hub.db.all("SELECT place_id FROM session_places WHERE sim = 1")).toHaveLength(2);
+  expect(prune(t.hub.db.conn, t.clock.now() + START_MS)).toBe(1);
+  expect(t.hub.db.all<{ place_id: string }>("SELECT place_id FROM session_places WHERE sim = 1")).toEqual([{ place_id: screen.hostKey }]);
 });
 
 test("session_step goes to the runner of the agent's session hosted elsewhere, and nowhere else", async () => {

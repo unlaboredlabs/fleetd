@@ -37,7 +37,8 @@ in one line and exits with 69; the agent carries on without it and says so.
 
 ## iOS simulators {#sim}
 
-`mac sim start` gives the agent an iOS simulator of its own: a booted clone of the Mac's golden simulator, headless.
+`mac sim start` gives the agent an iOS simulator of its own: a booted clone of the Mac's golden simulator, headless,
+which [the person can watch and take over](#sim-screens).
 From then on the agent drives it with
 [agent-device](https://github.com/callstack/agent-device), as it always has: an `agent-device` first on its PATH runs
 each command on the Mac, already pointed at that simulator (pass no `--udid` or `--platform`). `agent-device` inside
@@ -96,6 +97,25 @@ them.
 
 The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
 for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number.
+
+### Watching a simulator {#sim-screens}
+
+Each simulator an agent holds is a screen of its own, in **Screens** and the project's **Agents › Screens**, named for
+its device and agent ("iPhone 17 · T12") and drawn in an iPhone bezel. It never touches the Mac's own screen and takes
+no turn on it, so several agents' simulators are watched at once, beside an agent on the [Mac's screen](/docs/browser-sessions#mac).
+
+- **Live view.** While someone watches, the Mac takes a screenshot of the simulator (`simctl io screenshot`) at most every
+  100 ms and sends the ones that changed; nobody watching, it takes none.
+- **Recording.** From the first time someone watches until the simulator ends, `simctl io recordVideo` records it. Its
+  recording, with a line for each of the agent's `agent-device` commands and for your takeover, lands with the screen's
+  others once the simulator ends. A simulator nobody watched has its line log and no video.
+- **Take over.** Your click is an `agent-device press`, a drag a `swipe`, a long press a `longpress`, the wheel a
+  `swipe`, typing a `type`, and Enter, Home and Back their own commands, all through the agent's own agent-device
+  daemon on the Mac. Meanwhile the agent's `agent-device` refuses and says a person has control; its next command after
+  you hand it back drives the simulator again.
+
+The Mac has as many simulator screens as [simulators it boots at once](#sim), plus its own screen. The screen ends with
+the simulator: `mac sim end`, or 30 minutes without a `mac` command from the agent.
 
 ### Waiting for a simulator {#sim-queue}
 

@@ -2662,6 +2662,10 @@
           "minLength": 1,
           "type": "string"
         },
+        "sim": {
+          "description": "The step is a `mac sim start`: the hub makes the screen the simulator it lends shows as.",
+          "type": "boolean"
+        },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
           "description": "The agent's session the node made it for."

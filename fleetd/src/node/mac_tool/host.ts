@@ -3,7 +3,8 @@
 // never before), and run in that agent's own folder under `<home>/mac/<task or session>/`: its `repo/` checked out
 // from the project's mirror, its jobs, the files it put and pulls. The answer goes back sealed with the step's key.
 //
-// iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them.
+// iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them;
+// a `sim_start`'s frame carries the screen the hub made for the simulator it lends (sim_screen.ts).
 // What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts); a folder nothing touched for FOLDER_DAYS
 // goes, with its snapshot in the mirror (`sweep`).
 import { createHash } from "node:crypto";
@@ -28,7 +29,7 @@ import { ToolError } from "../../shared/errors.ts";
 import { inTurn } from "../util.ts";
 import { type Activity, clipCommand, type JobActivity, type SimActivity } from "./activity.ts";
 import type { MacSims } from "../device/ios/sims.ts";
-import type { MacCaller, MacCallFrame, MacResultFrame, McpToolError } from "../../shared/screens_wire.ts";
+import type { MacCaller, MacCallFrame, MacResultFrame, McpToolError, SimScreen } from "../../shared/screens_wire.ts";
 import {
   type Answer,
   type Done,
@@ -178,7 +179,7 @@ export class Host {
       const agent = this.agent(frame.caller);
       // Any step of the agent's keeps its simulator.
       this.sims?.touch(agent.name);
-      const [done, after] = await this.step(agent, envelope.step, raw);
+      const [done, after] = await this.step(agent, envelope.step, raw, frame.screen);
       answer = { done };
       out = after;
     } catch (e) {
@@ -233,8 +234,11 @@ export class Host {
     return join(this.root, ".mirrors", `${project}.git`);
   }
 
-  /** The step, with the raw bytes after it (a `put`'s piece); the answer, with those that go after it (a raw `get`'s). */
-  async step(agent: Agent, step: Step, raw: Uint8Array = new Uint8Array()): Promise<[Done, Uint8Array]> {
+  /**
+   * The step, with the raw bytes after it (a `put`'s piece); the answer, with those that go after it (a raw `get`'s).
+   * `screen`: the screen the hub made for a `sim_start`, which the simulator it lends shows as.
+   */
+  async step(agent: Agent, step: Step, raw: Uint8Array = new Uint8Array(), screen?: SimScreen): Promise<[Done, Uint8Array]> {
     const none = new Uint8Array();
     switch (step.step) {
       case "have":
@@ -272,7 +276,7 @@ export class Host {
             "do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines",
           );
         }
-        return [await this.sims.start(agent, step.device, step.wait ?? false), none];
+        return [await this.sims.start(agent, step.device, step.wait ?? false, screen), none];
       case "sim_end":
         return [{ step: "sim_end", ended: this.sims?.end(agent.name) ?? false }, none];
       default:
@@ -320,6 +324,8 @@ export class Host {
       const code = await child.exited;
       closeSync(fd);
       entry.exit = child.signalCode ? 128 + (signalNumber(String(child.signalCode)) ?? 0) : code;
+      // A job that drove the agent's simulator is a line in its screen's log.
+      this.sims?.ran(agent.name, entry.command, entry.exit === 0, this.clock() - entry.startedMs);
     });
     if (!background) void this.endUnfollowed(agent.name, job);
     return { step: "run", job };

@@ -347,6 +347,8 @@ export function waitingWords(w: Waiting): [string, string] {
 export class Lent {
   /** The pool started the clone's runner in its home. */
   runner = false;
+  /** The screen's pixels per point (its device type's): a person's taps on its screen go in points. */
+  scale = 3;
   private gone = false;
 
   constructor(
@@ -425,6 +427,7 @@ export class Pool {
   private async boot(): Promise<Lent> {
     const udid = await this.simctl.cloneDevice(this.golden.udid, `fleetd-${shortId()}`);
     const lent = new Lent(udid, cloneHome(this.home, udid), this.simctl);
+    lent.scale = this.golden.scale;
     this.booting.add(lent);
     try {
       try {
@@ -455,6 +458,7 @@ export class Pool {
     const [runtime, type] = pick(await this.simctl.runtimes(), wanted);
     const udid = await this.simctl.create(`fleetd-${shortId()}`, type.identifier, runtime.identifier);
     const lent = new Lent(udid, cloneHome(this.home, udid), this.simctl);
+    lent.scale = await scale(type);
     try {
       await this.simctl.boot(udid, OWN_BOOT);
     } catch (e) {

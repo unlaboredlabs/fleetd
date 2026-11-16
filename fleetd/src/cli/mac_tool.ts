@@ -177,7 +177,7 @@ export function shown(result: any): string {
     case "run":
       return `job ${display(result.job)}\n`;
     case "sim_start":
-      return `your simulator: ${typeof result.device === "string" ? result.device : "?"} (${typeof result.udid === "string" ? result.udid : "?"}). Drive it with agent-device, which runs on the Mac now; end it with mac sim end. Plain simctl there needs fleetd's device set: mac run -- 'xcrun simctl --set "$FLEETD_MAC_SIM_SET" install "$FLEETD_MAC_SIM" <app>'\n`;
+      return `your simulator: ${typeof result.device === "string" ? result.device : "?"} (${typeof result.udid === "string" ? result.udid : "?"}), your screen: the person can watch it in Screens and take it over. Drive it with agent-device, which runs on the Mac now; end it with mac sim end. Plain simctl there needs fleetd's device set: mac run -- 'xcrun simctl --set "$FLEETD_MAC_SIM_SET" install "$FLEETD_MAC_SIM" <app>'\n`;
     case "sim_queued": {
       const secs = u64OrNull(result.secs);
       const about = secs === null ? "" : `, about ${secs} s`;

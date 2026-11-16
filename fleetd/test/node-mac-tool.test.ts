@@ -22,7 +22,9 @@ function setup() {
   const host = new Host(join(macHome.dir, "mac"), new NodeBoxKey(secret));
   const agent = testNode("devbox");
   const caller = { machineId: "devbox", projectId: "p1", taskId: "T7", threadId: "t1" };
+  const sent: Record<string, unknown>[] = [];
   agent.link.answer = async (op, args) => {
+    if (op === "mac_send") sent.push(args);
     if (op === "mac_where") return { machineId: "mac1", boxPubKey: Buffer.from(publicKeyOf(secret)).toString("base64") };
     if (op === "mac_send") {
       const answer = await host.answer({ id: "c1", caller, sealed: String(args.sealed) });
@@ -39,7 +41,7 @@ function setup() {
   writeFileSync(join(wt, "app.txt"), "v1\n");
   writeFileSync(join(wt, ".gitignore"), "build/\n");
   cleanups.push(macHome.done, agent.done, work.done, () => host.stop());
-  return { host, client: new MacClient(agent.node, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller };
+  return { host, client: new MacClient(agent.node, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller, sent };
 }
 
 test("push, run, logs and pull: the agent's worktree on the Mac, its job's output, and its files back", async () => {
@@ -117,7 +119,7 @@ test("a step's absent fields may come as null, as the Rust client sends them", a
 }, 30_000);
 
 test("mac sim start puts the forwarding agent-device first on the session's PATH, and mac sim end takes it off", async () => {
-  const { host, client, wt } = setup();
+  const { host, client, wt, sent } = setup();
   const agentHome = (client as unknown as { node: { home: string } }).node.home;
   host.sims = {
     held: new Map(),
@@ -134,6 +136,8 @@ test("mac sim start puts the forwarding agent-device first on the session's PATH
   expect(launchEnv(agentHome, "t1", "/usr/bin")[0]?.[1]).toBe(`${fwd}:${binDir(agentHome)}:/usr/bin`);
   expect(await client.call("t1", wt, { step: "sim_end" })).toEqual({ step: "sim_end", ended: true });
   expect(existsSync(fwd)).toBe(false);
+  // Only the start asks the hub for the simulator's screen.
+  expect(sent.map((s) => s.sim)).toEqual([true, undefined]);
 });
 
 test("the Mac sweeps agents' folders nothing touched for FOLDER_DAYS, with their snapshots, and keeps the rest", async () => {

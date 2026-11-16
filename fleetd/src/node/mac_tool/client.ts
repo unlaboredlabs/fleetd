@@ -177,7 +177,9 @@ export class MacClient {
     const answerKey = crypto.getRandomValues(new Uint8Array(32));
     const envelope: Envelope = { thread, atMs: Date.now(), nonce: b64(crypto.getRandomValues(new Uint8Array(16))), answerKey: b64(answerKey), step };
     const sealed = sealStep(mac.key, envelope, raw);
-    const r = await hubCall(this.node, "mac_send", { machineId: mac.machineId, threadId: thread, sealed }, { threadId: thread, cwd, waitMs: SEND_WAIT });
+    // A simulator start goes with the screen the hub makes for it: the simulator it lends is the agent's screen.
+    const sim = step.step === "sim_start" ? { sim: true } : {};
+    const r = await hubCall(this.node, "mac_send", { machineId: mac.machineId, threadId: thread, sealed, ...sim }, { threadId: thread, cwd, waitMs: SEND_WAIT });
     const opened = openAnswer(answerKey, String(r.sealed ?? ""));
     answerKey.fill(0);
     if (!opened) throw failed("the Mac's answer did not open", "run the command again");

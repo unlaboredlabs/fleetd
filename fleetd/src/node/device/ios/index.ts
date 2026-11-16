@@ -1,6 +1,7 @@
 // iOS simulators: the agents' Mac lends agents a clone from its
 // warm pool (`mac sim`, node/mac_tool, through `lend`). iOS screens are gone (D298): the kind router refuses an ios
-// `session_start`, so the Rust node's legacy session side (session.rs, screen.rs) isn't ported. The pool lends a booted
+// `session_start`. The Rust node's live view and takeover (screen.rs) are ported as each lent simulator's own screen
+// (screen.ts, sim_screen.ts). The pool lends a booted
 // clone of the node's settled golden simulator (pool.ts), and the clone is deleted when it is given back. The
 // simulators live in a device set of the node's own (simctl.ts), apart from a person's in Xcode.
 //

@@ -2,15 +2,21 @@
 // `end_idle_sims`, `sim_env`): `mac sim start` lends an agent a clone from the warm pool (or one of the device type it
 // named), within the Mac's budget of simulators at once and in the order agents asked (node/mac_tool/queue.ts); `mac
 // sim end`, or 30 minutes without a step, gives it back and deletes it. While an agent holds one, its jobs' agent-device and plain simctl are pointed at it.
+//
+// Each simulator lent is a screen of the agent's too (sim_screen.ts), when the hub made one for the step that lent it:
+// a person watches and takes it over in Screens, and it ends with the simulator.
 import { join } from "node:path";
 import { ToolError } from "../../../shared/errors.ts";
 import { simBudget } from "../../mac_tool/protocol.ts";
 import { Queue } from "../../mac_tool/queue.ts";
-import { release, sessionDir } from "../agent_device.ts";
+import type { SimScreen as SimScreenKey } from "../../../shared/screens_wire.ts";
+import { controlPath, release, sessionDir } from "../agent_device.ts";
 import { blocksSimulators } from "../../agents_mac/checks.ts";
 import { simWaiting, type Simulators } from "./index.ts";
 import type { Lent } from "./pool.ts";
-import { iosEnv, setDir, writeConfig } from "./wrapper.ts";
+import type { Runner } from "./screen.ts";
+import type { SimScreens } from "./sim_screen.ts";
+import { binDir, iosEnv, setDir, writeConfig } from "./wrapper.ts";
 
 /** A simulator nobody sent a step for this long goes. */
 export const SIM_IDLE = 30 * 60_000;
@@ -39,6 +45,8 @@ export class MacSims {
   readonly held = new Map<string, Held>();
   /** The agents waiting for one, in the order they asked. */
   readonly queue = new Queue();
+  /** The simulators' screens, where the Mac shows them (its link to the hub). */
+  screens: SimScreens | undefined;
 
   constructor(
     /** The node's home: the wrapper's config for each agent, the golden's set. */
@@ -58,9 +66,10 @@ export class MacSims {
    * The agent's simulator: its own again while it holds one, else within the budget a clone from the warm pool, or with
    * `device` a simulator of that device type (`mac sim start --device`). Simulators go to agents in the order they
    * asked (queue.ts): one that `wait`s and isn't first, or finds none free, hears its place in line; one that doesn't
-   * wait is told why there is none, as before the line.
+   * wait is told why there is none, as before the line. A simulator lent now is the `screen` the hub made for this
+   * step, when it made one.
    */
-  async start(agent: { name: string; project: string }, device?: string, wait = false): Promise<Started | Queued> {
+  async start(agent: { name: string; project: string }, device?: string, wait = false, screen?: SimScreenKey): Promise<Started | Queued> {
     // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen.
     const blocked = blocksSimulators(this.home);
     if (blocked) {
@@ -128,6 +137,17 @@ export class MacSims {
       throw new ToolError("failed", `agent-device wasn't pointed at the simulator: ${(e as Error).message}`);
     }
     this.held.set(agent.name, { lent, device: named, project: agent.project, sinceMs: Date.now(), used: Date.now() });
+    if (screen) {
+      this.screens?.open({
+        screen,
+        agent: agent.name,
+        udid: lent.udid,
+        device: named,
+        scale: lent.scale,
+        runner: this.runner(agent.name, lent.udid),
+        controlFile: controlPath(this.home, key),
+      });
+    }
     return { step: "sim_start", udid: lent.udid, device: named };
   }
 
@@ -138,8 +158,24 @@ export class MacSims {
     if (!held) return false;
     this.held.delete(agent);
     release(this.home, simKey(agent));
-    void held.lent.discard();
+    // Its screen's video is finished before the simulator goes.
+    void (this.screens?.close(agent) ?? Promise.resolve()).finally(() => held.lent.discard());
     return true;
+  }
+
+  /** How a person's commands on the agent's simulator run: its wrapper, in the agent's own agent-device home (its
+   * daemon and runner), past the control file that holds the agent's back. */
+  private runner(agent: string, udid: string): Runner {
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+    for (const [k, v] of this.env(agent, process.env.PATH) ?? []) env[k] = v;
+    delete env.FLEETD_DEVICE_CONTROL;
+    return { wrapper: join(binDir(this.home), "agent-device"), env, udid };
+  }
+
+  /** An agent's job on the Mac ended (its screen's log). */
+  ran(agent: string, command: string, ok: boolean, durationMs: number): void {
+    this.screens?.ran(agent, command, ok, durationMs);
   }
 
   /** A step of the agent's: its simulator isn't idle. */
@@ -174,6 +210,7 @@ export class MacSims {
 
   /** Every held simulator goes, and the pool's (the node stops). */
   async shutdown(): Promise<void> {
+    await this.screens?.shutdown();
     for (const agent of [...this.held.keys()]) this.end(agent);
     await this.simulators.shutdown();
   }
