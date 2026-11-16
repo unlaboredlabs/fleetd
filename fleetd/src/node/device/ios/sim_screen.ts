@@ -440,7 +440,9 @@ export class SimScreens {
     if (!frame.on) return this.unwatch(screen.id);
     const on = this.pumps.get(screen.id);
     if (on) {
+      // Another viewer: it gets the newest frame too.
       on.pump.kbps = frame.kbps;
+      if (screen.newest) on.pump.offer(screen.newest);
       return;
     }
     const pump = new Pump(screen.id, () => screen.control(), (f) => this.link.send({ t: "browser_frame", ...f }), frame.kbps);

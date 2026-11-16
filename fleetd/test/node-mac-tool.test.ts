@@ -124,6 +124,7 @@ test("mac sim start puts the forwarding agent-device first on the session's PATH
   host.sims = {
     held: new Map(),
     touch: () => {},
+    ran: () => {},
     env: () => undefined,
     start: async () => ({ step: "sim_start", udid: "U1", device: "iPhone 17" }),
     end: () => true,
@@ -188,7 +189,7 @@ test("the menu bar's activity: agents' simulators and running jobs, oldest first
   const { host, client, wt } = setup();
   await client.call("t1", wt, { step: "push" });
   const run = (await client.call("t1", wt, { step: "run", args: [`sleep 5 # ${"x".repeat(300)}`], background: true })) as { job: number };
-  host.sims = { activity: () => [{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }], touch: () => {}, env: () => undefined } as never;
+  host.sims = { activity: () => [{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }], touch: () => {}, ran: () => {}, env: () => undefined } as never;
   const now = host.activity();
   expect(now.simulators).toEqual([{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }]);
   expect(now.jobs).toEqual([expect.objectContaining({ agent: "T7", projectId: "p1", job: run.job })]);

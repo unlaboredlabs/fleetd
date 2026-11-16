@@ -565,6 +565,16 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   await until(() => frames.length > 0);
   expect(frames[0]).toMatchObject({ t: "browser_frame", sessionId: screen.sessionId, width: 640, height: 1386, control: "agent" });
   expect(recorded).toEqual([udid]);
+  // Another viewer gets the newest frame at once; one who leaves and comes back to a still screen sees it again.
+  const seen = frames.length;
+  screens.watch({ sessionId: screen.sessionId, on: true, kbps: 500 } as never);
+  await until(() => frames.length > seen);
+  screens.watch({ sessionId: screen.sessionId, on: false } as never);
+  await Bun.sleep(150);
+  const back = frames.length;
+  screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
+  await until(() => frames.length > back);
+  expect(recorded).toEqual([udid]);
 
   // Their input goes nowhere until they take over; then the agent's agent-device refuses.
   const tap = (action: "pressed" | "released") => ({ sessionId: screen.sessionId, input: { kind: "mouse", action, button: "left", x: 300, y: 600 } }) as never;

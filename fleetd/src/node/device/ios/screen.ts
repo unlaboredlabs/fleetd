@@ -58,6 +58,8 @@ export class Shooter {
 
   private async loop(): Promise<void> {
     let failing = false;
+    // A watcher that comes back gets the screen at once, changed or not.
+    this.last = undefined;
     while (this.wanted() && !this.stopped) {
       const began = performance.now();
       let gap = MIN_GAP;
