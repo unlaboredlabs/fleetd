@@ -9,7 +9,7 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 app and take it over. The node records the screen and uploads the recording to the hub.
 
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
-[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. iOS simulators aren't
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents share app by app. iOS simulators aren't
 screens you open: each one an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
 [open one yourself](#yours) too. The app shows every project's on the [Screens page](#page), and each
 project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
@@ -476,15 +476,23 @@ or podman), `FLEETD_DESKTOP_IMAGE` (an image instead of the pinned one; it must 
 
 On a Mac set aside for agents, the desktop of the account its fleetd node runs in (yours is fine) is a screen too:
 **`session_start`** with `kind` `mac`, the only kind the agents' Mac hosts (its node's `browser`, `device` and
-`desktop` settings are ignored). Unlike the other kinds there is only one, so agents take turns on it:
+`desktop` settings are ignored). Unlike the other kinds there is only one, so agents share it:
 
-- **One holder at a time.** The first agent to open it holds it. Another agent's `session_start` still opens a session,
-  but it only observes: its `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's reading
-  commands (`snapshot`, `find`, `get`, `is`, `list-apps`, ...), work; its other actions answer who holds the screen.
-  Once the holder ends, the observer's next action takes the screen.
-- **Idle release.** A Mac screen session with no action for 5 minutes ends, and the screen is free for the next one.
-- **Your takeover takes it.** Taking over any Mac screen session, or opening one yourself from **New screen ›
-  Agents' Mac**, makes it yours: the agent that held it only observes until you're done.
+- **One agent per app.** agent-desktop's headless commands act through the accessibility API and move no pointer
+  and take no focus: `click`, `type`, `set-value`, `select`, `toggle` and the other ref actions, `press` with
+  `--app`, `launch <app>` (without `--activate`) and `close-app <app>`. The first one on an app claims it for that
+  agent's session, by bundle id; another agent's command on it answers who holds it. A ref's app is the one its
+  snapshot read. Several agents work at once, each on its own app.
+- **One holder at a time for pointer and keys.** The `desktop` tool's clicks, keys, scrolls and drags, its `launch`,
+  agent-desktop with `--headed`, and every agent-desktop command not known to be headless (`double-click`, `hover`,
+  `drag`, `mouse-*`, `press` without `--app`, `batch`, ...) need the Mac's lease. The first such action takes it;
+  another agent's answers who holds it. It goes back after 5 minutes without one.
+- **Reading is open to all.** The `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's
+  reading commands (`snapshot`, `find`, `get`, `is`, `list-apps`, ...), need nothing, a claimed app's included.
+- **Idle release.** A Mac screen session with no action for 5 minutes ends, and its lease and claims are free for the
+  next one. A session that ends gives them back only once its last agent-desktop command has stopped.
+- **Your takeover takes it all.** Taking over any Mac screen session, or opening one yourself from **New screen ›
+  Agents' Mac**, makes the whole screen yours: until you hand it back, every agent only reads, its claims included.
 
 The agent drives it with its `desktop` tool: the same computer-use actions as a Linux desktop (`key` also takes
 `cmd` and `option`, as in `cmd+s`), `launch` (a shell command, such as `open -a TextEdit`), and `agent_desktop`, which
@@ -506,8 +514,8 @@ What the screen is, and isn't:
   logged in at the Mac's screen, unlocked, and the node checks it again at every start. Otherwise Settings and New
   screen say exactly what stands in the way: the screen is locked, another user has it, nobody is logged in, or a grant
   is missing.
-- **Recorded as any screen**: the video while a session holds the screen, and its action log, a line per action and
-  agent-desktop command. Recordings go to the hub's storage, under the same retention.
+- **Recorded as any screen**: the video while a session holds the lease or an app's claim, and its action log, a
+  line per action and agent-desktop command. Recordings go to the hub's storage, under the same retention.
 
 ### On the Mac {#mac-setup}
 

@@ -1751,7 +1751,7 @@
    "inputSchema": {
     "properties": {
      "kind": {
-      "description": "`android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the\n`desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and\nagent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac.",
+      "description": "`android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the\n`desktop` tool; `mac` for the agents' Mac's screen, shared (one agent per app; pointer and keys one at a time), driven with the\n`desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac.",
       "enum": [
        "browser",
        "android",
@@ -1781,7 +1781,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it; on the Mac in a folder of the session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts on them without moving the pointer. Take a screenshot after acting to see what happened.",
+   "description": "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it; on the Mac in a folder of the session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts on them without moving the pointer. Its headless commands claim the app they act on for your session (one agent per app); clicks, keys, scrolls, drags, launch and agent-desktop with --headed take the Mac's lease, one agent at a time. Take a screenshot after acting to see what happened.",
    "inputSchema": {
     "properties": {
      "action": {

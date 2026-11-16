@@ -52,18 +52,24 @@ export function browserResult(answer: Record<string, unknown>): ToolResult {
   }
   if (op === "session_start" && desktop === "mac") {
     const held = at(result, "heldBy");
-    const holding =
-      typeof held === "string"
-        ? `You only observe for now: ${held}. screenshot, cursor_position, wait and agent-desktop's reading ` +
-          "commands (snapshot, find, get, is, list-apps) work; your first other action takes the screen once " +
-          "it's free."
-        : "It is yours until you end it.";
+    const claimed = at(result, "claimed");
+    const now = [
+      typeof held === "string" ? `The lease is taken: ${held}.` : "",
+      Array.isArray(claimed) && claimed.length > 0 ? `Apps other sessions have claimed: ${claimed.map(String).join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     return text(
-      `Mac screen session ${id} is open: the agents' Mac's own screen, shared by every agent that uses the Mac, ` +
-        `recorded. ${holding} Drive it with the desktop tool: a screenshot first, then agent_desktop for apps' ` +
-        "accessibility refs (`skills get platform` loads its Mac guide), clicks and keys for the rest. What " +
-        "agent-desktop launches with --cdp listens on the Mac's own loopback, not yours, and closes when the " +
-        "session ends; apps you open stay open on the Mac. Never type a secret there. It ends after 5 minutes " +
+      `Mac screen session ${id} is open: the agents' Mac's own screen, shared by every agent that uses the Mac at ` +
+        "once, recorded while you hold something on it. Start with a screenshot. agent-desktop's headless commands " +
+        "(click, type, set-value, select, ... on a ref from your snapshot; press with --app; launch <app>) move no " +
+        "pointer and take no focus: the first one on an app claims it for you until your session ends, and another " +
+        "agent's claimed app is refused. Real pointer and key input (the desktop tool's clicks, keys, scrolls and " +
+        "drags, launch, agent-desktop with --headed, double-click, hover, drag, press without --app, batch) takes " +
+        "the Mac's lease, one agent at a time, given back after 5 minutes unused; reading (screenshot, snapshot, find, " +
+        `get, is, list-apps) is open to all. ${now ? `${now} ` : ""}\`skills get platform\` loads agent-desktop's Mac ` +
+        "guide. What agent-desktop launches with --cdp listens on the Mac's own loopback, not yours, and closes when " +
+        "the session ends; apps you open stay open on the Mac. Never type a secret there. It ends after 5 minutes " +
         "without an action; end it with session_end when done.",
       false,
     );
@@ -94,8 +100,8 @@ export function browserResult(answer: Record<string, unknown>): ToolResult {
   }
   if (op === "session_end" && kind === "mac") {
     return text(
-      `Mac screen session ${id} ended, and the Mac's screen is free for the next agent; what you opened stays on ` +
-        `it. Its recording (${files(result)}) goes to the hub.`,
+      `Mac screen session ${id} ended: its lease and app claims are free for the next agent; what you opened stays ` +
+        `on the Mac. Its recording (${files(result)}) goes to the hub.`,
       false,
     );
   }

@@ -1,14 +1,14 @@
 // node/desktop/mac: the agents' Mac's screen without a Mac: what macOS
-// says about the console, the gate made of it, keys, agent-desktop's commands, and the lease end to end on a fake
-// screen. Nothing here asks macOS anything or touches the agents' Mac.
+// says about the console, the gate made of it, keys, agent-desktop's commands, and the lease and app claims end to end
+// on a fake screen and a stand-in agent-desktop. Nothing here asks macOS anything or touches the agents' Mac.
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Desktops, desktops, macScreen } from "../src/node/desktop/index.ts";
 import { packed } from "../src/node/desktop/mac/capture.ts";
-import { answer, command, install, launchedPid, split, COMMAND_TIMEOUT, OUTPUT_CHARS } from "../src/node/desktop/mac/agent_desktop.ts";
+import { answer, bundleOf, command, install, launchedPid, snapshotApp, split, COMMAND_TIMEOUT, OUTPUT_CHARS } from "../src/node/desktop/mac/agent_desktop.ts";
 import { parse, state } from "../src/node/desktop/mac/console.ts";
-import { blockedBy, MacLent, observes } from "../src/node/desktop/mac/index.ts";
+import { blockedBy, MacLent, needs, observes } from "../src/node/desktop/mac/index.ts";
 import { COMMAND, ofSym, OPTION } from "../src/node/desktop/mac/keys.ts";
 import { jpeg, type Raw, type Screen } from "../src/node/desktop/screen.ts";
 import type { DesktopCall } from "../src/node/desktop/session.ts";
@@ -159,6 +159,50 @@ test("agent-desktop's commands are checked before they run", () => {
 
 const call = (action: string, text?: string): DesktopCall => ({ action, ...(text ? { text } : {}) });
 
+test("headless commands need a claim on their app, pointer and keys the lease, and anything unknown the lease", () => {
+  const of = (text: string) => {
+    const c = command(text);
+    return [c.needs, c.target];
+  };
+  // Reads need nothing, unless headed.
+  expect(of("snapshot --app TextEdit -i")).toEqual(["read", undefined]);
+  expect(of("list-notifications --headed")[0]).toBe("lease");
+  // Ref actions: their snapshot names the app.
+  expect(of("click @s8f3k2p9:e12")).toEqual(["app", { snapshot: "s8f3k2p9" }]);
+  expect(of("type @sA1:e2 'hello there'")).toEqual(["app", { snapshot: "sA1" }]);
+  expect(of("set-value @sA1:e2 42 --app=Numbers")).toEqual(["app", { app: "Numbers", snapshot: "sA1" }]);
+  for (const name of ["right-click", "clear", "focus", "select", "toggle", "check", "uncheck", "expand", "collapse", "scroll", "scroll-to"]) {
+    expect(of(`${name} @sB:e1`)[0]).toBe("app");
+  }
+  // A ref action with --headed takes the lease, and still names its app.
+  expect(of("click @s8f3k2p9:e12 --headed")).toEqual(["lease", { snapshot: "s8f3k2p9" }]);
+  // Keys go to the app they name; unscoped, to whatever is in front.
+  expect(of("press cmd+s --app TextEdit")).toEqual(["app", { app: "TextEdit" }]);
+  expect(of("press return")[0]).toBe("lease");
+  expect(of("press return --window-id w-4521")[0]).toBe("lease");
+  expect(of("launch TextEdit")).toEqual(["app", { app: "TextEdit" }]);
+  expect(of("launch Slack --cdp")).toEqual(["app", { app: "Slack" }]);
+  expect(of("launch TextEdit --activate")[0]).toBe("lease");
+  expect(of("close-app com.apple.TextEdit")).toEqual(["app", { app: "com.apple.TextEdit" }]);
+  // Physical gestures, a bare ref, batches and anything not listed take the lease.
+  for (const text of ["double-click @sB:e1", "triple-click @sB:e1", "hover @sB:e1", "drag --from @sB:e1 --to @sB:e2", "mouse-click --xy 5,5", "mouse-move --xy 1,1", "click @e8", "batch '[]'", "clipboard-set hi", "focus-window --window-id w-1", "cursor-overlay enable", "some-new-command --app TextEdit"]) {
+    expect(of(text)[0]).toBe("lease");
+  }
+  // The desktop tool's own actions.
+  expect(needs(call("left_click")).needs).toBe("lease");
+  expect(needs(call("key", "cmd+s")).needs).toBe("lease");
+  expect(needs(call("launch", "open -a TextEdit")).needs).toBe("lease");
+  expect(needs(call("agent_desktop", "click @sB:e1"))).toEqual({ needs: "app", target: { snapshot: "sB" } });
+  // A snapshot's answer says its app; list-apps' says a bundle id by name or bundle id.
+  expect(snapshotApp(`{"ok":true,"data":{"app":"Finder","snapshot_id":"s8f3k2p9","tree":{}}}`)).toEqual(["s8f3k2p9", "Finder"]);
+  expect(snapshotApp(`{"ok":true,"data":{"app":"Finder"}}`)).toBeUndefined();
+  const apps = `{"ok":true,"data":{"apps":[{"name":"TextEdit","pid":611,"bundle_id":"com.apple.TextEdit"}]}}`;
+  expect(bundleOf(apps, "textedit")).toBe("com.apple.TextEdit");
+  expect(bundleOf(apps, "COM.APPLE.TEXTEDIT")).toBe("com.apple.TextEdit");
+  expect(bundleOf(`{"ok":true,"data":[{"name":"Notes","bundle_id":"com.apple.Notes"}]}`, "Notes")).toBe("com.apple.Notes");
+  expect(bundleOf(apps, "Notes")).toBeUndefined();
+});
+
 test("only reading actions observe", () => {
   expect(observes(call("screenshot"))).toBe(true);
   expect(observes(call("cursor_position"))).toBe(true);
@@ -202,7 +246,28 @@ class FakeScreen implements Screen {
   close() {}
 }
 
-test("one session holds the Mac's screen, others observe, and a person takes it", async () => {
+/** A stand-in agent-desktop: `snapshot --app X` reads app X into snapshot `sX`, `list-apps` lists TextEdit and Notes
+ * with their bundle ids, a command on `@sSlow:e1` notes it started in `marker` and runs for 30 s, anything else says
+ * what it ran. */
+function standIn(dir: string, marker: string): string {
+  const bin = join(dir, "agent-desktop");
+  writeFileSync(
+    bin,
+    `#!/bin/sh
+case "$*" in
+  *@sSlow:e1*) echo started > '${marker}'; exec sleep 30 ;;
+esac
+if [ "$1" = snapshot ]; then echo "{\\"ok\\":true,\\"data\\":{\\"app\\":\\"$3\\",\\"snapshot_id\\":\\"s$3\\"}}"; exit 0; fi
+if [ "$1" = list-apps ]; then echo '{"ok":true,"data":{"apps":[{"name":"TextEdit","pid":611,"bundle_id":"com.apple.TextEdit"},{"name":"Notes","pid":612,"bundle_id":"com.apple.Notes"}]}}'; exit 0; fi
+echo "ran $*"
+`,
+  );
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+/** A node lending the Mac's screen on a fake screen and the stand-in agent-desktop, nothing in the way. */
+function macNode(dir: string) {
   const t = testNode("mac");
   cleanups.push(t.done);
   const reports: Record<string, unknown>[] = [];
@@ -213,51 +278,142 @@ test("one session holds the Mac's screen, others observe, and a person takes it"
   };
   const d = desktops(t.node, new Desktops(t.node, { enabled: false }, { enabled: true }));
   cleanups.push(() => d.shutdown());
+  d.macGate = () => undefined;
+  const screen = new FakeScreen();
+  const bin = standIn(dir, join(dir, "slow-started"));
+  const open = (thread: string, purpose: string) => d.openMac(thread, "/work/app", purpose, screen, bin);
+  return { t, d, screen, open, reports };
+}
+
+test("agents work on different Mac apps at once, one per app; pointer and keys take the lease; a person takes it all", async () => {
+  const { t, d, screen, open, reports } = macNode(scratch());
   let gate: { message: string } | undefined;
   d.macGate = () => gate;
-  const screen = new FakeScreen();
-  const open = (thread: string, purpose: string) => d.openMac(thread, "/work/app", purpose, screen, new Error("not on a Mac"));
+  let now = 0;
+  d.clock = () => now;
 
+  // Opening holds nothing: neither starts with the lease.
   const first = await open("th-a", "Check the export dialog");
   expect(first.desktop).toBe("mac");
   expect(first.heldBy).toBeUndefined();
-  const second = await open("th-b", "Read the settings");
-  expect(String(second.heldBy)).toContain("Check the export dialog");
+  const second = await open("th-b", "Write the release notes");
+  expect(second.heldBy).toBeUndefined();
   expect(d.live("th-b")).toEqual({ id: String(second.sessionId), kind: "mac" });
-  expect(macScreen(t.node).heldBy()).toContain("Check the export dialog");
-
-  // The observer reads the screen, and agent-desktop's reading commands get past the lease.
-  expect((await d.act("th-b", call("screenshot"))).jpegB64).toBeString();
-  await expect(d.act("th-b", call("agent_desktop", "snapshot -i"))).rejects.toThrow("isn't installed");
-  // Acting is the holder's.
-  const refused = d.act("th-b", call("left_click"));
-  await expect(refused).rejects.toThrow("someone else's");
-  await expect(d.act("th-b", call("left_click"))).rejects.toThrow("Check the export dialog");
-  await d.act("th-a", call("left_click"));
-  expect(screen.did).toEqual(["click 3,4 1x1"]);
-
-  // A person takes the observer's session over: the lease is theirs, and the agent that held it only observes.
-  d.control({ sessionId: String(second.sessionId), control: "human", by: "Ana" });
   const a = d.session("th-a")!;
   const b = d.session("th-b")!;
-  expect(a.observing() && !b.observing()).toBe(true);
-  await expect(d.act("th-a", call("type", "hi"))).rejects.toThrow("a person has taken it over");
+  expect(a.observing() && b.observing()).toBe(true);
 
-  // The person's session ends: the lease is free, and the next action takes it, unless the screen locked meanwhile.
-  await d.sessionEnd("th-b");
-  gate = { message: "the Mac's screen is locked" };
-  await expect(d.act("th-a", call("type", "hi"))).rejects.toThrow("locked");
-  gate = undefined;
-  await d.act("th-a", call("type", "hi"));
+  // Both read TextEdit; the first headless action on it claims it, by bundle id, for its session alone.
+  expect((await d.act("th-a", call("agent_desktop", "snapshot --app TextEdit -i"))).message).toContain("sTextEdit");
+  expect((await d.act("th-b", call("agent_desktop", "snapshot --app TextEdit -i"))).message).toContain("sTextEdit");
+  expect((await d.act("th-a", call("agent_desktop", "click @sTextEdit:e1"))).message).toBe("ran click @sTextEdit:e1");
   expect(a.observing()).toBe(false);
+  expect(a.steps.map((s) => s.tool)).toContain("app_claimed");
+  await expect(d.act("th-b", call("agent_desktop", "type @sTextEdit:e2 hi"))).rejects.toThrow('TextEdit is another session\'s on the Mac now: another agent\'s session "Check the export dialog"');
+  await expect(d.act("th-b", call("agent_desktop", "press cmd+s --app com.apple.TextEdit"))).rejects.toThrow("Check the export dialog");
+  // Reading a claimed app stays open.
+  expect((await d.act("th-b", call("agent_desktop", "get @sTextEdit:e2 --property value"))).message).toBe("ran get @sTextEdit:e2 --property value");
+  // Another app is free: both work at once, neither holding the lease.
+  await d.act("th-b", call("agent_desktop", "snapshot --app Notes -i"));
+  expect((await d.act("th-b", call("agent_desktop", "click @sNotes:e1"))).message).toBe("ran click @sNotes:e1");
+  await d.act("th-a", call("agent_desktop", "type @sTextEdit:e2 hi"));
+  expect(d.heldBy()).toBeUndefined();
+  expect(d.claimed().map((c) => c.app)).toEqual(["TextEdit", "Notes"]);
+  // A ref from a snapshot the session never saw can't be claimed: it needs the lease, as anything unknown does.
+  await d.act("th-b", call("agent_desktop", "click @sElsewhere:e1"));
+  expect(d.heldBy()).toContain("Write the release notes");
+
+  // Pointer and keys are the lease holder's alone.
+  const refused = d.act("th-a", call("left_click"));
+  await expect(refused).rejects.toThrow("pointer and keys are someone else's");
+  await expect(d.act("th-a", call("agent_desktop", "click @sTextEdit:e1 --headed"))).rejects.toThrow("Write the release notes");
+  await expect(d.act("th-a", call("launch", "open -a TextEdit"))).rejects.toThrow("Write the release notes");
+  await d.act("th-b", call("left_click"));
+  expect(screen.did).toEqual(["click 3,4 1x1"]);
+  // A lease-holder's headed command on another's app is still refused.
+  await expect(d.act("th-b", call("agent_desktop", "click @sTextEdit:e1 --headed"))).rejects.toThrow("TextEdit is another session's");
+
+  // A third session hears who holds what.
+  const third = await open("th-c", "Look at Settings");
+  expect(String(third.heldBy)).toContain("Write the release notes");
+  expect(third.claimed).toEqual(["TextEdit", "Notes"]);
+
+  // A person takes the third's session over: the whole screen is theirs, claims included, while they drive.
+  d.control({ sessionId: String(third.sessionId), control: "human", by: "Ana" });
+  const c = d.session("th-c")!;
+  expect(b.steps.map((s) => s.tool)).toContain("lease_lost");
+  expect(d.heldBy()).toContain("a person has taken it over");
+  await expect(d.act("th-a", call("agent_desktop", "type @sTextEdit:e2 hi"))).rejects.toThrow("a person has taken it over");
+  await expect(d.act("th-b", call("type", "hi"))).rejects.toThrow("a person has taken it over");
+  expect((await d.act("th-a", call("screenshot"))).jpegB64).toBeString();
+  // They hand it back: the claims are their holders' again, and the lease the third session's.
+  d.control({ sessionId: String(third.sessionId), control: "agent", by: "Ana" });
+  await d.act("th-a", call("agent_desktop", "type @sTextEdit:e2 hi"));
+  await d.act("th-c", call("screenshot"));
+  expect(c.control()).toBe("agent");
+  await expect(d.act("th-b", call("type", "hi"))).rejects.toThrow("Look at Settings");
+
+  // A lease unused for 5 minutes goes back, though its session lives on; the next action takes it, if the screen
+  // can be lent.
+  now = 5 * 60_000;
+  await d.housekeep();
+  expect(d.heldBy()).toBeUndefined();
+  expect(d.session("th-c")).toBeDefined();
+  gate = { message: "the Mac's screen is locked" };
+  await expect(d.act("th-b", call("type", "hi"))).rejects.toThrow("locked");
+  gate = undefined;
+  await d.act("th-b", call("type", "hi"));
   expect(screen.did.at(-1)).toBe("type hi");
-  expect(a.steps.map((s) => s.tool)).toEqual(expect.arrayContaining(["lease_lost", "lease_taken"]));
+  expect(b.steps.map((s) => s.tool)).toEqual(expect.arrayContaining(["lease_lost", "lease_taken"]));
+
+  // A session that ends gives back its claims: TextEdit is free for the next agent.
   const ended = await d.sessionEnd("th-a");
   expect(ended.kind).toBe("mac");
+  expect(d.claimed().map((x) => x.app)).toEqual(["Notes"]);
+  await d.act("th-c", call("agent_desktop", "snapshot --app TextEdit -i"));
+  await d.act("th-c", call("agent_desktop", "click @sTextEdit:e1"));
+  expect(d.claimed().map((x) => x.app)).toEqual(["Notes", "TextEdit"]);
+  await d.sessionEnd("th-b");
   expect(d.heldBy()).toBeUndefined();
+  expect(macScreen(t.node).heldBy()).toBeUndefined();
   expect(reports.some((r) => r.kind === "mac" && r.state === "uploading")).toBe(true);
   for (let i = 0; i < 200 && !reports.some((r) => r.kind === "mac" && r.state === "recorded"); i++) await Bun.sleep(10);
   expect(reports.some((r) => r.kind === "mac" && r.state === "recorded" && (r.files as unknown[]).length > 0)).toBe(true);
+});
+
+test("a session that ends mid-command keeps its lease and claim until that command has stopped", async () => {
+  const dir = scratch();
+  const { d, open } = macNode(dir);
+  await open("th-a", "Slow export");
+  await open("th-b", "Next in line");
+  await d.act("th-a", call("left_click"));
+  await d.act("th-a", call("agent_desktop", "snapshot --app Slow -i"));
+  const started = performance.now();
+  const slow = d.act("th-a", call("agent_desktop", "click @sSlow:e1")).then(
+    () => "answered",
+    (e: Error) => e.message,
+  );
+  for (let i = 0; i < 200 && !existsSync(join(dir, "slow-started")); i++) await Bun.sleep(10);
+  expect(existsSync(join(dir, "slow-started"))).toBe(true);
+  expect(d.claimed().map((c) => c.app)).toEqual(["Slow"]);
+
+  // Its agent session ends while the command runs: the session is gone, but what it held isn't handed over yet.
+  d.ended("th-a");
+  expect(d.session("th-a")).toBeUndefined();
+  expect(d.heldBy()).toContain("Slow export");
+  await d.act("th-b", call("agent_desktop", "snapshot --app Slow -i"));
+  await expect(d.act("th-b", call("agent_desktop", "click @sSlow:e2"))).rejects.toThrow("Slow export");
+  await expect(d.act("th-b", call("left_click"))).rejects.toThrow("Slow export");
+
+  // The node stops the command rather than wait out its 40 s, then hands both over.
+  await slow;
+  for (let i = 0; i < 200 && d.heldBy() !== undefined; i++) await Bun.sleep(10);
+  expect(performance.now() - started).toBeLessThan(10_000);
+  expect(d.heldBy()).toBeUndefined();
+  expect(d.claimed()).toEqual([]);
+  await d.act("th-b", call("agent_desktop", "click @sSlow:e2"));
+  await d.act("th-b", call("left_click"));
+  expect(d.heldBy()).toContain("Next in line");
 });
 
 test("a Mac screen start off a Mac, or with nothing in the way checked, says why", async () => {

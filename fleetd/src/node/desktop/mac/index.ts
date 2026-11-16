@@ -1,13 +1,24 @@
 // The agents' Mac's own screen (D298): the GUI session the Mac's node runs
-// in, as a screen kind (`session_start` kind mac). There is one such screen, so it is leased: the first session to start
-// holds it, and every other only observes (its screenshots, the pointer's place and agent-desktop's reading commands
-// work; its other actions are refused while another holds it, and its first one after the holder ends takes it). A
-// session no action touched for IDLE_MINUTES ends, and the lease with it. A person who takes a Mac screen over takes
-// the lease too: an agent holding it only observes from then on. The lease itself is node/desktop's (index.ts).
+// in, as a screen kind (`session_start` kind mac). There is one such screen, but several agents work on it at once:
+//
+// - agent-desktop's headless commands (accessibility actions on a ref, `press --app`, `launch <app>`, which move no
+//   pointer and take no focus) need only a claim on the app they name: one agent per app (by bundle id), taken by its
+//   first such command and kept until its session ends. Another agent naming that app is refused, with who holds it.
+// - Real pointer and key input needs the Mac's lease, one holder at a time: the desktop tool's clicks, keys, scrolls
+//   and drags, `launch`, agent-desktop with `--headed`, and any agent-desktop command not known to be headless
+//   (agent_desktop.ts lists the known ones). It is taken by the first such action and given back after IDLE_MINUTES
+//   without one, or when its session ends.
+// - Reading (screenshots, the pointer's place, agent-desktop's reading commands) is open to every session.
+//
+// A session no action touched for IDLE_MINUTES ends, with its lease and claims. A person who takes a Mac screen
+// over takes the whole screen: the lease is theirs, and every agent only reads until they hand it back. A session
+// that ends gives its lease and claims back only once its last agent-desktop command has stopped. The lease and the
+// claims themselves are node/desktop's (index.ts); a session that holds neither only observes, and records no video.
 //
 // The node reads and drives the screen (screen.ts) under its own grants, and runs a pinned agent-desktop for the agent
 // (agent_desktop.ts) as its child under those same grants. macOS gives a session frames and input only while it is the
-// one on the screen, unlocked (console.ts), so every start and every take of the lease checks that first.
+// one on the screen, unlocked (console.ts), so every start, every take of the lease and every new claim checks that
+// first.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -17,10 +28,11 @@ import { tcc } from "../../agents_mac/tcc.ts";
 import { tail } from "../display.ts";
 import type { Launched, Lent } from "../screen.ts";
 import type { DesktopCall } from "../session.ts";
-import { answer, command, launchedPid, run } from "./agent_desktop.ts";
+import { answer, bundleOf, command, launchedPid, type Needs, run, snapshotApp, type Target } from "./agent_desktop.ts";
 import { type Console, consoleBlocked, read as readConsole, state } from "./console.ts";
 
-/** A Mac screen session no action touched for this long ends, and gives the lease back. */
+/** A Mac screen session no action touched for this long ends, and gives its lease and claims back; the lease alone
+ * goes back after this long without an action that needs it. */
 export const IDLE_MINUTES = 5;
 
 /** node.json's `mac`: the agents' Mac's screen. Off unless `enabled` is true. */
@@ -70,25 +82,35 @@ export function blocked(): Blocked | undefined {
   return blockedBy(user, console, screenRecording, accessibility);
 }
 
-/** Whether a `desktop` action only reads the screen, so a session that doesn't hold the lease may take it. */
-export function observes(call: DesktopCall): boolean {
+/** What a `desktop` action needs on the Mac's screen (agent_desktop.ts `Needs`), and the app it names. */
+export function needs(call: DesktopCall): { needs: Needs; target?: Target } {
   switch (call.action) {
     case "screenshot":
     case "cursor_position":
     case "wait":
-      return true;
-    case "agent_desktop":
+      return { needs: "read" };
+    case "agent_desktop": {
       // One the node won't run is refused as it runs, with why.
-      if (!call.text) return true;
+      if (!call.text) return { needs: "read" };
       try {
-        return command(call.text).observing;
+        const cmd = command(call.text);
+        return { needs: cmd.needs, ...(cmd.target ? { target: cmd.target } : {}) };
       } catch {
-        return true;
+        return { needs: "read" };
       }
+    }
     default:
-      return false;
+      // Clicks, keys, scrolls, drags, and `launch`, whose shell command may bring anything to the front.
+      return { needs: "lease" };
   }
 }
+
+/** Whether a `desktop` action only reads the screen, so any session may take it. */
+export const observes = (call: DesktopCall) => needs(call).needs === "read";
+
+/** An app as claims know it: its bundle id where agent-desktop lists it running, else its name, either in lower case;
+ * and the name the agent gave, for messages. */
+export type App = { key: string; name: string };
 
 /** When process `pid` started, as `ps` says it; undefined where there's no such process. */
 function startedAt(pid: number): string | undefined {
@@ -99,12 +121,21 @@ function startedAt(pid: number): string | undefined {
 
 /** What a Mac screen session is lent: its own folder (apps it launches start there, and agent-desktop keeps its
  * snapshots there), the apps it started and those agent-desktop launched with a DevTools port. Dropped when the session
- * ends: those apps are closed and the folder goes; what the agent opened otherwise stays on the Mac's screen. */
+ * ends: an agent-desktop command still running is stopped first, those apps are closed and the folder goes; what the
+ * agent opened otherwise stays on the Mac's screen. */
 export class MacLent implements Lent {
   /** Apps launched with `--cdp`: each pid with its start time, so a pid reused since is never signalled. */
   private readonly cdp: [number, string][] = [];
   private readonly apps: { proc: ChildProcess; exited?: number | null }[] = [];
   private launched = 0;
+  /** The app each of the session's snapshots read, so a ref's command knows its app. */
+  private readonly snapshots = new Map<string, string>();
+  /** Bundle ids found so far, by the name the agent gave in lower case. */
+  private readonly bundles = new Map<string, string>();
+  /** Stops the session's agent-desktop commands when it is dropped. */
+  private readonly stop = new AbortController();
+  /** The agent-desktop commands running now. */
+  private readonly running = new Set<Promise<unknown>>();
 
   constructor(
     readonly dir: string,
@@ -140,8 +171,9 @@ export class MacLent implements Lent {
 
   async agentDesktop(args: string): Promise<string> {
     const cmd = command(args);
-    if (this.agentDesktopBin instanceof Error) throw new Error(`agent-desktop isn't installed on this Mac: ${this.agentDesktopBin.message}`);
-    const ran = await run(this.agentDesktopBin, join(this.dir, "agent-desktop"), cmd.args);
+    const ran = await this.run(cmd.args);
+    const read = snapshotApp(ran.stdout);
+    if (read) this.snapshots.set(read[0], read[1]);
     if (cmd.cdp) {
       const pid = launchedPid(ran.stdout);
       const at = pid === undefined ? undefined : startedAt(pid);
@@ -150,7 +182,34 @@ export class MacLent implements Lent {
     return answer(ran.stdout, ran.stderr, ran.code);
   }
 
+  /** Runs agent-desktop in the session's own home, counted among the running commands until its process exits. */
+  private run(args: string[]): Promise<{ code?: number; stdout: string; stderr: string }> {
+    if (this.agentDesktopBin instanceof Error) throw new Error(`agent-desktop isn't installed on this Mac: ${this.agentDesktopBin.message}`);
+    const running = run(this.agentDesktopBin, join(this.dir, "agent-desktop"), args, undefined, this.stop.signal);
+    this.running.add(running);
+    void running.catch(() => {}).finally(() => this.running.delete(running));
+    return running;
+  }
+
+  /** The app `target` names, as claims know it; undefined when the session can't tell (a ref from a snapshot it never
+   * saw). Its bundle id is asked of agent-desktop's `list-apps` once per name. */
+  async appOf(target: Target): Promise<App | undefined> {
+    const name = target.app ?? (target.snapshot === undefined ? undefined : this.snapshots.get(target.snapshot));
+    if (name === undefined) return undefined;
+    const lower = name.toLowerCase();
+    let bundle = this.bundles.get(lower);
+    if (bundle === undefined && !(this.agentDesktopBin instanceof Error)) {
+      const listed = await this.run(["list-apps"]).catch(() => undefined);
+      bundle = listed ? bundleOf(listed.stdout, name) : undefined;
+      // An app not running yet keeps its name: asked again next time, as it may have started since.
+      if (bundle !== undefined) this.bundles.set(lower, bundle);
+    }
+    return { key: (bundle ?? name).toLowerCase(), name };
+  }
+
   async drop(): Promise<void> {
+    this.stop.abort();
+    await Promise.allSettled([...this.running]);
     for (const [pid, at] of this.cdp.splice(0)) {
       if (startedAt(pid) === at) {
         try {
