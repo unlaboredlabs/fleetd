@@ -241,6 +241,9 @@ const REFUSALS: Readonly<Record<string, readonly [codes: ReadonlyArray<string>, 
   doctor_fix: [["invalid"], "the hub fixes nothing itself: each check's fix is a command a person runs"],
   machine_add_plan: [["failed", "invalid"], "a hub not set up with `fleetd init`, as a run's, plans no machine, and one that is reaches no SSH host that never resolves"],
   machine_add: [["failed", "invalid"], "a hub not set up with `fleetd init`, as a run's, adds no machine"],
+  revyl_connect: [["invalid"], "a run has no Revyl key, and nothing it makes up is sealed to the hub's own key"],
+  revyl_test: [["invalid"], "a run's hub has no Revyl key connected to test"],
+  revyl_route_set: [["invalid"], "a route to Revyl needs a connected Revyl key, which a run's hub has none of"],
 };
 
 /**

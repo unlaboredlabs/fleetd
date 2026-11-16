@@ -137,6 +137,16 @@ test("the node restarts: shutdown stops its screens; a crash's leftovers stop at
   expect(two.reports.at(-1)).toMatchObject({ state: "lost" });
 });
 
+test("an iOS start is the hub's to route: its refusal (the way to mac sim start) comes back as it is", async () => {
+  const { t } = rig();
+  t.link.answer = async (op) => {
+    if (op === "session_route") throw Object.assign(new Error("iOS screens are gone: start one with mac sim start"), { toJSON: () => ({ code: "invalid", message: "iOS screens are gone: start one with mac sim start" }) });
+    return {};
+  };
+  await expect(t.local.call("session_start", { kind: "ios", purpose: "p" }, "t1")).rejects.toThrow("mac sim start");
+  expect(t.link.calls.filter((c) => c.op === "session_route")).toHaveLength(1);
+});
+
 test("Revyl refuses over billing: the agent hears not to retry or work around it", async () => {
   const { begin, reports } = rig({ startOut: '{"billing_notice":"Your free minutes are used up","billing_url":"https://example.invalid"}' });
   await expect(begin()).rejects.toThrow("over the team's plan or billing");
