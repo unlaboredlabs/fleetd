@@ -30,6 +30,7 @@ import { holdForScreens, ScreensRestart } from "./restart.ts";
 import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
+import { RevylScreens } from "./revyl/index.ts";
 import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
@@ -469,6 +470,11 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       case "node_action":
         if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
         if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
+        // A node without Revyl screens (the agents' Mac) answers below that it doesn't know the action.
+        if (frame.action === "revyl_check") {
+          const revyl = screens(node).revyl;
+          if (revyl instanceof RevylScreens) return void revyl.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
+        }
         void runNodeAction(frame as unknown as NodeAction, {
           hold: () => sessions.hold(),
           unhostedMidStep: () => sessions.unhostedMidStep(),

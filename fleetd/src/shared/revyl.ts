@@ -10,6 +10,9 @@ export const KINDS: readonly RevylKind[] = ["ios", "android"];
 /** How to install Revyl's CLI, from Revyl's own channel: fleetd ships no copy of it. */
 export const INSTALL = "curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
 
+/** How long Settings' Test of the key may take on a machine (`revyl device list`). */
+export const CHECK_WAIT = 30_000;
+
 /** A Revyl screen's idle timeout at Revyl, in seconds: as long as fleetd's own (IDLE_MS), so fleetd ends it first. */
 export const IDLE_SECS = 30 * 60;
 
