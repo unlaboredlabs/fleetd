@@ -4,6 +4,8 @@ import type { HubFrame } from "../shared/hub";
 import type { ConnectionEvents, Transport } from "../main/hub/link";
 import { createWebShell, frameUrl, NEEDS_DESKTOP, platformOf, socketUrl, type WebDeps } from "./shell";
 import type { WebSession } from "./session";
+import { REVYL_CONNECT_TIMEOUT_MS } from "../main/secret";
+import rust from "../main/secret.rust-seal.json";
 
 const ORIGIN = "https://app.fleetd.dev";
 const SESSION: WebSession = {
@@ -173,6 +175,19 @@ describe("the web shell", () => {
     expect(await api.vault.reveal(ACME, { itemId: "V1", label: "Amazon", fields: ["password"] })).toMatchObject({ ok: false, error: { code: "desktop_only" } });
     expect(await api.vault.copy(ACME, { itemId: "V1", label: "Amazon", field: "password" })).toMatchObject({ ok: false });
     expect(sockets).toHaveLength(0);
+  });
+
+  it("gives revyl_connect its longer wait: its first check may install Revyl's CLI on a machine first", async () => {
+    const { api, hubs } = setup();
+    const [hub] = hubs;
+    if (hub === undefined) throw new Error("no hub");
+    const asked: Array<{ tool: string; timeoutMs?: number | undefined }> = [];
+    vi.spyOn(hub, "call").mockImplementation((request) => {
+      asked.push(request);
+      return Promise.resolve({ ok: true, output: {} });
+    });
+    expect(await api.secret.revylKey(ACME, { boxPubKey: rust.publicKey, key: "rvl_test_0123456789abcdef" })).toMatchObject({ ok: true });
+    expect(asked.map(({ tool, timeoutMs }) => ({ tool, timeoutMs }))).toEqual([{ tool: "revyl_connect", timeoutMs: REVYL_CONNECT_TIMEOUT_MS }]);
   });
 
   it("answers the desktop-only parts as needing the desktop app", async () => {

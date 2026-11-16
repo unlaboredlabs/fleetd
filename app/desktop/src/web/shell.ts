@@ -135,7 +135,8 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   for (const [id, team] of teams) hubs.set(id, new WebHub(team.url, socketUrl(deps.origin, team.id), deps.transport, onState));
 
   const gone: CallOutcome = { ok: false, error: { code: "offline", message: "That team isn't in this account." } };
-  const call = (id: HubId) => (tool: string, input: unknown) => hubs.get(id)?.call({ tool, input: input as CallRequest["input"] }) ?? Promise.resolve(gone);
+  const call = (id: HubId) => (tool: string, input: unknown, timeoutMs?: number) =>
+    hubs.get(id)?.call({ tool, input: input as CallRequest["input"], ...(timeoutMs === undefined ? {} : { timeoutMs }) }) ?? Promise.resolve(gone);
 
   /** A team's own HTTP paths, as the desktop's calls to the team's address are made: the cookie stands in for the key. */
   const keyed = (id: HubId): KeyedTeam | null => {
