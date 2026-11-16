@@ -404,6 +404,13 @@ test("an app claimed by name before it ran stays one claim once it runs, by its 
   await d.act("th-a", call("agent_desktop", "press cmd+s --app com.apple.TextEdit"));
   await expect(d.act("th-b", call("agent_desktop", "press cmd+s --app com.apple.textedit"))).rejects.toThrow("Edit the notes file");
   expect(d.claimed().map((c) => c.app)).toEqual(["TextEdit"]);
+  // A ref is checked against its own snapshot's app, whatever --app names, so naming a free app gets nowhere.
+  await d.act("th-b", call("agent_desktop", "snapshot --app TextEdit -i"));
+  await expect(d.act("th-b", call("agent_desktop", "click @sTextEdit:e1 --app Notes"))).rejects.toThrow("Edit the notes file");
+  // A ref from a snapshot the session never saw takes the lease, --app or not.
+  await d.act("th-b", call("agent_desktop", "click @sUnseen:e1 --app Notes"));
+  expect(d.heldBy()).toContain("Agent B");
+  expect(d.claimed().map((c) => c.app)).toEqual(["TextEdit"]);
 });
 
 test("a session that ends mid-command keeps its lease and claim until that command has stopped", async () => {

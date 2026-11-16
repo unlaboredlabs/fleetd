@@ -192,10 +192,11 @@ export class MacLent implements Lent {
     return running;
   }
 
-  /** The app `target` names, as claims know it; undefined when the session can't tell (a ref from a snapshot it never
-   * saw). Its display name and bundle id are asked of agent-desktop's `list-apps` until it lists the app running. */
+  /** The app `target` names, as claims know it: a ref's is the app its snapshot read, whatever `--app` says, since the
+   * ref is what the command acts on; undefined when the session can't tell (a ref from a snapshot it never saw). Its
+   * display name and bundle id are asked of agent-desktop's `list-apps` until it lists the app running. */
   async appOf(target: Target): Promise<App | undefined> {
-    const name = target.app ?? (target.snapshot === undefined ? undefined : this.snapshots.get(target.snapshot));
+    const name = target.snapshot === undefined ? target.app : this.snapshots.get(target.snapshot);
     if (name === undefined) return undefined;
     const lower = name.toLowerCase();
     let keys = this.listed.get(lower);
