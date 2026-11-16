@@ -208,6 +208,16 @@ export const HubLinkRequest = z.strictObject({
 export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
+ * The team's own Revyl key (Settings › Hub › Machines › Screens): main seals `key` to `boxPubKey`, the hub's own key
+ * from revyl_get, and calls revyl_connect. The hub gets the box, never the key, and nothing returns it.
+ */
+export const RevylKeyRequest = z.strictObject({
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  key: z.string().trim().min(1).max(SECRET_MAX_BYTES),
+});
+export type RevylKeyRequest = z.infer<typeof RevylKeyRequest>;
+
+/**
  * Create the hub's own GitHub App (Settings › Hub › Setup › GitHub): main asks the hub for its manifest, posts it to GitHub from
  * a loopback page, catches GitHub's code there and calls github_app_create itself; the App's keys go to the hub only.
  */
@@ -405,6 +415,7 @@ export const REQUESTS = {
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
+  [IPC.revylKeySubmit]: z.tuple([HubId, RevylKeyRequest]),
   [IPC.mcpOauthClientSubmit]: z.tuple([HubId, McpOauthClientRequest]),
   [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),
   [IPC.githubAppCancel]: none,

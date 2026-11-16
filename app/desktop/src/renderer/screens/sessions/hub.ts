@@ -72,6 +72,7 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     ...(row.credentialsFilled === undefined || row.credentialsFilled === 0 ? {} : { credentialsFilled: row.credentialsFilled }),
     ...(row.note === undefined ? {} : { note: row.note }),
     ...(row.openedBy === undefined ? {} : { openedBy: row.openedBy.name }),
+    ...(row.source === "revyl" ? { revyl: true as const } : {}),
     // What its agent did last, while it is live (a hub that names it: screen_thumbs).
     ...(row.state === "live" && row.step !== undefined ? { now: stepWords(row.step) } : {}),
   };

@@ -82,6 +82,10 @@ export const fixtures = [
   "machines-warning",
   "machines-one",
   "machines-unwell",
+  // ...the team's own Revyl in Machines' Screens part: no key yet, connected with its routes, and a key Revyl refused.
+  "machines-revyl-off",
+  "machines-revyl-on",
+  "machines-revyl-failed",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -272,6 +276,8 @@ export const fixtures = [
   "sessions-preview",
   // D305: the Screens page, across projects, one with no repo among them, and three machines (fixtures/sessions).
   "sessions-page",
+  // W676: ...with an agent's iOS simulator on the team's own Revyl account (fixtures/sessions).
+  "sessions-revyl",
   // W96: what there is to look at, two of the lead's nudges, with nothing waiting (fixtures/look).
   "look-two",
   "stream-reply",
@@ -3156,6 +3162,16 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "screens", route: "#/screens", fixtures: ["typical"] },
+  // W676: a screen on the team's own Revyl account shows like any other, its row quietly saying Revyl.
+  {
+    id: "screens",
+    route: "#/screens",
+    fixtures: ["sessions-revyl"],
+    variant: "revyl",
+    open: async (page) => {
+      await expect(page.getByText("iOS simulator · Revyl")).toBeVisible();
+    },
+  },
   // ...New screen, one sentence under the title.
   {
     id: "screens",
@@ -3562,6 +3578,28 @@ export const screens: readonly Screen[] = [
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
   // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the plus.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },
+  // W676: its Screens part with the team's own Revyl: no key yet (the Revyl choices off, why, and Connect Revyl),
+  // connected (each kind's route), and a key Revyl refused at its last test.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-revyl-off", "machines-revyl-on", "machines-revyl-failed"],
+    variant: "revyl",
+    open: async (page) => {
+      await page.locator("[data-revyl]").scrollIntoViewIfNeeded();
+    },
+  },
+  // ...Connect opens the key's one sealed field in the row.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-revyl-off"],
+    variant: "revyl-connect",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Connect…" }).click();
+      await page.getByRole("textbox", { name: "Revyl API key" }).waitFor();
+    },
+  },
   // The plus opens Add machine's ways in over the list.
   {
     id: "settings.hub.machines",

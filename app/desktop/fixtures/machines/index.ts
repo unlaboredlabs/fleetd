@@ -7,7 +7,10 @@
 // only what needs someone: nothing in `machines-well`, claude logged out with Log in from the app in
 // `machines-logged-out`, and Android's fix to run on it in `machines-warning`. `machines-one` is a hub just set up,
 // devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
-// out, so the list has a row that needs someone of each kind and each one's page says what to do.
+// out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own Revyl
+// in Machines' Screens part (W676): `machines-revyl-off` with no key yet (each kind on our machines, its Revyl choices
+// off and why), `machines-revyl-on` connected (iOS simulators on Revyl only, Android ours first), and
+// `machines-revyl-failed` with a key Revyl refused.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
@@ -219,6 +222,25 @@ function unwell(from: Fixture): Fixture {
   return f;
 }
 
+/** The hub's own box key, which the app seals a Revyl key to. */
+const BOX = "q5pJ8nL0v3Yc7hT2mR9wE4kD1sF6gA8uX0zB3cN5eQ8=";
+
+const REVYL_OFF: JsonObject = { boxPubKey: BOX, connected: false, routes: { ios: "ours_only", android: "ours_only" } };
+
+/** The admin's hub with the team's Revyl as `state` has it; Connect, Test and the routes answer as a hub would. */
+function revyl(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
+  const f = hub(from, name, note, () => []);
+  const on: JsonObject = { ...REVYL_OFF, connected: true, check: { ok: true, at: f.now }, routes: { ios: "revyl_only", android: "ours_first" } };
+  f.answer("revyl_get", undefined, state);
+  // Recordings, the part's last row, as a hub that serves Revyl keeps them.
+  f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
+  f.answer("revyl_connect", undefined, on);
+  f.answer("revyl_test", undefined, state["connected"] === true ? state : on);
+  f.answer("revyl_disconnect", undefined, REVYL_OFF);
+  f.answer("revyl_route_set", undefined, state);
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
@@ -227,6 +249,19 @@ export default defineGroup({
     joinedWith(base("typical"), "machines-logged-out", "laptop joined with claude logged out: the one row, and Log in from the app", laptopChecks({ out: true })),
     joinedWith(base("typical"), "machines-warning", "laptop joined with Android not ready: the one row, and its fix to run on laptop", laptopChecks({ kvm: true })),
     one(base("empty")),
+    revyl(base("typical"), "machines-revyl-off", "No Revyl key yet: each phone kind on our machines, its Revyl choices off with why and Connect", REVYL_OFF),
+    revyl(base("typical"), "machines-revyl-on", "Revyl connected: iOS simulators on Revyl only, Android on our machines first", {
+      ...REVYL_OFF,
+      connected: true,
+      check: { ok: true, at: "2026-10-19T08:55:00.000Z" },
+      routes: { ios: "revyl_only", android: "ours_first" },
+    }),
+    revyl(base("typical"), "machines-revyl-failed", "A Revyl key Revyl refused at its last test: why, under the row", {
+      ...REVYL_OFF,
+      connected: true,
+      check: { ok: false, at: "2026-10-19T08:55:00.000Z", reason: "invalid_key", message: "Revyl refused the key (401): it is wrong, revoked or expired.", fix: "Make a new key in Revyl, then disconnect and connect it." },
+      routes: { ios: "ours_first", android: "ours_first" },
+    }),
     unwell(base("typical")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),

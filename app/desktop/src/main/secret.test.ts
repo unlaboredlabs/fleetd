@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -205,6 +205,29 @@ describe("a pasted hub link key", () => {
     expect(wrong.ok).toBe(false);
     if (!wrong.ok) expect(wrong.error.fix).toContain("flk_");
     expect(sent).toEqual([]);
+  });
+});
+
+describe("the team's own Revyl key", () => {
+  it("goes to revyl_connect as {key} sealed to the hub's own key, trimmed, and never in the clear", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const key = "rvl_test_0123456789abcdef";
+    const request = { boxPubKey: rust.publicKey, key: `  ${key}\n` };
+    expect(parseRequest(IPC.revylKeySubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.revylKeySubmit, ["hub", { ...request, key: "   " }]).ok).toBe(false);
+    expect(parseRequest(IPC.revylKeySubmit, ["hub", { ...request, boxPubKey: "AAAA" }]).ok).toBe(false);
+    expect((await submitRevylKey(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("revyl_connect");
+    const input = sent[1] as { sealed: string };
+    expect(Object.keys(input)).toEqual(["sealed"]);
+    expect(JSON.stringify(input)).not.toContain(key);
+    expect(JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk)))).toEqual({ key });
   });
 });
 

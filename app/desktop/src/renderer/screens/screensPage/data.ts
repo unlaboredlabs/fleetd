@@ -40,8 +40,9 @@ export const KIND_WORD: Readonly<Record<Kind, string>> = {
 /** A phone's screen stands up; a browser's, a desktop's and the Mac's lie down. */
 export const isPhone = (kind: Kind): boolean => kind === "android" || kind === "ios";
 
-/** Where it runs, in words: the agents' Mac by name, else its kind on its machine. */
-export const placeLine = (p: Pick<PageScreen, "kind" | "machine">): string => (p.kind === "mac" ? KIND_WORD.mac : `${KIND_WORD[p.kind]} · ${p.machine}`);
+/** Where it runs, in words: the agents' Mac by name, a Revyl screen as Revyl's, else its kind on its machine. */
+export const placeLine = (p: Pick<PageScreen, "kind" | "machine" | "x">): string =>
+  p.kind === "mac" ? KIND_WORD.mac : `${KIND_WORD[p.kind]} · ${p.x.revyl === true ? "Revyl" : p.machine}`;
 
 const ALL = {} as const;
 const NO_THUMBS: Readonly<Record<string, never>> = {};
