@@ -28,6 +28,8 @@ export interface ScreenCard {
   readonly control: Control;
   /** A person opened it themselves (New screen): theirs to drive, with no agent to hand it to. */
   readonly own: boolean;
+  /** It runs on the team's own Revyl account, not one of the team's machines. */
+  readonly revyl: boolean;
 }
 
 const KINDS = new Set(["android", "ios", "linux_desktop", "mac"]);
@@ -39,6 +41,7 @@ export const cardOf = (s: BrowserSession): ScreenCard => ({
   kind: KINDS.has(s.kind ?? "") ? (s.kind as ScreenCard["kind"]) : "browser",
   control: controlOf(s, undefined),
   own: s.openedBy !== undefined,
+  revyl: s.source === "revyl",
 });
 
 /** The cards a chat shows: its live screens, the ones asking for you first. */

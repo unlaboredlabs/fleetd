@@ -26,7 +26,7 @@ import { installGithub } from "../main/cloud/github";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
 import { externalUrl } from "../main/external";
 import type { Transport } from "../main/hub/link";
-import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "../main/secret";
+import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSecret } from "../main/secret";
 import { sessionHash } from "../shared/sessionHash";
 import { saveVaultItem, unlockVault } from "../main/vault";
 import { WebHub } from "./hub";
@@ -206,6 +206,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       projectEnv: (hub, request) => submitProjectEnv(request, call(hub)),
       mcpServer: (hub, request) => submitMcpServer(request, call(hub)),
       hubLink: (hub, request) => submitHubLink(request, call(hub)),
+      revylKey: (hub, request) => submitRevylKey(request, call(hub)),
       mcpOauthClient: (hub, request) => submitMcpOauthClient(request, call(hub)),
       claudeAccount: (hub, request) => submitClaudeAccount(request, call(hub)),
       onePassword: (hub, request) => submitOnePassword(request, call(hub)),

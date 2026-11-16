@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine, usesRevyl } from "./revylModel";
+
+const at = "2026-10-19T09:00:00.000Z";
+
+describe("where each phone kind's agent screens run", () => {
+  it("offers the three routes for iOS simulators and Android only", () => {
+    expect(REVYL_KINDS.map((k) => k.kind)).toEqual(["ios", "android"]);
+    expect(routeChoices(true, "ours_first")).toEqual([
+      { value: "ours_first", label: "Our machines first, then Revyl" },
+      { value: "ours_only", label: "Our machines only" },
+      { value: "revyl_only", label: "Revyl only" },
+    ]);
+  });
+
+  it("keeps the Revyl routes listed but off before a key is connected, each saying what it needs", () => {
+    const off = routeChoices(false, "ours_only");
+    expect(off.filter((o) => o.disabled === true).map((o) => o.value)).toEqual(["ours_first", "revyl_only"]);
+    for (const o of off.filter((c) => c.disabled === true)) expect(o.label).toContain("needs a Revyl key");
+    expect(off.find((o) => o.value === "ours_only")?.disabled).toBeUndefined();
+    expect(usesRevyl("ours_only")).toBe(false);
+  });
+
+  it("says why they're off: an admin gets Connect beside it, anyone else whom to ask; nothing once connected", () => {
+    expect(routeOffLine(false, true)).toBe("Revyl choices need a Revyl key.");
+    expect(routeOffLine(false, false)).toContain("ask an admin");
+    expect(routeOffLine(true, true)).toBeNull();
+    expect(routeOffLine(true, false)).toBeNull();
+  });
+
+  it("lists a route a newer hub has, so the choice shows what is in effect", () => {
+    expect(routeChoices(true, "ours_then_theirs").at(-1)).toEqual({ value: "ours_then_theirs", label: "ours_then_theirs" });
+  });
+});
+
+describe("the Revyl row's line", () => {
+  it("says nothing at rest while the key works or no key is connected, and Works just after a check", () => {
+    expect(revylLine({ connected: false }, true)).toBeNull();
+    expect(revylLine({ connected: true, check: { ok: true, at } }, false)).toBeNull();
+    expect(revylLine({ connected: true, check: { ok: true, at } }, true)).toEqual({ text: "Works", tone: "quiet" });
+  });
+
+  it("says what a failed check found, in the hub's words else its reason's, with its fix", () => {
+    expect(revylLine({ connected: true, check: { ok: false, at, reason: "invalid_key" } }, false)?.text).toContain("refused the key");
+    const noCli = revylLine({ connected: true, check: { ok: false, at, reason: "no_cli", message: "No revyl on devbox.", fix: "curl -fsSL https://revyl.com/install.sh | sh" } }, false);
+    expect(noCli).toEqual({ text: "No revyl on devbox.", tone: "danger", fix: "curl -fsSL https://revyl.com/install.sh | sh" });
+  });
+});
+
+describe("a pasted key", () => {
+  it("is trimmed, and empty is none", () => {
+    expect(keyOf("  rvl_abc\n")).toBe("rvl_abc");
+    expect(keyOf(" \n")).toBeNull();
+  });
+});

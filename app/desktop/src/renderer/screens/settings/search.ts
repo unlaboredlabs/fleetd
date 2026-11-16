@@ -117,6 +117,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "browser", "android", "desktop", "mac", "hosts"] },
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
+  { key: "hub.revyl", label: "Revyl", tab: "hub.machines", keywords: ["revyl", "phone", "iphone", "ios simulator", "android", "cloud devices", "api key", "connect", "disconnect", "our machines", "routing", "where screens run"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
   { key: "hub.profiles", label: "Agents for every project", tab: "hub.profiles", keywords: ["every project", "hub-wide"] },

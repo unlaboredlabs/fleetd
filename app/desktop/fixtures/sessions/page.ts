@@ -26,6 +26,7 @@ export const PAGE_SESSION = {
   android: "B9e3c7a1f5d9b3e7c1a5f9d3b7e1c5a9f",
   home: "B4a8e2c6f0b4d8a2e6c0f4b8d2a6e0c4b",
   checkoutEnded: "B6f0b4d8a2e6c0f4b8d2a6e0c4b8f2a6d",
+  revyl: "B3c7a1e5d9b3f7c1a5e9d3b7f1c5a9e3d",
   homeEnded: "B8b2f6d0a4e8c2f6b0d4a8e2c6f0b4d8a",
 } as const;
 
@@ -160,5 +161,36 @@ export const screensPage = (preview: Fixture): Fixture => {
   f.answer("machine_roles", undefined, {
     machines: [machine("devbox", ["browser", "android", "desktop"], 3, 8), machine("buildbox", ["browser", "android", "desktop"], 2, 4), machine("mac", ["mac"], 1, 1)],
   });
+  return f;
+};
+
+/**
+ * The Screens page with an agent's iPhone on the team's own Revyl account (W676): billing's agent checks the invoice
+ * screen on an iOS simulator Revyl hosts, shown like any other, its row saying Revyl where a machine's name would be.
+ */
+export const revylScreen = (page: Fixture): Fixture => {
+  const f = Fixture.from(page, "sessions-revyl", "Screens page with an agent's iOS simulator on the team's own Revyl account, beside the team's own screens.");
+  const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
+  const answered = f.output("browser_sessions", { projectRef: BILLING });
+  if (!isObject(answered) || !Array.isArray(answered["sessions"])) throw new Error("no billing sessions");
+  const iphone: JsonObject = {
+    sessionId: PAGE_SESSION.revyl,
+    projectRef: BILLING,
+    threadId: "c8a1f2e3-0000-4000-8000-00000000rvl1",
+    purpose: "Check the invoice screen on an iPhone",
+    state: "live",
+    control: "agent",
+    startedAt: iso(2 * 60_000 + 30_000),
+    kind: "ios",
+    source: "revyl",
+    taskId: "T11",
+    machineId: "buildbox",
+    step: step("revyl", { command: "revyl device tap --x 196 --y 712" }, iso(5_000)),
+  };
+  f.drop("browser_sessions", { projectRef: BILLING });
+  f.answer("browser_sessions", { projectRef: BILLING }, { ...answered, sessions: [iphone, ...answered["sessions"]] });
+  f.later(0, "screen_thumb", { sessionId: PAGE_SESSION.revyl, jpegB64: b64("shopApp.jpg"), width: 603, height: 1311, at: iso(3_000) });
+  f.drop("screens_count");
+  f.answer("screens_count", undefined, { live: 7, asking: 1 });
   return f;
 };

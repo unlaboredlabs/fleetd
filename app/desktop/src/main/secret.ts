@@ -4,7 +4,7 @@
 import { fromBase64, toBase64 } from "../shared/base64";
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, RevylKeyRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -61,6 +61,19 @@ export const submitHubLink = async (
   const sealed = await seal(request.boxPubKey, request.key);
   if (!sealed.ok) return sealed;
   return call("hub_link_add", { project: request.project, label: request.label, url: request.url, sealed: sealed.sealed });
+};
+
+/**
+ * The team's own Revyl key: trimmed, sealed as `{"key":…}` to the hub's own key (revyl_get's boxPubKey), then
+ * revyl_connect, whose answer has the hub's first check of it.
+ */
+export const submitRevylKey = async (
+  request: RevylKeyRequest,
+  call: (tool: "revyl_connect", input: ToolInput<"revyl_connect">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const sealed = await seal(request.boxPubKey, JSON.stringify({ key: request.key.trim() }));
+  if (!sealed.ok) return sealed;
+  return call("revyl_connect", { sealed: sealed.sealed });
 };
 
 /**
