@@ -45,6 +45,11 @@ export class Queue {
     return { now: true };
   }
 
+  /** How many agents wait now. */
+  size(): number {
+    return this.waiting.length;
+  }
+
   /** The agent leaves the line (it got its simulator, ran `mac sim end`, or failed); whether it was in it. */
   leave(agent: string): boolean {
     const before = this.waiting.length;

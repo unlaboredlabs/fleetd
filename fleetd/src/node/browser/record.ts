@@ -29,6 +29,8 @@ export type Meta = {
   endedAt?: string;
   credentialsFilled: number;
   note?: string;
+  /** `revyl`: a phone in the team's own Revyl account (node/revyl). */
+  source?: string;
 };
 
 export function writeMeta(dir: string, meta: Meta): void {
@@ -291,6 +293,7 @@ export function report(meta: Meta, state: BrowserSessionState, control: BrowserC
     files: sent.map(([file, bytes]) => ({ file, bytes })),
     credentialsFilled: meta.credentialsFilled,
     ...(meta.note ? { note: [...meta.note].slice(0, 500).join("") } : {}),
+    ...(meta.source ? { source: meta.source } : {}),
   };
 }
 

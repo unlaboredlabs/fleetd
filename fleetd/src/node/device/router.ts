@@ -70,6 +70,8 @@ export class Router {
   android: Screens | undefined;
   /** The Linux desktops and the agents' Mac's screen (node/desktop's), where this machine lends them. */
   desktops: Screens | undefined;
+  /** Phones in the team's own Revyl account (node/revyl's), which the hub routes here. */
+  revyl: Screens | undefined;
 
   constructor(readonly browser: Broker | undefined) {}
 
@@ -77,7 +79,7 @@ export class Router {
   open(thread: string): { kind: SessionKind; id: string } | undefined {
     const browser = this.browser?.live(thread);
     if (browser) return { kind: "browser", id: browser.id };
-    return this.android?.live(thread) ?? this.desktops?.live(thread);
+    return this.android?.live(thread) ?? this.desktops?.live(thread) ?? this.revyl?.live(thread);
   }
 
   /** Whether the agent session has a screen of any kind live here. */
@@ -87,7 +89,7 @@ export class Router {
 
   /** How many screens of every kind are live here. */
   count(): number {
-    return (this.browser?.count() ?? 0) + (this.android?.count() ?? 0) + (this.desktops?.count() ?? 0);
+    return (this.browser?.count() ?? 0) + (this.android?.count() ?? 0) + (this.desktops?.count() ?? 0) + (this.revyl?.count() ?? 0);
   }
 
   /** The kind a call is for: a start's own, the desktop tool's (the Mac's while one is open), else the open screen's. */
@@ -104,6 +106,12 @@ export class Router {
     const op = frame.call.op;
     const open = this.open(thread);
     const kind = this.kindOf(thread, frame);
+    // A Revyl screen takes its own calls (its `revyl` commands among them), whatever its kind.
+    if (op === "revyl" || (open && this.revyl?.live(thread))) {
+      if (op === "session_start" && open) throw new ToolError("invalid", `Revyl session ${open.id} is open.`, "use it, or end it with session_end before starting another");
+      if (!this.revyl) throw new ToolError("not_found", "No Revyl screen is open in this session.", "session_start kind ios or android gives you one when the team routes phone screens to Revyl");
+      return this.revyl.handle(thread, frame);
+    }
     if (op === "device" && !open) {
       throw new ToolError("not_found", "No iOS session is open.", "start a simulator with mac sim start; agent-device then drives it");
     }
@@ -157,7 +165,7 @@ export class Router {
       void this.browser.end(thread).catch(() => {});
       return true;
     }
-    return (this.android?.endScreen(thread, id) ?? false) || (this.desktops?.endScreen(thread, id) ?? false);
+    return (this.android?.endScreen(thread, id) ?? false) || (this.desktops?.endScreen(thread, id) ?? false) || (this.revyl?.endScreen(thread, id) ?? false);
   }
 
   /** The agent session ended: its screen of every kind goes now. */
@@ -165,12 +173,14 @@ export class Router {
     if (this.browser?.live(thread)) void this.browser.end(thread).catch(() => {});
     this.android?.ended(thread);
     this.desktops?.ended(thread);
+    this.revyl?.ended(thread);
   }
 
   /** The node stops: every kind's screens end. */
   async shutdown(): Promise<void> {
     await this.android?.shutdown();
     await this.desktops?.shutdown();
+    await this.revyl?.shutdown();
   }
 }
 

@@ -349,9 +349,6 @@ test("an Android screen the hub would place on another machine is refused before
   const android = placedElsewhere([["DEPLOY_TOKEN", "tok-hunter2-secret"]], false);
   await expect(android.tn.local.call("session_start", { purpose: "Settings", kind: "android" }, "t1")).rejects.toThrow("can't drive an emulator there");
   expect(android.routes.length).toBe(1);
-  // And an iOS start isn't even asked of the hub.
-  await expect(android.tn.local.call("session_start", { purpose: "Settings", kind: "ios" }, "t1")).rejects.toThrow("mac sim start");
-  expect(android.routes.length).toBe(1);
 });
 
 test("a browser start refused before the broker opens it leaves none of the session's secrets in memory", async () => {

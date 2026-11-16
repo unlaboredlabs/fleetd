@@ -12,7 +12,8 @@ A screen is any of these an agent opens: a browser, an [Android emulator](#andro
 [Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents share app by app. iOS simulators aren't
 screens you open: each one an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
 [open one yourself](#yours) too. The app shows every project's on the [Screens page](#page), and each
-project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
+project's under **Agents › Screens**. A team that connects its own Revyl account also gets
+[iPhones and Android phones from Revyl](#revyl), routed next to its own machines. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
 
 ## The Screens page {#page}
@@ -413,9 +414,60 @@ Android screen ([simulator screens](/docs/agents-mac#sim-screens)). New screen a
 in Settings › Hub › Machines offer no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its
 fix while none is set up.
 
-For one release, `ios` stays as a legacy value. `session_start` with `kind` `ios` answers with the way to
-`mac sim start`, and so does the hub, to an older node or app asking for an iOS screen (`screen_open`); nothing starts.
+`session_start` with `kind` `ios` answers with the way to `mac sim start`, unless the team routes iOS screens to
+[its Revyl account](#revyl): then it is a Revyl iPhone. The hub answers an older app asking for an iOS screen
+(`screen_open`) the same way; nothing starts.
 Past iOS screens still list, and their recordings still play.
+
+## Phones from your own Revyl account {#revyl}
+
+[Revyl](https://revyl.com) runs iOS simulators and Android emulators in its cloud. A team with a Revyl account can
+connect it, and agents then get iPhone and Android screens from Revyl as well as from the team's own machines. Revyl
+bills the team directly; fleetd charges nothing for it and holds no Revyl account of its own.
+
+**Connect it.** In Revyl's dashboard make an API key (Settings › API Keys). In **Settings › Hub › Machines ›
+Screens**, an admin pastes it into the **Revyl** row's sealed field and presses Test. The app seals the key to the
+hub, which keeps it sealed as it keeps [vault](/docs/vault) values: it is never shown again, logged or given to an
+agent, and each use is logged without it. Test runs `revyl auth status` on the hub's machine and says whether it
+works: a key Revyl refuses (wrong or expired) reads as such, and a machine with no `revyl` command says how to install
+it. Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
+MCP clients use `revyl_get`, `revyl_connect`, `revyl_test`, `revyl_disconnect` and `revyl_route_set`.
+
+**Install Revyl's CLI** on the hub's machine and on each machine whose agents may get Revyl screens, from Revyl:
+`curl -fsSL https://revyl.com/install.sh | sh` (or `brew install RevylAI/tap/revyl`, or `pip install revyl`). fleetd
+doesn't ship it.
+
+**Route each kind.** Under the Revyl row, iOS simulator and Android each have one choice:
+
+| Route | Where an agent's phone comes from |
+|---|---|
+| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the agent's own machine while it has a free screen slot (an emulator on another machine is one the agent can't drive yet); an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
+| Our machines only | As with no key, but when every machine that may take it is full, the agent waits in line for the next free slot, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
+| Revyl only | Every phone of that kind is Revyl's. |
+
+The rule is fixed, never a guess from load: a slot is free or it isn't. When Revyl's own sessions are all in use,
+Revyl holds the start in its queue until one frees. With no key connected nothing changes from before.
+
+**What an agent sees.** `session_start` with `kind` `ios` or `android` answers that the phone is Revyl's, and why
+("devbox's screen slots are full, so this one is Revyl's"). The agent drives it with `revyl device …` by coordinates
+after a screenshot (`revyl device screenshot --out shot.png`, `revyl device tap --x 120 --y 300`, swipe, type, key),
+installs its own build with `revyl build upload --file <.app or .apk>`, and ends it with `session_end`. The `revyl`
+on its PATH is fleetd's: the node runs Revyl's CLI with the team's key in that one process, so the agent never holds
+the key. Agents run as the node's own user, though, so this keeps the key out of their commands and output, not out
+of reach of a process that goes looking for it on the machine. Revyl's AI-driven actions (`--target`), remote builds, tests, `revyl feedback` and anything about billing
+are refused. When Revyl refuses over the team's plan or billing, the agent doesn't retry or work around it; it says
+so in its result.
+
+**What you see.** A Revyl phone lists in Screens like any other, marked Revyl. You watch it live (Revyl's screenshots,
+about one a second) and take it over: a click taps, a drag swipes, typing goes where you last tapped, and Enter and
+Backspace work. Its recording is Revyl's own video, which reaches the hub once Revyl has it after the end.
+
+**When it ends.** A Revyl phone ends, and Revyl's minutes stop, at `session_end`, when the agent's session ends,
+after 30 minutes without a command, when the key is disconnected, and when the agent's node restarts; a node that
+stopped without ending one stops it as it starts again.
+
+Your team is Revyl's customer: what you upload to Revyl (builds, screens, test data) is under Revyl's terms, so keep
+sensitive personal data out of it and sign Revyl's DPA before sending any personal data.
 
 ## Linux desktop screens {#desktop}
 

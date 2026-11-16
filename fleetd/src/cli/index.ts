@@ -141,6 +141,7 @@ export async function main(argv: string[]): Promise<number> {
     // Every argument after these is theirs, `--help` too.
     if (command === "mac") return await (await import("./mac_tool.ts")).run(rest);
     if (command === "agent-device") return await (await import("./agent_device.ts")).run(rest);
+    if (command === "revyl") return await (await import("./revyl.ts")).run(rest);
     if (command === "build-slot") return await (await import("../node/build_slots.ts")).main(rest);
     if (command === "session-host") return (await import("./session_host.ts")).run(rest);
     initFromArgv(argv);

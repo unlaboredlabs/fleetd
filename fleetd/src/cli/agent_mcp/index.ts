@@ -86,7 +86,8 @@ export const envDeps = (): LeadDeps => ({
  * be asked. */
 export function sendCall(call: Call, deps: LeadDeps): Promise<Record<string, unknown>> {
   const frame: Call = {
-    t: BROWSER_OPS.has(String(call.op)) ? "browser_call" : "lead_call",
+    // `fleetd revyl` drives the session's own Revyl screen, as a session tool does its screen.
+    t: BROWSER_OPS.has(String(call.op)) || call.op === "revyl" ? "browser_call" : "lead_call",
     id: `cli-${process.pid}`,
     cwd: callerCwd(deps.pwd, deps.cwd),
     call,

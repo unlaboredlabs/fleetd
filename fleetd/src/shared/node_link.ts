@@ -182,6 +182,8 @@ export type NodeLoad = {
   ios?: ScreenHealth;
   desktop?: ScreenHealth;
   mac?: MacHealth;
+  /** The agents' Mac's iOS simulators: held by agents, how many may be at once, and agents waiting in line. */
+  sims?: { inUse: number; budget: number; waiting: number };
 };
 
 /** Hub -> node: run a `cmd` check. argv only, never through a shell. */
