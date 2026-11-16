@@ -165,13 +165,16 @@ it("connects a key through one sealed field that goes to main only, then says it
 
 it("shows a Test that first installs Revyl's CLI as testing, with no words, then Works", async () => {
   state = on;
-  let release = () => undefined as void;
+  let release: () => void = () => undefined;
   testHeld = new Promise((r) => (release = r));
   await render();
   await click(button("Test"));
   expect(button("Testing…")?.disabled).toBe(true);
   expect(revyl()?.querySelector("[role='alert'], [role='status']")).toBeNull();
-  await act(async () => release());
+  await act(async () => {
+    release();
+    await Promise.resolve();
+  });
   await settle();
   expect(revyl()?.textContent).toContain("Works");
   expect(button("Copy", within(revyl()))).toBeUndefined();
