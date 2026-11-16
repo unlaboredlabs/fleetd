@@ -105,5 +105,15 @@ export function refusal(argv: string[]): string | undefined {
   return `revyl ${cmd ?? ""} isn't one fleetd runs: drive your screen with revyl device …, and upload your build with revyl build upload --file.`;
 }
 
+/**
+ * `output` without the lines in which Revyl's CLI asks an agent to report to Revyl unasked ("Revyl: … revyl feedback
+ * --type bug …"): fleetd's agents never send feedback.
+ */
+export const withoutNudges = (output: string) =>
+  output
+    .split("\n")
+    .filter((l) => !/^Revyl: .*\brevyl feedback\b/.test(l))
+    .join("\n");
+
 /** A refusal from Revyl about money or limits (a billing notice, no minutes left): never retried. */
 export const billingRefusal = (output: string) => /billing|payment|credit|free minutes|out of minutes|upgrade your plan|402/i.test(output);

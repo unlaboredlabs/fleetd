@@ -12,11 +12,11 @@
 // IDLE_MS without a command or a person's input, when the hub's key is removed, and when the node stops. A node that
 // stopped without ending one (a crash) stops it at its next start, from the record it keeps in `live/` while it runs.
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { BrowserControl, BrowserInput, BrowserSessionState, KnownRevylCheckReason } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
-import { billingRefusal, CHECK_WAIT, failure, IDLE_SECS, INSTALL, mask, refusal, tail } from "../../shared/revyl.ts";
+import { billingRefusal, CHECK_WAIT, failure, IDLE_SECS, INSTALL, mask, refusal, tail, withoutNudges } from "../../shared/revyl.ts";
 import { type BrowserCallFrame, type BrowserControlFrame, type BrowserInputFrame, type BrowserWatchFrame, CAP_REVYL, type RevylStart } from "../../shared/screens_wire.ts";
 import { giveUp, type Meta, report, upload, writeMeta } from "../browser/record.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
@@ -84,10 +84,12 @@ class Screen {
     readonly meta: Meta,
     readonly dir: string,
     now: number,
+    /** The screen's width in device units, as `device start` says (`screen_width`): 440 on an iPhone 16 Pro Max. */
+    readonly units: number | undefined,
   ) {
     this.lastActive = now;
-    // Revyl taps an iPhone in points and an Android phone in pixels (docs.revyl.com/reference/cli); its screenshots
-    // are in pixels, so an iPhone's are three to a point. Unchecked against a real session.
+    // Revyl taps an iPhone in points and an Android phone in pixels; its screenshots are in pixels (a 440-point
+    // iPhone's are 1320 wide), so each frame's width over `units` is the scale. Until a frame: three to an iPhone's point.
     this.scale = kind === "ios" ? 3 : 1;
   }
 }
@@ -113,8 +115,10 @@ export class RevylScreens implements Screens {
     this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
   }
 
-  private run(argv: string[], key: string, timeoutMs: number, cwd?: string): Promise<Run> {
-    return runRevyl(argv, { key, home: cliHome(this.node.home), timeoutMs, ...(cwd ? { cwd } : {}), ...(this.options.bin ? { bin: this.options.bin } : {}) });
+  /** Every `revyl` runs in its own home: Revyl's CLI keeps `.revyl/` (its sessions, input locks) where it runs. */
+  private async run(argv: string[], key: string, timeoutMs: number): Promise<Run> {
+    const run = await runRevyl(argv, { key, home: cliHome(this.node.home), timeoutMs, ...(this.options.bin ? { bin: this.options.bin } : {}) });
+    return { ...run, out: withoutNudges(run.out) };
   }
 
   private readonly hub = (thread: string, cwd: string, op: string, args: Record<string, unknown>) => hubCall(this.node, op, args, { threadId: thread, cwd });
@@ -146,7 +150,8 @@ export class RevylScreens implements Screens {
 
   /**
    * Settings' Test of the team's key (`node_action` revyl_check), here where agents' Revyl screens run:
-   * `revyl device list`, which only Revyl's server can answer for the key, and which starts nothing.
+   * `revyl device history`, which only Revyl's server can answer for the key, and which starts nothing. (`device list`
+   * lists this CLI's own sessions without asking the server: any key passes it.)
    */
   async check(frame: NodeAction): Promise<NodeActionResult> {
     const no = (reason: KnownRevylCheckReason, message: string): NodeActionResult => ({ id: frame.id, ok: false, reason, message: message.slice(0, 500) });
@@ -159,14 +164,14 @@ export class RevylScreens implements Screens {
     }
     let run: Run;
     try {
-      run = await this.run(["device", "list", "--json"], key, CHECK_WAIT);
+      run = await this.run(["device", "history", "--json", "--limit", "1"], key, CHECK_WAIT);
     } catch (e) {
       if (e instanceof NoCli) return no("no_cli", "no revyl command");
       return no("failed", mask((e as Error).message, key));
     }
     if (run.exit === 0) return { id: frame.id, ok: true, message: "Revyl answered for the key" };
-    if (run.timedOut) return no("failed", `revyl device list didn't answer within ${CHECK_WAIT / 1000} seconds.`);
-    return no(failure(run.out), tail(run.out, 500) || `revyl device list exited ${run.exit}.`);
+    if (run.timedOut) return no("failed", `revyl device history didn't answer within ${CHECK_WAIT / 1000} seconds.`);
+    return no(failure(run.out), tail(run.out, 500) || `revyl device history exited ${run.exit}.`);
   }
 
   /** `session_start` the hub routed to Revyl:the device started with the team's key, and the screen reported. */
@@ -181,25 +186,30 @@ export class RevylScreens implements Screens {
     try {
       let run: Run;
       try {
-        run = await this.run(["device", "start", "--platform", kind, "--timeout", String(IDLE_SECS), "--json"], key, START_WAIT);
+        // --open=false: Revyl's viewer would otherwise open in a browser on this machine.
+        run = await this.run(["device", "start", "--platform", kind, "--timeout", String(IDLE_SECS), "--open=false", "--json"], key, START_WAIT);
       } catch (e) {
         if (e instanceof NoCli) {
           throw new ToolError("failed", "This machine has no revyl command, so it can't start the team's Revyl screen.", `say so in your result: a person installs Revyl's CLI here: ${INSTALL}`);
         }
         throw e;
       }
-      const revylId = run.exit === 0 ? String(jsonOf(run.out)?.session_id ?? "") : "";
+      const started = run.exit === 0 ? jsonOf(run.out) : undefined;
+      const revylId = String(started?.session_id ?? "");
       if (!revylId) throw this.refused("revyl device start", run);
+      const units = Number(started?.screen_width) > 0 ? Number(started?.screen_width) : undefined;
       const id = newId();
       const dir = join(recordingsDir(this.node.home), id);
       const meta: Meta = { sessionId: id, kind, threadId: thread, cwd: frame.cwd, purpose: [...purpose].slice(0, 200).join(""), startedAt: new Date(this.now()).toISOString(), credentialsFilled: 0, source: "revyl" };
       writeMeta(dir, meta);
       mkdirPrivate(liveDir(this.node.home));
       writeAtomic(join(liveDir(this.node.home), `${id}.json`), JSON.stringify({ revylId, sealed: routed.sealed } satisfies LiveRecord));
-      const screen = new Screen(id, thread, frame.cwd, kind, revylId, key, meta, dir, this.now());
+      const screen = new Screen(id, thread, frame.cwd, kind, revylId, key, meta, dir, this.now(), units);
       this.screens.set(thread, screen);
       void this.report(screen, "live");
       const device = kind === "ios" ? "iPhone" : "Android phone";
+      // An iPhone's screenshot is in pixels and its taps in points: say how to get from one to the other.
+      const coords = kind === "ios" ? `points${units ? `, ${units} wide` : ""}; a screenshot is in pixels, three to a point` : "pixels, as in a screenshot";
       return {
         op: "session_start",
         sessionId: id,
@@ -207,7 +217,7 @@ export class RevylScreens implements Screens {
         source: "revyl",
         note:
           `A Revyl ${device} in the team's own Revyl account (${routed.why}). Drive it with revyl device … by coordinates ` +
-          `(${kind === "ios" ? "points" : "pixels"}): revyl device screenshot --out shot.png, revyl device tap --x 120 --y 300, ` +
+          `(${coords}): revyl device screenshot --out shot.png, revyl device tap --x 120 --y 300, ` +
           "swipe, type, key; install your build with revyl build upload --file <.app or .apk>, then revyl device install. " +
           "agent-device doesn't reach it. Revyl bills the team per minute: end it with session_end as soon as you're done.",
       };
@@ -266,7 +276,7 @@ export class RevylScreens implements Screens {
     }
     screen.lastActive = this.now();
     const quick = argv[0] === "device" && argv[1] !== "install";
-    const run = await this.run([...argv, "--session-id", screen.revylId], screen.key, quick ? QUICK_WAIT : COMMAND_WAIT, frame.cwd);
+    const run = await this.run([...inCwd(argv, frame.cwd), "--session-id", screen.revylId], screen.key, quick ? QUICK_WAIT : COMMAND_WAIT);
     if (run.exit !== 0 && billingRefusal(run.out)) throw this.refused(`revyl ${argv.slice(0, 2).join(" ")}`, run);
     return { exitCode: run.exit ?? 1, output: run.out };
   }
@@ -417,10 +427,11 @@ export class RevylScreens implements Screens {
     if (run?.exit !== 0 || !existsSync(out)) return undefined;
     const png = new Uint8Array(readFileSync(out));
     rmSync(out, { force: true });
-    // Revyl's screenshot is a PNG, and a frame is a JPEG: made one here.
+    // Revyl's screenshot is a PNG (RGBA, in pixels), and a frame is a JPEG: made one here.
     const jpeg = await new Bun.Image(png).jpeg({ quality: FRAME_QUALITY }).bytes().catch(() => undefined);
     if (!jpeg) return undefined;
     const [width, height] = pngSize(png) ?? [1, 1];
+    if (screen.units && width > 1) screen.scale = width / screen.units;
     return { seq: ++screen.seq, jpeg, width, height, atMs: this.now() };
   }
 
@@ -484,6 +495,19 @@ export function inputArgv(input: BrowserInput, screen: { scale: number; down: [n
     default:
       return undefined;
   }
+}
+
+/** Flags whose value is a file: `device screenshot`/`hierarchy --out`, `build upload --file`. */
+const PATH_FLAGS = new Set(["--out", "--file", "-f"]);
+
+/** `argv` with each file it names made absolute against `cwd`, the agent's own folder, since `revyl` runs elsewhere. */
+export function inCwd(argv: string[], cwd: string): string[] {
+  const at = (v: string) => (isAbsolute(v) ? v : resolve(cwd, v));
+  return argv.map((a, i) => {
+    const eq = a.indexOf("=");
+    if (eq > 0 && PATH_FLAGS.has(a.slice(0, eq))) return `${a.slice(0, eq + 1)}${at(a.slice(eq + 1))}`;
+    return i > 0 && PATH_FLAGS.has(argv[i - 1]!) && !a.startsWith("-") ? at(a) : a;
+  });
 }
 
 /** The first file named `name` under `dir`, at most three folders down. */
