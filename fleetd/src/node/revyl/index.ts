@@ -13,9 +13,10 @@
 // stopped without ending one (a crash) stops it at its next start, from the record it keeps in `live/` while it runs.
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { BrowserControl, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
+import type { BrowserControl, BrowserInput, BrowserSessionState, KnownRevylCheckReason } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { billingRefusal, IDLE_SECS, INSTALL, refusal, tail } from "../../shared/revyl.ts";
+import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
+import { billingRefusal, CHECK_WAIT, failure, IDLE_SECS, INSTALL, mask, refusal, tail } from "../../shared/revyl.ts";
 import { type BrowserCallFrame, type BrowserControlFrame, type BrowserInputFrame, type BrowserWatchFrame, CAP_REVYL, type RevylStart } from "../../shared/screens_wire.ts";
 import { giveUp, type Meta, report, upload, writeMeta } from "../browser/record.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
@@ -41,6 +42,8 @@ export const QUICK_WAIT = 60_000;
 export const VIDEO_WAIT = 35 * 60_000;
 /** Between live-view frames while a person watches. */
 export const FRAME_EVERY = 1000;
+/** A live-view frame's JPEG quality. */
+const FRAME_QUALITY = 80;
 
 export const revylDir = (home: string) => join(home, "revyl");
 /** The folder each `revyl` process gets as its home. */
@@ -141,7 +144,32 @@ export class RevylScreens implements Screens {
     }
   }
 
-  /** `session_start` the hub routed to Revyl: the device started with the team's key, and the screen reported. */
+  /**
+   * Settings' Test of the team's key (`node_action` revyl_check), here where agents' Revyl screens run:
+   * `revyl device list`, which only Revyl's server can answer for the key, and which starts nothing.
+   */
+  async check(frame: NodeAction): Promise<NodeActionResult> {
+    const no = (reason: KnownRevylCheckReason, message: string): NodeActionResult => ({ id: frame.id, ok: false, reason, message: message.slice(0, 500) });
+    if (!frame.revyl) return no("failed", "the hub sent no key to test");
+    let key: string;
+    try {
+      key = this.keyOf(frame.revyl);
+    } catch (e) {
+      return no("failed", (e as Error).message);
+    }
+    let run: Run;
+    try {
+      run = await this.run(["device", "list", "--json"], key, CHECK_WAIT);
+    } catch (e) {
+      if (e instanceof NoCli) return no("no_cli", "no revyl command");
+      return no("failed", mask((e as Error).message, key));
+    }
+    if (run.exit === 0) return { id: frame.id, ok: true, message: "Revyl answered for the key" };
+    if (run.timedOut) return no("failed", `revyl device list didn't answer within ${CHECK_WAIT / 1000} seconds.`);
+    return no(failure(run.out), tail(run.out, 500) || `revyl device list exited ${run.exit}.`);
+  }
+
+  /** `session_start` the hub routed to Revyl:the device started with the team's key, and the screen reported. */
   async start(thread: string, frame: BrowserCallFrame, routed: RevylStart): Promise<Answer> {
     if (this.starting.has(thread)) throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
     const open = this.screens.get(thread);
@@ -387,10 +415,13 @@ export class RevylScreens implements Screens {
     const out = join(screen.dir, "frame.png");
     const run = await this.run(["device", "screenshot", "--out", out, "--session-id", screen.revylId], screen.key, QUICK_WAIT).catch(() => undefined);
     if (run?.exit !== 0 || !existsSync(out)) return undefined;
-    const bytes = new Uint8Array(readFileSync(out));
+    const png = new Uint8Array(readFileSync(out));
     rmSync(out, { force: true });
-    const [width, height] = pngSize(bytes) ?? [1, 1];
-    return { seq: ++screen.seq, jpeg: bytes, width, height, atMs: this.now() };
+    // Revyl's screenshot is a PNG, and a frame is a JPEG: made one here.
+    const jpeg = await new Bun.Image(png).jpeg({ quality: FRAME_QUALITY }).bytes().catch(() => undefined);
+    if (!jpeg) return undefined;
+    const [width, height] = pngSize(png) ?? [1, 1];
+    return { seq: ++screen.seq, jpeg, width, height, atMs: this.now() };
   }
 
   /** A person's input, while they have control: a click taps, a drag swipes, text types where they last tapped. */

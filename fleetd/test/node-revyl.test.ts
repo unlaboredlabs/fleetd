@@ -74,6 +74,8 @@ test("a person watches and takes over: frames from screenshots, a click taps; th
   const screen = r.byId(sessionId)!;
   const frame = await r.shot(screen);
   expect(frame).toMatchObject({ seq: 1, width: 2, height: 3 });
+  // Revyl's PNG goes out as the JPEG a frame is.
+  expect([...frame!.jpeg.subarray(0, 2)]).toEqual([0xff, 0xd8]);
   t.link.deliver({ t: "browser_control", sessionId, control: "human", by: "ana" });
   expect(reports.at(-1)).toMatchObject({ state: "live", control: "human" });
   await expect(t.local.call("revyl", { argv: ["device", "screenshot", "--out", "a.png"] }, "t1")).rejects.toThrow("A person has control");

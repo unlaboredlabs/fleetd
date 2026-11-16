@@ -428,12 +428,14 @@ bills the team directly; fleetd charges nothing for it and holds no Revyl accoun
 **Connect it.** In Revyl's dashboard make an API key (Settings › API Keys). In **Settings › Hub › Machines ›
 Screens**, an admin pastes it into the **Revyl** row's sealed field and presses Test. The app seals the key to the
 hub, which keeps it sealed as it keeps [vault](/docs/vault) values: it is never shown again, logged or given to an
-agent, and each use is logged without it. Test runs `revyl auth status` on the hub's machine and says whether it
-works: a key Revyl refuses (wrong or expired) reads as such, and a machine with no `revyl` command says how to install
-it. Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
+agent, and each use is logged without it. Test runs where agents' Revyl screens run: the hub sends the key sealed
+to the team's machines online, in the order of their ids, and the first with a `revyl` command asks Revyl about it
+(`revyl device list`, which starts nothing). The hub never runs `revyl` itself, so a hosted hub tests the same way,
+and on a single self-hosted box its own machine runs it. A key Revyl refuses (wrong or expired) reads as such, and
+when no machine online has `revyl`, Test names the one to install it on. Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
 MCP clients use `revyl_get`, `revyl_connect`, `revyl_test`, `revyl_disconnect` and `revyl_route_set`.
 
-**Install Revyl's CLI** on the hub's machine and on each machine whose agents may get Revyl screens, from Revyl:
+**Install Revyl's CLI** on each machine whose agents may get Revyl screens, from Revyl:
 `curl -fsSL https://revyl.com/install.sh | sh` (or `brew install RevylAI/tap/revyl`, or `pip install revyl`). fleetd
 doesn't ship it.
 
@@ -454,8 +456,8 @@ after a screenshot (`revyl device screenshot --out shot.png`, `revyl device tap 
 installs its own build with `revyl build upload --file <.app or .apk>`, and ends it with `session_end`. The `revyl`
 on its PATH is fleetd's: the node runs Revyl's CLI with the team's key in that one process, so the agent never holds
 the key. Agents run as the node's own user, though, so this keeps the key out of their commands and output, not out
-of reach of a process that goes looking for it on the machine. Revyl's AI-driven actions (`--target`), remote builds, tests, `revyl feedback` and anything about billing
-are refused. When Revyl refuses over the team's plan or billing, the agent doesn't retry or work around it; it says
+of reach of a process that goes looking for it on the machine. Revyl's AI-driven actions (`--target`), remote builds,
+tests, `revyl feedback` and anything about billing are refused. When Revyl refuses over the team's plan or billing, the agent doesn't retry or work around it; it says
 so in its result.
 
 **What you see.** A Revyl phone lists in Screens like any other, marked Revyl. You watch it live (Revyl's screenshots,

@@ -5,11 +5,14 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { boxKey } from "../src/hub/hub_links/store.ts";
 import { choose, mask, refusal, routeOf } from "../src/shared/revyl.ts";
-import { pngSize, inputArgv } from "../src/node/revyl/index.ts";
+import { pngSize, inputArgv, RevylScreens } from "../src/node/revyl/index.ts";
+import { NodeBoxKey } from "../src/node/identity.ts";
+import type { NodeAction } from "../src/shared/node_link.ts";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
 import { addMachine, addProject, agent, caller, testHub } from "./screens_helpers.ts";
 import { BAD, GOOD, standIn } from "./revyl_standin.ts";
+import { testNode } from "./node_helpers.ts";
 
 let t: ReturnType<typeof testHub>;
 let s: ReturnType<typeof standIn>;
@@ -38,7 +41,36 @@ async function call(who: typeof admin, tool: string, input: Record<string, unkno
   throw new Error(r.error.kind === "tool" ? r.error.error.message : r.error.kind);
 }
 
-test("connect: the sealed key is kept sealed, checked at once, and never comes back", async () => {
+/**
+ * A machine of the team's whose node answers the hub's check as node/revyl does: `bin` is its `revyl`, absent for a
+ * machine without one.
+ */
+function machine(id: string, bin?: string) {
+  const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
+  addMachine(t.hub, id, { boxPubKey: box.publicKey() });
+  t.link.link(id, ["browser", "session_seal", "session_host", "revyl"]);
+  const n = testNode(id);
+  const r = new RevylScreens(n.node, { ...(bin ? { bin } : {}), boxKey: box });
+  nodes.set(id, r);
+  cleanup.push(() => void r.shutdown(), n.done);
+}
+const nodes = new Map<string, RevylScreens>();
+const cleanup: (() => void)[] = [];
+afterEach(() => {
+  for (const c of cleanup.splice(0)) c();
+  nodes.clear();
+});
+/** Each machine's node answers the hub's requests; a machine with none gives no answer. */
+const answering = () =>
+  (t.link.answer = async (id, frame) => {
+    const r = nodes.get(id);
+    if (!r) throw new Error(`${id}'s node is not linked to the hub`);
+    return r.check(frame as unknown as NodeAction);
+  });
+
+test("connect: the sealed key is kept sealed, checked at once on the team's machine, and never comes back", async () => {
+  machine("devbox", s.bin);
+  answering();
   const before = await call(member, "revyl_get");
   expect(before).toMatchObject({ connected: false, routes: { ios: "ours_only", android: "ours_only" } });
   expect(before.boxPubKey).toBe(Buffer.from(publicKeyOf(boxKey(t.hub))).toString("base64"));
@@ -47,23 +79,46 @@ test("connect: the sealed key is kept sealed, checked at once, and never comes b
   expect(on.connected).toBe(true);
   expect(on.check).toMatchObject({ ok: true });
   expect(on.routes).toEqual({ ios: "ours_first", android: "ours_first" });
-  // Ran `revyl auth status` with the key in its environment and a home of its own, never on its command line.
-  expect(s.lines()).toEqual([expect.stringMatching(/^auth status key=set home=.*\/revyl\/home$/)]);
+  // The hub sent the key sealed to devbox's box key; devbox ran `revyl device list`, which only Revyl's server answers,
+  // with the key in its environment and a home of its own, never on its command line.
+  const sent = t.link.sent("devbox");
+  expect(JSON.stringify(sent)).not.toContain(GOOD);
+  expect(s.lines()).toEqual([expect.stringMatching(/^device list --json key=set home=.*\/revyl\/home$/)]);
   const stored = t.hub.db.conn.query<{ sealed: Uint8Array }, []>("SELECT sealed FROM revyl_account").get()!;
   expect(Buffer.from(stored.sealed).includes(Buffer.from(GOOD))).toBe(false);
   expect(JSON.stringify(on)).not.toContain(GOOD);
   expect(JSON.stringify(await call(member, "revyl_get"))).not.toContain(GOOD);
 });
 
-test("test: a refused key reads invalid_key, masked; no revyl command reads no_cli with Revyl's install line", async () => {
-  const bad = await call(admin, "revyl_connect", { sealed: sealed(BAD) });
-  expect(bad.check).toMatchObject({ ok: false, reason: "invalid_key" });
-  expect(bad.check.message).toContain("Invalid API key");
-  expect(JSON.stringify(bad)).not.toContain(BAD);
+test("test: a hub with no revyl checks on a machine that has one, after one that hasn't, in the order of their ids", async () => {
+  // The hub's own machine has no revyl (a hosted hub): only the nodes run it.
   process.env.FLEETD_REVYL_BIN = `${s.bin}-missing`;
-  const missing = await call(admin, "revyl_test");
+  machine("box1");
+  machine("devbox", s.bin);
+  answering();
+  const on = await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
+  expect(on.check).toEqual({ at: expect.any(String), ok: true });
+  expect(s.lines()).toHaveLength(1);
+  const bad = await call(admin, "revyl_connect", { sealed: sealed(BAD) });
+  expect(bad.check).toMatchObject({ ok: false, reason: "invalid_key", message: expect.stringMatching(/^devbox: .*Invalid API key/) });
+  expect(JSON.stringify(bad)).not.toContain(BAD);
+});
+
+test("test: no machine with revyl reads no_cli, naming the machine to install it on; none online reads failed", async () => {
+  process.env.FLEETD_REVYL_BIN = `${s.bin}-missing`;
+  machine("box1");
+  machine("devbox");
+  addMachine(t.hub, "box3", { boxPubKey: KEY });
+  t.link.link("box3", ["revyl"]);
+  answering();
+  const missing = await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
   expect(missing.check).toMatchObject({ ok: false, reason: "no_cli" });
-  expect(missing.check.fix).toContain("https://revyl.com/install.sh");
+  expect(missing.check.message).toBe("No machine of the team's online has the revyl command (box1, devbox). No check from box3 (box3's node is not linked to the hub).");
+  expect(missing.check.fix).toStartWith("install Revyl's CLI on box1, and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh");
+  for (const id of ["box1", "devbox", "box3"]) t.link.unlink(id);
+  const none = await call(admin, "revyl_test");
+  expect(none.check).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("nowhere to test the key") });
+  expect(s.lines()).toEqual([]);
 });
 
 test("disconnect: the key and routes go, and every live Revyl screen ends at its node", async () => {
@@ -241,5 +296,6 @@ test("ours_only: the team's machines alone, and a full one puts agents in line, 
   t.hub.db.conn.query("DELETE FROM browser_sessions").run();
   expect((await route("android", "b")).error?.reason).toBe("queued");
   expect((await route("android", "a")).result).toEqual({ runner: "devbox", here: true });
-  expect(s.lines()).toEqual(["auth status key=set home=" + s.lines()[0]!.split("home=")[1]]);
+  // Neither the hub nor routing ran revyl: a check runs on a machine's node, and devbox's gave none here.
+  expect(s.lines()).toEqual([]);
 });

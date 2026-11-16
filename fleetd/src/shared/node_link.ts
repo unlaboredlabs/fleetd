@@ -237,7 +237,8 @@ export type NodeActionKind =
   | "claude_login"
   | "claude_login_code"
   | "hold"
-  | "screens";
+  | "screens"
+  | "revyl_check";
 
 /** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
@@ -251,6 +252,8 @@ export type NodeAction = {
   claude?: string;
   code?: string;
   screens?: unknown;
+  /** `revyl_check`: the team's Revyl key sealed to this node's box key (base64), for Settings' Test (hub/revyl). */
+  revyl?: string;
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
    * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores
@@ -272,6 +275,8 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
+  /** `revyl_check` that failed: why, as RevylCheck's `reason` (`no_cli` when this machine has no `revyl`). */
+  reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */
   steps?: number;
   hosts?: HostCheck[];

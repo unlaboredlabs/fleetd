@@ -1,15 +1,15 @@
 // The team's own Revyl account (W676): one API key per hub, which an admin's app seals to the hub's box key, and which
 // the hub keeps sealed under the vault's root key as it keeps a vault item (table `revyl_account`). It never leaves in
-// the clear: a check runs `revyl` here with it in that process's environment alone, and an agent's node gets it sealed
-// to its own box key for the Revyl screen it starts (`sealedTo`), never into the agent's session. Every use is logged,
+// the clear: a machine of the team's gets it sealed to its own box key (`sealedTo`) for the Revyl screen its node starts
+// and for a check of it (`test`), never into an agent's session; the hub never runs `revyl` itself. Every use is logged,
 // without the key. Each phone kind's route (ours_first, ours_only, revyl_only) says where agents' screens go
 // (machine_roles/calls.ts). No partner API, no billing: Revyl bills the team directly.
-import { join } from "node:path";
 import type { KnownRevylRoute, RevylCheck, RevylKind, RevylState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { failure, INSTALL, KINDS, mask, routeOf, tail } from "../../shared/revyl.ts";
+import type { NodeActionResult } from "../../shared/node_link.ts";
+import { CHECK_WAIT, INSTALL, KINDS, routeOf } from "../../shared/revyl.ts";
+import { CAP_REVYL } from "../../shared/screens_wire.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
-import { NoCli, runRevyl } from "../../node/revyl/cli.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import { boxKey } from "../hub_links/store.ts";
@@ -18,9 +18,6 @@ import { store } from "../store/hub_store.ts";
 import { openRawToHub } from "../vault/items.ts";
 import { vault } from "../vault/index.ts";
 import { keyIdOf, openItem, sealItem } from "../vault/crypto.ts";
-
-/** How long a check's `revyl auth status` may take. */
-export const CHECK_WAIT = 30_000;
 
 /** The key's envelope is bound to this row, as a vault item's is to its own. */
 const BINDING = { itemId: "revyl", kind: "revyl_key", scopeKey: "hub", version: 1 };
@@ -127,35 +124,78 @@ export async function sealedTo(hub: Hub, machineId: string, why: string): Promis
   return b64(seal(Buffer.from(to, "base64"), new TextEncoder().encode(key)));
 }
 
-/** Checks the key with a harmless `revyl auth status` on the hub's machine and keeps what it found. */
+/** How long the hub waits for a machine's check: the check's own wait, and a grace. */
+export const CHECK_REPLY_SEC = CHECK_WAIT / 1000 + 15;
+
+/**
+ * Checks the key where agents' Revyl screens run, and keeps what it found: on the team's machines online that drive
+ * them (CAP_REVYL), in the order of their ids, the first that has a `revyl` command asks Revyl about the key. The hub's
+ * own process never runs `revyl`: a hub that is also the team's machine (one self-hosted box) checks through its own
+ * node like any other, and a shared hosted hub, where no team can install Revyl's CLI, the same way.
+ */
 export async function test(hub: Hub): Promise<RevylState> {
-  const key = await keyOf(hub, "a check");
-  if (key === undefined) throw new ToolError("invalid", "No Revyl key is connected.", "connect one first");
+  if (!connected(hub)) throw new ToolError("invalid", "No Revyl key is connected.", "connect one first");
   const at = isoMs(hub.clock.now());
-  let check: RevylCheck;
-  try {
-    const run = await runRevyl(["auth", "status"], { key, home: join(hub.config.home, "revyl", "home"), timeoutMs: CHECK_WAIT });
-    if (run.exit === 0) check = { at, ok: true };
-    else if (run.timedOut) check = { at, ok: false, reason: "failed", message: "revyl auth status didn't answer within 30 seconds.", fix: "check this machine's network, then test again" };
-    else {
-      const reason = failure(run.out);
-      check = {
-        at,
-        ok: false,
-        reason,
-        message: tail(run.out) || `revyl auth status exited ${run.exit}.`,
-        fix:
-          reason === "invalid_key"
-            ? "Revyl refused the key: it may be wrong or expired. Make a new one in Revyl's dashboard (Settings › API Keys) and connect it again."
-            : "test again in a minute; if it keeps failing, run revyl doctor on the hub's machine",
-      };
+  const machines = store(hub)
+    .machinesList()
+    .filter((m) => link(hub).can(m.machineId, CAP_REVYL));
+  /** Machines that answered they have no `revyl`, and those that gave no check (offline, too old). */
+  const noCli: string[] = [];
+  const unanswered: string[] = [];
+  let check: RevylCheck | undefined;
+  for (const m of machines) {
+    let reply: NodeActionResult;
+    try {
+      const sealed = await sealedTo(hub, m.machineId, "a check");
+      reply = (await link(hub).request(m.machineId, { t: "node_action", id: "", action: "revyl_check", revyl: sealed }, { waitSec: CHECK_REPLY_SEC })) as unknown as NodeActionResult;
+    } catch (e) {
+      unanswered.push(`${m.name} (${(e as Error).message})`);
+      continue;
     }
-  } catch (e) {
-    check =
-      e instanceof NoCli
-        ? { at, ok: false, reason: "no_cli", message: "The hub's machine has no revyl command.", fix: `install Revyl's CLI on the hub's machine and on each machine whose agents get Revyl screens: ${INSTALL}` }
-        : { at, ok: false, reason: "failed", message: mask((e as Error).message, key) };
+    if (reply.ok) {
+      check = { at, ok: true };
+      break;
+    }
+    if (reply.reason === "no_cli") {
+      noCli.push(m.name);
+      continue;
+    }
+    if (reply.reason !== "invalid_key" && reply.reason !== "failed") {
+      unanswered.push(`${m.name} (${reply.message})`);
+      continue;
+    }
+    check = {
+      at,
+      ok: false,
+      reason: reply.reason,
+      message: `${m.name}: ${reply.message}`,
+      fix:
+        reply.reason === "invalid_key"
+          ? "Revyl refused the key: it may be wrong or expired. Make a new one in Revyl's dashboard (Settings › API Keys) and connect it again."
+          : `test again in a minute; if it keeps failing, run revyl doctor on ${m.name}`,
+    };
+    break;
   }
+  const others = unanswered.length > 0 ? ` No check from ${unanswered.join(", ")}.` : "";
+  check ??=
+    noCli.length > 0
+      ? {
+          at,
+          ok: false,
+          reason: "no_cli",
+          message: `No machine of the team's online has the revyl command (${noCli.join(", ")}).${others}`,
+          fix: `install Revyl's CLI on ${noCli[0]}, and on each machine whose agents get Revyl screens: ${INSTALL}`,
+        }
+      : {
+          at,
+          ok: false,
+          reason: "failed",
+          message:
+            machines.length === 0
+              ? "No machine of the team's that drives Revyl screens is online, so there is nowhere to test the key."
+              : `No machine of the team's could test the key.${others}`,
+          fix: "bring one of the team's machines online with an up-to-date fleetd, then test again",
+        };
   hub.db.conn.query("UPDATE revyl_account SET check_json = ?1 WHERE id = 1").run(JSON.stringify(check));
   return state(hub);
 }
