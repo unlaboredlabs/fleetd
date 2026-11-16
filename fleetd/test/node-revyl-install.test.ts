@@ -84,7 +84,7 @@ test("a node without revyl installs Revyl's CLI into its own folder, checked, an
   const bin = join(dir, VERSION, "revyl");
   expect(statSync(bin).mode & 0o777).toBe(0o755);
   expect(readdirSync(join(dir, VERSION))).toEqual(["revyl"]);
-  expect(c.s.lines()).toEqual([expect.stringMatching(/^device list --json key=set /)]);
+  expect(c.s.lines()).toEqual([expect.stringMatching(/^device history --json --limit 1 key=set /)]);
   // Installed once: the next Test runs it as it is.
   expect((await r.check(checkFrame())).ok).toBe(true);
   expect(c.hits).toHaveLength(1);
