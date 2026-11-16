@@ -219,12 +219,14 @@ download_draw() {
       on=""
       off=""
       i=0
+      # ${on}, not $on, before a non-ASCII character: macOS's sh, in a UTF-8 locale, reads ━'s first byte as part of a
+      # bare name ("on?: unbound variable"). The installer test refuses a bare one.
       while [ "$i" -lt "$fill" ]; do
-        on="$on━"
+        on="${on}━"
         i=$((i + 1))
       done
       while [ "$i" -lt "$barw" ]; do
-        off="$off━"
+        off="${off}━"
         i=$((i + 1))
       done
       bar="$(paint 32 "$on")$(paint 90 "$off")  "

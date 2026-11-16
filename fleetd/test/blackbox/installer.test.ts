@@ -3,7 +3,7 @@
 // outside a throwaway HOME. It needs no fleetd build: the join line is the CLI's own (src/cli/pair.ts).
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { joinLine } from "../../src/cli/pair.ts";
 import { tempHome } from "../helpers.ts";
@@ -143,6 +143,62 @@ test.skipIf(process.platform !== "linux" || !Bun.which("script"))("on a terminal
     const plain = await onTty(env);
     expect(plain, env).not.toContain("\x1b");
     expect(plain, env).toContain("✓  Download  the CLI");
+  }
+});
+
+// macOS's sh (bash 3.2 in POSIX mode), in a UTF-8 locale, counts a byte above 0x7f as a letter of a bare $name, so
+// `$on━` reads the variable `on\xe2` and `set -u` stops the install ("on?: unbound variable"). glibc's UTF-8 locales
+// don't, so this reads the script's text for one.
+test("no bare $name runs into a non-ASCII character", () => {
+  const bare = readFileSync(INSTALLER, "utf8")
+    .split("\n")
+    .flatMap((line, i) => (/\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]/u.test(line) ? [`site/install.sh:${i + 1}: ${line.trim()}`] : []));
+  expect(bare, "brace it: ${name}").toEqual([]);
+});
+
+// The download's progress bar under each sh there is: dash, busybox's, and bash as `sh` (POSIX mode, as macOS runs
+// it). Where localedef can make a Latin-1 locale, in it: there glibc counts 0xe2 as a letter, as macOS's UTF-8 locales
+// do, so a bare $name before ━ fails as it does on a Mac. A stand-in curl leaves half the file a moment, so a part-full
+// bar draws.
+test.skipIf(process.platform !== "linux" || !Bun.which("script"))("the download's bar draws under every sh", async () => {
+  const curl = Bun.which("curl")!;
+  const tools = release();
+  const bin = join(tools.dir, "bin");
+  mkdirSync(bin);
+  script(
+    join(bin, "curl"),
+    `${curl} "$@" || exit
+dest=""
+headers=""
+while [ $# -gt 0 ]; do
+  case "$1" in -o) dest="$2"; shift ;; -D) headers="$2"; shift ;; esac
+  shift
+done
+[ -n "$headers" ] && [ -n "$dest" ] || exit 0
+mv "$dest" "$dest.whole"
+head -c $(($(wc -c <"$dest.whole") / 2)) "$dest.whole" >"$dest"
+sleep 0.5
+mv "$dest.whole" "$dest"
+`,
+  );
+  let locale = "LC_ALL=C.UTF-8";
+  // localedef can warn, and exit non-zero, with a locale it made.
+  if (Bun.which("localedef")) Bun.spawnSync(["localedef", "-i", "en_US", "-f", "ISO-8859-1", join(tools.dir, "latin1")]);
+  if (existsSync(join(tools.dir, "latin1/LC_CTYPE"))) locale = `LOCPATH='${tools.dir}' LC_ALL=latin1`;
+  const shells = [Bun.which("dash"), Bun.which("busybox"), Bun.which("bash")].filter((s) => s !== null);
+  expect(shells.length).toBeGreaterThan(0);
+  for (const shell of shells) {
+    const r = release();
+    const sh = join(r.dir, "sh");
+    mkdirSync(sh);
+    symlinkSync(shell, join(sh, "sh"));
+    const out = await r.sh(
+      `PATH="${sh}:${bin}:$PATH" ${locale} TERM=xterm-256color NO_COLOR= CI= script -qec 'stty cols 100; sh "$INSTALLER" --no-init' /dev/null`,
+    );
+    expect(out.code, `${shell} (${locale}):\n${out.stdout}`).toBe(0);
+    expect(out.stdout, shell).toContain("\x1b[32m━");
+    expect(out.stdout, shell).toContain("\x1b[90m━");
+    expect(out.stdout, shell).toContain("Next, run");
   }
 });
 
