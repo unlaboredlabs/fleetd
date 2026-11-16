@@ -3,8 +3,8 @@
 // changes (the video, and the frames a person watches), and the action log, a line per `desktop` action and session
 // tool call as a browser session keeps it (node/browser/record.ts), each scrubbed of the session's secrets.
 //
-// A Mac screen session that doesn't hold the Mac's lease only observes: it reads the screen only while a person
-// watches it, and records no video meanwhile.
+// A Mac screen session that holds neither the Mac's lease nor an app's claim only observes: it reads the screen only
+// while a person watches it, and records no video meanwhile.
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
@@ -12,6 +12,8 @@ import { RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { Pacer } from "../browser/fit.ts";
 import { appendAction, files as recordedFiles, type Meta, scrubFile, type Steps, VideoSink, writeMeta } from "../browser/record.ts";
 import { Scrub } from "../mask.ts";
+import type { Target } from "./mac/agent_desktop.ts";
+import type { App } from "./mac/index.ts";
 import type { Launched, Lent, Screen } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
@@ -56,7 +58,7 @@ export type Opened = {
   ffmpeg?: string;
   /** Each session's latest step, for the heartbeat (the browsers' record.ts `Steps`). */
   steps?: Steps;
-  /** A Mac screen session that starts without the lease. */
+  /** A Mac screen session that starts holding neither the lease nor a claim. */
   observing?: boolean;
 };
 
@@ -66,7 +68,8 @@ export class Session {
   readonly cwd: string;
   readonly purpose: string;
   readonly kind: "linux_desktop" | "mac";
-  /** A Mac screen session without the lease: it only observes, and reads the screen only for a person watching it. */
+  /** A Mac screen session without the lease or a claim: it only observes, and reads the screen only for a person
+   * watching it. */
   private observingNow: boolean;
   readonly startedAt = new Date().toISOString();
   private readonly start = performance.now();
@@ -172,11 +175,9 @@ export class Session {
     return this.observingNow;
   }
 
-  /** Takes the Mac's lease (false) or gives it up (true), logged as a step. */
+  /** Starts recording, as it took the Mac's lease or a claim (false), or stops, holding neither any more (true). */
   setObserving(observing: boolean): void {
-    if (this.observingNow === observing) return;
     this.observingNow = observing;
-    this.logStep(observing ? "lease_lost" : "lease_taken", {}, true);
   }
 
   watched(): boolean {
@@ -347,6 +348,12 @@ export class Session {
       throw new Error("agent_desktop drives the agents' Mac's screen (session_start kind mac); on a Linux desktop use the other actions");
     }
     return { message: await this.lent.agentDesktop(call.text) };
+  }
+
+  /** The app an agent-desktop command names, as the Mac's claims know it; undefined where the session can't tell. */
+  async appOf(target: Target): Promise<App | undefined> {
+    if (!this.lent?.appOf) return undefined;
+    return this.lent.appOf(target);
   }
 
   /** Starts an app on the display. */

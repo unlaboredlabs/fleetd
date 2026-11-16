@@ -10,7 +10,8 @@
 // session call to the kind it is for (`router(node).desktops`).
 //
 // The agents' Mac's own screen is a session here too (`session_start` kind mac, desktop/mac/): on the screen the Mac's
-// node runs in rather than a display of its own, and leased to one session at a time.
+// node runs in rather than a display of its own, shared by several sessions at once: one claim per app for
+// agent-desktop's headless commands, and a lease, one holder at a time, for real pointer and key input.
 //
 // Each session is recorded as a browser session is (session.ts, node/browser/record.ts): its video, where an ffmpeg
 // is installed, and its action log, scrubbed of its agent session's secrets (for a session hosted here for an agent
@@ -33,7 +34,7 @@ import { image as pinnedImage, Runtime } from "./container.ts";
 import { type Backend, clearLeftovers, Pool, type Settings } from "./display.ts";
 import { onPath } from "./paths.ts";
 import { install as installAgentDesktop, macDir } from "./mac/agent_desktop.ts";
-import { type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE_MINUTES, MacLent, type MacConfig, macEnabled, observes } from "./mac/index.ts";
+import { type App, type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE_MINUTES, MacLent, type MacConfig, macEnabled, needs as macNeeds } from "./mac/index.ts";
 import { MacScreen } from "./mac/screen.ts";
 import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
@@ -244,8 +245,16 @@ export class Desktops implements Screens {
   capsNow: string[] = [];
   /** node.json's `mac`: the agents' Mac's screen, where this node lends it. */
   readonly mac: MacConfig;
-  /** The Mac screen session that holds the Mac's screen now. */
-  private lease: string | undefined;
+  /** The Mac screen session that holds the Mac's lease now (its pointer and keys), and when it last used it. It stays
+   * its holder's until the holder's session has ended, its last command included, or it goes unused IDLE_MINUTES. */
+  private lease: Session | undefined;
+  private leaseUsed = 0;
+  /** Each app claimed on the Mac's screen: the session that claimed it, the app's name as it gave it, and every name
+   * the app goes by (mac/index.ts `App`), more as they are learned. Kept until that session has ended, its last command
+   * included. */
+  private claims: { session: Session; name: string; keys: Set<string> }[] = [];
+  /** The clock the lease's idle time is read on (a test's own). */
+  clock: () => number = () => performance.now();
   /** What stands in the way of the Mac's screen now (mac/index.ts `blocked`; a test's own). */
   macGate: () => Blocked | undefined = macBlocked;
   /** The Mac's own screen, for a session to read and drive (a test's own). */
@@ -503,13 +512,14 @@ export class Desktops implements Screens {
     try {
       session.logStep("session_end", {}, true);
       const files = await session.close();
-      this.releaseLease(session.id);
       const note = session.note();
       // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
       await this.report(session, "uploading", new Date().toISOString());
       if (session.dir) void this.uploads.send(session.dir);
       return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
     } finally {
+      // Only now, its screen closed and its last agent-desktop command stopped: the lease and its claims go back.
+      this.release(session);
       this.ending.delete(session.id);
     }
   }
@@ -547,7 +557,7 @@ export class Desktops implements Screens {
         session.logStep("agent_resumed", {}, true);
         void this.report(session, "live");
     }
-    if (session.kind === "mac" && session.observing() && !observes(call)) await this.takeLease(session);
+    if (session.kind === "mac") await this.macAccess(session, call);
     try {
       return await session.act(call);
     } catch (e) {
@@ -569,17 +579,21 @@ export class Desktops implements Screens {
 
   /** Who holds the Mac's lease, in a line for the others; undefined while nobody does. */
   heldBy(): string | undefined {
-    const holder = this.lease === undefined ? undefined : this.byId(this.lease);
-    return holder ? this.describe(holder) : undefined;
+    return this.lease ? this.describe(this.lease) : undefined;
   }
 
-  /** The lease's holder `session`, in a line for the others. */
+  /** The apps claimed on the Mac's screen now, each with who holds it, in a line for the others. */
+  claimed(): { app: string; heldBy: string }[] {
+    return this.claims.map((c) => ({ app: c.name, heldBy: this.describe(c.session) }));
+  }
+
+  /** The lease's or a claim's holder `session`, in a line for the others. */
   private describe(session: Session): string {
     if (session.control() === "human") return `a person has taken it over ("${session.purpose}")`;
     return `another agent's session "${session.purpose}" holds it (idle ${Math.floor(session.idleFor() / 60_000)} min; it ends after ${MAC_IDLE_MINUTES} min idle)`;
   }
 
-  /** `session_start` kind mac: the Mac's screen, leased to this session if nobody holds it, else observed. */
+  /** `session_start` kind mac: the Mac's screen, shared; the session holds nothing until an action needs it. */
   async macStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
     if (!macEnabled(this.mac)) {
       throw new ToolError(
@@ -605,7 +619,8 @@ export class Desktops implements Screens {
     return this.openMac(thread, cwd, purpose, screen, agentDesktop);
   }
 
-  /** Opens a Mac screen session on `screen`, holding the lease if nobody does, else observing. */
+  /** Opens a Mac screen session on `screen`. It holds neither the lease nor a claim yet, so it observes until its first
+   * action that needs one; the answer says who holds the lease now, and which apps are claimed. */
   async openMac(thread: string, cwd: string, purpose: string, screen: Screen, agentDesktop: string | Error): Promise<Record<string, unknown>> {
     if (this.starting.has(thread) || this.sessions.has(thread)) {
       throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
@@ -624,50 +639,121 @@ export class Desktops implements Screens {
       await lent.drop();
       throw e;
     }
-    // A holder whose session is gone holds nothing.
     const heldBy = this.heldBy();
-    const session = new Session(lent, screen, { id, thread, cwd, purpose, secrets, kind: "mac", observing: heldBy !== undefined, ...this.recording(id) });
-    if (heldBy === undefined) this.lease = id;
+    const claimed = this.claimed().map((c) => c.app);
+    const session = new Session(lent, screen, { id, thread, cwd, purpose, secrets, kind: "mac", observing: true, ...this.recording(id) });
     this.sessions.set(thread, session);
     session.open();
-    session.logStep("session_start", { purpose, kind: "mac", observing: heldBy !== undefined }, true, heldBy);
+    session.logStep("session_start", { purpose, kind: "mac" }, true, heldBy);
     void this.report(session, "live");
-    return { sessionId: id, desktop: "mac", ...(heldBy ? { heldBy: heldBy.slice(0, 300) } : {}), startMs: session.offsetMs() };
+    return {
+      sessionId: id,
+      desktop: "mac",
+      ...(heldBy ? { heldBy: heldBy.slice(0, 300) } : {}),
+      ...(claimed.length ? { claimed: claimed.slice(0, 20) } : {}),
+      startMs: session.offsetMs(),
+    };
   }
 
-  /** Before an action of an observing session that acts on the screen: takes the lease if nobody holds it, else
-   * refuses with who does. */
-  private async takeLease(session: Session): Promise<void> {
-    const heldElsewhere = () => this.lease !== undefined && this.lease !== session.id && this.byId(this.lease) !== undefined;
-    if (heldElsewhere()) {
+  /** Before a Mac screen session's action: nothing for a read; a claim on the app it names for a headless command; the
+   * lease (and a claim on its app, where it names one) for anything else. Refused while a person drives any Mac screen
+   * session, while another session holds what it needs, or while the screen can't be lent. */
+  private async macAccess(session: Session, call: DesktopCall): Promise<void> {
+    const need = macNeeds(call);
+    if (need.needs === "read") return;
+    this.personDriving(session);
+    let app: App | undefined;
+    if (need.target) {
+      try {
+        app = await session.appOf(need.target);
+      } catch {}
+      if (this.sessions.get(session.thread) !== session) throw new ToolError("not_found", "No desktop session is open.", "start one with session_start kind mac");
+      this.personDriving(session);
+    }
+    // A command whose app the session can't tell (a ref from a snapshot it never saw) can't be claimed: it needs the
+    // lease, as anything not known to be headless does.
+    const lease = need.needs === "lease" || app === undefined;
+    const claim = app ? this.claims.find((c) => app.keys.some((k) => c.keys.has(k))) : undefined;
+    if (app && claim && claim.session !== session) {
       throw new ToolError(
         "invalid",
-        `The Mac's screen is someone else's now: ${this.heldBy() ?? "another session holds it"}. You can observe it meanwhile: screenshot, cursor_position, wait and agent-desktop's reading commands (snapshot, find, get, is, list-apps).`,
-        "carry on with what you can without it and try again later; once it's free, your next action takes it",
+        `${app.name} is another session's on the Mac now: ${this.describe(claim.session)}. Its claim lasts until that session ends. You can still read ${app.name} (snapshot, find, get, is), and work on any other app meanwhile.`,
+        "carry on with another app or without it, and try again later",
       );
     }
+    if (lease) this.takeLease(session);
+    if (app && !claim) {
+      // The lease checked the screen already; a claim alone checks it now.
+      if (!lease) this.gate();
+      this.claims.push({ session, name: app.name, keys: new Set(app.keys) });
+      session.logStep("app_claimed", { app: app.name }, true);
+      session.setObserving(false);
+    }
+    // Its own claim learns the names the app goes by now: one made by name before the app ran matches its bundle id.
+    if (app && claim) for (const key of app.keys) claim.keys.add(key);
+  }
+
+  /** Refuses while a person drives a Mac screen session other than `session`: their takeover takes the whole screen,
+   * every agent's lease and claims included, for as long as they drive. */
+  private personDriving(session: Session): void {
+    for (const other of this.sessions.values()) {
+      if (other !== session && other.kind === "mac" && other.control() === "human") {
+        throw new ToolError(
+          "invalid",
+          `The Mac's screen is a person's for now: a person has taken it over ("${other.purpose}"). Until they hand it back, every agent only observes it: screenshot, cursor_position, wait and agent-desktop's reading commands (snapshot, find, get, is, list-apps).`,
+          "carry on with what you can without it and try again later; once they're done, take a screenshot first: they may have changed things",
+        );
+      }
+    }
+  }
+
+  /** Throws what stands in the way of the Mac's screen now, if anything does. */
+  private gate(): void {
     const gate = this.macGate();
     if (gate) {
       throw new ToolError("failed", `The Mac's screen can't be lent now: ${gate.message}.`, "say so in your result, with what a person must do at the Mac");
     }
-    if (heldElsewhere()) {
-      throw new ToolError("invalid", "Another session took the Mac's screen just now.", "carry on with what you can without it and try again later");
+  }
+
+  /** Before an action of `session` that needs the lease: takes it if nobody holds it, else refuses with who does. */
+  private takeLease(session: Session): void {
+    if (this.lease === session) {
+      this.leaseUsed = this.clock();
+      return;
     }
-    this.lease = session.id;
+    if (this.lease) {
+      throw new ToolError(
+        "invalid",
+        `The Mac's pointer and keys are someone else's now: ${this.heldBy()}. You can observe meanwhile (screenshot, cursor_position, wait and agent-desktop's reading commands: snapshot, find, get, is, list-apps), and agent-desktop's headless commands on an app no other session has claimed need no lease (click, type, set-value, ... on a ref; press with --app).`,
+        "carry on with what you can without it and try again later; once it's free, your next action takes it",
+      );
+    }
+    this.gate();
+    this.lease = session;
+    this.leaseUsed = this.clock();
+    session.logStep("lease_taken", {}, true);
     session.setObserving(false);
   }
 
   /** A person takes a Mac screen session over: the lease is theirs through it, and whoever held it only observes. */
   private personTakesLease(session: Session): void {
     const before = this.lease;
-    this.lease = session.id;
-    if (before !== undefined && before !== session.id) this.byId(before)?.setObserving(true);
+    this.lease = session;
+    this.leaseUsed = this.clock();
+    if (before && before !== session) this.lostLease(before, "a person took the Mac's screen over");
     session.setObserving(false);
   }
 
-  /** A session ended: the lease is free if it held it. */
-  private releaseLease(id: string): void {
-    if (this.lease === id) this.lease = undefined;
+  /** `session` no longer holds the lease: it records only while it still holds a claim. */
+  private lostLease(session: Session, why: string, log = true): void {
+    if (log) session.logStep("lease_lost", { why }, true);
+    if (!this.claims.some((c) => c.session === session)) session.setObserving(true);
+  }
+
+  /** A session ended: the lease, if it held it, and its claims go back. */
+  private release(session: Session): void {
+    if (this.lease === session) this.lease = undefined;
+    this.claims = this.claims.filter((c) => c.session !== session);
   }
 
   /** The hub's live view for one of these sessions: false when the id isn't one of these. */
@@ -717,10 +803,16 @@ export class Desktops implements Screens {
     void this.close(session);
   }
 
-  /** Ends sessions idle past the limit. */
+  /** Ends sessions idle past the limit, and gives back a lease unused that long. */
   async housekeep(): Promise<void> {
     const linux = 60_000 * IDLE_MINUTES;
     const mac = 60_000 * MAC_IDLE_MINUTES;
+    const holder = this.lease;
+    if (holder && holder.control() === "agent" && this.clock() - this.leaseUsed >= mac) {
+      this.lease = undefined;
+      // Not a step: one would count as the session's action and keep it from ending idle.
+      this.lostLease(holder, "unused", false);
+    }
     for (const [thread, session] of [...this.sessions]) {
       if (session.idleFor() >= (session.kind === "mac" ? mac : linux) && session.control() === "agent") {
         console.info(`desktop session ${session.id} idle; ending it`);

@@ -194,8 +194,8 @@ A machine whose node is older starts leads the old way, and its projects take no
 
 ## The agents' Mac's screen {#mac-screen}
 
-The [agents' Mac](/docs/browser-sessions#mac) lends the desktop of the account its node runs in to one agent at a
-time: yours, when it joined from your account (an administrator's included), or a [user of its
+The [agents' Mac](/docs/browser-sessions#mac) lends the desktop of the account its node runs in to agents, one per app
+and one at a time for pointer and keys: yours, when it joined from your account (an administrator's included), or a [user of its
 own](/docs/agents-mac#own-user), which keeps agents out of your files and logins.
 
 | Rule | Detail |

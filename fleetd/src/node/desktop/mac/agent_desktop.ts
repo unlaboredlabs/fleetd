@@ -145,9 +145,62 @@ const OBSERVING = new Set([
   "list-apps", "list-windows", "list-displays", "list-surfaces", "list-notifications",
 ]);
 
-/** One command, checked before it runs: its arguments, whether it only observes, and whether it launches with `--cdp`
- * (the node closes that app when the session ends). */
-export type Command = { args: string[]; observing: boolean; cdp: boolean };
+/** The commands that act on a ref through the accessibility API, headless (no pointer, no focus) unless `--headed`:
+ * agent-desktop 1.1.0's "Act on a ref" group, less double-click and triple-click, which are physical gestures. Their
+ * app is the one the ref's snapshot read. */
+const HEADLESS_REF = new Set([
+  "click", "right-click", "type", "set-value", "clear", "focus", "select", "toggle", "check", "uncheck", "expand",
+  "collapse", "scroll", "scroll-to",
+]);
+
+/** The commands that are headless only when they name their app: `press --app` posts its keys to that app (unscoped,
+ * it goes to whatever is in front), `launch <app>` and `close-app <app>` name it as their first word. */
+const HEADLESS_APP_FLAG = new Set(["press"]);
+const HEADLESS_APP_WORD = new Set(["launch", "close-app"]);
+
+/** What a command needs before it runs: nothing (`read`: it only reads), a claim on the app it names (`app`: it acts
+ * on that app alone, headless), or the Mac's lease (`lease`: real pointer or keys, focus, or anything not known to be
+ * headless), with a claim on its app too where it names one. */
+export type Needs = "read" | "app" | "lease";
+
+/** The app a command names: by name or bundle id (`--app`, or its first word), or by a ref's snapshot (`@s8f3k2p9:e12`
+ * is snapshot `s8f3k2p9`'s), which the session saw read one app. */
+export type Target = { app?: string; snapshot?: string };
+
+/** One command, checked before it runs: its arguments, whether it only observes, whether it launches with `--cdp`
+ * (the node closes that app when the session ends), what it needs, and the app it names. */
+export type Command = { args: string[]; observing: boolean; cdp: boolean; needs: Needs; target?: Target };
+
+/** The snapshot of a ref (`@s8f3k2p9:e12`); undefined for anything else. */
+export const refSnapshot = (word: string) => /^@(s[A-Za-z0-9]+):e\d+$/.exec(word)?.[1];
+
+/** What `args` needs, and the app it names. */
+function needsOf(args: string[]): { needs: Needs; target?: Target } {
+  const name = args[0]!;
+  const has = (flag: string) => args.some((a) => a === flag || a.startsWith(`${flag}=`));
+  const value = (flag: string) => {
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === flag) return args[i + 1];
+      if (args[i]!.startsWith(`${flag}=`)) return args[i]!.slice(flag.length + 1);
+    }
+    return undefined;
+  };
+  const app = value("--app");
+  const snapshot = args.slice(1).map(refSnapshot).find((s) => s !== undefined);
+  const target = app || snapshot ? { ...(app ? { app } : {}), ...(snapshot ? { snapshot } : {}) } : undefined;
+  const lease = { needs: "lease" as const, ...(target ? { target } : {}) };
+  if (has("--headed")) return lease;
+  if (OBSERVING.has(name)) return name === "permissions" && (has("--request") || has("--guide")) ? lease : { needs: "read" };
+  if (HEADLESS_REF.has(name)) return snapshot || app ? { needs: "app", target: target! } : lease;
+  if (HEADLESS_APP_FLAG.has(name)) return app ? { needs: "app", target: { app } } : lease;
+  if (HEADLESS_APP_WORD.has(name)) {
+    const word = args[1];
+    // `launch --activate` brings the app to the front.
+    if (word === undefined || word.startsWith("-") || has("--activate")) return lease;
+    return { needs: "app", target: { app: word } };
+  }
+  return lease;
+}
 
 /** `text` as one agent-desktop command; throws why the node won't run it. */
 export function command(text: string): Command {
@@ -165,8 +218,36 @@ export function command(text: string): Command {
   if (name === "batch" && text.includes("cdp")) {
     throw new Error("run `launch <app> --cdp` on its own, not in a batch, so the node can close the app when your session ends");
   }
-  const observing = OBSERVING.has(name) && !(name === "permissions" && (has("--request") || has("--guide")));
-  return { args, observing, cdp };
+  const needs = needsOf(args);
+  return { args, observing: needs.needs === "read", cdp, ...needs };
+}
+
+/** The app a snapshot read, from a command's JSON answer (`data.snapshot_id` with `data.app`): undefined for any other
+ * answer. */
+export function snapshotApp(output: string): [snapshot: string, app: string] | undefined {
+  try {
+    const data = (JSON.parse(output.trim()) as { ok?: unknown; data?: { snapshot_id?: unknown; app?: unknown } }).data;
+    return typeof data?.snapshot_id === "string" && typeof data.app === "string" && data.app ? [data.snapshot_id, data.app] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** App `name` (its display name or its bundle id, any case) in `list-apps`'s JSON answer, with its display name and
+ * bundle id; undefined when it isn't running, or the answer can't be read. */
+export function listedApp(output: string, name: string): { name: string; bundle: string } | undefined {
+  try {
+    const data = (JSON.parse(output.trim()) as { data?: unknown }).data;
+    const apps = Array.isArray(data) ? data : (data as { apps?: unknown } | undefined)?.apps;
+    if (!Array.isArray(apps)) return undefined;
+    const want = name.toLowerCase();
+    for (const app of apps as { name?: unknown; bundle_id?: unknown }[]) {
+      if (typeof app?.bundle_id !== "string" || !app.bundle_id) continue;
+      const shown = typeof app.name === "string" ? app.name : "";
+      if (app.bundle_id.toLowerCase() === want || shown.toLowerCase() === want) return { name: shown || app.bundle_id, bundle: app.bundle_id };
+    }
+  } catch {}
+  return undefined;
 }
 
 /** The pid of the app a `launch --cdp` started, from its JSON answer (`data.pid`, with `data.cdp` set). */
@@ -199,9 +280,17 @@ export function answer(stdout: string, stderr: string, code: number | undefined)
   return text;
 }
 
-/** Runs one command with the session's own agent-desktop home, at most COMMAND_TIMEOUT: its exit code (undefined when
- * it was stopped), what it printed and what it said on stderr. */
-export async function run(bin: string, sessionHome: string, args: string[], timeoutMs = COMMAND_TIMEOUT): Promise<{ code?: number; stdout: string; stderr: string }> {
+/** Runs one command with the session's own agent-desktop home, at most COMMAND_TIMEOUT, and stopped as soon as `stop`
+ * aborts: its exit code (undefined when it was stopped), what it printed and what it said on stderr. It answers only
+ * once the command's process has exited. */
+export async function run(
+  bin: string,
+  sessionHome: string,
+  args: string[],
+  timeoutMs = COMMAND_TIMEOUT,
+  stop?: AbortSignal,
+): Promise<{ code?: number; stdout: string; stderr: string }> {
+  if (stop?.aborted) throw new Error("the session has ended");
   try {
     mkdirSync(sessionHome, { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -221,11 +310,14 @@ export async function run(bin: string, sessionHome: string, args: string[], time
     throw new Error(`cannot run agent-desktop: ${(e as Error).message}`);
   }
   let stopped = false;
-  const timer = setTimeout(() => {
+  const kill = () => {
     stopped = true;
     proc.kill("SIGKILL");
-  }, timeoutMs);
+  };
+  const timer = setTimeout(kill, timeoutMs);
+  stop?.addEventListener("abort", kill);
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   clearTimeout(timer);
+  stop?.removeEventListener("abort", kill);
   return { ...(stopped || code === null ? {} : { code }), stdout, stderr };
 }

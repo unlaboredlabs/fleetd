@@ -4,6 +4,8 @@
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
+import type { Target } from "./mac/agent_desktop.ts";
+import type { App } from "./mac/index.ts";
 
 /** One read of the screen: its pixels as the screen gives them, at its size then. */
 export type Raw = { data: Uint8Array; width: number; height: number };
@@ -87,6 +89,8 @@ export interface Lent {
   launch(command: string, cwd: string): Promise<Launched>;
   /** One agent-desktop command (its arguments, the command first), and what it printed: the agents' Mac's only. */
   agentDesktop?(args: string): Promise<string>;
+  /** The app an agent-desktop command names, as the Mac's app claims know it: the agents' Mac's only. */
+  appOf?(target: Target): Promise<App | undefined>;
   /** Throws it away with everything on it. */
   drop(): Promise<void>;
 }

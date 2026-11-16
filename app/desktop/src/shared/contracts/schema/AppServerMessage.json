@@ -2358,7 +2358,7 @@
         },
         {
           "const": "mac",
-          "description": "The agents' Mac's own screen: its `agents` user's GUI session, on the console and unlocked, one agent at a time.",
+          "description": "The agents' Mac's own screen: its `agents` user's GUI session, on the console and unlocked, shared: one agent per app, and one at a time for pointer and keys.",
           "type": "string"
         }
       ],
