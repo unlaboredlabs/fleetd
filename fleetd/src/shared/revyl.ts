@@ -76,6 +76,7 @@ const OWN_FLAGS = new Set(["-s", "--session-id", "--all", "--api-key", "--target
  */
 export function refusal(argv: string[]): string | undefined {
   const [cmd, sub] = argv;
+  if (argv.includes("--")) return "fleetd adds your screen's session to each command, so a revyl command here takes no `--`.";
   const flag = argv.find((a) => OWN_FLAGS.has(a.split("=")[0]!));
   if (flag) {
     if (flag.startsWith("--target") || flag.startsWith("--intent")) {

@@ -108,6 +108,7 @@ test("an agent's revyl commands: coordinates and reads only; no AI targets, remo
   expect(refusal(["feedback", "--type", "bug", "x"])).toContain("never send feedback");
   expect(refusal(["auth", "login"])).toContain("billing is the team's own");
   expect(refusal(["test", "run"])).toContain("isn't one fleetd runs");
+  expect(refusal(["device", "tap", "--", "--x", "1"])).toContain("takes no `--`");
   expect(mask(`key ${GOOD} and rvl_other_123456`, GOOD)).toBe("key rvl_… and rvl_…");
 });
 
@@ -150,6 +151,38 @@ function fleet(opts: { androidLive?: number; sims?: { inUse: number; budget: num
 }
 
 const route = (kind: string, thread?: string) => t.calls.call(agent("devbox", "p1", "T3"), start(kind, thread)) as Promise<{ result?: any; error?: any }>;
+
+/** box2 hosts Android for other machines' agents, with `free` slots open. */
+function box2(free: number) {
+  addMachine(t.hub, "box2", { boxPubKey: KEY });
+  addProject(t.hub, "box2", "p2");
+  t.link.link("box2", ["browser", "session_seal", "session_host", "revyl"]);
+  t.link.deliver("box2", hb([androidReady]) as never);
+  t.hub.db.conn.query("INSERT INTO machine_roles (machine_id, agents, sessions, max_sessions) VALUES ('box2', 1, 1, ?)").run(free);
+}
+
+test("Android's ours is every team machine today's placement may use, not the agent's own alone", async () => {
+  fleet({ androidLive: 1 });
+  box2(4);
+  const elsewhere = { runner: "box2", here: false, sealTo: KEY };
+  expect((await route("android")).result).toEqual(elsewhere);
+  await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
+  expect((await route("android", "t2")).result).toEqual(elsewhere);
+  await call(admin, "revyl_route_set", { kind: "android", route: "ours_only" });
+  expect((await route("android", "t3")).result).toEqual(elsewhere);
+});
+
+test("the line is per pool of slots: an agent whose own machine has room never waits behind one waiting elsewhere", async () => {
+  fleet({ androidLive: 1 });
+  box2(4);
+  // Starts stay on their agent's machine: each agent's pool is its own machine.
+  t.hub.db.conn.query("INSERT INTO machine_roles_settings (key, value) VALUES ('remote', 0)").run();
+  await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
+  await call(admin, "revyl_route_set", { kind: "android", route: "ours_only" });
+  expect((await route("android", "a")).error?.reason).toBe("queued");
+  const theirs = (await t.calls.call(agent("box2", "p2", "T4"), start("android", "b"))) as { result?: unknown };
+  expect(theirs.result).toEqual({ runner: "box2", here: true });
+});
 
 test("no key: phone starts go exactly as today", async () => {
   fleet({ androidLive: 1 });

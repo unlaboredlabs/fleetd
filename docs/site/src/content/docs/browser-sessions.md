@@ -441,8 +441,8 @@ doesn't ship it.
 
 | Route | Where an agent's phone comes from |
 |---|---|
-| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the agent's own machine while it has a free screen slot; an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
-| Our machines only | As with no key. When the agent's machine is full, the agent waits in line for it, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
+| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the team's machines while one that may take it has a free screen slot, as with no key; an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
+| Our machines only | As with no key, but when every machine that may take it is full, the agent waits in line for the next free slot, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
 | Revyl only | Every phone of that kind is Revyl's. |
 
 The rule is fixed, never a guess from load: a slot is free or it isn't. When Revyl's own sessions are all in use,
@@ -453,7 +453,8 @@ Revyl holds the start in its queue until one frees. With no key connected nothin
 after a screenshot (`revyl device screenshot --out shot.png`, `revyl device tap --x 120 --y 300`, swipe, type, key),
 installs its own build with `revyl build upload --file <.app or .apk>`, and ends it with `session_end`. The `revyl`
 on its PATH is fleetd's: the node runs Revyl's CLI with the team's key in that one process, so the agent never holds
-the key. Revyl's AI-driven actions (`--target`), remote builds, tests, `revyl feedback` and anything about billing
+the key. Agents run as the node's own user, though, so this keeps the key out of their commands and output, not out
+of reach of a process that goes looking for it on the machine. Revyl's AI-driven actions (`--target`), remote builds, tests, `revyl feedback` and anything about billing
 are refused. When Revyl refuses over the team's plan or billing, the agent doesn't retry or work around it; it says
 so in its result.
 
