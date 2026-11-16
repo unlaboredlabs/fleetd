@@ -161,13 +161,13 @@ function box2(free: number) {
   t.hub.db.conn.query("INSERT INTO machine_roles (machine_id, agents, sessions, max_sessions) VALUES ('box2', 1, 1, ?)").run(free);
 }
 
-test("Android's ours is every team machine today's placement may use, not the agent's own alone", async () => {
+test("Android: ours_first counts only the agent's own machine (its node refuses one elsewhere); ours_only places as today", async () => {
   fleet({ androidLive: 1 });
   box2(4);
   const elsewhere = { runner: "box2", here: false, sealTo: KEY };
   expect((await route("android")).result).toEqual(elsewhere);
   await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
-  expect((await route("android", "t2")).result).toEqual(elsewhere);
+  expect((await route("android", "t2")).result).toMatchObject({ runner: "devbox", here: true, revyl: { platform: "android", why: "devbox's screen slots are full (1 of 1), so this one is Revyl's" } });
   await call(admin, "revyl_route_set", { kind: "android", route: "ours_only" });
   expect((await route("android", "t3")).result).toEqual(elsewhere);
 });

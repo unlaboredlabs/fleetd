@@ -441,7 +441,7 @@ doesn't ship it.
 
 | Route | Where an agent's phone comes from |
 |---|---|
-| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the team's machines while one that may take it has a free screen slot, as with no key; an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
+| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the agent's own machine while it has a free screen slot (an emulator on another machine is one the agent can't drive yet); an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
 | Our machines only | As with no key, but when every machine that may take it is full, the agent waits in line for the next free slot, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
 | Revyl only | Every phone of that kind is Revyl's. |
 

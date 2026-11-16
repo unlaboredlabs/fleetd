@@ -1,7 +1,8 @@
 // Where an agent's phone screen goes once the team connected its Revyl key (machine_roles/calls.ts asks): its kind's
-// route (shared/revyl.ts `choose`) over how the team's own machines stand now. For an Android emulator "ours" is what
-// today's placement (`place`) may use: the agent's own machine, and the team's other machines when its start may go
-// elsewhere; an iOS simulator is the agents' Mac's (`mac sim start`), and the Mac's heartbeat says how many of its
+// route (shared/revyl.ts `choose`) over how the team's own machines stand now. For an Android emulator with ours_first,
+// "ours" is the agent's own machine: its node refuses one placed elsewhere. With ours_only it is what today's placement
+// (`place`) may use: the agent's own machine, and the team's other machines when its start may go elsewhere. An iOS
+// simulator is the agents' Mac's (`mac sim start`), and the Mac's heartbeat says how many of its
 // simulators are held and how many agents wait. With ours_only, an Android start waits in line, first come first
 // served, while all of those are full; Revyl's own queue holds a start while the team's Revyl sessions are all in use.
 // With no key nothing here runs: today's placement does.
@@ -80,7 +81,10 @@ export async function routePhone(
 ): Promise<SessionRouteResult | undefined> {
   if (!connected(hub)) return undefined;
   const route = routeFor(hub, kind);
-  const [ours, why] = kind === "android" ? android(origin, all, remote) : ios(hub);
+  // ours_first counts only what can really give this agent the screen: an Android emulator on another machine is one
+  // its node refuses (agent-device drives one over adb, which crosses no machine; node/session_route), so the agent's
+  // own machine is all the capacity it has. ours_only (and no key) place as today does.
+  const [ours, why] = kind === "android" ? android(origin, all, route === "ours_first" ? false : remote) : ios(hub);
   const pool = remote ? `${kind}` : `${kind}@${origin}`;
   // A node that can't drive Revyl screens gets the team's machines, as before the key; refused when only Revyl may serve.
   const canRevyl = link(hub).can(origin, CAP_REVYL);
