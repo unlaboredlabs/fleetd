@@ -275,7 +275,10 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
-  /** `revyl_check` that failed: why, as RevylCheck's `reason` (`no_cli` when this machine has no `revyl`). */
+  /**
+   * `revyl_check` that failed: why, as RevylCheck's `reason` (`no_cli` when this machine has no `revyl` and couldn't
+   * install it, `message` saying why).
+   */
   reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */
   steps?: number;

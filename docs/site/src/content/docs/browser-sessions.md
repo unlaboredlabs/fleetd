@@ -429,15 +429,18 @@ bills the team directly; fleetd charges nothing for it and holds no Revyl accoun
 Screens**, an admin pastes it into the **Revyl** row's sealed field and presses Test. The app seals the key to the
 hub, which keeps it sealed as it keeps [vault](/docs/vault) values: it is never shown again, logged or given to an
 agent, and each use is logged without it. Test runs where agents' Revyl screens run: the hub sends the key sealed
-to the team's machines online, in the order of their ids, and the first with a `revyl` command asks Revyl about it
-(`revyl device history`, which only Revyl's server answers and which starts nothing). The hub never runs `revyl` itself, so a hosted hub tests the same way,
-and on a single self-hosted box its own machine runs it. A key Revyl refuses (wrong or expired) reads as such, and
-when no machine online has `revyl`, Test names the one to install it on. Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
+to the team's machines online, in the order of their ids, and the first that has or installs Revyl's CLI asks Revyl
+about it (`revyl device history`, which only Revyl's server answers and which starts nothing). The hub never runs
+`revyl` itself, so a hosted hub tests the same way, and on a single self-hosted box its own machine runs it. A key
+Revyl refuses (wrong or expired) reads as such, and when no machine online could install Revyl's CLI, Test says why
+(no network, an unsupported platform). Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
 MCP clients use `revyl_get`, `revyl_connect`, `revyl_test`, `revyl_disconnect` and `revyl_route_set`.
 
-**Install Revyl's CLI** on each machine whose agents may get Revyl screens, from Revyl:
-`curl -fsSL https://revyl.com/install.sh | sh` (or `brew install RevylAI/tap/revyl`, or `pip install revyl`). fleetd
-doesn't ship it.
+**Revyl's CLI installs itself.** A machine that needs `revyl` (a Test, or an agent's Revyl screen) uses the one on
+its `PATH` or in `~/.revyl/bin`; with none, its node downloads Revyl's release binary for the machine (macOS or
+Linux, x64 or arm64) from Revyl's GitHub releases, checks it against the checksum fleetd pins for that version, and
+keeps it in `~/.fleetd/node/revyl/cli`: no script, no sudo, nothing system-wide. The first Test there takes a little
+longer. fleetd's builds don't ship it.
 
 **Route each kind.** Under the Revyl row, iOS simulator and Android each have one choice:
 

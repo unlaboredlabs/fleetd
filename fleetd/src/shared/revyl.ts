@@ -7,8 +7,8 @@ import type { KnownRevylCheckReason, KnownRevylRoute, RevylKind } from "./contra
 export const ROUTES: readonly KnownRevylRoute[] = ["ours_first", "ours_only", "revyl_only"];
 export const KINDS: readonly RevylKind[] = ["ios", "android"];
 
-/** How to install Revyl's CLI, from Revyl's own channel: fleetd ships no copy of it. */
-export const INSTALL = "curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
+/** How long a node may take to download Revyl's CLI the first time it needs it (node/revyl/install.ts). */
+export const INSTALL_WAIT = 120_000;
 
 /** How long Settings' Test of the key may take on a machine (`revyl device list`). */
 export const CHECK_WAIT = 30_000;

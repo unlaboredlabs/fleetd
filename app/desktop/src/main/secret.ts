@@ -63,17 +63,20 @@ export const submitHubLink = async (
   return call("hub_link_add", { project: request.project, label: request.label, url: request.url, sealed: sealed.sealed });
 };
 
+/** How long revyl_connect may take: its first check may install Revyl's CLI on the machine it runs on first. */
+export const REVYL_CONNECT_TIMEOUT_MS = 180_000;
+
 /**
  * The team's own Revyl key: trimmed, sealed as `{"key":…}` to the hub's own key (revyl_get's boxPubKey), then
  * revyl_connect, whose answer has the hub's first check of it.
  */
 export const submitRevylKey = async (
   request: RevylKeyRequest,
-  call: (tool: "revyl_connect", input: ToolInput<"revyl_connect">) => Promise<CallOutcome>,
+  call: (tool: "revyl_connect", input: ToolInput<"revyl_connect">, timeoutMs?: number) => Promise<CallOutcome>,
 ): Promise<CallOutcome> => {
   const sealed = await seal(request.boxPubKey, JSON.stringify({ key: request.key.trim() }));
   if (!sealed.ok) return sealed;
-  return call("revyl_connect", { sealed: sealed.sealed });
+  return call("revyl_connect", { sealed: sealed.sealed }, REVYL_CONNECT_TIMEOUT_MS);
 };
 
 /**

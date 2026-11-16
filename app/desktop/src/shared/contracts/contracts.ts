@@ -7032,7 +7032,7 @@ export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
 /**
  * Why a Revyl key's last check failed, as a word the app acts on: `invalid_key` (Revyl refused it: wrong, revoked or
- * expired), `no_cli` (the hub's machine has no `revyl` command; `fix` says how to install it from Revyl), `failed`
+ * expired), `no_cli` (no machine could install Revyl's CLI; `message` says why), `failed`
  * (anything else: the network, Revyl down).
  */
 export type KnownRevylCheckReason = "invalid_key" | "no_cli" | "failed";
@@ -7042,7 +7042,7 @@ export type RevylCheckReason = KnownRevylCheckReason | (string & {});
 /** The last check of the team's Revyl key (`revyl_connect`, `revyl_test`): never the key, nor any part of it. */
 export type RevylCheck = {
   at: Timestamp;
-  /** What to do about a failed check, in plain words (an install command for `no_cli`). */
+  /** What to do about a failed check, in plain words. */
   fix?: string;
   /** What failed, in plain words, with the key masked. Absent while it works. */
   message?: string;
