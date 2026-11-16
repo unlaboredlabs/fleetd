@@ -332,7 +332,9 @@ export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's s
                                    line, about 90 s") and returns once yours is booted, so run it with your longest
                                    timeout; cut off, run it again within 2 minutes to keep your place. --no-wait
                                    says why there is none instead. From then on agent-device drives it, running on
-                                   the Mac (its files land in your folder there: mac pull them). In
+                                   the Mac (its files land in your folder there: mac pull them). It is your screen:
+                                   the person can watch it live in Screens and take it over (agent-device refuses
+                                   until they hand it back); it never uses the Mac's own screen. In
                                    mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
                                    simctl needs: xcrun simctl --set "$FLEETD_MAC_SIM_SET" <command> "$FLEETD_MAC_SIM"
   mac sim end                      ends it, or leaves the line (30 minutes with no mac command ends it too)

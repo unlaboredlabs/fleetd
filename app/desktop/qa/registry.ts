@@ -575,6 +575,15 @@ const islandHolds = async (page: Page) => {
   if (seen.atEnd) expect(seen.lastBottom, `at the end, the last message ends above the band: ${said}`).toBeLessThan(island.top);
 };
 
+/**
+ * The chat has landed at its end (its rows measured, its pictures loaded): before then "Latest ↓" shares the band and
+ * pushes the island off the pill's centre.
+ */
+const atTheEnd = async (page: Page) => {
+  const list = page.locator('[aria-label="Conversation with the lead"]');
+  await expect.poll(() => list.evaluate((l) => l.scrollHeight - l.scrollTop - l.clientHeight <= 1), { timeout: 15_000 }).toBe(true);
+};
+
 /** The island says the lead works by its glyph alone (W669): no words, nothing to open. */
 const leadGlyphAlone = async (page: Page) => {
   const island = page.locator("[data-band] > [data-island]");
@@ -827,6 +836,7 @@ export const screens: readonly Screen[] = [
     variant: "turn-alone",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await atTheEnd(page);
       await leadGlyphAlone(page);
     },
     check: islandHolds,
@@ -842,6 +852,7 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /It reads this at its next step/u);
+      await atTheEnd(page);
       await leadGlyphAlone(page);
     },
     check: islandHolds,

@@ -103,7 +103,13 @@ export type SessionStepFrame = { hostKey: string; item: unknown };
 export type RelayDialFrame = { hostKey: string; token: string; stream?: "cdp" };
 export type SessionEndFrame = { threadId: ThreadId; sessionId: BrowserSessionId };
 export type MacCaller = { machineId: MachineId; projectId: ProjectId; taskId?: TaskId; threadId: ThreadId };
-export type MacCallFrame = { id: string; caller: MacCaller; sealed: string };
+/**
+ * A simulator's screen, made by the hub for a `mac send` its agent's node marked `sim` (a `mac sim start`): the key
+ * the Mac reports it under (a hosted session's) and its session id. The Mac uses it only when the step lends a new
+ * simulator.
+ */
+export type SimScreen = { hostKey: string; sessionId: BrowserSessionId };
+export type MacCallFrame = { id: string; caller: MacCaller; sealed: string; screen?: SimScreen };
 
 // ---- node -> hub ----
 export type SessionHostResult = { id: string; frame: BrowserResultFrame };
@@ -162,7 +168,8 @@ export type SessionRouteResult = {
   relayOnly?: boolean;
 };
 export type SessionStepCall = { threadId: ThreadId; item: unknown };
-export type MacSendCall = { machineId: MachineId; threadId: ThreadId; sealed: string };
+/** `sim`: the step is a `mac sim start`, so the hub makes the screen the simulator it lends shows as. */
+export type MacSendCall = { machineId: MachineId; threadId: ThreadId; sealed: string; sim?: boolean };
 
 /** A node's heartbeat fields this area reads (node_link.rs `Heartbeat`, `NodeLoad`). */
 export type HeartbeatLoad = {

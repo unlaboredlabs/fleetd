@@ -5,10 +5,13 @@ import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
 import { CAP_AGENTS_MAC, CAP_MAC_TOOL } from "../../shared/screens_wire.ts";
-import { type Node, onHub, toHub } from "../browser/node.ts";
+import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
+import { SimScreens, simctlTools } from "../device/ios/sim_screen.ts";
+import { iosDir } from "../device/ios/wrapper.ts";
 import { pinSelf } from "../self_exe.ts";
 import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
@@ -75,7 +78,16 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   const sims = new MacSims(node.home, simulators, setting);
   h.sims = sims;
   void simulators.start();
-  sweeps.set(h, setInterval(() => sims.endIdle(SIM_IDLE), 60_000));
+  sims.screens = simScreens(node, simulators);
+  const screens = sims.screens;
+  void screens.housekeep();
+  sweeps.set(
+    h,
+    setInterval(() => {
+      sims.endIdle(SIM_IDLE);
+      void screens.housekeep();
+    }, 60_000),
+  );
   // The doctor's iOS row (load.rs `ios`): no Xcode, no Node.js, the golden being made or why it failed, or ready.
   node.area("hb").contribute((hb) => {
     const ios = simulators.health();
@@ -84,6 +96,35 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   return sims;
 }
 const sweeps = new WeakMap<Host, Timer>();
+
+/**
+ * Each simulator's screen (sim_screen.ts): reported to the hub in its agent's name, and the hub's live view and
+ * takeover for its ids; every other id goes on to the handler before (the Mac screen's, the browser broker's).
+ */
+function simScreens(node: Node, simulators: Simulators): SimScreens {
+  const screens = new SimScreens(
+    node.home,
+    { hub: (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }), send: (frame) => toHub(node, frame) },
+    simctlTools(simulators.simctl, join(iosDir(node.home), "shots")),
+  );
+  const link = node.area("link");
+  const ours = (f: unknown) => screens.byId(String((f as { sessionId?: unknown }).sessionId)) !== undefined;
+  for (const [tag, mine] of [
+    ["browser_watch", (f: unknown) => screens.watch(f as BrowserWatchFrame)],
+    ["browser_input", (f: unknown) => screens.input(f as BrowserInputFrame)],
+    ["browser_control", (f: unknown) => screens.control(f as BrowserControlFrame)],
+  ] as const) {
+    const before = link.handler(tag);
+    link.on(tag, (frame, ctx) => {
+      if (ours(frame)) mine(frame);
+      else before?.(frame, ctx);
+    });
+  }
+  node.area("hb").contribute((hb) => {
+    hb.steps.push(...screens.steps.list());
+  });
+  return screens;
+}
 
 /** How often the Mac looks for agents' folders nothing touched for FOLDER_DAYS. */
 export const SWEEP_EVERY = 6 * 3600_000;

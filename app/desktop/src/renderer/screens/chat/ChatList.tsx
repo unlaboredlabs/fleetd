@@ -324,7 +324,9 @@ export function ChatList(props: {
     oldest.current = now === undefined ? undefined : { key: now.key, start: now.start };
   }, [rows]);
 
-  // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end.
+  // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end. Read
+  // again as the rows or the view change size too: rows that measure shorter can bring the end into view with no
+  // scroll, and Latest would stay beside the island at the end.
   const [awayFrom, setAwayFrom] = useState<string>();
   useEffect(() => {
     const el = virtualizer.current?.scrollElement;
@@ -334,7 +336,13 @@ export function ChatList(props: {
       setAwayFrom((from) => (away ? (from ?? newestKey(rowsNow.current)) : undefined));
     };
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
   }, []);
   const latest = latestLabel(rows, awayFrom);
   const toLatest = () => {

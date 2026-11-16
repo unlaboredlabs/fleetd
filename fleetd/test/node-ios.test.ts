@@ -3,12 +3,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { binDir as androidBin, entry, LENT, sessionDir, VERSION } from "../src/node/device/agent_device.ts";
+import { binDir as androidBin, controlPath, entry, LENT, sessionDir, VERSION } from "../src/node/device/agent_device.ts";
 import { blocksSimulators } from "../src/node/agents_mac/checks.ts";
 import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
 import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Pool, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
 import { MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
+import { SimScreens } from "../src/node/device/ios/sim_screen.ts";
 import { builtXctestrun, installWrapper, iosEnv, runnerDir, setDir, writeConfig, wrapperScript } from "../src/node/device/ios/wrapper.ts";
 import { Host, jobEnv } from "../src/node/mac_tool/host.ts";
 import { simBudget } from "../src/node/mac_tool/protocol.ts";
@@ -444,9 +445,16 @@ test("the Mac's heartbeat carries its simulators' state for the doctor", async (
   writeGolden(ready.node.home, xctestrun);
   const { xcrun } = fakeXcrun(ready.node.home);
   const simctl = new Simctl(setDir(ready.node.home), xcrun);
-  startSims(ready.node, host(ready.node, new Host(join(ready.node.home, "work"), { open: () => null })), new Simulators(ready.node.home, { enabled: true }, { simctl, runner: async () => {} }), 2);
+  // The Mac screen's (or the browser broker's) live view, there before the simulators' screens.
+  const earlier: unknown[] = [];
+  ready.node.area("link").on("browser_watch", (f) => void earlier.push(f));
+  const sims = startSims(ready.node, host(ready.node, new Host(join(ready.node.home, "work"), { open: () => null })), new Simulators(ready.node.home, { enabled: true }, { simctl, runner: async () => {} }), 2);
   cleanups.push(() => stop(ready.node));
   expect(await hbOf(ready)).toMatchObject({ state: "ready", message: expect.stringContaining("iPhone 18") });
+  // A screen that isn't a simulator's goes on to it.
+  expect(sims.screens).toBeDefined();
+  ready.link.deliver({ t: "browser_watch", sessionId: `B${"9".repeat(32)}`, on: true });
+  expect(earlier).toHaveLength(1);
 
   // A golden that couldn't be made says so, with why.
   const failed = testNode("mac2", { agentsMac: true });
@@ -490,4 +498,116 @@ test("a node that stops while a clone still starts its runner throws that clone 
   expect(existsSync(cloneHome)).toBe(false);
   release();
   await until(() => pool.warm() === 0);
+});
+
+test("a simulator lent with the hub's screen is a screen of the agent's: watched, taken over, handed back, and recorded", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  writeGolden(home.dir, xctestrun);
+  const { xcrun, log } = fakeXcrun(home.dir);
+  const simulators = new Simulators(home.dir, { enabled: true }, { simctl: new Simctl(setDir(home.dir), xcrun), runner: async () => {} });
+  const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+  cleanups.push(() => sims.shutdown());
+  // The hub, the simulator's tools and agent-device, stand-ins all.
+  const calls: { thread: string; op: string; args: Record<string, unknown> }[] = [];
+  const frames: Record<string, unknown>[] = [];
+  const commands: string[][] = [];
+  const recorded: string[] = [];
+  const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x6a, 0x02, 0x80, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xd9]);
+  const screens = new SimScreens(
+    home.dir,
+    {
+      hub: async (thread, _cwd, op, args) => {
+        calls.push({ thread, op, args });
+        return op === "browser_recording_part" ? { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length } : {};
+      },
+      send: (frame) => frames.push(frame),
+    },
+    {
+      shoot: async () => JPEG,
+      record: (udid, path) => {
+        recorded.push(udid);
+        return { finish: async () => (writeFileSync(path, "mp4"), undefined) };
+      },
+      run: async (_runner, args) => (commands.push(args), { ok: true, said: "", ms: 3 }),
+    },
+  );
+  sims.screens = screens;
+  await simulators.start();
+  await until(() => simulators.warm() === 1);
+  const host = new Host(join(home.dir, "mac"), { open: () => null });
+  host.sims = sims;
+  const a = host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta", taskId: "T1" });
+  const screen = { hostKey: `H${"1".repeat(32)}`, sessionId: `B${"2".repeat(32)}` };
+  const [done] = await host.step(a, { step: "sim_start" }, undefined, screen);
+  const udid = (done as { udid: string }).udid;
+  // Reported live under the hub's key, in the agent's name: an iPhone screen, never the Mac's desktop.
+  await until(() => calls.length === 1);
+  expect(calls[0]).toMatchObject({
+    thread: screen.hostKey,
+    op: "browser_session",
+    args: { sessionId: screen.sessionId, kind: "ios", purpose: "iPhone 18 · T1", state: "live", control: "agent" },
+  });
+  // Asked again, the agent keeps its simulator and its screen; a start the hub made no screen for has none.
+  await host.step(a, { step: "sim_start" }, undefined, { hostKey: `H${"3".repeat(32)}`, sessionId: `B${"4".repeat(32)}` });
+  expect(screens.count()).toBe(1);
+  await until(() => simulators.warm() === 1);
+  const b = host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
+  await host.step(b, { step: "sim_start" });
+  expect(screens.of("T2")).toBeUndefined();
+
+  // Nobody watches: no screenshot, no video. A person watches: frames go to the hub, and the video starts.
+  expect(recorded).toEqual([]);
+  screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
+  await until(() => frames.length > 0);
+  expect(frames[0]).toMatchObject({ t: "browser_frame", sessionId: screen.sessionId, width: 640, height: 1386, control: "agent" });
+  expect(recorded).toEqual([udid]);
+  // Another viewer gets the newest frame at once; one who leaves and comes back to a still screen sees it again.
+  const seen = frames.length;
+  screens.watch({ sessionId: screen.sessionId, on: true, kbps: 500 } as never);
+  await until(() => frames.length > seen);
+  screens.watch({ sessionId: screen.sessionId, on: false } as never);
+  await Bun.sleep(150);
+  const back = frames.length;
+  screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
+  await until(() => frames.length > back);
+  expect(recorded).toEqual([udid]);
+
+  // Their input goes nowhere until they take over; then the agent's agent-device refuses.
+  const tap = (action: "pressed" | "released") => ({ sessionId: screen.sessionId, input: { kind: "mouse", action, button: "left", x: 300, y: 600 } }) as never;
+  screens.input(tap("pressed"));
+  screens.input(tap("released"));
+  await Bun.sleep(20);
+  expect(commands).toEqual([]);
+  screens.control({ sessionId: screen.sessionId, control: "human", by: "human:laptop" } as never);
+  const control = controlPath(home.dir, simKey("T1"));
+  expect(existsSync(control)).toBe(true);
+  expect(sims.env("T1")!.find(([k]) => k === "FLEETD_DEVICE_CONTROL")?.[1]).toBe(control);
+  screens.input(tap("pressed"));
+  screens.input(tap("released"));
+  await until(() => commands.length === 1);
+  expect(commands[0]).toEqual(["press", "100", "200"]);
+  expect(calls.at(-1)).toMatchObject({ op: "browser_session", args: { control: "human" } });
+  // Handed back: the agent's next agent-device job gives it the simulator again.
+  screens.control({ sessionId: screen.sessionId, control: "agent", by: "human:laptop" } as never);
+  expect(existsSync(control)).toBe(false);
+  expect(screens.of("T1")!.control()).toBe("handing_back");
+  sims.ran("T1", "agent-device snapshot", true, 40);
+  expect(screens.of("T1")!.control()).toBe("agent");
+
+  // mac sim end: the screen ends with the simulator, its video finished before the clone goes, and its recording sent.
+  expect((await host.step(a, { step: "sim_end" }))[0]).toEqual({ step: "sim_end", ended: true });
+  await until(() => calls.some((c) => c.op === "browser_session" && c.args.state === "recorded"));
+  await until(() => readFileSync(log, "utf8").includes(`delete ${udid}`));
+  expect(calls.filter((c) => c.op === "browser_session").map((c) => c.args.state)).toEqual(["live", "live", "live", "live", "uploading", "uploading", "recorded"]);
+  const recordedCall = calls.find((c) => c.args.state === "recorded")!;
+  expect(recordedCall.thread).toBe(screen.hostKey);
+  expect((recordedCall.args.files as { file: string }[]).map((f) => f.file).sort()).toEqual(["actions", "video_mp4"]);
+  const parts = calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "actions");
+  const actions = Buffer.from(parts.map((p) => String(p.args.dataB64)).join(""), "base64").toString().trim().split("\n").map((l) => JSON.parse(l).tool);
+  expect(actions).toEqual(["sim_start", "takeover", "agent-device", "handback", "agent-device", "sim_end"]);
+  expect(screens.count()).toBe(0);
 });

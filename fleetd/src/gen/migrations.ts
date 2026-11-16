@@ -166,6 +166,7 @@ import m162 from "../hub/store/migrations/202611121235_one_team_vault.sql" with 
 import m163 from "../hub/store/migrations/202611121500_project_names.sql" with { type: "text" };
 import m164 from "../hub/store/migrations/202611131200_chat_tags.sql" with { type: "text" };
 import m165 from "../hub/store/migrations/202611131300_removed_node_keys.sql" with { type: "text" };
+import m166 from "../hub/store/migrations/202611161400_sim_screens.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -334,4 +335,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611121500_project_names", sql: m163 },
   { name: "202611131200_chat_tags", sql: m164 },
   { name: "202611131300_removed_node_keys", sql: m165 },
+  { name: "202611161400_sim_screens", sql: m166 },
 ];

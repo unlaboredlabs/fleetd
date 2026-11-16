@@ -1,6 +1,10 @@
 // The agents' Mac, the hub's half (D298): `mac_where` names the online machine whose
 // node lists `mac_tool` and its key, `mac_send` passes one step an agent's node sealed to it on, with who the caller is,
 // and brings back the sealed answer. The hub never opens either. Every project's agents may use the Mac; projects never.
+//
+// A step the agent's node marks `sim` (a `mac sim start`) goes with a screen the hub made for it, a hosted session of
+// the agent's placed on the Mac (machine_roles `simPlace`): a simulator the step lends is that screen, watched, taken
+// over and recorded there, and the Mac reports it under the place's key in the agent's name.
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCaller, MacResultFrame, MacSendCall } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
@@ -9,7 +13,7 @@ import { leadCalls } from "../lead_calls/index.ts";
 import { store } from "../store/hub_store.ts";
 import { request } from "../machine_roles/calls.ts";
 import { macMachine } from "../machine_roles/mac.ts";
-import { newKey } from "../machine_roles/places.ts";
+import { newKey, simPlace } from "../machine_roles/places.ts";
 
 export const OPS = ["mac_where", "mac_send"] as const;
 
@@ -62,12 +66,22 @@ async function send(hub: Hub, caller: LeadCaller, call: MacSendCall) {
     ...(caller.agent.kind === "task" ? { taskId: caller.agent.taskId } : {}),
     threadId: call.threadId,
   };
+  const screen =
+    call.sim === true
+      ? hub.db.transaction((c) => simPlace(c, machineId, caller.projectRef, call.threadId, who.taskId, hub.clock.now()))
+      : undefined;
   let answer: MacResultFrame;
   try {
     answer = await request<MacResultFrame>(
       hub,
       machineId,
-      { t: "mac_call", id: `mac-${newKey().slice(1, 13)}`, caller: who, sealed: call.sealed },
+      {
+        t: "mac_call",
+        id: `mac-${newKey().slice(1, 13)}`,
+        caller: who,
+        sealed: call.sealed,
+        ...(screen ? { screen: { hostKey: screen.key, sessionId: screen.sessionId! } } : {}),
+      },
       SEND_WAIT,
     );
   } catch (e) {

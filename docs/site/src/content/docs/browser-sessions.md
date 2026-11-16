@@ -10,7 +10,7 @@ app and take it over. The node records the screen and uploads the recording to t
 
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
 [Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. iOS simulators aren't
-screens: agents start their own on [the agents' Mac](/docs/agents-mac#sim) ([iOS screens are gone](#ios)). You can
+screens you open: each one an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
 [open one yourself](#yours) too. The app shows every project's on the [Screens page](#page), and each
 project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
@@ -403,12 +403,15 @@ key.
 |---|---|
 | `enabled` | `true` opts this machine in: the first Android screen installs the emulator. `false` turns Android screens off. Absent: on only where they are installed already; nothing is installed. |
 
-## iOS screens are gone {#ios}
+## iOS simulators {#ios}
 
-iOS simulators aren't a kind of screen any more (decision `mac.shared-mac`, D298). An agent starts one of its own on
+iOS simulators aren't a kind of screen you open (decision `mac.shared-mac`, D298). An agent starts one of its own on
 [the agents' Mac](/docs/agents-mac#sim) with `mac sim start` and drives it with
-[agent-device](https://github.com/callstack/agent-device) as before. New screen and the Screens part of a machine's page in Settings › Hub › Machines
-offer no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its fix while none is set up.
+[agent-device](https://github.com/callstack/agent-device), and while it holds it the simulator is that agent's screen:
+it lists as "iPhone 17 · T12", in an iPhone bezel, and you watch it live, take it over and hand it back as you do an
+Android screen ([simulator screens](/docs/agents-mac#sim-screens)). New screen and the Screens part of a machine's page
+in Settings › Hub › Machines offer no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its
+fix while none is set up.
 
 For one release, `ios` stays as a legacy value. `session_start` with `kind` `ios` answers with the way to
 `mac sim start`, and so does the hub, to an older node or app asking for an iOS screen (`screen_open`); nothing starts.

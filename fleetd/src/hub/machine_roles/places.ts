@@ -13,7 +13,9 @@ import { heldOn } from "./screens.ts";
 import {
   AGENTS_UNMEASURED,
   autoSessions,
+  hex,
   KEEP_HOSTED_MS,
+  newKey,
   type Place,
   PLACE_COLUMNS,
   placeOf,
@@ -116,7 +118,7 @@ export function liveOn(c: Database, runner: string, now: number): number {
     runner,
   );
   const hosted = count(
-    `SELECT COUNT(*) AS n FROM session_places p WHERE p.runner_id = ?1 AND p.hosted = 1 AND p.ended_ms IS NULL
+    `SELECT COUNT(*) AS n FROM session_places p WHERE p.runner_id = ?1 AND p.hosted = 1 AND p.sim = 0 AND p.ended_ms IS NULL
        AND NOT ${taskEnded("p.task_id", now)}
        AND ((p.session_id IS NULL AND p.started_ms > ?2)
          OR (p.session_id IS NOT NULL AND NOT EXISTS (
@@ -214,7 +216,7 @@ export function openHosted(c: Database, origin: string, thread: string, now: num
   return onePlace(
     c,
     `SELECT ${PLACE_COLUMNS} FROM session_places p WHERE origin_machine = ?1 AND origin_thread = ?2
-       AND hosted = 1 AND ended_ms IS NULL
+       AND hosted = 1 AND sim = 0 AND ended_ms IS NULL
        AND (session_id IS NOT NULL OR started_ms > ?3)
        AND NOT EXISTS (SELECT 1 FROM browser_sessions b WHERE b.session_id = p.session_id AND b.state != 'live')
      ORDER BY started_ms DESC LIMIT 1`,
@@ -222,6 +224,18 @@ export function openHosted(c: Database, origin: string, thread: string, now: num
     thread,
     now - START_MS,
   );
+}
+
+/**
+ * The screen of a simulator the agents' Mac `runner` may lend the agent session `thread` with the step the hub passes
+ * on now (`mac sim start`): its key and session id, made now. The Mac reports it under the key once it lends one, and
+ * a start that lent none leaves it to `prune`. Never the agent's open session (openHosted), nor a slot on the Mac.
+ */
+export function simPlace(c: Database, runner: string, origin: { machineId: string; projectId: string }, thread: string, taskId: string | undefined, now: number): Place {
+  const p: Place = { key: newKey(), runner, origin, originThread: thread, taskId, hosted: true, sessionId: `B${hex(16)}` };
+  insertPlace(c, p, now);
+  c.query("UPDATE session_places SET sim = 1 WHERE place_id = ?1").run(p.key);
+  return p;
 }
 
 /** A hosted session by its key. */
@@ -272,6 +286,8 @@ export function prune(c: Database, now: number): number {
       `DELETE FROM session_places WHERE
          (hosted = 0 AND started_ms <= ?1)
          OR (hosted = 1 AND session_id IS NULL AND started_ms <= ?1)
+         OR (sim = 1 AND started_ms <= ?1 AND NOT EXISTS (SELECT 1 FROM browser_sessions b
+               WHERE b.session_id = session_places.session_id))
          OR (hosted = 1 AND ended_ms IS NOT NULL AND ended_ms <= ?2)
          OR (hosted = 1 AND started_ms <= ?2 AND EXISTS (SELECT 1 FROM browser_sessions b
                WHERE b.session_id = session_places.session_id AND b.state IN ('recorded', 'lost', 'expired')))`,

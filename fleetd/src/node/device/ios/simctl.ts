@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 /** A simctl call that hangs (a wedged CoreSimulator) is given up after this; a boot waits longer. */
 export const CALL = 60_000;
+/** A screenshot's bound. */
+const SHOT = 10_000;
 /**
  * How long a call waits while CoreSimulator may still be starting. The first simctl call since the Mac started has
  * launchd start CoreSimulator's service, which readies every installed runtime before it answers: seconds on a Mac in
@@ -212,6 +214,11 @@ export class Simctl {
       // Shut down already.
       if (!(e as Error).message.includes("current state: Shutdown")) throw e;
     }
+  }
+
+  /** One screenshot of the simulator's screen, as JPEG, into `to` (the live view's, screen.ts). */
+  async screenshot(udid: string, to: string): Promise<void> {
+    await this.run(["io", udid, "screenshot", "--type=jpeg", to], SHOT);
   }
 
   async delete(udid: string): Promise<void> {
