@@ -22,6 +22,11 @@ vi.hoisted(() => {
 const AT = "2026-10-26T10:00:00.000Z";
 const BOX = `${"A".repeat(43)}=`;
 const KEY = "rvl_live_0123456789abcdef";
+/** The hub's own words for a missing CLI (fleetd/src/hub/revyl, shared/revyl.ts INSTALL). */
+/** The same where the key is tested on the team's machines: the sentence names the one to install on. */
+const MACHINE_INSTALL =
+  "install Revyl's CLI on devbox, and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
+const HUB_INSTALL = "install Revyl's CLI on the hub's machine and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
 
 const off: RevylState = { boxPubKey: BOX, connected: false, routes: { ios: "ours_only", android: "ours_only" } };
 const on: RevylState = { ...off, connected: true, check: { ok: true, at: AT }, routes: { ios: "ours_first", android: "ours_first" } };
@@ -157,18 +162,31 @@ it("connects a key through one sealed field that goes to main only, then says it
 
 it("says what a failed test found, with the install line when the hub has no revyl, and disconnects", async () => {
   state = on;
-  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: "devbox has no revyl command.", fix: "curl -fsSL https://revyl.com/install.sh | sh" } };
+  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: "The hub's machine has no revyl command.", fix: HUB_INSTALL } };
   await render();
   // At rest, a working key says nothing.
   expect(revyl()?.textContent).not.toContain("Works");
   await click(button("Test"));
   expect(calls.some((c) => c.tool === "revyl_test")).toBe(true);
-  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe("devbox has no revyl command.");
-  expect(revyl()?.textContent).toContain("curl -fsSL https://revyl.com/install.sh | sh");
+  // The hub's sentence is words in the line; only its install command is the line to copy, and runs as pasted.
+  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`The hub's machine has no revyl command. I${HUB_INSTALL.slice(1)}`);
+  const copied = [...(revyl()?.querySelectorAll("[data-text]") ?? [])].map((t) => t.textContent).filter((t) => t.startsWith("curl"));
+  expect(copied).toEqual(["curl -fsSL https://revyl.com/install.sh | sh"]);
   await click(button("Disconnect"));
   expect(calls.some((c) => c.tool === "revyl_disconnect")).toBe(true);
   expect(revyl()?.getAttribute("data-revyl")).toBe("off");
   expect(button("Connect…")).toBeDefined();
+});
+
+it("copies only the install command when the sentence names the team machine to install on", async () => {
+  state = on;
+  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: "No machine of the team's online has the revyl command (devbox).", fix: MACHINE_INSTALL } };
+  await render();
+  await click(button("Test"));
+  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`No machine of the team's online has the revyl command (devbox). I${MACHINE_INSTALL.slice(1)}`);
+  const copied = [...(revyl()?.querySelectorAll("[data-text]") ?? [])].map((t) => t.textContent).filter((t) => t.startsWith("curl"));
+  expect(copied).toEqual(["curl -fsSL https://revyl.com/install.sh | sh"]);
+  expect(revyl()?.textContent).not.toContain("hub's machine");
 });
 
 it("keeps each kind on our machines until a key is connected, saying why with Connect right there", async () => {

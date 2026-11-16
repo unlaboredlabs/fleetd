@@ -58,14 +58,23 @@ const failWords = (check: RevylCheck): string => {
     case "invalid_key":
       return "Revyl refused the key: it is wrong, revoked or expired.";
     case "no_cli":
-      return "The hub's machine has no revyl command.";
+      return "Revyl's CLI isn't installed where the key is tested.";
     default:
       return "Couldn't reach Revyl with the key.";
   }
 };
 
-/** Whether a failed check's fix is a command to run on the hub's machine (installing Revyl's CLI). */
-export const fixIsCommand = (state: Pick<RevylState, "check">): boolean => state.check?.reason === "no_cli";
+/**
+ * The one command to copy out of a failed check's fix, or null: the hub says where to install Revyl's CLI in a
+ * sentence that names the machine ("install Revyl's CLI on devbox, and on each machine whose agents get Revyl screens:
+ * curl -fsSL https://revyl.com/install.sh | sh (or brew install …)"), which the row shows as words; only the install
+ * command in it goes to Copy, so what is pasted into a shell runs as it is, whatever machine the sentence names.
+ */
+export const installCommand = (state: Pick<RevylState, "check">): string | null => {
+  if (state.check?.reason !== "no_cli" || state.check.fix === undefined) return null;
+  const found = /curl\s+[^\s()]+\s+\S+\s*\|\s*(?:ba)?sh\b|brew install [^\s(),]+|pip3? install [^\s(),]+/u.exec(state.check.fix);
+  return found === null ? null : found[0];
+};
 
 /** A pasted key, trimmed: a key copied with a line break or spaces round it still connects; empty is no key. */
 export const keyOf = (pasted: string): string | null => {

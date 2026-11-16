@@ -14,7 +14,7 @@ import { useHubRole } from "../admin/role";
 import { CommandLine } from "../onboarding/Prose";
 import { errorText, useHubCall, useLive } from "./hub";
 import { GroupNote, SettingsRow } from "./parts";
-import { fixIsCommand, keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine } from "./revylModel";
+import { installCommand, keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine } from "./revylModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -66,6 +66,7 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
   };
   const line = problem === null ? revylLine(state, checked) : { text: problem, tone: "danger" as const };
   const fix = line?.tone === "danger" && "fix" in line ? line.fix : undefined;
+  const install = problem === null ? installCommand(state) : null;
   const control = state.connected ? (
     <div className={s.inline}>
       <Button size="sm" disabled={busy !== null} onClick={() => run("test")}>
@@ -85,7 +86,7 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
       reveal="hub.revyl"
       title="Revyl"
       hint={HINT}
-      line={line === null ? null : <span role={line.tone === "danger" ? "alert" : "status"}>{fix === undefined || fixIsCommand(state) ? line.text : `${line.text} ${fix}`}</span>}
+      line={line === null ? null : <span role={line.tone === "danger" ? "alert" : "status"}>{fix === undefined ? line.text : `${line.text} ${fix.charAt(0).toUpperCase()}${fix.slice(1)}`}</span>}
       lineTone={line?.tone}
       control={control}
       data={{ "data-revyl": state.connected ? "connected" : "off" }}
@@ -99,8 +100,8 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
             setChecked(true);
           }}
         />
-      ) : fix !== undefined && fixIsCommand(state) ? (
-        <CommandLine command={fix} />
+      ) : install !== null ? (
+        <CommandLine command={install} />
       ) : null}
     </SettingsRow>
   );
