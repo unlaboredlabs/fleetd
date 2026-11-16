@@ -249,9 +249,10 @@ export class Desktops implements Screens {
    * its holder's until the holder's session has ended, its last command included, or it goes unused IDLE_MINUTES. */
   private lease: Session | undefined;
   private leaseUsed = 0;
-  /** Each app claimed on the Mac's screen, by its key (mac/index.ts `App`): the session that claimed it, and the
-   * app's name as it gave it. Kept until that session has ended, its last command included. */
-  private readonly claims = new Map<string, { session: Session; name: string }>();
+  /** Each app claimed on the Mac's screen: the session that claimed it, the app's name as it gave it, and every name
+   * the app goes by (mac/index.ts `App`), more as they are learned. Kept until that session has ended, its last command
+   * included. */
+  private claims: { session: Session; name: string; keys: Set<string> }[] = [];
   /** The clock the lease's idle time is read on (a test's own). */
   clock: () => number = () => performance.now();
   /** What stands in the way of the Mac's screen now (mac/index.ts `blocked`; a test's own). */
@@ -583,7 +584,7 @@ export class Desktops implements Screens {
 
   /** The apps claimed on the Mac's screen now, each with who holds it, in a line for the others. */
   claimed(): { app: string; heldBy: string }[] {
-    return [...this.claims.values()].map((c) => ({ app: c.name, heldBy: this.describe(c.session) }));
+    return this.claims.map((c) => ({ app: c.name, heldBy: this.describe(c.session) }));
   }
 
   /** The lease's or a claim's holder `session`, in a line for the others. */
@@ -672,7 +673,7 @@ export class Desktops implements Screens {
     // A command whose app the session can't tell (a ref from a snapshot it never saw) can't be claimed: it needs the
     // lease, as anything not known to be headless does.
     const lease = need.needs === "lease" || app === undefined;
-    const claim = app ? this.claims.get(app.key) : undefined;
+    const claim = app ? this.claims.find((c) => app.keys.some((k) => c.keys.has(k))) : undefined;
     if (app && claim && claim.session !== session) {
       throw new ToolError(
         "invalid",
@@ -684,10 +685,12 @@ export class Desktops implements Screens {
     if (app && !claim) {
       // The lease checked the screen already; a claim alone checks it now.
       if (!lease) this.gate();
-      this.claims.set(app.key, { session, name: app.name });
+      this.claims.push({ session, name: app.name, keys: new Set(app.keys) });
       session.logStep("app_claimed", { app: app.name }, true);
       session.setObserving(false);
     }
+    // Its own claim learns the names the app goes by now: one made by name before the app ran matches its bundle id.
+    if (app && claim) for (const key of app.keys) claim.keys.add(key);
   }
 
   /** Refuses while a person drives a Mac screen session other than `session`: their takeover takes the whole screen,
@@ -744,13 +747,13 @@ export class Desktops implements Screens {
   /** `session` no longer holds the lease: it records only while it still holds a claim. */
   private lostLease(session: Session, why: string, log = true): void {
     if (log) session.logStep("lease_lost", { why }, true);
-    if (![...this.claims.values()].some((c) => c.session === session)) session.setObserving(true);
+    if (!this.claims.some((c) => c.session === session)) session.setObserving(true);
   }
 
   /** A session ended: the lease, if it held it, and its claims go back. */
   private release(session: Session): void {
     if (this.lease === session) this.lease = undefined;
-    for (const [key, claim] of [...this.claims]) if (claim.session === session) this.claims.delete(key);
+    this.claims = this.claims.filter((c) => c.session !== session);
   }
 
   /** The hub's live view for one of these sessions: false when the id isn't one of these. */

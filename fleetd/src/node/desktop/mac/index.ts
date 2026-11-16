@@ -28,7 +28,7 @@ import { tcc } from "../../agents_mac/tcc.ts";
 import { tail } from "../display.ts";
 import type { Launched, Lent } from "../screen.ts";
 import type { DesktopCall } from "../session.ts";
-import { answer, bundleOf, command, launchedPid, type Needs, run, snapshotApp, type Target } from "./agent_desktop.ts";
+import { answer, command, launchedPid, listedApp, type Needs, run, snapshotApp, type Target } from "./agent_desktop.ts";
 import { type Console, consoleBlocked, read as readConsole, state } from "./console.ts";
 
 /** A Mac screen session no action touched for this long ends, and gives its lease and claims back; the lease alone
@@ -108,9 +108,10 @@ export function needs(call: DesktopCall): { needs: Needs; target?: Target } {
 /** Whether a `desktop` action only reads the screen, so any session may take it. */
 export const observes = (call: DesktopCall) => needs(call).needs === "read";
 
-/** An app as claims know it: its bundle id where agent-desktop lists it running, else its name, either in lower case;
- * and the name the agent gave, for messages. */
-export type App = { key: string; name: string };
+/** An app as claims know it: every name it goes by, in lower case (the one the agent gave, and where agent-desktop
+ * lists it running, its display name and bundle id), so a claim made by name before the app ran still matches it by
+ * bundle id once it runs; and the name the agent gave, for messages. */
+export type App = { keys: string[]; name: string };
 
 /** When process `pid` started, as `ps` says it; undefined where there's no such process. */
 function startedAt(pid: number): string | undefined {
@@ -130,8 +131,8 @@ export class MacLent implements Lent {
   private launched = 0;
   /** The app each of the session's snapshots read, so a ref's command knows its app. */
   private readonly snapshots = new Map<string, string>();
-  /** Bundle ids found so far, by the name the agent gave in lower case. */
-  private readonly bundles = new Map<string, string>();
+  /** The names an app goes by, once agent-desktop listed it running, by the name the agent gave in lower case. */
+  private readonly listed = new Map<string, string[]>();
   /** Stops the session's agent-desktop commands when it is dropped. */
   private readonly stop = new AbortController();
   /** The agent-desktop commands running now. */
@@ -192,19 +193,22 @@ export class MacLent implements Lent {
   }
 
   /** The app `target` names, as claims know it; undefined when the session can't tell (a ref from a snapshot it never
-   * saw). Its bundle id is asked of agent-desktop's `list-apps` once per name. */
+   * saw). Its display name and bundle id are asked of agent-desktop's `list-apps` until it lists the app running. */
   async appOf(target: Target): Promise<App | undefined> {
     const name = target.app ?? (target.snapshot === undefined ? undefined : this.snapshots.get(target.snapshot));
     if (name === undefined) return undefined;
     const lower = name.toLowerCase();
-    let bundle = this.bundles.get(lower);
-    if (bundle === undefined && !(this.agentDesktopBin instanceof Error)) {
-      const listed = await this.run(["list-apps"]).catch(() => undefined);
-      bundle = listed ? bundleOf(listed.stdout, name) : undefined;
-      // An app not running yet keeps its name: asked again next time, as it may have started since.
-      if (bundle !== undefined) this.bundles.set(lower, bundle);
+    let keys = this.listed.get(lower);
+    if (keys === undefined && !(this.agentDesktopBin instanceof Error)) {
+      const ran = await this.run(["list-apps"]).catch(() => undefined);
+      const app = ran ? listedApp(ran.stdout, name) : undefined;
+      // An app not running yet goes by its name alone: asked again next time, as it may have started since.
+      if (app) {
+        keys = [...new Set([lower, app.name.toLowerCase(), app.bundle.toLowerCase()])];
+        this.listed.set(lower, keys);
+      }
     }
-    return { key: (bundle ?? name).toLowerCase(), name };
+    return { keys: keys ?? [lower], name };
   }
 
   async drop(): Promise<void> {

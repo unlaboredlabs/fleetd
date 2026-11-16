@@ -6,7 +6,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Desktops, desktops, macScreen } from "../src/node/desktop/index.ts";
 import { packed } from "../src/node/desktop/mac/capture.ts";
-import { answer, bundleOf, command, install, launchedPid, snapshotApp, split, COMMAND_TIMEOUT, OUTPUT_CHARS } from "../src/node/desktop/mac/agent_desktop.ts";
+import { answer, command, install, launchedPid, listedApp, snapshotApp, split, COMMAND_TIMEOUT, OUTPUT_CHARS } from "../src/node/desktop/mac/agent_desktop.ts";
 import { parse, state } from "../src/node/desktop/mac/console.ts";
 import { blockedBy, MacLent, needs, observes } from "../src/node/desktop/mac/index.ts";
 import { COMMAND, ofSym, OPTION } from "../src/node/desktop/mac/keys.ts";
@@ -197,10 +197,11 @@ test("headless commands need a claim on their app, pointer and keys the lease, a
   expect(snapshotApp(`{"ok":true,"data":{"app":"Finder","snapshot_id":"s8f3k2p9","tree":{}}}`)).toEqual(["s8f3k2p9", "Finder"]);
   expect(snapshotApp(`{"ok":true,"data":{"app":"Finder"}}`)).toBeUndefined();
   const apps = `{"ok":true,"data":{"apps":[{"name":"TextEdit","pid":611,"bundle_id":"com.apple.TextEdit"}]}}`;
-  expect(bundleOf(apps, "textedit")).toBe("com.apple.TextEdit");
-  expect(bundleOf(apps, "COM.APPLE.TEXTEDIT")).toBe("com.apple.TextEdit");
-  expect(bundleOf(`{"ok":true,"data":[{"name":"Notes","bundle_id":"com.apple.Notes"}]}`, "Notes")).toBe("com.apple.Notes");
-  expect(bundleOf(apps, "Notes")).toBeUndefined();
+  const textEdit = { name: "TextEdit", bundle: "com.apple.TextEdit" };
+  expect(listedApp(apps, "textedit")).toEqual(textEdit);
+  expect(listedApp(apps, "COM.APPLE.TEXTEDIT")).toEqual(textEdit);
+  expect(listedApp(`{"ok":true,"data":[{"name":"Notes","bundle_id":"com.apple.Notes"}]}`, "Notes")).toEqual({ name: "Notes", bundle: "com.apple.Notes" });
+  expect(listedApp(apps, "Notes")).toBeUndefined();
 });
 
 test("only reading actions observe", () => {
@@ -246,9 +247,9 @@ class FakeScreen implements Screen {
   close() {}
 }
 
-/** A stand-in agent-desktop: `snapshot --app X` reads app X into snapshot `sX`, `list-apps` lists TextEdit and Notes
- * with their bundle ids, a command on `@sSlow:e1` notes it started in `marker` and runs for 30 s, anything else says
- * what it ran. */
+/** A stand-in agent-desktop: `snapshot --app X` reads app X into snapshot `sX`, `list-apps` lists Notes and, unless a
+ * `textedit-off` file sits beside it (`launch TextEdit` removes it), TextEdit, with their bundle ids; a command on
+ * `@sSlow:e1` notes it started in `marker` and runs for 30 s; anything else says what it ran. */
 function standIn(dir: string, marker: string): string {
   const bin = join(dir, "agent-desktop");
   writeFileSync(
@@ -258,7 +259,11 @@ case "$*" in
   *@sSlow:e1*) echo started > '${marker}'; exec sleep 30 ;;
 esac
 if [ "$1" = snapshot ]; then echo "{\\"ok\\":true,\\"data\\":{\\"app\\":\\"$3\\",\\"snapshot_id\\":\\"s$3\\"}}"; exit 0; fi
-if [ "$1" = list-apps ]; then echo '{"ok":true,"data":{"apps":[{"name":"TextEdit","pid":611,"bundle_id":"com.apple.TextEdit"},{"name":"Notes","pid":612,"bundle_id":"com.apple.Notes"}]}}'; exit 0; fi
+if [ "$1" = launch ] && [ "$2" = TextEdit ]; then rm -f '${dir}/textedit-off'; fi
+if [ "$1" = list-apps ]; then
+  if [ -e '${dir}/textedit-off' ]; then echo '{"ok":true,"data":{"apps":[{"name":"Notes","pid":612,"bundle_id":"com.apple.Notes"}]}}'; exit 0; fi
+  echo '{"ok":true,"data":{"apps":[{"name":"TextEdit","pid":611,"bundle_id":"com.apple.TextEdit"},{"name":"Notes","pid":612,"bundle_id":"com.apple.Notes"}]}}'; exit 0
+fi
 echo "ran $*"
 `,
   );
@@ -379,6 +384,26 @@ test("agents work on different Mac apps at once, one per app; pointer and keys t
   expect(reports.some((r) => r.kind === "mac" && r.state === "uploading")).toBe(true);
   for (let i = 0; i < 200 && !reports.some((r) => r.kind === "mac" && r.state === "recorded"); i++) await Bun.sleep(10);
   expect(reports.some((r) => r.kind === "mac" && r.state === "recorded" && (r.files as unknown[]).length > 0)).toBe(true);
+});
+
+test("an app claimed by name before it ran stays one claim once it runs, by its name or its bundle id", async () => {
+  const dir = scratch();
+  writeFileSync(join(dir, "textedit-off"), "");
+  const { d, open } = macNode(dir);
+  await open("th-a", "Edit the notes file");
+  await open("th-b", "Agent B");
+  // A launches TextEdit, which isn't running yet: claimed by its name.
+  expect((await d.act("th-a", call("agent_desktop", "launch TextEdit"))).message).toBe("ran launch TextEdit");
+  expect(d.claimed().map((c) => c.app)).toEqual(["TextEdit"]);
+  // Now it runs: B naming it, by name or bundle id, is refused, and A keeps it.
+  await d.act("th-b", call("agent_desktop", "snapshot --app TextEdit -i"));
+  await expect(d.act("th-b", call("agent_desktop", "click @sTextEdit:e1"))).rejects.toThrow("Edit the notes file");
+  await expect(d.act("th-b", call("agent_desktop", "close-app com.apple.TextEdit"))).rejects.toThrow("Edit the notes file");
+  await d.act("th-a", call("agent_desktop", "snapshot --app TextEdit -i"));
+  await d.act("th-a", call("agent_desktop", "click @sTextEdit:e1"));
+  await d.act("th-a", call("agent_desktop", "press cmd+s --app com.apple.TextEdit"));
+  await expect(d.act("th-b", call("agent_desktop", "press cmd+s --app com.apple.textedit"))).rejects.toThrow("Edit the notes file");
+  expect(d.claimed().map((c) => c.app)).toEqual(["TextEdit"]);
 });
 
 test("a session that ends mid-command keeps its lease and claim until that command has stopped", async () => {

@@ -233,9 +233,9 @@ export function snapshotApp(output: string): [snapshot: string, app: string] | u
   }
 }
 
-/** The bundle id of app `name` (its display name or its bundle id, any case) in `list-apps`'s JSON answer; undefined
- * when it isn't running, or the answer can't be read. */
-export function bundleOf(output: string, name: string): string | undefined {
+/** App `name` (its display name or its bundle id, any case) in `list-apps`'s JSON answer, with its display name and
+ * bundle id; undefined when it isn't running, or the answer can't be read. */
+export function listedApp(output: string, name: string): { name: string; bundle: string } | undefined {
   try {
     const data = (JSON.parse(output.trim()) as { data?: unknown }).data;
     const apps = Array.isArray(data) ? data : (data as { apps?: unknown } | undefined)?.apps;
@@ -243,7 +243,8 @@ export function bundleOf(output: string, name: string): string | undefined {
     const want = name.toLowerCase();
     for (const app of apps as { name?: unknown; bundle_id?: unknown }[]) {
       if (typeof app?.bundle_id !== "string" || !app.bundle_id) continue;
-      if (app.bundle_id.toLowerCase() === want || (typeof app.name === "string" && app.name.toLowerCase() === want)) return app.bundle_id;
+      const shown = typeof app.name === "string" ? app.name : "";
+      if (app.bundle_id.toLowerCase() === want || shown.toLowerCase() === want) return { name: shown || app.bundle_id, bundle: app.bundle_id };
     }
   } catch {}
   return undefined;
