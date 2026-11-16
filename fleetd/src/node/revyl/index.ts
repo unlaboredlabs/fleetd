@@ -16,7 +16,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { BrowserControl, BrowserInput, BrowserSessionState, KnownRevylCheckReason } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
-import { billingRefusal, CHECK_WAIT, failure, IDLE_SECS, INSTALL, mask, refusal, tail, withoutNudges } from "../../shared/revyl.ts";
+import { billingRefusal, CHECK_WAIT, failure, IDLE_SECS, mask, refusal, tail, withoutNudges } from "../../shared/revyl.ts";
 import { type BrowserCallFrame, type BrowserControlFrame, type BrowserInputFrame, type BrowserWatchFrame, CAP_REVYL, type RevylStart } from "../../shared/screens_wire.ts";
 import { giveUp, type Meta, report, upload, writeMeta } from "../browser/record.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
@@ -27,6 +27,7 @@ import { loadOrCreateBoxKey } from "../identity.ts";
 import { mkdirPrivate } from "../config.ts";
 import { writeAtomic } from "../secrets/files.ts";
 import { jsonOf, NoCli, type Run, runRevyl } from "./cli.ts";
+import type { Install } from "./install.ts";
 import { self } from "../mac_tool/index.ts";
 import { binDir, installShim } from "./shim.ts";
 
@@ -48,6 +49,8 @@ const FRAME_QUALITY = 80;
 export const revylDir = (home: string) => join(home, "revyl");
 /** The folder each `revyl` process gets as its home. */
 const cliHome = (home: string) => join(revylDir(home), "home");
+/** Where the node installs Revyl's CLI when the machine has none (install.ts). */
+export const cliDir = (home: string) => join(revylDir(home), "cli");
 const liveDir = (home: string) => join(revylDir(home), "live");
 const recordingsDir = (home: string) => join(revylDir(home), "recordings");
 
@@ -94,7 +97,14 @@ class Screen {
   }
 }
 
-export type RevylOptions = { bin?: string; now?: () => number; boxKey?: { open(sealed: Uint8Array): Uint8Array | null } };
+/** `install` and `env` are the tests': a stand-in release channel, and the environment `revyl` is looked for in. */
+export type RevylOptions = {
+  bin?: string;
+  now?: () => number;
+  boxKey?: { open(sealed: Uint8Array): Uint8Array | null };
+  install?: Omit<Install, "dir">;
+  env?: Record<string, string | undefined>;
+};
 
 /** The node's Revyl screens, one per agent session at most. */
 export class RevylScreens implements Screens {
@@ -117,7 +127,9 @@ export class RevylScreens implements Screens {
 
   /** Every `revyl` runs in its own home: Revyl's CLI keeps `.revyl/` (its sessions, input locks) where it runs. */
   private async run(argv: string[], key: string, timeoutMs: number): Promise<Run> {
-    const run = await runRevyl(argv, { key, home: cliHome(this.node.home), timeoutMs, ...(this.options.bin ? { bin: this.options.bin } : {}) });
+    const { bin, env } = this.options;
+    const install = { ...this.options.install, dir: cliDir(this.node.home) };
+    const run = await runRevyl(argv, { key, home: cliHome(this.node.home), timeoutMs, install, ...(bin ? { bin } : {}), ...(env ? { env } : {}) });
     return { ...run, out: withoutNudges(run.out) };
   }
 
@@ -166,7 +178,7 @@ export class RevylScreens implements Screens {
     try {
       run = await this.run(["device", "history", "--json", "--limit", "1"], key, CHECK_WAIT);
     } catch (e) {
-      if (e instanceof NoCli) return no("no_cli", "no revyl command");
+      if (e instanceof NoCli) return no("no_cli", e.message);
       return no("failed", mask((e as Error).message, key));
     }
     if (run.exit === 0) return { id: frame.id, ok: true, message: "Revyl answered for the key" };
@@ -190,7 +202,7 @@ export class RevylScreens implements Screens {
         run = await this.run(["device", "start", "--platform", kind, "--timeout", String(IDLE_SECS), "--open=false", "--json"], key, START_WAIT);
       } catch (e) {
         if (e instanceof NoCli) {
-          throw new ToolError("failed", "This machine has no revyl command, so it can't start the team's Revyl screen.", `say so in your result: a person installs Revyl's CLI here: ${INSTALL}`);
+          throw new ToolError("failed", `Revyl's CLI couldn't be installed on this machine (${e.message}), so it can't start the team's Revyl screen.`, "do without the screen and say so in your result");
         }
         throw e;
       }

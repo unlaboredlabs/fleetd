@@ -22,11 +22,9 @@ vi.hoisted(() => {
 const AT = "2026-10-26T10:00:00.000Z";
 const BOX = `${"A".repeat(43)}=`;
 const KEY = "rvl_live_0123456789abcdef";
-/** The hub's own words for a missing CLI (fleetd/src/hub/revyl, shared/revyl.ts INSTALL). */
-/** The same where the key is tested on the team's machines: the sentence names the one to install on. */
-const MACHINE_INSTALL =
-  "install Revyl's CLI on devbox, and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
-const HUB_INSTALL = "install Revyl's CLI on the hub's machine and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
+/** The hub's own words when no machine could install Revyl's CLI for itself (fleetd/src/hub/revyl). */
+const NOT_INSTALLED = "Revyl's CLI couldn't be installed on devbox (couldn't download Revyl's CLI from github.com: Unable to connect).";
+const RETRY = "test again once one of them can download it from github.com (Revyl's CLI runs on macOS and Linux)";
 
 const off: RevylState = { boxPubKey: BOX, connected: false, routes: { ios: "ours_only", android: "ours_only" } };
 const on: RevylState = { ...off, connected: true, check: { ok: true, at: AT }, routes: { ios: "ours_first", android: "ours_first" } };
@@ -39,6 +37,8 @@ let sealed: RevylKeyRequest[];
 let state: RevylState | HubError;
 let admin: boolean;
 let testAnswer: RevylState;
+/** Holds revyl_test's answer back until it settles: a first Test that installs Revyl's CLI on the machine first. */
+let testHeld: Promise<void> | undefined;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -49,6 +49,7 @@ beforeEach(() => {
   state = off;
   admin = true;
   testAnswer = on;
+  testHeld = undefined;
   (globalThis as { fleetd?: unknown }).fleetd = {
     platform: "linux",
     secret: {
@@ -76,8 +77,10 @@ const render = async () => {
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "1", protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member" } } });
       if (tool === "revyl_get") return Promise.resolve("code" in state ? { ok: false, error: state } : { ok: true, output: state });
       if (tool === "revyl_test") {
-        state = testAnswer;
-        return Promise.resolve({ ok: true, output: testAnswer });
+        return (testHeld ?? Promise.resolve()).then(() => {
+          state = testAnswer;
+          return { ok: true, output: testAnswer };
+        });
       }
       if (tool === "revyl_disconnect") {
         state = off;
@@ -160,33 +163,39 @@ it("connects a key through one sealed field that goes to main only, then says it
   expect(button("Disconnect")).toBeDefined();
 });
 
-it("says what a failed test found, with the install line when the hub has no revyl, and disconnects", async () => {
+it("shows a Test that first installs Revyl's CLI as testing, with no words, then Works", async () => {
   state = on;
-  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: "The hub's machine has no revyl command.", fix: HUB_INSTALL } };
+  let release: () => void = () => undefined;
+  testHeld = new Promise((r) => (release = r));
+  await render();
+  await click(button("Test"));
+  expect(button("Testing…")?.disabled).toBe(true);
+  expect(revyl()?.querySelector("[role='alert'], [role='status']")).toBeNull();
+  await act(async () => {
+    release();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(revyl()?.textContent).toContain("Works");
+  expect(button("Copy", within(revyl()))).toBeUndefined();
+});
+
+it("says why Revyl's CLI couldn't be installed, with nothing to copy, and disconnects", async () => {
+  state = on;
+  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: NOT_INSTALLED, fix: RETRY } };
   await render();
   // At rest, a working key says nothing.
   expect(revyl()?.textContent).not.toContain("Works");
   await click(button("Test"));
   expect(calls.some((c) => c.tool === "revyl_test")).toBe(true);
-  // The hub's sentence is words in the line; only its install command is the line to copy, and runs as pasted.
-  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`The hub's machine has no revyl command. I${HUB_INSTALL.slice(1)}`);
-  const copied = [...(revyl()?.querySelectorAll("[data-text]") ?? [])].map((t) => t.textContent).filter((t) => t.startsWith("curl"));
-  expect(copied).toEqual(["curl -fsSL https://revyl.com/install.sh | sh"]);
+  // The node installs Revyl's CLI itself: only a download that failed reads here, as its reason, with no command.
+  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`${NOT_INSTALLED} T${RETRY.slice(1)}`);
+  expect(button("Copy", within(revyl()))).toBeUndefined();
+  expect(revyl()?.textContent).not.toMatch(/curl|install\.sh/);
   await click(button("Disconnect"));
   expect(calls.some((c) => c.tool === "revyl_disconnect")).toBe(true);
   expect(revyl()?.getAttribute("data-revyl")).toBe("off");
   expect(button("Connect…")).toBeDefined();
-});
-
-it("copies only the install command when the sentence names the team machine to install on", async () => {
-  state = on;
-  testAnswer = { ...on, check: { ok: false, at: AT, reason: "no_cli", message: "No machine of the team's online has the revyl command (devbox).", fix: MACHINE_INSTALL } };
-  await render();
-  await click(button("Test"));
-  expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`No machine of the team's online has the revyl command (devbox). I${MACHINE_INSTALL.slice(1)}`);
-  const copied = [...(revyl()?.querySelectorAll("[data-text]") ?? [])].map((t) => t.textContent).filter((t) => t.startsWith("curl"));
-  expect(copied).toEqual(["curl -fsSL https://revyl.com/install.sh | sh"]);
-  expect(revyl()?.textContent).not.toContain("hub's machine");
 });
 
 it("keeps each kind on our machines until a key is connected, saying why with Connect right there", async () => {

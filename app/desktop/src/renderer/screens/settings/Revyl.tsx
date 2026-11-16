@@ -11,13 +11,15 @@ import { CallError } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, cx, Input, Select, Text } from "../../ui";
 import { useHubRole } from "../admin/role";
-import { CommandLine } from "../onboarding/Prose";
 import { errorText, useHubCall, useLive } from "./hub";
 import { GroupNote, SettingsRow } from "./parts";
-import { installCommand, keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine } from "./revylModel";
+import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine } from "./revylModel";
 import s from "./settings.module.css";
 
 const noInput = {};
+
+/** A Test may first install Revyl's CLI on the machine it runs on (the hub waits up to 2.75 minutes for one). */
+const TEST_TIMEOUT_MS = 180_000;
 
 const HINT = "Phone screens from your team's own Revyl account, which Revyl bills. The key is sealed and never shown again.";
 
@@ -56,7 +58,7 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
     setBusy(what);
     setProblem(null);
     setChecked(false);
-    void (what === "test" ? call("revyl_test", noInput, { timeoutMs: 60_000 }) : call("revyl_disconnect", noInput))
+    void (what === "test" ? call("revyl_test", noInput, { timeoutMs: TEST_TIMEOUT_MS }) : call("revyl_disconnect", noInput))
       .then(
         () => setChecked(what === "test"),
         (e: unknown) => setProblem(`${what === "test" ? "Not tested" : "Not disconnected"}: ${errorText(e)}`),
@@ -66,7 +68,6 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
   };
   const line = problem === null ? revylLine(state, checked) : { text: problem, tone: "danger" as const };
   const fix = line?.tone === "danger" && "fix" in line ? line.fix : undefined;
-  const install = problem === null ? installCommand(state) : null;
   const control = state.connected ? (
     <div className={s.inline}>
       <Button size="sm" disabled={busy !== null} onClick={() => run("test")}>
@@ -100,8 +101,6 @@ function RevylRow({ state, connecting, setConnecting }: { state: RevylState; con
             setChecked(true);
           }}
         />
-      ) : install !== null ? (
-        <CommandLine command={install} />
       ) : null}
     </SettingsRow>
   );

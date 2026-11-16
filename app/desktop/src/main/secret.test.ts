@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, REVYL_CONNECT_TIMEOUT_MS, submitProjectEnv, submitRevylKey, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -213,8 +213,8 @@ describe("the team's own Revyl key", () => {
     await sodium.ready;
     const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
     const sent: unknown[] = [];
-    const call = (tool: string, input: unknown) => {
-      sent.push(tool, input);
+    const call = (tool: string, input: unknown, timeoutMs?: number) => {
+      sent.push(tool, input, timeoutMs);
       return Promise.resolve({ ok: true as const, output: {} });
     };
     const key = "rvl_test_0123456789abcdef";
@@ -228,6 +228,8 @@ describe("the team's own Revyl key", () => {
     expect(Object.keys(input)).toEqual(["sealed"]);
     expect(JSON.stringify(input)).not.toContain(key);
     expect(JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk)))).toEqual({ key });
+    // Its first check may install Revyl's CLI on a machine first: longer than a call's default 30 s.
+    expect(sent[2]).toBe(REVYL_CONNECT_TIMEOUT_MS);
   });
 });
 

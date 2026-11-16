@@ -18913,7 +18913,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "fix": {
-          "description": "What to do about a failed check, in plain words (an install command for `no_cli`).",
+          "description": "What to do about a failed check, in plain words.",
           "type": "string"
         },
         "message": {
@@ -18934,7 +18934,7 @@
       "type": "object"
     },
     "RevylCheckReason": {
-      "description": "Why a Revyl key's last check failed, as a word the app acts on: `invalid_key` (Revyl refused it: wrong, revoked or\nexpired), `no_cli` (the hub's machine has no `revyl` command; `fix` says how to install it from Revyl), `failed`\n(anything else: the network, Revyl down).",
+      "description": "Why a Revyl key's last check failed, as a word the app acts on: `invalid_key` (Revyl refused it: wrong, revoked or\nexpired), `no_cli` (no machine could install Revyl's CLI; `message` says why), `failed`\n(anything else: the network, Revyl down).",
       "enum": [
         "invalid_key",
         "no_cli",

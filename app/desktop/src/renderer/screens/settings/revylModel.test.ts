@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { installCommand, keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine, usesRevyl } from "./revylModel";
+import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine, usesRevyl } from "./revylModel";
 
 const at = "2026-10-19T09:00:00.000Z";
-/** The hub's own words for a missing CLI (fleetd/src/hub/revyl, shared/revyl.ts INSTALL). */
-/** The same where the key is tested on the team's machines: the sentence names the one to install on. */
-const MACHINE_INSTALL =
-  "install Revyl's CLI on devbox, and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
-const HUB_INSTALL = "install Revyl's CLI on the hub's machine and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh | sh (or brew install RevylAI/tap/revyl, or pip install revyl)";
+/** The hub's own words when no machine could install Revyl's CLI for itself (fleetd/src/hub/revyl). */
+const NOT_INSTALLED = "Revyl's CLI couldn't be installed on devbox (couldn't download Revyl's CLI from github.com: Unable to connect).";
+const RETRY = "test again once one of them can download it from github.com (Revyl's CLI runs on macOS and Linux)";
 
 describe("where each phone kind's agent screens run", () => {
   it("offers the three routes for iOS simulators and Android only", () => {
@@ -51,20 +49,10 @@ describe("the Revyl row's line", () => {
 
   it("says what a failed check found, in the hub's words else its reason's, with its fix", () => {
     expect(revylLine({ connected: true, check: { ok: false, at, reason: "invalid_key" } }, false)?.text).toContain("refused the key");
-    const noCli = revylLine({ connected: true, check: { ok: false, at, reason: "no_cli", message: "The hub's machine has no revyl command.", fix: HUB_INSTALL } }, false);
-    expect(noCli).toEqual({ text: "The hub's machine has no revyl command.", tone: "danger", fix: HUB_INSTALL });
-  });
-
-  it("copies only the install command out of the hub's sentence, never the sentence", () => {
-    const check = { ok: false, at, reason: "no_cli", message: "The hub's machine has no revyl command.", fix: HUB_INSTALL };
-    expect(installCommand({ check })).toBe("curl -fsSL https://revyl.com/install.sh | sh");
-    // The wording that names the team machine to install on (the key tested on the team's machines).
-    expect(installCommand({ check: { ...check, message: "No machine of the team's online has the revyl command (devbox, box2).", fix: MACHINE_INSTALL } })).toBe("curl -fsSL https://revyl.com/install.sh | sh");
-    expect(installCommand({ check: { ...check, fix: "run brew install RevylAI/tap/revyl, then test again" } })).toBe("brew install RevylAI/tap/revyl");
-    // Words with no command in them stay words: nothing to copy.
-    expect(installCommand({ check: { ...check, fix: "install Revyl's CLI from revyl.com" } })).toBeNull();
-    expect(installCommand({ check: { ...check, reason: "invalid_key" } })).toBeNull();
-    expect(installCommand({})).toBeNull();
+    // Only a download that failed reads no_cli: the reason, never a command to run.
+    const noCli = revylLine({ connected: true, check: { ok: false, at, reason: "no_cli", message: NOT_INSTALLED, fix: RETRY } }, false);
+    expect(noCli).toEqual({ text: NOT_INSTALLED, tone: "danger", fix: RETRY });
+    expect(JSON.stringify(noCli)).not.toMatch(/curl|install\.sh|brew|pip/);
   });
 });
 

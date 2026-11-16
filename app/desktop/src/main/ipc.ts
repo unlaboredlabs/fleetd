@@ -68,7 +68,8 @@ export const registerIpc = (
 ): MacSetup => {
   // A hub removed while a call was on its way answers as an unpaired one would.
   const gone = { ok: false, error: { code: "offline", message: "That hub was removed from this app." } } as const;
-  const call = (id: string) => (tool: string, input: unknown) => hubs.get(id)?.call({ tool, input: input as CallRequest["input"] }) ?? Promise.resolve(gone);
+  const call = (id: string) => (tool: string, input: unknown, timeoutMs?: number) =>
+    hubs.get(id)?.call({ tool, input: input as CallRequest["input"], ...(timeoutMs === undefined ? {} : { timeoutMs }) }) ?? Promise.resolve(gone);
   handle(IPC.hubsList, () => hubs.list());
   handle(IPC.hubsUpdate, (_event, id, change) => hubs.update(id, change));
   hubs.onChange((list) => {

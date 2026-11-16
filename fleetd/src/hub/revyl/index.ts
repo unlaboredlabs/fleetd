@@ -7,7 +7,7 @@
 import type { KnownRevylRoute, RevylCheck, RevylKind, RevylState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CHECK_WAIT, INSTALL, KINDS, routeOf } from "../../shared/revyl.ts";
+import { CHECK_WAIT, INSTALL_WAIT, KINDS, routeOf } from "../../shared/revyl.ts";
 import { CAP_REVYL } from "../../shared/screens_wire.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
@@ -124,13 +124,13 @@ export async function sealedTo(hub: Hub, machineId: string, why: string): Promis
   return b64(seal(Buffer.from(to, "base64"), new TextEncoder().encode(key)));
 }
 
-/** How long the hub waits for a machine's check: the check's own wait, and a grace. */
-export const CHECK_REPLY_SEC = CHECK_WAIT / 1000 + 15;
+/** How long the hub waits for a machine's check: a first install of Revyl's CLI there, the check's own wait, and a grace. */
+export const CHECK_REPLY_SEC = (INSTALL_WAIT + CHECK_WAIT) / 1000 + 15;
 
 /**
  * Checks the key where agents' Revyl screens run, and keeps what it found: on the team's machines online that drive
- * them (CAP_REVYL), in the order of their ids, the first that has a `revyl` command asks Revyl about the key. The hub's
- * own process never runs `revyl`: a hub that is also the team's machine (one self-hosted box) checks through its own
+ * them (CAP_REVYL), in the order of their ids, the first that has a `revyl` command, or installs Revyl's CLI for itself
+ * (node/revyl/install.ts), asks Revyl about the key. The hub's own process never runs `revyl`: a hub that is also the team's machine (one self-hosted box) checks through its own
  * node like any other, and a shared hosted hub, where no team can install Revyl's CLI, the same way.
  */
 export async function test(hub: Hub): Promise<RevylState> {
@@ -139,7 +139,7 @@ export async function test(hub: Hub): Promise<RevylState> {
   const machines = store(hub)
     .machinesList()
     .filter((m) => link(hub).can(m.machineId, CAP_REVYL));
-  /** Machines that answered they have no `revyl`, and those that gave no check (offline, too old). */
+  /** Machines that answered they have no `revyl` and couldn't install it (with why), and those that gave no check. */
   const noCli: string[] = [];
   const unanswered: string[] = [];
   let check: RevylCheck | undefined;
@@ -157,7 +157,7 @@ export async function test(hub: Hub): Promise<RevylState> {
       break;
     }
     if (reply.reason === "no_cli") {
-      noCli.push(m.name);
+      noCli.push(`${m.name} (${reply.message})`);
       continue;
     }
     if (reply.reason !== "invalid_key" && reply.reason !== "failed") {
@@ -183,8 +183,8 @@ export async function test(hub: Hub): Promise<RevylState> {
           at,
           ok: false,
           reason: "no_cli",
-          message: `No machine of the team's online has the revyl command (${noCli.join(", ")}).${others}`,
-          fix: `install Revyl's CLI on ${noCli[0]}, and on each machine whose agents get Revyl screens: ${INSTALL}`,
+          message: `Revyl's CLI couldn't be installed on ${noCli.join(", ")}.${others}`,
+          fix: "test again once one of them can download it from github.com (Revyl's CLI runs on macOS and Linux)",
         }
       : {
           at,

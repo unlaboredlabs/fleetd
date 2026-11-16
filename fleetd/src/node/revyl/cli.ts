@@ -1,11 +1,12 @@
-// Runs Revyl's own CLI (`revyl`), installed from Revyl's channel (shared/revyl.ts INSTALL): fleetd ships no copy. The
-// team's key goes to the one process in its environment (REVYL_API_KEY), never on a command line, and the process runs
+// Runs Revyl's own CLI (`revyl`): the one on the machine, else fleetd's own copy, which the node fetches from Revyl's
+// releases the first time it needs it (install.ts): fleetd ships no copy. The team's key goes to the one process in its environment (REVYL_API_KEY), never on a command line, and the process runs
 // with a home of its own, so a login stored in a person's ~/.revyl never stands in for the team's key. What it prints
 // comes back with any key masked. FLEETD_REVYL_BIN names a stand-in (the tests').
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mask } from "../../shared/revyl.ts";
+import { type Install, InstallFailed, installRevyl } from "./install.ts";
 
 export type Run = { exit: number | null; out: string; timedOut: boolean };
 
@@ -22,19 +23,35 @@ export function revylBin(env: Record<string, string | undefined> = process.env):
 /** Python's user base under the real home (`site.USER_BASE`): ~/Library/Python on a Mac, else ~/.local. */
 const userBase = (home: string) => (process.platform === "darwin" ? join(home, "Library", "Python") : join(home, ".local"));
 
-export class NoCli extends Error {
-  constructor() {
-    super("there is no revyl command on this machine");
+/** There is no `revyl` here and none could be installed: why, in a sentence. */
+export class NoCli extends Error {}
+
+/**
+ * The `revyl` to run: one on the machine (revylBin), else fleetd's own copy in `install`'s folder, installed now when
+ * it isn't there yet. A stand-in FLEETD_REVYL_BIN names is never installed over. Throws NoCli.
+ */
+export async function findRevyl(install?: Install, env: Record<string, string | undefined> = process.env): Promise<string> {
+  const found = revylBin(env);
+  if (found) return found;
+  if (env.FLEETD_REVYL_BIN) throw new NoCli(`${env.FLEETD_REVYL_BIN} isn't there`);
+  if (!install) throw new NoCli("there is no revyl command on this machine");
+  try {
+    return await installRevyl(install);
+  } catch (e) {
+    throw new NoCli(e instanceof InstallFailed ? e.message : `couldn't install Revyl's CLI: ${(e as Error).message}`);
   }
 }
 
 /**
  * `revyl <argv>` with the team's `key`, in `cwd`, cut off after `timeoutMs`. `home` is the folder the process gets as
- * its HOME (made 0700). Throws NoCli when there is no `revyl`.
+ * its HOME (made 0700). Without `bin`, the `revyl` findRevyl gives, installed into `install`'s folder when there is
+ * none; throws NoCli when there is none and it couldn't be.
  */
-export async function runRevyl(argv: string[], opts: { key: string; home: string; cwd?: string; timeoutMs: number; bin?: string }): Promise<Run> {
-  const bin = opts.bin ?? revylBin();
-  if (!bin) throw new NoCli();
+export async function runRevyl(
+  argv: string[],
+  opts: { key: string; home: string; cwd?: string; timeoutMs: number; bin?: string; install?: Install; env?: Record<string, string | undefined> },
+): Promise<Run> {
+  const bin = opts.bin ?? (await findRevyl(opts.install, opts.env));
   mkdirSync(opts.home, { recursive: true, mode: 0o700 });
   const proc = Bun.spawn([bin, ...argv], {
     cwd: opts.cwd ?? opts.home,

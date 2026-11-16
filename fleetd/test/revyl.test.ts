@@ -43,14 +43,15 @@ async function call(who: typeof admin, tool: string, input: Record<string, unkno
 
 /**
  * A machine of the team's whose node answers the hub's check as node/revyl does: `bin` is its `revyl`, absent for a
- * machine without one.
+ * machine without one, whose own install of Revyl's CLI can't reach its release channel.
  */
 function machine(id: string, bin?: string) {
   const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
   addMachine(t.hub, id, { boxPubKey: box.publicKey() });
   t.link.link(id, ["browser", "session_seal", "session_host", "revyl"]);
   const n = testNode(id);
-  const r = new RevylScreens(n.node, { ...(bin ? { bin } : {}), boxKey: box });
+  const none = { env: { PATH: "/usr/bin:/bin", HOME: n.node.home }, install: { releases: "http://127.0.0.1:9", waitMs: 5000 } };
+  const r = new RevylScreens(n.node, { ...(bin ? { bin } : none), boxKey: box });
   nodes.set(id, r);
   cleanup.push(() => void r.shutdown(), n.done);
 }
@@ -106,7 +107,7 @@ test("test: a hub with no revyl checks on a machine that has one, after one that
   expect(JSON.stringify(bad)).not.toContain(BAD);
 });
 
-test("test: no machine with revyl reads no_cli, naming the machine to install it on; none online reads failed", async () => {
+test("test: no machine that could install revyl reads no_cli, with each one's reason and no command; none online reads failed", async () => {
   process.env.FLEETD_REVYL_BIN = `${s.bin}-missing`;
   machine("box1");
   machine("devbox");
@@ -115,8 +116,9 @@ test("test: no machine with revyl reads no_cli, naming the machine to install it
   answering();
   const missing = await call(admin, "revyl_connect", { sealed: sealed(GOOD) });
   expect(missing.check).toMatchObject({ ok: false, reason: "no_cli" });
-  expect(missing.check.message).toBe("No machine of the team's online has the revyl command (box1, devbox). No check from box3 (box3's node is not linked to the hub).");
-  expect(missing.check.fix).toStartWith("install Revyl's CLI on box1, and on each machine whose agents get Revyl screens: curl -fsSL https://revyl.com/install.sh");
+  const why = "couldn't download Revyl's CLI from 127\\.0\\.0\\.1:9: [^)]+";
+  expect(missing.check.message).toMatch(new RegExp(`^Revyl's CLI couldn't be installed on box1 \\(${why}\\), devbox \\(${why}\\)\\. No check from box3 \\(box3's node is not linked to the hub\\)\\.$`));
+  expect(missing.check.fix).toBe("test again once one of them can download it from github.com (Revyl's CLI runs on macOS and Linux)");
   for (const id of ["box1", "devbox", "box3"]) t.link.unlink(id);
   const none = await call(admin, "revyl_test");
   expect(none.check).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("nowhere to test the key") });
