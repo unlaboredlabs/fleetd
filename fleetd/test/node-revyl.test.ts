@@ -3,10 +3,10 @@
 // ends: session_end, the agent's session ending, idling out, or the node restarting. A stand-in `revyl` answers
 // (revyl_standin.ts): nothing reaches Revyl or spends anything.
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { NodeBoxKey } from "../src/node/identity.ts";
-import { IDLE_MS, RevylScreens, start as startRevyl } from "../src/node/revyl/index.ts";
+import { IDLE_MS, inCwd, RevylScreens, start as startRevyl } from "../src/node/revyl/index.ts";
 import { router } from "../src/node/device/router.ts";
 import { start as startRoute } from "../src/node/session_route/index.ts";
 import { seal } from "../src/shared/sealed_box.ts";
@@ -47,7 +47,7 @@ test("a routed start: Revyl's device, reported as the agent's screen with source
   const started = await begin();
   expect(started).toMatchObject({ op: "session_start", kind: "android", source: "revyl", sessionId: expect.stringMatching(/^B[0-9a-f]{32}$/) });
   expect(String(started.note)).toContain("revyl device tap");
-  expect(s.lines()[0]).toMatch(/^device start --platform android --timeout 1800 --json key=set /);
+  expect(s.lines()[0]).toMatch(/^device start --platform android --timeout 1800 --open=false --json key=set /);
   expect(reports[0]).toMatchObject({ state: "live", kind: "android", source: "revyl", threadId: "t1" });
   expect(router(t.node).live("t1")).toBe(true);
   expect(readdirSync(join(t.node.home, "revyl", "live"))).toHaveLength(1);
@@ -68,12 +68,27 @@ test("the agent's revyl: its own screen by coordinates, the key never in what co
   await expect(t.local.call("session_start", { kind: "android", purpose: "again" }, "t1")).rejects.toThrow("is open");
 });
 
+test("the agent's revyl runs outside its folder, so Revyl's .revyl/ stays out of its repo; its files land in its folder", async () => {
+  const { t, begin } = rig();
+  await begin();
+  const cwd = mkdtempSync(join(t.node.home, "agent-"));
+  const shot = (await router(t.node).handle("t1", { id: "x", cwd, call: { op: "revyl", argv: ["device", "screenshot", "--out", "a.png"] } })) as Record<string, unknown>;
+  expect(shot).toMatchObject({ exitCode: 0 });
+  expect(readdirSync(cwd)).toEqual(["a.png"]);
+  expect(existsSync(join(t.node.home, "revyl", "home", ".revyl"))).toBe(true);
+  expect(inCwd(["build", "upload", "-f", "app.apk"], "/w")).toEqual(["build", "upload", "-f", "/w/app.apk"]);
+  expect(inCwd(["build", "upload", "--file=/b/app.apk"], "/w")).toEqual(["build", "upload", "--file=/b/app.apk"]);
+  expect(inCwd(["device", "hierarchy", "--out=h.json"], "/w")).toEqual(["device", "hierarchy", "--out=/w/h.json"]);
+});
+
 test("a person watches and takes over: frames from screenshots, a click taps; the agent waits meanwhile", async () => {
   const { s, t, r, reports, begin } = rig();
   const { sessionId } = (await begin()) as { sessionId: string };
   const screen = r.byId(sessionId)!;
   const frame = await r.shot(screen);
   expect(frame).toMatchObject({ seq: 1, width: 2, height: 3 });
+  // The 2-pixel frame of a screen `device start` said is 1 unit wide: two pixels to a unit.
+  expect(screen.scale).toBe(2);
   // Revyl's PNG goes out as the JPEG a frame is.
   expect([...frame!.jpeg.subarray(0, 2)]).toEqual([0xff, 0xd8]);
   t.link.deliver({ t: "browser_control", sessionId, control: "human", by: "ana" });
@@ -81,7 +96,7 @@ test("a person watches and takes over: frames from screenshots, a click taps; th
   await expect(t.local.call("revyl", { argv: ["device", "screenshot", "--out", "a.png"] }, "t1")).rejects.toThrow("A person has control");
   t.link.deliver({ t: "browser_input", sessionId, input: { kind: "mouse", action: "pressed", button: "left", x: 50, y: 70 } });
   await r.input({ sessionId, input: { kind: "mouse", action: "released", button: "left", x: 50, y: 70 } });
-  expect(s.lines().at(-1)).toMatch(/^device tap --x 50 --y 70 --session-id rs-0001 key=set/);
+  expect(s.lines().at(-1)).toMatch(/^device tap --x 25 --y 35 --session-id rs-0001 key=set/);
   t.link.deliver({ t: "browser_control", sessionId, control: "agent", by: "ana" });
   await t.local.call("revyl", { argv: ["device", "info"] }, "t1");
   expect(reports.at(-1)).toMatchObject({ control: "agent" });

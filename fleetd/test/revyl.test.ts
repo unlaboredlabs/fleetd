@@ -79,11 +79,11 @@ test("connect: the sealed key is kept sealed, checked at once on the team's mach
   expect(on.connected).toBe(true);
   expect(on.check).toMatchObject({ ok: true });
   expect(on.routes).toEqual({ ios: "ours_first", android: "ours_first" });
-  // The hub sent the key sealed to devbox's box key; devbox ran `revyl device list`, which only Revyl's server answers,
-  // with the key in its environment and a home of its own, never on its command line.
+  // The hub sent the key sealed to devbox's box key; devbox ran `revyl device history`, which only Revyl's server
+  // answers, with the key in its environment and a home of its own, never on its command line.
   const sent = t.link.sent("devbox");
   expect(JSON.stringify(sent)).not.toContain(GOOD);
-  expect(s.lines()).toEqual([expect.stringMatching(/^device list --json key=set home=.*\/revyl\/home$/)]);
+  expect(s.lines()).toEqual([expect.stringMatching(/^device history --json --limit 1 key=set home=.*\/revyl\/home$/)]);
   const stored = t.hub.db.conn.query<{ sealed: Uint8Array }, []>("SELECT sealed FROM revyl_account").get()!;
   expect(Buffer.from(stored.sealed).includes(Buffer.from(GOOD))).toBe(false);
   expect(JSON.stringify(on)).not.toContain(GOOD);
@@ -100,6 +100,8 @@ test("test: a hub with no revyl checks on a machine that has one, after one that
   expect(on.check).toEqual({ at: expect.any(String), ok: true });
   expect(s.lines()).toHaveLength(1);
   const bad = await call(admin, "revyl_connect", { sealed: sealed(BAD) });
+  // Revyl's CLI asks whoever reads its output to send Revyl feedback; that line never reaches anyone.
+  expect(bad.check.message).not.toContain("revyl feedback");
   expect(bad.check).toMatchObject({ ok: false, reason: "invalid_key", message: expect.stringMatching(/^devbox: .*Invalid API key/) });
   expect(JSON.stringify(bad)).not.toContain(BAD);
 });

@@ -430,7 +430,7 @@ Screens**, an admin pastes it into the **Revyl** row's sealed field and presses 
 hub, which keeps it sealed as it keeps [vault](/docs/vault) values: it is never shown again, logged or given to an
 agent, and each use is logged without it. Test runs where agents' Revyl screens run: the hub sends the key sealed
 to the team's machines online, in the order of their ids, and the first with a `revyl` command asks Revyl about it
-(`revyl device list`, which starts nothing). The hub never runs `revyl` itself, so a hosted hub tests the same way,
+(`revyl device history`, which only Revyl's server answers and which starts nothing). The hub never runs `revyl` itself, so a hosted hub tests the same way,
 and on a single self-hosted box its own machine runs it. A key Revyl refuses (wrong or expired) reads as such, and
 when no machine online has `revyl`, Test names the one to install it on. Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
 MCP clients use `revyl_get`, `revyl_connect`, `revyl_test`, `revyl_disconnect` and `revyl_route_set`.
@@ -452,7 +452,8 @@ Revyl holds the start in its queue until one frees. With no key connected nothin
 
 **What an agent sees.** `session_start` with `kind` `ios` or `android` answers that the phone is Revyl's, and why
 ("devbox's screen slots are full, so this one is Revyl's"). The agent drives it with `revyl device …` by coordinates
-after a screenshot (`revyl device screenshot --out shot.png`, `revyl device tap --x 120 --y 300`, swipe, type, key),
+after a screenshot (`revyl device screenshot --out shot.png`, `revyl device tap --x 120 --y 300`, swipe, type, key):
+an iPhone's in points (its screenshots have three pixels to a point), an Android phone's in pixels. It
 installs its own build with `revyl build upload --file <.app or .apk>`, and ends it with `session_end`. The `revyl`
 on its PATH is fleetd's: the node runs Revyl's CLI with the team's key in that one process, so the agent never holds
 the key. Agents run as the node's own user, though, so this keeps the key out of their commands and output, not out
