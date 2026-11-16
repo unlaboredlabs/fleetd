@@ -36,6 +36,7 @@ import {
   runners,
   setSession,
 } from "./places.ts";
+import { routePhone } from "../revyl/route.ts";
 import { hashToken } from "./relay.ts";
 import { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
 
@@ -124,8 +125,6 @@ export async function route(hub: Hub, caller: LeadCaller, call: SessionRouteCall
     if (!answer) throw failure;
     return relayed(open.runner, answer);
   }
-  // iOS screens are gone (D298): a node before them still asks to place one, and gets the agents' Mac's way.
-  if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
   if (open) {
     throw new ToolError(
       "invalid",
@@ -134,6 +133,13 @@ export async function route(hub: Hub, caller: LeadCaller, call: SessionRouteCall
     );
   }
   const all = runners(hub).map((r) => r.runner);
+  // A phone screen, once the team connected its own Revyl key: its kind's route says where (hub/revyl/route.ts).
+  if ((host === "android" || host === "ios") && call.sealed === undefined) {
+    const routed = await routePhone(hub, host as "android" | "ios", origin, thread, all);
+    if (routed) return routed;
+  }
+  // iOS screens are the agents' Mac's (D298): `mac sim start` there.
+  if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
   // Across machines only from an agent's node that seals its session's secrets to the runner.
   const remote = remoteOn(hub.db.conn) && link(hub).can(origin, CAP_SESSION_SEAL);
   let runner: string;

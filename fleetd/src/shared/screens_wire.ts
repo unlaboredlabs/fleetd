@@ -16,6 +16,7 @@ import type {
   MachineId,
  
   ProjectId,
+  ScreenSource,
   SessionHost,
   SessionKind,
   TaskId,
@@ -35,6 +36,8 @@ export const CAP_SCREEN_SETTINGS = "screen_settings";
 export const CAP_PROJECT_SIGNINS = "project_signins";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
+/** The node starts and drives phone screens in the team's own Revyl account (node/revyl). */
+export const CAP_REVYL = "revyl";
 
 // ---- browser.rs constants ----
 export const RECORDING_PART_BYTES = 512 * 1024;
@@ -149,6 +152,8 @@ export type BrowserSessionCall = {
   files?: BrowserRecordingEntry[];
   credentialsFilled?: number;
   note?: string;
+  /** `revyl`: a phone in the team's own Revyl account, which this node drives through Revyl's CLI. */
+  source?: ScreenSource;
 };
 export type BrowserRecordingPartCall = {
   sessionId: BrowserSessionId;
@@ -159,9 +164,15 @@ export type BrowserRecordingPartCall = {
 export type BrowserTakeoverCall = { sessionId: BrowserSessionId; reason: string };
 export type SealedForRunner = { runner: MachineId; dataB64: string };
 export type SessionRouteCall = { frame: BrowserCallFrame; host?: SessionHost; sealed?: SealedForRunner };
+/**
+ * A phone screen the hub routed to the team's own Revyl account: the agent's node starts it with Revyl's CLI, with the
+ * team's key sealed to the node's box key, and drives it as its own screen. `why` says why it is Revyl's.
+ */
+export type RevylStart = { platform: "ios" | "android"; sealed: string; why: string };
 export type SessionRouteResult = {
   runner: MachineId;
   here: boolean;
+  revyl?: RevylStart;
   answer?: BrowserResultFrame;
   relay?: string;
   sealTo?: string;

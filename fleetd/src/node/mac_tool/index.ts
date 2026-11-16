@@ -92,6 +92,8 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   node.area("hb").contribute((hb) => {
     const ios = simulators.health();
     if (hb.load && ios) (hb.load as Record<string, unknown>).ios = ios;
+    // How full its simulators are, for the hub's routing of iOS screens between this Mac and Revyl.
+    if (hb.load) (hb.load as Record<string, unknown>).sims = { inUse: sims.held.size, budget: sims.budget(), waiting: sims.queue.size() };
   });
   return sims;
 }

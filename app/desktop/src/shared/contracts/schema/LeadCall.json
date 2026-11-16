@@ -652,6 +652,10 @@
         "sessionId": {
           "$ref": "#/$defs/BrowserSessionId"
         },
+        "source": {
+          "$ref": "#/$defs/ScreenSource",
+          "description": "`revyl` for a phone in the team's own Revyl account, which this node drives through Revyl's CLI; absent for a\nscreen on a machine of the team's."
+        },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -3391,6 +3395,14 @@
       ],
       "type": "object"
     },
+    "ScreenSource": {
+      "description": "Where a screen runs beyond the team's own machines: `revyl`, the team's own Revyl account.",
+      "enum": [
+        "revyl"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "ScrollDirection": {
       "enum": [
         "up",
@@ -3636,11 +3648,11 @@
       "type": "object"
     },
     "SessionStartCall": {
-      "description": "`session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator), for this\nagent only, recorded until `session_end`. `ios` is a legacy value, answered with the way to `mac sim start` (the\nagents' Mac).",
+      "description": "`session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator), for this\nagent only, recorded until `session_end`. `ios` asks for an iPhone: a Revyl one when the team\nroutes iOS screens to its own Revyl account (as `android` may be), else the way to `mac sim start` (the agents' Mac).",
       "properties": {
         "kind": {
           "$ref": "#/$defs/SessionKind",
-          "description": "`android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the\n`desktop` tool; `mac` for the agents' Mac's screen, shared (one agent per app; pointer and keys one at a time), driven with the\n`desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac."
+          "description": "`android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the\n`desktop` tool; `mac` for the agents' Mac's screen, shared (one agent per app; pointer and keys one at a time), driven with the\n`desktop` tool and agent-desktop; absent for a browser. `ios` for an iPhone: a Revyl one when the team routes iOS screens\nto its Revyl account, else the way to `mac sim start` on the agents' Mac. A Revyl phone (ios or android) is driven with\n`revyl device …`."
         },
         "purpose": {
           "description": "What you need the browser for, in one line; the person replaying it sees it.",

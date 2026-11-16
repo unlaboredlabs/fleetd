@@ -25,7 +25,6 @@ import { ToolError } from "../../shared/errors.ts";
 import {
   type BrowserCallFrame,
   type BrowserResultFrame,
-  IOS_GONE,
   type RelayDialFrame,
   type SessionHostFrame,
   type SessionRouteResult,
@@ -41,6 +40,11 @@ import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { notInVault } from "../browser/vault.ts";
 import { dial, relayUrl } from "./relay.ts";
+import { revyl as revylScreens } from "../revyl/index.ts";
+import { ASK_EVERY } from "../mac_tool/queue.ts";
+
+/** The hub's reason for a phone start waiting in its line (hub/revyl/route.ts). */
+const QUEUED = "queued";
 
 /** Whether a runner refused a `fill_credential` reference because its vault doesn't hold it (or, a runner from
  * before the vault, because it has no 1Password token): read here then, and sent sealed. */
@@ -52,6 +56,9 @@ const notInVaultThere = (routed: SessionRouteResult) => {
 
 /** A step's output past this goes cut. */
 const STEP_OUTPUT = 64 * 1024;
+
+/** How long a phone start waits in the hub's line before the agent hears its place (it keeps it by calling again). */
+export const LINE_WAIT = 100_000;
 
 /** How long the node waits for the hub to place a session: past the hub's own wait for a runner's start. */
 export const ROUTE_WAIT = 150_000;
@@ -145,15 +152,15 @@ export class Router {
     const op = frame.call.op;
     if (screens(this.node).live(thread)) return this.here(thread, frame);
     const host = hostOf(frame);
-    // iOS simulators are the agents' Mac's (`mac sim`): the hub isn't asked.
-    if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
     // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
     if (this.broker.staysHere(thread)) return this.here(thread, frame);
     // A fill of a session hosted elsewhere: its runner asks the hub's vault itself. Only a 1Password reference the vault
     // doesn't hold yet (one release) is read here, with this machine's token, and only the value goes, sealed.
     const remote = this.remotes.get(thread);
     const ref = op === "fill_credential" && typeof frame.call.ref === "string" && frame.call.ref ? frame.call.ref : undefined;
-    let routed = await this.ask(thread, frame);
+    let routed = op === "session_start" && (host === "android" || host === "ios") ? await this.inLine(thread, frame) : await this.ask(thread, frame);
+    // A phone the team's own Revyl account hosts: started and driven here, with the key the hub sealed to this node.
+    if (routed.revyl && op === "session_start") return revylScreens(this.node).start(thread, frame, routed.revyl);
     if (ref && remote?.runner && remote.sealTo && notInVaultThere(routed)) {
       routed = await this.ask(thread, frame, await this.sealedFill(thread, ref, remote.runner, remote.sealTo));
     }
@@ -186,6 +193,22 @@ export class Router {
     // The agent's own address for it, as its AGENT_BROWSER_CDP names it: never the runner's.
     if (op === "session_start" && this.remotes.has(thread)) result.cdp = this.broker.proxy.url(thread);
     return result;
+  }
+
+  /**
+   * A phone start: asked again every ASK_EVERY while the hub keeps it in line for the team's machines (reason
+   * `queued`), up to LINE_WAIT; then the agent hears its place and calls again to keep it.
+   */
+  private async inLine(thread: string, frame: BrowserCallFrame): Promise<SessionRouteResult> {
+    const started = Date.now();
+    for (;;) {
+      try {
+        return await this.ask(thread, frame);
+      } catch (e) {
+        if (!(e instanceof ToolError) || e.reason !== QUEUED || Date.now() - started >= LINE_WAIT) throw e;
+      }
+      await Bun.sleep(ASK_EVERY);
+    }
   }
 
   /** The agent's claude exited: its screens end now, not at their idle timeout, here or on the machine hosting one
