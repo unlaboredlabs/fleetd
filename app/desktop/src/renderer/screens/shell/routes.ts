@@ -157,6 +157,8 @@ type ScreenOf =
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
   /** The hub admin's setup: the welcome, one step open, or the end. */
   | { readonly id: "setup"; readonly view: string | null }
+  /** Get started, fleetd cloud's first run (screens/start); `sample` shows one of its sample views. */
+  | { readonly id: "start"; readonly sample: string | null }
   /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
   | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };
 
@@ -267,6 +269,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     case "setup":
       return { id: "setup", view: a ?? null };
+    case "start":
+      return { id: "start", sample: query.get("sample") || null };
     default:
       // The removed surfaces (#/board, #/order, #/inbox, #/agents, #/prs, #/status) and anything unknown land on the home project.
       return HOME;
@@ -322,6 +326,7 @@ const path = (screen: Screen): Array<string> => {
       return screen.open === null ? ["screens"] : ["screens", screen.open.project.machineId, screen.open.project.projectId, screen.open.session];
     case "factory":
     case "onboarding":
+    case "start":
       return [screen.id];
   }
 };
@@ -333,6 +338,7 @@ export const toHash = (screen: Screen): string => {
     if (screen.hub !== null) query.set("hub", screen.hub);
     if (screen.code !== null) query.set("code", screen.code);
   }
+  if (screen.id === "start" && screen.sample !== null) query.set("sample", screen.sample);
   if (screen.id === "factory" && screen.project !== null) query.set("project", `${screen.project.machineId}/${screen.project.projectId}`);
   if (screen.id === "settings") {
     if (screen.prompt !== undefined) query.set("prompt", screen.prompt);
