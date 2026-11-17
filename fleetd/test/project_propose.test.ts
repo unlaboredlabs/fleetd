@@ -19,8 +19,8 @@ const NOTES = { machineId: "devbox", projectId: "notes" };
 const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const grace = key("operate", { human: true, name: "phone", person: { personId: "p-grace", name: "Grace" } });
 const BILLING = { kind: "repo_facts" as const, exists: true, isGit: true, remote: "https://github.com/acme/billing", defaultBranch: "main", workflowFiles: [] };
-const WHAT = "A new project on devbox, once you approve. Everyone on this hub can use it. Nothing is made before that.";
-const WHAT_CLONED = "A new project on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it. Nothing is made before that.";
+const WHAT = "A new bot on devbox, once you approve. Everyone on this hub can use it. Nothing is made before that.";
+const WHAT_CLONED = "A new bot on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it. Nothing is made before that.";
 
 /** Notes on devbox with its lead (th-lead) and a task of it (T4, th-task), the wakes its lead gets, and its prompts. */
 async function rig(answer: Answer = () => undefined) {
@@ -84,7 +84,7 @@ test("a proposal is one card in every approval mode, YOLO too, and nothing is ma
         server: "fleetd",
         tool: "project_propose",
         action: "write",
-        title: `Create the project “Billing ${i}”`,
+        title: `Create the bot “Billing ${i}”`,
         // onlyMe false for one release: an older app shows the card as New project only with it.
         input: JSON.stringify({ machineId: "devbox", onlyMe: false, path: `${ROOT}/billing-${i}`, repo: null, title: `Billing ${i}`, what: WHAT }, null, 2),
       });
@@ -99,7 +99,7 @@ test("a proposal is one card in every approval mode, YOLO too, and nothing is ma
   }
 });
 
-test("a person's Approve makes the project, theirs; the lead's call then returns it, once", async () => {
+test("a person's Approve makes the bot, theirs; the lead's call then returns it, once", async () => {
   const k = await rig();
   try {
     await k.mode("yolo");
@@ -117,7 +117,7 @@ test("a person's Approve makes the project, theirs; the lead's call then returns
     // The call the prompt let through returns what was made, and only once.
     const out = result(await k.send("th-lead", { op: "project_propose", title: "Billing" }));
     expect(out).toMatchObject({ created: true, title: "Billing", path: `${ROOT}/billing` });
-    expect(out?.next).toBe(`Billing is a project now, at ${ROOT}/billing on devbox, in everyone's list of projects; its own lead starts with their first message there.`);
+    expect(out?.next).toBe(`Billing is a bot now, at ${ROOT}/billing on devbox, in everyone's list of bots; its own lead starts with their first message there.`);
     expect(refusal(await k.send("th-lead", { op: "project_propose", title: "Billing" }))?.code).toBe("forbidden");
     expect(k.made()).toHaveLength(1);
     // The same card approved again (its answer undelivered) makes no second one.
@@ -145,7 +145,7 @@ test("denied, nothing is made, in YOLO as in any mode; and the call itself never
     const direct = refusal(await k.send("th-lead", { op: "project_propose", title: "Billing" }));
     expect([direct?.code, direct?.message]).toEqual([
       "forbidden",
-      "Nothing was created: no approval of a project named Billing is waiting here. Only a person's Approve on the card project_propose shows them makes one.",
+      "Nothing was created: no approval of a bot named Billing is waiting here. Only a person's Approve on the card project_propose shows them makes one.",
     ]);
     // No setup call makes one either: it is refused with the line that names the proposal.
     expect(refusal(await k.send("th-lead", { op: "project_setup", create: true, title: "Billing" }))?.message).toBe(`project_setup has no create. ${PEOPLE_ONLY.create}`);
@@ -157,7 +157,7 @@ test("denied, nothing is made, in YOLO as in any mode; and the call itself never
   }
 });
 
-test("a task can't propose a project: its call is refused, and its prompt is no card", async () => {
+test("a task can't propose a bot: its call is refused, and its prompt is no card", async () => {
   const k = await rig();
   try {
     expect(refusal(await k.send("th-task", { op: "project_propose", title: "Billing" }))?.message).toBe("project_propose is a lead's call, and T4 is a task.");
@@ -165,7 +165,7 @@ test("a task can't propose a project: its call is refused, and its prompt is no 
     expect([card, answer]).toEqual([undefined, undefined]);
     // A person's shell, with no session, is no lead either.
     const shell = refusal(await k.send(undefined, { op: "project_propose", title: "Billing" }));
-    expect([shell?.message, shell?.fix]).toEqual(["project_propose is a project's lead's call, from its own session.", "A person makes a project themselves with New project in the app."]);
+    expect([shell?.message, shell?.fix]).toEqual(["project_propose is a bot's lead's call, from its own session.", "A person makes a bot themselves with New bot in the app."]);
     expect(k.made()).toEqual([]);
   } finally {
     k.hub.shutdown.abort();
@@ -185,7 +185,7 @@ test("what could not be made is refused before a person is asked", async () => {
       return answer?.[1];
     };
     expect(await denied("p-1", { title: "  " })).toBe(
-      "Blocked by fleetd: no card was shown. Give title: the new project's name, on one line of at most 200 characters. Propose it under another title, or: The person makes it themselves with New project in the app.",
+      "Blocked by fleetd: no card was shown. Give title: the new bot's name, on one line of at most 200 characters. Propose it under another title, or: The person makes it themselves with New bot in the app.",
     );
     expect(await denied("p-2", { title: "Two\nlines" })).toContain("on one line");
     // A folder that holds files already, a repository gh can't see, and a clone's folder that is taken.
@@ -193,7 +193,7 @@ test("what could not be made is refused before a person is asked", async () => {
     expect(await denied("p-4", { title: "Secret", url: "acme/secret" })).toContain("acme/secret");
     expect(await denied("p-5", { title: "Billing", url: "https://github.com/acme/billing" })).toBe(
       "Blocked by fleetd: no card was shown. /home/me/src/billing already exists on devbox, so acme/billing can't be cloned there. " +
-        "The person makes it themselves with New project in the app, where a checkout that is there can be added as it is.",
+        "The person makes it themselves with New bot in the app, where a checkout that is there can be added as it is.",
     );
     expect(k.a.listQuiet({ kind: "approval" })).toEqual([]);
     expect(k.made()).toEqual([]);
@@ -202,7 +202,7 @@ test("what could not be made is refused before a person is asked", async () => {
   }
 });
 
-test("a project that can't be made once approved is said on the card and to the lead, and none exists", async () => {
+test("a bot that can't be made once approved is said on the card and to the lead, and none exists", async () => {
   let taken = false;
   const k = await rig((call) => {
     if (taken && call.op === "folder_make") return { err: { code: "invalid", message: `folder not empty: ${call.path}` } };
@@ -214,7 +214,7 @@ test("a project that can't be made once approved is said on the card and to the 
     // Files landed in the folder between the card and the tap.
     taken = true;
     await k.tap(ada, id, "approve");
-    const why = `the project was not created: ${ROOT}/billing on devbox already holds files. Propose it again once that is sorted, or: The person makes it themselves with New project in the app`;
+    const why = `the bot was not created: ${ROOT}/billing on devbox already holds files. Propose it again once that is sorted, or: The person makes it themselves with New bot in the app`;
     expect([k.a.get(id)?.state, k.a.get(id)?.evidence]).toEqual(["failed", why]);
     expect(k.answered("p-1")).toEqual(["deny", `human:desk approved it (${id}), but ${why}`]);
     expect(k.made()).toEqual([]);
@@ -224,7 +224,7 @@ test("a project that can't be made once approved is said on the card and to the 
   }
 });
 
-test("a proposal with a repo clones it once approved: the project exists when the clone ends, and the lead is woken", async () => {
+test("a proposal with a repo clones it once approved: the bot exists when the clone ends, and the lead is woken", async () => {
   let cloned: (() => void) | undefined;
   const k = await rig((call) => {
     if (call.op === "repo_inspect" && call.path === "/home/me/src/billing") return cloned === undefined ? { ok: { kind: "repo_facts", exists: false, isGit: false } } : { ok: BILLING };
@@ -264,7 +264,7 @@ test("a proposal with a repo clones it once approved: the project exists when th
     expect(k.wakes).toHaveLength(1);
     expect(k.wakes[0]).toMatchObject({ kind: "line", line: "request" });
     expect((k.wakes[0] as { text: string }).text).toMatch(
-      /^project_propose: acme\/billing is cloned, and Billing is a project now \(.+\), at \/home\/me\/src\/billing on devbox, as one Ada added themselves; its own lead starts with their first message there\.$/u,
+      /^project_propose: acme\/billing is cloned, and Billing is a bot now \(.+\), at \/home\/me\/src\/billing on devbox, as one Ada added themselves; its own lead starts with their first message there\.$/u,
     );
     expect(k.db.query("SELECT COUNT(*) AS n FROM project_setup_clones").get()).toEqual({ n: 0 });
   } finally {
@@ -272,7 +272,7 @@ test("a proposal with a repo clones it once approved: the project exists when th
   }
 });
 
-test("an approved proposal's clone that fails wakes the lead with why, and no project exists", async () => {
+test("an approved proposal's clone that fails wakes the lead with why, and no bot exists", async () => {
   const k = await rig((call) => {
     if (call.op === "repo_inspect" && call.path === "/home/me/src/billing") return { ok: { kind: "repo_facts", exists: false, isGit: false } };
     if (call.op === "repo_clone") return { err: { code: "git", message: "repository 'https://github.com/acme/billing/' not found" } };
@@ -288,7 +288,7 @@ test("an approved proposal's clone that fails wakes the lead with why, and no pr
         kind: "line",
         line: "request",
         text:
-          "project_propose: the project Billing was not created. cloning acme/billing on devbox failed: repository 'https://github.com/acme/billing/' not found " +
+          "project_propose: the bot Billing was not created. cloning acme/billing on devbox failed: repository 'https://github.com/acme/billing/' not found " +
           "On devbox, run `gh auth login` with an account that can read acme/billing, then add it again. Tell the person.",
       },
     ]);
@@ -308,8 +308,8 @@ test("a lead whose proposal's clone a hub restart cut off is told at the hub's n
         kind: "line",
         line: "request",
         text:
-          "project_propose: the hub restarted while cloning acme/billing into /home/me/src/billing, so the project Billing was not created. " +
-          "Tell the person: they can add it with New project in the app, where a clone that finished on the machine is added as it is.",
+          "project_propose: the hub restarted while cloning acme/billing into /home/me/src/billing, so the bot Billing was not created. " +
+          "Tell the person: they can add it with New bot in the app, where a clone that finished on the machine is added as it is.",
       },
     ]);
     expect(k.db.query("SELECT COUNT(*) AS n FROM project_setup_clones").get()).toEqual({ n: 0 });

@@ -1,9 +1,9 @@
 ---
 title: Chat with the lead
-description: Tell a project's lead what you want, reply to its questions, steer it, and follow the work in the chat.
+description: Tell a bot's lead what you want, reply to its questions, steer it, and follow the work in the chat.
 ---
 
-You'll give a project work by chatting with its [lead](/docs/glossary#lead), the way you'd talk to an engineer.
+You'll give a bot work by chatting with its [lead](/docs/glossary#lead), the way you'd talk to an engineer.
 
 ```text
 You:   the checkout button is misaligned on mobile Safari, fix it
@@ -12,9 +12,9 @@ Lead:  On it. One writer on the CSS, one reviewer after.
 Lead:  Fixed in "Align the checkout button on Safari", merged.
 ```
 
-Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
+Each bot has one lead and one ongoing chat. Click the bot in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the island above the message box shows three agents at work. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
+![The storefront bot's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the island above the message box shows three agents at work. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
@@ -28,15 +28,15 @@ as soon as a chat opens. A new chat asks what the lead should do, with a few sta
 | Paste a screenshot | Paste it into the box. |
 | Send it again | Press ↑ in the empty box to bring back your last message. |
 
-Words you haven't sent stay in each project's box, even after you quit the app.
+Words you haven't sent stay in each bot's box, even after you quit the app.
 
-If the project's machine is offline or was removed from the hub, your message waits on the hub for it. The message
+If the bot's machine is offline or was removed from the hub, your message waits on the hub for it. The message
 says so, and what to do: Repair an offline machine in Settings › Hub › Machines. A removed machine has to join
 again under its own id (`fleetd pair --worker <id>`, then the line it prints with `--rejoin`).
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
-After an hour idle, the lead starts fresh with your next message: from the project's state, its decisions and the
+After an hour idle, the lead starts fresh with your next message: from the bot's state, its decisions and the
 last few chat messages, not the whole conversation. If it should know something older, say it again.
 
 ## From a terminal {#terminal}
@@ -63,7 +63,7 @@ fleetd chat devbox/storefront "the nightly build is red" --key-file ~/.fleetd/hu
 The first command writes the key to a new file only you can read and prints the file's path, never the key. The
 agent's messages show as "Agent · nightly-ci", and the lead takes them as input, never as yours: an agent can't
 approve a command, enter a secret, steer or stop, and the chat keeps waiting on you. Each agent key sends at most 10
-messages a minute. A project's own lead and agents talk to each other through their fleetd tools, not its chat.
+messages a minute. A bot's own lead and agents talk to each other through their fleetd tools, not its chat.
 
 ## Reply to the lead {#reply}
 
@@ -93,15 +93,15 @@ Hover any of the lead's bubbles for a tapback (👍, ❤️ and the rest). Tapba
 lead, with one exception: 👍 on the message the lead waits on, or on an Approve and Deny question, answers it.
 
 The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
-sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
+sidebar, a bot says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
 item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, the
-top bar says what it waits on after the project's name, such as "2 questions, asked at 09:02" or "1 command to approve".
+top bar says what it waits on after the bot's name, such as "2 questions, asked at 09:02" or "1 command to approve".
 Click Show to scroll to it. Questions you don't want to answer have two ways out: **×** hides them from the bar
 until the lead asks something new (the app remembers it for that chat), and **Not needed, skip it** under the
 questions tells the lead to go on without an answer. Approvals and secrets have neither: the lead can't go on
-without them. When nothing waits on you but the project is blocked, the bar says why. A check red on main
+without them. When nothing waits on you but the bot is blocked, the bar says why. A check red on main
 blocks nothing, so the bar warns instead, naming the check and whether a fix is under way: "`fleetd (macos)` is red on
-main, fix in progress". When nothing needs you, the bar is just the project's name.
+main, fix in progress". When nothing needs you, the bar is just the bot's name.
 
 ### Things to look at {#look-at}
 
@@ -109,8 +109,8 @@ The lead can flag one of its messages for your look: something to see, something
 waits on you, the top bar
 counts them and names the oldest: "1 to look at: the Machines page redesign". Show scrolls to that message
 and rings it briefly; Dismiss drops it. A flag clears once you have seen its message (it stayed on screen a moment,
-or you used Show), and fades on its own after a day. A project keeps at most 3; a newer one replaces the oldest. Flags never notify you: they are only in the app, below questions, approvals,
-secrets and a blocked project, which always come first. A check red on main still shows after them.
+or you used Show), and fades on its own after a day. A bot keeps at most 3; a newer one replaces the oldest. Flags never notify you: they are only in the app, below questions, approvals,
+secrets and a blocked bot, which always come first. A check red on main still shows after them.
 
 ## How the lead writes {#voice}
 
@@ -119,13 +119,13 @@ words aren't the best fit it sends a block instead: a chart, a table, a diff, a 
 checklist, an image, a file, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
 [prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice. The lead
-of a project with no repo talks in a voice of its own, a personal assistant's rather than an engineer's
+of a bot with no repo talks in a voice of its own, a personal assistant's rather than an engineer's
 (`assistant.voice`).
 
 An image or file can be one the lead or its agents made: a screenshot of a UI change, a PDF, a CSV, a document. They
 upload it with [`chat_file`](/docs/reference/agent-tools#chat_file), which reads it only from inside the agent's own
 worktree or working directory, never anywhere else on the machine, at most 25 MiB, its bytes checked against what its
-name says. It belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.
+name says. It belongs to that bot: only its chat shows it. One the lead never shows is deleted after 24 hours.
 
 An image (png, jpeg, webp or gif) shows inline. Anything else shows as a card with its name, kind and size. **Open**
 opens it in your computer's app for that kind, and the download button saves it where you pick; on the phone, tapping
@@ -148,7 +148,7 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
 To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
-and every agent of the project stop now, and a line in the chat says what stopped. Then tell the lead what to do
+and every agent of the bot stop now, and a line in the chat says what stopped. Then tell the lead what to do
 instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
@@ -169,7 +169,7 @@ Everything shows up in the chat, quietly:
 | Three dots | The lead is writing; its message shows when it's done. |
 | A report's card | The lead or an agent published a report. Click it to read it in the panel's [Artifacts](#artifacts). |
 
-For a project's work in the terminal, see [Status](/docs/status). For where the time went, see
+For a bot's work in the terminal, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
 ## Reports in Artifacts {#artifacts}
@@ -193,23 +193,23 @@ An HTML artifact runs sandboxed: its scripts run, but it can't reach the network
 key or another artifact, keep cookies or storage, or open a window or frame (its own frame tags show nothing), so a
 page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one.
 
-On the phone, a project's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link
+On the phone, a bot's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link
 opens one the same way, and **Versions** at the top picks an older one. On iPhone an HTML artifact is fenced the same
 way, with no frames inside it, and a link you tap in it opens in Safari. Android shows where to open an HTML artifact
 instead of running it: its web view can't yet be kept off the network the same way. HTML artifacts need an app build
 from this release on: an over-the-air update doesn't bring them.
 
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
-`[Title](artifact:name)`. The lead and its agents read one of their project's back with
+`[Title](artifact:name)`. The lead and its agents read one of their bot's back with
 [`artifact_read`](/docs/reference/agent-tools#artifact_read), so a task picks up an earlier report itself.
 
 ## Read a pull request {#prs}
 
-**Shipping**, in the panel beside the chat (⌥⌘B shows the panel), lists the project's PRs: those that need a look, what [merges now](/docs/desktop-app#train) and the line behind it, the other open ones, then, folded, those merged
+**Shipping**, in the panel beside the chat (⌥⌘B shows the panel), lists the bot's PRs: those that need a look, what [merges now](/docs/desktop-app#train) and the line behind it, the other open ones, then, folded, those merged
 or closed, most recent first, each with its checks and its reviews. **Load more** at the end
 reads older ones, back to the repo's first PR. A PR named in the chat
-("#221", "PR #221" or its GitHub link), in the island above the message box or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
-(⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
+("#221", "PR #221" or its GitHub link), in the island above the message box or in [Agents](/docs/desktop-app#agents) opens it there too. For another bot's, open the command palette
+(⌘K), select the bot, press ⌘K again and choose **Pull requests in this bot**.
 
 Click a PR to read it in the list's place; **All pull requests** or Esc goes back.
 
@@ -225,7 +225,7 @@ the PR's number for its repo and branch.
 
 ## Earlier work {#history}
 
-Work from before the chat existed shows at the top of each project's chat, under "From before this chat": what you
+Work from before the chat existed shows at the top of each bot's chat, under "From before this chat": what you
 asked for, the lead's replies, and how each piece of work ended, such as "Done: 2 PRs merged." or "Stopped by you; kept
 for later." Nothing was moved or deleted. Scroll up to read it.
 
@@ -233,7 +233,7 @@ for later." Nothing was moved or deleted. Scroll up to read it.
 
 ## Stop everything {#stop}
 
-To stop all of a project's work at once, press Stop in the chat, or run:
+To stop all of a bot's work at once, press Stop in the chat, or run:
 
 ```sh
 fleetd project stop devbox/storefront --key-file ~/.fleetd/human.key

@@ -52,7 +52,7 @@ export function edited(list: Checklist, call: ChecklistCall, at: string): Checkl
       continue;
     }
     const at_ = next.items.findIndex((i) => i.id === edit.id);
-    if (at_ < 0) throw new ToolError("not_found", `No item ${edit.id} on this project's checklist.`, idsFix(next));
+    if (at_ < 0) throw new ToolError("not_found", `No item ${edit.id} on this bot's checklist.`, idsFix(next));
     if (edit.remove === true) {
       next.items.splice(at_, 1);
       continue;

@@ -141,7 +141,7 @@ const mount = async (features?: readonly string[]) => {
   };
 };
 
-it("lists the project's agents under their orders' titles, the order waiting on you first, without the lead", async () => {
+it("lists the bot's agents under their orders' titles, the order waiting on you first, without the lead", async () => {
   await mount();
   const list = host.querySelector("[data-screen='agents']");
   const lines = [...(list?.querySelectorAll("[aria-label='Agents'] a, [aria-label='Agents'] [data-group-label]") ?? [])].map((el) =>
@@ -156,10 +156,10 @@ it("is the list alone: no sentence above it, no tabs or switches of its own, and
   const pane = host.querySelector("[data-screen='agents']");
   expect(pane?.querySelectorAll("[role='tab'], [role='tablist'], [role='radio'], [role='radiogroup'], [role='switch'], select")).toHaveLength(0);
   expect(pane?.firstElementChild?.querySelector("[aria-label='Agents']")).not.toBeNull();
-  expect(pane?.textContent).not.toMatch(/All projects|This project|\d+ working|max \d/u);
+  expect(pane?.textContent).not.toMatch(/All bots|This bot|\d+ working|max \d/u);
 });
 
-it("puts the project's screens under its agents where the hub serves them, All screens and New screen at their label", async () => {
+it("puts the bot's screens under its agents where the hub serves them, All screens and New screen at their label", async () => {
   const go = await mount(["browser_sessions", "screen_open"]);
   const labels = () => [...host.querySelectorAll("[data-group-label]")].map((el) => el.textContent);
   expect(labels()).toEqual(["Receipts in the store's zone2", "Dark mode1", "Screens"]);

@@ -358,13 +358,13 @@ test("a one-time run due while another run is open waits and runs once that ends
   expect(autos.get(a.automationId)!.doneAt).toBeDefined();
 });
 
-test("a full project makes room with its oldest done reminder", async () => {
+test("a full bot makes room with its oldest done reminder", async () => {
   const { hub, advance } = setup();
   const autos = automations(hub);
   autos.start();
   const [reminder] = autos.create(fresh(PROJECT, { at: "2026-10-17T10:05", tz: "UTC" }, false));
   for (let i = 1; i < 50; i++) autos.create({ ...fresh(PROJECT, undefined, false), name: `n${i}` });
-  expect(() => autos.create(fresh(PROJECT, undefined, false))).toThrow("The project has 50 automations");
+  expect(() => autos.create(fresh(PROJECT, undefined, false))).toThrow("The bot has 50 automations");
   await advance(5 * MIN);
   expect(autos.get(reminder.automationId)!.doneAt).toBeDefined();
   autos.create({ ...fresh(PROJECT, undefined, false), name: "new" });
@@ -372,7 +372,7 @@ test("a full project makes room with its oldest done reminder", async () => {
   expect(autos.list(PROJECT).length).toBe(50);
 });
 
-test("the lead makes, lists, edits, pauses, runs and deletes its project's automations", async () => {
+test("the lead makes, lists, edits, pauses, runs and deletes its bot's automations", async () => {
   const { hub } = setup();
   const made = await call(hub, "automation_create", {
     name: "Weekly report",
@@ -398,7 +398,7 @@ test("the lead makes, lists, edits, pauses, runs and deletes its project's autom
   // Another project's automation is refused.
   store(hub).projectsUpsertMany(PROJECT.machineId, [{ ...store(hub).projectGet(PROJECT)!, projectId: "p2" }, store(hub).projectGet(PROJECT)!]);
   const [theirs] = automations(hub).create(fresh({ machineId: PROJECT.machineId, projectId: "p2" }, undefined, false));
-  await expect(call(hub, "automation_delete", { automationId: theirs.automationId })).rejects.toThrow("belongs to another project");
+  await expect(call(hub, "automation_delete", { automationId: theirs.automationId })).rejects.toThrow("belongs to another bot");
   const gone = await call(hub, "automation_delete", { automationId: a.automationId });
   expect(gone).toEqual({ automationId: a.automationId, next: "Deleted; orders its runs opened stay open." });
 });
@@ -426,7 +426,7 @@ test("only the person marks an automation as their go-ahead, through approvals' 
   expect(automations(hub).running(PROJECT)).toEqual([]);
 });
 
-test("a removed project's automations go, and their webhook URL is refused", async () => {
+test("a removed bot's automations go, and their webhook URL is refused", async () => {
   const { hub } = setup();
   automations(hub).start();
   const [a, secret] = automations(hub).create(fresh(PROJECT, schedule("0 * * * *", "UTC"), true));
@@ -435,7 +435,7 @@ test("a removed project's automations go, and their webhook URL is refused", asy
   await settle(hub);
   expect(automations(hub).get(a.automationId)).toBeUndefined();
   expect(automations(hub).webhookTarget(a.automationId, secret!)).toBeUndefined();
-  expect(eventsOf(hub, "automation.changed").at(-1)?.summary).toContain("deleted with its project");
+  expect(eventsOf(hub, "automation.changed").at(-1)?.summary).toContain("deleted with its bot");
 });
 
 test("a run a stop left without its order opens it at start, once", async () => {
@@ -495,7 +495,7 @@ test("the tools: grants, the webhook URL shown once, rotate", async () => {
   expect(rotated.next).toContain("The old URL no longer works.");
 });
 
-test("a run closes once its turn ends with nothing in flight, in every project; else its order stays for the lead", async () => {
+test("a run closes once its turn ends with nothing in flight, in every bot; else its order stays for the lead", async () => {
   const { hub, clock, advance } = setup();
   const records = new LeadRecords(hub.db);
   records.leadPut({ projectRef: PROJECT, threadId: "th-lead", startedAt: isoMs(START + 31 * MIN), sessionGeneration: 1 });
@@ -576,7 +576,7 @@ test("a run closes once its turn ends with nothing in flight, in every project; 
   expect(autos.runs(a.automationId, 1)[0]!.state).toBe("done");
 });
 
-test("the project checker's standing word is the confirmed automations with a run open", async () => {
+test("the bot checker's standing word is the confirmed automations with a run open", async () => {
   const { hub } = setup();
   start(hub);
   const [mine] = automations(hub).create(fresh(PROJECT, undefined, false));

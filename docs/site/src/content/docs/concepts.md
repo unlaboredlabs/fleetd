@@ -21,7 +21,7 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 <path d="M470 64 380 126" marker-end="url(#fleet-arrow)" marker-start="url(#fleet-arrow)"/>
 <rect x="190" y="128" width="300" height="64" rx="6" stroke-width="2"/>
 <text x="340" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Hub</text>
-<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · lead chats · merge train</text>
+<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">bots · lead chats · merge train</text>
 <path d="M175 260 290 194" marker-end="url(#fleet-arrow)"/>
 <path d="M505 260 390 194" marker-end="url(#fleet-arrow)"/>
 <text x="205" y="222" text-anchor="end" fill="currentColor" stroke="none" font-size="12">dials out</text>
@@ -53,15 +53,15 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 | **Node** | The fleetd process on a machine that runs agents. It connects out to the hub, so the machine opens no port. | One per worker. |
 | **Worker** | Any machine with a node. The hub machine is usually a worker too. | As many as you like. |
 | **Claude session** | One `claude` process doing one job: a lead, a writer, a reviewer. It uses your own `~/.claude` setup. | Many per node. |
-| **Desktop app** | Where you chat with each project's lead and see the fleet's status. | Any number of devices. |
+| **Desktop app** | Where you chat with each bot's lead and see the fleet's status. | Any number of devices. |
 | **CLI and MCP clients** | `fleetd` commands, and agents such as Claude Code connected to `<hub url>/mcp`. | Any number. |
 
 The hub keeps its data in one SQLite file, `~/.fleetd/hub/hub.sqlite`. See [Config & files](/docs/config-and-files).
 
 ## How work flows {#flow}
 
-1. You open a **project** (a folder on a worker, holding zero or more git repos) and write to its **lead** in the
-   chat, such as `fix the typo in the README`. In a project with no repo the lead does the work itself: steps 3 and 4
+1. You open a **bot** (a folder on a worker, holding zero or more git repos) and write to its **lead** in the
+   chat, such as `fix the typo in the README`. In a bot with no repo the lead does the work itself: steps 3 and 4
    need a repo.
 2. The lead plans the work: what to build, and what done looks like.
 3. The lead starts **tasks**. Each writer gets its own git worktree and branch, and opens a pull request.

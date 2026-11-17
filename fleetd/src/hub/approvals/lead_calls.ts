@@ -23,7 +23,7 @@ function checkWorkstream(hub: Hub, caller: LeadCaller, workstreamId: string | un
   if (!row || row.machine_id !== caller.projectRef.machineId || row.project_id !== caller.projectRef.projectId) {
     throw new ToolError(
       "not_found",
-      `There is no workstream ${workstreamId} in your project.`,
+      `There is no workstream ${workstreamId} in your bot.`,
       "Use a workstream id from the digest at the top of your last wake.",
     );
   }

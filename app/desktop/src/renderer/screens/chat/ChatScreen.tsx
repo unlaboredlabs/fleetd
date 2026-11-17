@@ -339,7 +339,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [
       {
         id: "chat.projectSettings",
-        title: "Settings for this project",
+        title: "Settings for this bot",
         detail: "Its connections, sign-ins, approvals and memory",
         group: "actions",
         keywords: ["preferences", "configure"],
@@ -398,7 +398,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       <div ref={stage} className={s.stage}>
         {data.missing ? (
           <div className={s.loading} role="status">
-            <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
+            <Text tone="quiet">This bot isn’t on the hub. It may have been removed.</Text>
           </div>
         ) : rows === undefined && data.loadError !== undefined ? (
           <div className={s.loading} role="alert">

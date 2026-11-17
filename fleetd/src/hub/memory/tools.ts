@@ -124,7 +124,7 @@ export function register(tools: Registry): void {
     const user: MemoryFile = own ? memory.file(own) : { scope: "user", text: "", chars: 0, cap: memory.caps.user, notes: [] };
     const r = input.projectRef;
     if (!r) {
-      return { user, caps: memory.caps, next: "memory_get with projectRef adds that project's MEMORY.md and topic files." };
+      return { user, caps: memory.caps, next: "memory_get with projectRef adds that bot's MEMORY.md and topic files." };
     }
     knownProject(hub, caller, r, "read");
     const files = [memory.file(projectTarget(r)), ...memory.topics(r).map((t) => memory.file(projectTarget(r, t)))];

@@ -28,14 +28,14 @@ const agent = (project: string, laneId: string, status: AgentRow["status"] = "wo
 const words = (list: readonly (GroupLine | LiveAgent)[]) => list.map((a) => ("group" in a ? `[${a.title}]` : a.row.laneId));
 
 describe("the agents list", () => {
-  it("lists one project's agents, those waiting on you first, without its lead", () => {
+  it("lists one bot's agents, those waiting on you first, without its lead", () => {
     const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
     const list = projectAgents([lead, agent("api", "T1"), agent("web", "T2", "waiting"), agent("api", "T3", "waiting"), agent("api", "T4", "queued")], "devbox/api");
     expect(list.map((a) => a.row.laneId)).toEqual(["T3", "T1", "T4"]);
     expect(projectAgents([], "devbox/api")).toEqual([]);
   });
 
-  it("groups one project's agents under their orders' titles, the orders with one waiting on you first", () => {
+  it("groups one bot's agents under their orders' titles, the orders with one waiting on you first", () => {
     const titles: Record<string, string> = { W1: "Dark mode", W2: "Receipts in the store's zone" };
     const list = projectGroups(
       [agent("api", "T1"), agent("api", "T2", "working", "W2"), agent("api", "T3"), agent("api", "T4", "waiting", "W2"), agent("web", "T5", "waiting")],
@@ -62,7 +62,7 @@ describe("the agents list", () => {
     expect(words(projectGroups([agent("api", "T1", "working", "W9"), loose], "devbox/api"))).toEqual(["T1", "T2"]);
   });
 
-  it("lists the other projects' agents under their names, the projects with one waiting on you first, without the leads or its own", () => {
+  it("lists the other bots' agents under their names, the bots with one waiting on you first, without the leads or its own", () => {
     const lead: LiveAgent = { ...agent("web", "lead:devbox/web"), row: { ...agent("web", "lead:devbox/web").row, role: "lead" } };
     const list = otherProjects([agent("api", "T1"), agent("ops", "T5"), agent("ops", "T6", "waiting", "W7"), lead, agent("web", "T2"), agent("web", "T3", "waiting"), agent("docs", "T9")], "devbox/api");
     expect(words(list)).toEqual(["[ops]", "T6", "T5", "[web]", "T3", "T2", "[docs]", "T9"]);
@@ -196,7 +196,7 @@ describe("work elsewhere on the repo", () => {
     expect(alsoOnRepo(list([claim("C1", person, "expired", -H), item("X5", "change", { projectRef: web, state: "refused" })]), "devbox/api", NOW)).toEqual([]);
   });
 
-  it("leaves out the project's own agents and PRs, and the claims its lead holds", () => {
+  it("leaves out the bot's own agents and PRs, and the claims its lead holds", () => {
     const out = list([
       item("T1", "task", { projectRef: api }),
       item("X1", "change", { projectRef: api }),

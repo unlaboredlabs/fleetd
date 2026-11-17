@@ -81,7 +81,7 @@ const WOKE_MS = 4000;
 export default defineGroup({
   fixtures: (base) => [
     (() => {
-      const f = Fixture.from(base("chat-long"), "offline-held", "The hub doesn't answer; the last launch's cache holds the projects and storefront's chat, with one message queued.");
+      const f = Fixture.from(base("chat-long"), "offline-held", "The hub doesn't answer; the last launch's cache holds the bots and storefront's chat, with one message queued.");
       const down = base("hub-unreachable").state;
       // The next attempt counted from this fixture's own clock, not the base's.
       f.state = down.phase === "retrying" ? { ...down, retryAt: Date.parse(f.now) + 8000 } : down;

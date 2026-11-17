@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "No projects yet: fleetd project add <path|github-url>\n",
+  "stdout": "No bots yet: fleetd project add <path|github-url>\n",
   "stderr": ""
 }

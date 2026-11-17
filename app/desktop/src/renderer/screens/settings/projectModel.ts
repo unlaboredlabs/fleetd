@@ -20,7 +20,7 @@ export const ENV_MAX = 100;
 export function nameProblem(name: string): string | null {
   if (name === "") return "Name it.";
   if (!NAME.test(name)) return "A name is letters, digits and _, and doesn't start with a digit.";
-  if (reservedName(name)) return `${name} is fleetd's or claude's own: a project can't set it.`;
+  if (reservedName(name)) return `${name} is fleetd's or claude's own: a bot can't set it.`;
   return null;
 }
 
@@ -38,7 +38,7 @@ export function totalProblem(env: readonly ProjectEnvVar[], set: ReadonlyArray<{
   for (const name of remove) sizes.delete(name);
   for (const v of set) sizes.set(v.name, byteLength(v.value));
   const total = [...sizes.values()].reduce((a, b) => a + b, 0);
-  return total > ENV_TOTAL_MAX_BYTES ? `A project's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.` : null;
+  return total > ENV_TOTAL_MAX_BYTES ? `A bot's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.` : null;
 }
 
 /** Names that usually hold a credential: a pasted one starts as a secret. */

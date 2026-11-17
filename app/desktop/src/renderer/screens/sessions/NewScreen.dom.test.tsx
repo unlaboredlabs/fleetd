@@ -350,7 +350,7 @@ it("says why a PR's build didn't open, and clears it when closed", async () => {
   expect(calls.filter((c) => c.tool === "screen_end").map((c) => c.input)).toEqual([{ waitId: "W2" }]);
 });
 
-it("says plainly when the project's PRs can't be read, and reads them again on Retry", async () => {
+it("says plainly when the bot's PRs can't be read, and reads them again on Retry", async () => {
   prsFail = 10;
   await mount();
   act(() => button("New screen")?.click());
@@ -365,7 +365,7 @@ it("says plainly when the project's PRs can't be read, and reads them again on R
     vi.useRealTimers();
   }
   await settle();
-  expect(picker()?.textContent).toContain("The project’s PRs couldn’t be read");
+  expect(picker()?.textContent).toContain("The bot’s PRs couldn’t be read");
   prsFail = 0;
   act(() => button("Retry")?.click());
   await settle();
@@ -386,7 +386,7 @@ it("says so when the call fails before the hub, and can be tried again", async (
   expect(button("Open screen")?.disabled).toBe(false);
 });
 
-it("offers New screen… in the palette for the project on screen", async () => {
+it("offers New screen… in the palette for the bot on screen", async () => {
   await mount();
   window.location.hash = `#/project/${project.machineId}/${project.projectId}`;
   const command = commandFor("screen.new");

@@ -14,7 +14,7 @@ function invalid(problem: string): ToolError {
   return new ToolError(
     "invalid",
     [...`${POLICY_FILE_PATH} is invalid: ${problem}`].slice(0, 1000).join(""),
-    `Fix ${POLICY_FILE_PATH} in the project's checkout on its machine. For example:\n${EXAMPLE}`,
+    `Fix ${POLICY_FILE_PATH} in the bot's checkout on its machine. For example:\n${EXAMPLE}`,
   );
 }
 

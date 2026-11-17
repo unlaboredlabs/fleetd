@@ -237,7 +237,7 @@ const shared = (f: Fixture) => basics(f);
  * every live frame that carries one, since the live state wins.
  */
 function agents(from: Fixture): Fixture {
-  const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
+  const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one bot under its max, one at it, one with no limit of its own");
   f.agentsFromSlots = true;
   // An admin's key on a hub from before people: the Hub group shows, with the fleet and machine caps.
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });

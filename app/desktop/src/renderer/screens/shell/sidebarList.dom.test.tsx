@@ -125,7 +125,7 @@ const rightClick = (el: HTMLElement) =>
   });
 
 describe("one list", () => {
-  it("has every project in one unlabelled list, in its order, each row its name, time and line, numbered while ⌘ is held", () => {
+  it("has every bot in one unlabelled list, in its order, each row its name, time and line, numbered while ⌘ is held", () => {
     mount([{ ...ADA, line: "You: ship it" }, HOME, STOREFRONT]);
     expect(host.querySelector("[class*=sidebarSectionHead]")).toBeNull();
     expect(host.textContent).not.toMatch(/Projects/u);
@@ -241,10 +241,10 @@ describe("one list", () => {
     expect(button("storefront").querySelector("[class*=dot]")).toBeNull();
   });
 
-  it("says there are no chats yet, with New project, and nothing while they load", () => {
+  it("says there are no chats yet, with New bot, and nothing while they load", () => {
     mount([]);
     expect(host.textContent).toContain("No chats yet");
-    act(() => button("New project").click());
+    act(() => button("New bot").click());
     expect(went).toEqual([{ id: "projects.add" }]);
     const quiet: HubApi = { call: () => Promise.resolve({ ok: true, output: {} }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() };
     act(() =>
@@ -256,7 +256,7 @@ describe("one list", () => {
         </UiProvider>,
       ),
     );
-    expect(host.querySelector("[aria-label='Loading projects']")).not.toBeNull();
+    expect(host.querySelector("[aria-label='Loading bots']")).not.toBeNull();
     expect(host.textContent).not.toContain("No chats yet");
   });
 
@@ -271,7 +271,7 @@ describe("one list", () => {
     expect(calls.filter((c) => c.tool === "chat_pins_set").at(-1)).toEqual({ tool: "chat_pins_set", input: { pins: [{ machineId: "devbox", projectId: "storefront" }] } });
   });
 
-  it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {
+  it("a bot's menu renames it after asking for the name, and archives it at once with Undo", async () => {
     mount([ADA, HOME, STOREFRONT]);
     rightClick(button("storefront"));
     expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive"]);

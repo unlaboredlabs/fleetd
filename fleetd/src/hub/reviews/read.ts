@@ -27,10 +27,10 @@ export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown })
   if (picked !== undefined) {
     prs = mine.filter((pr) => names(picked, pr));
     if (prs.length === 0) {
-      const whose = task !== undefined && reviewer ? `${task}'s` : "this project's";
+      const whose = task !== undefined && reviewer ? `${task}'s` : "this bot's";
       throw new ToolError(
         "forbidden",
-        `PR ${picked} is not one of ${whose} PRs; another project's reviews are not yours to read.`,
+        `PR ${picked} is not one of ${whose} PRs; another bot's reviews are not yours to read.`,
         "Leave out pr to list the PRs you can read.",
       );
     }
@@ -45,7 +45,7 @@ export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown })
     out.next =
       task !== undefined
         ? "You have no PR yet: open it and the train reviews it."
-        : "No PR of this project is in the merge queue: pass pr to read an earlier one.";
+        : "No PR of this bot is in the merge queue: pass pr to read an earlier one.";
   }
   return out;
 }
@@ -62,7 +62,7 @@ function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: 
   if (task !== undefined) {
     const own = readTask<Task>(hub.db.conn, task);
     if (!own || own.projectRef.machineId !== project.machineId || own.projectRef.projectId !== project.projectId) {
-      throw new ToolError("not_found", `No task ${task} in this project.`);
+      throw new ToolError("not_found", `No task ${task} in this bot.`);
     }
     // A reviewer reads the earlier reviews of the one PR it reviews, and no other PR's.
     if (own.kind === "review") return { prs: own.pr !== undefined ? [own.pr] : [], reviewer: true };

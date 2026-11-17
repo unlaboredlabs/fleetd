@@ -56,7 +56,7 @@ export const whoseOf = (state: State, key: string | undefined): { whose: Whose; 
   if (key === undefined) return { whose: { kind: "team" } };
   const p = state.projects?.[key];
   const ref = refOf(key);
-  return { whose: { kind: "project", project: ref }, project: { ...ref, title: p?.title ?? "This project" } };
+  return { whose: { kind: "project", project: ref }, project: { ...ref, title: p?.title ?? "This bot" } };
 };
 
 const styles = StyleSheet.create({

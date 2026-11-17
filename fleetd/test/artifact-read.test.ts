@@ -13,7 +13,7 @@ import { PROJECT, testHub } from "./hub-helpers.ts";
 
 const REPORT = "# Sweep\n\nThree crates are behind:\n\n- tokio 1.40\n- axum 0.7\n- serde 1.0.200\n";
 
-test("an agent reads its project's artifacts, whoever published them, and only those", async () => {
+test("an agent reads its bot's artifacts, whoever published them, and only those", async () => {
   const { hub, done } = testHub();
   const shop: ProjectRef = { machineId: PROJECT.machineId, projectId: "p2" };
   hub.db.conn
@@ -56,8 +56,8 @@ test("an agent reads its project's artifacts, whoever published them, and only t
   await call(shop, { kind: "lead" }, { op: "artifact_publish", name: "shop-notes", title: "Notes", content: "shop's" });
   const other = await refusal(reads(shop, reader, { name: "sweep-report" }));
   expect(other.code).toBe("not_found");
-  expect(other.message).toContain("No artifact sweep-report in this project");
-  expect(other.fix).toBe("This project's newest artifacts: shop-notes.");
+  expect(other.message).toContain("No artifact sweep-report in this bot");
+  expect(other.fix).toBe("This bot's newest artifacts: shop-notes.");
   expect((await refusal(reads(PROJECT, reader, { name: "sweep-report", version: 3 }))).code).toBe("not_found");
 
   // Past the cap: its head, and a last line saying where it was cut.

@@ -448,7 +448,7 @@ async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: s
     return undefined;
   }
   if (!(await hubHasTool(opts.home, "project_add"))) {
-    list.skipped(title, "this hub can't add projects yet; after fleetd update, run fleetd init again");
+    list.skipped(title, "this hub can't add bots yet; after fleetd update, run fleetd init again");
     return undefined;
   }
   if (!ui.interactive) {
@@ -460,7 +460,7 @@ async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: s
   const items: [Pick, string, string][] = repos.slice(0, 30).map((r, i): [Pick, string, string] => [i, tildeOf(r.path), r.remote ? shortRemote(r.remote) : ""]);
   const fallback: Pick = items.length === 0 ? "clone" : 0;
   items.push(["clone", "Clone one from GitHub", "paste its URL"], ["later", "Not now", ""]);
-  const picked = await ui.select(list, "Which repo should be your first project?", items, fallback);
+  const picked = await ui.select(list, "Which repo should be your first bot?", items, fallback);
   let path: string;
   if (picked === "later") {
     list.skipped(title, "none yet; run fleetd init again to add one");
@@ -486,7 +486,7 @@ async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: s
       }
     }
   } else path = repos[picked]!.path;
-  list.start("Adding the project");
+  list.start("Adding the bot");
   try {
     await addProject(opts.home, local, path);
     const what = `${tildeOf(path)} on ${local}`;
@@ -598,7 +598,7 @@ function finish(list: Checklist, summary: Summary, paired: boolean) {
   const lines: string[] = [];
   if (summary.hub) lines.push(`hub       ${summary.hub}`);
   if (summary.workers.length > 0) lines.push(`workers   ${summary.workers.join(", ")}`);
-  if (summary.project) lines.push(`project   ${summary.project}`);
+  if (summary.project) lines.push(`bot   ${summary.project}`);
   if (summary.pairing) lines.push(`app       ${summary.pairing}`);
   if (which("fleetd") === undefined) lines.push('PATH      add: export PATH="$HOME/.local/bin:$PATH"');
   if (list.rich) list.boxed("fleetd is ready", lines.join("\n"));
@@ -655,12 +655,12 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
     const [local, ids, byHand] = await workers(opts, ui, list, net, claudeHere);
     summary.workers = [...ids, ...byHand];
     [added, idle] = [ids, byHand];
-    list.sectionHeader("Project");
+    list.sectionHeader("Bot");
     const project = await firstProject(opts, ui, list, local, ghOk);
     if (project !== undefined) summary.project = project;
   } else {
     list.skipped("workers", "need the hub running");
-    list.sectionHeader("Project");
+    list.sectionHeader("Bot");
     list.skipped("project", "needs the hub running");
   }
   list.sectionHeader("App & setup");

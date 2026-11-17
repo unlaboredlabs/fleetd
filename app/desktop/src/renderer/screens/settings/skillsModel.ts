@@ -5,7 +5,7 @@ import type { SkillOrigin, SkillSummary } from "../../../shared/contracts";
 export const ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = {
   repo_agents: "Repo · .agents/skills",
   repo_claude: "Repo · .claude/skills",
-  project: "This project",
+  project: "This bot",
   global: "Hub-wide",
 };
 

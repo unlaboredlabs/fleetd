@@ -1,6 +1,6 @@
 ---
 title: Config & files
-description: Where fleetd keeps its state, the Claude login it uses, the project policy file, services and ports.
+description: Where fleetd keeps its state, the Claude login it uses, the bot policy file, services and ports.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
@@ -63,11 +63,11 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
 ## Memory files {#memory}
 
 What the leads [remember](/docs/what-agents-are-told#memory) is plain markdown under `~/.fleetd/hub/memory`: each
-person's own in `people/<person id>.md` (one shared `user.md` on a hub from before people), and per project a
+person's own in `people/<person id>.md` (one shared `user.md` on a hub from before people), and per bot a
 `MEMORY.md` (its always-on entries, then one `- [topic](topic.md)` line per topic) with its topic files beside it. Each remembered line is one `- ` entry.
 
-Settings › a project › Instructions & memory (and Settings › Your memory for yours) lists each file as cards, one per entry, with a search across them and the file's length against
-its cap. An entry the lead wrote says when, and links to the "Remembered: …" line in that project's chat (or the
+Settings › a bot › Instructions & memory (and Settings › Your memory for yours) lists each file as cards, one per entry, with a search across them and the file's length against
+its cap. An entry the lead wrote says when, and links to the "Remembered: …" line in that bot's chat (or the
 [nightly refresh](/docs/what-agents-are-told#memory-refresh)'s line); an entry
 you wrote or changed since shows no source. Edit an entry in its card, or delete it and use Undo in the toast to put it
 back. **Edit as text** opens the whole file; a save past a cap is refused there, as it is for the lead. The files stay
@@ -151,15 +151,15 @@ ANTHROPIC_AUTH_TOKEN=<token>
 ```
 
 Nodes put every line in each session's environment, re-read at each session start. `HEAVY_LANGUAGE_SERVERS=1` here
-turns the [heavy language servers](/docs/what-agents-are-told#language-servers) back on for every project on the
+turns the [heavy language servers](/docs/what-agents-are-told#language-servers) back on for every bot on the
 machine.
 
 The `env` in your `~/.claude/settings.json` outranks it, as it does for your own `claude`.
 
 ## .fleetd/policy.yaml {#policy}
 
-Optional: a project with no `.fleetd/` runs at full speed with the defaults below. fleetd reads the file from the
-project's checkout on its machine (the working tree of the folder you added, committed or not), so an edit there
+Optional: a bot with no `.fleetd/` runs at full speed with the defaults below. fleetd reads the file from the
+bot's checkout on its machine (the working tree of the folder you added, committed or not), so an edit there
 applies within a minute. Commit it if your other checkouts and machines should get it too.
 
 ```yaml

@@ -41,7 +41,7 @@ async function prList(hub: Hub, caller: Caller, input: Record<string, unknown>) 
   if (projectRow(hub.db.conn, project) === undefined) {
     throw new ToolError(
       "not_found",
-      `No project ${project.projectId} on ${project.machineId}.`,
+      `No bot ${project.projectId} on ${project.machineId}.`,
       `Call project_get with machineId ${project.machineId} and no projectId.`,
       undefined,
       "It was removed, or its machine was: the projects list has the ones that are left.",
@@ -82,7 +82,7 @@ async function prList(hub: Hub, caller: Caller, input: Record<string, unknown>) 
 /** The project whose PRs `repo` holds, refused unless the key may read it. */
 function owner(hub: Hub, caller: Caller, repo: string): ProjectRef {
   const project = ownerOf(hub, repo);
-  if (!project) throw new ToolError("not_found", `No project of this fleet lands PRs on ${repo}.`, "pr_list shows a project's PRs.");
+  if (!project) throw new ToolError("not_found", `No bot of this fleet lands PRs on ${repo}.`, "pr_list shows a bot's PRs.");
   requireRole(caller, "read", project.machineId);
   return project;
 }
@@ -95,7 +95,7 @@ async function prGet(hub: Hub, caller: Caller, input: Record<string, unknown>) {
   const read = await prsGithub(hub).detail(repo, number);
   const detail = read.value;
   if (!detail && changes.length === 0) {
-    throw new ToolError("not_found", `${repo}#${number}: ${read.error ?? "GitHub has no such PR."}`, "pr_list shows the project's PRs.");
+    throw new ToolError("not_found", `${repo}#${number}: ${read.error ?? "GitHub has no such PR."}`, "pr_list shows the bot's PRs.");
   }
   const change = changes[0];
   const ctx = join.rowCtx(projectTasks(hub, project));

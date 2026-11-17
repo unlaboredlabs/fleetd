@@ -16,7 +16,7 @@ const dm = (id: string, recipients: DmReceipt[], text = "The iOS close code is 1
 
 const event = (type: string, extra: Partial<HubEvent> = {}): HubEvent => ({ at: AT, seq: 1, summary: "", type, ...extra }) as HubEvent;
 
-describe("a project's DMs between agents", () => {
+describe("a bot's DMs between agents", () => {
   it("shows only on a hub that keeps them", () => {
     expect(dmsShown({ phase: "live", features: ["agent_messages"] } as unknown as HubState)).toBe(true);
     expect(dmsShown({ phase: "live", features: ["artifacts"] } as unknown as HubState)).toBe(false);
@@ -68,7 +68,7 @@ describe("a project's DMs between agents", () => {
     expect(countValue(8)).toBe("8");
   });
 
-  it("reads again on a DM or a receipt in this project, not on a steer or another project's", () => {
+  it("reads again on a DM or a receipt in this bot, not on a steer or another bot's", () => {
     expect(touchesDms(event("agent.messaged", P), P)).toBe(true);
     expect(touchesDms(event("agent.message_updated", P), P)).toBe(true);
     expect(touchesDms(event("agent.messaged", { ...P, projectId: "storefront" }), P)).toBe(false);

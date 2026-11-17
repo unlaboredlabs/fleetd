@@ -30,7 +30,7 @@ const YOU: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
 const HUB_PAGES: ReadonlyArray<{ tab: HubTab; icon: ReactNode; label?: string }> = [
   { tab: "hub.people", icon: <Users /> },
   { tab: "hub.machines", icon: <Server /> },
-  { tab: "hub.profiles", icon: <Layers />, label: "Every project" },
+  { tab: "hub.profiles", icon: <Layers />, label: "Every bot" },
   { tab: "hub.setup", icon: <ListChecks /> },
 ];
 
@@ -102,8 +102,8 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
               <SidebarItem key={p.tab} label={PAGE_LABEL[p.tab]} icon={p.icon} current={pageOf(route.tab) === p.tab} onClick={() => go(tabHref(p.tab))} />
             ))}
           </SidebarSection>
-          <SidebarSection label="Projects">
-            <SidebarItem label="Projects" icon={<FolderGit2 />} current={isProjectTab(route.tab)} onClick={() => go(formatRoute({ tab: "projects" }))} />
+          <SidebarSection label="Bots">
+            <SidebarItem label="Bots" icon={<FolderGit2 />} current={isProjectTab(route.tab)} onClick={() => go(formatRoute({ tab: "projects" }))} />
           </SidebarSection>
           {administers ? <HubGroup route={route} /> : null}
         </>

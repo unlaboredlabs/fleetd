@@ -41,11 +41,11 @@ export const projectItems = (state: DataState, go: (hash: string) => void, on?: 
       keywords: on === undefined ? [p.projectId] : [p.projectId, on.label],
       run: () => there(chatRoute(p.machineId, p.projectId)),
       actions: [
-        { title: "Pull requests in this project", run: () => there(toHash(panelRoute(p, { tab: "prs", pr: null }))) },
-        { title: "Settings for this project", run: () => there(settingsFor("projects", p)) },
-        { title: "Instructions for this project", run: () => there(settingsFor("instructions", p)) },
+        { title: "Pull requests in this bot", run: () => there(toHash(panelRoute(p, { tab: "prs", pr: null }))) },
+        { title: "Settings for this bot", run: () => there(settingsFor("projects", p)) },
+        { title: "Instructions for this bot", run: () => there(settingsFor("instructions", p)) },
         {
-          title: "Max agents for this project",
+          title: "Max agents for this bot",
           run: () => {
             focusSliderNext();
             there(settingsFor("agents", p));

@@ -23,8 +23,8 @@ const setup = () => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("a project's skills", () => {
-  it("lists them for the project alone", async () => {
+describe("a bot's skills", () => {
+  it("lists them for the bot alone", async () => {
     const { hub, session, last } = setup();
     const listed = listSkills(session, REF);
     expect(last("skills_list")).toEqual({ projectRef: REF });
@@ -92,7 +92,7 @@ describe("a project's skills", () => {
     await expect(gone).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
   });
 
-  it("reads again on a change to this project's skills or a hub-wide one, not another's", () => {
+  it("reads again on a change to this bot's skills or a hub-wide one, not another's", () => {
     const event = (data: unknown): HubEvent => ({ type: "skills.changed", at: AT, data }) as HubEvent;
     expect(touchesSkills(event({ scope: "project", projectRef: REF, names: ["a"] }), REF)).toBe(true);
     expect(touchesSkills(event({ scope: "global", names: ["a"] }), REF)).toBe(true);

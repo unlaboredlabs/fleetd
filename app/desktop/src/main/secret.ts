@@ -136,7 +136,7 @@ export const submitProjectEnv = async (
     // Any number of lines (a certificate chain, a service account's JSON); only a NUL can't be in an environment.
     if (v.value.includes("\0")) return refused(`${v.name}'s value holds a NUL character.`, "Remove it, then save.");
     if (request.boxPubKey === undefined) {
-      return refused("The project's machine takes no secrets yet: its node has no box key.", "Update fleetd on that machine, then save.");
+      return refused("The bot's machine takes no secrets yet: its node has no box key.", "Update fleetd on that machine, then save.");
     }
     const sealed = await seal(request.boxPubKey, v.value);
     if (!sealed.ok) return { ok: false, error: { ...sealed.error, message: `${v.name}: ${sealed.error.message}` } };

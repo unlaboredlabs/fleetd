@@ -21,7 +21,7 @@ afterAll(async () => {
 
 const project = { machineId: "lab-a", projectId: "p1" };
 
-test("a chat subscription streams that project's deltas, and a new one replaces it", async () => {
+test("a chat subscription streams that bot's deltas, and a new one replaces it", async () => {
   const key = insertKey(hub.db, [{ role: "read", machines: "*" }], "phone");
   const app = new FakeApp(url);
   await app.send({ t: "auth", key });

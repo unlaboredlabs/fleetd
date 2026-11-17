@@ -61,7 +61,7 @@ test("a person's skill: set, versions, revert, off, delete; a secret is refused"
   done();
 });
 
-test("a lead saves its project's skill with a chat line; a task may not", async () => {
+test("a lead saves its bot's skill with a chat line; a task may not", async () => {
   const { hub, done } = testHub();
   registerLeadCalls(hub);
   const lead: LeadCaller = { projectRef: PROJECT, by: "lead:lab-a/p1", agent: { kind: "lead" } };
@@ -70,7 +70,7 @@ test("a lead saves its project's skill with a chat line; a task may not", async 
   expect(out).toMatchObject({ name: "triage", version: 1, created: true });
   expect(chat(hub).page(PROJECT, undefined, undefined, 5).messages.map((m) => m.text)).toEqual(["Saved a new skill, triage: how we sort bugs"]);
   expect(() => save?.({ ...lead, agent: { kind: "task", taskId: "T1" } }, { op: "skill_save", name: "triage", text: md("triage"), why: "x" })).toThrow(
-    "Only the project's lead saves its skills.",
+    "Only the bot's lead saves its skills.",
   );
   done();
 });

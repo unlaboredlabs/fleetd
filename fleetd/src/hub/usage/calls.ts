@@ -27,7 +27,7 @@ async function resume(hub: Hub, caller: LeadCaller, machine: string | undefined)
   if (m !== own) {
     throw new ToolError(
       "forbidden",
-      `A lead resumes only the machine its project runs on (${own}), not ${m}.`,
+      `A lead resumes only the machine its bot runs on (${own}), not ${m}.`,
       `Ask the human to press Resume in the app, or to run fleetd usage resume ${m}.`,
     );
   }

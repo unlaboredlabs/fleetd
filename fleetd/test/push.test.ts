@@ -166,7 +166,7 @@ test("a payload with the Devices route reaches the phone's own reader whole, and
   expect(shownOf(openPayload(Buffer.from(seal(phone, payloadJson(plainAlert))).toString("base64"), (box) => openSealed(secret, box))!).route).toBeUndefined();
 });
 
-test("an event about no project goes to owners and admins; a project's to who last wrote in its chat", () => {
+test("an event about no bot goes to owners and admins; a bot's to who last wrote in its chat", () => {
   const { hub } = setup();
   const admin = people(hub).create("Ada", "admin");
   const member = people(hub).create("Mo", "member");

@@ -70,8 +70,8 @@ export function check(agent: CallerAgent, op: string): void {
           "forbidden",
           `${op} is a lead's call, and ${task} is a task.`,
           "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief (brief_read), " +
-            "decisions (decisions_search), its PRs' reviews (review_read) and its project's agents (agents), writes to another agent (agent_message), and may upload an image or file for your " +
-            "lead to show (chat_file), publish a report (publish_artifact), read one of your project's (artifact_read) or " +
+            "decisions (decisions_search), its PRs' reviews (review_read) and its bot's agents (agents), writes to another agent (agent_message), and may upload an image or file for your " +
+            "lead to show (chat_file), publish a report (publish_artifact), read one of your bot's (artifact_read) or " +
             "wait on CI (wait_ci). Put anything else in your result or ask your lead.",
         );
       }
@@ -151,7 +151,7 @@ export function checkFanOut(open: number, maxAgents: number): void {
   if (open < most) return;
   throw new ToolError(
     "forbidden",
-    `This project already has ${open} open tasks, the most one lead may have at once (${most}).`,
+    `This bot already has ${open} open tasks, the most one lead may have at once (${most}).`,
     "End your turn: results arrive in wakes and free room. Or stop a task you no longer need with stop_agent.",
   );
 }

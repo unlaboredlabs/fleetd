@@ -420,7 +420,7 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         </Text>
         <Text as="p" tone="quiet">
           {left === 0
-            ? "Add a project and say hi to its lead. What you left for later waits in Settings › Hub › Setup, and fleetd asks for it the first time it is needed."
+            ? "Add a bot and say hi to its lead. What you left for later waits in Settings › Hub › Setup, and fleetd asks for it the first time it is needed."
             : `${left} required ${left === 1 ? "step is" : "steps are"} left before agents can run.`}
         </Text>
         <StepSummary title="Ready" steps={ready} brief />
@@ -428,7 +428,7 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         <div className={s.welcomeFoot}>
           {left === 0 ? (
             <Button variant="primary" size="md" onClick={() => (window.location.hash = "#/projects/add")}>
-              Add a project
+              Add a bot
             </Button>
           ) : (
             <Button variant="primary" size="md" onClick={() => go(steps.find(isRequiredLeft)?.id ?? null)}>

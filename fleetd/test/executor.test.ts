@@ -97,7 +97,7 @@ test("a link subscribes from a fresh snapshot, goes live, and the stream fills t
   node.event({ type: "project_removed", projectId: "app" });
   await settle();
   expect(store(k.hub).projectGet({ machineId: "devbox", projectId: "app" })).toBeUndefined();
-  expect(events(k.hub).page(1).events.map((e) => [e.type, e.summary])).toEqual([["project.removed", `Project "App" on devbox was removed`]]);
+  expect(events(k.hub).page(1).events.map((e) => [e.type, e.summary])).toEqual([["project.removed", `Bot "App" on devbox was removed`]]);
 });
 
 test("an older link never takes over, and a dropped one leaves the machine stale", async () => {
@@ -213,7 +213,7 @@ test("a call is answered by the reply with its id, or fails with the node's word
   await expect(ex.call("devbox", "read", { op: "runner_info" }, 20)).rejects.toThrow("no answer within 0 s");
 });
 
-test("project_get offline is the cache as of the last sighting; hooks add their fields; another's project is refused", async () => {
+test("project_get offline is the cache as of the last sighting; hooks add their fields; another's bot is refused", async () => {
   const k = kit();
   store(k.hub).machineUpsert(machine("offline"));
   store(k.hub).projectsUpsertMany("devbox", [

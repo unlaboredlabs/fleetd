@@ -88,7 +88,7 @@ export function SessionView({ project, id, windowed = false, onBack }: { project
             </Button>
           </div>
         )}
-        <EmptyState title="This screen isn’t here">It may be from before the hub kept screens, or from another project.</EmptyState>
+        <EmptyState title="This screen isn’t here">It may be from before the hub kept screens, or from another bot.</EmptyState>
       </div>
     );
   }

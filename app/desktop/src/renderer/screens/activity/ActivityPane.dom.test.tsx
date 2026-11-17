@@ -121,7 +121,7 @@ const FIRST = [
   ev(6, "task.completed", { taskId: "T12" }, "T12 completed: Receipt dates in the shop's zone"),
 ];
 
-it("shows the project's events newest first, a run folded, each linking to its agent or PR", async () => {
+it("shows the bot's events newest first, a run folded, each linking to its agent or PR", async () => {
   await mount(() => page(FIRST));
   expect(reads[0]).toMatchObject({ projectRef: project, hubWide: true, limit: 50 });
   expect(reads[0]?.before).toBeUndefined();

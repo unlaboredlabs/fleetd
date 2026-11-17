@@ -91,7 +91,7 @@ test("an order: sink's value becomes an order variable", async () => {
   expect(Object.fromEntries(k.node.orderFiles.get("p1/W5")!)).toEqual({ DEPLOY_TOKEN: "planted-order-1" });
 });
 
-test("a vault card: picked for the project, claimed once, sealed to the hosting node; its fill closes the audit row", async () => {
+test("a vault card: picked for the bot, claimed once, sealed to the hosting node; its fill closes the audit row", async () => {
   startPurchases(k.hub);
   const card = await k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", {
     kind: "card",

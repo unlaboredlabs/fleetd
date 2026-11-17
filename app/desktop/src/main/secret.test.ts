@@ -69,7 +69,7 @@ describe("sealing a secret ask's value", () => {
     expect(JSON.stringify(sent[1])).not.toContain("hunter2");
   });
 
-  it("sends a project's plain values as typed and its secrets only sealed, and takes a secret of several lines but not a NUL", async () => {
+  it("sends a bot's plain values as typed and its secrets only sealed, and takes a secret of several lines but not a NUL", async () => {
     await sodium.ready;
     const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
     const sent: unknown[] = [];
@@ -153,7 +153,7 @@ describe("sealing a secret ask's value", () => {
     expect((await submitMcpServer({ ...request, boxes: [] }, call)).ok).toBe(false);
     expect(sent).toEqual([]);
   });
-  it("sends a project's integration with its server, the token sealed and nowhere in the clear", async () => {
+  it("sends a bot's integration with its server, the token sealed and nowhere in the clear", async () => {
     await sodium.ready;
     const sent: unknown[] = [];
     const call = (tool: string, input: unknown) => {

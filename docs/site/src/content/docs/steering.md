@@ -3,7 +3,7 @@ title: Steering
 description: Redirect the lead or one agent while it works, see when it took your words in, and take a steer back.
 ---
 
-You'll send a [steer](/docs/glossary#steer): a short message to an agent that is already working. In a project's chat,
+You'll send a [steer](/docs/glossary#steer): a short message to an agent that is already working. In a bot's chat,
 any message you send while the lead works is a steer.
 
 ```text
@@ -15,7 +15,7 @@ A steer goes straight to the agent. It doesn't wait for the lead's next wake, an
 
 ## Send a steer {#keys}
 
-1. Open the project's chat in the desktop app.
+1. Open the bot's chat in the desktop app.
 2. While the lead works, type in the box at the bottom. It says "Message the lead. It reads this at its next step."
 3. Press Enter.
 
@@ -65,7 +65,7 @@ back. Past that time it is **expired**.
 
 ## Steer one agent {#agents}
 
-Open an agent from **Agents** (or the island above its project's message box) and type in the box under its work. Enter
+Open an agent from **Agents** (or the island above its bot's message box) and type in the box under its work. Enter
 sends at its next step; ⌘Enter stops its current step. Your recent steers to it show above the box with their
 receipts. From a terminal, `fleetd steer T88 "…"` does the same.
 

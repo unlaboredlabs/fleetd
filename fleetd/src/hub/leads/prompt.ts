@@ -7,7 +7,7 @@ import type { PromptSet } from "../prompts/set.ts";
 
 /** An automation's order, and the tools that manage them. */
 const AUTOMATIONS =
-  '## Automations\nAn order that says "From automation" is a run of one of this project\'s automations: start its work without asking the human first; reviews, the train and approvals still apply. For recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` (which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`.';
+  '## Automations\nAn order that says "From automation" is a run of one of this bot\'s automations: start its work without asking the human first; reviews, the train and approvals still apply. For recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` (which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`.';
 
 /** The lead's lines while its project's chat tags are on (a trial; artifact threads-design), under "When to speak". */
 export const TAG_LINES = [
@@ -70,10 +70,10 @@ export function reposBlock(r: ProjectRef, repos: ProjectRepo[]): string | undefi
   const lines = repos.map((repo) => {
     const path = repo.path ?? repo.checkout.projectId;
     const lands = repo.repoKey !== undefined ? (repo.base !== undefined ? `, ${repo.repoKey} on ${repo.base}` : `, ${repo.repoKey}`) : ", no remote";
-    const own = sameRef(repo.checkout, r) ? " (the project's own directory)" : "";
+    const own = sameRef(repo.checkout, r) ? " (the bot's own directory)" : "";
     return `- \`${repo.name}\`: ${path}${lands}${own}`;
   });
   const mine = repos.find((repo) => sameRef(repo.checkout, r));
-  const absent = mine ? `\`${mine.name}\`` : "the project's directory";
-  return `## Repos\nThis project holds these repos, each a checkout on ${r.machineId}:\n${lines.join("\n")}\n\nName the one each agent works in with \`spawn_agent\`'s \`repo\`: its worktree, branch, setup and PR are that repo's. Without \`repo\`, an agent given a \`pr\` works in that PR's repo, and any other in ${absent}. Other repos' files are not in your directory: read them through a read task.`;
+  const absent = mine ? `\`${mine.name}\`` : "the bot's directory";
+  return `## Repos\nThis bot holds these repos, each a checkout on ${r.machineId}:\n${lines.join("\n")}\n\nName the one each agent works in with \`spawn_agent\`'s \`repo\`: its worktree, branch, setup and PR are that repo's. Without \`repo\`, an agent given a \`pr\` works in that PR's repo, and any other in ${absent}. Other repos' files are not in your directory: read them through a read task.`;
 }

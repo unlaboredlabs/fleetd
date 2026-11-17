@@ -50,7 +50,7 @@ const recalled = (hub: Hub, r: ProjectRef, c: Record<string, unknown>, agent?: C
 const texts = (out: Record<string, any> | [string, string]) => (out as { messages: { text: string }[] }).messages.map((m) => m.text);
 const ids = (out: Record<string, any> | [string, string]) => (out as { messages: { messageId: string }[] }).messages.map((m) => m.messageId);
 
-test("a project finds what the person said long before its recent chat, and reads around it", async () => {
+test("a bot finds what the person said long before its recent chat, and reads around it", async () => {
   const { hub } = setup();
   const inbox = ref("inbox");
   say(hub, inbox, "human", "who was that dentist again?", "2026-10-14T09:00:00Z");
@@ -177,7 +177,7 @@ test("a purchase is recorded with no ask, filled once, and its fill is a quiet l
   // Only a person picks the card.
   expect(await refused(key("operate"), "project_card_set", { ...inbox, card: "op://Personal/Visa" })).toBe("forbidden");
   const set = await ok(key("operate", { human: true }), "project_card_set", { ...inbox, card: "op://Personal/Visa" });
-  expect(set).toEqual({ card: { ref: "op://Personal/Visa" }, next: "The project pays with Visa (Personal) from now on, with no ask at each purchase." });
+  expect(set).toEqual({ card: { ref: "op://Personal/Visa" }, next: "The bot pays with Visa (Personal) from now on, with no ask at each purchase." });
   const opened = (await buy(shopping("lamps.example"))) as Record<string, any>;
   expect([opened.state, opened.next]).toEqual(["approved", "recorded, with no ask (D310): fill the card now with purchase_fill, on this checkout"]);
   const claimed = await buy({ op: "purchase_claim", requestId: opened.requestId, sessionId: "s1" });
@@ -228,7 +228,7 @@ test("a secure input from 1Password fills once with no ask, and one the person t
   expect(((await step({ op: "secure_input_claim", requestId: typed.requestId, sessionId: "s1" })) as string[])[0]).toBe("invalid");
 });
 
-test("a deleted project is erased once the hub sees it gone, its removal kept without its name", () => {
+test("a deleted bot is erased once the hub sees it gone, its removal kept without its name", () => {
   const home = tempHome();
   try {
     const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => Date.parse(AT) });
@@ -250,7 +250,7 @@ test("a deleted project is erased once the hub sees it gone, its removal kept wi
     expect([chat(hub).page(r, undefined, undefined, 10).messages.length, marks(), existsSync(memory)]).toEqual([1, 1, true]);
     // The node's project_removed: the hub finishes the erase.
     store(hub).projectRemove(r);
-    event("project.removed", 'Project "Secret diary" on devbox was removed');
+    event("project.removed", 'Bot "Secret diary" on devbox was removed');
     expect(erase.finishPending(hub)).toBe(1);
     expect([chat(hub).page(r, undefined, undefined, 10).messages.length, marks(), existsSync(memory)]).toEqual([0, 0, false]);
     const left = events(hub).page(from).events.filter((e) => e.projectId === r.projectId || JSON.stringify(e).includes(r.projectId));
@@ -265,7 +265,7 @@ test("a deleted project is erased once the hub sees it gone, its removal kept wi
   }
 });
 
-test("what an older hub left of a deleted project is pruned, and a live one is never touched", () => {
+test("what an older hub left of a deleted bot is pruned, and a live one is never touched", () => {
   const { hub } = setup();
   const gone = ref("gone");
   hub.db.conn.run(
@@ -277,7 +277,7 @@ test("what an older hub left of a deleted project is pruned, and a live one is n
   expect(erase.pruneOrphans(hub)).toBe(0);
 });
 
-test("approvals reach the project's hooks once the inbox area starts", async () => {
+test("approvals reach the bot's hooks once the inbox area starts", async () => {
   const { hub } = setup();
   const inbox = ref("inbox");
   const hooks = approvals(hub).deps.hooks;
@@ -300,7 +300,7 @@ test("approvals reach the project's hooks once the inbox area starts", async () 
     const bridge = hooks.promptVerdict(inbox, "mcp__fleetd__project_message", { project: "app", text: "ship it" }, [], undefined);
     expect(bridge && "ask" in bridge && [bridge.ask.action, bridge.ask.title]).toEqual(["send", "Message the lead of app"]);
     expect(hooks.promptVerdict(inbox, "mcp__fleetd__automation_confirm", { automationId: "a1" }, [], undefined)).toEqual({
-      deny: "Blocked by fleetd: this project has no such automation. automation_list names them.",
+      deny: "Blocked by fleetd: this bot has no such automation. automation_list names them.",
     });
     expect(hooks.promptVerdict(inbox, "Bash", { command: "ls" }, [], undefined)).toBeUndefined();
     // Sites, approvals, the lead.

@@ -67,7 +67,7 @@ export function PrsPane({ project, pr, tab, onTab, at = null }: PrsPaneProps) {
   if (missing) {
     return (
       <div className={s.screen} data-screen="prs.missing">
-        <PanelEmpty title="This project isn’t on the hub" />
+        <PanelEmpty title="This bot isn’t on the hub" />
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function PrsPane({ project, pr, tab, onTab, at = null }: PrsPaneProps) {
         <>
           <PrTop onBack={back} />
           <div data-screen="prs.detail.missing" className={s.detailEmpty}>
-            <PanelEmpty title={`#${pr?.number ?? ""} isn’t in this project`} />
+            <PanelEmpty title={`#${pr?.number ?? ""} isn’t in this bot`} />
           </div>
         </>
       ) : rows === undefined && !fresh ? (

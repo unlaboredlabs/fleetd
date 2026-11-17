@@ -63,7 +63,7 @@ test("the Mac's step reads its own checks on any machine; the hub's never count"
   expect([mac?.status, mac?.said]).toEqual(["look", "no Xcode"]);
 });
 
-test("GitHub is to do, not failing, before any project can open a PR", () => {
+test("GitHub is to do, not failing, before any bot can open a PR", () => {
   const gh = [check("hub/gh_auth", "fail", "gh is not logged in")];
   const before = read(guides("http://devbox:4790"), beforeFirstUse(gh, 0)).find((s) => s.id === "github");
   expect(before?.status).toBe("todo");

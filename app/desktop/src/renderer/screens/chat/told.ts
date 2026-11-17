@@ -76,9 +76,9 @@ function titleFromId(id: string): string {
 }
 
 export function level(id: string, scope: PromptScope): string {
-  if (id === INSTRUCTIONS) return scope === "project" ? "your instructions for this project" : "your instructions for every project";
+  if (id === INSTRUCTIONS) return scope === "project" ? "your instructions for this bot" : "your instructions for every bot";
   if (scope === "default") return "fleetd's default";
-  return scope === "global" ? "your hub-wide edit" : "your edit for this project";
+  return scope === "global" ? "your hub-wide edit" : "your edit for this bot";
 }
 
 function grouped(rows: ReadonlyArray<ToldRow & { readonly group: string }>): ToldGroup[] {
@@ -134,7 +134,7 @@ export function toolsInWords(disallowed: readonly string[]): ToldTool[] {
     if (names.length > 0) out.push({ ...t, names });
   }
   const rest = disallowed.filter((n) => !known.has(n));
-  if (rest.length > 0) out.push({ label: "Kept from this project", why: "This project's policy turns these off.", names: rest });
+  if (rest.length > 0) out.push({ label: "Kept from this bot", why: "This bot's policy turns these off.", names: rest });
   return out;
 }
 

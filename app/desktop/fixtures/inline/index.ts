@@ -30,7 +30,7 @@ const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 const inlineItems = (
   base: Fixture,
   name = "inline-items",
-  note = "A project's chat with every state of the two inline items: a secret to enter and a command to approve.",
+  note = "A bot's chat with every state of the two inline items: a secret to enter and a command to approve.",
   list: ReadonlyArray<unknown> = data.items,
   // What the person asked and what the lead said before its items.
   opening: ReadonlyArray<string> = ["Ship the share card to staging.", "On it. I need a couple of things from you on the way: a key, and your OK before anything risky runs."],
@@ -185,19 +185,19 @@ export default defineGroup({
     const items = inlineItems(base("typical"));
     // A project's integration cards in a chat of their own (fixtures/inline/integrations.json), so the chat above keeps
     // every state of the two inline items in view.
-    const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a project's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
+    const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a bot's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
     // A project's checker: a quiet line for what it let through, a card it asks with, a blocked forward and a final
     // Confirm on a site with its screenshot (fixtures/inline/checker.json, booking.png).
-    const checked = inlineItems(base("typical"), "inline-checker", "A project's chat with its approval checker at work: a line for what it let through, a send it asks about, a forward it blocked and a final Confirm with the page's screenshot.", checker.items);
+    const checked = inlineItems(base("typical"), "inline-checker", "A bot's chat with its approval checker at work: a line for what it let through, a send it asks about, a forward it blocked and a final Confirm with the page's screenshot.", checker.items);
     const projects = arr(checked.snapshot?.["projects"]);
     const first = projects[0] as JsonObject | undefined;
     const id = (v: JsonValue | undefined, fallback: string) => (typeof v === "string" ? v : fallback);
     const shotRef = { machineId: id(first?.["machineId"], "devbox"), projectId: id(first?.["projectId"], "storefront") };
     const png = fs.readFileSync(new URL("./booking.png", import.meta.url));
     checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
-    const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a project's secure input: a passport number to type in a sealed field.", secure.items);
+    const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a bot's secure input: a passport number to type in a sealed field.", secure.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    const proposed = inlineItems(base("typical"), "inline-propose", "A chat with a lead's proposals for a new project: two waiting, one approved, one declined and one that could not be made.", propose.items, propose.opening);
+    const proposed = inlineItems(base("typical"), "inline-propose", "A chat with a lead's proposals for a new bot: two waiting, one approved, one declined and one that could not be made.", propose.items, propose.opening);
     return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked, proposed];
   },
 });

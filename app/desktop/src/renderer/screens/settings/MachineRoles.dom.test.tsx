@@ -91,7 +91,7 @@ const render = async () => {
         tool === "machine_roles"
           ? { machines: [devbox, mac1, agentsMac] }
           : tool === "machine_roles_set"
-            ? { machine: { ...devbox, roles: ["agents"] }, next: "devbox takes no new agents: those running finish their work, and its projects' agents wait." }
+            ? { machine: { ...devbox, roles: ["agents"] }, next: "devbox takes no new agents: those running finish their work, and its bots' agents wait." }
             : {};
       return Promise.resolve({ ok: true, output });
     },

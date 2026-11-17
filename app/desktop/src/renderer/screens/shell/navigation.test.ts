@@ -49,7 +49,7 @@ describe("routes on several hubs", () => {
   });
 });
 
-describe("New project's address", () => {
+describe("New bot's address", () => {
   it("leaves the screen it opened over on show, so that screen stays mounted as it was", () => {
     window.location.hash = "#/project/devbox/storefront/prs";
     expect(screenHash()).toBe("#/project/devbox/storefront/prs");

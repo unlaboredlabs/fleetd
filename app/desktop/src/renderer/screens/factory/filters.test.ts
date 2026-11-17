@@ -16,7 +16,7 @@ describe("filters", () => {
     expect(new Date(period({ range: "quarter", compare: false }, NOW)[0])).toEqual(new Date(2026, 6, 22));
   });
 
-  it("ask for the project, the zone and compare, and for until only on a custom range", () => {
+  it("ask for the bot, the zone and compare, and for until only on a custom range", () => {
     const project = { machineId: "devbox", projectId: "storefront" };
     expect(queryOf({ range: "week", compare: true }, project, NOW, "Europe/Paris")).toEqual({
       since: new Date(2026, 9, 13).toISOString(),

@@ -266,7 +266,7 @@ function RemoveDialog({ row, onClose }: { row: PersonRow | null; onClose: () => 
       open={row !== null}
       onOpenChange={(open) => !open && close()}
       title={`Remove ${name}?`}
-      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did and the projects they made stay.`}
+      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did and the bots they made stay.`}
       footer={
         <>
           {error === undefined ? null : (

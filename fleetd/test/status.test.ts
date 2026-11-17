@@ -81,7 +81,7 @@ test("waiting on you is the lead chat's needs-you, and reading the rows writes n
   chat(hub).add(r, { author: "human", text: "1 rec" });
   expect(status(hub).project(reader, r)?.state).toBe("idle");
   const missing = await tools.call(hub, reader, "status_get", { projectRef: { machineId: "devbox", projectId: "nope" } });
-  expect(missing).toMatchObject({ error: { kind: "tool", error: { code: "not_found", message: "There is no project devbox/nope." } } });
+  expect(missing).toMatchObject({ error: { kind: "tool", error: { code: "not_found", message: "There is no bot devbox/nope." } } });
 });
 
 test("an offline machine blocks its rows and marks them stale; agents come from the slots area", () => {
@@ -96,7 +96,7 @@ test("an offline machine blocks its rows and marks them stale; agents come from 
   expect(row?.projectRef).toEqual(r);
 });
 
-test("the latest merge per project is titled by its writer task, else its order; PRs in flight are counted", () => {
+test("the latest merge per bot is titled by its writer task, else its order; PRs in flight are counted", () => {
   const db = HubDb.memory();
   const c = db.conn;
   const change = (n: number, task: string | null, state: string) =>
@@ -162,7 +162,7 @@ test("the status loop turns flips into source events", () => {
   expect(clock(NOW - 30 * 86_400_000, NOW, "UTC")).toMatch(/^[A-Z][a-z]{2} \d{1,2} \d\d:\d\d$/);
 });
 
-test("a project's PRs show in its groups: in review, landing and done", () => {
+test("a bot's PRs show in its groups: in review, landing and done", () => {
   const { hub, r } = setup();
   const put = (n: number, state: string) =>
     hub.db.conn

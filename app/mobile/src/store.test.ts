@@ -5,7 +5,7 @@ import { effectsOf, initial, reduce } from "./store";
 const event = (type: string, extra: Partial<HubEvent> = {}): HubEvent => ({ seq: 1, at: "2026-11-07T10:00:00.000Z", type, summary: type, ...extra });
 
 describe("what an event reads again", () => {
-  it("a project or machine coming or going reads the snapshot again, so its chats leave the list at once", () => {
+  it("a bot or machine coming or going reads the snapshot again, so its chats leave the list at once", () => {
     expect(effectsOf(event("project.removed")).snapshot).toBe(true);
     expect(effectsOf(event("project.added")).snapshot).toBe(true);
     // The hub erased the machine's projects with it: their chats go without a restart.
@@ -18,7 +18,7 @@ describe("what an event reads again", () => {
     expect(effectsOf(event("project.settings")).info).toBe(false);
   });
 
-  it("an agent starting, ending or moving reads the orders board again, which counts each project's agents at work", () => {
+  it("an agent starting, ending or moving reads the orders board again, which counts each bot's agents at work", () => {
     expect(effectsOf(event("task.started")).board).toBe(true);
     expect(effectsOf(event("workstream.closed")).board).toBe(true);
     expect(effectsOf(event("chat.message")).board).toBe(false);

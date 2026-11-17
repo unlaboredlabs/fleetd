@@ -152,7 +152,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       parts: [
         part(
           "Give the hub an API key",
-          "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › " +
+          "Bots' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › " +
             "Your accounts › Claude. Machines need no login of their own.",
           [link("Claude Console › API keys", "https://console.anthropic.com/settings/keys")],
           [
@@ -217,10 +217,10 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           part(
             "Make a vault for fleetd",
             "Agents run as you on their machine: they reach your files, gh and ssh, and could read what fleetd's " +
-              "1Password service account reads. Keep only the logins agents sign in with and the card a project buys with " +
+              "1Password service account reads. Keep only the logins agents sign in with and the card a bot buys with " +
               "in this vault, and nothing else of yours.",
             [],
-            [value("Vault name", "fleetd"), plain("In it", "Each login agents sign in with, with its website, and the card a project buys with")],
+            [value("Vault name", "fleetd"), plain("In it", "Each login agents sign in with, with its website, and the card a bot buys with")],
           ),
           part(
             "Use a low-limit or virtual card",
@@ -251,7 +251,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       "people",
       "people",
       "Invite people",
-      "Each person gets their own sign-in, chats and projects; you choose who is an admin.",
+      "Each person gets their own sign-in, chats and bots; you choose who is an admin.",
       { kind: "optional" },
       {
         parts: [
@@ -290,7 +290,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             "Join, at the Mac's screen",
             "Paste the join line in Terminal on the Mac, logged in at its screen: launchd runs the node only inside " +
               "that login, so su and ssh won't do. It installs fleetd for that account and joins as the agents' Mac: a " +
-              "tool every project's agents use, which runs no claude and no lead and takes no secret. Settings › Hub › " +
+              "tool every bot's agents use, which runs no claude and no lead and takes no secret. Settings › Hub › " +
               "Machines › Add machine › A Mac for agents makes the line with its one-time code; if this Mac runs fleetd " +
               "already, give it that machine's name, and the line replaces it. After a restart, log that account in " +
               "again: with FileVault on, macOS logs no one in by itself.",

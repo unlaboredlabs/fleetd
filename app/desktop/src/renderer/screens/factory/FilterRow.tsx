@@ -38,7 +38,7 @@ function Chip({ label, children }: { label: string; children: ReactNode }) {
 
 export function FilterRow({ filters: f, project, projects, nowMs, onFilters, onProject }: FilterRowProps) {
   const [custom, setCustom] = useState(false);
-  const title = project === null ? "All projects" : (projects.find((p) => keyOf(p) === keyOf(project))?.title ?? project.projectId);
+  const title = project === null ? "All bots" : (projects.find((p) => keyOf(p) === keyOf(project))?.title ?? project.projectId);
   const [since, until] = period(f, nowMs);
   return (
     <div className={s.filters} role="toolbar" aria-label="Filters">
@@ -59,7 +59,7 @@ export function FilterRow({ filters: f, project, projects, nowMs, onFilters, onP
       </Chip>
       <Chip label={title}>
         <MenuRadioGroup value={project === null ? ALL : keyOf(project)} onValueChange={(v) => onProject(projects.find((p) => keyOf(p) === v) ?? null)}>
-          <MenuRadioItem value={ALL}>All projects</MenuRadioItem>
+          <MenuRadioItem value={ALL}>All bots</MenuRadioItem>
           <MenuSeparator />
           {projects.map((p) => (
             <MenuRadioItem key={keyOf(p)} value={keyOf(p)} hint={p.machineId}>

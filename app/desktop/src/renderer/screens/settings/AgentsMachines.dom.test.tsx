@@ -192,14 +192,14 @@ it("sets a machine with its slider, and Undo goes back to auto", async () => {
   expect(calls[1]).toEqual({ tool: "cap_set", input: { machine: { machineId: "devbox", auto: true } } });
 });
 
-it("takes a project's slider to the fleet cap and says when its machine holds it, with no machine control in Settings", async () => {
+it("takes a bot's slider to the fleet cap and says when its machine holds it, with no machine control in Settings", async () => {
   await render("settings", false);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
   const project = section("Max agents");
   const thumb = project.querySelector("[role='slider']");
   expect(thumb?.getAttribute("aria-valuenow")).toBe("30");
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
-  expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this project runs 22 until an admin raises devbox.");
+  expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this bot runs 22 until an admin raises devbox.");
   // A member sees the line only: no raise, no fleet or machine caps, nothing about admin keys.
   expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("devbox's max in Hub › Machines");
   expect(host.textContent).not.toContain("admin key");

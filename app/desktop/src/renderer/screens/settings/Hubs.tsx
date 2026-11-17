@@ -27,7 +27,7 @@ export function HubsSettings() {
     <SettingsSection
       title="Paired hubs"
       reveal="hubs.add"
-      hint="The hubs this app is paired with. It acts as you on each. With two hubs or more, a hub's name shows above its projects and beside its work."
+      hint="The hubs this app is paired with. It acts as you on each. With two hubs or more, a hub's name shows above its bots and beside its work."
       aside={
         // The web app is fleetd cloud's: its hubs are the account's teams, and pairing one of your own is the desktop app's.
         onWeb() ? undefined : (

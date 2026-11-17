@@ -8,14 +8,14 @@ export function GetStarted({ onAddProject }: { onAddProject: () => void }) {
     <div className={s.screen}>
       <div className={s.column}>
         <Text as="h1" size="xl" strong>
-          Add a project to chat with its lead
+          Add a bot to chat with its lead
         </Text>
         <Text as="p" tone="quiet">
           {TAGLINE}
         </Text>
         <div className={s.actions}>
           <Button variant="primary" onClick={onAddProject}>
-            Add a project
+            Add a bot
           </Button>
         </div>
       </div>

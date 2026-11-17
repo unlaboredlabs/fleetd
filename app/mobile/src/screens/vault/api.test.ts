@@ -64,7 +64,7 @@ describe("saving an item", () => {
     expect(opened(calls.find((c) => c.tool === "vault_save")!.input.sealed as string)).toEqual({ line2: "" });
   });
 
-  it("puts a new variable in its project, its name and secrecy beside it", async () => {
+  it("puts a new variable in its bot, its name and secrecy beside it", async () => {
     const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
     await saveItem(hub, { kind: "env", project: { machineId: "devbox", projectId: "p1", title: "x" } as never, label: "K", envName: "K", secret: false, fields: { value: "v" } });
     expect(calls.at(-1)!.input).toEqual({ kind: "env", scope: "project", machineId: "devbox", projectId: "p1", label: "K", envName: "K", secret: false, sealed: expect.any(String) });
@@ -134,7 +134,7 @@ describe("revealing", () => {
 });
 
 describe("the rest", () => {
-  it("lists the cards a project can pay with", async () => {
+  it("lists the cards a bot can pay with", async () => {
     const gone = { ...SUMMARY, itemId: "V9", deletedMs: 5 };
     const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, gone] }) });
     expect(await usableCards(hub, { machineId: "devbox", projectId: "p1" })).toEqual({ ok: true, value: [SUMMARY] });
@@ -157,18 +157,18 @@ describe("the rest", () => {
     expect(await listItems(hub, { kind: "team" }, true)).toEqual({ ok: true, value: { items: [SUMMARY], setAside: [] } });
   });
 
-  it("lists an older hub's own and hub items as one list, its projects' left to them", async () => {
+  it("lists an older hub's own and hub items as one list, its bots' left to them", async () => {
     const { hub } = fake({ vault_list: () => ({ items: [SUMMARY, mine, own, order, newer] }) });
     expect(await listItems(hub, { kind: "team" }, false)).toEqual({ ok: true, value: { items: [SUMMARY, mine], setAside: [] } });
   });
 
-  it("lists a project's variables and its orders'", async () => {
+  it("lists a bot's variables and its orders'", async () => {
     const { hub, calls } = fake({ vault_list: () => ({ items: [own, order, newer] }) });
     expect(await listItems(hub, { kind: "project", project: { machineId: "devbox", projectId: "p1" } }, true)).toEqual({ ok: true, value: { items: [own, order], setAside: [] } });
     expect(calls.map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "p1" }]);
   });
 
-  it("moves a set-aside item to the team vault, or a variable to a project", async () => {
+  it("moves a set-aside item to the team vault, or a variable to a bot", async () => {
     const { hub, calls } = fake({ vault_move: (input) => ({ item: { ...SUMMARY, itemId: input.itemId, scope: input.projectId === undefined ? "hub" : "project" } }) });
     expect(await moveItem(hub, "V5")).toMatchObject({ ok: true, value: { itemId: "V5", scope: "hub" } });
     expect(await moveItem(hub, "V6", { machineId: "devbox", projectId: "p1", title: "Nova" } as never)).toMatchObject({ ok: true, value: { scope: "project" } });

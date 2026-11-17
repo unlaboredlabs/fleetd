@@ -16,8 +16,8 @@ export function register(tools: Registry): void {
     if (scope.kind === "global") {
       throw new ToolError(
         "invalid",
-        "Signing in connects one project's server, with your own account; a global server reaches every teammate's agents.",
-        "Add the server to the project (a project's Integrations), then sign in.",
+        "Signing in connects one bot's server, with your own account; a global server reaches every teammate's agents.",
+        "Add the server to the bot (a bot's Integrations), then sign in.",
       );
     }
     projectOf(hub, scope);

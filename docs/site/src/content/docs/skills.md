@@ -1,10 +1,10 @@
 ---
 title: Skills
-description: Reusable SKILL.md workflows every fleetd agent can use, from the repo, the project or the whole hub.
+description: Reusable SKILL.md workflows every fleetd agent can use, from the repo, the bot or the whole hub.
 ---
 
 A skill is a workflow an agent follows when it fits: how to cut a release, review a PR, fill a PDF form. Every fleetd
-agent (the lead, writers, reviewers) gets the skills of its repo, of its project and of the whole hub. fleetd uses the
+agent (the lead, writers, reviewers) gets the skills of its repo, of its bot and of the whole hub. fleetd uses the
 skills.sh format, so skills installed with the skills.sh CLI (`skills add`) work as they are, and so do Claude Code
 skills.
 
@@ -40,10 +40,10 @@ loads. Other frontmatter fields Claude Code knows (`allowed-tools`, `disable-mod
 
 An agent gets skills from four places. When two have a skill of the same name, the first one wins:
 
-1. **The repo's `.agents/skills/<name>/`**: where the skills.sh CLI puts a project's skills.
-2. **The repo's `.claude/skills/<name>/`**: Claude Code's project skills.
-3. **The project's skills**, kept by the hub.
-4. **Global skills**, kept by the hub for every project.
+1. **The repo's `.agents/skills/<name>/`**: where the skills.sh CLI puts a bot's skills.
+2. **The repo's `.claude/skills/<name>/`**: Claude Code's bot skills.
+3. **The bot's skills**, kept by the hub.
+4. **Global skills**, kept by the hub for every bot.
 
 Each agent reads the repo's folders in its own checkout, so a skill a branch adds is that branch's. The hub keeps its
 skills as plain folders in its home (`skills/global/` and `skills/projects/<machine>/<project>/`), never in a repo, so
@@ -65,18 +65,18 @@ it), and the session's skill list has it from its next start. A deleted skill go
 
 ## Manage skills in the app {#app}
 
-A project's skills are in Settings → Projects → Agents: pick the project. Changing them takes operate on its machine. The
+A bot's skills are in Settings → Bots → Agents: pick the bot. Changing them takes operate on its machine. The
 hub-wide (global) skills it gets are named on one line there, read-only.
 
 Global skills reach every machine's agents, so changing them takes admin on every machine: they are in
-Settings › [Hub](/docs/desktop-app#hub) › Every project › Agents, which only the hub's owners and admins see.
+Settings › [Hub](/docs/desktop-app#hub) › Every bot › Agents, which only the hub's owners and admins see.
 
-- **List**: every skill of the project or hub-wide, marked with where it comes from. A skill that another source
+- **List**: every skill of the bot or hub-wide, marked with where it comes from. A skill that another source
   outranks says which one.
-- **View and edit**: open one to read its `SKILL.md`. Project and global skills are editable. Repo skills change
+- **View and edit**: open one to read its `SKILL.md`. Bot and global skills are editable. Repo skills change
   in the repo.
 - **New**: name it, write its `SKILL.md`, save.
-- **Delete**: removes a project or global skill from the hub.
+- **Delete**: removes a bot or global skill from the hub.
 - **Install**: give a source and fleetd fetches its skills into the project or global scope:
   - `owner/repo`: every skill in a GitHub repo.
   - `owner/repo@skill`: one of them.
@@ -91,11 +91,11 @@ Settings › [Hub](/docs/desktop-app#hub) › Every project › Agents, which on
   fetches the same source and branch again and moves the pin. An edit you made to an installed skill is replaced.
 
 A lead can install skills too, with its `skill_install` tool, when you ask it to ("install
-vercel-labs/agent-skills@web-design-guidelines for this project"). It installs into its own project only, from GitHub
+vercel-labs/agent-skills@web-design-guidelines for this bot"). It installs into its own bot only, from GitHub
 or other remote sources, and says so in its chat.
 
-Every change to a project or global skill's `SKILL.md` is kept as a version: who made it, when and why. A
-project's lead also [saves skills of its own](/docs/projects#skills): **History, restore or turn off** on one opens it
+Every change to a bot or global skill's `SKILL.md` is kept as a version: who made it, when and why. A
+bot's lead also [saves skills of its own](/docs/projects#skills): **History, restore or turn off** on one opens it
 in the panel beside the chat, with each version, a diff against the one before, and Restore.
 
 ## Name a skill in the chat {#chat}
@@ -105,7 +105,7 @@ description, so the lead uses it or puts it in the brief of the agent it starts.
 
 ## Limits {#limits}
 
-- A skill folder holds at most 64 files and 512 KB. The hub sends a project's and the global skills' text files to the
+- A skill folder holds at most 64 files and 512 KB. The hub sends a bot's and the global skills' text files to the
   node with each session start, up to 4 MB in all.
 - A scope holds at most 200 skills.
 - A skill never holds a secret: one that looks like it is refused. Name the secret instead, and the agent asks for it

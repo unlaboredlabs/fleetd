@@ -48,13 +48,13 @@ describe("an integration's approval card", () => {
   });
 });
 
-describe("a lead's proposal for a new project", () => {
+describe("a lead's proposal for a new bot", () => {
   const shown = { machineId: "devbox", path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
   const card = (input: unknown, more: Partial<ToolPreview> = {}): ToolPreview => ({
     server: "fleetd",
     tool: "project_propose",
     action: "write",
-    title: "Create the project “Pricing page”",
+    title: "Create the bot “Pricing page”",
     input: typeof input === "string" ? input : JSON.stringify(input),
     ...more,
   });
@@ -73,8 +73,8 @@ describe("a lead's proposal for a new project", () => {
   });
   it("folds, once answered, to what was decided: never that it ran", () => {
     expect(previewOutcome(card(shown), item("open"))).toBeUndefined();
-    expect(previewOutcome(card(shown), item("approved"))).toEqual({ tone: "quiet", text: "Approved: a new project" });
-    expect(previewOutcome(card(shown), item("denied"))?.text).toBe("Declined: a new project");
+    expect(previewOutcome(card(shown), item("approved"))).toEqual({ tone: "quiet", text: "Approved: a new bot" });
+    expect(previewOutcome(card(shown), item("denied"))?.text).toBe("Declined: a new bot");
     expect(previewOutcome(card(shown), item("failed"))).toEqual({ tone: "danger", text: "Approved, not created" });
   });
 });

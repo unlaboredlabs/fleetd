@@ -29,10 +29,10 @@ const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
 
 describe("its screen", () => {
   it("says where it lives under its name", () => {
-    expect(subtitle(project(), "Dev Box")).toBe("Project on Dev Box");
+    expect(subtitle(project(), "Dev Box")).toBe("Bot on Dev Box");
     const repo = (name: string) => ({ repoId: name, name, checkout: { machineId: "devbox", projectId: name } });
     expect(subtitle(project({ repos: [repo("shop"), repo("api")] }), "Dev Box")).toBe("2 repos on Dev Box");
-    expect(subtitle(own(), "Dev Box")).toBe("Project on Dev Box");
+    expect(subtitle(own(), "Dev Box")).toBe("Bot on Dev Box");
   });
 
   const agent = (laneId: string, role: AgentRow["role"], status: AgentRow["status"], extra: Partial<AgentRow> = {}): AgentRow => ({
@@ -124,7 +124,7 @@ describe("its screen", () => {
 });
 
 describe("Delete", () => {
-  it("erases any project in the desktop's words, with a tickbox naming its folder", () => {
+  it("erases any bot in the desktop's words, with a tickbox naming its folder", () => {
     for (const p of [own(), project()]) {
       const root = p.workspaceRoot;
       const w = deleteWords(p, settings({ workspaceRoot: root }), "devbox");

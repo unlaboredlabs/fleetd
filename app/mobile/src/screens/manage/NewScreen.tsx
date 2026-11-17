@@ -129,7 +129,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
         <>
           <ListSection
             header="Kind"
-            footer={shownKind === "browser" ? `It opens on ${project?.title ?? "the project"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
+            footer={shownKind === "browser" ? `It opens on ${project?.title ?? "the bot"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
           >
             {SCREEN_KINDS.map((k) => {
               const kindOff = whyOff(machines, k.kind, home);

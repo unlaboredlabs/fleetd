@@ -73,7 +73,7 @@ describe("the disk cache", () => {
     expect(out?.asOf).toBe(AT);
   });
 
-  it("is written only with projects to show, and is cut to fit", () => {
+  it("is written only with bots to show, and is cut to fit", () => {
     expect(toCache(initialState(), HUB, 0, null)).toBeUndefined();
     const huge = cache({ chats: Array.from({ length: 6 }, (_, i) => ({ key: `devbox/p${String(i)}`, messages: [msg(1, { text: "x".repeat(600_000) })], hasOlder: false })) });
     const text = encodeCache(huge);
@@ -83,7 +83,7 @@ describe("the disk cache", () => {
     expect(decodeCache(JSON.stringify({ ...cache(), version: 2 }))).toBeUndefined();
   });
 
-  it("restores the projects, chats and waiting messages, marked as of when they were current", () => {
+  it("restores the bots, chats and waiting messages, marked as of when they were current", () => {
     const s = restoreCache(initialState(), cache());
     expect(selectOfflineAsOf(s)).toBe(Date.parse(AS_OF));
     expect(selectShownProjects(s)).toMatchObject([{ key: KEY, needsYou: true, running: 0, working: false }]);

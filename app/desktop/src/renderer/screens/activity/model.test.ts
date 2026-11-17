@@ -101,7 +101,7 @@ group("filters", () => {
     expect(hubWideFor(new Set<ActivityKind>(["agents"]))).toBe(false);
   });
 
-  it("keeps a streamed event when it is this project's and of a shown kind", () => {
+  it("keeps a streamed event when it is this bot's and of a shown kind", () => {
     const started = ev("task.started", today("10:00"), { taskId: "T1" });
     expect(inFeed(started, project, new Set())).toBe(true);
     expect(inFeed(started, project, new Set<ActivityKind>(["agents"]))).toBe(true);

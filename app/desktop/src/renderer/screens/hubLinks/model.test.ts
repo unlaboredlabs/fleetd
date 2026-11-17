@@ -23,7 +23,7 @@ describe("a pasted link", () => {
     expect(readPasted("fld_not_a_link")).toEqual({ key: undefined, url: undefined });
   });
 
-  it("asks for a label the hub takes and this project hasn't used, and an address", () => {
+  it("asks for a label the hub takes and this bot hasn't used, and an address", () => {
     expect(labelProblem("")).toBeUndefined();
     expect(labelProblem("x".repeat(41))).toMatch(/40/u);
     expect(labelProblem("Acme", ["acme"])).toMatch(/already/u);
@@ -51,20 +51,20 @@ describe("a kept link", () => {
     const at = "2026-10-27T10:00:00.000Z";
     const now = Date.parse("2026-11-07T12:00:00.000Z");
     expect(linkState({ ...link, state: "unreachable", checkedAt: at }, now).line).toBe("Can’t reach acme at https://acme.example. Since Oct 27.");
-    expect(linkState({ ...link, state: "revoked", checkedAt: at }, now).line).toBe("Revoked on acme: this project can’t use it any more. Since Oct 27.");
+    expect(linkState({ ...link, state: "revoked", checkedAt: at }, now).line).toBe("Revoked on acme: this bot can’t use it any more. Since Oct 27.");
     expect(linkState({ ...link, state: "ok", checkedAt: at }, now).line).toBeNull();
   });
 
-  it("names the person it acts as and the projects it is limited to", () => {
+  it("names the person it acts as and the bots it is limited to", () => {
     expect(reachLine({})).toBeNull();
-    expect(reachLine({ who: "Alex" })).toBe("As Alex · every project of theirs");
+    expect(reachLine({ who: "Alex" })).toBe("As Alex · every bot of theirs");
     const projects = [{ projectRef: { machineId: "devbox", projectId: "shop" }, title: "Shop" }];
     expect(reachLine({ who: "Alex", projects })).toBe("As Alex · only Shop");
   });
 });
 
 describe("links minted here", () => {
-  it("lists a person's own, open first, and names their projects", () => {
+  it("lists a person's own, open first, and names their bots", () => {
     const a = issued("hl_aaaaaaaa", { person: { personId: "p_1", name: "Alex" } });
     const b = issued("hl_bbbbbbbb", { person: { personId: "p_2", name: "Sam" }, createdAt: "2026-10-27T11:00:00.000Z" });
     const c = issued("hl_cccccccc", { revokedAt: "2026-10-27T12:00:00.000Z" });
@@ -72,7 +72,7 @@ describe("links minted here", () => {
     // Not until the hub says who you are: an admin's answer holds everyone's.
     expect(mine([a, b], undefined)).toEqual([]);
     expect(sortIssued([c, a, b]).map((l) => l.linkId)).toEqual(["hl_bbbbbbbb", "hl_aaaaaaaa", "hl_cccccccc"]);
-    expect(projectsLine(a, () => undefined)).toBe("Every project");
+    expect(projectsLine(a, () => undefined)).toBe("Every bot");
     expect(projectsLine({ projects: [{ machineId: "devbox", projectId: "shop" }] }, () => "Shop")).toBe("Only Shop");
   });
 });

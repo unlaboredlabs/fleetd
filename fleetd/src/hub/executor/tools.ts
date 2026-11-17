@@ -97,7 +97,7 @@ async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, un
     attention: attention(hub, caller, cursor),
     cursor,
     notify: notifyPolicy(hub),
-    next: `Call events_wait with cursor ${cursor} to wait for changes, or project_get for one project's outcome.`,
+    next: `Call events_wait with cursor ${cursor} to wait for changes, or project_get for one bot's outcome.`,
     // Rust's two status hooks (serve/wire.rs `extend_tools`, chat/tools.rs `extend_status`): always present.
     slots: slotBoard(hub, caller),
     chats: chatStates(hub, caller),

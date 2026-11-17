@@ -16,7 +16,7 @@ const router: RetiredPromptOverride = {
   scope: "project",
   projectRef: { machineId: "devbox", projectId: "storefront" },
   text: "Route checkout work to storefront.",
-  why: "orders now go to a project's lead in its chat.",
+  why: "orders now go to a bot's lead in its chat.",
 };
 
 describe("edits that no longer apply", () => {
@@ -30,6 +30,6 @@ describe("edits that no longer apply", () => {
 
   it("ends the hub's reason with one full stop", () => {
     expect(whyLine(wake)).toBe("Notes to the lead are now fixed event lines that fleetd writes.");
-    expect(whyLine(router)).toBe("Orders now go to a project's lead in its chat.");
+    expect(whyLine(router)).toBe("Orders now go to a bot's lead in its chat.");
   });
 });

@@ -251,8 +251,8 @@ async function list(client: McpClient, v: Parsed) {
   const projects: any[] = Array.isArray(body?.projects) ? body.projects : [];
   const archived = v.flag("archived");
   const shown = projects.filter((p) => archived || p.archivedAt === undefined);
-  if (projects.length === 0) println("No projects yet: fleetd project add <path|github-url>");
-  else if (shown.length === 0) println("Every project is archived: fleetd project list --archived shows them");
+  if (projects.length === 0) println("No bots yet: fleetd project add <path|github-url>");
+  else if (shown.length === 0) println("Every bot is archived: fleetd project list --archived shows them");
   for (const p of shown) {
     const arch = p.archivedAt !== undefined ? "  (archived)" : "";
     println(
@@ -292,16 +292,16 @@ const find = (client: McpClient, v: Parsed) => findTarget(client, v.positionals[
 
 /** The project a `<machine>/<project id or title>` argument names. */
 async function findTarget(client: McpClient, target: string | undefined): Promise<[string, any]> {
-  if (target === undefined) throw new Stop(2, "give the project as <machine>/<project id or title>");
+  if (target === undefined) throw new Stop(2, "give the bot as <machine>/<bot id or title>");
   const slash = target.indexOf("/");
-  if (slash < 0) throw new Stop(2, `'${target}' is not <machine>/<project>`);
+  if (slash < 0) throw new Stop(2, `'${target}' is not <machine>/<bot>`);
   const [machine, which] = [target.slice(0, slash), target.slice(slash + 1)];
   const body = await call(client, "project_get", { machineId: machine });
   const projects: any[] = Array.isArray(body?.projects) ? body.projects : [];
   const byTitle = projects.filter((p) => s(p, "/title") === which);
   const found = projects.find((p) => s(p, "/projectId") === which) ?? (byTitle.length === 1 ? byTitle[0] : undefined);
   if (found === undefined) {
-    throw new Stop(3, `no single project '${which}' on ${machine}`, `fleetd project list --machine ${machine} shows their ids`);
+    throw new Stop(3, `no single bot '${which}' on ${machine}`, `fleetd project list --machine ${machine} shows their ids`);
   }
   return [machine, found];
 }
@@ -515,11 +515,11 @@ async function set(client: McpClient, out: Out, v: Parsed) {
     if (maxAgents === null) input.project.followDefault = true;
     else input.project.maxAgents = maxAgents;
   } else if (target !== undefined) {
-    if (allowed === undefined) throw new Stop(2, "give --max-agents <n> or --profiles <names> for the project");
+    if (allowed === undefined) throw new Stop(2, "give --max-agents <n> or --profiles <names> for the bot");
   } else if (maxAgents !== undefined) {
-    throw new Stop(2, "--max-agents needs the project as <machine>/<project>");
+    throw new Stop(2, "--max-agents needs the bot as <machine>/<bot>");
   } else if (fleetCap === undefined) {
-    throw new Stop(2, "give --max-agents <n> or --profiles <names> with a project, or --fleet-cap <n>");
+    throw new Stop(2, "give --max-agents <n> or --profiles <names> with a bot, or --fleet-cap <n>");
   }
   const body = await call(client, "cap_set", input);
   out.success(typeof body?.next === "string" ? body.next : "Set.");
@@ -669,7 +669,7 @@ async function pick(client: McpClient, out: Out, machine: string | undefined): P
 }
 
 async function add(client: McpClient, out: Out, v: Parsed, home: string) {
-  if (out.tty) tty.intro("Add a project");
+  if (out.tty) tty.intro("Add a bot");
   const givenMachine = v.str("machine");
   const newName = v.str("new");
   if (newName !== undefined) return addNew(client, out, v, newName, givenMachine);
@@ -724,7 +724,7 @@ async function add(client: McpClient, out: Out, v: Parsed, home: string) {
   const machine = s(added, "/machineId");
   const path = s(added, "/path");
   if (typeof added?.addId !== "string") {
-    out.success(`${tilde(path)} on ${machine} ${added?.created === true ? "added" : "is already a project"}`);
+    out.success(`${tilde(path)} on ${machine} ${added?.created === true ? "added" : "is already a bot"}`);
     out.info(describe(added?.inspect ?? null));
     return finish(out);
   }

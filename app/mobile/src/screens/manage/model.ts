@@ -9,7 +9,7 @@ export const machineName = (machines: readonly Machine[], machineId: string): st
 /** The line under its name on its screen. */
 export const subtitle = (p: ProjectSummary, machine: string): string => {
   const repos = p.repos?.length ?? 0;
-  return repos > 1 ? `${String(repos)} repos on ${machine}` : `Project on ${machine}`;
+  return repos > 1 ? `${String(repos)} repos on ${machine}` : `Bot on ${machine}`;
 };
 
 const ROLE: Record<AgentRow["role"], string> = { lead: "Lead", implementer: "Writer", reader: "Reader", reviewer: "Reviewer", verifier: "Verifier", qa: "QA" };

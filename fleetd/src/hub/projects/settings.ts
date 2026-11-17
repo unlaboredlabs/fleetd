@@ -52,7 +52,7 @@ export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "l
 
 /** The refusal when a change would take a project's values past ENV_TOTAL_MAX_BYTES, naming the total. */
 export const envTotalOver = (total: number) =>
-  `A project's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.`;
+  `A bot's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.`;
 
 /** The bytes standard base64 decodes to; undefined for text that isn't (secrets.rs `base64_bytes`). */
 function base64Bytes(text: string): number | undefined {
@@ -193,7 +193,7 @@ export const projectSettings = (hub: Hub) => new ProjectSettingsStore(hub.db.con
 export const taskSetup = (hub: Hub, r: ProjectRef, repo: RepoId | undefined) => projectSettings(hub).setupIn(r, repo);
 
 export const tooOld = (m: MachineId) =>
-  new ToolError("invalid", `${m}'s node is too old to take project settings.`, `Update fleetd on ${m} and restart its node.`);
+  new ToolError("invalid", `${m}'s node is too old to take bot settings.`, `Update fleetd on ${m} and restart its node.`);
 
 /** The node can take the call: it is online and new enough. */
 function nodeReady(hub: Hub, m: MachineId): void {
@@ -218,9 +218,9 @@ export function repoNamed(hub: Hub, r: ProjectRef, name: RepoName | undefined): 
   const names = repos.of(hub.db.conn, r).map((x) => x.name);
   const fix =
     names.length === 0
-      ? "It has no repos: leave repo out for the project's own settings."
-      : `Name one of its repos (${names.join(", ")}), or leave repo out for the project's own settings.`;
-  throw new ToolError("not_found", `Project ${r.projectId} on ${r.machineId} has no repo ${name}.`, fix);
+      ? "It has no repos: leave repo out for the bot's own settings."
+      : `Name one of its repos (${names.join(", ")}), or leave repo out for the bot's own settings.`;
+  throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no repo ${name}.`, fix);
 }
 
 /** The project's settings, with `setup` that of `repo` when one is given. */
@@ -311,11 +311,11 @@ export function register(tools: Registry): void {
     }
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     const settings = await settingsOf(hub, r, repo);
-    let next = "New tasks of the project use these settings.";
+    let next = "New tasks of the bot use these settings.";
     if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
       next = `Its bot is ${input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
-      next = `New tasks of the project use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
+      next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }
     return { settings, next };
   });
@@ -324,7 +324,7 @@ export function register(tools: Registry): void {
     const m = input.machineId;
     requireRole(caller, "operate", m);
     if (!isHuman(caller)) {
-      throw new ToolError("forbidden", "Only a person sets a project's environment.", "Set it in the desktop app: Settings › Projects.");
+      throw new ToolError("forbidden", "Only a person sets a bot's environment.", "Set it in the desktop app: Settings › Bots.");
     }
     const r = { machineId: m, projectId: input.projectId };
     if (!store(hub).projectGet(r)) throw unknownProject(r);
@@ -333,8 +333,8 @@ export function register(tools: Registry): void {
       env,
       next:
         missed.length === 0
-          ? "Every claude the node starts for the project from now on gets them; running sessions get them at their next start."
-          : `The project has them, but these didn't take: ${missed.join(", ")}. Set them again to retry.`,
+          ? "Every claude the node starts for the bot from now on gets them; running sessions get them at their next start."
+          : `The bot has them, but these didn't take: ${missed.join(", ")}. Set them again to retry.`,
     };
   });
 }
@@ -357,7 +357,7 @@ export async function setEnv(
   for (const name of remove) sizes.delete(name);
   for (const v of set) sizes.set(v.name, setBytes(v));
   if (sizes.size > PROJECT_ENV_MAX) {
-    throw new ToolError("invalid", `A project takes at most ${PROJECT_ENV_MAX} variables; this would make ${sizes.size}.`, "Remove some first.");
+    throw new ToolError("invalid", `A bot takes at most ${PROJECT_ENV_MAX} variables; this would make ${sizes.size}.`, "Remove some first.");
   }
   const big = set.find((v) => setBytes(v) > ENV_VALUE_MAX_BYTES);
   if (big) {

@@ -26,7 +26,7 @@ const setupLeft = (f: Fixture): void => {
 
 /** A label as long as a hub's can be (40 characters), and a machine's name as long. */
 const LONG_HUB = "Acme Robotics shared build hub, Berlin 2";
-const LONG_OTHER = "Personal projects and garden experiments";
+const LONG_OTHER = "Personal bots and garden experiments";
 const LONG_MACHINE = "buildbox-ci-runner-eu-central-berlin-002";
 
 /** `machineId` changed by `change`, in the snapshot and in the live feed, whose word is the newer one. */

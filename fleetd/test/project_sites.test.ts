@@ -11,14 +11,14 @@ function setup() {
   k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-own', 'Own', 'owner', 0), ('p-ada', 'Ada', 'member', 1)");
   const mine = { machineId: "devbox", projectId: "ada-inbox" };
   const shared = { machineId: "devbox", projectId: "app" };
-  project(k.hub, mine, { title: "Ada's project" });
+  project(k.hub, mine, { title: "Ada's bot" });
   project(k.hub, shared, { title: "App" });
   kept.put(k.hub.db.conn, mine, { keyId: "key_ada", name: "phone" }, 5);
   const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
   return { ...k, mine, shared, ada };
 }
 
-test("project_get lists every project; any key that operates archives one and brings it back", async () => {
+test("project_get lists every bot; any key that operates archives one and brings it back", async () => {
   const { ok, mine, ada, hub } = setup();
   // Ada's former Only me project is everyone's (D491).
   hub.db.conn.run("UPDATE project_settings SET only_me = 1, owner_person = 'p-ada' WHERE project_id = 'ada-inbox'");
@@ -32,8 +32,8 @@ test("project_get lists every project; any key that operates archives one and br
   expect((await ok(ada, "project_archive", mine)).next).toBeUndefined();
   const back = await ok(ada, "project_archive", { ...mine, archived: false });
   expect([back.project.archivedAt, back.next]).toEqual([undefined, "Its lead starts with the next chat message."]);
-  expect(events(hub).page(0).events.map((e) => e.summary)).toEqual(["Ada's project archived", "Ada's project back"]);
-  expect(events(hub).page(0).events[0]?.data).toEqual({ title: "Ada's project", archivedAt: "2026-10-17T10:00:00.000Z" });
+  expect(events(hub).page(0).events.map((e) => e.summary)).toEqual(["Ada's bot archived", "Ada's bot back"]);
+  expect(events(hub).page(0).events[0]?.data).toEqual({ title: "Ada's bot", archivedAt: "2026-10-17T10:00:00.000Z" });
 });
 
 test("sites, their revoke, and approvals only a person sets", async () => {
@@ -70,7 +70,7 @@ test("the site a URL is on, and the sites a message links to", () => {
   expect(pasted("see (https://example.org/a) and HTTPS://example.org. or http://docs.example.com:8080")).toEqual(["example.org", "docs.example.com"]);
 });
 
-test("the hub answers no tool name the contract doesn't list, and project_asks needs its project", async () => {
+test("the hub answers no tool name the contract doesn't list, and project_asks needs its bot", async () => {
   // So an older app's call by a name that left the contract (the aliases kept for one release, D317) gets an
   // unknown-tool error, and its asks read by the argument's old name is refused rather than read for no project.
   const { tools, call, refused, shared } = setup();

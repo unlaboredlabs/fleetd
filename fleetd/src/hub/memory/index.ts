@@ -166,7 +166,7 @@ export class Memory {
       const total = this.projectChars(t.project) - chars(this.read(t)) + len;
       if (total > this.caps.project) {
         throw invalid(
-          `This project's memory would be ${total} characters, past its cap of ${this.caps.project}. Nothing was written.`,
+          `This bot's memory would be ${total} characters, past its cap of ${this.caps.project}. Nothing was written.`,
           "Merge or replace: fold topics together, or drop entries that no longer hold.",
         );
       }
@@ -228,7 +228,7 @@ export class Memory {
       const room = Math.max(this.caps.project - (this.projectChars(t.project) - chars(this.read(t)) - chars(this.read(it))), 0);
       if (chars(index) > this.cap(it) || chars(index) + chars(text) > room) {
         throw invalid(
-          "This project's memory is at its cap. Nothing was written.",
+          "This bot's memory is at its cap. Nothing was written.",
           "Merge or replace: fold topics together, or drop entries that no longer hold.",
         );
       }
@@ -329,10 +329,10 @@ export class Memory {
     let out = "## Memory\n";
     out += lead
       ? "What you remembered in earlier sessions, with `remember`. Open a topic with `memory_read`."
-      : "What fleetd remembers about the human and this project. Follow it.";
+      : "What fleetd remembers about the human and this bot. Follow it.";
     for (const [title, text] of [
       ["How the human works (user.md)", user],
-      ["This project (MEMORY.md)", project],
+      ["This bot (MEMORY.md)", project],
     ] as const) {
       if (text.trim()) out += `\n\n### ${title}\n${text.trimEnd()}`;
     }

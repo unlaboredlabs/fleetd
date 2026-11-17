@@ -1,5 +1,5 @@
 {
-  "note": "A project's secure input: a passport number for the person to type in a sealed field, filled straight into the visa form. devbox; no personal data.",
+  "note": "A bot's secure input: a passport number for the person to type in a sealed field, filled straight into the visa form. devbox; no personal data.",
   "items": [
     {
       "kind": "secret_request",

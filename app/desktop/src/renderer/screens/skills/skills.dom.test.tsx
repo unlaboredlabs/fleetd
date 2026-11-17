@@ -132,7 +132,7 @@ const type = async (field: HTMLInputElement | HTMLTextAreaElement | null, value:
 };
 const view = (skill: string) => <SkillsTabView project={ADA} skill={skill} onWide={() => undefined} />;
 
-it("opens one skill in the panel with no tab of its own, Back going to the list in the project's settings", async () => {
+it("opens one skill in the panel with no tab of its own, Back going to the list in the bot's settings", async () => {
   await mount(<ProjectPanel project={ADA} view={{ tab: "skills", skill: "taxes" }} onWide={() => undefined} />);
   expect(host.querySelector("[data-screen=skill]")).not.toBeNull();
   expect(host.querySelector("[data-section=skills]")).toBeNull();

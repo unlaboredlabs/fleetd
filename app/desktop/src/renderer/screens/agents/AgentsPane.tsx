@@ -138,7 +138,7 @@ function AgentList({ project: ref, at }: { project: ProjectKey; at: "screens" | 
       out.push({ fold: "repo", label: "Also on this repo", count: repo.rows.length }, ...(repoOpen ? repo.rows.map((row) => ({ row, other: true as const })) : []));
     }
     const theirs = others.filter((a) => !isLine(a)).length;
-    if (theirs > 0) out.push({ fold: "projects", label: "Other projects", count: theirs }, ...(othersOpen ? others : []));
+    if (theirs > 0) out.push({ fold: "projects", label: "Other bots", count: theirs }, ...(othersOpen ? others : []));
     // Nothing of its own at work, with something under it: one quiet line where its agents would be.
     return agents.length === 0 && out.length > 0 ? [{ note: "No agents are working." }, ...out] : out;
   }, [agents, screensOn, groups, waits, recentOpen, repo, repoOpen, others, othersOpen]);
@@ -237,7 +237,7 @@ function ScreensLabel({ project, count }: { project: ProjectKey; count: number }
       count={count}
       end={
         <>
-          <Tooltip content="All screens: every project’s, side by side">
+          <Tooltip content="All screens: every bot’s, side by side">
             <Button variant="quiet" size="sm" iconOnly aria-label="All screens" onClick={() => navigate({ id: "screens", open: null })}>
               <LayoutGrid />
             </Button>

@@ -16,7 +16,7 @@ import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
 
 const LINKED_LINE =
-  "Other hubs this project reaches: its lead opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub.";
+  "Other hubs this bot reaches: its lead opens and follows work in their bots, as the person who made the link there. Remove a link here, or revoke it on the other hub.";
 
 export function LinkedHubs({ project }: { project: ProjectRef }) {
   const live = useLive();
@@ -60,7 +60,7 @@ export function LinkedHubs({ project }: { project: ProjectRef }) {
           onAdded={(out) => {
             setAdding(false);
             const n = out.projects.length;
-            setAdded(`Linked to ${out.link.label}: this project reaches ${n === 1 ? "1 project" : `${String(n)} projects`} there.`);
+            setAdded(`Linked to ${out.link.label}: this bot reaches ${n === 1 ? "1 bot" : `${String(n)} bots`} there.`);
           }}
         />
       ) : null}

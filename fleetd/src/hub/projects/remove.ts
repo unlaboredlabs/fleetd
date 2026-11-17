@@ -50,7 +50,7 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
   if (!erases) {
     throw new ToolError(
       "invalid",
-      `Update fleetd on ${m} first: its node is too old to erase a project, so nothing was deleted`,
+      `Update fleetd on ${m} first: its node is too old to erase a bot, so nothing was deleted`,
       `Run fleetd update on ${m}, then delete it again.`,
     );
   }
@@ -91,11 +91,11 @@ function forgetGone(hub: Hub, r: ProjectRef): { ok: true; next: string } {
     type: "project.removed",
     machineId: r.machineId,
     projectId: r.projectId,
-    summary: `Project "${project.title}" on ${r.machineId} was forgotten: its machine was removed`,
+    summary: `Bot "${project.title}" on ${r.machineId} was forgotten: its machine was removed`,
     data: { title: project.title },
   });
   return {
     ok: true,
-    next: `${r.machineId} is no longer in the hub, so no machine held its files: fleetd forgot the project, its chat and its settings.`,
+    next: `${r.machineId} is no longer in the hub, so no machine held its files: fleetd forgot the bot, its chat and its settings.`,
   };
 }

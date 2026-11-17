@@ -213,7 +213,7 @@ describe("Settings → MCP servers", () => {
     // Saved for the lead and writers by an older app: on.
     expect(agents.getAttribute("aria-checked")).toBe("true");
     await click(agents);
-    expect(dialog().textContent).toContain("Only each project's lead gets it.");
+    expect(dialog().textContent).toContain("Only each bot's lead gets it.");
     await click(button("Save", dialog()));
     expect(saved.at(-1)?.roles).toEqual({ lead: true, writers: false, reviewers: false });
   });

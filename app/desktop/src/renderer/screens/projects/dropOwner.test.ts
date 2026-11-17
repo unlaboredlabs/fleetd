@@ -7,7 +7,7 @@ describe("who handles a drop", () => {
     expect(dropOwner({ taken: true, inField: true, hasFiles: true })).toBe("taken");
   });
 
-  it("takes a folder or link the chat passed on, so a repo folder dropped on the chat opens Add project", () => {
+  it("takes a folder or link the chat passed on, so a repo folder dropped on the chat opens Add bot", () => {
     // The composer leaves folders and links undefaultPrevented: inside the chat they are Add project's.
     expect(dropOwner({ taken: false, inField: false, hasFiles: true })).toBe("projects");
     expect(dropOwner({ taken: false, inField: false, hasFiles: false })).toBe("projects");
@@ -19,10 +19,10 @@ describe("who handles a drop", () => {
   });
 });
 
-describe("what may be a project while it is dragged", () => {
+describe("what may be a bot while it is dragged", () => {
   const file = (type: string) => ({ kind: "file", type });
 
-  it("rules out a drag of only images, video, audio or PDFs, so no Add project overlay shows for them", () => {
+  it("rules out a drag of only images, video, audio or PDFs, so no Add bot overlay shows for them", () => {
     expect(mayBeProject(["Files"], [file("image/png")])).toBe(false);
     expect(mayBeProject(["Files"], [file("image/png"), file("application/pdf")])).toBe(false);
   });

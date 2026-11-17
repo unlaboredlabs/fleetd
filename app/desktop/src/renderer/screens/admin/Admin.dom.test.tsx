@@ -202,7 +202,7 @@ it("lists the Hub group's pages flat, and Setup always, saying how many required
   setupLeft = 2;
   await render({ me: sam, admin: true }, "settings");
   const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-  expect(rows()).toEqual(["People", "Machines", "Every project", "Setup2 left"]);
+  expect(rows()).toEqual(["People", "Machines", "Every bot", "Setup2 left"]);
   act(() => root.unmount());
   root = createRoot(host);
   setupLeft = 0;
@@ -377,7 +377,7 @@ it("asks for a hub update on a hub from before people, in place of a raw error",
   }
 });
 
-it("lets a hub with no hub_info at all reach the Hub group, whose Every project pages work there", async () => {
+it("lets a hub with no hub_info at all reach the Hub group, whose Every bot pages work there", async () => {
   await render(null, "settings", true);
   expect(hubGroup()).not.toBeNull();
   act(() => root.unmount());

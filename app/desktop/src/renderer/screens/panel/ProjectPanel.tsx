@@ -65,8 +65,8 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
     <Tabs className={s.panel} value={section.id} onValueChange={(id) => navigate(panelRoute(project, listView(listOf(id))), { replace: true })}>
       <div className={s.head}>
         <SectionTabs count={count} features={features} extra={extra} />
-        <Tooltip content="The project’s settings: its connections, sign-ins, approvals and memory" side="bottom">
-          <Button variant="quiet" iconOnly className={s.headTool} aria-label="Project settings" onClick={() => navigate({ id: "settings", tab: "projects", for: projectKey(project) })}>
+        <Tooltip content="The bot’s settings: its connections, sign-ins, approvals and memory" side="bottom">
+          <Button variant="quiet" iconOnly className={s.headTool} aria-label="Bot settings" onClick={() => navigate({ id: "settings", tab: "projects", for: projectKey(project) })}>
             <Settings />
           </Button>
         </Tooltip>

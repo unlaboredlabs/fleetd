@@ -23,7 +23,7 @@ export function start(hub: Hub): void {
 /** The call ran: it was let through (by the checker, the person or YOLO), so the project clicks. */
 export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   mayUse(hub.db.conn, caller.projectRef);
-  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a project confirms a step on a site.");
+  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a bot confirms a step on a site.");
   if (call.op !== "confirm_step") throw new ToolError("invalid", `${call.op} is not a confirm step call.`);
   const step = decodeCall(call);
   if (!step) throw new ToolError("invalid", "This confirm_step can't be read. Give site, button and does.");

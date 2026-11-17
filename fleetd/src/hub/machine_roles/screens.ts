@@ -349,7 +349,7 @@ async function screenEnd(hub: Hub, caller: Caller, input: { sessionId?: string; 
   const id = input.sessionId;
   if (id === undefined) throw new ToolError("invalid", "screen_end needs a sessionId or a waitId.");
   const notFound = () =>
-    new ToolError("not_found", `No screen ${id} of yours.`, "Call browser_sessions for the project's screens.");
+    new ToolError("not_found", `No screen ${id} of yours.`, "Call browser_sessions for the bot's screens.");
   const session = get(hub, id);
   if (!session) throw notFound();
   try {
@@ -477,7 +477,7 @@ async function findBuild(hub: Hub, r: ProjectRef, kind: SessionKind, pr: ScreenP
   if (kind !== "android") throw new ToolError("invalid", "A PR's build goes into an Android screen.", "Pick Android, or leave the PR out.");
   // TODO(bun): the repos whose PRs the project lands too (hub/prs `project_repos`), once that area has them.
   if (!projectRepos(hub.db, r).some((repo) => repo.toLowerCase() === pr.repo.toLowerCase())) {
-    throw new ToolError("invalid", `${pr.repo} isn't a repository of this project.`, "Pick a PR from pr_list for this project.");
+    throw new ToolError("invalid", `${pr.repo} isn't a repository of this bot.`, "Pick a PR from pr_list for this bot.");
   }
   try {
     return await builds(hub).find(pr.repo, pr.number, kind);

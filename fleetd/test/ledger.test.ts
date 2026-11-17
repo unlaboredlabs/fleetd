@@ -101,7 +101,7 @@ test("a new value supersedes it as the person's, and the list keeps both", async
   expect(held[0]?.[1].text.startsWith(`- the human replaced ${d.decisionId} payments.provider "stripe" with `)).toBe(true);
 });
 
-test("the list is the project's and needs read on its machine", async () => {
+test("the list is the bot's and needs read on its machine", async () => {
   const { hub, r, person, refused, ok } = setup();
   decide(hub, r, "lead:devbox/app", { key: "api.health.path", value: "/healthz", scope: "project" });
   expect(await refused(key("read", { machines: ["laptop"] }), "decisions_list", { projectRef: r })).toBe("forbidden");
@@ -114,7 +114,7 @@ test("decisions_record and decisions_search through the tools", async () => {
   expect(await refused(key("operate", { machines: ["devbox"] }), "decisions_record", { key: "a.b", scope: { kind: "global" }, value: "x" })).toBe("forbidden");
   const out = await ok(key("operate"), "decisions_record", { key: "api.base", scope: { kind: "project", projectRef: r }, value: "/v2" });
   expect(out.decision).toMatchObject({ decisionId: "D1", source: "agent", by: "agent", state: "active" });
-  expect(out.next).toBe("D1 is active. Leads use it instead of asking; a project's lead is woken with it.");
+  expect(out.next).toBe("D1 is active. Leads use it instead of asking; a bot's lead is woken with it.");
   expect(await refused(key("operate"), "decisions_record", { key: "a.b", scope: { kind: "project", projectRef: { machineId: "devbox", projectId: "nope" } }, value: "x" })).toBe("not_found");
   expect(await refused(key("operate"), "decisions_record", { key: "a.b", scope: { kind: "workstream", workstreamId: "W9" }, value: "x" })).toBe("not_found");
   expect((await ok(key("read"), "decisions_search", { query: "api base" })).decisions.map((d: { decisionId: string }) => d.decisionId)).toEqual(["D1"]);
@@ -136,7 +136,7 @@ test("a lead decides at its only open order, and searches its own chain", () => 
   expect(() => decide(hub, r, "lead:devbox/app", { key: "a.b", value: "y", workstreamId: theirs.workstreamId })).toThrow("no workstream");
   decisions(hub).record({ key: "c.d", scope: { kind: "project", projectRef: other }, value: "z" }, human);
   expect(decisionsSearch(hub, r, { query: "D1" }).decisions[0]?.decisionId).toBe("D1");
-  expect(() => decisionsSearch(hub, r, { query: "D2" })).toThrow("another project's decision");
+  expect(() => decisionsSearch(hub, r, { query: "D2" })).toThrow("another bot's decision");
   expect(() => decisionsSearch(hub, r, { query: "D9" })).toThrow("No decision D9.");
   expect(decisionsSearch(hub, r, { query: "c.d" }).decisions).toEqual([]);
 });

@@ -24,7 +24,7 @@ test("refuses broken files with a message and a fix", () => {
     }
     expect(e?.code).toBe("invalid");
     expect(e?.message.startsWith(".fleetd/policy.yaml is invalid: ")).toBe(true);
-    expect(e?.fix).toContain("Fix .fleetd/policy.yaml in the project's checkout on its machine.");
+    expect(e?.fix).toContain("Fix .fleetd/policy.yaml in the bot's checkout on its machine.");
   }
 });
 

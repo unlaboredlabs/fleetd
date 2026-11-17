@@ -26,7 +26,7 @@ function decisionTools(opts: { searchLeaks?: boolean; badRecord?: boolean } = {}
       input: input("DecisionsRecordInput"),
       output: {},
       run: (team, given) => {
-        if (given.scope?.kind !== "global") throw new Refusal("not_found", "No such project.");
+        if (given.scope?.kind !== "global") throw new Refusal("not_found", "No such bot.");
         const decision = { decisionId: `D${of(team).length + 1}`, key: given.key, scope: given.scope, value: given.value, why: given.why, source: "human", state: "active", at: "2026-01-01T00:00:00.000Z" };
         of(team).push(decision);
         return opts.badRecord === true ? { made: decision } : { decision };
@@ -223,7 +223,7 @@ function projectTools(seeded: "none" | "machine" | "gone") {
   const decisions: Array<Record<string, any>> = [];
   const project = (given: { machineId: string; projectId: string }) => {
     const found = projects.find((p) => p.machineId === given.machineId && p.projectId === given.projectId);
-    if (found === undefined) throw new Refusal("not_found", `No project ${given.machineId}/${given.projectId}.`);
+    if (found === undefined) throw new Refusal("not_found", `No bot ${given.machineId}/${given.projectId}.`);
     return found;
   };
   const offline = (machineId: string) => new Refusal("machine_offline", `Machine ${machineId} is offline.`);
@@ -278,12 +278,12 @@ function projectTools(seeded: "none" | "machine" | "gone") {
     if (seeded === "none") return;
     if (seeded === "machine") machines.add("m1");
     projects.push({ machineId: "m1", projectId: "p1" });
-    decisions.unshift({ decisionId: "D0", key: "areas.project", scope: { kind: "project", projectRef: { machineId: "m1", projectId: "p1" } }, value: "the project's", why: "seeded", source: "human", state: "active", at });
+    decisions.unshift({ decisionId: "D0", key: "areas.project", scope: { kind: "project", projectRef: { machineId: "m1", projectId: "p1" } }, value: "the bot's", why: "seeded", source: "human", state: "active", at });
   };
   return { tools, calls, seed };
 }
 
-test("the project tools under the hub's rules: project_remove runs last, and what a machine does answers machine_offline", async () => {
+test("the bot tools under the hub's rules: project_remove runs last, and what a machine does answers machine_offline", async () => {
   const run = async (seeded: "none" | "machine" | "gone") => {
     const { tools, calls, seed } = projectTools(seeded);
     const target = await standIn({ only: tools });
@@ -512,7 +512,7 @@ test("the caller's picture is made of a file of its own, so the file the run put
       output: {},
       run: (_team, given) => {
         const file = files.get(given.attachmentId);
-        if (file === undefined) throw new Refusal("not_found", `No attachment ${given.attachmentId} in this project.`);
+        if (file === undefined) throw new Refusal("not_found", `No attachment ${given.attachmentId} in this bot.`);
         return { attachmentId: given.attachmentId, name: file.name, mime: file.mime, bytes: Buffer.from(file.dataB64, "base64").length, dataB64: file.dataB64 };
       },
     },

@@ -195,24 +195,24 @@ const type = async (el: HTMLTextAreaElement, text: string) => {
 const sent = (tool: string) => calls.filter((c) => c.tool === tool && c.input["dryRun"] !== true).map((c) => c.input);
 const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
 
-it("lists the Hub group's pages flat, Setup last saying how many required steps are left, and Every project's three under tabs on its page", async () => {
+it("lists the Hub group's pages flat, Setup last saying how many required steps are left, and Every bot's three under tabs on its page", async () => {
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Every project", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Every bot", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
   expect(host.querySelector("nav[aria-label='Settings'] [role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
 
-  await click(button("Every project", nav() ?? document));
+  await click(button("Every bot", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/hub/profiles");
   expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
-  expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
-  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Every project']");
+  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Every bot']");
   expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Agents", "Instructions"]);
   await tab(tabs, "Instructions");
   expect(window.location.hash).toBe("#/settings/hub/instructions");
-  expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
 });
 
 it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub each a row of Setup that opens its controls", async () => {
@@ -254,7 +254,7 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   expect(setup().getAttribute("aria-current")).toBe("page");
 });
 
-it("gathers what reaches every project on Every project's pages, and saves its instructions hub-wide", async () => {
+it("gathers what reaches every bot on Every bot's pages, and saves its instructions hub-wide", async () => {
   // Tools & skills is a part of Agents, under the task profiles: its old link opens there.
   window.location.hash = "#/settings/hub/tools";
   await render(admin);
@@ -265,14 +265,14 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   // The old shared memory shows only while it has text: this hub's has none.
   expect(parts()).toEqual(["hub.instructions", "builtin-prompts"]);
   expect(host.querySelector("button[aria-label='Add machine']")).toBeNull();
-  const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
+  const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every bot']");
   if (text === null) throw new Error("no instructions");
   await type(text, "Write tests first.");
   await click(button("Save", host.querySelector("[data-part='hub.instructions']") ?? document));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "global", text: "Write tests first." })]);
 });
 
-it("opens the hub-wide built-in prompts from the row under the instructions for every project, and saves one hub-wide", async () => {
+it("opens the hub-wide built-in prompts from the row under the instructions for every bot, and saves one hub-wide", async () => {
   // One hub-wide edit: the row says so.
   edited = { "lead.start": "global" };
   window.location.hash = "#/settings/hub/instructions";
@@ -287,7 +287,7 @@ it("opens the hub-wide built-in prompts from the row under the instructions for 
   // A page of its own, with no tabs: Every project stays the sidebar's page, and the way back is its Instructions.
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.prompts']");
   expect(host.querySelector("[role='tablist']")).toBeNull();
-  expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
   // The edited prompt first, the rest folded behind its group.
   const lists = [...(page?.querySelectorAll<HTMLElement>("[role='list']") ?? [])].map((l) => [l.getAttribute("aria-label"), [...l.querySelectorAll("button")].map((b) => b.textContent)]);
   expect(lists).toEqual([
@@ -352,7 +352,7 @@ it("brings an edit up to date in place once its built-in text changed: both chan
   ]);
 });
 
-it("leaves an out-of-date hub-wide edit to the hub's page: a project's shows it as the text in effect, with nothing hub-wide to press", async () => {
+it("leaves an out-of-date hub-wide edit to the hub's page: a bot's shows it as the text in effect, with nothing hub-wide to press", async () => {
   edited = { "lead.start": "global" };
   stale = new Set(["lead.start"]);
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
@@ -366,12 +366,12 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("One text for every project: the hub's owners and admins change it in Hub › Every project › Instructions.");
+  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Hub › Every bot › Instructions.");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });
 
-it("keeps a project's built-in prompts to its own: a hub-wide edit shows as the text in effect, and a save lands on the project", async () => {
+it("keeps a bot's built-in prompts to its own: a hub-wide edit shows as the text in effect, and a save lands on the bot", async () => {
   edited = { "lead.start": "global" };
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
@@ -385,7 +385,7 @@ it("keeps a project's built-in prompts to its own: a hub-wide edit shows as the 
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "lead.start", scope: "project", projectRef: { machineId: "devbox", projectId: "storefront" } })]);
 });
 
-it("keeps Settings' prompts to a project's own, the first project's when none is picked", async () => {
+it("keeps Settings' prompts to a bot's own, the first bot's when none is picked", async () => {
   window.location.hash = "#/settings/prompts?prompt=task.brief.write";
   await render(admin);
   expect(window.location.hash).toContain("for=devbox/storefront");
@@ -396,12 +396,12 @@ it("keeps Settings' prompts to a project's own, the first project's when none is
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "task.brief.write", scope: "project", projectRef: { machineId: "devbox", projectId: "storefront" } })]);
 });
 
-it("keeps Settings' instructions to one project's, with no text for every project", async () => {
+it("keeps Settings' instructions to one bot's, with no text for every bot", async () => {
   window.location.hash = "#/settings/instructions?for=devbox/storefront";
   await render(<Instructions route={{ tab: "instructions", prompt: null, for: "devbox/storefront" }} />);
-  expect(host.querySelector("textarea[aria-label='Instructions for every project']")).toBeNull();
+  expect(host.querySelector("textarea[aria-label='Instructions for every bot']")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for storefront']");
-  if (text === null) throw new Error("no project instructions");
+  if (text === null) throw new Error("no bot instructions");
   await type(text, "Use pnpm.");
   await click(button("Save"));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "project", projectRef: { machineId: "devbox", projectId: "storefront" }, text: "Use pnpm." })]);

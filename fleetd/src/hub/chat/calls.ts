@@ -47,7 +47,7 @@ function newestReply(hub: Hub, r: ProjectRef, parts: LiveParts, thread: ThreadRe
 
 /** The lead's `nudge`: flags its reply of this turn, the one it just wrote. A reply the chat doesn't have yet is flagged as it lands. */
 export function nudge(hub: Hub, caller: LeadCaller, call: Record<string, unknown>, live: (t: ThreadRef) => LiveParts | undefined) {
-  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a project's lead nudges, and only its own messages.");
+  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a bot's lead nudges, and only its own messages.");
   const reason = typeof call.reason === "string" ? call.reason : "";
   if ([...reason].length < 1 || [...reason].length > 200 || /[\r\n]/.test(reason)) {
     throw new ToolError("invalid", "reason: give what to look at in a few words, on one line, at most 200 characters.");

@@ -37,7 +37,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("Rename and Archive", () => {
-  it("renames any project by its settings' title", async () => {
+  it("renames any bot by its settings' title", async () => {
     const { hub, session, calls } = setup();
     const renamed = rename(session, ADA, "Ada Lovelace");
     expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", title: "Ada Lovelace" });
@@ -45,7 +45,7 @@ describe("Rename and Archive", () => {
     await expect(renamed).resolves.toEqual({ ok: true, value: null });
   });
 
-  it("gives its bot a color by its settings, and a project keeps it in its summary", async () => {
+  it("gives its bot a color by its settings, and a bot keeps it in its summary", async () => {
     const { hub, session, calls } = setup();
     const set = setBotColor(session, SHOP, "sage");
     expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, avatarColor: "sage" });
@@ -55,7 +55,7 @@ describe("Rename and Archive", () => {
     expect(session.state.projects?.["devbox/shop"]?.avatarColor).toBe("sage");
   });
 
-  it("archives any project and brings it back, by the project's archive tool", async () => {
+  it("archives any bot and brings it back, by the bot's archive tool", async () => {
     const { hub, session, calls } = setup();
     const archived = setArchived(session, SHOP, true);
     expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: true });
@@ -66,7 +66,7 @@ describe("Rename and Archive", () => {
   });
 });
 
-describe("A project's screen", () => {
+describe("A bot's screen", () => {
   it("reads what runs, its orders, checklist, last two weeks' merges, profiles, skills and DMs' count side by side", async () => {
     const { hub, session, calls } = setup();
     const info = readInfo(session, SHOP, NOW, { skills: true, dms: true });
@@ -323,7 +323,7 @@ describe("Approvals and Linked hubs", () => {
     await expect(next).resolves.toEqual({ ok: true, value: { log: [entry], older: undefined } });
   });
 
-  it("lists the hub links the hub reads for the project, and removes one", async () => {
+  it("lists the hub links the hub reads for the bot, and removes one", async () => {
     const { hub, session, calls } = setup();
     const read = readLinks(session, SHOP);
     expect(calls("hub_links_get").at(-1)?.input).toEqual({ project: REF });

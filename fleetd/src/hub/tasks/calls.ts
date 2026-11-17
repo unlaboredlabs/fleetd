@@ -100,7 +100,7 @@ export async function leadCall(hub: Hub, t: Tasks, caller: LeadCaller, call: Lea
         if (typeof c.taskId === "string") {
           const task = t.get(c.taskId);
           if (!task || !sameProject(task.projectRef, r)) {
-            throw new ToolError("not_found", `There is no task ${c.taskId} in your project.`, "Call `agents` without taskId.");
+            throw new ToolError("not_found", `There is no task ${c.taskId} in your bot.`, "Call `agents` without taskId.");
           }
           const changing = await t.changing(task);
           const parts = [listNext(hub, t, r, [task]), changing].filter((p): p is string => p !== undefined);

@@ -99,7 +99,7 @@ export function NewScreenHost() {
       {
         id: "screen.new",
         title: "New screen…",
-        detail: "Open a browser, an emulator, a desktop or the agents’ Mac’s screen, for this project",
+        detail: "Open a browser, an emulator, a desktop or the agents’ Mac’s screen, for this bot",
         group: "actions",
         keywords: ["browser", "android", "emulator", "linux", "desktop", "mac", "session"],
         enabled: () => served && routeProject() !== undefined,
@@ -119,7 +119,7 @@ export function NewScreenButton({ project }: { project: ProjectKey }) {
   const served = useData((d) => d.features.includes(NEW_SCREEN));
   if (!served) return null;
   return (
-    <Tooltip content="New screen: a browser or a device of your own, for this project">
+    <Tooltip content="New screen: a browser or a device of your own, for this bot">
       <Button variant="quiet" size="sm" iconOnly aria-label="New screen" onClick={() => openNewScreen(project)}>
         <Plus />
       </Button>
@@ -386,7 +386,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             {prs.isError ? (
               <div className={s.prError} role="alert">
                 <Text size="xs" tone="danger">
-                  The project’s PRs couldn’t be read{prs.error instanceof Error && prs.error.message !== "" ? `: ${prs.error.message}` : "."}
+                  The bot’s PRs couldn’t be read{prs.error instanceof Error && prs.error.message !== "" ? `: ${prs.error.message}` : "."}
                 </Text>
                 <Button variant="quiet" size="sm" disabled={prs.isFetching} onClick={() => void prs.refetch()}>
                   {prs.isFetching ? "Retrying…" : "Retry"}
@@ -395,11 +395,11 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             ) : (
               <Text size="xs" tone="quiet">
                 {prs.data === undefined
-                  ? "Reading the project’s PRs…"
+                  ? "Reading the bot’s PRs…"
                   : pr !== undefined
                     ? "Its newest CI build is installed before you get control."
                     : choices.length === 0
-                      ? (prs.data.githubError ?? "The project has no open PRs.")
+                      ? (prs.data.githubError ?? "The bot has no open PRs.")
                       : "Optional: an open PR whose CI build to install."}
               </Text>
             )}

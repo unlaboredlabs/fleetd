@@ -181,7 +181,7 @@ export function settleEnded(hub: Hub, r: ProjectRef, thread: string, seq: number
  */
 export function retag(hub: Hub, r: ProjectRef, messageId: string, workstreamId: WorkstreamId | undefined, who: string): ChatMessage {
   if (!tagsOn(hub, r)) {
-    throw new ToolError("invalid", "This project's chat tags are off.", "Turn them on with project_settings_set chatTags: true.");
+    throw new ToolError("invalid", "This bot's chat tags are off.", "Turn them on with project_settings_set chatTags: true.");
   }
   const c = chat(hub);
   const message = c.byId(messageId);
@@ -190,7 +190,7 @@ export function retag(hub: Hub, r: ProjectRef, messageId: string, workstreamId: 
   if (workstreamId !== undefined) {
     const w = readWorkstream(hub.db.conn, workstreamId);
     if (!w || !sameRef(w.projectRef, r) || w.state !== "open") {
-      throw new ToolError("invalid", `${workstreamId} is not an open order of this project.`, "Pick one of its open orders, or leave workstreamId out for none.");
+      throw new ToolError("invalid", `${workstreamId} is not an open order of this bot.`, "Pick one of its open orders, or leave workstreamId out for none.");
     }
     about = aboutOf(hub, r, workstreamId);
   }

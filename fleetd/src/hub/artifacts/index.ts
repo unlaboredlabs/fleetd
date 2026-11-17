@@ -190,11 +190,11 @@ export function read(hub: Hub, caller: LeadCaller, raw: LeadCall): Record<string
       .map((a) => a.name);
     const fix =
       names.length === 0
-        ? "This project has no artifacts yet: only its own are readable here."
-        : `This project's newest artifacts: ${names.join(", ")}.`;
+        ? "This bot has no artifacts yet: only its own are readable here."
+        : `This bot's newest artifacts: ${names.join(", ")}.`;
     throw new ToolError(
       "not_found",
-      version !== undefined ? `${name} has no version ${version} in this project.` : `No artifact ${name} in this project.`,
+      version !== undefined ? `${name} has no version ${version} in this bot.` : `No artifact ${name} in this bot.`,
       fix,
     );
   }

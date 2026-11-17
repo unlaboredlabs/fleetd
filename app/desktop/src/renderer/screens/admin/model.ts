@@ -14,7 +14,7 @@ export const roleWord = (role: HubRole): string => ROLE_WORD[role] ?? role;
 export const ROLE_HELP: Readonly<Record<string, string>> = {
   owner: "Everything an admin does, and makes or removes owners.",
   admin: "Invites and removes people, and changes hub-wide settings.",
-  member: "Works in every project. Sees no Hub pages in Settings.",
+  member: "Works in every bot. Sees no Hub pages in Settings.",
 };
 
 export interface PersonRow {

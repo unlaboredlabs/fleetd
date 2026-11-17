@@ -15,8 +15,8 @@ const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "wo
   }) as ProjectRow;
 const sidebar = (ids: Array<string>): ReadonlyArray<SidebarProject> => toSidebar(ids.map((id) => row(id))) ?? [];
 
-describe("sidebar projects", () => {
-  it("keeps each project's marks, and says nothing until the projects loaded", () => {
+describe("sidebar bots", () => {
+  it("keeps each bot's marks, and says nothing until the bots loaded", () => {
     expect(toSidebar(undefined)).toBeUndefined();
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
       {
@@ -67,7 +67,7 @@ describe("sidebar projects", () => {
     expect(lines()).toEqual(["Ada: looks good", "Lee: on it"]);
   });
 
-  it("says why each project wants you: a secret or approval first, then a reply, then blocked", () => {
+  it("says why each bot wants you: a secret or approval first, then a reply, then blocked", () => {
     const ref = (projectId: string) => ({ machineId: "devbox", projectId });
     const marks: MarksIn = {
       requests: [
@@ -110,7 +110,7 @@ describe("sidebar projects", () => {
     expect(unread).toEqual([["api", true], ["billing", false], ["cart", false], ["docs", false]]);
   });
 
-  it("jumps to the next project that wants you, wrapping, and never to the open one alone", () => {
+  it("jumps to the next bot that wants you, wrapping, and never to the open one alone", () => {
     const ref = (projectId: string) => `devbox/${projectId}`;
     const projects = toSidebar([row("api", { needsYou: true }), row("billing"), row("cart", { needsYou: true }), row("docs")]) ?? [];
     expect(nextWanting(projects, null)?.key).toEqual(ref("api"));
@@ -122,7 +122,7 @@ describe("sidebar projects", () => {
     expect(nextWanting(sidebar(["api"]), null)).toBeNull();
   });
 
-  it("steps forward and back, wrapping, from the open project or the ends", () => {
+  it("steps forward and back, wrapping, from the open bot or the ends", () => {
     const projects = sidebar(["api", "billing", "storefront"]);
     const key = (projectId: string) => `devbox/${projectId}`;
     expect(stepProject(projects, key("api"), 1)?.key).toEqual(key("billing"));
@@ -133,7 +133,7 @@ describe("sidebar projects", () => {
     expect(stepProject([], null, 1)).toBeNull();
   });
 
-  it("opens to the last project while it exists, else the first, else nothing", () => {
+  it("opens to the last bot while it exists, else the first, else nothing", () => {
     const projects = sidebar(["api", "storefront"]);
     expect(homeProject(projects, "devbox/storefront")?.key).toEqual("devbox/storefront");
     expect(homeProject(projects, "devbox/gone")?.key).toEqual("devbox/api");

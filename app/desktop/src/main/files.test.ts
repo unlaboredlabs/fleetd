@@ -76,8 +76,8 @@ it("writes the file under a name of its type and opens it", async () => {
 });
 
 it("says why when the hub can't give it or nothing opens it", async () => {
-  const refused = () => Promise.resolve({ ok: false as const, error: { code: "not_found", message: "No attachment F7 in this project." } });
-  expect(await openFile(refused, request, dir)).toEqual({ ok: false, message: "The file couldn't be read: No attachment F7 in this project." });
+  const refused = () => Promise.resolve({ ok: false as const, error: { code: "not_found", message: "No attachment F7 in this bot." } });
+  expect(await openFile(refused, request, dir)).toEqual({ ok: false, message: "The file couldn't be read: No attachment F7 in this bot." });
   openFails = "No application knows how to open it";
   const pdf = () => Promise.resolve({ ok: true as const, output: { name: "plan.pdf", mime: "application/pdf", dataB64: "JVBERi0=" } });
   expect(await openFile(pdf, request, dir)).toEqual({ ok: false, message: "plan.pdf didn't open: No application knows how to open it" });
@@ -143,8 +143,8 @@ it("says why when the write fails, and leaves nothing behind", async () => {
   const nowhere = await downloadFile(hubFile("pebble.png", "image/png", Buffer.from("x")), request, join(dir, "not-a-folder", "downloads"));
   expect(nowhere.ok ? "" : nowhere.message).toMatch(/^The file couldn't be saved: .*(ENOTDIR|EEXIST)/u);
   // And a hub that can't give it.
-  const refused = () => Promise.resolve({ ok: false as const, error: { code: "not_found", message: "No attachment F7 in this project." } });
-  expect(await downloadFile(refused, request, downloads)).toEqual({ ok: false, message: "The file couldn't be read: No attachment F7 in this project." });
+  const refused = () => Promise.resolve({ ok: false as const, error: { code: "not_found", message: "No attachment F7 in this bot." } });
+  expect(await downloadFile(refused, request, downloads)).toEqual({ ok: false, message: "The file couldn't be read: No attachment F7 in this bot." });
 });
 
 it("shows only a file it saved in its folder", async () => {

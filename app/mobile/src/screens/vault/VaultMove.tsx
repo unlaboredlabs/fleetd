@@ -49,7 +49,7 @@ export function VaultMove() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
       {projects.length === 0 ? (
-        <EmptyState icon="folder" title="No Projects" body="Add a project first, then add the variable to it." />
+        <EmptyState icon="folder" title="No Bots" body="Add a bot first, then add the variable to it." />
       ) : (
         <ListSection header="Add to" footer="Its agents get it when they start.">
           {projects.map((p) => (

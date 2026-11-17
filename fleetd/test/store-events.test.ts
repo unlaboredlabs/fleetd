@@ -143,7 +143,7 @@ test("subscribers get each stored event in order", () => {
   expect(seen).toEqual([1, 2]);
 });
 
-test("a project's page walks newest first, with the hub-wide events when asked, and its index", () => {
+test("a bot's page walks newest first, with the hub-wide events when asked, and its index", () => {
   const { log } = newLog();
   log.append(event("thread.started", "devbox", { projectId: "app" }));
   log.append({ at: "2026-10-17T10:00:00.000Z", type: "hub.updated", summary: "hub-wide" });

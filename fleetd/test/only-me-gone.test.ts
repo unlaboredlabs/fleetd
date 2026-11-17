@@ -52,7 +52,7 @@ const settings = (db: HubDb) =>
       .map((r) => [r.project_id, { onlyMe: r.only_me, archived: r.archived_ms === null ? null : r.archived_ms === ARCHIVED_BEFORE ? "before" : "now" }]),
   );
 
-test("on a one-person hub, former Only me projects become ordinary and nothing visible changes", () => {
+test("on a one-person hub, former Only me bots become ordinary and nothing visible changes", () => {
   const home = tempHome();
   try {
     const db = upgraded(home.dir, ["p_adaadaad"]);
@@ -112,7 +112,7 @@ test("on a hub with more than one person, they are archived too; a second person
   }
 });
 
-test("a removed person's projects stay as they are, unarchived and listed for everyone", async () => {
+test("a removed person's bots stay as they are, unarchived and listed for everyone", async () => {
   const k = kit();
   k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ownownow', 'Own', 'owner', 0), ('p_adaadaad', 'Ada', 'member', 1)");
   const notes = { machineId: "devbox", projectId: "notes" };
@@ -125,7 +125,7 @@ test("a removed person's projects stay as they are, unarchived and listed for ev
   expect((await k.ok(own, "people_list", {})).left).toBeUndefined();
 });
 
-test("a person's pasted link allows its site in any project", () => {
+test("a person's pasted link allows its site in any bot", () => {
   const k = kit();
   const shop = { machineId: "devbox", projectId: "shop" };
   project(k.hub, shop);

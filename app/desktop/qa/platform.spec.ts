@@ -172,7 +172,7 @@ test("the chat's pill closes the panel and opens it again", async () => {
     await settled();
     await setView(app, page, "medium", "light");
     await show(page, "shell", "#/");
-    const panel = page.getByRole("complementary", { name: "Project panel" });
+    const panel = page.getByRole("complementary", { name: "Bot panel" });
     await panel.waitFor();
     const dragged = (await check(page, [])).filter((f) => f.check === "drag");
     expect(dragged, "controls a click on drags the macOS window instead").toEqual([]);

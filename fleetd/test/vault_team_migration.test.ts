@@ -149,7 +149,7 @@ test("the migration runs after every one before it", () => {
   expect(MIGRATIONS.slice(0, TEAM).every((m) => m.name < MIGRATIONS[TEAM]!.name)).toBe(true);
 });
 
-test("hub and project logins, cards and addresses join the team vault; a clashing label gets its project's name", async () => {
+test("hub and bot logins, cards and addresses join the team vault; a clashing label gets its bot's name", async () => {
   const p = await oldHub({
     people: [{ id: ADA }, { id: BO }],
     projects: [{ id: "p1", title: "Storefront" }, { id: "p2", title: "Blog" }],
@@ -192,7 +192,7 @@ test("hub and project logins, cards and addresses join the team vault; a clashin
   expect(k.hub.db.all("SELECT name FROM sqlite_master WHERE name = 'vault_shares'")).toEqual([]);
 });
 
-test("one live person: their logins, cards and addresses join the team vault, their variables go to each live project without one", async () => {
+test("one live person: their logins, cards and addresses join the team vault, their variables go to each live bot without one", async () => {
   const p = await oldHub({
     people: [{ id: ADA }, { id: BO, removed: true }],
     projects: [{ id: "p1", title: "Storefront" }, { id: "p2", title: "Blog" }, { id: "p3", title: "Old", archived: true }, { id: "p4", title: "Docs" }],

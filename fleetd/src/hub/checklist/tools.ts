@@ -18,7 +18,7 @@ export function register(tools: Registry): void {
       projectRef: r,
       items: list.items,
       ...(list.updatedMs === undefined ? {} : { updatedAt: isoMs(list.updatedMs) }),
-      ...(list.items.length === 0 ? { next: "The project's lead keeps this list; it is empty until the lead sets one." } : {}),
+      ...(list.items.length === 0 ? { next: "The bot's lead keeps this list; it is empty until the lead sets one." } : {}),
     };
   });
 

@@ -56,7 +56,7 @@ test("Changes are numbered, lined up per repo with drafts at the back, and store
   expect(records.get("X3")!.lastError!.length).toBe(2000);
 });
 
-test("changes_list filters by grant, and lists a project that was another person's Only me one (D491)", async () => {
+test("changes_list filters by grant, and lists a bot that was another person's Only me one (D491)", async () => {
   const { hub, tools, records } = lab();
   records.create(change("web", 7));
   records.create(change("inbox", 8));

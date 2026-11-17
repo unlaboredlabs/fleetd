@@ -4,7 +4,7 @@ description: Enter a secret and approve a risky command, the two things that sho
 ---
 
 You'll enter a secret a lead needs, and approve or deny a command it wants to run. Both show as items inside the
-project's chat, because plain chat text can't carry them safely.
+bot's chat, because plain chat text can't carry them safely.
 
 | Item | You see | You do |
 |---|---|---|
@@ -29,7 +29,7 @@ command as a [gated command](/docs/glossary#gated-command).
    again to hide it; every card opens with it hidden.
 2. Click Approve to run it, or Deny to refuse. A command marked "Can't be undone" asks once more: click "Yes, run
    it". With the item focused, Enter approves and Esc denies.
-3. The node runs exactly the stored command, in the project's workspace. It is killed after the lead's timeout: 30
+3. The node runs exactly the stored command, in the bot's workspace. It is killed after the lead's timeout: 30
    minutes unless the lead asked for more, at most 4 hours.
 4. The exit code and output go back to the lead. The item folds to one line, such as "Approved, ran in 12s"; click
    it to see the card and its output again.
@@ -39,8 +39,8 @@ back. If an answer doesn't go through, the item says why in one line; click Retr
 
 ## Approve an integration call {#integrations}
 
-A call through a project's [integrations](/docs/integrations) that you didn't mark as a read goes by the project's
-[approval mode](/docs/projects#approvals): none asks (YOLO, which a new project starts in), or its checker lets what
+A call through a bot's [integrations](/docs/integrations) that you didn't mark as a read goes by the bot's
+[approval mode](/docs/projects#approvals): none asks (YOLO, which a new bot starts in), or its checker lets what
 you asked for through and asks you about the rest, or every call asks. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
 when it had one. Approve sends exactly that, once. Moving money, trading and creating accounts are refused even if
 approved. See [The approval card](/docs/integrations#card).
@@ -67,12 +67,12 @@ the value goes: a line in an env file, a file, or a variable for one order's age
 1. Type or paste the value in the masked field: up to 64 KB.
 2. The app seals it to the hub's own key (a libsodium sealed box). The field clears once the value is saved; if
    saving fails, what you typed stays so you can click Retry.
-3. The hub keeps it in the [vault](/docs/vault), encrypted, as a variable of the project (an env file line or a file)
+3. The hub keeps it in the [vault](/docs/vault), encrypted, as a variable of the bot (an env file line or a file)
    or of the order, and delivers it to the machine. A machine that's offline gets it once it's back.
 4. The node writes it with mode `0600`.
 5. The lead sees only its fingerprint, never the value. The value never enters the chat.
 
-The saved value is then listed in the project's Vault, where you can change or delete it. A hub without the vault
+The saved value is then listed in the bot's Vault, where you can change or delete it. A hub without the vault
 (an older one) seals the value to the machine's key instead, keeps nothing, and needs the machine online.
 
 If you don't want to give a secret, or a command isn't needed after all, say so in the chat; the lead takes the request
@@ -80,32 +80,32 @@ back.
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
-For a secret every agent of a project should have, such as a test API key, add it to the project's Vault instead:
+For a secret every agent of a bot should have, such as a test API key, add it to the bot's Vault instead:
 see [Environment variables](/docs/projects#env).
 
 ### A variable an agent asks for {#order-variables}
 
 An agent that finds a variable it needs isn't set asks its lead with `ask_lead`, naming the variable and why, never its
 value. The lead relays it to you as a secret request whose item says **for W27's agents** (the order's id): its sink is
-`order:<machine>:<order>`, on the project's machine.
+`order:<machine>:<order>`, on the bot's machine.
 
 - The value reaches only that order's agents on that machine: each one already running gets it at its next turn (its
   claude starts again with it and resumes its conversation), and each new one from the start. No other order's agents
-  and no other project's see it.
-- It is masked like a project's secret, as `***NAME***`, in everything those agents report.
-- For those agents it wins over a project variable of the same name.
+  and no other bot's see it.
+- It is masked like a bot's secret, as `***NAME***`, in everything those agents report.
+- For those agents it wins over a bot variable of the same name.
 - A value entered after the order closed is refused.
 - It goes when the order closes, done or stopped: the node forgets it, and the hub deletes it from the vault. A
   machine offline then forgets it once it is back.
-- Its limits are a project variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
-  together with the project's stay under 512 KiB.
+- Its limits are a bot variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
+  together with the bot's stay under 512 KiB.
 
-Each agent's brief lists the names of the project's and its order's variables (a short plain value too), never a
+Each agent's brief lists the names of the bot's and its order's variables (a short plain value too), never a
 secret's value.
 
 ### What agents send is masked too {#masking}
 
-Before anything an agent reports leaves its machine, the node replaces each of its project's and order's secrets with
+Before anything an agent reports leaves its machine, the node replaces each of its bot's and order's secrets with
 `***NAME***` (see [what is masked](/docs/projects#env)). That covers the agent's own fleetd calls as well: a secret
 pasted into `ask_lead`, a `report` or any other fleetd tool reaches the hub, its records and the app masked. A call
 that masking would make too long for its field, or one the machine can't read the secrets to mask, is refused there, so
@@ -116,16 +116,16 @@ take only a human key. `requests_list` lists every secret and approval request w
 
 ## Approve a lead's tool call {#tool-approvals}
 
-A project's lead runs with claude's permission prompts on, allowed unasked what a full-access lead does: a send
+A bot's lead runs with claude's permission prompts on, allowed unasked what a full-access lead does: a send
 through an integration, a first visit to a site, `project_message`, `confirm_step` and `automation_confirm` raise a
-prompt. The project's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the project's
+prompt. The bot's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the bot's
 chat as an approval with the tool and its input. Approve runs the tool with exactly that input; Deny tells the lead you
 said no, with your reason if you type one. A card the checker blocked says why, with **Approve anyway**. If the lead's
 run ends before you answer, the approval closes by itself.
 
 ## Tool permission rules {#tool-rules}
 
-Tasks run with claude's permission prompts off, and leads ask only as above. A project can deny tools for every session, with rules in
+Tasks run with claude's permission prompts off, and leads ask only as above. A bot can deny tools for every session, with rules in
 claude's own syntax in `.fleetd/policy.yaml`:
 
 ```yaml

@@ -217,7 +217,7 @@ export function sealedCardFor(hub: Hub, r: ProjectRef, ref: string, requestId: s
   }
   const { personId, workstreamId } = vt.personFor(r, undefined);
   const row = vt.usable().find((x) => x.itemId === id);
-  if (!row || row.kind !== "card") throw new ToolError("forbidden", "The project's card is gone from the team vault.", "Ask the person to pick a card again in Settings › Payments.");
+  if (!row || row.kind !== "card") throw new ToolError("forbidden", "The bot's card is gone from the team vault.", "Ask the person to pick a card again in Settings › Payments.");
   const box = hubStore(hub).machineGet(host)?.boxPubKey;
   if (!box) throw new ToolError("failed", `${host}'s node takes no sealed values.`, `Update fleetd on ${host}.`);
   const secret = vt.store.open(row);

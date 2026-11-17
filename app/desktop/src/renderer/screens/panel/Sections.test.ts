@@ -9,7 +9,7 @@ describe("a section the hub serves in part", () => {
     if (agents === undefined) throw new Error("no sections");
     const alone = servedSection(agents, []);
     expect(alone.views).toEqual(["agents"]);
-    expect(alone.line).toBe("The AI workers on this project, and what each is doing right now.");
+    expect(alone.line).toBe("The AI workers on this bot, and what each is doing right now.");
     expect(alone.line).not.toMatch(/browser/u);
     const both = servedSection(agents, ["browser_sessions"]);
     expect(both.views).toEqual(["agents", "sessions"]);
@@ -54,7 +54,7 @@ describe("a tucked section", () => {
     expect(shownSections(["artifacts"], ["plan", "artifacts"]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
   });
 
-  it("never has a Skills tab: one skill opens with no tab, its list in the project's settings", () => {
+  it("never has a Skills tab: one skill opens with no tab, its list in the bot's settings", () => {
     expect(shownSections(["artifacts"], ["skills"]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "history"]);
     expect(sectionOf("skills")).toBe(SKILL);
   });

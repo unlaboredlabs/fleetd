@@ -180,7 +180,7 @@ const row = (name: string) => {
 };
 const hubCalls = () => JSON.stringify(calls);
 
-describe("a project's MCP servers", () => {
+describe("a bot's MCP servers", () => {
   it("offers to add an MCP server, and says the lead's writes follow Approvals", async () => {
     await render();
     // Only the named services, each ready to connect.
@@ -190,7 +190,7 @@ describe("a project's MCP servers", () => {
     expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
 
-  it("shows a connected server: its key sealed on the project's machine, and a test by policy", async () => {
+  it("shows a connected server: its key sealed on the bot's machine, and a test by policy", async () => {
     project = [crm];
     await render();
     await click(button("Test", row("crm")));
@@ -284,7 +284,7 @@ describe("a project's MCP servers", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("disconnects: the server goes, and the key is erased from the project's machine", async () => {
+  it("disconnects: the server goes, and the key is erased from the bot's machine", async () => {
     project = [crm];
     await render();
     await click(button("Disconnect", row("crm")));
@@ -312,7 +312,7 @@ const signInMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
   await settle();
 };
 
-describe("one list for the lead and the project's agents", () => {
+describe("one list for the lead and the bot's agents", () => {
   const github: McpServer = {
     ...crm,
     name: "github",
@@ -327,7 +327,7 @@ describe("one list for the lead and the project's agents", () => {
     await render();
     expect(row("github").textContent).toContain("Lead and agents · unasked");
     expect(() => button("Edit", row("crm"))).toThrow();
-    expect(document.body.textContent).toContain("replaced by this project's");
+    expect(document.body.textContent).toContain("replaced by this bot's");
     await click(button("Edit", row("github")));
     // The saved secret stays unless a new value is typed, and it is sealed to the project's machine only.
     await click(button("Save", dialog()));

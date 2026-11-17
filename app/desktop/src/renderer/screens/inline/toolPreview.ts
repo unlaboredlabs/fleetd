@@ -74,7 +74,7 @@ const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write:
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
   // Its act, not the tool's name: a name is a slug, which the open card shows as code.
   const made = proposal(p) !== undefined;
-  const what = made ? "a new project" : ACT_WORDS[p.action];
+  const what = made ? "a new bot" : ACT_WORDS[p.action];
   switch (item.state) {
     case "open":
       return undefined;

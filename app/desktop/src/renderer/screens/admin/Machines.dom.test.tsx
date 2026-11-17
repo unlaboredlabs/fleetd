@@ -41,7 +41,7 @@ const LOGGED_OUT: DoctorCheck[] = [
   check("claude_version", "ok", "laptop runs claude 2.1.314, the version fleetd was tested with."),
   check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
   check("commit_identity", "ok", "laptop commits as 1+ada-lovelace@users.noreply.github.com."),
-  check("git_fetch", "ok", "At each project's last start on laptop: storefront fetched its remote."),
+  check("git_fetch", "ok", "At each bot's last start on laptop: storefront fetched its remote."),
   check("android", "warn", "Android screens are off: /dev/kvm isn't readable by ada.", { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada", on: "machine" }),
 ];
 /** The same checks, another machine's. */
@@ -116,7 +116,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
           ok: false,
           error: {
             code: "invalid",
-            message: "devbox runs the leads of 2 projects (app, site): removing it stops them and erases its projects, with their chats and history.",
+            message: "devbox runs the leads of 2 bots (app, site): removing it stops them and erases its bots, with their chats and history.",
             fix: "to repair devbox instead, run fleetd pair --worker devbox on the hub and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
           },
         });
@@ -282,7 +282,7 @@ it("says what removing a machine that runs leads stops, and removes it only on R
   await click(button("Remove…"));
   await click(button("Remove devbox"));
   const dialog = document.querySelector("[role='dialog']");
-  expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 projects (app, site)");
+  expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 bots (app, site)");
   expect(host.textContent).not.toContain("Removed devbox.");
   await click(button("Remove anyway"));
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "devbox" }, { machineId: "devbox", force: true }]);
@@ -294,7 +294,7 @@ it("says a machine the hub set up loses its service as well as its key", async (
   await click(button("Remove…"));
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("The hub stops and removes builder-1's node service, then revokes its key.");
   // Its projects and their history go with it, and the confirm says so.
-  expect(document.querySelector("[role='dialog']")?.textContent).toContain("its projects are deleted from fleetd with their chats, memory, skills, files and orders");
+  expect(document.querySelector("[role='dialog']")?.textContent).toContain("its bots are deleted from fleetd with their chats, memory, skills, files and orders");
 });
 
 const problems = () => [...host.querySelectorAll("[data-problem]")].map((row) => `${row.getAttribute("data-problem") ?? ""}:${row.getAttribute("data-state") ?? ""}`);
@@ -473,7 +473,7 @@ it("says so when the hub has no such machine", async () => {
   expect(host.querySelector("[data-problem]")).toBeNull();
 });
 
-it("lists the projects left from a removed machine, and Remove only forgets one in fleetd", async () => {
+it("lists the bots left from a removed machine, and Remove only forgets one in fleetd", async () => {
   const project = (machineId: string, projectId: string): ProjectSummary => ({
     machineId,
     projectId,
@@ -483,7 +483,7 @@ it("lists the projects left from a removed machine, and Remove only forgets one 
     threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
   });
   await render(<MachineList />, [project("devbox", "fleetd"), project("worker", "fleetd")]);
-  const leftovers = host.querySelector("[aria-label='Projects left from removed machines']");
+  const leftovers = host.querySelector("[aria-label='Bots left from removed machines']");
   expect([...(leftovers?.querySelectorAll("[role='listitem']") ?? [])].map((li) => li.textContent)).toEqual([
     "fleetdworker · /home/dev/src/fleetdRemove",
   ]);
@@ -493,7 +493,7 @@ it("lists the projects left from a removed machine, and Remove only forgets one 
   expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "worker", projectId: "fleetd" }]);
 });
 
-it("lists no leftovers while every project's machine is in the hub", async () => {
+it("lists no leftovers while every bot's machine is in the hub", async () => {
   await render(<MachineList />);
   expect(document.body.textContent).not.toContain("Left from removed machines");
 });

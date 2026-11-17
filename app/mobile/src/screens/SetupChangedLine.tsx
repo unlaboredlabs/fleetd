@@ -33,7 +33,7 @@ export function SetupChangedLine({ chatKey, messageId, line, onOpen }: { chatKey
         <Text style={[type.footnote, styles.text, { color: t.secondary }]} accessibilityLabel={line.label}>
           {line.text}
         </Text>
-        <Pressable accessibilityRole="link" accessibilityLabel="Open" accessibilityHint="Opens the project's settings" onPress={onOpen} hitSlop={8} style={({ pressed }) => pressed && { opacity: PRESSED_OPACITY }}>
+        <Pressable accessibilityRole="link" accessibilityLabel="Open" accessibilityHint="Opens the bot's settings" onPress={onOpen} hitSlop={8} style={({ pressed }) => pressed && { opacity: PRESSED_OPACITY }}>
           <Text style={[type.footnote, { color: t.link }]}>Open</Text>
         </Pressable>
         {line.undone ? (

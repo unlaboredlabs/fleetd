@@ -105,7 +105,7 @@ async function run(db: HubDb, verb: string, v: Exclude<ReturnType<typeof parse>,
       prompts.reset(e, scope, project);
       announce(db, e, scope, project, {});
       const detail = prompts.detail(e, project);
-      const level = { default: "the shipped text", global: "the hub-wide override", project: "the project override" }[detail.scope];
+      const level = { default: "the shipped text", global: "the hub-wide override", project: "the bot override" }[detail.scope];
       text = `${e.id} is back to ${level} (${detail.effective.ref}).`;
     } else if (verb === "edit") text = await edit(db, prompts, e, scope, project);
     else return usage(`unknown prompts command '${verb}'`);
@@ -126,7 +126,7 @@ function findProject(db: HubDb, machineId: string, which: string): ProjectRef | 
   const byTitle = projects.filter((p) => p.title === which);
   const found = projects.find((p) => p.projectId === which) ?? (byTitle.length === 1 ? byTitle[0] : undefined);
   if (found === undefined) {
-    return `no single project '${which}' on ${machineId}; fleetd project list --machine ${machineId} shows their ids`;
+    return `no single bot '${which}' on ${machineId}; fleetd project list --machine ${machineId} shows their ids`;
   }
   return { machineId, projectId: found.projectId } as ProjectRef;
 }

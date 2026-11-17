@@ -174,7 +174,7 @@ test("an expired claim out of the view is not renewed over work taken since", ()
   expect(w.renew(free.claimId)?.state).toBe("active");
 });
 
-test("the view reads every project on the repo's base; a writer appears once, its Change taking over until it merges", async () => {
+test("the view reads every bot on the repo's base; a writer appears once, its Change taking over until it merges", async () => {
   const { hub } = rig();
   const w = work(hub);
   const github: WorkScope = { repoKey: "github.com/acme/shop", base: "main" };
@@ -309,7 +309,7 @@ test("a renewal that adds someone else's issue is taken; a human key's may take 
   expect([renewed.status, renewed.claim.keys]).toEqual(["renewed", [{ issue: "SHOP-9" }]]);
 });
 
-test("an expired claim matches as weak only; work_list reads only and takes a project's base", async () => {
+test("an expired claim matches as weak only; work_list reads only and takes a bot's base", async () => {
   const k = rig();
   const [laptop, desktop] = [operate("laptop"), operate("desktop")];
   await k.ok(laptop, "work_claim", { repo: REMOTE, title: "dark mode toggle", branch: "ada/dark-mode" });
@@ -351,7 +351,7 @@ test("work_list shows what landed outside the train in the last day", async () =
   ]);
 });
 
-test("a call names a repo or a known project; work_done ends the owner's claim and a human key may end anyone's", async () => {
+test("a call names a repo or a known bot; work_done ends the owner's claim and a human key may end anyone's", async () => {
   const k = rig();
   const [laptop, robot, phone] = [operate("laptop"), operate("robot"), operate("phone", true)];
   expect(await k.refused(laptop, "work_list", {})).toBe("invalid");
@@ -392,7 +392,7 @@ const fakeGit = (remote: string | undefined): NodeGit => ({
   },
 });
 
-test("a repo no project is bound to reads the caller's unbound projects first", async () => {
+test("a repo no bot is bound to reads the caller's unbound bots first", async () => {
   const k = rig();
   const [desktop, laptop] = [operate("desktop", true), operate("laptop", true)];
   addProject(k.hub, shopRef, { workspaceRoot: "/work/shop" });
@@ -400,7 +400,7 @@ test("a repo no project is bound to reads the caller's unbound projects first", 
   expect(work(k.hub).scopeOf(shopRef)).toBeUndefined();
   const input = { repo: "https://gitlab.example.com/acme/shop", title: "header search", branch: "fleetd/T1-search" } as WorkClaimInput;
   const away = await claimOn(k.hub, desktop, input, fakeGit(undefined));
-  expect([away.status, away.warning]).toEqual(["claimed", "no project bound to gitlab.example.com/acme/shop yet; agents' work may be missing"]);
+  expect([away.status, away.warning]).toEqual(["claimed", "no bot bound to gitlab.example.com/acme/shop yet; agents' work may be missing"]);
   const back = await claimOn(k.hub, laptop, input, fakeGit(REMOTE));
   expect(work(k.hub).scopeOf(shopRef)).toEqual(shop);
   expect([back.status, back.matches.some((m) => m.item.id === "T1"), back.warning]).toEqual(["taken", true, undefined]);

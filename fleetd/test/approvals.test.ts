@@ -270,7 +270,7 @@ test("an order sink is checked by its order's hooks", async () => {
   expect(requestOutcome(fake.request("Q1")).outcome).toStartWith("set for W12's agents on lab-a (fingerprint ab12cd34)");
 });
 
-test("a lead withdraws its own project's requests only, and a removed project's close", async () => {
+test("a lead withdraws its own bot's requests only, and a removed bot's close", async () => {
   const fake = new Fake();
   const a = fake.approvals();
   await a.gatedRun(p1, migration());
@@ -279,8 +279,8 @@ test("a lead withdraws its own project's requests only, and a removed project's 
   const done = await a.withdraw(p1, "lead:lab-a/p1", "Q1");
   expect([done.state, done.evidence, done.answeredBy]).toEqual(["denied", "withdrawn by the lead", "lead:lab-a/p1"]);
   expect((await refused(a.withdraw(p1, "lead", "Q1"))).message).toBe("Q1 is already denied.");
-  await a.closeOpen(p1, undefined, "the project was removed");
-  expect([fake.request("Q2").state, fake.request("Q2").evidence]).toEqual(["withdrawn", "the project was removed"]);
+  await a.closeOpen(p1, undefined, "the bot was removed");
+  expect([fake.request("Q2").state, fake.request("Q2").evidence]).toEqual(["withdrawn", "the bot was removed"]);
 });
 
 test("after a restart an approved command goes back to the person and never runs late", async () => {
@@ -563,7 +563,7 @@ test("the tools and lead calls go through the hub's registries", async () => {
   });
   expect(approvals(hub).get("Q1")!.gated).toEqual({ argv: ["make"], cwd: "/w/p1", class: "irreversible", reason: "build", timeoutSec: 1800 });
   expect((await refused(Promise.resolve(gated(lead, { op: "gated_run", argv: ["make"], class: "irreversible", reason: "b", workstreamId: "W7" })))).message).toBe(
-    "There is no workstream W7 in your project.",
+    "There is no workstream W7 in your bot.",
   );
   // A machine with no box key takes no secrets.
   await leadCalls(hub).handler("request_secret")!(lead, { op: "request_secret", key: "a.b", sink: "file:lab-a:/x", text: "t" });
@@ -642,7 +642,7 @@ test("a thread event that throws is logged, and the follower goes on", async () 
   expect(fake.request("Q1")?.permission?.requestId).toBe("p-2");
 });
 
-test("a confirm step's card shows its screenshot only when it is the asking project's own file", async () => {
+test("a confirm step's card shows its screenshot only when it is the asking bot's own file", async () => {
   const { hub, done } = testHub();
   startProjectLead(hub);
   startIntake(hub);

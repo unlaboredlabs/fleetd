@@ -168,7 +168,7 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(row("devbox")?.textContent).not.toContain("Update devbox");
   // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
-  expect(host.querySelector("[aria-label='Recordings per project, at most']")).toBeNull();
+  expect(host.querySelector("[aria-label='Recordings per bot, at most']")).toBeNull();
 });
 
 it("says once that an offline machine's switches wait for it, not on every row", async () => {

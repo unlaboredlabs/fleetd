@@ -1,11 +1,11 @@
 ---
 title: Quick start
-description: Install fleetd, open a project and chat with its lead.
+description: Install fleetd, open a bot and chat with its lead.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
 
-You'll install fleetd, open a project in the desktop app, and tell its lead what you want.
+You'll install fleetd, open a bot in the desktop app, and tell its lead what you want.
 
 **Before you start**, have these on the machine:
 
@@ -38,7 +38,7 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
    | 2. Logins | Checks `claude` and `gh`, and picks the commit author for your agents. |
    | 3. Hub | Runs the hub as a background service. |
    | 4. Workers | Picks the [workers](/docs/glossary#worker): the machines that run agents. This machine can be one. |
-   | 5. Project | Adds your first [project](/docs/glossary#project): a git repo on a worker. |
+   | 5. Bot | Adds your first [bot](/docs/glossary#project): a git repo on a worker. |
    | 6. App & setup | Prints a pairing code for the desktop app, then lists the hub's [setup steps](#setup-steps) and runs `fleetd doctor`. |
 
    Expected output ends like this:
@@ -70,10 +70,10 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
    On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. Enter the hub address
    and the pairing code from step 1. A code works once, for 15 minutes; run `fleetd pair` on the hub for a new one.
 
-3. **Open your project.**
+3. **Open your bot.**
 
-   The sidebar lists your projects. Click the one the wizard added. It opens the chat with that project's
-   [lead](/docs/glossary#lead): the Claude session that plans the work and runs the agents. Each project has one.
+   The sidebar lists your bots. Click the one the wizard added. It opens the chat with that bot's
+   [lead](/docs/glossary#lead): the Claude session that plans the work and runs the agents. Each bot has one.
 
 4. **Tell the lead what you want.**
 
@@ -89,7 +89,7 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 5. **Reply when it asks.**
 
    The lead asks only about product calls, money and irreversible steps, as numbered items with a recommendation
-   each. A project with a question waiting shows an amber dot in the sidebar. Reply in plain words, or tersely:
+   each. A bot with a question waiting shows an amber dot in the sidebar. Reply in plain words, or tersely:
 
    ```text
    1 go, 2 rec
@@ -107,7 +107,7 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 Everything a hub admin sets up is one list of steps, the same in the terminal and the app. `fleetd init` lists them at
 its end, `fleetd doctor` lists them first, and `fleetd init --step <id>` opens one: why it matters, the values to paste
 (computed for your hub), the pages to open, then **Test** or **Go on**. In the app, an admin's first run opens on
-them while the hub has no project yet. After that, Settings in the sidebar shows how many required steps are left and
+them while the hub has no bot yet. After that, Settings in the sidebar shows how many required steps are left and
 opens on [Settings › Hub › Setup](/docs/desktop-app#hub), which lists the hub's accounts and the steps left at any time. Each step's status comes from the hub's checks, so you can stop at any
 point and pick up again later, from any of them.
 
@@ -119,7 +119,7 @@ point and pick up again later, from any of them.
 | GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub › Setup › GitHub, then each person connects theirs in Settings › Your accounts › GitHub; or `gh auth login` on the hub. |
 | Import from 1Password | `onepassword` | Optional. Agents fill logins and cards from fleetd's own [vault](/docs/vault); to import yours from 1Password, a service account that reads only a vault of fleetd's own, pasted in Settings › Your accounts › 1Password. Done once each saved token's Test reads one vault ([why](/docs/security#agent-reach)). |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
-| A Mac for agents | `mac` | Optional. One Mac every project's agents use for Xcode builds and iOS simulators: [the agents' Mac](/docs/agents-mac). |
+| A Mac for agents | `mac` | Optional. One Mac every bot's agents use for Xcode builds and iOS simulators: [the agents' Mac](/docs/agents-mac). |
 
 Optional steps never block anything, and stay in the list until they are done. Secrets are never typed in the terminal: a
 step that takes one names the page in the app that seals it on your device.
@@ -134,7 +134,7 @@ On a machine with no display, chat with the lead from a script:
    (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
-2. Save the script from [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`, and find your project's ids:
+2. Save the script from [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`, and find your bot's ids:
 
    ```sh
    fleetd project list
@@ -154,11 +154,11 @@ On a machine with no display, chat with the lead from a script:
      '{"projectRef":{"machineId":"homeserver","projectId":"<id>"}}'
    ```
 
-`fleetd status` shows where the project's work is. Secrets need the app.
+`fleetd status` shows where the bot's work is. Secrets need the app.
 
 ## Next steps
 
 - [Concepts](/docs/concepts): how the pieces fit together.
 - [Machines](/docs/machines): add more machines that run agents.
 - [Chat with the lead](/docs/chat): give work, reply, steer.
-- [Projects](/docs/projects): add more repos.
+- [Bots](/docs/projects): add more repos.

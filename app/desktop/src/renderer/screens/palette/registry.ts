@@ -21,7 +21,7 @@ export type Group = (typeof GROUPS)[number];
 export const GROUP_LABELS: Readonly<Record<Group, string>> = {
   actions: "Actions",
   "go-to": "Go to",
-  projects: "Projects",
+  projects: "Bots",
   prs: "Pull requests",
   machines: "Machines",
   settings: "Settings",

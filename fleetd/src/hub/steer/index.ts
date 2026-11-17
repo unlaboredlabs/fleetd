@@ -96,17 +96,17 @@ function resolve(hub: Hub, by: By, target: SteerTarget): Resolved {
       if (!allows(by.caller, "read", r.machineId)) throw notFound(`order ${target.workstreamId}`);
       requireRole(by.caller, "operate", r.machineId);
     }
-    if (isClosed(w.state)) throw invalid(`${target.workstreamId} has ended; its lead no longer works on it.`, "Tell the project's lead in its chat (chat_send).");
+    if (isClosed(w.state)) throw invalid(`${target.workstreamId} has ended; its lead no longer works on it.`, "Tell the bot's lead in its chat (chat_send).");
     // An archived project's lead takes no turn (W79): this says why first.
     const holder = repos.holders(hub.db.conn, r)[0];
     if (holder) {
       throw invalid(
-        `This project is archived: its directory is repo ${holder.repo.name} of project ${holder.project.projectId} on ${holder.project.machineId}.`,
-        "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
+        `This bot is archived: its directory is repo ${holder.repo.name} of bot ${holder.project.projectId} on ${holder.project.machineId}.`,
+        "Write to that bot's lead instead; project_repo_remove takes the repo out of it and brings this bot back.",
       );
     }
     const lead = records.leadGet(r);
-    if (!lead) throw invalid(`${target.workstreamId}'s project has no lead running yet.`, "Start it with lead_start, then steer it.");
+    if (!lead) throw invalid(`${target.workstreamId}'s bot has no lead running yet.`, "Start it with lead_start, then steer it.");
     return { workstreamId: w.workstreamId, title: w.title, thread: { machineId: r.machineId, threadId: lead.threadId } };
   }
   const task = TaskRecords.get(hub.db.conn, target.taskId)?.task;
@@ -116,9 +116,9 @@ function resolve(hub: Hub, by: By, target: SteerTarget): Resolved {
     if (!allows(by.caller, "read", r.machineId)) throw notFound(`task ${target.taskId}`);
     requireRole(by.caller, "operate", r.machineId);
   } else if (by.kind === "lead") {
-    if (!sameRef(by.project, r)) throw notFound(`task ${target.taskId} in this project`);
+    if (!sameRef(by.project, r)) throw notFound(`task ${target.taskId} in this bot`);
   } else if (!sameRef(by.from.projectRef, r)) {
-    throw new ToolError("not_found", `There is no agent ${target.taskId} in your project.`, "Call `agents` to see your project's agents and their ids.");
+    throw new ToolError("not_found", `There is no agent ${target.taskId} in your bot.`, "Call `agents` to see your bot's agents and their ids.");
   } else if (by.from.taskId === target.taskId) {
     throw invalid(`${target.taskId} is you.`, "Call `agents` to find the agent you mean, or ask your lead with ask_lead.");
   }

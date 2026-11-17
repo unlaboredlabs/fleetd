@@ -93,7 +93,7 @@ function leadPerson(hub: Hub): string | undefined {
 
 const leadOnly = (caller: LeadCaller) => {
   if (caller.agent.kind !== "lead") {
-    throw new ToolError("forbidden", "Only a project's lead searches 1Password for imports.", "Ask your lead with ask_lead.");
+    throw new ToolError("forbidden", "Only a bot's lead searches 1Password for imports.", "Ask your lead with ask_lead.");
   }
 };
 

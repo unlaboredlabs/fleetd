@@ -28,7 +28,7 @@ function order(n: number, r = PROJECT, startedBy?: string, state = "open") {
     .run(n, r.machineId, r.projectId, state, JSON.stringify({ workstreamId: `W${n}`, projectRef: r, state, ...(startedBy ? { startedBy: { personId: startedBy } } : {}) }));
 }
 
-test("a project's variables reach its node file sealed per delivery, and the Rust mirror rows stay in step", async () => {
+test("a bot's variables reach its node file sealed per delivery, and the Rust mirror rows stay in step", async () => {
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "API_KEY", sealed: k.sealToHub({ value: "planted-env-1" }) });
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "REGION", secret: false, sealed: k.sealToHub({ value: "eu" }) });
   await sync();
@@ -70,7 +70,7 @@ test("a variable set aside is delivered nowhere, not even to its owner's own ord
   expect(file("p2")).toEqual({});
 });
 
-test("an order gets its own variables, the project's stay in its file; they go when it closes", async () => {
+test("an order gets its own variables, the bot's stay in its file; they go when it closes", async () => {
   order(7, PROJECT, k.member.personId);
   await save({ kind: "env", scope: "project", ...PROJECT, envName: "SHARED", sealed: k.sealToHub({ value: "project" }) });
   await save({ kind: "env", scope: "order", ...PROJECT, workstreamId: "W7", envName: "DEPLOY_KEY", sealed: k.sealToHub({ value: "order-only" }) });

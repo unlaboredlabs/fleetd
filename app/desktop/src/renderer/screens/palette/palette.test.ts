@@ -52,7 +52,7 @@ describe("rank", () => {
   });
 
   it("finds a word in a detail, but not letters scattered through it", () => {
-    const list = [item("j", "Research judge", "machines", { detail: "Decides whether a research claim's check passed." }), item("s", "Status", "go-to", { detail: "Every project: working, waiting on you" })];
+    const list = [item("j", "Research judge", "machines", { detail: "Decides whether a research claim's check passed." }), item("s", "Status", "go-to", { detail: "Every bot: working, waiting on you" })];
     expect(rank("dark", list).matches).toEqual([]);
     expect(rank("waiting", list).matches.map((i) => i.id)).toEqual(["s"]);
   });
@@ -197,7 +197,7 @@ describe("keys while the palette is open", () => {
     offs.push(
       registerCommands([
         item("palette.toggle", "Palette", "actions"),
-        item("project.open.1", "Project 1", "projects"),
+        item("project.open.1", "Bot 1", "projects"),
         item("shortcuts.show", "Shortcuts", "actions"),
       ]),
     );
@@ -232,7 +232,7 @@ describe("default navigation", () => {
 describe("projects", () => {
   const state = (frames: readonly HubFrame[]) => frames.reduce((s, f) => applyFrame(s, f, Date.parse(AT))[0], initialState());
 
-  it("lists every project, opening its lead chat, named by machine, never by id", () => {
+  it("lists every bot, opening its lead chat, named by machine, never by id", () => {
     const opened: string[] = [];
     const items = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
     expect(items.map((i) => [i.id, i.title, i.detail, i.group])).toEqual([["project:devbox/storefront", "storefront", "Chat with the lead · on devbox", "projects"]]);
@@ -246,10 +246,10 @@ describe("projects", () => {
     expect(rank("", items).matches.map((i) => i.group)).toEqual(["projects", "go-to"]);
   });
 
-  it("offers the project's other pages as actions, scoped to it", () => {
+  it("offers the bot's other pages as actions, scoped to it", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
-    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Settings for this project", "Instructions for this project", "Max agents for this project"]);
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this bot", "Settings for this bot", "Instructions for this bot", "Max agents for this bot"]);
     for (const action of project?.actions ?? []) action.run();
     expect(opened).toEqual([
       "#/project/devbox/storefront/prs",
@@ -259,7 +259,7 @@ describe("projects", () => {
     ]);
   });
 
-  it("with several hubs, says each project's hub beside its machine and opens it on that hub", () => {
+  it("with several hubs, says each bot's hub beside its machine and opens it on that hub", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash), { id: "a1b2", label: "Acme" });
     expect([project?.id, project?.detail]).toEqual(["project:a1b2:devbox/storefront", "Chat with the lead · Acme · on devbox"]);
@@ -270,7 +270,7 @@ describe("projects", () => {
     expect(currentProjectItem("#/project/devbox/storefront?at=a1b2")).toBe("project:a1b2:devbox/storefront");
   });
 
-  it("knows the project on screen, so the palette opens on it", () => {
+  it("knows the bot on screen, so the palette opens on it", () => {
     expect(currentProjectItem("#/project/devbox/storefront")).toBe("project:devbox/storefront");
     expect(currentProjectItem("#/project/dev%20box/a%2Fb?message=m1")).toBe("project:dev box/a/b");
     expect(currentProjectItem("#/project/devbox/storefront/prs/acme/storefront/11")).toBe("project:devbox/storefront");

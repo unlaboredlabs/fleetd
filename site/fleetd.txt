@@ -28,7 +28,7 @@ showcase-lead-dark.jpg. More: https://fleetd.sh/docs/merge-train
 
 
 YOUR TEAM IN ONE CHAT
-Everyone on the hub writes in the same project chat, under their own name. The
+Everyone on the hub writes in the same bot's chat, under their own name. The
 lead answers all of you.
 Clip: showcase-team-dark.webm, showcase-team-light.webm. Still:
 showcase-team-dark.jpg. More: https://fleetd.sh/docs/people
@@ -36,7 +36,7 @@ showcase-team-dark.jpg. More: https://fleetd.sh/docs/people
 
 AGENTS MESSAGE EACH OTHER, IN THE OPEN
 When one agent learns something another needs, it tells it directly. Every
-message shows on the agent's work and in the project's log, with who read it
+message shows on the agent's work and in the bot's log, with who read it
 and when.
 Stills: showcase-dms-dark.jpg, showcase-dmlog-dark.jpg.
 More: https://fleetd.sh/docs/desktop-app#dms

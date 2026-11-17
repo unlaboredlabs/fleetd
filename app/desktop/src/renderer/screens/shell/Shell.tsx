@@ -243,11 +243,11 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
       },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "panel.toggle", title: "Toggle the panel", group: "actions", keywords: ["panel", "right", "agents", "prs", "checklist"], enabled: () => chrome && open !== null, run: panel.toggle },
-      { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
-      { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
+      { id: "project.previous", title: "Previous bot", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
+      { id: "project.next", title: "Next bot", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       {
         id: "project.nextNeedsYou",
-        title: "Next project that needs you",
+        title: "Next bot that needs you",
         group: "projects",
         keywords: ["waiting", "reply", "approve", "secret", "blocked"],
         enabled: () => chrome && projects !== undefined && nextWanting(projects, openKey) !== null,
@@ -273,7 +273,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
       ...JUMPS.map(
         (n): Command => ({
           id: `project.open.${String(n)}`,
-          title: `Open project ${String(n)} in the sidebar`,
+          title: `Open bot ${String(n)} in the sidebar`,
           group: "projects",
           searchOnly: true,
           enabled: () => chrome && onShow?.[n - 1] !== undefined,

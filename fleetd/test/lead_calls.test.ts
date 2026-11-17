@@ -77,7 +77,7 @@ test("cwd matching: the deepest root wins, siblings sharing a prefix don't count
   expect(projectIndexForCwd(["rel"], "rel")).toBeUndefined();
 });
 
-test("a person's shell acts on the project its cwd is in, and the result carries the op", async () => {
+test("a person's shell acts on the bot its cwd is in, and the result carries the op", async () => {
   const frame = await answer("/work/app/tools/x", DECIDE);
   expect(frame).toEqual({ id: "c1", result: { echoed: "decide", op: "decide" } });
   expect(seen.at(-1)).toEqual({ projectRef: { machineId: "devbox", projectId: "p2" }, by: "lead:devbox/p2", agent: { kind: "person" }, via: "devbox" });
@@ -86,11 +86,11 @@ test("a person's shell acts on the project its cwd is in, and the result carries
 test("a cwd outside every workspace is refused, naming the roots", async () => {
   expect(error(await answer("/elsewhere", DECIDE))).toEqual({
     code: "forbidden",
-    message: "/elsewhere is not inside any project workspace on devbox",
-    fix: "run fleetd from the project's workspace or a worktree under it (/work/app, /work/app/tools, /work/other)",
+    message: "/elsewhere is not inside any bot workspace on devbox",
+    fix: "run fleetd from the bot's workspace or a worktree under it (/work/app, /work/app/tools, /work/other)",
   });
   expect(error(await answer("/x", DECIDE, undefined, "laptop"))?.message).toBe(
-    "the hub knows no projects on laptop yet, so it cannot tell which project /x belongs to",
+    "the hub knows no bots on laptop yet, so it cannot tell which bot /x belongs to",
   );
 });
 
@@ -104,11 +104,11 @@ test("a writer's worktree outside every workspace is known by its session", asyn
   expect(seen.at(-1)?.agent).toEqual({ kind: "task", taskId: "T4" });
 });
 
-test("a session acting from another project's workspace is refused", async () => {
+test("a session acting from another bot's workspace is refused", async () => {
   expect(error(await answer("/work/app", DECIDE, "th-other"))).toEqual({
     code: "forbidden",
-    message: "this session works for project devbox/p3, not for the project its working directory is in",
-    fix: "act only on your own project, from its workspace",
+    message: "this session works for bot devbox/p3, not for the bot its working directory is in",
+    fix: "act only on your own bot, from its workspace",
   });
 });
 
@@ -127,7 +127,7 @@ test("leads, tasks and the memory refresh are told apart, and the policy holds",
   expect(error(await answer("/work/app", DECIDE, "th-refresh"))?.code).toBe("forbidden");
   expect(error(await answer("/work/app", DECIDE, "th-nobody"))).toEqual({
     code: "forbidden",
-    message: "session th-nobody is neither a project's lead nor a task, so it can't make fleetd's lead calls",
+    message: "session th-nobody is neither a bot's lead nor a task, so it can't make fleetd's lead calls",
     fix: "a person runs these commands from their own shell; agents use their fleetd tools",
   });
 });
@@ -188,7 +188,7 @@ test("the policy's lists and the fan-out cap", () => {
   expect(() => checkCall({ kind: "memory_refresh" }, { op: "remember", scope: "user", replaces: "x" })).toThrow();
   expect(() => checkCall({ kind: "memory_refresh" }, { op: "remember", scope: "project", replaces: "x" })).not.toThrow();
   expect(() => checkFanOut(31, 4)).not.toThrow();
-  expect(() => checkFanOut(32, 4)).toThrow("This project already has 32 open tasks, the most one lead may have at once (32).");
+  expect(() => checkFanOut(32, 4)).toThrow("This bot already has 32 open tasks, the most one lead may have at once (32).");
   expect(() => checkFanOut(40, 28)).not.toThrow();
 });
 

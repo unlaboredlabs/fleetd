@@ -64,7 +64,7 @@ const sameProject = (s: BrowserSession, caller: LeadCaller) =>
 function own(hub: Hub, caller: LeadCaller, id: string): BrowserSession | undefined {
   const stored = get(hub, id);
   if (stored && !sameProject(stored, caller)) {
-    throw new ToolError("forbidden", `Browser session ${id} is another project's.`);
+    throw new ToolError("forbidden", `Browser session ${id} is another bot's.`);
   }
   return stored;
 }

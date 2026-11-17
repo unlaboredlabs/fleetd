@@ -32,7 +32,7 @@ export interface Where {
   readonly label: string;
 }
 
-export const PROJECT_WIDE: Where = { id: "project", label: "Whole project" };
+export const PROJECT_WIDE: Where = { id: "project", label: "This bot" };
 
 export const whereOf = (d: Pick<Decision, "scope">, titles: ReadonlyMap<string, string>): Where => {
   if (d.scope.kind !== "workstream") return PROJECT_WIDE;

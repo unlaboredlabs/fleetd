@@ -286,7 +286,7 @@ const workOf = (f: Fixture, state: RowState, agents: number): JsonObject => {
         ? [item("waiting_on_you", "The lead's question in chat", 2), ...working, item("idle", "Read the export job's logs", 40, { taskId: "T27" })]
         : state === "blocked"
           ? [item("idle", "fleetd/T31-ci", 25, { pr: pr(207), why: "CI failed" })]
-          : [item("done", "Quick start opens a project's chat", 300, { taskId: "T12", pr: pr(198) })];
+          : [item("done", "Quick start opens a bot's chat", 300, { taskId: "T12", pr: pr(198) })];
   const count = (g: string) => items.filter((i) => i["group"] === g).length;
   return {
     counts: { waitingOnYou: count("waiting_on_you"), inReview: count("in_review"), working: Math.max(count("working"), agents), landing: count("landing"), idle: count("idle"), done: count("done") },

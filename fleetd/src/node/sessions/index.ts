@@ -135,7 +135,7 @@ const notFound = (m: string) => new Refusal("not_found", m);
 const notPorted = (op: string) =>
   new Refusal("runner_unavailable", `${op} is not ported to the Bun node yet`, "run this machine's node on the Rust fleetd for it");
 
-export const noProject = (projectId: string) => `no project ${projectId} on this machine`;
+export const noProject = (projectId: string) => `no bot ${projectId} on this machine`;
 /** An id that names a file: nothing but letters, digits, `-` and `_`. */
 export const pathSafe = (id: string) => /^[A-Za-z0-9_-]+$/.test(id);
 const permissionItemId = (requestId: string) => `perm-${requestId}`;
@@ -836,7 +836,7 @@ export class SessionService {
   }
 
   #projectUpsert(projectId: string, title: string, root: string): SessionOutput {
-    if (!pathSafe(projectId)) throw invalid(`project id ${projectId} has characters a path can't hold`);
+    if (!pathSafe(projectId)) throw invalid(`bot id ${projectId} has characters a path can't hold`);
     // A relative root is a folder of the node's own, made when missing.
     const folder = !isAbsolute(root) && !root.startsWith("~") && pathSafe(root.replaceAll("/", "_")) ? join(this.home, root) : undefined;
     let workspaceRoot = root;
@@ -883,7 +883,7 @@ export class SessionService {
   async #projectRemove(projectId: string, removeWorktrees: boolean, erase: boolean, removeFolder: boolean): Promise<SessionOutput> {
     const project = this.store.project(projectId);
     const ids = this.store.sessions().filter((r) => r.summary.projectId === projectId);
-    for (const row of ids) if (this.#live.has(row.summary.sessionId)) await this.#stop(row.summary.sessionId, false, "the project was removed");
+    for (const row of ids) if (this.#live.has(row.summary.sessionId)) await this.#stop(row.summary.sessionId, false, "the bot was removed");
     // Its agents' tasks end with it, and what their sessions left running too.
     for (const row of ids) {
       if (row.local.role !== "worker") continue;
@@ -919,7 +919,7 @@ export class SessionService {
       else forgetSignins(this.home, projectId);
     } catch (error) {
       const why = (error as Error).message;
-      throw invalid(why.includes("were not forgotten") ? why : `project ${projectId}'s browser sign-ins were not forgotten: ${why}`);
+      throw invalid(why.includes("were not forgotten") ? why : `bot ${projectId}'s browser sign-ins were not forgotten: ${why}`);
     }
   }
 

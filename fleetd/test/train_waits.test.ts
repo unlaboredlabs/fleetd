@@ -363,7 +363,7 @@ test("a regeneration the hub stopped in is run again", async () => {
 
 // --- #1300: removed projects' PRs leave quietly; repeating warnings at most hourly ---
 
-test("a removed project's PRs leave the train once, with one line; a live project's stay", async () => {
+test("a removed bot's PRs leave the train once, with one line; a live bot's stay", async () => {
   const k = kit();
   k.pr(7, "fleetd/T7-gone", { "g.txt": "g\n" }, { labels: ["hold"] });
   k.pr(8, "fleetd/T8-kept", { "k.txt": "k\n" }, { labels: ["hold"] });

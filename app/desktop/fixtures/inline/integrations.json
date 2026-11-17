@@ -1,5 +1,5 @@
 {
-  "note": "A project's integration approvals (hub/integrations): a message to send through a custom MCP server, with its whole input; a page to delete; and a send already approved, folded. devbox; no personal data.",
+  "note": "A bot's integration approvals (hub/integrations): a message to send through a custom MCP server, with its whole input; a page to delete; and a send already approved, folded. devbox; no personal data.",
   "items": [
     {
       "kind": "command_approval",

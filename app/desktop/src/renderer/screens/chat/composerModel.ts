@@ -133,7 +133,7 @@ export function receiptMark(m: Sendable, latest: boolean): ReceiptMark | undefin
 export function stopFailed(code: string): string {
   switch (code) {
     case "forbidden":
-      return "This computer’s key can’t stop this project’s work.";
+      return "This computer’s key can’t stop this bot’s work.";
     case "offline":
     case "disconnected":
       return "Not connected to the hub, so nothing was stopped.";

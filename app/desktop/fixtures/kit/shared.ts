@@ -67,7 +67,7 @@ const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolea
   { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, merged: "Receipt dates use Intl" } },
   { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, merged: "Nightly export resumes after a crash", mergedAgoMs: 26 * 3_600_000 } },
   { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { warning: "`ios sessions` is red on main, fix in progress" } },
-  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat", mergedAgoMs: 12 * 86_400_000 } },
+  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a bot's chat", mergedAgoMs: 12 * 86_400_000 } },
   { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2 } },
   { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
   { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12 } },
@@ -115,7 +115,7 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
   const strip = (f: Fixture, n: number) => liveStrip(f, firstProject(f), n);
   const scene = (f: Fixture, title: string, agents: ReadonlyArray<SceneAgent>) => sceneStrip(f, firstProject(f), title, agents);
   return [
-    withChat(copy("chat-long", `${String(LONG)}+ messages in the first project's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
+    withChat(copy("chat-long", `${String(LONG)}+ messages in the first bot's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
     (() => {
       const f = strip(
         withChat(
@@ -173,8 +173,8 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
       ],
     ),
     strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
-    strip(withChat(copy("chat-empty", "A project whose chat has no messages yet, and no agents at work."), []), 0),
-    withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
+    strip(withChat(copy("chat-empty", "A bot whose chat has no messages yet, and no agents at work."), []), 0),
+    withProjectsMix(copy("status-rows", "Eight bots: rows in all four states (one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
   ];
 };
 
@@ -186,10 +186,10 @@ export const buildShared = (): Map<SharedName, Fixture> => {
   typical.live = typical.live.filter((frame) => frame["full"] === true);
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
-    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),
+    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no bots, orders, chats or time."), []),
     typical,
     longText(copy("long-text", "Every title ~120 characters, a ~250-character judge criterion, long branches, paths, prose and prompt keys.")),
-    manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the project.")),
+    manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the bot.")),
     manyAgents(copy("many-agents", "One order with 12 working and 14 finished agents (26 lanes), and a board of six orders.")),
     (() => {
       const f = new Fixture("hub-unreachable", "The saved hub doesn't answer; the app retries.");

@@ -26,7 +26,7 @@ const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineI
 
 
 export const noProject = (r: ProjectRef) =>
-  new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
+  new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
 
 export class Workstreams {
   private readonly records: LeadRecords;
@@ -47,7 +47,7 @@ export class Workstreams {
   private own(caller: ProjectRef, id: string): Workstream {
     const w = this.records.workstreamGet(id);
     if (!w) throw new ToolError("not_found", `There is no workstream ${id}.`, "Use a workstream id from the digest at the top of your last wake.");
-    if (!sameProject(w.projectRef, caller)) throw new ToolError("forbidden", `${id} belongs to another project.`, "Use a workstream id from your own digest.");
+    if (!sameProject(w.projectRef, caller)) throw new ToolError("forbidden", `${id} belongs to another bot.`, "Use a workstream id from your own digest.");
     return w;
   }
 

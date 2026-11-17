@@ -133,7 +133,7 @@ export function Vault() {
       setProblem(`Couldn't move ${titleOf(item)}: ${vaultErrorWords(r.error) ?? errorWords(r.error)}`);
     });
   };
-  const moveWord = (item: VaultItemSummary) => (item.kind === "env" ? "Add to a Project…" : "Move to Team Vault");
+  const moveWord = (item: VaultItemSummary) => (item.kind === "env" ? "Add to a Bot…" : "Move to Team Vault");
   const setAsideActions = (item: VaultItemSummary) => {
     haptics.tap();
     if (Platform.OS === "ios") {
@@ -170,7 +170,7 @@ export function Vault() {
           <EmptyState
             icon="lock"
             title={project === undefined ? "Team Vault" : "No Variables Yet"}
-            body={project === undefined ? "Logins, cards and addresses every project's agents use without seeing them." : `Variables ${project.title}'s agents get when they start.`}
+            body={project === undefined ? "Logins, cards and addresses every bot's agents use without seeing them." : `Variables ${project.title}'s agents get when they start.`}
             {...(live ? { action: project === undefined ? { label: "Add Login", onPress: () => add("login") } : { label: "Add Variable", onPress: () => add("env") } } : {})}
           />
         ) : shown.length === 0 ? (
@@ -197,7 +197,7 @@ export function Vault() {
         <Problem text={problem} />
         {r?.ok === true && items.length > 0 && query === "" ? (
           <Text style={[type.footnote, styles.footer, { color: t.secondary }]}>
-            {project === undefined ? "Every project's agents fill these without seeing them. Every use is logged." : `${project.title}'s agents get these when they start. Every use is logged.`}
+            {project === undefined ? "Every bot's agents fill these without seeing them. Every use is logged." : `${project.title}'s agents get these when they start. Every use is logged.`}
           </Text>
         ) : null}
         {setAside.length === 0 ? null : (

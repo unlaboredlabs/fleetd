@@ -214,7 +214,7 @@ describe("the fixture's answer", () => {
     expect(out.tiles.merged.spark.length).toBeLessThanOrEqual(12);
   });
 
-  it("answers one project with its repo only, and nothing merged with zeros", () => {
+  it("answers one bot with its repo only, and nothing merged with zeros", () => {
     const one = metricsAnswer({ now, projects, project: { machineId: "buildbox", projectId: "p2" } });
     expect(one.repos).toBeUndefined();
     expect(new Set(one.merges.map((m) => m.repo))).toEqual(new Set(["github.com/acme/billing"]));

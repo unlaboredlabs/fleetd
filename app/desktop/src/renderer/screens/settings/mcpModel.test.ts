@@ -29,7 +29,7 @@ describe("MCP servers' model", () => {
     expect(valuesText(github)).toBe("Authorization=secret · X-Team=core");
   });
 
-  it("names the machines a secret isn't on, and the global servers a project replaces", () => {
+  it("names the machines a secret isn't on, and the global servers a bot replaces", () => {
     expect(missingOn(github, ["devbox", "laptop"])).toEqual(["laptop"]);
     const own = { ...github, scope: { kind: "project" as const, machineId: "devbox", projectId: "p1" } };
     expect(globalsFor([github, { ...github, name: "docs" }], [own])).toEqual([

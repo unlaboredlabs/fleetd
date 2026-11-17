@@ -103,7 +103,7 @@ export function register(tools: Registry): void {
     });
     const next =
       asks.length === 0
-        ? "This project has asked no other project for anything yet."
+        ? "This bot has asked no other bot for anything yet."
         : truncated
           ? `These are its newest ${ASKS_MAX} asks; older ones aren't listed.`
           : undefined;
@@ -165,8 +165,8 @@ export function register(tools: Registry): void {
     if (!isHuman(caller)) {
       throw new ToolError(
         "forbidden",
-        "Only a person decides what their project does without asking.",
-        "Change it in the desktop app: the project's settings, Approvals.",
+        "Only a person decides what their bot does without asking.",
+        "Change it in the desktop app: the bot's settings, Approvals.",
       );
     }
     const project = summaryOf(hub, r);
@@ -185,7 +185,7 @@ export function register(tools: Registry): void {
     if (!link(hub).can(r.machineId, CAP_SIGNINS_FORGET)) {
       throw new ToolError(
         "invalid",
-        `${r.machineId}'s node is too old to forget a project's sign-ins`,
+        `${r.machineId}'s node is too old to forget a bot's sign-ins`,
         `Run fleetd update on ${r.machineId}, then forget them again`,
       );
     }

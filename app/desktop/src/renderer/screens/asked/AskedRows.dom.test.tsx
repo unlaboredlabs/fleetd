@@ -132,7 +132,7 @@ const answers =
   };
 
 describe("Asked work", () => {
-  it("reads this project's asks and shows each ask as a row that opens to its words and orders, with no ids", async () => {
+  it("reads this bot's asks and shows each ask as a row that opens to its words and orders, with no ids", async () => {
     const { calls } = await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers(READ));
     expect(calls).toContainEqual({ tool: PROJECT_TOOLS.asks, input: { project: { machineId: "devbox", projectId: "ada" } } });
     expect(screen()).toBe("asked");
@@ -166,7 +166,7 @@ describe("Asked work", () => {
   it("is a group under the plan's own, with no tab or switch to reach it, and only once there is something asked", async () => {
     await mount(<ChecklistPane project={ADA_KEY} />, [STOREFRONT, ADA], answers(READ, [ITEM]));
     expect(screen()).toBe("checklist");
-    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["Doing1", "Asked of other projects2"]);
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["Doing1", "Asked of other bots2"]);
     expect(host.querySelector("[role='tablist'], [role='tab']")).toBeNull();
     expect(host.querySelectorAll("[data-ask]")).toHaveLength(2);
 
@@ -184,13 +184,13 @@ describe("Asked work", () => {
     act(() => root.unmount());
     root = createRoot(host);
     await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers({ ...READ, asks: [] }, [ITEM]));
-    expect(host.querySelector("section[aria-label='Asked of other projects']")?.textContent).toBe("Asked of other projectsNothing asked yet.");
+    expect(host.querySelector("section[aria-label='Asked of other bots']")?.textContent).toBe("Asked of other botsNothing asked yet.");
 
     act(() => root.unmount());
     root = createRoot(host);
     await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers("fails", [ITEM]));
     expect(screen()).toBe("asked.error");
-    expect(host.querySelector("section[aria-label='Asked of other projects'] [role='alert']")?.textContent).toContain("Couldn’t read the asked work.");
+    expect(host.querySelector("section[aria-label='Asked of other bots'] [role='alert']")?.textContent).toContain("Couldn’t read the asked work.");
     expect(button("Retry")).toBeDefined();
   });
 });

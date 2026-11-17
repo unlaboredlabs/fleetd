@@ -53,12 +53,12 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
           <SettingsRow
             title="Hub-wide"
             label="Hub-wide skills"
-            hint="Skills every project gets. Owners and admins manage them."
+            hint="Skills every bot gets. Owners and admins manage them."
             line={names.length > 0 ? names.join(", ") : "None."}
             control={
               administers ? (
                 <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
-                  Hub-wide skills in Every project
+                  Hub-wide skills in Every bot
                 </Button>
               ) : undefined
             }
@@ -78,7 +78,7 @@ export function HubSkills() {
   const [dialog, setDialog] = useState<Dialogs>(null);
   return (
     <SettingsSection title="Skills" reveal="hub.skills" aside={live ? <SkillActions onOpen={setDialog} /> : undefined}>
-      {live ? <SkillList scope={HUB} where="every project" dialog={dialog} onDialog={setDialog} /> : <GroupNote>Not connected. Connect to a hub to see its skills.</GroupNote>}
+      {live ? <SkillList scope={HUB} where="every bot" dialog={dialog} onDialog={setDialog} /> : <GroupNote>Not connected. Connect to a hub to see its skills.</GroupNote>}
     </SettingsSection>
   );
 }

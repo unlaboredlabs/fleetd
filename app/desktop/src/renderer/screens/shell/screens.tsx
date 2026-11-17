@@ -31,7 +31,7 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
     case "settings":
       return { key: "settings", words: "Settings" };
     case "projects.add":
-      return { key: "projects.add", words: "Add project" };
+      return { key: "projects.add", words: "Add bot" };
     case "onboarding":
       return { key: "onboarding", words: "the connect screen" };
     case "setup":

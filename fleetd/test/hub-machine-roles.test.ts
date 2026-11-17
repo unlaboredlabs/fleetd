@@ -248,14 +248,14 @@ test("machine_roles lists each machine's roles and slots; machine_roles_set chan
   expect(listed.output.machines.find((m) => m.machineId === "devbox")?.roles).toEqual(["agents"]);
   const set = await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "box2", roles: ["sessions"], maxSessions: 6 });
   expect(set).toMatchObject({
-    output: { machine: { roles: ["sessions"], maxSessions: 6, maxSessionsSet: 6 }, next: "box2 takes no new agents: those running finish their work, and its projects' agents wait." },
+    output: { machine: { roles: ["sessions"], maxSessions: 6, maxSessionsSet: 6 }, next: "box2 takes no new agents: those running finish their work, and its bots' agents wait." },
   });
   expect(await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "box2", macTool: false })).toMatchObject({
     error: { error: { code: "invalid" } },
   });
 });
 
-test("machine_roles names where a new project goes: the online machine that takes repos", async () => {
+test("machine_roles names where a new bot goes: the online machine that takes repos", async () => {
   setup();
   const best = async () =>
     ((await t.tools.call(t.hub, caller("read"), "machine_roles", {})) as { output: { best?: string } }).output.best;
@@ -414,7 +414,7 @@ test("a person's Android screen with a PR: its CI build found, the screen starte
   const r = { projectRef: { machineId: "devbox", projectId: "p1" }, machineId: "box2", kind: "android" as const };
   // Refused before anything starts: another repo's PR, or one with no build.
   expect(await t.tools.call(t.hub, person, "screen_open", { ...r, pr: { repo: "acme/other", number: 12 } })).toMatchObject({
-    error: { error: { code: "invalid", message: "acme/other isn't a repository of this project." } },
+    error: { error: { code: "invalid", message: "acme/other isn't a repository of this bot." } },
   });
   // The runner: opens the hub's seal for the relay key, then takes the sealed pieces and the install.
   let relayKey: Uint8Array | undefined;

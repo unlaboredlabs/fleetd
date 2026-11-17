@@ -18,7 +18,7 @@ afterEach(async () => {
   for (const fn of cleanups.splice(0).reverse()) await fn();
 });
 
-test("a project's profile is its own, one browser at a time, keeps only sign-ins, and a wipe waits for its browser", async () => {
+test("a bot's profile is its own, one browser at a time, keeps only sign-ins, and a wipe waits for its browser", async () => {
   const home = tempHome();
   cleanups.push(home.done);
   expect(keptDir(home.dir, "ada")).toBe(join(home.dir, "browser/kept/ada"));
@@ -28,7 +28,7 @@ test("a project's profile is its own, one browser at a time, keeps only sign-ins
   for (const name of ["", "..", "../ada", "a/b", ".hidden"]) expect(keptDir(home.dir, name)).toBeUndefined();
   const kept = new Kept(home.dir);
   const ada = kept.take("ada");
-  expect(() => kept.take("ada")).toThrow("This project's browser is open in another session");
+  expect(() => kept.take("ada")).toThrow("This bot's browser is open in another session");
   const bee = kept.take("bee");
   expect(ada.dir).not.toBe(bee.dir);
   // What a killed browser left: its lock, a cache, history, a saved password; and its cookies.
@@ -180,7 +180,7 @@ test.skipIf(!chrome)("a lead stays signed in between sessions, no other agent is
   await r.call("session_end", {}, "t-lead-2");
   hooks.launched("t-lead-2", "assistant", "proj-1");
   expect((await r.call("session_start", { purpose: "again" }, "t-lead-2")).error?.message).toBe(
-    "This project's browser is open in another session: it keeps the project's sign-ins, and one browser at a time runs on them.",
+    "This bot's browser is open in another session: it keeps the bot's sign-ins, and one browser at a time runs on them.",
   );
   r.broker.personScreen("person-key", "proj-1");
   expect(await visit(r, "person-key", url, "Signed out")).toBe("Signed out");

@@ -7,7 +7,7 @@ const at = (h: number) => new Date(2026, 9, 31, h, 5).toISOString();
 
 const skill = (name: string, extra: Partial<SkillSummary> = {}): SkillSummary => ({ name, origin: "project", description: `${name} things.`, ...extra });
 
-describe("a project's skills", () => {
+describe("a bot's skills", () => {
   it("says who changed it last, when, and when it was last used", () => {
     const changed = { version: 2, author: "agent" as const, by: "Home", at: at(9) };
     expect(metaLine(skill("taxes", { changed, lastUsedAt: at(11) }), NOW)).toBe("Changed today 09:05 by Home · used today 11:05");

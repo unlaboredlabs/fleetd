@@ -102,7 +102,7 @@ test("a hosted box reaches public endpoints itself; a tailnet, LAN or loopback o
   expect(await publicEndpoint("https://160.79.104.10", resolve)).toBe(true);
 });
 
-test("a box whose relay moved the port has its claude pointed there in --settings, above the user's and the project's", () => {
+test("a box whose relay moved the port has its claude pointed there in --settings, above the user's and the bot's", () => {
   const overlay = join(root, "overlay2.json");
   writeFileSync(overlay, JSON.stringify({ env: { OTHER: "x" }, hooks: { a: 1 } }));
   const r = reachOf("https://gateway.tail1234.ts.net");

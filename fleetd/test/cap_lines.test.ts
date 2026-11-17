@@ -42,7 +42,7 @@ test("each line a max agents change says, in the hub's words", () => {
   expect(capRaisedText(4, 3)).toBe("- cap raised to 4: 3 slots free; queued agents already started");
 });
 
-test("a project's line picks raised, paused, lowered, back to the default or a plain change", () => {
+test("a bot's line picks raised, paused, lowered, back to the default or a plain change", () => {
   const change = { from: 4, to: 4, started: 0, free: 0, paused: 0, running: 0, back: false };
   expect(projectLine({ ...change, to: 6, started: 1, free: 1 })).toBe("Max agents 4 → 6: 1 queued agent starts now, 1 slot free.");
   // The paused ones still count as running until they end.

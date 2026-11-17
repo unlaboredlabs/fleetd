@@ -5,7 +5,7 @@ description: One Mac that every agent uses from wherever it runs, for its shell,
 
 Browsers, Linux desktops and Android emulators are cheap to start anywhere; Macs aren't. So fleetd lends one real Mac
 to every agent at once. Its node runs in the account logged in at the Mac's screen (yours is fine, an admin's too, or
-a [user of its own](#own-user)), and it runs no agents or leads itself. Agents stay on the machines their projects
+a [user of its own](#own-user)), and it runs no agents or leads itself. Agents stay on the machines their bots
 live on and reach the Mac with the `mac` command, through the hub.
 
 ## How an agent uses it {#use}
@@ -100,7 +100,7 @@ for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in
 
 ### Watching a simulator {#sim-screens}
 
-Each simulator an agent holds is a screen of its own, in **Screens** and the project's **Agents › Screens**, named for
+Each simulator an agent holds is a screen of its own, in **Screens** and the bot's **Agents › Screens**, named for
 its device and agent ("iPhone 17 · T12") and drawn in an iPhone bezel. It never touches the Mac's own screen and takes
 no turn on it, so several agents' simulators are watched at once, beside an agent on the [Mac's screen](/docs/browser-sessions#mac).
 
@@ -160,7 +160,7 @@ A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restar
 - **Each step is sealed** by the agent's node to the Mac's key, with a fresh key for its answer: the hub sees who
   calls, never a command, a file or an output. The Mac takes each step once, and only within 5 minutes of when it was
   made.
-- **No secrets by default.** A job gets none of the agent's project or order secrets, and none of the Mac node's
+- **No secrets by default.** A job gets none of the agent's bot or order secrets, and none of the Mac node's
   environment beyond `HOME`, `PATH`, `USER` and the locale. `--env NAME` sends that one variable, for that command
   only; its value is masked in the job's output.
 - **Files stay in their folders.** `push` reads only the agent's worktree, `pull` writes only into it (a folder comes
@@ -175,10 +175,10 @@ A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restar
 The agents' Mac is a tool, never a runner:
 
 - No agent or lead runs there, whatever its [machine roles](/docs/machines#roles) say. Its agents role stays
-  off, and no project can be added on it.
+  off, and no bot can be added on it.
 - It takes no secret: the app never seals a Claude account, an API key, a 1Password token, an MCP server's secret, a
-  project's variable or a browser fill to it, and its node refuses one that comes anyway.
-- Its node relays no `fleetd` call made on the Mac (every process there is some project's job): `fleetd` commands
+  bot's variable or a browser fill to it, and its node refuses one that comes anyway.
+- Its node relays no `fleetd` call made on the Mac (every process there is some bot's job): `fleetd` commands
   typed there answer "this Mac is a tool for agents elsewhere: run fleetd from your own machine".
 A Mac nobody else uses (a Mac mini) is best. Release signing stays in CI.
 
@@ -386,9 +386,9 @@ Once the Mac is joined, the fleetd app on it keeps an icon in the menu bar for a
 (right-click the icon to turn **Open at Login** off, open the app or quit). Its popover has three parts:
 
 - **Now**: who has the Mac's screen, with **Take over** (the screen opens in its own window with you in control) and
-  **Hand back**; each simulator an agent holds and each build or command an agent runs, with its agent, its project
+  **Hand back**; each simulator an agent holds and each build or command an agent runs, with its agent, its bot
   and how long. The node writes these to `~/.fleetd/node/mac-activity.json` as they change; who has the screen, and
-  the agents' and projects' names, come from the hub, so they show once the app is signed in to it on the Mac.
+  the agents' and bots' names, come from the hub, so they show once the app is signed in to it on the Mac.
 - **Health**: the node, the two permissions, Xcode, CocoaPods and the disk, a word each. One that isn't green says
   what the node found and its fix: **Restart the node**, **Allow in System Settings**, **Open the App Store**, or the
   exact command with Copy and where to run it. The disk warns under 30 GB free and fails under 10 GB. Any other
@@ -406,7 +406,7 @@ holding the Mac can read. That's your call.
 ## Agents may use this Mac {#switch}
 
 The agents' Mac's page in **Settings › Hub › Machines** shows it with one switch, **Agents may use this Mac**, for
-every project's agents. Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
+every bot's agents. Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
 ## A Mac that runs fleetd already {#move}
@@ -420,7 +420,7 @@ A Mac joined as an ordinary machine becomes the agents' Mac under the same name,
 Joining under another name, or from another account (a [user of its own](#own-user)), leaves the old machine
 enrolled: the `mac_one_node` check fails until you remove it with `fleetd machine remove <name>` on the hub, and, in
 the account it ran in, `launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node` (which deletes its
-worktrees, unpushed work included). The fleetd app can stay: it's a client, not a node. A project that lived on the
+worktrees, unpushed work included). The fleetd app can stay: it's a client, not a node. A bot that lived on the
 Mac runs no agents there any more: add it on another machine, whose agents then use the Mac.
 
 ## Removed from the hub {#removed}
@@ -438,9 +438,9 @@ behind) only says the node isn't enrolled, and the node keeps trying until it jo
 
 ## What stays shared {#shared}
 
-Every project's agents act as the node's account, so they can see each other's files, processes and simulators on the
+Every bot's agents act as the node's account, so they can see each other's files, processes and simulators on the
 Mac, and whatever that account can read: in your own account, your files, keychain prompts and browser logins too.
-Put nothing there you wouldn't give every project, or give agents a [user of their own](#own-user). That account can
+Put nothing there you wouldn't give every bot, or give agents a [user of their own](#own-user). That account can
 read the node's own key, as on any worker. Loopback ports are shared between macOS users too.
 
 ## node.json {#node-json}

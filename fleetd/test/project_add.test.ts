@@ -23,7 +23,7 @@ const added = (k: ReturnType<typeof kit>) => events(k.hub).page(0, ["project.add
 /** The approval mode `project_approvals` reports for a project on devbox, read by Ada. */
 const mode = async (k: ReturnType<typeof kit>, projectId: unknown) => (await k.ok(person, "project_approvals", { machineId: "devbox", projectId })).approvals.mode;
 
-test("a new project gets a folder under the projects root and no repo", async () => {
+test("a new bot gets a folder under the bots root and no repo", async () => {
   const k = kit();
   const n = await node(k, ["repos", "folder_make"]);
   gh(k, {});
@@ -69,7 +69,7 @@ test("a folder given is made there, git init runs only when asked, and a full on
   const dry = await k.ok(operate, "project_add", { machineId: "devbox", create: true, title: "Site", dryRun: true });
   expect(dry.path).toBe(`${ROOT}/site`);
   expect(dry.projectId).toBeUndefined();
-  expect(dry.next).toBe(`project_add with create makes ${ROOT}/site on devbox, a new project.`);
+  expect(dry.next).toBe(`project_add with create makes ${ROOT}/site on devbox, a new bot.`);
   expect(n.calls.map((c) => c.op)).toEqual(["repo_scan", "folder_make"]);
   const site = await k.ok(operate, "project_add", { machineId: "devbox", create: true, path: "/home/me/work/site/", gitInit: true });
   expect(site.path).toBe("/home/me/work/site");
@@ -95,7 +95,7 @@ test("a node too old to make a folder or read repos is told to update; a read ke
   await node(k, ["repos"]);
   gh(k, {});
   const made = await k.call(operate, "project_add", { machineId: "devbox", create: true, title: "x" });
-  expect(made).toMatchObject({ error: { error: { code: "failed", message: "devbox's node is too old to make a new project's folder" } } });
+  expect(made).toMatchObject({ error: { error: { code: "failed", message: "devbox's node is too old to make a new bot's folder" } } });
   (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set());
   expect(await k.refused(operate, "project_add", { machineId: "devbox", path: "/x" })).toBe("failed");
   expect(await k.refused(key("read"), "project_add", { machineId: "devbox", path: "/x" })).toBe("forbidden");
@@ -144,7 +144,7 @@ test("a checkout on GitHub is inspected through gh, bound to its repo and base, 
   expect(await k.refused(operate, "project_add", { machineId: "devbox", path: "/nope" })).toBe("not_found");
 });
 
-test("a clone streams its progress, then lands as a project with its addId", async () => {
+test("a clone streams its progress, then lands as a bot with its addId", async () => {
   const k = kit();
   clones(k.hub);
   let cloned: (() => void) | undefined;
@@ -191,7 +191,7 @@ test("a clone streams its progress, then lands as a project with its addId", asy
   expect(await mode(k, landed[0]?.projectId)).toBe("yolo");
 });
 
-test("a project that was there before keeps its mode: the one stored, or the checker with none stored", async () => {
+test("a bot that was there before keeps its mode: the one stored, or the checker with none stored", async () => {
   const k = kit();
   const n = await node(k, ["repos", "folder_make"]);
   gh(k, {});
@@ -223,7 +223,7 @@ test("a project that was there before keeps its mode: the one stored, or the che
   expect(await mode(k, fresh.projectId)).toBe("checker");
 });
 
-test("a new project's lead sends without asking, and is still refused or asked what every mode refuses or asks", async () => {
+test("a new bot's lead sends without asking, and is still refused or asked what every mode refuses or asks", async () => {
   const k = kit();
   const n = await node(k, ["repos", "folder_make"]);
   gh(k, {});
@@ -302,7 +302,7 @@ test("a plain folder takes a repo by path, lists it and takes it out again", asy
   expect(await k.refused(operate, "project_repo_add", { ...r, path: "/x", url: "acme/api" })).toBe("invalid");
   const out = await k.ok(operate, "project_repo_add", { ...r, path: "/home/me/src/api/" });
   expect(out.repo).toMatchObject({ name: "api", repoKey: "github.com/acme/api", base: "main", path: "/home/me/src/api" });
-  expect(out.next).toBe("api is a repo of the project now, at /home/me/src/api on devbox.");
+  expect(out.next).toBe("api is a repo of the bot now, at /home/me/src/api on devbox.");
   const copy = n.calls.find((c) => c.op === "project_env_copy");
   expect(copy).toMatchObject({ from: "notes" });
   const listed = await k.ok(key("read"), "project_repo_list", r);
@@ -313,13 +313,13 @@ test("a plain folder takes a repo by path, lists it and takes it out again", asy
   const removed = await k.ok(operate, "project_repo_remove", { ...r, name: "api" });
   expect(removed.cancelled).toEqual([]);
   expect(removed.next).toBe(
-    "Its checkout stays at /home/me/src/api on devbox, files and all. No project holds it now, so it shows as a project of its own again; project_remove forgets it (its files stay).",
+    "Its checkout stays at /home/me/src/api on devbox, files and all. No bot holds it now, so it shows as a bot of its own again; project_remove forgets it (its files stay).",
   );
   expect(events(k.hub).page(0, ["project.settings"]).events.at(-1)?.data).toEqual({ repoRemoved: "api" });
   expect(await k.refused(operate, "project_repo_remove", { ...r, name: "api" })).toBe("not_found");
 });
 
-test("attaching a project of its own archives it, and an archived project takes no repo", async () => {
+test("attaching a bot of its own archives it, and an archived bot takes no repo", async () => {
   const k = kit();
   const n = await node(k, ["repos"], (call) =>
     call.op === "repo_inspect" ? { ok: { kind: "repo_facts", exists: true, isGit: true, workflowFiles: [] } } : undefined,
@@ -336,12 +336,12 @@ test("attaching a project of its own archives it, and an archived project takes 
   k.hub.db.conn.run("UPDATE tasks SET state = 'done'");
   const out = await k.ok(operate, "project_repo_add", { ...web, path: "/home/me/site" });
   expect(out.archived).toEqual(site);
-  expect(out.next).toContain("The project site it was is archived");
+  expect(out.next).toContain("The bot site it was is archived");
   const refused = await k.call(operate, "project_repo_add", { ...site, path: "/home/me/web" });
-  expect(refused).toMatchObject({ error: { error: { code: "invalid", message: "This project is archived: its directory is repo site of project web on devbox." } } });
+  expect(refused).toMatchObject({ error: { error: { code: "invalid", message: "This bot is archived: its directory is repo site of bot web on devbox." } } });
 });
 
-test("removing a project checks its gates, then removes it and the checkouts only it holds, and erases it", async () => {
+test("removing a bot checks its gates, then removes it and the checkouts only it holds, and erases it", async () => {
   const k = kit();
   const app = { machineId: "devbox", projectId: "app" };
   const caps = (list: string[]) => (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(list));
@@ -355,7 +355,7 @@ test("removing a project checks its gates, then removes it and the checkouts onl
   }
   await settle();
   const old = await k.call(operate, "project_remove", app);
-  expect(old).toMatchObject({ error: { error: { code: "invalid", message: "Update fleetd on devbox first: its node is too old to erase a project, so nothing was deleted" } } });
+  expect(old).toMatchObject({ error: { error: { code: "invalid", message: "Update fleetd on devbox first: its node is too old to erase a bot, so nothing was deleted" } } });
   caps(["repos", "project_erase"]);
   // Its worktrees go only from a node that takes project settings.
   expect(await k.refused(operate, "project_remove", { ...app, removeWorktrees: true })).toBe("invalid");
@@ -394,7 +394,7 @@ test("removing a project checks its gates, then removes it and the checkouts onl
   ]);
 });
 
-test("a project of a machine the hub no longer has is forgotten in the hub, and says so", async () => {
+test("a bot of a machine the hub no longer has is forgotten in the hub, and says so", async () => {
   const k = kit();
   const r = { machineId: "gone", projectId: "app" };
   expect(await k.refused(operate, "project_remove", r)).toBe("not_found");
@@ -402,10 +402,10 @@ test("a project of a machine the hub no longer has is forgotten in the hub, and 
     { machineId: "gone", projectId: "app", title: "App", workspaceRoot: "/w/app", lastActivityAt: AT, threads: { running: 0, idle: 0, failed: 0, waiting: 0 } } as never,
   ]);
   const out = await k.ok(operate, "project_remove", r);
-  expect(out.next).toBe("gone is no longer in the hub, so no machine held its files: fleetd forgot the project, its chat and its settings.");
+  expect(out.next).toBe("gone is no longer in the hub, so no machine held its files: fleetd forgot the bot, its chat and its settings.");
   expect(store(k.hub).projectGet(r)).toBeUndefined();
   expect(events(k.hub).page(0, ["project.removed"]).events.map((e) => [e.summary, e.data])).toEqual([
-    ['Project "App" on gone was forgotten: its machine was removed', { title: "App" }],
+    ['Bot "App" on gone was forgotten: its machine was removed', { title: "App" }],
   ]);
 });
 
@@ -415,7 +415,7 @@ test("an order's variables: refused for a closed order, recorded, and dropped on
   const n = await node(k, ["order_env"]);
   const w = workstream(k.hub, r, "Ship it");
   expect(refusal(k.hub, r, "nope")).toBe("nope is no order id.");
-  expect(refusal(k.hub, { machineId: "devbox", projectId: "other" }, w.workstreamId)).toBe(`The project has no order ${w.workstreamId}.`);
+  expect(refusal(k.hub, { machineId: "devbox", projectId: "other" }, w.workstreamId)).toBe(`The bot has no order ${w.workstreamId}.`);
   expect(refusal(k.hub, r, w.workstreamId)).toBeUndefined();
   const s = { project: r, orderId: w.workstreamId, name: "TOKEN", fingerprint: "fp1", bytes: 12, requestId: "q1" };
   expect(await saved(k.hub, s, AT)).toBeUndefined();
@@ -430,7 +430,7 @@ test("an order's variables: refused for a closed order, recorded, and dropped on
   expect(orderEnvStore.held(k.hub.db.conn)).toEqual([]);
 });
 
-test("the projects loops answer the approvals area's order checks, and a closing order's next event drops its variables", async () => {
+test("the bots loops answer the approvals area's order checks, and a closing order's next event drops its variables", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   const n = await node(k, ["order_env"]);

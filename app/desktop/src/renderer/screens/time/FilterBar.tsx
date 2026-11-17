@@ -36,7 +36,7 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
   const [custom, setCustom] = useState(false);
   const projectKey = (p: { machineId: string; projectId: string }) => `${p.machineId}/${p.projectId}`;
   const picked = f.project;
-  const projectTitle = picked === undefined ? "All projects" : (names.projects.find((p) => projectKey(p) === projectKey(picked))?.title ?? picked.projectId);
+  const projectTitle = picked === undefined ? "All bots" : (names.projects.find((p) => projectKey(p) === projectKey(picked))?.title ?? picked.projectId);
   const orders = [...names.orders.entries()]
     .filter(([, o]) => f.project === undefined || o.project === projectTitle)
     .sort((a, b) => Number(b[0].replace(/\D/gu, "")) - Number(a[0].replace(/\D/gu, "")))
@@ -69,7 +69,7 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
             onFilters(p === undefined ? { ...f, project: undefined } : { ...f, project: { machineId: p.machineId, projectId: p.projectId } });
           }}
         >
-          <MenuRadioItem value={ALL}>All projects</MenuRadioItem>
+          <MenuRadioItem value={ALL}>All bots</MenuRadioItem>
           <MenuSeparator />
           {names.projects.map((p) => (
             <MenuRadioItem key={projectKey(p)} value={projectKey(p)}>

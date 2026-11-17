@@ -104,7 +104,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
   f.update("prompt_get", (out, input) => (input?.["id"] === undefined ? { ...obj(out), prompts: clone(prompts) } : out));
   for (const p of prompts) {
     const id = asText(p["id"]);
-    const defaultText = `# ${asText(p["title"])}\n\nYou are the lead of {project}. ${LONG_PARAGRAPH}\n\n- Keep each step small.\n- Ask before anything irreversible.`;
+    const defaultText = `# ${asText(p["title"])}\n\nYou are the lead of {bot}. ${LONG_PARAGRAPH}\n\n- Keep each step small.\n- Ask before anything irreversible.`;
     const out: JsonObject = {
       ...clone(template),
       id,
@@ -119,7 +119,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
     delete out["project"];
     delete out["stale"];
     if (p["overrideRef"] !== undefined) {
-      const text = `${defaultText}\n\nFor this project: run \`pnpm test --filter storefront\` before you report done.`;
+      const text = `${defaultText}\n\nFor this bot: run \`pnpm test --filter storefront\` before you report done.`;
       out["project"] = { ref: asText(p["overrideRef"]), base: asText(p["defaultRef"]), text };
       out["effective"] = { ref: asText(p["overrideRef"]), text };
     }

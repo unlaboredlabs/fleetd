@@ -538,7 +538,7 @@ export class Chat {
       type: "chat.message",
       machineId: r.machineId,
       projectId: r.projectId,
-      summary: title === undefined ? `${who} in a project's chat` : `${who} in the chat of ${[...title].slice(0, 60).join("")}`,
+      summary: title === undefined ? `${who} in a bot's chat` : `${who} in the chat of ${[...title].slice(0, 60).join("")}`,
       data: {
         projectRef: r,
         messageId: message.messageId,

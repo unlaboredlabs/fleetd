@@ -122,7 +122,7 @@ const click = async (el: HTMLElement) => {
 };
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 
-it("shows a member a project's skills and only names the hub-wide ones", async () => {
+it("shows a member a bot's skills and only names the hub-wide ones", async () => {
   await render("settings", false);
   expect(sent("skills_list")).toEqual([{ projectRef: storefront }]);
   expect(rowNamed("checkout-qa")).toBeDefined();
@@ -132,19 +132,19 @@ it("shows a member a project's skills and only names the hub-wide ones", async (
   expect(rowNamed("standup")).toBeUndefined();
   const line = document.querySelector("[aria-label='Hub-wide skills']");
   expect(line?.textContent).toContain("pr-review, standup");
-  expect(texts()).not.toContain("Hub-wide skills in Every project");
+  expect(texts()).not.toContain("Hub-wide skills in Every bot");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);
 });
 
-it("says on each of a project's rows whether it is off, who changed it last and its last use", async () => {
+it("says on each of a bot's rows whether it is off, who changed it last and its last use", async () => {
   await render("settings", false);
   expect(rowNamed("checkout-qa")?.textContent).toMatch(/Off · Changed .+ by storefront · not used yet$/u);
   expect(rowNamed("triage")?.textContent).toMatch(/not used yet$/u);
   expect(rowNamed("triage")?.textContent).not.toContain("Off");
 });
 
-it("opens one of the project's own skills' history in the panel, which has no Skills list of its own", async () => {
+it("opens one of the bot's own skills' history in the panel, which has no Skills list of its own", async () => {
   await render("settings", false);
   await click((rowNamed("triage") as { open: HTMLElement }).open);
   // A repo skill's history is the repo's.
@@ -154,7 +154,7 @@ it("opens one of the project's own skills' history in the panel, which has no Sk
   expect(window.location.hash).toBe("#/project/devbox/storefront/skills/checkout-qa");
 });
 
-it("writes a member's install into the project, never hub-wide", async () => {
+it("writes a member's install into the bot, never hub-wide", async () => {
   await render("settings", false);
   await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Install from a source…") as HTMLElement);
   const source = document.querySelector<HTMLInputElement>("input[placeholder='vercel-labs/agent-skills']");
@@ -168,20 +168,20 @@ it("writes a member's install into the project, never hub-wide", async () => {
   expect(sent("skill_install")).toEqual([{ scope: "project", projectRef: storefront, source: "acme/agent-skills" }]);
 });
 
-it("gives an admin on a project's page only the way to Every project", async () => {
+it("gives an admin on a bot's page only the way to Every bot", async () => {
   await render("settings", true);
   expect(rowNamed("pr-review")).toBeUndefined();
-  expect(texts()).toContain("Hub-wide skills in Every project");
+  expect(texts()).toContain("Hub-wide skills in Every bot");
 });
 
-it("keeps Every project's skills from a member, and reads none of it", async () => {
+it("keeps Every bot's skills from a member, and reads none of it", async () => {
   await render("admin", false);
   expect(document.querySelector("[data-screen='settings.hub.denied']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([]);
   expect(texts()).not.toContain("Install from a source…");
 });
 
-it("lets an admin install, update and remove hub-wide skills on Every project › Agents", async () => {
+it("lets an admin install, update and remove hub-wide skills on Every bot › Agents", async () => {
   await render("admin", true);
   expect(document.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);

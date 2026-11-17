@@ -4,7 +4,7 @@ description: Use fleetd cloud in a browser at app.fleetd.dev, with nothing to do
 ---
 
 On fleetd cloud you can use fleetd in a browser: open [app.fleetd.dev](https://app.fleetd.dev) and sign in with
-Google, GitHub or a code by email, as in the apps. It is the desktop app's own interface: your teams' projects, their
+Google, GitHub or a code by email, as in the apps. It is the desktop app's own interface: your teams' bots, their
 chats live as the lead writes, the panel beside a chat, Factory, Screens and taking a screen over, and Settings. With
 several teams, each is a group in the sidebar, as [several hubs](/docs/several-hubs) are in the desktop app.
 

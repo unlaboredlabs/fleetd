@@ -269,7 +269,7 @@ describe("activity", () => {
   const name = (m: string, p: string) => (p === "p1" ? "Nova" : undefined);
   const entry: VaultAuditEntry = { n: 1, atMs: 0, itemId: "V1", action: "fill", outcome: "ok", data: {} };
 
-  it("says what happened, where and for which project, never a value", () => {
+  it("says what happened, where and for which bot, never a value", () => {
     expect(auditLine({ ...entry, action: "fill", machineId: "devbox", projectId: "p1", data: { site: "amazon.com", fields: ["password"] } }, name)).toEqual({ title: "Filled", detail: "amazon.com · Nova" });
     expect(auditLine({ ...entry, action: "reveal", data: {} }, name)).toEqual({ title: "Shown", detail: undefined });
     expect(auditLine({ ...entry, action: "fill_refused", outcome: "refused", data: { site: "amaz0n.com", message: "not one of its sites" } }, name)).toEqual({ title: "Fill refused", detail: "amaz0n.com · Not one of its sites" });
@@ -298,7 +298,7 @@ describe("activity", () => {
 });
 
 describe("where a set-aside variable may go", () => {
-  it("lists every project not archived, by title", () => {
+  it("lists every bot not archived, by title", () => {
     const p = (title: string, archivedAt?: string) => ({ title, ...(archivedAt === undefined ? {} : { archivedAt }) }) as never;
     expect(moveTargets({ "devbox/b": p("Nova"), "devbox/a": p("Atlas"), "devbox/c": p("Old", "2026-01-01T00:00:00Z") })).toEqual([
       { key: "devbox/a", title: "Atlas" },

@@ -3,7 +3,7 @@ title: MCP clients
 description: Connect Claude Code or another MCP client to the hub, and the tools it can use to chat with leads.
 ---
 
-You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can chat with project leads.
+You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can chat with bot leads.
 
 ## Connect Claude Code {#claude-code}
 
@@ -34,7 +34,7 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it how a project is doing. It reads the chat with `chat_history` and the status with
+4. In Claude Code, ask it how a bot is doing. It reads the chat with `chat_history` and the status with
    `fleetd_status`.
 
 :::note[Writing to a lead]
@@ -73,7 +73,7 @@ Then call a tool:
 FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_get '{}'
 ```
 
-On a new hub with no projects yet, the output starts like this:
+On a new hub with no bots yet, the output starts like this:
 
 ```text
 {"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"rows\":[]}", …
@@ -120,9 +120,9 @@ is dropped, and to tell you when the work is taken. A session might go like this
 | `work_done {claimId, outcome, landing?, reason?}` | Ends your claim: `landed` (with its commit) or `dropped`. A human key can end anyone's. | operate |
 
 `repo` is the origin remote in any form, on any host: `git@github.com:acme/shop.git`, `https://gitlab.example.com/g/shop`,
-`/srv/git/shop.git`. With no `base`, the base is the project's (or that of a project on the repo), else `main`. A claim
+`/srv/git/shop.git`. With no `base`, the base is the bot's (or that of a bot on the repo), else `main`. A claim
 lasts 12 hours after your last `work_claim` on it, then shows as expired for a day. Matches only list it once it has expired.
-When no project is known to be on the repo yet, the hub first reads the remotes of your projects that it hasn't
+When no bot is known to be on the repo yet, the hub first reads the remotes of your bots that it hasn't
 matched to a repo, waiting a few seconds. If none matches, the answer's `warning` says the agents' work may be
 missing from it.
 
@@ -142,7 +142,7 @@ fleetd work done                                                   # the claim o
 | Role | Can |
 |---|---|
 | `read` | Read chats, status, time and prompts. |
-| `operate` | Also write to leads, set a project's max agents, and manage projects. |
+| `operate` | Also write to leads, set a bot's max agents, and manage bots. |
 | `admin` | Also change hub settings, such as screen recordings' retention. |
 
 `--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
@@ -153,30 +153,30 @@ fleetd work done                                                   # the claim o
 | `fleetd hub key revoke <keyId>` | Ends a key at once, also on a running hub. |
 
 A [human key](/docs/glossary#human-key) (`fleetd hub key create --human`) is for a person's device. Some tools, such
-as stopping a project, answering an approval or entering a secret, need one.
+as stopping a bot, answering an approval or entering a secret, need one.
 
 ## Tools for the chat {#tools}
 
 | Tool | Does | Role |
 |---|---|---|
-| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words with a human key, as an agent's with any other. | operate |
-| `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
+| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a bot's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words with a human key, as an agent's with any other. | operate |
+| `chat_history {projectRef, before?, after?, limit?}` | A page of a bot's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
 | `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
 | `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
-| `decisions_list {projectRef, limit?}` | Every decision in the project, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). `orders` names each order by its title. | read |
+| `decisions_list {projectRef, limit?}` | Every decision in the bot, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). `orders` names each order by its title. | read |
 | `decisions_overturn {decisionId, value?, why}` | Take back a decision in force. Without `value` it is revoked and the lead asks again when it comes up; with `value` a new decision on the same question replaces it, as yours. The lead reads the change, and your why, at its next wake. | operate, human key |
 | `requests_list {projectRef?, state?}` | Secret and approval requests, newest first, with their state. A secret's value is never in it, only its fingerprint. | read |
-| `project_stop {projectRef, reason?}` | Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
+| `project_stop {projectRef, reason?}` | Stop every running and queued agent of the bot and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
 | `attachment_put {name, mime, dataB64, uploadId?}` | Upload a file (image, text or PDF, at most 25 MiB) for a message; up to 20 go with one message. | operate |
 | `attachment_part {dataB64, uploadId?, offset?}` | One piece of a file too large for one request, in order: pass the `uploadId` it returns and the bytes sent so far as `offset` with the next piece, and the last piece to `attachment_put` with the `uploadId`. | operate |
-| `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
-| `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `status_get` | One row per project: its state word, its work in groups, agents running and the last merge. | read |
-| `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
+| `attachment_get {projectRef, attachmentId}` | Read a file attached to a bot's chat. | read |
+| `project_files {machineId, projectId, query}` | A bot's files, for `@`-mentions. | read |
+| `status_get` | One row per bot: its state word, its work in groups, agents running and the last merge. | read |
+| `agents_list {projectRef?, endedSince?}` | Every agent of your bots: its role, task, what it's doing now, when it started and its PR. | read |
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
-| `pr_list {projectRef, closedSince?, cursor?}`, `pr_get {repo, number}` | A project's PRs, up to 60 a page (`nextCursor`, passed as `cursor`, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
+| `pr_list {projectRef, closedSince?, cursor?}`, `pr_get {repo, number}` | A bot's PRs, up to 60 a page (`nextCursor`, passed as `cursor`, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
 | `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
-| `events_list {projectRef, before?, types?, hubWide?, limit?}` | A project's events, newest first, back through the last 30 days: agents started and finished, reviews, merges, requests. `hubWide` adds the hub's own, such as a device paired. | read |
+| `events_list {projectRef, before?, types?, hubWide?, limit?}` | A bot's events, newest first, back through the last 30 days: agents started and finished, reviews, merges, requests. `hubWide` adds the hub's own, such as a device paired. | read |
 | `workstream_list`, `order_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
@@ -186,7 +186,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
 `chat.message` event.
 
-Tools for projects: `project_discover`, `project_add {path | url | create}` (a path is a git checkout or a
+Tools for bots: `project_discover`, `project_add {path | url | create}` (a path is a git checkout or a
 plain folder; `create` makes a new folder for it on the machine; with `dryRun` to see its CI and merge rules, and where a
 clone would go, without adding it), `project_settings_set`, `project_archive` and `project_remove`
 ([more](/docs/projects#clients)). A clone answers with an `addId`, then sends

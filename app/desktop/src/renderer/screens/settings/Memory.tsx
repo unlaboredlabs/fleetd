@@ -56,7 +56,7 @@ export function Memory({ project }: { project: Scope | null }) {
     return now.files?.find((f) => fileName(f) === name)?.text ?? "";
   };
 
-  const head = "What the lead remembers about this project. Edit or delete anything that's wrong.";
+  const head = "What the lead remembers about this bot. Edit or delete anything that's wrong.";
   if (!live) {
     return (
       <SettingsSection title="Memory" reveal="memory" hint={head}>
@@ -98,7 +98,7 @@ export function Memory({ project }: { project: Scope | null }) {
             ) : null}
           </div>
         </div>
-        {total ? <CapMeter state={total} label="This project's memory" /> : null}
+        {total ? <CapMeter state={total} label="This bot's memory" /> : null}
       </SettingsSection>
       {ref && d?.files
         ? files.map((f) =>

@@ -364,14 +364,14 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
-            For every project:
+            For every bot:
           </Text>
           {globals.map(({ server, replaced }) => (
             <Text key={server.name} size="sm" tone="quiet">
               <Text as="span" mono size="sm">
                 {server.name}
               </Text>{" "}
-              {replaced ? "· replaced by this project's" : server.enabled ? `· ${rolesText(server.roles)}` : "· off"}
+              {replaced ? "· replaced by this bot's" : server.enabled ? `· ${rolesText(server.roles)}` : "· off"}
             </Text>
           ))}
         </div>

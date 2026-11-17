@@ -71,7 +71,7 @@ test("with the switch off nothing changes: no tags, markers stay, no prompt line
   expect(humanAbout(hub, PROJECT, "W3", reply, undefined)).toBeUndefined();
   settleRun(hub, PROJECT, "lead-1", hub.clock.now());
   expect(chat(hub).byId(reply.messageId)?.about).toBeUndefined();
-  await expect(call("chat_about_set", { projectRef: PROJECT, messageId: reply.messageId, workstreamId: "W4" })).rejects.toThrow("This project's chat tags are off.");
+  await expect(call("chat_about_set", { projectRef: PROJECT, messageId: reply.messageId, workstreamId: "W4" })).rejects.toThrow("This bot's chat tags are off.");
   expect(wakes).toEqual([]);
   const set = prompts(hub.db).current(PROJECT);
   const off = renderLeadStart(set, PROJECT, "Shop", [], "", "", "", undefined);
@@ -215,7 +215,7 @@ test("switch on: chat_about_set moves a message to another open order and tells 
   expect(wakes[1]?.text).toContain("from Price filter (W4) to no order");
   // Only to an open order of the project, and only a message of its chat.
   close(hub, 4);
-  await expect(call("chat_about_set", { projectRef: PROJECT, messageId: chips.messageId, workstreamId: "W4" })).rejects.toThrow("W4 is not an open order of this project.");
+  await expect(call("chat_about_set", { projectRef: PROJECT, messageId: chips.messageId, workstreamId: "W4" })).rejects.toThrow("W4 is not an open order of this bot.");
   await expect(call("chat_about_set", { projectRef: PROJECT, messageId: "m999", workstreamId: "W3" })).rejects.toThrow("No message m999 in this chat.");
   done();
 });
@@ -246,7 +246,7 @@ test("switch on: the lead's prompt carries the design's lines, and a person's me
   done();
 });
 
-test("project_settings_set turns the trial on and off, and the project serves it", async () => {
+test("project_settings_set turns the trial on and off, and the bot serves it", async () => {
   const { hub, call, done } = rig(false);
   const input = { machineId: PROJECT.machineId, projectId: PROJECT.projectId };
   await call("project_settings_set", { ...input, chatTags: true }).catch(() => undefined);

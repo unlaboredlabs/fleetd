@@ -257,7 +257,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       <form className={s.fields} onSubmit={(e) => void submit(e)} noValidate>
         {adding ? (
           <>
-            <Field label="Name" description="Shown above its projects in the sidebar.">
+            <Field label="Name" description="Shown above its bots in the sidebar.">
               <Input ref={nameField} value={name} maxLength={LABEL_MAX} onChange={(e) => setName(e.target.value)} placeholder="Personal, Acme, Side project…" autoComplete="off" />
             </Field>
             <ColorPick value={color} onChange={setColor} />

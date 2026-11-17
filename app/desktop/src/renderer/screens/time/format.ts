@@ -267,7 +267,7 @@ export const titleIsMachineText = (span: Span): boolean =>
   span.extra?.check !== undefined || (span.label !== undefined && span.label !== "");
 
 /** The other lanes by what they are to the user. */
-const LANE_WORD: Readonly<Record<string, string>> = { train: "merge queue", requests: "requests", fleet: "all projects", order: "this work" };
+const LANE_WORD: Readonly<Record<string, string>> = { train: "merge queue", requests: "requests", fleet: "all bots", order: "this work" };
 
 /** "about page", "lead", "PR #212", "requests". */
 export const laneName = (names: Names, span: Span): string => {

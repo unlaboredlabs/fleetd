@@ -104,7 +104,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     [
       { id: "composer.focus", title: "Focus the composer", group: "actions", run: () => box.current?.focus() },
       { id: "composer.attach", title: "Attach a file", group: "actions", run: () => fileInput.current?.click() },
-      { id: "lead.stop", title: "Stop the lead and its agents", group: "actions", detail: "Ends the lead’s turn and stops the project’s agents", enabled: () => showStop && !stopOffline && !stopping, run: stop },
+      { id: "lead.stop", title: "Stop the lead and its agents", group: "actions", detail: "Ends the lead’s turn and stops the bot’s agents", enabled: () => showStop && !stopOffline && !stopping, run: stop },
     ],
     [],
   );

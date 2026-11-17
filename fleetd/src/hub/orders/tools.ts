@@ -64,7 +64,7 @@ export function register(tools: Registry): void {
       requests,
       decisions: decided,
       steers,
-      next: "Talk to its lead with chat_send; stop the project's work with project_stop.",
+      next: "Talk to its lead with chat_send; stop the bot's work with project_stop.",
       ...(truncated ? { truncated: true } : {}),
     };
   });

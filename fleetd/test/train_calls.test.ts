@@ -79,7 +79,7 @@ test("review_verdict records a reviewer's own verdict and review_read reads it b
   expect((other as ToolError).message).toBe("You are T60, so you record only your own verdict, not T61's.");
 });
 
-test("review_read: an author reads any PR of its project it names, one it is stacked on, and no other project's", async () => {
+test("review_read: an author reads any PR of its bot it names, one it is stacked on, and no other bot's", async () => {
   const { k, hub, task } = lab();
   registerLeadCalls(hub);
   const mine = k.pr(10, "fleetd/T70-a", { "a.md": "a\n" });
@@ -105,13 +105,13 @@ test("review_read: an author reads any PR of its project it names, one it is sta
   expect(own.prs.map((p) => p.pr)).toEqual([mine]);
   const refused = await Promise.resolve().then(() => read(author, { op: "review_read", pr: theirs })).catch((e) => e);
   expect((refused as ToolError).code).toBe("forbidden");
-  expect((refused as ToolError).message).toBe(`PR ${theirs} is not one of this project's PRs; another project's reviews are not yours to read.`);
+  expect((refused as ToolError).message).toBe(`PR ${theirs} is not one of this bot's PRs; another bot's reviews are not yours to read.`);
   // A reviewer still reads only the PR it reviews.
   const notReviewed = await Promise.resolve().then(() => read(reviewer, { op: "review_read", pr: mine })).catch((e) => e);
   expect((notReviewed as ToolError).message).toContain("is not one of T72's PRs");
 });
 
-test("start wires the lead calls and the project's trains into project_get", async () => {
+test("start wires the lead calls and the bot's trains into project_get", async () => {
   const { k, hub } = lab();
   start(hub);
   k.train.stop();

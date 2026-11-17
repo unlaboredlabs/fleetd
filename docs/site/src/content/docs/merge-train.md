@@ -137,7 +137,7 @@ then refuses a merge for a missing approval, the PR waits for the approval as ab
 
 The train watches the checks it didn't wait for on the commit it merged onto the base, and the checks its batches
 [skip](#scarce-runners), even required ones. When one fails there, fleetd
-opens a fix order for the project, so its lead takes it up like any order: it names the check, the base, the PR that
+opens a fix order for the bot, so its lead takes it up like any order: it names the check, the base, the PR that
 merged and the run's link. One failure opens one order. The same check failing again on the next merges, while that
 order is open, is that order's; once it is closed, a new failure opens a new one. A cancelled run is no failure. The
 watch ends once every check on the commit has finished, and after 6 hours at most. With an empty fast set the train
@@ -193,13 +193,13 @@ When a PR is merged into a branch the train guards without the train, such as by
 within a minute and records `pr.merged_outside`. The next PR in line is rebased onto the new base as usual, so nothing
 else changes.
 
-Every commit that reaches a project's base branch is also recorded as a landing (`work.landed`), however it got there:
+Every commit that reaches a bot's base branch is also recorded as a landing (`work.landed`), however it got there:
 by the train, from a PR merged outside it, or pushed straight to the branch. fleetd reads this with plain git on the
-project's machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout's
+bot's machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout's
 `origin/HEAD`. A landing ends the claims it matches: the same branch or PR, a closing reference to the claim's issue
 in its message ("Fixes #12", "Closes SHOP-12"; a mere mention doesn't count), or a direct push by the claim's own
-author whose message matches its title closely. The project's lead is told once about each landing that didn't come
-through the train. When git on the project's machine can't reach the remote (for SSH, the key has to be in the
+author whose message matches its title closely. The bot's lead is told once about each landing that didn't come
+through the train. When git on the bot's machine can't reach the remote (for SSH, the key has to be in the
 `ssh-agent` the node runs with), the lead is told once, with git's reason.
 
 Each host's default merge message names its PR: GitHub, Gitea and Forgejo (`Merge pull request #12`, or a squash
@@ -311,7 +311,7 @@ keep a PR out: the batch's own CI decides. A check the batch PR [skips](#scarce-
 own commit too. A fast-set check whose job the PR's own tree doesn't define, because its branch predates the job,
 doesn't keep it out. The batch's CI runs that job on the combined tree and must pass it. Then:
 
-1. It makes its own branch from the base on GitHub, `train/batch` under the project's branch prefix
+1. It makes its own branch from the base on GitHub, `train/batch` under the bot's branch prefix
    (`fleetd/train/batch` by default), and merges each PR into it in order.
 2. It opens one PR for them, whose CI runs once.
 3. When that PR is green, it posts `fleetd/train` and merges it as one squash.
@@ -542,12 +542,12 @@ toward [CI's](#ci-time). A `wait_ci` goes on through it too.
 
 ## Several repos {#repos}
 
-A project can hold several repos. Each repo has its own train, so its PRs line up and merge on their own, apart from
+A bot can hold several repos. Each repo has its own train, so its PRs line up and merge on their own, apart from
 the other repos' PRs. The train for a repo reads its rules and its branch prefix from that repo's checkout. If two
-projects share a repo, they share its train and its rules.
+bots share a repo, they share its train and its rules.
 
-A project with two or more repos takes only PRs from its repos. A PR from any other repo is refused, and the refusal
-lists the project's repos. A project with one repo, or none, takes PRs from any repo, as before, such as a fork's
+A bot with two or more repos takes only PRs from its repos. A PR from any other repo is refused, and the refusal
+lists the bot's repos. A bot with one repo, or none, takes PRs from any repo, as before, such as a fork's
 upstream.
 
 ## Merge order {#order}
@@ -562,11 +562,11 @@ The PRs can be in the same repo or any other. Enqueuing a PR that is already in 
 ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the `hold` label to keep it
 from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.
 
-An `after` PR of a repo no project has counts too: the train reads only its state on GitHub.
+An `after` PR of a repo no bot has counts too: the train reads only its state on GitHub.
 
 A PR stacked on an agent's open PR waits for it without an `after`: one whose commits hold that PR's latest commit, as
 when it is based on that PR's branch or built on top of it. Only a PR of the same repo from an agent's branch (under the
-project's branch prefix) counts, never a fork's PR or a standing branch such as `develop`. Once the branch a PR is based
+bot's branch prefix) counts, never a fork's PR or a standing branch such as `develop`. Once the branch a PR is based
 on has landed, however it merged, the train first points the PR at that branch's base, so it lands there and not in
 the branch that already merged.
 
@@ -585,7 +585,7 @@ its turn. To hold every PR of a repo, label each one.
 
 ### People merge here {#people-merge}
 
-When people merge the PRs, not the train, say so in the project's
+When people merge the PRs, not the train, say so in the bot's
 [instructions](/docs/what-agents-are-told#instructions):
 
 ```text

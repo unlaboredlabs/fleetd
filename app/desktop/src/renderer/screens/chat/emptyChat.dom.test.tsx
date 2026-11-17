@@ -84,7 +84,7 @@ const mount = async (ui: ReactNode, features?: string[], open: string = "devbox/
   for (let i = 0; i < 6; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-it("asks what the lead should do in the project, with its starters", async () => {
+it("asks what the lead should do in the bot, with its starters", async () => {
   await mount(<ChatScreen project={SHOP} />, undefined, "devbox/shop");
   expect(host.querySelector("h2")?.textContent).toBe("What should the lead do in shop?");
   const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);
@@ -93,7 +93,7 @@ it("asks what the lead should do in the project, with its starters", async () =>
 
 const tabs = () => [...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"));
 
-it("gives every project the same sections, Asked work under Plan", async () => {
+it("gives every bot the same sections, Asked work under Plan", async () => {
   await mount(<ProjectPanel project={ADA} view={{ tab: "asked" }} onWide={() => undefined} />);
   expect(tabs()).toEqual(["agents", "shipping", "plan", "history"]);
   expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("plan");

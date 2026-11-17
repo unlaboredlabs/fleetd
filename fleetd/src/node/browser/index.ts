@@ -321,7 +321,7 @@ export class Broker {
           if (!owner.freshIfBusy) {
             throw new ToolError(
               "invalid",
-              `${(e as Error).message}: it keeps the project's sign-ins, and one browser at a time runs on them.`,
+              `${(e as Error).message}: it keeps the bot's sign-ins, and one browser at a time runs on them.`,
               "end that session first (session_end there), or wait for it to end, then session_start again",
             );
           }
@@ -746,7 +746,7 @@ export function screenHooks(node: Node, holdsScreen: (thread: string) => boolean
       try {
         await b.forgetSignins(projectId);
       } catch (e) {
-        throw new Error(`project ${projectId}'s browser sign-ins were not forgotten: ${(e as Error).message}`);
+        throw new Error(`bot ${projectId}'s browser sign-ins were not forgotten: ${(e as Error).message}`);
       }
     },
   };

@@ -31,7 +31,7 @@ export const PAGE_SESSION = {
 } as const;
 
 export const screensPage = (preview: Fixture): Fixture => {
-  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the hub's projects, Home among them, on devbox, buildbox and the agents' Mac.");
+  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the hub's bots, Home among them, on devbox, buildbox and the agents' Mac.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
   if (f.state.phase !== "live") throw new Error("sessions-preview's hub isn't live");
   f.state = { ...f.state, features: [...(f.state.features ?? []), "screen_thumbs"] };
@@ -39,7 +39,7 @@ export const screensPage = (preview: Fixture): Fixture => {
   if (snapshot === undefined) throw new Error("sessions-preview has no snapshot");
   // Your own Home beside the projects, and the agents' Mac beside devbox and buildbox.
   const projects = snapshot["projects"];
-  if (!Array.isArray(projects)) throw new Error("no projects");
+  if (!Array.isArray(projects)) throw new Error("no bots");
   projects.unshift({
     ...HOME,
     title: "Home",

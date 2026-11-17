@@ -139,7 +139,7 @@ describe("base and PRs", () => {
     expect(fix).toBe("gh auth login");
   });
 
-  test("a writer's PR is the host's; unread, only one on the project's own remote", () => {
+  test("a writer's PR is the host's; unread, only one on the bot's own remote", () => {
     expect(shortRemote("git@github.com:acme/shop.git")).toBe("github.com/acme/shop");
     expect(shortRemote("https://user@github.com/acme/shop/")).toBe("github.com/acme/shop");
     expect(githubRepo("git@github.com:acme/shop.git")).toBe("acme/shop");
@@ -199,7 +199,7 @@ describe("render", () => {
     expect(resolveProfile("medium", "review", ["high", "medium"])).toBe("high");
     expect(resolveProfile(undefined, "write", ["high", "medium"])).toBe("high");
     expect(resolveProfile("medium", "write", ["high", "medium"])).toBe("medium");
-    expect(() => resolveProfile("max", "read", ["high"])).toThrow("this project doesn't allow profile max; it allows high");
+    expect(() => resolveProfile("max", "read", ["high"])).toThrow("this bot doesn't allow profile max; it allows high");
   });
 });
 
@@ -220,19 +220,19 @@ describe("duplicates", () => {
 
   test("exact and strong matches are refused until named; a person's claim never passes; weak ones are listed", () => {
     expect(refusal(() => judge([match("T3", "strong")], undefined, new Set()))).toBe(
-      'Possible duplicate: T3 "dark mode" (running, project shop): 3 shared words.',
+      'Possible duplicate: T3 "dark mode" (running, bot shop): 3 shared words.',
     );
-    expect(judge([match("T3", "strong")], ["T3"], new Set())).toEqual({ elsewhere: ['T3 "dark mode" (running, project shop): 3 shared words'], overridden: ["T3"] });
-    expect(refusal(() => judge([match("T3", "exact")], undefined, new Set(["T3"])))).toBe('Taken: T3 "dark mode" (running, project shop): 3 shared words.');
+    expect(judge([match("T3", "strong")], ["T3"], new Set())).toEqual({ elsewhere: ['T3 "dark mode" (running, bot shop): 3 shared words'], overridden: ["T3"] });
+    expect(refusal(() => judge([match("T3", "exact")], undefined, new Set(["T3"])))).toBe('Taken: T3 "dark mode" (running, bot shop): 3 shared words.');
     const human = match("C1", "exact", { kind: "claim", owner: { kind: "human_session", keyId: "k", label: "laptop" } });
     expect(refusal(() => judge([human], ["C1"], new Set()))).toBe(
       'Taken by a person: C1 "dark mode" (running, a person\'s session, laptop): 3 shared words. A person\'s claim can\'t be passed over with notDuplicateOf.',
     );
     expect(judge([match("T3", "weak", { taskId: "T3" })], undefined, new Set(["T3"])).elsewhere).toEqual([
-      'T3 "dark mode" (running, project shop, changes unknown): 3 shared words',
+      'T3 "dark mode" (running, bot shop, changes unknown): 3 shared words',
     ]);
     expect(forWriter([match("T3", "weak", { taskId: "T3" }), match("T4", "weak", { taskId: "T4" })], "T3")).toEqual([
-      'T4 "dark mode" (running, project shop): 3 shared words',
+      'T4 "dark mode" (running, bot shop): 3 shared words',
     ]);
   });
 });

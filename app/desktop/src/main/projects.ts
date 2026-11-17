@@ -10,7 +10,7 @@ export { readDrop } from "./drop";
 
 export const pickFolder = async (sender: WebContents): Promise<string | null> => {
   const win = BrowserWindow.fromWebContents(sender);
-  const options = { title: "Add a project", buttonLabel: "Add", properties: ["openDirectory" as const] };
+  const options = { title: "Add a bot", buttonLabel: "Add", properties: ["openDirectory" as const] };
   const result = win === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(win, options);
   return result.canceled ? null : (result.filePaths[0] ?? null);
 };

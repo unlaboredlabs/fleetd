@@ -333,7 +333,7 @@ export class Tasks {
     // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
     const repo = this.repoOf(task);
     const checkout = repo?.checkout ?? r;
-    const gone = (p: ProjectRef) => new StartError(false, `No project ${p.projectId} on machine ${p.machineId}.`);
+    const gone = (p: ProjectRef) => new StartError(false, `No bot ${p.projectId} on machine ${p.machineId}.`);
     const project = store(this.hub).projectGet(r);
     if (!project) throw gone(r);
     let workspaceRoot = project.workspaceRoot;
@@ -1503,7 +1503,7 @@ export class Tasks {
       throw storeError(error);
     }
     if (stored && sameProject(stored.task.projectRef, caller.projectRef)) return stored;
-    throw leadError("not_found", `No task ${taskId} in this project.`, "Call `agents`.");
+    throw leadError("not_found", `No task ${taskId} in this bot.`, "Call `agents`.");
   }
 
   /** The task as stored: running, queued with its reason, or failed if the node refused the launch. */
@@ -1529,12 +1529,12 @@ export class Tasks {
     if (holder) {
       throw leadError(
         "invalid",
-        `This project is archived: its directory is repo ${holder.repo.name} of project ${holder.project.projectId} on ${holder.project.machineId}.`,
-        "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
+        `This bot is archived: its directory is repo ${holder.repo.name} of bot ${holder.project.projectId} on ${holder.project.machineId}.`,
+        "Write to that bot's lead instead; project_repo_remove takes the repo out of it and brings this bot back.",
       );
     }
     // Nor does one archived in the app: its lead takes no turn, even one that outlived its stop.
-    if (isArchived) throw leadError("invalid", "This project is archived: it starts no agents.", "Ask the person to bring it back in the app first.");
+    if (isArchived) throw leadError("invalid", "This bot is archived: it starts no agents.", "Ask the person to bring it back in the app first.");
     // Binding may ask the node, and so does each writer's changed paths: both happen before the lock.
     const repo = this.spawnRepo(r, input);
     const other = repo && !sameProject(repo.checkout, r) ? repo : undefined;
@@ -1557,7 +1557,7 @@ export class Tasks {
     try {
       const ws = this.workstream(input.workstreamId);
       if (!ws || !sameProject(ws.projectRef, r)) {
-        throw leadError("not_found", `No workstream ${input.workstreamId} in this project.`, "Use a workstream id from your digest.");
+        throw leadError("not_found", `No workstream ${input.workstreamId} in this bot.`, "Use a workstream id from your digest.");
       }
       if (ws.state !== "open") {
         throw leadError("invalid", `Workstream ${input.workstreamId} is ${ws.state}; tasks run only for open workstreams.`);
@@ -1572,7 +1572,7 @@ export class Tasks {
       try {
         allowed = this.ports.allowedProfiles(r);
       } catch (error) {
-        throw leadError("failed", `The project's profiles were not read: ${(error as Error).message}.`, "Retry.");
+        throw leadError("failed", `The bot's profiles were not read: ${(error as Error).message}.`, "Retry.");
       }
       let profile: string;
       try {
@@ -1696,9 +1696,9 @@ export class Tasks {
       const named = all.find((repo) => repo.name === input.repo);
       if (named) return named;
       if (all.length === 0) {
-        throw leadError("not_found", `No repo ${input.repo} in this project: it has none.`, "Leave repo out: the agent works in the project's directory.");
+        throw leadError("not_found", `No repo ${input.repo} in this bot: it has none.`, "Leave repo out: the agent works in the bot's directory.");
       }
-      throw leadError("not_found", `No repo ${input.repo} in this project.`, `Use one of its repos: ${all.map((x) => x.name).join(", ")}.`);
+      throw leadError("not_found", `No repo ${input.repo} in this bot.`, `Use one of its repos: ${all.map((x) => x.name).join(", ")}.`);
     }
     const ofPr = input.pr !== undefined ? all.find((repo) => holdsPr(repo, input.pr as string)) : undefined;
     return ofPr ?? all.find((repo) => sameProject(repo.checkout, r));
@@ -1733,7 +1733,7 @@ export class Tasks {
     if (found && sameProject(found.project, task.projectRef)) {
       return sameProject(found.repo.checkout, task.projectRef) ? undefined : found.repo;
     }
-    throw new StartError(false, `its repo ${task.repoId} was removed from the project`);
+    throw new StartError(false, `its repo ${task.repoId} was removed from the bot`);
   }
 
   /** The node checkout a task works in: its repo's, else the project's own directory. */

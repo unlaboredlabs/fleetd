@@ -1,15 +1,15 @@
 ---
-title: Projects
-description: "Add a project or start a new one, choose who sees it, its branch, task profiles and settings, what its lead asks first, and how it plans the work."
+title: Bots
+description: "Add a bot or start a new one, choose who sees it, its branch, task profiles and settings, what its lead asks first, and how it plans the work."
 ---
 
-A [project](/docs/glossary#project) is a chat with a lead, in a folder of its own, holding zero or more repos. Send
+A [bot](/docs/glossary#project) is a chat with a lead, in a folder of its own, holding zero or more repos. Send
 it work and follow that work to merged pull requests, or keep one with no repo as your own assistant: one for home,
-one for taxes. Every project has the same abilities: memory, [automations](/docs/automations),
+one for taxes. Every bot has the same abilities: memory, [automations](/docs/automations),
 [screens](/docs/browser-sessions), [kept sign-ins](#sign-ins), [purchases](#purchases), [skills](#skills) and
 [links to other hubs](#hub-links).
 
-## Add a project {#add-a-project}
+## Add a bot {#add-a-project}
 
 1. Add a GitHub repo. fleetd clones it onto a worker:
 
@@ -43,13 +43,13 @@ one for taxes. Every project has the same abilities: memory, [automations](/docs
 | A GitHub URL or `owner/repo` | Clones it onto the least busy online worker, into `~/src` (or `~/code`, `~/projects`). |
 | A path, such as `~/src/storefront` | Adds that existing checkout on this machine. |
 | A folder with no git, such as `~/notes` | Adds it as a plain folder: its lead chats, remembers and uses screens there. Agents that change code need a repo. |
-| `--new <name>`, such as `--new "Field notes"` | Starts a new, empty project: the machine makes its folder. See [Start a new project](#start-a-new-project). |
+| `--new <name>`, such as `--new "Field notes"` | Starts a new, empty bot: the machine makes its folder. See [Start a new bot](#start-a-new-project). |
 | Nothing, in a terminal | Lists checkouts on every worker and your repos from `gh repo list`, to pick from. |
 
 | Option | Does |
 |---|---|
 | `--machine <id>` | Clone to, or look for the path on, that worker. |
-| `--dest <dir>` | Clone into that folder, or make a new project's folder there. |
+| `--dest <dir>` | Clone into that folder, or make a new bot's folder there. |
 | `--git-init` | With `--new`: run `git init` in the new folder. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
@@ -82,20 +82,20 @@ From a terminal:
 fleetd project add --new "Field notes" --machine devbox
 ```
 
-### List and remove projects
+### List and remove bots {#list-and-remove-projects}
 
 ```sh
 fleetd project list
 fleetd project remove devbox/storefront
 ```
 
-`list` prints each project as `<machineId>/<projectId>`, its title and its folder; `--archived` includes archived
-ones. `remove` stops the project's agents and erases it: see [Delete a project](#delete). Its files, branches and
+`list` prints each bot as `<machineId>/<projectId>`, its title and its folder; `--archived` includes archived
+ones. `remove` stops the bot's agents and erases it: see [Delete a bot](#delete). Its files, branches and
 worktrees stay.
 
 ### Repos {#repos}
 
-A project is a lead and its own folder, holding zero or more git repos. A project added from a checkout holds that
+A bot is a lead and its own folder, holding zero or more git repos. A bot added from a checkout holds that
 checkout; add more to keep one lead across several repos.
 
 ```sh
@@ -105,39 +105,39 @@ fleetd project repo list devbox/storefront
 fleetd project repo remove devbox/storefront api
 ```
 
-- **Add** takes a checkout on the project's machine, or a GitHub repo to clone there (with `--dest` and
+- **Add** takes a checkout on the bot's machine, or a GitHub repo to clone there (with `--dest` and
   `--use-existing`, as for `project add`). The name comes from the remote or folder unless you pass `--name`.
-- **The checkout stops showing as a project** while a project holds it. A checkout that was a project of its own is
+- **The checkout stops showing as a bot** while a bot holds it. A checkout that was a bot of its own is
   archived: its chat and history stay, and its lead no longer runs. fleetd refuses while its agents run.
-- **One repo can be in several projects.**
-- **The project's environment variables, MCP servers and skills** go to every one of its checkouts.
-- **The lead's first message** lists the project's repos, and each agent works in the one the lead names: see
-  [Agents in a project's repos](#agents-in-repos).
-- **Remove** cancels that repo's running agents. The project's other work goes on. Nothing is deleted: the checkout stays
-  on its machine and, once no project holds it, shows as a project of its own again. A project's own folder can't be
-  removed this way; remove the project instead.
+- **One repo can be in several bots.**
+- **The bot's environment variables, MCP servers and skills** go to every one of its checkouts.
+- **The lead's first message** lists the bot's repos, and each agent works in the one the lead names: see
+  [Agents in a bot's repos](#agents-in-repos).
+- **Remove** cancels that repo's running agents. The bot's other work goes on. Nothing is deleted: the checkout stays
+  on its machine and, once no bot holds it, shows as a bot of its own again. A bot's own folder can't be
+  removed this way; remove the bot instead.
 
-The same actions are in Settings → Projects → Repos, and agents have `project_repo_add`, `project_repo_list` and
+The same actions are in Settings → Bots → Repos, and agents have `project_repo_add`, `project_repo_list` and
 `project_repo_remove`.
 
-A project's lead adds and removes its own project's repos when you ask it in the chat: see
+A bot's lead adds and removes its own bot's repos when you ask it in the chat: see
 [What the lead sets up](#lead-setup).
 
-## Project settings {#settings}
+## Bot settings {#settings}
 
-Open a project's settings in the desktop app: Settings → Projects, then pick the project, or **Open settings** in its
-right-click menu. Its **Project** page has these, in order:
+Open a bot's settings in the desktop app: Settings → Bots, then pick the bot, or **Open settings** in its
+right-click menu. Its **Bot** page has these, in order:
 
 | Setting | Does |
 |---|---|
-| Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the project is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
-| Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the project. On the phone it's in the project's info, under **Edit** on its icon. |
-| Name | How fleetd shows the project. Its folder keeps its own name. |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Setup**: what runs in its new worktrees. See [Setup commands](#setup). |
-| Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
+| Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the bot is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
+| Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the bot. On the phone it's in the bot's info, under **Edit** on its icon. |
+| Name | How fleetd shows the bot. Its folder keeps its own name. |
+| Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Setup**: what runs in its new worktrees. See [Setup commands](#setup). |
+| Environment variables | Variables every new agent of the bot gets. See [Environment variables](#env). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
-| MCP servers | One list of the project's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
+| MCP servers | One list of the bot's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
 | Sign-ins | **Forget sign-ins…** signs its browser out of every site. It shows once its machine keeps sign-ins for it; until then the row says "None kept yet." See [Sign-ins](#sign-ins). |
 | Skills | **Open its skills** goes to the list on its Agents page. See [Skills](#skills). |
 | Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
@@ -146,19 +146,19 @@ right-click menu. Its **Project** page has these, in order:
 
 Its other pages: **Agents** has its [max agents](#max-agents), the [task profiles](#models) it allows and its
 [skills](#skills). **Instructions & memory** has its instructions, what its lead remembers, and **Refresh memory every
-night**: on (the default), around 04:00 on a day with chat or orders, the lead tidies the project's memory and the chat
+night**: on (the default), around 04:00 on a day with chat or orders, the lead tidies the bot's memory and the chat
 shows one line of its changes, with Undo; off, memory changes only as the lead and you write it. Beside the switch are
 the refresh's hour, its next and last run, and **Run now**. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
 **Automations** has its [automations](/docs/automations). **Built-in prompts**, at the foot of Instructions & memory,
 opens the prompts fleetd itself sends its agents.
 
-The project's worktrees live on its machine in `~/.fleetd/node/worktrees/<project>/`, one per agent, each starting
+The bot's worktrees live on its machine in `~/.fleetd/node/worktrees/<project>/`, one per agent, each starting
 from the repo's default branch, freshly fetched (see [Which branch](#branches)). The chat lists any the nightly
 [cleanup](#cleanup) keeps, and Delete lists any with uncommitted changes.
 
 ### Environment variables {#env}
 
-A project's variables live in its [Vault](/docs/vault): Settings › Projects › *project* › Vault (the project's
+A bot's variables live in its [Vault](/docs/vault): Settings › Bots › *bot* › Vault (the bot's
 General page has a line with **Open Vault**). Add one at a time with **+ › Variable**, or paste a `.env` file with
 **+ › Paste .env**. A pasted file may use `export`, quotes and `#` comments, and a quoted value may run over several
 lines, as a certificate chain or a service account's JSON does. A name that looks like a credential (`STRIPE_KEY`,
@@ -166,13 +166,13 @@ lines, as a certificate chain or a service account's JSON does. A name that look
 
 | Kind | Where its value lives | Shown |
 |---|---|---|
-| Plain | The hub's vault and the project's machine. | In the list. |
-| Secret | The hub's vault, encrypted, and the project's machine. | As dots; its creator or an admin can [show it](/docs/vault#reveal) behind Touch ID or Face ID. |
+| Plain | The hub's vault and the bot's machine. | In the list. |
+| Secret | The hub's vault, encrypted, and the bot's machine. | As dots; its creator or an admin can [show it](/docs/vault#reveal) behind Touch ID or Face ID. |
 
 A value is sealed in the app to the hub's own key. The hub keeps it encrypted in the vault and delivers it to the
-project's machine, sealed to that machine's key, whenever it changes or the machine comes back online. The node keeps
-the project's variables in a file of its own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every
-claude it starts for the project from then on. An agent already running gets a change at its next start. An
+bot's machine, sealed to that machine's key, whenever it changes or the machine comes back online. The node keeps
+the bot's variables in a file of its own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every
+claude it starts for the bot from then on. An agent already running gets a change at its next start. An
 [order's variable](/docs/approvals-and-secrets#order-variables) of the same name wins for that order's agents. Every
 start of an agent is in the vault's activity, by variable name.
 
@@ -187,39 +187,39 @@ Only exact matches are caught. Part of a line (`head -c 20` of a key, one field 
 encoding, or a value under 4 characters goes out as printed, so keep secrets out of output where you can. A line of a
 secret is masked even where the same text comes from somewhere else, such as a generic line of a JSON file.
 
-Lists show a secret by its name, fingerprint and size in bytes (the size counts toward the project's total), never
+Lists show a secret by its name, fingerprint and size in bytes (the size counts toward the bot's total), never
 its value.
 
 Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`, `CLAUDE_CODE_TMPDIR`) and every
-`FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
+`FLEETD_` variable itself, and a bot can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
 refused. A variable the node already gives every session, from its own environment or
 [`claude.env`](/docs/config-and-files), keeps the node's value.
 
 `HEAVY_LANGUAGE_SERVERS=1` turns Claude Code's heavy language servers (rust-analyzer and the like) back on for the
-project's agents, at about 5 GB each: see [Heavy language servers are off](/docs/what-agents-are-told#language-servers).
+bot's agents, at about 5 GB each: see [Heavy language servers are off](/docs/what-agents-are-told#language-servers).
 
 | Limit | Is |
 |---|---|
-| Variables in a project | 100 |
+| Variables in a bot | 100 |
 | One value, plain or secret | 64 KiB, any number of lines, no NUL character |
-| All of a project's values together | 512 KiB: every one goes into every agent's environment, and the system refuses to start a process whose environment is too large |
+| All of a bot's values together | 512 KiB: every one goes into every agent's environment, and the system refuses to start a process whose environment is too large |
 
 An agent that needs a variable no one set asks its lead for it by name; the value you enter then reaches only that
 order's agents, until the order closes: see [A variable an agent asks for](/docs/approvals-and-secrets#order-variables).
 Each agent's brief lists the variables it gets by name.
 
-From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
+From an MCP client: `project_settings_get` reads a bot's settings, `project_settings_set` renames it or sets
 `setup`, and the [vault's tools](/docs/vault#clients) set and remove variables. For one release,
 `project_env_set` (a secret sealed to the machine's `boxPubKey`) still works and its variables land in the vault. Both
 take only a human key. Give either settings call a `repo` (a repo's name, such as
-`api`) to read or set that repo's own `setup`; without one, or with the project's own directory's, it is the project's.
+`api`) to read or set that repo's own `setup`; without one, or with the bot's own directory's, it is the bot's.
 
 ### Setup commands {#setup}
 
-Each repo's **Setup**, under the repos (**Setup: api** and so on once the project has more than one): commands that
-run in each new worktree of that repo, before its agent starts: install dependencies, generate code. The project's
-own directory's is the project's; a repo without any runs none. One a line, in order; each runs with `sh -c` in the
-worktree, with the project's variables (and the order's), the machine's build jobs and the agent's own `$TMPDIR`. The
+Each repo's **Setup**, under the repos (**Setup: api** and so on once the bot has more than one): commands that
+run in each new worktree of that repo, before its agent starts: install dependencies, generate code. The bot's
+own directory's is the bot's; a repo without any runs none. One a line, in order; each runs with `sh -c` in the
+worktree, with the bot's variables (and the order's), the machine's build jobs and the agent's own `$TMPDIR`. The
 first that fails, or runs past 10 minutes, stops the rest.
 
 - Each command shows on the agent's thread in the app as it runs, with its exit code and the end of its output, and
@@ -237,30 +237,30 @@ first that fails, or runs past 10 minutes, stops the rest.
   (`pnpm install --frozen-lockfile --prefer-offline`, `npm ci`, with the shared package cache). A finished
   reviewer's cargo `target/` goes to the next reviewer of the same checkout, so only what changed rebuilds; the machine
   keeps the newest two (`warmBuilds` in node.json) and drops any older than a week.
-- Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
+- Setup runs only in agents' worktrees, never in the bot's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 
-### Who sees a project {#who-sees}
+### Who sees a bot {#who-sees}
 
-Every project is open to everyone on its hub: its chat, orders, approvals, screens, vault items and settings, as
-each person's role allows on its machine. There is no private project; work only you should see goes on a hub of
+Every bot is open to everyone on its hub: its chat, orders, approvals, screens, vault items and settings, as
+each person's role allows on its machine. There is no private bot; work only you should see goes on a hub of
 your own ([Several hubs](/docs/several-hubs)).
 
-- **Leads run on the hub's account.** Every project's lead runs on the Claude account [Claude accounts](/docs/people#claude)
+- **Leads run on the hub's account.** Every bot's lead runs on the Claude account [Claude accounts](/docs/people#claude)
   sets for leads, and its 1Password fills ([purchases](#purchases), [secure input](#secure-input), logins) use only
-  the project's own `OP_SERVICE_ACCOUNT_TOKEN`. An order's agents run on the account of whoever started it.
-- **A removed person's projects stay.** Removing someone from the hub changes none of their projects.
+  the bot's own `OP_SERVICE_ACCOUNT_TOKEN`. An order's agents run on the account of whoever started it.
+- **A removed person's bots stay.** Removing someone from the hub changes none of their bots.
 - **Your user memory is how you work.** Every piece of work you start reads it, so keep it to that; anything about a
-  project goes in the project's memory, which everyone on the hub can read.
+  bot goes in the bot's memory, which everyone on the hub can read.
 
-#### Former Only me projects {#only-me}
+#### Former Only me bots {#only-me}
 
-Earlier fleetd had an **Only me** switch that kept a project to one person. It is gone. At the update, each project
+Earlier fleetd had an **Only me** switch that kept a bot to one person. It is gone. At the update, each bot
 that had it on becomes an ordinary one, open to everyone on the hub. On a hub with more than one person, those
-projects are also archived, so they don't turn up in teammates' sidebars uninvited: their owner (or anyone) brings one
+bots are also archived, so they don't turn up in teammates' sidebars uninvited: their owner (or anyone) brings one
 back from the archive. On a hub of one person, nothing you can see changes.
 
-Your sidebar lists projects newest first, your pinned ones on top; pin one from its right-click menu. ⌘1–9 (Ctrl on
+Your sidebar lists bots newest first, your pinned ones on top; pin one from its right-click menu. ⌘1–9 (Ctrl on
 Linux and Windows) open the first nine.
 
 ### Sections {#sections}
@@ -281,7 +281,7 @@ chats in no section, and sections.
 
 Your sections are yours: the hub keeps them, in your order, for each person, so they're the same on each of your
 computers and on [your phone](/docs/mobile#sections). A teammate's sections never change your list, and each hub keeps
-its own. A name is up to 40 characters, no two sections share one, and you can have up to 50. A project that's deleted
+its own. A name is up to 40 characters, no two sections share one, and you can have up to 50. A bot that's deleted
 leaves its section by itself; an archived one keeps its place. A change shows at once; if the hub refuses it, the list
 goes back and a notice says why.
 
@@ -323,7 +323,7 @@ those of agents that finished more than 3 days ago. No model runs for it.
 
 - Only a worktree whose work is safe elsewhere goes: no uncommitted changes, and every commit on a remote branch or
   already in the base. Its branch stays unless it merged, so every commit stays reachable.
-- A worktree holding work that exists only there is kept, and the project's chat says so once: one line a night, like
+- A worktree holding work that exists only there is kept, and the bot's chat says so once: one line a night, like
   "Cleanup kept 2 worktrees with unsaved work", which opens to each one's task, what is unsaved and its path to copy.
   Push or delete that work, and the next night's cleanup removes it.
 - One its machine couldn't remove (offline, a git error) is tried again the next night. After a week of failed tries
@@ -349,7 +349,7 @@ git remote set-head origin release
 
 ## Its lead {#its-lead}
 
-Each project has one [lead](/docs/glossary#lead) and one chat with it. Your first message starts the lead: there is
+Each bot has one [lead](/docs/glossary#lead) and one chat with it. Your first message starts the lead: there is
 nothing to start by hand. See [Chat with the lead](/docs/chat).
 
 If the lead can't start, your message waits and the chat says why. Common causes:
@@ -362,97 +362,97 @@ If the lead can't start, your message waits and the chat says why. Common causes
 
 Once the worker is back with a working `claude`, the lead starts and reads every waiting message.
 
-### Agents in a project's repos {#agents-in-repos}
+### Agents in a bot's repos {#agents-in-repos}
 
-A project that holds [repos](#repos) lists them in its lead's first message, and the lead names the repo each agent
+A bot that holds [repos](#repos) lists them in its lead's first message, and the lead names the repo each agent
 works in (`spawn_agent`'s `repo`). The agent's worktree and branch come from that repo's checkout, its new worktree
-runs the repo's setup commands (or the project's, when the repo has none), and its policy file and the repo's own
+runs the repo's setup commands (or the bot's, when the repo has none), and its policy file and the repo's own
 skills are read from that checkout. Its pull request is on that repo. Without a `repo`, an agent given a PR, such as a
-review, works in that PR's repo, and any other in the project's own repo, or its folder for a project with none. A
-repo the project doesn't have is refused, with the project's repos. An agent whose repo is removed before it starts
+review, works in that PR's repo, and any other in the bot's own repo, or its folder for a bot with none. A
+repo the bot doesn't have is refused, with the bot's repos. An agent whose repo is removed before it starts
 fails, and its lead hears why. An agent in another repo always gets a worktree of its own, so it doesn't start in a
 repo with no commits yet, nor run a reader on a machine whose fleetd is too old (update that machine).
 
 A writer is checked for duplicates against the work in flight on its own repo only. The lead's `agents` list names
-the project's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
+the bot's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
 
 ### What the lead sets up {#lead-setup}
 
-Ask the lead in its chat and it changes its own project itself, with no approval card, in every approval mode:
+Ask the lead in its chat and it changes its own bot itself, with no approval card, in every approval mode:
 
 | You ask for | The lead calls | What happens |
 |---|---|---|
-| A repo, by GitHub URL or `owner/repo` | `repo_add` with `url` | It is cloned onto the project's machine, as **Add repo** does. The lead is woken when the clone ends, or when it fails, with the fix. |
-| A repo that is already a checkout on the project's machine | `repo_add` with `path` | The checkout joins the project. |
+| A repo, by GitHub URL or `owner/repo` | `repo_add` with `url` | It is cloned onto the bot's machine, as **Add repo** does. The lead is woken when the clone ends, or when it fails, with the fix. |
+| A repo that is already a checkout on the bot's machine | `repo_add` with `path` | The checkout joins the bot. |
 | A repo taken out | `repo_remove` | As **Remove…**: its agents stop, and its checkout stays on disk. |
 | A name, an icon, a picture or a color | `project_setup` | A picture is an image file in the lead's folder. An icon replaces a picture. |
-| The project's instructions | `project_setup` with `instructions` | The whole text every agent of the project is told ([Your own instructions](/docs/what-agents-are-told#instructions)); empty clears it. |
-| Setup commands | `project_setup` with `setup` | For the project or one repo: see [Setup commands](#setup). |
+| The bot's instructions | `project_setup` with `instructions` | The whole text every agent of the bot is told ([Your own instructions](/docs/what-agents-are-told#instructions)); empty clears it. |
+| Setup commands | `project_setup` with `setup` | For the bot or one repo: see [Setup commands](#setup). |
 | A plain variable set or removed | `project_setup` with `env` | See [Environment variables](#env). A value that looks like a key or a password is refused: a secret goes through [secure input](#secure-input), which you fill in on your own device. A variable you set as a secret is not the lead's to change. |
-| The project archived | `project_setup` with `archive` | See [Archive](#archive). Only you bring it back. |
+| The bot archived | `project_setup` with `archive` | See [Archive](#archive). Only you bring it back. |
 
-Each change posts one quiet line in the chat, such as "Added the repo api" or "Renamed the project to Storefront",
-with **Open**, which goes to the page of the project's settings that shows it, and **Undo**. Undo is yours, from the
+Each change posts one quiet line in the chat, such as "Added the repo api" or "Renamed the bot to Storefront",
+with **Open**, which goes to the page of the bot's settings that shows it, and **Undo**. Undo is yours, from the
 desktop app or the phone, and puts back what was there before: undoing an added repo takes it out again (its checkout
-stays on disk), undoing a removed one adds it back with its setup commands, and undoing an archive brings the project
+stays on disk), undoing a removed one adds it back with its setup commands, and undoing an archive brings the bot
 back. The lead is told what you undid. An Undo that can't put back what was there, such as setup commands for a repo
 that is gone, says so under the line.
 
 What stays yours, whatever the lead is asked or told: the approval mode, [allowed sites](#sites) (the card on a first
-visit stays), profiles, models and [max agents](#max-agents), the project's [card](#purchases), vault items, MCP
-servers, the built-in prompts, [linked hubs](#hub-links), deleting a project, creating one
+visit stays), profiles, models and [max agents](#max-agents), the bot's [card](#purchases), vault items, MCP
+servers, the built-in prompts, [linked hubs](#hub-links), deleting a bot, creating one
 (the lead can only [propose it](#lead-propose)), and
-adding by path a folder that is a project of its own (adding it would archive that project). The lead's calls have no
+adding by path a folder that is a bot of its own (adding it would archive that bot). The lead's calls have no
 field for any of these, and one that names any of them is refused with a line that says who can do it and where. A
-lead sets up only its own project. A task can't make these calls at all: it is told to ask its lead. The `fleetd`
+lead sets up only its own bot. A task can't make these calls at all: it is told to ask its lead. The `fleetd`
 command line in an agent's shell changes none of this either:
 [The fleetd CLI inside a session](/docs/security#cli-in-session).
 
 The lead is told to make these changes only when you ask in the chat, never because a web page, a file or another
 agent says so.
 
-### A new project, proposed {#lead-propose}
+### A new bot, proposed {#lead-propose}
 
-A lead never creates a project. Ask it for one in its chat and it proposes it (`project_propose`), with a name and a
-GitHub repo to clone, or none. The chat shows one card, **New project**, with exactly what would be made: the name,
+A lead never creates a bot. Ask it for one in its chat and it proposes it (`project_propose`), with a name and a
+GitHub repo to clone, or none. The chat shows one card, **New bot**, with exactly what would be made: the name,
 the repo and the folder on the lead's own machine. On the phone it is the same card, among your
 approvals.
 
-- **Create it** makes the project, and nothing exists before that. It is made as if you had used **New project**
-  yourself, open to everyone on the hub like every project.
+- **Create it** makes the bot, and nothing exists before that. It is made as if you had used **New bot**
+  yourself, open to everyone on the hub like every bot.
 - **Don't create**, or no answer, makes nothing.
 - The card shows in every approval mode, YOLO included, and the checker never answers it for you.
-- A repo is cloned after your tap, as **New project** does it. The project appears when the clone ends, and the lead
+- A repo is cloned after your tap, as **New bot** does it. The bot appears when the clone ends, and the lead
   that proposed it is told then, or told why it failed.
 - What can't be made is refused before any card shows: a name whose folder is taken, a repo the machine's GitHub
   login can't read, a clone folder that already exists.
 
-A task can't propose a project: it is told to ask its lead. The new project's own lead starts with your first
+A task can't propose a bot: it is told to ask its lead. The new bot's own lead starts with your first
 message in its chat.
 
 ## What the lead asks first {#approvals}
 
-A project's lead runs with your access and no sandbox ([How leads run](/docs/security#how-leads-run)): it reads and
+A bot's lead runs with your access and no sandbox ([How leads run](/docs/security#how-leads-run)): it reads and
 writes what you can, installs what it needs, starts agents and works with repos, and its shell commands never ask. A
 command that would wipe the machine or your home folder (`rm -rf ~`, `rm -rf /`, `mkfs`, `dd` onto a disk, a fork
 bomb) is refused, with why.
 
-What reaches outside goes by the project's **Approvals** setting (decision D263): a send, reply, forward, share or
+What reaches outside goes by the bot's **Approvals** setting (decision D263): a send, reply, forward, share or
 invite through an [integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm
-or Submit on a site (`confirm_step`), and a message to another project's lead (`project_message`), whose card is
+or Submit on a site (`confirm_step`), and a message to another bot's lead (`project_message`), whose card is
 headed "Message the lead of Shop" and shows the exact text.
 
-A new project starts in **YOLO**, where none of these asks you. Pick **Checker decides** or **Ask me about
-everything** to be asked. A project made before YOLO became the starting mode keeps the mode it had: the one you
+A new bot starts in **YOLO**, where none of these asks you. Pick **Checker decides** or **Ask me about
+everything** to be asked. A bot made before YOLO became the starting mode keeps the mode it had: the one you
 picked, or **Checker decides** if you never picked one.
 
 | Mode | What happens |
 |---|---|
 | **Checker decides** | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
 | **Ask me about everything** | Every risky action waits for you on a card. No checker runs. |
-| **YOLO** (a new project starts here) | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
+| **YOLO** (a new bot starts here) | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
 
-A card shows in the chat with **Approve** and **Deny**, and the sidebar marks the project *approve* until you answer.
+A card shows in the chat with **Approve** and **Deny**, and the sidebar marks the bot *approve* until you answer.
 **Approve** runs the tool with exactly the input shown; **Deny** tells the lead you said no, with your reason if you
 give one. A prompt that goes away on its own (the run ended) closes its approval.
 
@@ -474,14 +474,14 @@ from then on.
   named public host (no IP address, `localhost`, `.local` or `.ts.net` name), with no query, no address or long code,
   and no part of its path or `#` fragment that your messages or your own data the lead read hold (mail, files,
   calendar; a web page's or a search's own links don't count). Any other link goes to the checker.
-- `project_sites` and `project_site_revoke` list the project's sites, those from your links included, and take one
+- `project_sites` and `project_site_revoke` list the bot's sites, those from your links included, and take one
   back; a revoked site asks again.
 
 ### The checker {#checker}
 
 The checker runs on your own Claude ([Claude accounts](/docs/people#claude)), as a session with no tools at all, in
-an empty folder of fleetd's own rather than the project's (so no `CLAUDE.md`, settings or skills the lead wrote reach
-it), on **Sonnet 5.5 at medium effort**, the hub's choice for every project: a weaker model would quietly weaken the
+an empty folder of fleetd's own rather than the bot's (so no `CLAUDE.md`, settings or skills the lead wrote reach
+it), on **Sonnet 5.5 at medium effort**, the hub's choice for every bot: a weaker model would quietly weaken the
 guard. It reads only:
 
 - the action exactly as it runs: the tool, the recipients or the link, the full text;
@@ -557,22 +557,22 @@ Through a command or a screen, a send is the lead's instruction, not fleetd's ru
 
 The site gate covers fetching and opening a site; it doesn't follow a page after that, or a command's own network
 use. Browser commands inside an open page run unasked: clicks, fills, typing, snapshots, a script in the page. A
-command such as `curl` reaches the network unasked too, and so do the project's agents, which never get an
+command such as `curl` reaches the network unasked too, and so do the bot's agents, which never get an
 integration. A click or a form that leads to another site isn't asked, and Android, iOS and desktop screens
 (`agent-device`) don't ask per site at all. That the lead calls `confirm_step` before a final click is its prompt,
 not fleetd's rules.
 
 ## Purchases {#purchases}
 
-A project can book a hotel or a flight, or buy something online, with a card in the [vault](/docs/vault). You aren't
+A bot can book a hotel or a flight, or buy something online, with a card in the [vault](/docs/vault). You aren't
 asked (decision `projects.one-model`, D310): each purchase goes in its purchases log, fleetd fills the card into the
-checkout, the lead never sees it, and the chat says what was paid. Any project's lead can pay, except an archived one's.
+checkout, the lead never sees it, and the chat says what was paid. Any bot's lead can pay, except an archived one's.
 Make it a virtual card with a monthly limit or a low-limit card ([why](/docs/security#agent-reach)).
 
-1. **Pick a card.** In the project's settings, **Payments › Pick a card…** lists the team vault's cards, which every
-   project may pay with. **Add a card…** and **Import from 1Password…** are beside the list, and pick the card they
+1. **Pick a card.** In the bot's settings, **Payments › Pick a card…** lists the team vault's cards, which every
+   bot may pay with. **Add a card…** and **Import from 1Password…** are beside the list, and pick the card they
    add. fleetd keeps `vault:<id>`.
-   On a hub without the vault, Payments lists the Credit Card items the project's 1Password token reads instead, and
+   On a hub without the vault, Payments lists the Credit Card items the bot's 1Password token reads instead, and
    keeps their `op://vault/item` reference; a hub with the vault imports that card once.
 2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
    name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
@@ -592,7 +592,7 @@ Make it a virtual card with a monthly limit or a low-limit card ([why](/docs/sec
 | Never | Paying an exchange or a broker (trading, crypto) or a money-transfer service is refused. That's decided by who is paid, not by what the basket says: an airport transfer is a purchase like any other. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
 | Unfilled | A purchase whose card isn't filled within 15 minutes ends as expired. |
 
-**Payments** in the project's settings also lists every purchase it made: the shop, the amount, when, and whether
+**Payments** in the bot's settings also lists every purchase it made: the shop, the amount, when, and whether
 its card was filled.
 
 ## Secure input {#secure-input}
@@ -602,70 +602,70 @@ you. The lead doesn't ask for it in the chat. On that page it calls `request_sec
 why, and fleetd checks the page is on that site and the field is there.
 
 - **You type it.** The chat shows a sealed field: the site, what it is and why. What you type is sealed on your device
-  to the project's machine, whose node types it straight into that field on that site (in its frames too), once. The
+  to the bot's machine, whose node types it straight into that field on that site (in its frames too), once. The
   phone app shows what is asked and sends you to the desktop app to enter it.
 - **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the lead names that
   field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes, with the token a
   [purchase](#purchases) uses. You aren't asked (D310).
 
-The value never reaches the lead, the chat, a transcript, a recording or a log. From the fill on, the project's
+The value never reaches the lead, the chat, a transcript, a recording or a log. From the fill on, the bot's
 browser session refuses to read values back, and the field shows as blurred dots. A page that moved to another site
 gets nothing.
 
 ## Sign-ins {#sign-ins}
 
-The browser of a lead that does its own work (one whose project has no repo) stays signed in. Sign in to a site
+The browser of a lead that does its own work (one whose bot has no repo) stays signed in. Sign in to a site
 once, yourself in a takeover or by the lead, and its next browser session is still signed in there. No login page,
 captcha or approve-on-your-phone step each time. A lead with repos gets its browser placed by the hub, as an agent
 does, on a fresh profile.
 
 - **What's kept:** the browser's cookies and site data (local storage, IndexedDB), in a browser profile of the
-  project's own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from
+  bot's own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from
   1Password aren't saved either: each session that fills one still refuses to read it back.
-- **Where:** on the project's machine, under fleetd's node directory (`browser/kept/<project id>`; a node moves one an
+- **Where:** on the bot's machine, under fleetd's node directory (`browser/kept/<project id>`; a node moves one an
   earlier fleetd kept elsewhere there at its start). Only the browsers fleetd starts on it use them, though with no
   sandbox the lead's own commands could read them, as yours can.
-- **Whose:** that project's alone. Another project's lead keeps its own, and agents each start with a fresh, empty
+- **Whose:** that bot's alone. Another bot's lead keeps its own, and agents each start with a fresh, empty
   profile that is thrown away when the session ends.
 - **One at a time:** one browser runs on the profile. If the lead opens a second session while one is open in another
   of its chats, the second is refused until the first ends.
-- **Its machine only:** the lead's browser always runs on the project's own machine, where its profile and folder
+- **Its machine only:** the lead's browser always runs on the bot's own machine, where its profile and folder
   are, never on another one the hub would pick.
-- **Your own screens:** a browser you open for the project on its own machine runs on the same profile, so a site you
+- **Your own screens:** a browser you open for the bot on its own machine runs on the same profile, so a site you
   sign in to there stays signed in for the lead. While the profile is busy, yours opens on a fresh one, and so does
   one on another machine.
 
-**To sign it out of everything,** open the project's settings (**Open settings** in its right-click menu), find
-**Sign-ins** and click **Forget sign-ins…** (shown once its machine keeps sign-ins for the project). A browser session it has open now ends, and the profile is deleted. Its
-chat, memory, folder and allowed sites stay. Deleting the project deletes its sign-ins too. To sign out of one site
+**To sign it out of everything,** open the bot's settings (**Open settings** in its right-click menu), find
+**Sign-ins** and click **Forget sign-ins…** (shown once its machine keeps sign-ins for the bot). A browser session it has open now ends, and the profile is deleted. Its
+chat, memory, folder and allowed sites stay. Deleting the bot deletes its sign-ins too. To sign out of one site
 only, ask the lead to sign out there.
 
 ## Hub links {#hub-links}
 
-A project's lead can open and follow work in projects on another hub, such as a team hub when the project lives on
-your personal one. You make a link key on the hub it reaches and add it to the project. It acts as you there, and
+A bot's lead can open and follow work in bots on another hub, such as a team hub when the bot lives on
+your personal one. You make a link key on the hub it reaches and add it to the bot. It acts as you there, and
 either side can revoke it. [Security](/docs/security#hub-links) has the rules.
 
 **On the hub it reaches.** Open **Settings › Hubs & devices**, **Hub links**, **Links to this hub** (with several hubs, *Links
 to* that hub), and click **Make a link key**:
 
 1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home" there.
-2. Leave **Every project you can reach**, or pick **Only some projects** and tick them.
+2. Leave **Every bot you can reach**, or pick **Only some bots** and tick them.
 3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
    at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
 
-The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
+The list below shows the links made as you: what each is for, its bots, when it was last used, and **Revoke**.
 Signing out the device you made a link on revokes the link too.
 An admin sees everyone's on **Settings › Hub › People**, under **Hub links**, each with the person it acts as.
 
-**On the project's hub.** Open the project's settings, **Linked hubs**, and click **Link a hub**. Paste what you
+**On the bot's hub.** Open the bot's settings, **Linked hubs**, and click **Link a hub**. Paste what you
 copied into **Link key**: the address fills itself. Name the hub as the lead should call it (*acme*), then click
 **Link hub**. The app seals the key to this hub, which checks it with the other hub and never shows it again. Then
 tell the lead what you want ("ask the Shop lead on acme for saved carts"). It follows the order and tells you when it
 lands.
 
-Each linked hub shows its address, the person it acts as there and its projects (*only Shop, Website*, or *every
-project of theirs*), and one word for its state:
+Each linked hub shows its address, the person it acts as there and its bots (*only Shop, Website*, or *every
+bot of theirs*), and one word for its state:
 
 | State | Means |
 |---|---|
@@ -678,22 +678,22 @@ notice says so: its link stays listed there until someone revokes it, but nothin
 
 ## Asked {#asked}
 
-**Asked of other projects**, under the to-do list in the panel's Plan tab beside the chat, lists the work this project's lead asked your
-other projects for (`project_message`), newest first: one row each, with the ask in a line, its state (*Waiting* for
-an order, *Working*, *Merged*, *Done* or *Stopped*), the project and how long ago. A follow-up its lead took into the
+**Asked of other bots**, under the to-do list in the panel's Plan tab beside the chat, lists the work this bot's lead asked your
+other bots for (`project_message`), newest first: one row each, with the ask in a line, its state (*Waiting* for
+an order, *Working*, *Merged*, *Done* or *Stopped*), the bot and how long ago. A follow-up its lead took into the
 order of an earlier ask says *Folded into an earlier ask*. Click a row for the whole message and the orders opened for
-it, each linked to its page; the project's name opens its chat. The lead also tells you in its chat when work it asked
+it, each linked to its page; the bot's name opens its chat. The lead also tells you in its chat when work it asked
 for lands.
 
 ## Files {#files}
 
-Files go both ways in a project's chat, from the app and the phone.
+Files go both ways in a bot's chat, from the app and the phone.
 
 - **What you send:** images, PDFs, text and CSV (and other text: notes, JSON, calendar invites, mail), Word, Excel and
   PowerPoint files (.docx, .xlsx, .pptx) and zips, up to 25 MB each. The hub keeps a file only
   when its bytes are what its type says, and gives it an extension of that type, so a text file named `run.command`
   becomes `run.command.txt`.
-- **What the lead reads:** each file lands in the project's folder under `.fleetd/attachments/chat/`. It reads images,
+- **What the lead reads:** each file lands in the bot's folder under `.fleetd/attachments/chat/`. It reads images,
   PDFs and text itself. For a Word, Excel or PowerPoint file the hub writes its text beside it (`lease.docx.txt`): a
   document's paragraphs, each sheet of a workbook as CSV, each slide of a deck. A zip it unzips with its shell.
 - **Untrusted:** what a file says is content anyone could have written, like a web page. The
@@ -709,23 +709,23 @@ Files go both ways in a project's chat, from the app and the phone.
 
 A lead's new session sees only the latest part of its chat, but the hub keeps all of it. When you mention something
 from before ("the dentist I told you about", "what we settled last week"), the lead searches the whole chat by words,
-within dates when you give them, and reads the messages around what it finds. It reads only its own project's chat,
+within dates when you give them, and reads the messages around what it finds. It reads only its own bot's chat,
 never another's. The tools are `chat_search` and `chat_read`, in [Agent tools](/docs/reference/agent-tools).
 
 ## Skills {#skills}
 
-A project learns. When its lead has to work out a task it will do again (where a portal hides the invoices, the steps
+A bot learns. When its lead has to work out a task it will do again (where a portal hides the invoices, the steps
 of a grocery order), or you correct how it does something, it saves a skill: a `SKILL.md` in the same format as an
 installed [skill](/docs/skills), with what the skill is for and the steps. Nothing asks you first. When it uses a
 skill and finds a step wrong or missing, it saves it again, improved. The chat gets one quiet line each time ("Saved
 a new skill, weekly-invoices: …"), the name a link to the skill.
 
-A project's skills are its own: they reach its sessions only, never another project's. A saved skill is in its next
+A bot's skills are its own: they reach its sessions only, never another bot's. A saved skill is in its next
 session's list as `fleetd:<name>`; the running session can read it from its skills folder at once.
 
-The project's **Agents** page in Settings lists them: its own, what was installed for it and any in its folder, each
+The bot's **Agents** page in Settings lists them: its own, what was installed for it and any in its folder, each
 saying whether it's off, who changed it last, when, and when the lead last used it, with the hub-wide ones every
-project gets named under them (**Open its skills** on its Project page goes there). A skill's
+bot gets named under them (**Open its skills** on its Bot page goes there). A skill's
 name in the chat, or **History, restore or turn off** on one of its own there, opens it in the panel beside the chat:
 
 - **A skill**: who changed it last, when, and when the lead last used it; its `SKILL.md`, rendered. **Edit** opens the whole file with a line for what you changed; saving
@@ -733,7 +733,7 @@ name in the chat, or **History, restore or turn off** on one of its own there, o
 - **History**: every version, newest first, with who wrote it (the lead or you), when, and why. Open one to see what
   it changed against the one before. **Restore** puts an older version back as a new version, so nothing is lost.
   The hub keeps the newest 100 versions of each skill.
-- **On**: turn a skill off and the project's sessions stop getting it, without deleting it. A lead that saves an off
+- **On**: turn a skill off and the bot's sessions stop getting it, without deleting it. A lead that saves an off
   skill again is told it stays off until you turn it back on.
 - **Delete**: removes the skill and its history.
 
@@ -744,9 +744,9 @@ acme/skills@0123456789ab*.
 
 ## For the app and other clients {#clients}
 
-A new project is `project_add {create: true, title, machineId?, gitInit?}`; `project_settings_set {machineId,
+A new bot is `project_add {create: true, title, machineId?, gitInit?}`; `project_settings_set {machineId,
 projectId, title?}` renames it; `project_archive {machineId, projectId, archived?}` archives it or brings it back. A
-project summary says `createdBy` (the id and name of the key that made it) and, once archived, `archivedAt`. An older
+bot summary says `createdBy` (the id and name of the key that made it) and, once archived, `archivedAt`. An older
 app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored. Its bot's color is `project_settings_set {machineId, projectId,
 avatarColor}`, one of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage` and `teal`; a summary's `avatarColor`
 says which it wears, and has none for slate. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
@@ -757,29 +757,29 @@ crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId
 |---|---|
 | Sites | `project_sites {machineId, projectId}`, `project_site_revoke {machineId, projectId, site}` |
 | Approvals | `project_approvals {machineId, projectId}`, `project_approvals_set {machineId, projectId, mode, model?, effort?}` |
-| Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the project's own token's, when it has one; refused in a shared project without one). |
+| Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the bot's own token's, when it has one; refused in a shared bot without one). |
 | Asked | `project_asks {project}`, with the orders opened for each. |
-| Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the project's machine online and on a fleetd that keeps them. |
+| Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the bot's machine online and on a fleetd that keeps them. |
 | Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |
 
-A project's [skills](#skills) are `scope: "project"` skills with its `projectRef`. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
+A bot's [skills](#skills) are `scope: "project"` skills with its `projectRef`. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
 `author` `agent` or `person`, `by`, `at`, `why`), `off` and `lastUsedAt`. `skill_get {origin, projectRef, name,
 version?}` adds `versions`, newest first, without their texts; with `version`, its text is that version's.
 `skill_set {scope, projectRef, name, text, why?}` is the person's edit, `skill_revert {scope, projectRef, name,
-version}` puts a version back as a new one, `skill_off {projectRef, name, off}` turns one off in that project, and
+version}` puts a version back as a new one, `skill_off {projectRef, name, off}` turns one off in that bot, and
 `skill_delete` removes it with its history. A chat message with `skillSaved {name, version, created, why,
 installed?}` is the line a save posts; `installed` (`<source>@<commit>`) marks one a `skill_install` posted.
 
 ## Max agents {#max-agents}
 
-Each machine runs as many agents at once as it fits, and each project has a cap of its own. The hub enforces both; the
+Each machine runs as many agents at once as it fits, and each bot has a cap of its own. The hub enforces both; the
 lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | The machine's page in Settings › Hub › Machines → Max agents; "Use auto" goes back. Owners and admins only. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap: it follows a change to it at once | Settings → Projects → Agents: the gear at the end of the panel's row opens the project's settings, and **Max agents** in the command palette its slider. Once set it is the project's own, which no machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
-| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Only from a terminal or an MCP client, with an admin key (below); the app has no slider for it. A fleet cap saved before stays until you change it, and while it holds the machines below their total, Settings › Hub › Machines says so. |
+| Per machine | Every bot's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | The machine's page in Settings › Hub › Machines → Max agents; "Use auto" goes back. Owners and admins only. |
+| Per bot: Max agents | The bot's agents: writers, readers, reviewers. Not the lead. | Its machine's cap: it follows a change to it at once | Settings → Bots → Agents: the gear at the end of the panel's row opens the bot's settings, and **Max agents** in the command palette its slider. Once set it is the bot's own, which no machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
+| Fleet-wide | Every bot's agents together. Not the leads. | None: the machines' caps added up | Only from a terminal or an MCP client, with an admin key (below); the app has no slider for it. A fleet cap saved before stays until you change it, and while it holds the machines below their total, Settings › Hub › Machines says so. |
 
 New agents on a machine also wait for disk: 5 GB each above the free-space floor (`minFreeGb`), with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
@@ -796,10 +796,10 @@ estimated to fit. Memory in use and CPU load don't hold new agents back either: 
 The Agents tab shows "2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo.
 
-Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
+Writers in a bot run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
-![Settings › Projects › Agents: Max agents per project, with storefront set to 12 ("Set for this project. The default is 16.", Use the default, "6 agents running now"), billing at 3 with 3 running and 2 queued, and checkout following the hub's fleet cap of 16.](/docs/img/max-agents.png)
+![Settings › Bots › Agents: Max agents per bot, with storefront set to 12 ("Set for this bot. The default is 16.", Use the default, "6 agents running now"), billing at 3 with 3 running and 2 queued, and checkout following the hub's fleet cap of 16.](/docs/img/max-agents.png)
 
 From a terminal:
 
@@ -847,17 +847,17 @@ them (**Lead runs on**). A new hub has two:
 | `high` (default) | `claude-opus-5-5` at effort high | Every review, claude's helper calls (session titles and the like), every task the lead names no other profile for, and the lead while no other profile is picked for it. |
 | `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks only: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup. Never design, architecture or anything subtle. |
 
-A project allows the default and the profiles it picks; nothing else. Its lead is told each allowed profile's name and
-note, and names one in `spawn_agent` when the note fits the work; `spawn_agent` refuses a profile the project doesn't
+A bot allows the default and the profiles it picks; nothing else. Its lead is told each allowed profile's name and
+note, and names one in `spawn_agent` when the note fits the work; `spawn_agent` refuses a profile the bot doesn't
 allow and says which it does. A task on another profile whose review finds blockers twice is redone on the default.
 Each agent's profile shows on its lane (`T12 medium`), and the time view splits agent time and output tokens by
 profile.
 
 | To change | Do |
 |---|---|
-| Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
-| A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Every project → Agents → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs & devices; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
+| Which profiles a bot allows | Settings → Bots → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
+| A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every bot → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
+| Which profile leads run on | Settings → Hub → Every bot → Agents → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every bot's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs & devices; reviews and tasks that name no profile stay on the default. Members see it on a bot's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -868,7 +868,7 @@ one Claude Code takes: low, medium, high, xhigh or max; a model without that lev
 mode is Claude Code's (`"fastMode": true` in the session's settings), only on the models that have it (Opus 5.5, Opus
 5 and Opus 4.8), at a higher price per token.
 
-`fleetd project profiles [<machine>/<project>]` lists them, and with a project which it allows:
+`fleetd project profiles [<machine>/<project>]` lists them, and with a bot which it allows:
 
 ```text
 high       claude-opus-5-5 at high (default, allowed)
@@ -886,7 +886,7 @@ name, ended ones show the name they ran on.
 ### The lead's profile {#lead-profile}
 
 Leads start on the profile picked under **Lead runs on**, the default until someone picks another. It is one setting
-for the whole hub, not one per project, and applies at each lead's next start: a lead already running keeps the model
+for the whole hub, not one per bot, and applies at each lead's next start: a lead already running keeps the model
 and effort it started on (`lead_start {fresh: true}` starts it again now). Each lead's
 lane, and its time by profile, name the profile its session started on.
 
@@ -904,7 +904,7 @@ $ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead --ke
 
 `fleetd project profiles` marks it `lead`. Picking the default
 (`fleetd project profile high --lead --key-file ~/.fleetd/human.key`) puts leads back on whichever profile is the
-default. Deleting the lead's profile does the same, and says so: `medium is gone, and no project allows it any more.
+default. Deleting the lead's profile does the same, and says so: `medium is gone, and no bot allows it any more.
 Leads ran on it, so they start on the default, high, again from their next start.`
 
 A change applies to agents started after it. Agents already running keep the model and effort they started on, and

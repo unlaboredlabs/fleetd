@@ -51,7 +51,7 @@ function ownerText(owner: ClaimOwner): string {
 
 const keyText = (key: WorkKey) => ("issue" in key ? key.issue : "pr" in key ? key.pr : `branch ${key.branch}`);
 
-const projectText = (r: ProjectRef | undefined) => (r ? `${r.machineId}/${r.projectId}` : "another project");
+const projectText = (r: ProjectRef | undefined) => (r ? `${r.machineId}/${r.projectId}` : "another bot");
 
 function itemLine(item: WorkItem): string {
   let what: string;

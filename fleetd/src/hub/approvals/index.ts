@@ -262,7 +262,7 @@ export class Approvals {
     if (sink.fill !== undefined) {
       throw refuse(
         "invalid",
-        "A fill: sink is a project's secure input, which its browser session asks for.",
+        "A fill: sink is a bot's secure input, which its browser session asks for.",
         "The lead calls request_secure_input on the page with the field instead.",
       );
     }
@@ -313,7 +313,7 @@ export class Approvals {
       );
     }
     const why = await this.deps.hooks.orderRefusal(project, order);
-    if (why !== undefined) throw refuse("invalid", why, "Name an open order of this project in the sink.");
+    if (why !== undefined) throw refuse("invalid", why, "Name an open order of this bot in the sink.");
     const name = call.envName ?? secretEnvName(call.key);
     if (name === undefined) throw refuse("invalid", `${call.key} names no valid variable.`, "Ask again with envName.");
     if (envNameReserved(name)) {
@@ -434,7 +434,7 @@ export class Approvals {
     if (root === undefined) {
       throw refuse(
         "not_found",
-        `The hub has no record of project ${project.projectId} on ${project.machineId}.`,
+        `The hub has no record of bot ${project.projectId} on ${project.machineId}.`,
         "Check fleetd_status, then run it again.",
       );
     }
@@ -546,7 +546,7 @@ export class Approvals {
     if (!r || !sameProject(projectOf(r), project)) {
       throw refuse(
         "not_found",
-        `There is no request ${requestId} in your project.`,
+        `There is no request ${requestId} in your bot.`,
         "Use a requestId your own request_secret or gated_run returned.",
       );
     }
@@ -622,7 +622,7 @@ export class Approvals {
     this.quietly(() => this.note(id, `${RUNNING} ${machine}, approved by ${by}`));
     let ran: GatedOutcome;
     if (cwd === undefined) {
-      ran = { outputTail: "", timedOut: false, error: "the project has no workspace on record" };
+      ran = { outputTail: "", timedOut: false, error: "the bot has no workspace on record" };
     } else {
       const input: Record<string, unknown> = { argv: spec.argv, cwd, timeoutSec: spec.timeoutSec, requestId: id };
       if (spec.secretEnv !== undefined) input.secretEnv = spec.secretEnv;
@@ -757,7 +757,7 @@ export class Approvals {
         if (event.machineId === undefined || event.projectId === undefined) continue;
         // One event's failure is logged, never the follower's end.
         try {
-          await this.closeOpen({ machineId: event.machineId, projectId: event.projectId }, undefined, "the project was removed");
+          await this.closeOpen({ machineId: event.machineId, projectId: event.projectId }, undefined, "the bot was removed");
         } catch (e) {
           console.error(`approvals: a removed project's requests weren't closed (${event.seq}):`, e);
         }

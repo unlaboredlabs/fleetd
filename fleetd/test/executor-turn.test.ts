@@ -164,7 +164,7 @@ test("stop sends the node's stop, removing the worktree when asked", async () =>
   expect(why).toBe("thread nope is not known on machine devbox");
 });
 
-test("the wired checker runs the project checker's turn and reads on the executors", async () => {
+test("the wired checker runs the bot checker's turn and reads on the executors", async () => {
   const n = await node();
   wireChecker(n.hub);
   const seams = checkerSeams(n.hub);

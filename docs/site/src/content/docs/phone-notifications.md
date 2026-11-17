@@ -43,7 +43,7 @@ app from before this shows the same notifications without buttons until it updat
 
 - **It sees**: your phone's device token, the size of each sealed notification, when it was sent, and the IP address
   of the hub that sent it.
-- **It can't see**: any content. Not the title, the text, the project, the person or the hub's URL. These are sealed to
+- **It can't see**: any content. Not the title, the text, the bot, the person or the hub's URL. These are sealed to
   the phone's key before they leave the hub.
 
 It keeps nothing past the request and logs no token or ciphertext. A stranger who learns a device token can post to
@@ -133,14 +133,14 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-Each goes to the person it is for, not to everyone on the project:
+Each goes to the person it is for, not to everyone on the bot:
 
 - The lead's messages go to the person whose order it worked on, else the person it was answering.
 - Approvals and secrets go to the person who started their order. An order nobody started (an automation's, the
   train's) goes to the hub's owner. One outside any order goes to the person the lead was answering.
 - Orders that landed or stopped go to the person who started them, else the hub's owner.
 - Failed fetches, machines down under running work and usage limits: what the hub already marks as needing you. They
-  go to the person who last wrote in that project's chat, else the hub's owner. Money and irreversible commands are
+  go to the person who last wrote in that bot's chat, else the hub's owner. Money and irreversible commands are
   urgent.
 - During the hub's quiet hours a notification arrives without a sound, unless it is urgent.
 

@@ -83,7 +83,7 @@ test("a minted link acts as its person at no more than operate, through /link/v1
   expect(((await gone.json()) as { message: string }).message).toEndWith("was revoked on this hub.");
 });
 
-test("a link added to a project here, sealed to this hub, follows the feed there and wakes the lead", async () => {
+test("a link added to a bot here, sealed to this hub, follows the feed there and wakes the lead", async () => {
   const minter = ownerOf(there);
   const { key } = await there.call<{ key: string }>(minter, "hub_link_mint", { label: "work" });
   const me = ownerOf(here);
@@ -103,7 +103,7 @@ test("a link added to a project here, sealed to this hub, follows the feed there
   expect(added.link.who).toBe(minter.person?.name as string);
   expect(added.projects).toEqual([{ projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site" }]);
   expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "inbox" }, label: "work", url: THERE, sealed }))).message).toBe(
-    "This project has a linked hub called work already.",
+    "This bot has a linked hub called work already.",
   );
 
   // What the inbox bridge lists as the project's linked hubs, through the hooks this area's start sets.

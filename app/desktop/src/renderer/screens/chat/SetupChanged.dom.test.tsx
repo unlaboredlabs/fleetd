@@ -74,27 +74,27 @@ describe("a lead's setup change in the chat", () => {
   });
 
   it("Undo asks the hub to put back what was there, for this line", async () => {
-    await render(line("Renamed the project to Storefront", { kind: "title" }));
+    await render(line("Renamed the bot to Storefront", { kind: "title" }));
     await click("Undo");
     expect(calls).toEqual([{ tool: "project_setup_undo", input: { projectRef: project, messageId: "m9" } }]);
   });
 
   it("an undone line says so in place of the button, and still opens", async () => {
-    await render(line("Archived the project", { kind: "archived", undone: true }));
+    await render(line("Archived the bot", { kind: "archived", undone: true }));
     expect(button("Undo")).toBeUndefined();
     expect(host.textContent).toContain("Undone");
     expect(button("Open")).toBeDefined();
   });
 
   it("a refused Undo says why, with the fix", async () => {
-    answer = { ok: false, error: { code: "not_found", message: "The repo api is gone.", fix: "Add it again in the project's settings." } };
+    answer = { ok: false, error: { code: "not_found", message: "The repo api is gone.", fix: "Add it again in the bot's settings." } };
     await render(line("Set the setup commands of api", { kind: "setup" }));
     await click("Undo");
-    expect(host.textContent).toContain("The repo api is gone. Add it again in the project's settings.");
+    expect(host.textContent).toContain("The repo api is gone. Add it again in the bot's settings.");
     expect(button("Undo")).toBeDefined();
   });
 
-  it("Open goes to the page of the project's settings that shows the change", async () => {
+  it("Open goes to the page of the bot's settings that shows the change", async () => {
     expect(pageOf({ kind: "repo_added" })).toBe("projects");
     expect(pageOf({ kind: "instructions" })).toBe("instructions");
     expect(pageOf({ kind: "env", names: ["API_BASE"] })).toBe("project-vault");

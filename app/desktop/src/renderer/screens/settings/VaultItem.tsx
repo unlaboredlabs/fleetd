@@ -197,7 +197,7 @@ export function VaultItemPanel({ listed, onGone, onClose }: { listed: VaultItemS
           }
         />
       ) : !item.canEdit && !trashed ? (
-        <GroupNote>{item.kind === "env" ? "Changing it needs operate on the project." : "Only its creator or an admin can change or delete it."}</GroupNote>
+        <GroupNote>{item.kind === "env" ? "Changing it needs operate on the bot." : "Only its creator or an admin can change or delete it."}</GroupNote>
       ) : null}
 
       {editing ? <VaultEditor kind={item.kind} item={item} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} /> : null}

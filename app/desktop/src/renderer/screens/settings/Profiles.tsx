@@ -117,7 +117,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      hint={`Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
+      hint={`Every bot's lead. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={
@@ -234,8 +234,8 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
         label="The default"
         description={
           saved?.default
-            ? "Every project allows it; every review, helper call and task that names no profile runs on it. Make another the default to change it."
-            : "Every project allows it; every review, helper call and task that names no profile runs on it."
+            ? "Every bot allows it; every review, helper call and task that names no profile runs on it. Make another the default to change it."
+            : "Every bot allows it; every review, helper call and task that names no profile runs on it."
         }
         checked={draft.default}
         disabled={saved?.default === true}
@@ -338,7 +338,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           </Text>
           {administers ? (
             <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
-              Change in Every project › Agents
+              Change in Every bot › Agents
             </Button>
           ) : null}
         </div>

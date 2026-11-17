@@ -63,7 +63,7 @@ export function parseSteerArgs(argv: string[], list: boolean): SteerArgs {
     if (id === undefined || text.trim() === "") throw new ArgError(`expected fleetd steer T<n> "<text>"`);
     if (isNumbered(id, "W")) {
       throw new ArgError(
-        `${id} is an order: to reach its project's lead, use fleetd chat <machine>/<project> "<text>" [--now]`,
+        `${id} is an order: to reach its bot's lead, use fleetd chat <machine>/<bot> "<text>" [--now]`,
       );
     }
     command = { kind: "send", target: targetOf(id), text, mode: v.flag("now") ? "now" : "queue", wait: v.flag("wait") };

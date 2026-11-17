@@ -76,8 +76,8 @@ const UNREAD = "New message from the lead";
 /** New, at the sidebar's top beside the window's controls: a project on the screen's hub. */
 export function NewButton({ go }: { go: (screen: Screen) => void }) {
   return (
-    <Tooltip content="New project">
-      <button type="button" className={s.new} aria-label="New project" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
+    <Tooltip content="New bot">
+      <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
         <Plus aria-hidden />
       </button>
     </Tooltip>
@@ -319,7 +319,7 @@ const NO_SECTION = "";
 
 /** Placeholder rows while the chats load: their shapes, still, so nothing repaints. */
 const Loading = ({ busy }: { busy: boolean }) => (
-  <div className={s.loading} aria-busy={busy} aria-label="Loading projects">
+  <div className={s.loading} aria-busy={busy} aria-label="Loading bots">
     {[72, 56, 64].map((w) => (
       <span key={w} className={s.ghost}>
         <span className={s.ghostAvatar} />
@@ -477,7 +477,7 @@ function ProjectGroup(props: {
   const wanting = rows?.filter((p) => p.want !== undefined).length ?? 0;
 
   return (
-    <section ref={group} className={s.group} aria-label={named ? hub.label : "Projects"}>
+    <section ref={group} className={s.group} aria-label={named ? hub.label : "Bots"}>
       {named ? (
         <button type="button" className={s.groupHead} aria-expanded={!collapsed} onClick={props.onToggle} data-hub-group={hub.id}>
           {collapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
@@ -496,9 +496,9 @@ function ProjectGroup(props: {
       ) : rows.length === 0 ? (
         <div className={s.empty}>
           <span className={s.emptyTitle}>No chats yet</span>
-          <span className={s.emptyText}>A project is a chat with its own lead: on a GitHub repo, a folder on one of your machines, or nothing at all.</span>
+          <span className={s.emptyText}>A bot is a chat with its own lead: on a GitHub repo, a folder on one of your machines, or nothing at all.</span>
           <Button size="sm" onClick={() => go({ id: "projects.add", ...at })}>
-            New project
+            New bot
           </Button>
         </div>
       ) : (

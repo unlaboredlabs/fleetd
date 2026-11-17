@@ -22,7 +22,7 @@ export function fixLabel(kind: BaseErrorKind, machineId: string): string {
     case "no_ssh":
       return `Install OpenSSH on ${machineId}`;
     default:
-      return "Run `git fetch` in the project to see why";
+      return "Run `git fetch` in the bot's checkout to see why";
   }
 }
 
@@ -79,7 +79,7 @@ export function fetchFailedText(project: string, base: WorktreeBase, now: string
       ];
     default:
       return [
-        `git can't fetch ${remote} for ${project}: ${said}. Fix: run \`git fetch ${remote}\` in the project to see why. Agents start from ${from}.`,
+        `git can't fetch ${remote} for ${project}: ${said}. Fix: run \`git fetch ${remote}\` in the bot's checkout to see why. Agents start from ${from}.`,
         `git fetch ${remote}`,
       ];
   }

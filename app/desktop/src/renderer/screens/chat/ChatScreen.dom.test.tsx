@@ -86,7 +86,7 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
 
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
 
-it("says why the project is blocked in the band over the composer, in the hub's words, and leaves the top bar to the pill", async () => {
+it("says why the bot is blocked in the band over the composer, in the hub's words, and leaves the top bar to the pill", async () => {
   await mount({ state: "blocked", blockedReason: "devbox is offline" });
   expect(line()).toBe("Blocked: devbox is offline");
   expect(host.querySelector("[data-say] [data-attention]")).not.toBeNull();

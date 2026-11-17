@@ -33,7 +33,7 @@ The desktop app's Pair a phone makes the same kind of code (one use, 15 minutes)
 no more than the role of the device that made the code. Its QR holds only the hub's address and that code.
 
 Agents run as the same OS user as the hub, so anything that can read the hub home (its keys and its database) an
-agent can reach too. Human key files are no exception: keep yours outside the hub home and your projects, but don't
+agent can reach too. Human key files are no exception: keep yours outside the hub home and your bots, but don't
 count on that to stop an agent that goes looking. [What an agent can reach](#agent-reach) says what that means on a
 machine, and how fleetd keeps it small.
 
@@ -44,8 +44,8 @@ the process tree, not from anything the caller says:
 
 | Caller | Acts as |
 |---|---|
-| A process that descends from a session's `claude` (its tools, its shell commands) | That session, a lead or a task, on its own project only. |
-| Any other process | You, on the project whose workspace holds its working directory. |
+| A process that descends from a session's `claude` (its tools, its shell commands) | That session, a lead or a task, on its own bot only. |
+| Any other process | You, on the bot whose workspace holds its working directory. |
 
 A task can't start, steer or stop agents, and a call that names another session is refused.
 
@@ -62,7 +62,7 @@ On the hub's machine the `fleetd` CLI acts with the hub home's own admin key (`c
 at their terminal keeps all of that. Inside an agent's session, the CLI talking to that session's node's own hub only
 reads: `status`, lists and history work, and anything that would change the hub (a tool above `read`, a chat
 message, a key, a prompt edit, the vault's key, adding or removing a machine) is refused with one line. It says what
-works instead: the lead's own fleetd tools set up its project (`repo_add`, `repo_remove`, `project_setup`) and
+works instead: the lead's own fleetd tools set up its bot (`repo_add`, `repo_remove`, `project_setup`) and
 propose a new one (`project_propose`), and a task asks its lead. A hub the session started itself, with its own
 `FLEETD_HOME`, keeps working in full, writes included.
 
@@ -81,9 +81,9 @@ the machine over the network, but your home folder is still shared writable, so 
 Leads, and agents on a Mac or on a machine without VMs, run with no sandbox (as [leads run](#how-leads-run)). So on its
 machine an agent can reach what you can:
 
-- your files: your home, your projects, and any key or token kept in them;
+- your files: your home, your bots, and any key or token kept in them;
 - your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;
-- fleetd's own files in `~/.fleetd`: the node's key, and the secrets the node holds for the work it runs: projects'
+- fleetd's own files in `~/.fleetd`: the node's key, and the secrets the node holds for the work it runs: bots'
   secret variables, Claude tokens, and each person's sealed 1Password service account token. On the hub's machine,
   that includes the [vault](#vault)'s root key and database, so the whole vault.
 
@@ -92,7 +92,7 @@ files they are in. Keeping agents out takes a separate OS user, which fleetd doe
 Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those tokens open small instead:
 
 - **1Password reads one vault.** fleetd's service account reads exactly one vault, made for fleetd, holding only the
-  logins agents sign in with and the card a project buys with. A service account reads only the vaults it was made with,
+  logins agents sign in with and the card a bot buys with. A service account reads only the vaults it was made with,
   and 1Password can't add more later, so whatever else is in your 1Password stays out of reach even of an agent that
   reads the token.
 - **A card that can't cost much.** Keep a virtual card with a monthly limit, or a low-limit card, in that vault: never
@@ -102,7 +102,7 @@ Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those toke
   or none, wants a look, with what to do: make a service account that reads only fleetd's vault, paste its token, and
   revoke the old one ([troubleshooting](/docs/troubleshooting#hub)). Test lists the vaults with that person's own token
   on a machine holding it.
-- A project's own `OP_SERVICE_ACCOUNT_TOKEN` variable is a secret the hub never tests: make it the same
+- A bot's own `OP_SERVICE_ACCOUNT_TOKEN` variable is a secret the hub never tests: make it the same
   way, one vault of its own.
 
 Run agents on machines with nothing else on them you'd mind them reading, and keep the rest of your 1Password in
@@ -116,7 +116,7 @@ invite people, change roles and change hub-wide settings, and the hub always kee
 revokes all their devices at once, and with them the [hub links](#hub-links) they made.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
-before. Every project is open to everyone on the hub, so give a hub only to people you trust with every project on it;
+before. Every bot is open to everyone on the hub, so give a hub only to people you trust with every bot on it;
 work only you should see goes on a hub of your own. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
 but it keeps nothing private from them.
 
@@ -134,7 +134,7 @@ every other secret:
 - One person's subscription runs only work they started. Removing a person forgets their token on
   every machine.
 
-Like project secrets, the value is in the claude process's environment. Any process of the node's OS user can read
+Like bot secrets, the value is in the claude process's environment. Any process of the node's OS user can read
 it, so the machine's owner and any agent running there could reach it, as [People](#people) says of the hub.
 
 ## The vault {#vault}
@@ -150,7 +150,7 @@ The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted 
 - **In transit.** The app seals what you type to the hub's own box key, even inside TLS. The hub seals a fill or a
   variable to the one node that uses it, and a reveal to a one-time key the app makes for it.
 - **Use.** A fill goes only to the node hosting that browser session, for an item of the team vault, on one of the
-  item's sites; cards only at a purchase recorded in that session. A hub is one trust group: every project's agents may
+  item's sites; cards only at a purchase recorded in that session. A hub is one trust group: every bot's agents may
   fill every team item, so give a hub only to people you trust with each other's logins and cards. Fills are
   rate-limited and every use, refusal and reveal is in the activity log, never with a value. Agents have no tool to
   show, create, change or delete an item.
@@ -175,24 +175,24 @@ The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted 
 
 ## How leads run {#how-leads-run}
 
-Every project's lead runs on its machine with the person's access and no sandbox (decision `projects.one-model`,
+Every bot's lead runs on its machine with the person's access and no sandbox (decision `projects.one-model`,
 D310). It runs in Claude Code's `manual` permission mode, allowed unasked what a full-access lead does: it reads and
-runs commands as you would, starts agents and works with repos. Only three things reach the person, by the project's
-[approval mode](/docs/projects#approvals) (a new project starts in YOLO, where none of them asks; pick Checker decides
+runs commands as you would, starts agents and works with repos. Only three things reach the person, by the bot's
+[approval mode](/docs/projects#approvals) (a new bot starts in YOLO, where none of them asks; pick Checker decides
 or Ask me about everything to be asked):
 
 - A send through an [integration](/docs/integrations) (a server saved with `integration`); its reads run unasked. A
-  server saved without `integration` runs every tool unasked, as it does for the project's agents, who never get an
+  server saved without `integration` runs every tool unasked, as it does for the bot's agents, who never get an
   integration.
 - A first fetch or browser visit to a site the person didn't give it (a link in their own message is given).
 - `project_message`, `confirm_step` and `automation_confirm`.
 
-A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A project
+A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A bot
 that had a home of its own from an earlier fleetd still runs its lead's commands there (in the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose
-project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
+bot has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 
-A machine whose node is older starts leads the old way, and its projects take no integration until that machine runs
+A machine whose node is older starts leads the old way, and its bots take no integration until that machine runs
 `fleetd update`.
 
 ## The agents' Mac's screen {#mac-screen}
@@ -210,21 +210,21 @@ own](/docs/agents-mac#own-user), which keeps agents out of your files and logins
 
 ## Hub links {#hub-links}
 
-A hub link lets a project on one hub open and follow work in projects on another hub, for example from a personal
-hub into a team hub. You make it on the hub it reaches and add it to the project on the other
+A hub link lets a bot on one hub open and follow work in bots on another hub, for example from a personal
+hub into a team hub. You make it on the hub it reaches and add it to the bot on the other
 ([how](/docs/projects#hub-links)).
 
 | Rule | Detail |
 |---|---|
-| It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
+| It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the bots you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
 | It goes with its device | Revoking a device (signing it out, or `fleetd hub key revoke`) revokes every link made on it in the same step, so a lost device leaves no link working behind it. The sign-out confirm says how many go. Links made on your other devices keep working. |
-| It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
-| Its messages are never your answer | They go into the project's chat as "*you* via *label*", an agent's input, like any message from another project's lead. Approvals, secrets and merges still need you there. |
-| The other hub sees only the requests | Not the project that asks, its chat or its title. |
-| The key stays sealed | The app seals it to the asking project's hub, which opens it only to call the other hub. Nothing shows it again. |
-| A person names the host it calls | `hub_link_add` makes the project's hub contact the URL that a person with operate gives it. Anyone who operates on the project's machine adds or removes its links. |
-| Only the project's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the lead and the link say "Can't reach *label*" with the reason. |
-| Revoke from either side | Removing it on the project's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
+| It does five things | List the bots it reaches, ask a bot's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
+| Its messages are never your answer | They go into the bot's chat as "*you* via *label*", an agent's input, like any message from another bot's lead. Approvals, secrets and merges still need you there. |
+| The other hub sees only the requests | Not the bot that asks, its chat or its title. |
+| The key stays sealed | The app seals it to the asking bot's hub, which opens it only to call the other hub. Nothing shows it again. |
+| A person names the host it calls | `hub_link_add` makes the bot's hub contact the URL that a person with operate gives it. Anyone who operates on the bot's machine adds or removes its links. |
+| Only the bot's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the lead and the link say "Can't reach *label*" with the reason. |
+| Revoke from either side | Removing it on the bot's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 
 ## Software {#software}
 

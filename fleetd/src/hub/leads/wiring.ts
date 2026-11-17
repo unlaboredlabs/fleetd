@@ -27,8 +27,8 @@ export function wire(hub: Hub): void {
       if (role === "assistant" && !link(hub).can(machineId, CAP_ASSISTANT)) {
         throw new ToolError(
           "invalid",
-          `${machineId}'s node is too old to run a project.`,
-          `Run fleetd update on ${machineId}; the project's message waits until then.`,
+          `${machineId}'s node is too old to run a bot.`,
+          `Run fleetd update on ${machineId}; the bot's message waits until then.`,
         );
       }
       // A project's lead runs on the hub's account whoever writes to it, a project's on its owner's.

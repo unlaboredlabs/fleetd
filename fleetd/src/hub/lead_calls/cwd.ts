@@ -47,14 +47,14 @@ const MAX_LISTED_ROOTS = 5;
 export function outsideEveryProject(machineId: string, cwd: string, roots: string[]): [string, string] {
   if (roots.length === 0) {
     return [
-      `the hub knows no projects on ${machineId} yet, so it cannot tell which project ${cwd} belongs to`,
-      `check that the node on ${machineId} is online and has added the project (fleetd_status), then run the command again`,
+      `the hub knows no bots on ${machineId} yet, so it cannot tell which bot ${cwd} belongs to`,
+      `check that the node on ${machineId} is online and has added the bot (fleetd_status), then run the command again`,
     ];
   }
   const listed = roots.slice(0, MAX_LISTED_ROOTS).join(", ");
   const more = roots.length > MAX_LISTED_ROOTS ? ` and ${roots.length - MAX_LISTED_ROOTS} more` : "";
   return [
-    `${cwd} is not inside any project workspace on ${machineId}`,
-    `run fleetd from the project's workspace or a worktree under it (${listed}${more})`,
+    `${cwd} is not inside any bot workspace on ${machineId}`,
+    `run fleetd from the bot's workspace or a worktree under it (${listed}${more})`,
   ];
 }

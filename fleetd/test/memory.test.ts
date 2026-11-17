@@ -75,7 +75,7 @@ test("a write past a cap is refused whole", () => {
   done();
 });
 
-test("memory_get shows the caller's own memory and the project's files", async () => {
+test("memory_get shows the caller's own memory and the bot's files", async () => {
   const { hub, done } = testHub();
   const tools = new Registry();
   registerAll(tools);

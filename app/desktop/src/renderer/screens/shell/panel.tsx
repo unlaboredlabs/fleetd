@@ -16,7 +16,7 @@ import s from "./shell.module.css";
 
 const ProjectPanel = memo(lazy(() => import("../panel/ProjectPanel").then((m) => ({ default: m.ProjectPanel }))));
 
-export const PANEL_LABEL = "Project panel";
+export const PANEL_LABEL = "Bot panel";
 
 export interface ProjectPanelState {
   /** The project on screen; the panel is only ever beside a project's chat. */

@@ -244,7 +244,7 @@ test("a restart with nothing new emits nothing", () => {
   expect(feed([[AFTER, snapshot(finals())]], newShellState(), storedFrom(afterTurns(), true))).toEqual([]);
 });
 
-test("removed projects, by event and by snapshot", () => {
+test("removed bots, by event and by snapshot", () => {
   const ctx = { machineId: MACHINE, now: NOW, stored: new Map(), baseline: false };
   const full = snapshot(finals());
   const state = newShellState();

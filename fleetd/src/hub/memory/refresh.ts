@@ -278,7 +278,7 @@ export function job(hub: Hub, r: ProjectRef): MemoryRefreshJob {
 /** Run now: a refresh of `r` started at once, held by the night's rules; why it didn't start. */
 export async function runNow(hub: Hub, r: ProjectRef, launcher: Launcher = refreshPorts(hub).launcher): Promise<string | undefined> {
   const project = store(hub).projectGet(r);
-  if (!project) return `There is no project ${r.machineId}/${r.projectId}.`;
+  if (!project) return `There is no bot ${r.machineId}/${r.projectId}.`;
   const run = getRun(hub.db, r);
   let why: string | undefined;
   if (run.threadId !== undefined) why = "A refresh is already running.";
@@ -429,10 +429,10 @@ function memoryNow(hub: Hub, r: ProjectRef, watermark: number, readTo: number): 
     ["user.md (add only)", user],
     [`${INDEX_FILE} (project)`, memory.read(projectTarget(r))],
   ];
-  for (const topic of memory.topics(r)) files.push([`${topic}.md (project, topic ${topic})`, memory.read(projectTarget(r, topic))]);
+  for (const topic of memory.topics(r)) files.push([`${topic}.md (bot, topic ${topic})`, memory.read(projectTarget(r, topic))]);
   const caps = memory.caps;
   let out =
-    `Caps, in characters: user.md ${caps.user}, MEMORY.md ${caps.index}, each topic ${caps.topic}, the project's files ` +
+    `Caps, in characters: user.md ${caps.user}, MEMORY.md ${caps.index}, each topic ${caps.topic}, the bot's files ` +
     `together ${caps.project} (now ${memory.projectChars(r)}).`;
   for (const [name, text] of files) {
     const body = text.trimEnd();

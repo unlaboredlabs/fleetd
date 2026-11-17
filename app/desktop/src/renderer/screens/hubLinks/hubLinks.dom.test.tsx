@@ -179,7 +179,7 @@ const row = (label: string) => {
   return r;
 };
 
-describe("a project's Linked hubs", () => {
+describe("a bot's Linked hubs", () => {
   it("with none yet, says so in one line with a button", async () => {
     await render(<LinkedHubs project={ADA} />);
     expect(calls).toContainEqual({ tool: "hub_links_get", input: { project: ADA } });
@@ -200,12 +200,12 @@ describe("a project's Linked hubs", () => {
     await click(button("Link hub"));
     expect(sealed).toEqual([{ project: ADA, label: "acme", url: "https://acme.example:4790", boxPubKey: BOX, key: KEY }]);
     expect(JSON.stringify(calls)).not.toContain(KEY);
-    expect(text()).toContain("Linked to acme: this project reaches 2 projects there.");
+    expect(text()).toContain("Linked to acme: this bot reaches 2 bots there.");
     expect(row("acme").textContent).toContain("Working");
     expect(document.querySelector("textarea")).toBeNull();
   });
 
-  it("refuses a label this project already uses before anything is sent", async () => {
+  it("refuses a label this bot already uses before anything is sent", async () => {
     answer = { ...answer, links: [kept("acme")] };
     await render(<LinkedHubs project={ADA} />);
     await click(button("Link another hub"));
@@ -214,11 +214,11 @@ describe("a project's Linked hubs", () => {
     const [address, label] = [...document.querySelectorAll<HTMLInputElement>("form input")];
     await type(address as HTMLInputElement, "https://acme.example");
     await type(label as HTMLInputElement, "ACME");
-    expect(text()).toContain("This project has a linked hub called that already");
+    expect(text()).toContain("This bot has a linked hub called that already");
     expect(button("Link hub").disabled).toBe(true);
   });
 
-  it("lists each link with who it acts as, its projects and its state, plainly", async () => {
+  it("lists each link with who it acts as, its bots and its state, plainly", async () => {
     answer = {
       ...answer,
       links: [
@@ -238,7 +238,7 @@ describe("a project's Linked hubs", () => {
     expect(down).toContain("over a tailnet or HTTPS");
     const gone = row("oldjob").textContent;
     expect(gone).toContain("Revoked on oldjob");
-    expect(gone).toContain("As Alex · every project of theirs");
+    expect(gone).toContain("As Alex · every bot of theirs");
     expect(text()).not.toContain("None yet.");
   });
 
@@ -266,7 +266,7 @@ describe("Links to this hub, in a person's settings", () => {
     expect(button("Make a link key")).toBeTruthy();
   });
 
-  it("makes a key for chosen projects, shows it once and copies it with the address another hub reaches", async () => {
+  it("makes a key for chosen bots, shows it once and copies it with the address another hub reaches", async () => {
     await render(<LinksToThisHub />);
     await click(button("Make a link key"));
     const label = document.querySelector<HTMLInputElement>("form input");
@@ -357,10 +357,10 @@ describe("Hub › People's hub links", () => {
 });
 
 describe("You › Hubs & devices › Hub links", () => {
-  it("lists the links to each hub, and leaves each project's linked hubs to its settings", async () => {
+  it("lists the links to each hub, and leaves each bot's linked hubs to its settings", async () => {
     await render(<HubLinksSettings />);
     expect(text()).toContain("Links to this hub");
-    expect(text()).toContain("Paste its key into that project’s Linked hubs.");
+    expect(text()).toContain("Paste its key into that bot’s Linked hubs.");
     expect(text()).not.toContain("Ada");
     const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { project?: { projectId: string } }).project?.projectId);
     expect(asked.filter((id) => id !== undefined)).toEqual([]);

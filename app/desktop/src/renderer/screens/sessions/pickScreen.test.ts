@@ -34,7 +34,7 @@ describe("hostsFor", () => {
     expect(canOpen([MACHINES[1] as MachineRolesEntry], "android")).toBe(false);
   });
 
-  it("keeps a project's browser on its own machine, and its devices anywhere", () => {
+  it("keeps a bot's browser on its own machine, and its devices anywhere", () => {
     expect(hostsFor(MACHINES, "browser", "mac").map((h) => h.machineId)).toEqual(["mac"]);
     expect(hostsFor(MACHINES, "linux_desktop", "mac").map((h) => h.machineId)).toEqual(["devbox"]);
   });
@@ -218,7 +218,7 @@ describe("why a kind can't open", () => {
     expect(whyOff([], "browser")).toMatchObject({ why: "No machine has joined this hub yet.", fix: "add" });
   });
 
-  it("keeps a project's browser to its own machine's reason", () => {
+  it("keeps a bot's browser to its own machine's reason", () => {
     expect(whyOff([off("devbox", {}), off("home", { browser: "off" })], "browser", "home")?.why).toBe("Browser screens are turned off on home.");
   });
 

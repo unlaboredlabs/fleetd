@@ -52,7 +52,7 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
 
 /** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
 export function sourceLine(slots: SlotState, a: ProjectAgents): string {
-  if (a.own) return `Set for this project. The default is ${a.cap}.`;
+  if (a.own) return `Set for this bot. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
   return fleet ? "Follows the default: the hub's fleet cap." : "Follows the default: its machine's cap.";
 }
@@ -63,7 +63,7 @@ export function sourceLine(slots: SlotState, a: ProjectAgents): string {
  */
 export function machineHolds(a: ProjectAgents, value: number, machineId: string): string | null {
   if (value <= a.machineCap) return null;
-  return `${machineId} runs at most ${a.machineCap} agents at once, so this project runs ${a.machineCap} until an admin raises ${machineId}.`;
+  return `${machineId} runs at most ${a.machineCap} agents at once, so this bot runs ${a.machineCap} until an admin raises ${machineId}.`;
 }
 
 /** One machine as Settings shows it. */

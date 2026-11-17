@@ -416,7 +416,7 @@ export function readyKept(dir: string): void {
   try {
     mkdirSync(join(dir, "Default"), { recursive: true, mode: 0o700 });
   } catch (e) {
-    throw new Error(`cannot ready the project's profile ${dir}: ${(e as Error).message}`);
+    throw new Error(`cannot ready the bot's profile ${dir}: ${(e as Error).message}`);
   }
   for (const lock of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) {
     try {
@@ -435,7 +435,7 @@ export function readyKept(dir: string): void {
   try {
     writeFileSync(prefs, JSON.stringify(merge(merged, structuredClone(KEPT_PREFS))));
   } catch (e) {
-    throw new Error(`cannot ready the project's profile ${dir}: ${(e as Error).message}`);
+    throw new Error(`cannot ready the bot's profile ${dir}: ${(e as Error).message}`);
   }
 }
 
@@ -452,14 +452,14 @@ export class Kept {
 
   private dirOf(project: string): string {
     const dir = keptDir(this.home, project);
-    if (!dir) throw new Error(`${project} is no project's id`);
+    if (!dir) throw new Error(`${project} is no bot's id`);
     return dir;
   }
 
   /** The project's profile for a browser, unless one runs on it. Throws why not. */
   take(project: string): KeptLease {
     const dir = this.dirOf(project);
-    if (this.held.has(project)) throw new Error("This project's browser is open in another session");
+    if (this.held.has(project)) throw new Error("This bot's browser is open in another session");
     const entry = { waiters: [] as (() => void)[] };
     this.held.set(project, entry);
     let released = false;

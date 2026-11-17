@@ -150,7 +150,7 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
               {s.phase.error.message}
             </Text>
             <View style={styles.noProjectButton}>
-              <Button label="New Project" kind="tinted" size="small" icon="plus" onPress={() => navigation.navigate("NewProject", { back: true })} />
+              <Button label="New Bot" kind="tinted" size="small" icon="plus" onPress={() => navigation.navigate("NewProject", { back: true })} />
             </View>
           </Animated.View>
         ) : s.phase.t === "failed" && lostAnswer(s.phase.error) ? (

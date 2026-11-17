@@ -26,7 +26,7 @@ const CARDS_MS = 240_000;
 
 /** Payments' help on a hub with a vault: the card comes from there. */
 const VAULT_HELP =
-  "The card it pays with at a checkout, from the vault. fleetd fills it in at the checkout, and the project never sees it. Use a virtual or low-limit card, never your main one. Each purchase is listed below, with the shop and the total.";
+  "The card it pays with at a checkout, from the vault. fleetd fills it in at the checkout, and the bot never sees it. Use a virtual or low-limit card, never your main one. Each purchase is listed below, with the shop and the total.";
 
 /** A picked card's name: a vault card's label, never its raw `vault:` id. */
 const pickedName = (card: { ref: string; label?: string }): string => card.label ?? (card.ref.startsWith("vault:") ? "a card no longer in the vault" : cardLabel(card));

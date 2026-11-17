@@ -132,7 +132,7 @@ test("a key revoked on this hub closes its connections as unauthorized", async (
   expect(await app.closed).toEqual({ code: 4401, reason: "unauthorized" });
 });
 
-test("presence: a human key's focused minute with input on a known project is one app.presence event", async () => {
+test("presence: a human key's focused minute with input on a known bot is one app.presence event", async () => {
   hub.db.conn
     .query("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES ('devbox', 'p1', '', '', '{}')")
     .run();
@@ -210,7 +210,7 @@ test("a cursor past head streams new events from head", async () => {
   app.close();
 });
 
-test("a presence frame with a malformed project is refused as malformed", async () => {
+test("a presence frame with a malformed bot is refused as malformed", async () => {
   const key = insertKey(hub.db, all, "badpresence");
   const { app } = await authed(key);
   await app.send({ t: "presence", focused: true, input: true, project: { machineId: "Dev Box" } });

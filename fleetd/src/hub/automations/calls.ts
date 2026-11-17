@@ -134,7 +134,7 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
       const automation = a.own(r, id);
       const next = automation.confirmed
         ? "The person lets it run on its own: its runs count as their go-ahead for what its prompt names."
-        : "Not confirmed: only the person confirms it, on the card this call shows them in the project's chat, or by editing it " +
+        : "Not confirmed: only the person confirms it, on the card this call shows them in the bot's chat, or by editing it " +
           "in the app. Its runs still ask as any other action does.";
       return { automation, next };
     }

@@ -118,12 +118,12 @@ test("launch, send, a permission prompt and an interrupt go out as session calls
   await expect(unknown).rejects.toThrow("thread nope is not known on machine devbox");
 });
 
-test("a logged-out runner refuses a launch; an archived project's lead takes no turn", async () => {
+test("a logged-out runner refuses a launch; an archived bot's lead takes no turn", async () => {
   const { hub, ex } = await node();
   ex.rememberRunner("devbox", { runner: "claude", supported: ">=2", versionOk: true, login: "logged_out" });
   await expect(launch(hub, "devbox", input("req-9"))).rejects.toThrow("Claude Code is not logged in on this machine");
   // The lead of p1, whose directory another project holds as a repo.
   hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'p1', 'lead-1', 'x', 1)");
   hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'big', 'p1', 'devbox', 'p1')");
-  await expect(send(hub, { machineId: "devbox", threadId: "lead-1" }, "hi", "req-5")).rejects.toThrow("This project is archived: its directory is repo p1 of project big on devbox.");
+  await expect(send(hub, { machineId: "devbox", threadId: "lead-1" }, "hi", "req-5")).rejects.toThrow("This bot is archived: its directory is repo p1 of bot big on devbox.");
 });

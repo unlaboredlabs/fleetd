@@ -39,7 +39,7 @@ export function hubFlags(v: { str(n: string): string | undefined }): [string, st
 export function parseStatusArgs(argv: string[]): StatusArgs {
   const v = parse(argv, { options: { hub: "str", "key-file": "str", watch: "bool", json: "bool" }, positionals: true });
   if (v instanceof ArgError) throw v;
-  if (v.positionals.length > 1) throw new ArgError(`give one project, got '${v.positionals.join(" ")}'`);
+  if (v.positionals.length > 1) throw new ArgError(`give one bot, got '${v.positionals.join(" ")}'`);
   const hub = hubFlags(v);
   return {
     ...(hub ? { hub } : {}),
@@ -143,7 +143,7 @@ function renderRow(row: any, zone: string): string[] {
 
 export function render(rows: any[], zone: string): string {
   const first = rows[0];
-  if (first === undefined) return "no projects yet";
+  if (first === undefined) return "no bots yet";
   const out = [`Status at ${at(first.asOf, first.asOf, zone)}`];
   for (const row of rows) out.push("", ...renderRow(row, zone));
   return out.join("\n");

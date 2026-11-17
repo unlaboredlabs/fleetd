@@ -153,7 +153,7 @@ export const ownPr = (task: Pick<Task, "pr" | "result">, target: Target) =>
 
 /** The refusal for a target in none of the project's repos. */
 export const notProjectRepo = (target: Target) =>
-  new ToolError("forbidden", `${repoOf(target)} is not one of this project's repos.`, "Wait only on CI of your project's repos; ask your lead about another repo.");
+  new ToolError("forbidden", `${repoOf(target)} is not one of this bot's repos.`, "Wait only on CI of your bot's repos; ask your lead about another repo.");
 
 /** The refusal for a task that already waits on PER_TASK others. */
 export const tooManyWaits = (taskId: string, open: number) =>

@@ -28,7 +28,7 @@ export const labelProblem = (label: string, taken: ReadonlyArray<string> = []): 
   const t = label.trim();
   if (t.length > LABEL_MAX) return `Keep it under ${String(LABEL_MAX)} characters`;
   if (/[\r\n]/u.test(label)) return "One line";
-  if (taken.some((x) => x.toLowerCase() === t.toLowerCase())) return "This project has a linked hub called that already";
+  if (taken.some((x) => x.toLowerCase() === t.toLowerCase())) return "This bot has a linked hub called that already";
   return undefined;
 };
 
@@ -68,14 +68,14 @@ const linkWords = (link: Pick<HubLink, "label" | "url" | "state" | "error">): Li
       return {
         word: "Can’t reach",
         line: link.error ?? `Can’t reach ${link.label} at ${link.url}.`,
-        fix: `A hub link needs ${link.label}’s hub reachable from this hub, over a tailnet or HTTPS. The project’s requests there fail until it is.`,
+        fix: `A hub link needs ${link.label}’s hub reachable from this hub, over a tailnet or HTTPS. The bot’s requests there fail until it is.`,
         tone: "danger",
       };
     case "revoked":
       return {
         word: "Revoked",
         // The other hub's reason is in its own words ("revoked on this hub"), so it is quoted as that hub's.
-        line: `Revoked on ${link.label}: this project can’t use it any more.${link.error === undefined ? "" : ` ${link.label} says: “${withoutId(link.error)}”`}`,
+        line: `Revoked on ${link.label}: this bot can’t use it any more.${link.error === undefined ? "" : ` ${link.label} says: “${withoutId(link.error)}”`}`,
         fix: `Remove it, or make a new link key on ${link.label} and add that.`,
         tone: "danger",
       };
@@ -88,12 +88,12 @@ const linkWords = (link: Pick<HubLink, "label" | "url" | "state" | "error">): Li
 export const reachLine = (link: Pick<HubLink, "who" | "projects">): string | null => {
   const projects = link.projects === undefined ? null : link.projects.map((p) => p.title).join(", ");
   if (link.who === undefined) return projects === null ? null : `Only ${projects}`;
-  return `As ${link.who} · ${projects === null ? "every project of theirs" : `only ${projects}`}`;
+  return `As ${link.who} · ${projects === null ? "every bot of theirs" : `only ${projects}`}`;
 };
 
 /** A minted link's projects, by title where this app knows them. */
 export const projectsLine = (link: Pick<IssuedLink, "projects">, titleOf: (p: ProjectRef) => string | undefined): string =>
-  link.projects === undefined ? "Every project" : `Only ${link.projects.map((p) => titleOf(p) ?? p.projectId).join(", ")}`;
+  link.projects === undefined ? "Every bot" : `Only ${link.projects.map((p) => titleOf(p) ?? p.projectId).join(", ")}`;
 
 /** Its person, or its device on a hub from before people. */
 export const whoOf = (link: Pick<IssuedLink, "person" | "device">): string => link.person?.name ?? link.device;

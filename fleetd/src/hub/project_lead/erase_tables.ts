@@ -24,6 +24,6 @@ export const hubWide = (machineId: string, projectId: string) => machineId === "
 /** Refuses a hub-wide key where a project's is meant. */
 export function aProject(r: ProjectRef): void {
   if (hubWide(r.machineId, r.projectId)) {
-    throw new Error("an empty machine or project id is the hub's own, not a project's: nothing was erased");
+    throw new Error("an empty machine or bot id is the hub's own, not a bot's: nothing was erased");
   }
 }

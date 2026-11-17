@@ -62,7 +62,7 @@ export const LEAD_SETUP_TOOLS = ["repo_add", "repo_remove", "project_setup", "pr
 /** Why a write to the live hub from an agent's session is refused, and what works instead: one line. */
 export const liveHubRefusal = (what: string) =>
   `${what} would change the live hub, and inside an agent's session the fleetd CLI only reads it. ` +
-  `The lead's fleetd tools set its project up (${LEAD_SETUP_TOOLS.join(", ")}); a task asks its lead. ` +
+  `The lead's fleetd tools set its bot up (${LEAD_SETUP_TOOLS.join(", ")}); a task asks its lead. ` +
   `For a throwaway hub, set FLEETD_HOME.`;
 
 /** A write the CLI refuses inside an agent's session. */

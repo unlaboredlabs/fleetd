@@ -28,23 +28,23 @@ const pages: Command[] = [
   {
     id: "go:settings.prompts",
     title: "Built-in prompts",
-    detail: "What fleetd itself tells a project's agents",
+    detail: "What fleetd itself tells a bot's agents",
     group: "settings",
     keywords: ["prompts", "templates", "system prompt"],
     run: () => go(tabHref("prompts")),
   },
   {
     id: "go:settings.projects",
-    title: "Project settings",
-    detail: "A project's name, repos, environment variables, setup and MCP servers, or delete it",
+    title: "Bot settings",
+    detail: "A bot's name, repos, environment variables, setup and MCP servers, or delete it",
     group: "settings",
-    keywords: ["env", "secrets", "setup", "mcp", "integrations", "delete project", "rename"],
+    keywords: ["env", "secrets", "setup", "mcp", "integrations", "delete bot", "rename"],
     run: () => go(tabHref("projects")),
   },
   {
     id: "go:settings.instructions",
     title: "Instructions & memory",
-    detail: "A project's own instructions, and what its leads remember",
+    detail: "A bot's own instructions, and what its leads remember",
     group: "settings",
     keywords: ["custom instructions", "rules", "memory", "remember"],
     run: () => go(tabHref("instructions")),
@@ -95,7 +95,7 @@ const pages: Command[] = [
   // A setting by its own name, typed rather than listed, so "max agents" finds it.
   ...(
     [
-      ["Max agents", "How many of a project's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
+      ["Max agents", "How many of a bot's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
       ["Hub", "The connection, and this app's key", "hubs", ["connection", "disconnect", "key"]],
     ] as const
   ).map(
@@ -123,7 +123,7 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
     {
       id: "settings.open",
       title: "Settings",
-      detail: "You, your projects, and the hub",
+      detail: "You, your bots, and the hub",
       group: "settings",
       keywords: ["preferences", "administration"],
       run: () => go(left() > 0 ? toHash({ id: "settings", tab: "hub.setup" }) : tabHref("general")),
@@ -141,9 +141,9 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   });
   const offAdmin = registerCommands([
     hubPage("go:hub.machines", "Machines", "Settings › Hub: add a machine, its roles, max agents, updates", "hub.machines", ["machine", "add machine", "fleet cap", "machine roles", "update", "upgrade"]),
-    hubPage("go:hub.profiles", "Agents for every project", "Every project: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
-    hubPage("go:hub.tools", "Tools & skills", "Every project › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every project"]),
-    hubPage("go:hub.instructions", "Instructions for every project", "Every project: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
+    hubPage("go:hub.profiles", "Agents for every bot", "Every bot: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
+    hubPage("go:hub.tools", "Tools & skills", "Every bot › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
+    hubPage("go:hub.instructions", "Instructions for every bot", "Every bot: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
     hubPage("go:hub.accounts", "Hub accounts", "Hub › Setup: the hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
     hubPage("go:hub.setup", "Setup", "Settings › Hub: the hub's accounts and its other setup steps", "hub.setup", ["setup", "guided setup", "accounts", "steps"]),
   ]);

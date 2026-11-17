@@ -9,7 +9,7 @@ import { migrate } from "../src/hub/store/migrations.ts";
 import { tempHome } from "./helpers.ts";
 import { expectRenamed, RENAMES_AT, seedOld, SQL } from "./project_names_kit.ts";
 
-test("a hub from before the renames upgrades in place: every row under the project's names, nothing lost", () => {
+test("a hub from before the renames upgrades in place: every row under the bot's names, nothing lost", () => {
   const home = tempHome();
   try {
     const conn = new Database(join(home.dir, "hub.sqlite"), { create: true, strict: true });

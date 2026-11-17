@@ -54,7 +54,7 @@ export function parseTimeArgs(argv: string[], now: number, zone: string): TimeAr
   const keyFile = v.str("key-file") || undefined;
   if (hub !== undefined && keyFile === undefined) throw new ArgError("--hub needs --key-file");
   if (hub === undefined && keyFile !== undefined) throw new ArgError("--key-file needs --hub");
-  if (v.positionals.length > 1) throw new ArgError(`give one order or project, got '${v.positionals.join(" ")}'`);
+  if (v.positionals.length > 1) throw new ArgError(`give one order or bot, got '${v.positionals.join(" ")}'`);
   return {
     ...(hub !== undefined ? { hub: [hub, keyFile!] as [string, string] } : {}),
     target: v.positionals[0] ?? "",
@@ -78,7 +78,7 @@ export function resolveProject(name: string, projects: any[]): { machineId: stri
   if (found.length === 1) return { machineId: str(found[0], "machineId"), projectId: str(found[0], "projectId") };
   if (found.length === 0) {
     throw new Error(
-      `no order or project '${name}'; projects: ${projects.map((p) => `${str(p, "machineId")}/${str(p, "title")}`).join(", ")}`,
+      `no order or bot '${name}'; bots: ${projects.map((p) => `${str(p, "machineId")}/${str(p, "title")}`).join(", ")}`,
     );
   }
   throw new Error(`'${name}' is on several machines; say which: ${found.map((p) => `${str(p, "machineId")}/${rest}`).join(", ")}`);

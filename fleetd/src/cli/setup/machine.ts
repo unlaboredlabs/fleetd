@@ -732,7 +732,7 @@ export async function remove(
   progress: Progress,
 ): Promise<Removed> {
   const erase = hub.erase;
-  if (erase === undefined) throw new NotImplemented("src/hub/project_lead/erase.ts: erasing a removed machine's projects");
+  if (erase === undefined) throw new NotImplemented("src/hub/project_lead/erase.ts: erasing a removed machine's bots");
   let state: SetupState | undefined;
   try {
     state = readSetup(home);
@@ -794,8 +794,8 @@ export async function remove(
   progress.say(
     revoked ? `revoked ${machineId}'s node key; the hub refuses that node from now on.` : `the hub held no node key for ${machineId}.`,
   );
-  if (erased === 1) progress.say(`erased ${machineId}'s project: its chat, memory, skills, files, orders and tasks.`);
-  else if (erased > 1) progress.say(`erased ${machineId}'s ${erased} projects: their chats, memory, skills, files, orders and tasks.`);
+  if (erased === 1) progress.say(`erased ${machineId}'s bot: its chat, memory, skills, files, orders and tasks.`);
+  else if (erased > 1) progress.say(`erased ${machineId}'s ${erased} bots: their chats, memory, skills, files, orders and tasks.`);
   if (rows > 0) {
     progress.say(
       `the hub forgot ${machineId}'s sessions, checkouts and settings (${rows} rows); the factory metrics stay as history.`,
@@ -823,8 +823,8 @@ export function leadsOn(hub: HubSide, machineId: string): string | undefined {
   if (titles.length === 0) return undefined;
   let named = titles.slice(0, 5).join(", ");
   if (titles.length > 5) named += ` and ${titles.length - 5} more`;
-  const projects = titles.length === 1 ? "1 project" : `${titles.length} projects`;
-  return `${machineId} runs the leads of ${projects} (${named}): removing it stops them and erases its projects, with their chats and history`;
+  const projects = titles.length === 1 ? "1 bot" : `${titles.length} bots`;
+  return `${machineId} runs the leads of ${projects} (${named}): removing it stops them and erases its bots, with their chats and history`;
 }
 
 /** How to bring a machine back instead of removing it. */

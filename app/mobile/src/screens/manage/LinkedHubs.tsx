@@ -13,7 +13,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { readLinks, removeLink } from "./api";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 
-const HELP = "Other hubs this project reaches: it opens and follows work in their projects, as the person who made the link there. Link one from this project's settings in the desktop app.";
+const HELP = "Other hubs this bot reaches: it opens and follows work in their bots, as the person who made the link there. Link one from this bot's settings in the desktop app.";
 
 export function LinkedHubs({ route }: ChatInfoProps<"LinkedHubs">) {
   const t = useTheme();
@@ -26,7 +26,7 @@ export function LinkedHubs({ route }: ChatInfoProps<"LinkedHubs">) {
   const remove = (link: HubLink) =>
     confirmDestructive({
       title: `Remove the link to ${link.label}?`,
-      message: `This project can't reach ${link.label} any more. The link is revoked there too when ${link.label} can be reached.`,
+      message: `This bot can't reach ${link.label} any more. The link is revoked there too when ${link.label} can be reached.`,
       button: "Remove",
       onConfirm: () => {
         setBusy(link.linkId);

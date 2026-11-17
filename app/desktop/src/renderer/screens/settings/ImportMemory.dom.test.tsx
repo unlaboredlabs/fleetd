@@ -214,16 +214,16 @@ it("never says your memory already has it when nothing fit, or only secrets were
   expect(status()).toBe("Nothing was added. Skipped 1 holding a secret.");
 });
 
-it("offers New project on a hub with no project, since the import runs in one", async () => {
-  await mount(undefined, { code: "invalid", reason: NO_PROJECT, message: "This hub has no project to run the import in.", fix: "Add a project first, then import again." });
+it("offers New bot on a hub with no bot, since the import runs in one", async () => {
+  await mount(undefined, { code: "invalid", reason: NO_PROJECT, message: "This hub has no bot to run the import in.", fix: "Add a bot first, then import again." });
   const box = paste("[2024-03-02] - Keep answers short.");
   await act(async () => {
     button("Add to Memory").click();
     await Promise.resolve();
   });
   await settle();
-  expect(status()).toBe(`${NO_PROJECT_TEXT} Add a project, then import again.`);
-  act(() => button("Add a project").click());
+  expect(status()).toBe(`${NO_PROJECT_TEXT} Add a bot, then import again.`);
+  act(() => button("Add a bot").click());
   expect(addUi()).toMatchObject({ open: true });
   // What was pasted stays for after.
   expect(box.value).toBe("[2024-03-02] - Keep answers short.");

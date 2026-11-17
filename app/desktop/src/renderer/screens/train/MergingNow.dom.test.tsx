@@ -175,7 +175,7 @@ describe("the merge line in Shipping", () => {
     expect(order()).toContain("Merged and closed7");
   });
 
-  it("says a train with nothing on it by the list alone, a train it couldn't read above the list with Retry, and so offline or for a project the hub lacks", async () => {
+  it("says a train with nothing on it by the list alone, a train it couldn't read above the list with Retry, and so offline or for a bot the hub lacks", async () => {
     const { changes, prs: rows } = trainFixture(project, AT);
     const ok = hubOf(() => changes);
     await mount((tool, input) => (tool === "changes_list" ? { ok: true, output: { changes: [] } } : tool === "pr_list" ? { ok: true, output: { at: AT, prs: rows.filter((r) => r.state !== "open") } } : ok(tool, input)));

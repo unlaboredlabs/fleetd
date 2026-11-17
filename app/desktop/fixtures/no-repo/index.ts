@@ -34,7 +34,7 @@ export const ownProject = (f: Fixture, ref: Ref, title: string, folder: string, 
 /** A project of the snapshot by title, as a ref. */
 const refOf = (f: Fixture, title: string): Ref => {
   const p = arr(f.snapshot?.["projects"]).filter(isObject).find((x) => x["title"] === title);
-  if (p === undefined) throw new Error(`no project ${title}`);
+  if (p === undefined) throw new Error(`no bot ${title}`);
   return { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
 };
 
@@ -80,7 +80,7 @@ export const toolApproval = (project: Ref, name: string, call: ToolCall = BOOKIN
 });
 
 const two = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "no-repo-chats", "No repo: Ada and Home beside the projects, Taxes archived; Ada asks to book a table and follows work it asked for.");
+  const f = Fixture.from(base, "no-repo-chats", "No repo: Ada and Home beside the bots, Taxes archived; Ada asks to book a table and follows work it asked for.");
   if (f.snapshot === undefined) throw new Error("no-repo-chats needs a snapshot");
   f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home"), ownProject(f, TAXES, "Taxes", "taxes", 3 * 86_400_000)];
   const storefront = refOf(f, "storefront");
@@ -111,7 +111,7 @@ const two = (base: Fixture): Fixture => {
     { author: "human", text: "File the quarterly estimate before the 15th." },
     { author: "lead", text: "Paid on the 12th; the receipt is in my folder." },
   ]);
-  f.answer(PROJECT_TOOLS.asks, { project: { ...TAXES } }, { project: { ...TAXES }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...TAXES } }, { project: { ...TAXES }, asks: [], next: "This bot has asked no other bot for anything yet." });
   // Ada's to-do list, its panel's Plan.
   f.answer("checklist_get", { projectRef: { ...ADA } }, {
     projectRef: { ...ADA },
@@ -353,7 +353,7 @@ const files = (from: Fixture): Fixture => {
     { author: "human", text: "Can you put the Lisbon trip together as a PDF I can keep offline? And the receipts as a spreadsheet.", minutesAgo: 6 },
     { author: "lead", text, parts, minutesAgo: 1 },
   ]);
-  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This bot has asked no other bot for anything yet." });
   return f;
 };
 
@@ -379,7 +379,7 @@ const pictures = (from: Fixture): Fixture => {
   ]);
   // After the chat, which drops the project's earlier files as it is written.
   f.answer("attachment_get", { projectRef: { ...HOME }, attachmentId: "F21" }, { attachmentId: "F21", name: "checkout-with-code.jpg", mime: "image/jpeg", bytes: applied.length, dataB64: applied.toString("base64") });
-  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { project: { ...HOME } }, { project: { ...HOME }, asks: [], next: "This bot has asked no other bot for anything yet." });
   return f;
 };
 

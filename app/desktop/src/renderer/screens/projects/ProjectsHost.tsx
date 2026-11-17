@@ -144,10 +144,10 @@ export function ProjectsHost() {
       {
         // Overrides the palette's default with one that keeps a running add and returns where it came from.
         id: "go:projects.add",
-        title: "New project…",
+        title: "New bot…",
         detail: "Start a chat with its own lead: in a new folder, a GitHub repo cloned onto a machine, or a folder already on one",
         group: "actions",
-        keywords: ["add project", "new", "clone", "repo", "github", "folder"],
+        keywords: ["add bot", "new", "clone", "repo", "github", "folder"],
         run: () => openAddProject(),
       },
     ],
@@ -215,7 +215,7 @@ export function ProjectsHost() {
       {over ? (
         <div className={s.dropOverlay} aria-hidden>
           <Text size="lg" strong>
-            Drop a folder or a GitHub link to add it as a project
+            Drop a folder or a GitHub link to add it as a bot
           </Text>
         </div>
       ) : null}

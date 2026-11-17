@@ -126,7 +126,7 @@ const mount = async (text: string) => {
   await settle();
 };
 
-const panel = () => host.querySelector("aside[aria-label='Project panel']");
+const panel = () => host.querySelector("aside[aria-label='Bot panel']");
 const links = (where: string) => [...host.querySelectorAll<HTMLAnchorElement>(`[data-testid='${where}'] a`)];
 /** Follows a link as the window's hash router does. */
 const follow = async (a: HTMLAnchorElement | undefined) => {

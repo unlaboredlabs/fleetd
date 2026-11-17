@@ -148,7 +148,7 @@ export function prepare(sessionDir: string, cwd: string): Prepared {
   rmSync(dir, { recursive: true, force: true });
   if (!winners.length) return { skills: [] };
   mkdirPrivate(join(dir, ".claude-plugin"));
-  const manifest = { name: PLUGIN_NAME, description: "The skills fleetd gives this session: the repo's, the project's and the hub's." };
+  const manifest = { name: PLUGIN_NAME, description: "The skills fleetd gives this session: the repo's, the bot's and the hub's." };
   writeFileSync(join(dir, ".claude-plugin", "plugin.json"), `${JSON.stringify(manifest)}\n`);
   const skills: string[] = [];
   for (const c of winners) {

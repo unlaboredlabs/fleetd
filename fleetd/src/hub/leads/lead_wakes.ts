@@ -133,8 +133,8 @@ export function archivedNote(hub: Hub, r: ProjectRef): { message: string; fix: s
   const holder = repos.holders(hub.db.conn, r)[0];
   if (!holder) return undefined;
   return {
-    message: `This project is archived: its directory is repo ${holder.repo.name} of project ${holder.project.projectId} on ${holder.project.machineId}.`,
-    fix: "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
+    message: `This bot is archived: its directory is repo ${holder.repo.name} of bot ${holder.project.projectId} on ${holder.project.machineId}.`,
+    fix: "Write to that bot's lead instead; project_repo_remove takes the repo out of it and brings this bot back.",
   };
 }
 

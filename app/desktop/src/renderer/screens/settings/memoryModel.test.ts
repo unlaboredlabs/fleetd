@@ -6,7 +6,7 @@ import { searchSettings } from "./search";
 
 const file = (over: Partial<MemoryFile>): MemoryFile => ({ scope: "project", text: "", chars: 0, cap: 4000, notes: [], ...over });
 
-describe("Settings → Projects → Instructions & memory", () => {
+describe("Settings → Bots → Instructions & memory", () => {
   it("names the files as the hub does", () => {
     expect(fileName({ scope: "user" })).toBe("user.md");
     expect(fileName({ scope: "project" })).toBe("MEMORY.md");
@@ -20,11 +20,11 @@ describe("Settings → Projects → Instructions & memory", () => {
     expect(capState("x".repeat(4001), 4000).over).toBe(true);
   });
 
-  it("checks the whole project against its cap with the draft in place of its file", () => {
+  it("checks the whole bot against its cap with the draft in place of its file", () => {
     const files = [file({ chars: 3000 }), file({ topic: "deploys", chars: 8000, cap: 8000 }), file({ topic: "ci", chars: 8000, cap: 8000 })];
-    expect(projectCapState(files, null, 32000)).toEqual({ chars: 19000, cap: 32000, line: "19,000 of 32,000 characters across this project", over: false });
+    expect(projectCapState(files, null, 32000)).toEqual({ chars: 19000, cap: 32000, line: "19,000 of 32,000 characters across this bot", over: false });
     expect(projectCapState(files, { name: "MEMORY.md", text: "x".repeat(16001) }, 32000).over).toBe(true);
-    expect(projectCapState(files, { name: "deploys.md", text: "" }, 32000).line).toBe("11,000 of 32,000 characters across this project");
+    expect(projectCapState(files, { name: "deploys.md", text: "" }, 32000).line).toBe("11,000 of 32,000 characters across this bot");
   });
 
   it("links each remembered entry to its chat line", () => {
@@ -107,7 +107,7 @@ describe("Settings → Projects → Instructions & memory", () => {
     expect(restoreLine("- One.\n", { at: 5, raw: "- Six." })).toBe("- One.\n- Six.\n");
   });
 
-  it("is yours on You › Your memory and a project's on its Instructions & memory, which search finds by what people call it", () => {
-    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Your memory", "Project memory"]);
+  it("is yours on You › Your memory and a bot's on its Instructions & memory, which search finds by what people call it", () => {
+    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Your memory", "Bot memory"]);
   });
 });

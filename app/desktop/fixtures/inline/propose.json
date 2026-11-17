@@ -1,8 +1,8 @@
 {
-  "note": "A lead's proposals for a new project (project_propose, W614): one with a repo to clone and one with none, both waiting; one approved, one declined and one approved that could not be made, each folded. devbox; no personal data.",
+  "note": "A lead's proposals for a new bot (project_propose, W614): one with a repo to clone and one with none, both waiting; one approved, one declined and one approved that could not be made, each folded. devbox; no personal data.",
   "opening": [
-    "Can you set up a project for the pricing page? The repo is acme/pricing-page.",
-    "I can't make a project myself, only propose one. This is exactly what would be made, once you approve."
+    "Can you set up a bot for the pricing page? The repo is acme/pricing-page.",
+    "I can't make a bot myself, only propose one. This is exactly what would be made, once you approve."
   ],
   "items": [
     {
@@ -14,13 +14,13 @@
         "threadId": "t-lead",
         "requestId": "perm-41",
         "toolName": "mcp__fleetd__project_propose",
-        "summary": "Proposes a new project",
+        "summary": "Proposes a new bot",
         "preview": {
           "server": "fleetd",
           "tool": "project_propose",
           "action": "write",
-          "title": "Create the project “Pricing page”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/pricing-page\",\n  \"repo\": \"acme/pricing-page\",\n  \"title\": \"Pricing page\",\n  \"what\": \"A new project on devbox, cloned from acme/pricing-page once you approve. Nothing is made before that.\"\n}"
+          "title": "Create the bot “Pricing page”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/pricing-page\",\n  \"repo\": \"acme/pricing-page\",\n  \"title\": \"Pricing page\",\n  \"what\": \"A new bot on devbox, cloned from acme/pricing-page once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -33,13 +33,13 @@
         "threadId": "t-lead",
         "requestId": "perm-42",
         "toolName": "mcp__fleetd__project_propose",
-        "summary": "Proposes a new project",
+        "summary": "Proposes a new bot",
         "preview": {
           "server": "fleetd",
           "tool": "project_propose",
           "action": "write",
-          "title": "Create the project “Release notes”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/release-notes\",\n  \"repo\": null,\n  \"title\": \"Release notes\",\n  \"what\": \"A new project on devbox, once you approve. Nothing is made before that.\"\n}"
+          "title": "Create the bot “Release notes”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/release-notes\",\n  \"repo\": null,\n  \"title\": \"Release notes\",\n  \"what\": \"A new bot on devbox, once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -54,13 +54,13 @@
         "threadId": "t-lead",
         "requestId": "perm-43",
         "toolName": "mcp__fleetd__project_propose",
-        "summary": "Proposes a new project",
+        "summary": "Proposes a new bot",
         "preview": {
           "server": "fleetd",
           "tool": "project_propose",
           "action": "write",
-          "title": "Create the project “Docs site”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/docs\",\n  \"repo\": \"acme/docs\",\n  \"title\": \"Docs site\",\n  \"what\": \"A new project on devbox, cloned from acme/docs once you approve. Nothing is made before that.\"\n}"
+          "title": "Create the bot “Docs site”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/docs\",\n  \"repo\": \"acme/docs\",\n  \"title\": \"Docs site\",\n  \"what\": \"A new bot on devbox, cloned from acme/docs once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -75,13 +75,13 @@
         "threadId": "t-lead",
         "requestId": "perm-44",
         "toolName": "mcp__fleetd__project_propose",
-        "summary": "Proposes a new project",
+        "summary": "Proposes a new bot",
         "preview": {
           "server": "fleetd",
           "tool": "project_propose",
           "action": "write",
-          "title": "Create the project “Scratch”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/scratch\",\n  \"repo\": null,\n  \"title\": \"Scratch\",\n  \"what\": \"A new project on devbox, once you approve. Nothing is made before that.\"\n}"
+          "title": "Create the bot “Scratch”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/fleetd/projects/scratch\",\n  \"repo\": null,\n  \"title\": \"Scratch\",\n  \"what\": \"A new bot on devbox, once you approve. Nothing is made before that.\"\n}"
         }
       }
     },
@@ -92,18 +92,18 @@
       "state": "failed",
       "answeredAt": "2026-10-19T09:16:00.000Z",
       "by": "desk",
-      "note": "the project was not created: /home/dev/src/billing already exists on devbox. Propose it again once that is sorted, or: The person makes it themselves with New project in the app",
+      "note": "the bot was not created: /home/dev/src/billing already exists on devbox. Propose it again once that is sorted, or: The person makes it themselves with New bot in the app",
       "permission": {
         "threadId": "t-lead",
         "requestId": "perm-45",
         "toolName": "mcp__fleetd__project_propose",
-        "summary": "Proposes a new project",
+        "summary": "Proposes a new bot",
         "preview": {
           "server": "fleetd",
           "tool": "project_propose",
           "action": "write",
-          "title": "Create the project “Billing”",
-          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/billing\",\n  \"repo\": \"acme/billing\",\n  \"title\": \"Billing\",\n  \"what\": \"A new project on devbox, cloned from acme/billing once you approve. Nothing is made before that.\"\n}"
+          "title": "Create the bot “Billing”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"path\": \"/home/dev/src/billing\",\n  \"repo\": \"acme/billing\",\n  \"title\": \"Billing\",\n  \"what\": \"A new bot on devbox, cloned from acme/billing once you approve. Nothing is made before that.\"\n}"
         }
       }
     }

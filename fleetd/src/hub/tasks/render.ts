@@ -120,9 +120,9 @@ export type PromptInput = {
 /** Where a read or review task works, for its brief's `{{workspace}}`. */
 function workspaceLine(kind: TaskKind, baseBranch: string | undefined): string {
   const own =
-    "You may build and run tests there; fleetd removes it when the task ends. Never work in the project's own checkout, which is the human's.";
+    "You may build and run tests there; fleetd removes it when the task ends. Never work in the bot's own checkout, which is the human's.";
   if (baseBranch === undefined) {
-    return "Your current directory is the project's own checkout, which is the human's: read it as it is, and never check out, build or write anything there.";
+    return "Your current directory is the bot's own checkout, which is the human's: read it as it is, and never check out, build or write anything there.";
   }
   if (kind === "review") {
     return `Your current directory is a detached git worktree of your own, at the PR's head when fleetd could fetch it from the remote the PR belongs to, else at origin/${baseBranch}. Check with \`git log -1\` against the PR's head commit; if it isn't that, fetch the PR's head yourself and check it out in this worktree. origin/${baseBranch} is fresh, to diff against. ${own}`;

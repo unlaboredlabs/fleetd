@@ -111,7 +111,7 @@ export type Start =
 const decode = (data: string) => JSON.parse(data) as Automation;
 const decodeRun = (data: string) => JSON.parse(data) as AutomationRun;
 
-const notFound = (id: string) => new ToolError("not_found", `There is no automation ${id}.`, "automation_list shows the project's automations.");
+const notFound = (id: string) => new ToolError("not_found", `There is no automation ${id}.`, "automation_list shows the bot's automations.");
 
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
@@ -271,7 +271,7 @@ export class Automations {
     const a = this.get(id);
     if (!a) throw notFound(id);
     if (!sameRef(a.projectRef, project)) {
-      throw new ToolError("forbidden", `${id} belongs to another project.`, "Use an automation of this project; automation_list shows them.");
+      throw new ToolError("forbidden", `${id} belongs to another bot.`, "Use an automation of this bot; automation_list shows them.");
     }
     return a;
   }
@@ -326,7 +326,7 @@ export class Automations {
         [r.machineId, r.projectId],
       )[0]?.id;
       if (done === undefined) {
-        throw invalid(`The project has ${AUTOMATIONS_PER_PROJECT} automations, the most it keeps.`, "Delete one it no longer needs, or fold two into one prompt.");
+        throw invalid(`The bot has ${AUTOMATIONS_PER_PROJECT} automations, the most it keeps.`, "Delete one it no longer needs, or fold two into one prompt.");
       }
       this.delete(done, "hub");
     }
@@ -659,7 +659,7 @@ export class Automations {
       ).run(r.machineId, r.projectId);
       c.query("DELETE FROM automations WHERE machine_id = ? AND project_id = ?").run(r.machineId, r.projectId);
     });
-    for (const a of gone) this.changedEvent(a, "deleted with its project", "hub");
+    for (const a of gone) this.changedEvent(a, "deleted with its bot", "hub");
     if (gone.length > 0) this.signal();
     return gone;
   }
@@ -975,7 +975,7 @@ export class Automations {
     const unsubscribe = log.subscribe((event) => {
       switch (event.type) {
         case "project.removed":
-          void this.then("pruning a removed project", () => this.pruneRemoved());
+          void this.then("pruning a removed bot", () => this.pruneRemoved());
           break;
         case "workstream.done":
         case "workstream.state":

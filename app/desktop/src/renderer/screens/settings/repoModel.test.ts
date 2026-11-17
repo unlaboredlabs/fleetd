@@ -11,7 +11,7 @@ const project: ProjectSettings = {
   env: [],
 };
 
-describe("Settings → Projects → Repos", () => {
+describe("Settings → Bots → Repos", () => {
   it("adds a path as a checkout and anything else as a GitHub repo, with a name only when it is one", () => {
     expect(addInput(project, " /home/w/src/api ", "")).toEqual({ machineId: "devbox", projectId: "p1", path: "/home/w/src/api" });
     expect(addInput(project, "acme/web", "front")).toEqual({ machineId: "devbox", projectId: "p1", name: "front", url: "acme/web" });
@@ -26,7 +26,7 @@ describe("Settings → Projects → Repos", () => {
     expect(sourceProblem("/home/w/src/api")).toBeNull();
   });
 
-  it("finds a repo's checkout by the hub's path first, and tells the project's own directory", () => {
+  it("finds a repo's checkout by the hub's path first, and tells the bot's own directory", () => {
     const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "devbox", projectId: "p9" } };
     expect(checkoutPath(api, [])).toBe("p9");
     expect(checkoutPath({ ...api, path: "/home/w/src/api" }, [])).toBe("/home/w/src/api");

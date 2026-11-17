@@ -22,7 +22,7 @@ export function registerLeadCalls(hub: Hub): void {
 const invalid = (why: string) => new ToolError("invalid", `Invalid ${why}.`);
 
 function scopeOf(call: LeadCall): MemoryScope {
-  if (call.scope !== "user" && call.scope !== "project") throw invalid(`${call.op} call: scope is user or project`);
+  if (call.scope !== "user" && call.scope !== "project") throw invalid(`${call.op} call: scope is user or bot`);
   if (call.scope === "user" && call.topic !== undefined) throw invalid(`${call.op} call: user.md has no topics; leave topic out with scope user`);
   if (call.topic !== undefined && (typeof call.topic !== "string" || !isTopic(call.topic))) {
     throw invalid(`${call.op} call: topic is a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory`);
@@ -116,7 +116,7 @@ function remembered(hub: Hub, r: ProjectRef, caller: LeadCaller, item: Remembere
     record(hub.db, r, item);
     return;
   }
-  const where = item.scope === "user" ? " for every project" : item.topic !== undefined ? ` (${item.topic})` : "";
+  const where = item.scope === "user" ? " for every bot" : item.topic !== undefined ? ` (${item.topic})` : "";
   const text =
     item.forgotten === true
       ? item.reason !== undefined

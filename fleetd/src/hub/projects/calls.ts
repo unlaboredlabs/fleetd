@@ -74,9 +74,9 @@ type SetupCall = {
 const invalid = (why: string, fix?: string) => new ToolError("invalid", why, fix);
 
 /** A lead's call from its own session, and nobody else's. */
-function onlyLead(caller: LeadCaller, op: string, fix = "A person changes the same in the project's settings in the app."): void {
+function onlyLead(caller: LeadCaller, op: string, fix = "A person changes the same in the bot's settings in the app."): void {
   if (caller.agent.kind === "lead") return;
-  throw new ToolError("forbidden", `${op} is a project's lead's call, from its own session.`, fix);
+  throw new ToolError("forbidden", `${op} is a bot's lead's call, from its own session.`, fix);
 }
 
 function projectOf(hub: Hub, r: ProjectRef): ProjectSummary {
@@ -130,7 +130,7 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
   const m = r.machineId;
   const { url, path, name } = call as { url?: string; path?: string; name?: RepoName };
   if ((url === undefined) === (path === undefined)) {
-    throw invalid("Give url (a GitHub URL or owner/repo, cloned onto the project's machine) or path (a checkout already there), one of them.");
+    throw invalid("Give url (a GitHub URL or owner/repo, cloned onto the bot's machine) or path (a checkout already there), one of them.");
   }
   let created = true;
   // A clone can end before this call does: its row is written only while it still runs.
@@ -142,13 +142,13 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
       created = other === undefined;
       if (other === undefined || repos.holders(hub.db.conn, { machineId: m, projectId: other }).length > 0) return;
       const title = store(hub).projectGet({ machineId: m, projectId: other })?.title ?? other;
-      throw peopleOnly("project_folder", `${at} is the project ${title}.`);
+      throw peopleOnly("project_folder", `${at} is the bot ${title}.`);
     },
     cloned: (repo) => {
       ended = true;
       if (addId !== undefined) cloneDone(hub, addId);
       added(hub, r, repo, true);
-      tell(hub, r, "request", `repo_add: ${repo.name} is cloned and is a repo of the project now, at ${repo.path ?? "its checkout"} on ${m}. spawn_agent takes it with repo.`);
+      tell(hub, r, "request", `repo_add: ${repo.name} is cloned and is a repo of the bot now, at ${repo.path ?? "its checkout"} on ${m}. spawn_agent takes it with repo.`);
     },
     cloneFailed: (problem: ProjectProblem) => {
       ended = true;
@@ -166,7 +166,7 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
     return {
       repo: out.repo.name,
       path: out.path,
-      next: `${out.repo.name} is a repo of the project now, at ${out.path} on ${m}: spawn_agent takes it with repo. The chat says so in one line the person can undo.`,
+      next: `${out.repo.name} is a repo of the bot now, at ${out.path} on ${m}: spawn_agent takes it with repo. The chat says so in one line the person can undo.`,
     };
   }
   addId = out.addId;
@@ -194,7 +194,7 @@ async function repoRemove(hub: Hub, caller: LeadCaller, call: LeadCall): Promise
   return {
     removed: repo.name,
     cancelled: out.cancelled,
-    next: `${repo.name} is out of the project; its checkout stays on disk${path !== undefined ? ` at ${path}` : ""}.${stopped} The chat says so in one line; the person's Undo on it brings the repo back.`,
+    next: `${repo.name} is out of the bot; its checkout stays on disk${path !== undefined ? ` at ${path}` : ""}.${stopped} The chat says so in one line; the person's Undo on it brings the repo back.`,
   };
 }
 
@@ -322,9 +322,9 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
     throw invalid("project_setup changes nothing as sent.", "Give any of title, icon, picture, color, instructions, setup, env or archive");
   }
   if (c.icon !== undefined && c.picture !== undefined) throw invalid("Give icon or picture, not both: an icon replaces a picture.");
-  if (c.archive === false) throw invalid("archive takes true only: a person brings an archived project back, from the app.");
+  if (c.archive === false) throw invalid("archive takes true only: a person brings an archived bot back, from the app.");
   const title = c.title?.trim();
-  if (title !== undefined && title === "") throw invalid("A project's title has at least one letter.");
+  if (title !== undefined && title === "") throw invalid("A bot's title has at least one letter.");
   const env = { set: c.env?.set ?? [], remove: c.env?.remove ?? [] };
   const was = new Map(s.env(r).map((v) => [v.name, v]));
   for (const v of env.set) {
@@ -361,7 +361,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
     await step(async () => {
       if (title === project.title) return undefined;
       await rename(hub, project, title);
-      const line = `Renamed the project to ${title}`;
+      const line = `Renamed the bot to ${title}`;
       post(hub, r, line, { kind: "title", title: project.title });
       return line;
     });
@@ -387,7 +387,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
         parts.push("color");
       }
       if (parts.length === 0) return undefined;
-      const line = `Changed the project's ${parts.join(" and ")}`;
+      const line = `Changed the bot's ${parts.join(" and ")}`;
       post(hub, r, line, before, undefined, jpeg);
       return line;
     });
@@ -408,7 +408,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
         const saved = p.set(entry, "project", r, text);
         promptChanged(hub, entry.id, "project", r, { ref: saved.ref, warnings: saved.warnings.map((w) => w.code) });
       }
-      const line = clear ? "Cleared the project's instructions" : "Wrote the project's instructions";
+      const line = clear ? "Cleared the bot's instructions" : "Wrote the bot's instructions";
       post(hub, r, line, { kind: "instructions", ...(had ? { text: had.text, ...(had.base !== undefined ? { base: had.base } : {}) } : {}) });
       return line;
     });
@@ -462,14 +462,14 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
       setArchived(db, r, hub.clock.now());
       const p = projectOf(hub, r);
       announce(hub, r, `${p.title} archived`, { title: p.title, archivedAt: p.archivedAt ?? null });
-      const line = "Archived the project";
+      const line = "Archived the bot";
       post(hub, r, line, { kind: "archived" });
       return line;
     });
   }
 
-  if (said.length === 0) return { changed: [], next: "Nothing changed: the project already has all of it." };
-  const archived = c.archive === true ? " The project is archived: say so in one line and end your turn; nothing wakes you until a person brings it back." : "";
+  if (said.length === 0) return { changed: [], next: "Nothing changed: the bot already has all of it." };
+  const archived = c.archive === true ? " The bot is archived: say so in one line and end your turn; nothing wakes you until a person brings it back." : "";
   return {
     changed: said,
     next: `${said.join(". ")}. Each is one line in the chat, which the person can undo.${archived}`,
@@ -486,7 +486,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
   switch (before.kind) {
     case "repo_added": {
       const repo = repos.byName(db, r, before.repo);
-      if (!repo) return "It was already out of the project.";
+      if (!repo) return "It was already out of the bot.";
       await removeFrom(hub, r, repo.name);
       // A checkout the add made a project of the machine is forgotten again; its files stay.
       if (before.created && repos.holders(db, repo.checkout).length === 0) {
@@ -498,7 +498,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
     }
     case "repo_removed": {
       if (before.path === undefined) {
-        throw new ToolError("failed", `fleetd doesn't know where ${before.repo}'s checkout was.`, "Add it again in the project's settings.");
+        throw new ToolError("failed", `fleetd doesn't know where ${before.repo}'s checkout was.`, "Add it again in the bot's settings.");
       }
       const out = await addTo(hub, { machineId: r.machineId, projectId: r.projectId, name: before.repo, path: before.path }, {});
       if (before.setup && out.repo) s.setSetupIn(r, out.repo.repoId, before.setup);
@@ -532,7 +532,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
     case "setup": {
       const repo = before.repo === undefined ? undefined : repos.byName(db, r, before.repo);
       if (before.repo !== undefined && !repo) {
-        throw new ToolError("not_found", `${before.repo} is no longer a repo of the project.`, "Its setup commands went with it.");
+        throw new ToolError("not_found", `${before.repo} is no longer a repo of the bot.`, "Its setup commands went with it.");
       }
       s.setSetupIn(r, repo?.repoId, before.setup ?? { commands: [], inputs: [] });
       announce(hub, r, `${project.title}'s setup commands changed`, { setup: true });
@@ -576,7 +576,7 @@ export function register(tools: Registry): void {
     if (item.undone === true) return { ok: true, next: "Already undone." };
     const was = kept(hub, message.messageId);
     if (!was) {
-      throw new ToolError("not_found", "fleetd no longer holds what was there before this change.", "Change it back in the project's settings.");
+      throw new ToolError("not_found", "fleetd no longer holds what was there before this change.", "Change it back in the bot's settings.");
     }
     const running = undoing.get(hub) ?? new Set<string>();
     undoing.set(hub, running);
@@ -600,7 +600,7 @@ export function registerLeadCalls(hub: Hub): void {
   leadCalls(hub).register("repo_remove", (caller, call) => repoRemove(hub, caller, call));
   leadCalls(hub).register("project_setup", (caller, call) => setup(hub, caller, call));
   leadCalls(hub).register("project_propose", (caller, call) => {
-    onlyLead(caller, "project_propose", "A person makes a project themselves with New project in the app.");
+    onlyLead(caller, "project_propose", "A person makes a bot themselves with New bot in the app.");
     return propose.answer(hub, caller.projectRef, call);
   });
   propose.fill(hub);

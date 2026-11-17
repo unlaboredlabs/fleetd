@@ -267,13 +267,13 @@ describe("setup", () => {
     scenario = scenarios["setup-done"] as Scenario;
     await render(<FirstRun onAddProject={() => undefined} />);
     expect(document.querySelector("[data-screen='setup.welcome']")).toBeNull();
-    expect(document.body.textContent).toContain("Add a project to chat with its lead");
+    expect(document.body.textContent).toContain("Add a bot to chat with its lead");
     // A member never sees setup, and the hub isn't asked.
     admin = false;
     scenario = scenarios["setup-fresh"] as Scenario;
     calls = [];
     await render(<FirstRun onAddProject={() => undefined} />);
-    expect(document.body.textContent).toContain("Add a project to chat with its lead");
+    expect(document.body.textContent).toContain("Add a bot to chat with its lead");
     expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
   });
 
@@ -298,7 +298,7 @@ describe("setup", () => {
     await go(button("Finish"));
     expect(document.querySelector("[data-screen='setup.done']")).not.toBeNull();
     expect(document.body.textContent).toContain("fleetd is ready");
-    await click(button("Add a project"));
+    await click(button("Add a bot"));
     expect(window.location.hash).toBe("#/projects/add");
   });
 });
@@ -317,7 +317,7 @@ describe("Settings › Hub › Setup", () => {
     // The first run goes on to Get started, with no welcome to steps it has none of.
     await render(<FirstRun onAddProject={() => undefined} />);
     expect(document.querySelector("[data-screen='setup.welcome']")).toBeNull();
-    expect(document.body.textContent).toContain("Add a project to chat with its lead");
+    expect(document.body.textContent).toContain("Add a bot to chat with its lead");
     expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
   });
 

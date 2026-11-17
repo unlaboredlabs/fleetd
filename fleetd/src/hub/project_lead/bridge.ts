@@ -136,7 +136,7 @@ export function mayUse(db: Database, r: ProjectRef): void {
   if (isProject(db, r, false)) return;
   throw new ToolError(
     "forbidden",
-    "This project is archived, or the hub doesn't have it: its lead works with no other project.",
+    "This bot is archived, or the hub doesn't have it: its lead works with no other bot.",
     "Bring it back from the app first.",
   );
 }
@@ -156,17 +156,17 @@ function target(hub: Hub, asker: Asker, name: string): ProjectSummary {
   const byId = all.filter((p) => p.projectId === name);
   const found = byId.length > 0 ? byId : all.filter((p) => p.title.trim().toLowerCase() === name.trim().toLowerCase());
   if (found.length === 0) {
-    throw new ToolError("not_found", `No project ${name} on this hub.`, "Call factory_status to see the projects, and name one by its title.");
+    throw new ToolError("not_found", `No bot ${name} on this hub.`, "Call factory_status to see the bots, and name one by its title.");
   }
-  if (found.length > 1) throw new ToolError("invalid", `${found.length} projects are called ${name}.`, "Name it by its project id, from factory_status.");
+  if (found.length > 1) throw new ToolError("invalid", `${found.length} bots are called ${name}.`, "Name it by its bot id, from factory_status.");
   const p = found[0] as ProjectSummary;
   if (!reaches(asker, refOf(p))) {
     throw asker.kind === "project"
-      ? new ToolError("invalid", "That is this lead's own project.", "project_message writes to another project's lead; say it in your own reply.")
+      ? new ToolError("invalid", "That is this lead's own bot.", "project_message writes to another bot's lead; say it in your own reply.")
       : new ToolError(
           "forbidden",
-          `${p.title} is not one of this link's projects.`,
-          "factory_status lists the projects the link reaches; the person can widen it where it was made.",
+          `${p.title} is not one of this link's bots.`,
+          "factory_status lists the bots the link reaches; the person can widen it where it was made.",
         );
   }
   return p;
@@ -363,11 +363,11 @@ export function factoryStatus(hub: Hub, asker: Asker, call: FactoryStatusCall): 
   const next =
     projects.length === 0
       ? asker.kind === "link"
-        ? "The link reaches no project on this hub."
-        : "No other project on this hub yet."
+        ? "The link reaches no bot on this hub."
+        : "No other bot on this hub yet."
       : only
         ? "Write to its lead with project_message; what it needs the person for is in its own chat."
-        : "factory_status with project reads one. Write to a project's lead with project_message.";
+        : "factory_status with project reads one. Write to a bot's lead with project_message.";
   return { projects, next };
 }
 

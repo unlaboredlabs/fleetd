@@ -26,7 +26,7 @@ export function register(tools: Registry): void {
       throw unread(error);
     }
     if (!row) {
-      throw new ToolError("not_found", `There is no project ${r.machineId}/${r.projectId}.`, "status_get without a projectRef lists them.");
+      throw new ToolError("not_found", `There is no bot ${r.machineId}/${r.projectId}.`, "status_get without a projectRef lists them.");
     }
     return { row };
   });

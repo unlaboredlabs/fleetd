@@ -27,7 +27,7 @@ type Proposals = { made: Set<string>; outcomes: Outcome[] };
 const proposals = (hub: Hub) => hub.area<Proposals>("project_proposals", () => ({ made: new Set(), outcomes: [] }));
 
 /** A person's own way to the same, said where a proposal can't go on. */
-const THEMSELVES = "The person makes it themselves with New project in the app";
+const THEMSELVES = "The person makes it themselves with New bot in the app";
 
 const keyOf = (r: ProjectRef, title: string, repo: GitHubRepo | null) => JSON.stringify([r.machineId, r.projectId, title, repo]);
 
@@ -35,7 +35,7 @@ const keyOf = (r: ProjectRef, title: string, repo: GitHubRepo | null) => JSON.st
 function asked(input: unknown): { title: string; repo: GitHubRepo | null } {
   const { title, url } = (input !== null && typeof input === "object" ? input : {}) as { title?: unknown; url?: unknown };
   const name = typeof title === "string" ? title.trim() : "";
-  if (name === "" || name.length > 200 || /[\r\n]/u.test(name)) throw new ToolError("invalid", "Give title: the new project's name, on one line of at most 200 characters.");
+  if (name === "" || name.length > 200 || /[\r\n]/u.test(name)) throw new ToolError("invalid", "Give title: the new bot's name, on one line of at most 200 characters.");
   if (url === undefined) return { title: name, repo: null };
   if (typeof url !== "string") throw new ToolError("invalid", "url is a GitHub URL or owner/repo.");
   return { title: name, repo: repoOf(url) };
@@ -60,12 +60,12 @@ function preview(shown: Shown): ToolPreview {
   // As `project_add` from a person's own device: everyone on the hub can use it, with a repo or without (D491).
   const whose = shown.repo === null ? "once you approve" : `cloned from ${shown.repo} once you approve`;
   // `onlyMe: false` for one release: an app from before D491 shows a card without it as a generic one, not New project.
-  const card = { ...shown, onlyMe: false, what: `A new project on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
+  const card = { ...shown, onlyMe: false, what: `A new bot on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
   return {
     server: "fleetd",
     tool: "project_propose",
     action: "write",
-    title: clipUtf16(`Create the project “${shown.title}”`, 200),
+    title: clipUtf16(`Create the bot “${shown.title}”`, 200),
     input: JSON.stringify(sortedValue(card), null, 2),
   };
 }
@@ -111,7 +111,7 @@ const cloneDone = (hub: Hub, addId: string) => hub.db.conn.query("DELETE FROM pr
 
 /** What the lead whose proposal's clone a hub restart cut off is told (calls.ts `tellInterrupted`). */
 export const interrupted = (title: string, repo: string, path: string) =>
-  `project_propose: the hub restarted while cloning ${repo} into ${path}, so the project ${title} was not created. Tell the person: they can add it with New project in the app, where a clone that finished on the machine is added as it is.`;
+  `project_propose: the hub restarted while cloning ${repo} into ${path}, so the bot ${title} was not created. Tell the person: they can add it with New bot in the app, where a clone that finished on the machine is added as it is.`;
 
 /**
  * A person approved the card showing `shown`: the project is made as their own `project_add` makes it, at the folder
@@ -135,7 +135,7 @@ export async function make(hub: Hub, project: ProjectRef, shown: unknown, by: Pr
   try {
     if (repo === null) {
       const out = await add(hub, keyFor(m, by), { create: true, title, path, machineId: m });
-      done({ created: true, projectId: out.projectId, title, path: out.path, next: `${title} is a project now, at ${out.path} on ${m}, in everyone's list of projects; ${LEAD}.` });
+      done({ created: true, projectId: out.projectId, title, path: out.path, next: `${title} is a bot now, at ${out.path} on ${m}, in everyone's list of bots; ${LEAD}.` });
       return undefined;
     }
     // A clone can end before `add` returns: its row is written only while it still runs.
@@ -145,12 +145,12 @@ export async function make(hub: Hub, project: ProjectRef, shown: unknown, by: Pr
       added: (projectId, at) => {
         ended = true;
         if (addId !== undefined) cloneDone(hub, addId);
-        tell(hub, project, `project_propose: ${repo} is cloned, and ${title} is a project now (${projectId}), at ${at} on ${m}, as one ${who} added themselves; ${LEAD}.`);
+        tell(hub, project, `project_propose: ${repo} is cloned, and ${title} is a bot now (${projectId}), at ${at} on ${m}, as one ${who} added themselves; ${LEAD}.`);
       },
       failed: (problem: ProjectProblem) => {
         ended = true;
         if (addId !== undefined) cloneDone(hub, addId);
-        tell(hub, project, `project_propose: the project ${title} was not created. ${problem.message}${problem.fix ? ` ${problem.fix}.` : ""} Tell the person.`);
+        tell(hub, project, `project_propose: the bot ${title} was not created. ${problem.message}${problem.fix ? ` ${problem.fix}.` : ""} Tell the person.`);
       },
     };
     const out = await add(hub, keyFor(m, by), { url: repo, title, dest: path, machineId: m }, end);
@@ -164,12 +164,12 @@ export async function make(hub: Hub, project: ProjectRef, shown: unknown, by: Pr
       cloning: true,
       title,
       path: out.path,
-      next: `${who} approved it: cloning ${repo} into ${out.path} on ${m}, and ${title} is a project once that ends. You are woken when it ends, or when it fails: tell the person then, and never before that it exists.`,
+      next: `${who} approved it: cloning ${repo} into ${out.path} on ${m}, and ${title} is a bot once that ends. You are woken when it ends, or when it fails: tell the person then, and never before that it exists.`,
     });
     return undefined;
   } catch (e) {
     if (!(e instanceof ToolError)) throw e;
-    return `the project was not created: ${words(e)}. Propose it again once that is sorted, or: ${THEMSELVES}`;
+    return `the bot was not created: ${words(e)}. Propose it again once that is sorted, or: ${THEMSELVES}`;
   }
 }
 
@@ -184,7 +184,7 @@ export function answer(hub: Hub, project: ProjectRef, call: LeadCall): Record<st
   if (at < 0) {
     throw new ToolError(
       "forbidden",
-      `Nothing was created: no approval of a project named ${title} is waiting here. Only a person's Approve on the card project_propose shows them makes one.`,
+      `Nothing was created: no approval of a bot named ${title} is waiting here. Only a person's Approve on the card project_propose shows them makes one.`,
       "If they approved it a moment ago, project_list shows it. Otherwise call project_propose as your own tool and wait for their answer",
     );
   }

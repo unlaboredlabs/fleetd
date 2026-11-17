@@ -62,7 +62,7 @@ export function HubMcpServers() {
         <>
           <ServersSetting
             label="Global MCP servers"
-            help="Given to every project's lead, and its agents too when you say so, as commands on their machine or services over HTTP. A project's own replaces one of the same name."
+            help="Given to every bot's lead, and its agents too when you say so, as commands on their machine or services over HTTP. A bot's own replaces one of the same name."
             scope={null}
             servers={data.global}
           />
@@ -287,7 +287,7 @@ export function ServerEditor(props: { scope: Ref | null; editing: McpServer | nu
       wide
       onOpenChange={(open) => !open && !busy && props.onClose()}
       title={props.editing ? `Edit ${props.editing.name}` : "Add an MCP server"}
-      description={`${props.scope === null ? "For every project." : "For this project only."} ${TAKES_EFFECT}`}
+      description={`${props.scope === null ? "For every bot." : "For this bot only."} ${TAKES_EFFECT}`}
       footer={
         <>
           <Button onClick={props.onClose} disabled={busy}>
@@ -326,7 +326,7 @@ export function ServerEditor(props: { scope: Ref | null; editing: McpServer | nu
           {stdio ? "Environment" : "Headers"}
         </Text>
         <Text size="xs" tone="quiet">
-          A secret is sealed on this computer to {props.scope === null ? "every machine" : "the project's machine"}; fleetd never shows it again.
+          A secret is sealed on this computer to {props.scope === null ? "every machine" : "the bot's machine"}; fleetd never shows it again.
         </Text>
         {draft.values.map((v, i) => (
           <div key={i} role="group" aria-label={v.name || `Value ${i + 1}`} className={s.inline}>
@@ -359,7 +359,7 @@ export function ServerEditor(props: { scope: Ref | null; editing: McpServer | nu
           description={
             draft.agents
               ? "Its writers and reviewers get it as well, and none of its tools asks you: agents can't stop to ask."
-              : `Only ${props.scope === null ? "each project's lead" : "its lead"} gets it.`
+              : `Only ${props.scope === null ? "each bot's lead" : "its lead"} gets it.`
           }
           checked={draft.agents}
           disabled={busy}

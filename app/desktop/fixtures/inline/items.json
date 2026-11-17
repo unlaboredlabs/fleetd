@@ -106,7 +106,7 @@
         "timeoutSec": 300
       },
       "state": "failed",
-      "note": "Not run on devbox: the project has no workspace on record.",
+      "note": "Not run on devbox: the bot has no workspace on record.",
       "answeredAt": "2026-10-19T10:29:00.000Z",
       "finishedAt": "2026-10-19T10:29:01.000Z"
     },

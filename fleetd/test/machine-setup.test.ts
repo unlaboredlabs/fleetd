@@ -265,7 +265,7 @@ test("hosts list this machine, ssh_config and the tailnet once each", async () =
   ]);
 });
 
-test("a machine that runs leads is removed only with force, which erases its projects and tells open apps", async () => {
+test("a machine that runs leads is removed only with force, which erases its bots and tells open apps", async () => {
   store(t.hub).machineUpsert({ machineId: "lab-a", name: "lab-a", tags: [], status: "online", lastSeenAt: new Date().toISOString(), nodeVersion: "1" } as never);
   t.hub.db.conn.query("INSERT INTO node_keys (machine_id, pub_key) VALUES ('lab-a', 'k')").run();
   t.hub.db.conn
@@ -273,7 +273,7 @@ test("a machine that runs leads is removed only with force, which erases its pro
     .run();
   await expect(call("machine_remove", { machineId: "lab-a" })).rejects.toMatchObject({
     code: "invalid",
-    message: "lab-a runs the leads of 1 project (Shop): removing it stops them and erases its projects, with their chats and history.",
+    message: "lab-a runs the leads of 1 bot (Shop): removing it stops them and erases its bots, with their chats and history.",
     fix: "to repair lab-a instead, run fleetd pair --worker lab-a on the hub and the line it prints on lab-a with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
   });
   expect(store(t.hub).machineGet("lab-a")).toBeDefined();
@@ -284,7 +284,7 @@ test("a machine that runs leads is removed only with force, which erases its pro
   expect(out.steps).toEqual([]);
   expect(ran).toEqual([]);
   expect(out.next).toContain("was not set up by fleetd machine add from this hub");
-  expect(out.next).toContain("erased lab-a's project: its chat, memory, skills, files, orders and tasks.");
+  expect(out.next).toContain("erased lab-a's bot: its chat, memory, skills, files, orders and tasks.");
   expect(store(t.hub).machineGet("lab-a")).toBeUndefined();
   expect(store(t.hub).projectsList("lab-a")).toEqual([]);
   const removed = events(t.hub).page(0, ["machine.removed"]).events;

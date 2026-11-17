@@ -70,7 +70,7 @@ export function VaultImportCardView({ card, at }: { card: VaultImportCard; at: s
     <section className={v.card} aria-label="Import from 1Password" data-vault-import={card.proposalId}>
       <div className={v.cardHead}>
         <Text strong>Import from 1Password</Text>
-        <Text size="xs" tone="quiet">{card.scope === "project" || card.scope === "order" ? "Into the project's variables" : "Into the team vault"}</Text>
+        <Text size="xs" tone="quiet">{card.scope === "project" || card.scope === "order" ? "Into the bot's variables" : "Into the team vault"}</Text>
       </div>
       {card.why.trim() === "" ? null : <Text size="sm">{card.why}</Text>}
       <div className={v.picks} role="group" aria-label="Items">

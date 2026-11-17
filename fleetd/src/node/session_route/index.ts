@@ -285,7 +285,7 @@ export class Router {
         if (frame.project !== undefined) {
           const kind = frame.frame.call.kind;
           const known = this.broker.sessionsArea()?.hasProject?.(frame.project) ?? false;
-          if ((kind !== undefined && kind !== "browser") || !known) return refuse(`this machine has no project ${frame.project} with a browser to open`);
+          if ((kind !== undefined && kind !== "browser") || !known) return refuse(`this machine has no bot ${frame.project} with a browser to open`);
           this.broker.personScreen(key, frame.project);
         }
         const secrets = (Array.isArray(opened.secrets) ? opened.secrets : [])

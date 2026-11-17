@@ -31,7 +31,7 @@ const stub = (answers: Record<string, unknown>) => {
   return { hub, calls };
 };
 
-describe("a project's named services on the phone", () => {
+describe("a bot's named services on the phone", () => {
   it("connects Paper as the desktop's manual form saves it: name, URL, no key, its agents too", async () => {
     const { hub, calls } = stub({ mcp_server_set: { server: paper() } });
     const out = await connect(hub, PAPER, REF, []);
