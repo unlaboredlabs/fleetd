@@ -9,6 +9,7 @@ import { readHubSetup } from "../doctor/config.ts";
 import { doctor } from "../doctor/index.ts";
 import { githubApps } from "../github_app/index.ts";
 import { test as testOnePassword } from "../onepassword/tools.ts";
+import { limits as sandboxLimits, test as testSandbox } from "../sandbox/index.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { store } from "../store/hub_store.ts";
 import { beforeFirstUse, guides, read as readSteps, requiredLeft } from "./index.ts";
@@ -71,6 +72,16 @@ export function register(tools: Registry): void {
         await testOnePassword(hub, caller, {});
       } catch (error) {
         console.info(`setup: no 1Password token of the caller's own tested: ${(error as Error).message ?? error}`);
+      }
+    }
+    // Hosted sandboxes' Test lists fleetd's sandboxes at each connected provider, and keeps it as that key's last check.
+    if (input.step === "sandboxes") {
+      for (const { provider } of sandboxLimits(hub)) {
+        try {
+          await testSandbox(hub, provider);
+        } catch (error) {
+          console.warn(`setup: the ${provider} key's test didn't run:`, error);
+        }
       }
     }
     // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.

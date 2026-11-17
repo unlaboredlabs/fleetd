@@ -63,6 +63,14 @@ describe("sizing", () => {
     );
   });
 
+  test("a node's hosted sandboxes add to its own cap, past the top too; none reported adds nothing", () => {
+    expect(autoCap({ ...machine(16, 32), hostedMax: 20 })).toEqual({ cap: 32, why: "memory 32 GB, about 2 GB an agent, and 20 in hosted sandboxes", hosted: 20 });
+    expect(autoCap({ ...machine(128, 512), hostedMax: 10 })).toEqual({ cap: HARD_TOP + 10, why: `top of ${HARD_TOP}, and 10 in hosted sandboxes`, hosted: 10 });
+    expect(autoCap({ ...machine(16, 32), hostedMax: 0 })).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
+    expect(autoCap({ ...machine(16, 32), hostedMax: -3 })).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
+    expect(autoCap(machine(16, 32))).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
+  });
+
   test("disk room counts 5 GB agents above the floor", () => {
     expect(diskRoom(withDisk(machine(8, 8), 60, 26))).toBe(6);
     expect(diskRoom(withDisk(machine(2, 4), 25, 20))).toBe(1);
@@ -308,6 +316,15 @@ describe("board", () => {
     expect(k.board.room(air)).toBe(0);
     k.release("T1");
     expect(k.grants).toEqual(["T3"]);
+  });
+
+  test("a machine's hosted sandboxes come after its own slots, a person's number for them included", () => {
+    const air = project_("pa", "air");
+    const k = Kit.on(undefined, [{ machineId: "air", name: "air-box", auto: { cap: 5, why: "memory 18 GB, and 3 in hosted sandboxes", hosted: 3 } }]);
+    for (let n = 1; n <= 5; n++) expect(k.acquire(`T${n}`, air)).toEqual(GRANTED);
+    expect(k.acquire("T6", air)).toEqual(queued("machine cap: 5 of 5 running on air-box (memory 18 GB, and 3 in hosted sandboxes)"));
+    k.board.setMachine("air", 1);
+    expect(k.board.state().perMachine[0]!.cap).toBe(4);
   });
 
   test("a saved fleet cap holds under the machines' total", () => {

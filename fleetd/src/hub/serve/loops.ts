@@ -20,6 +20,7 @@ import { start as s18 } from "../projects/loops.ts";
 import { start as s19 } from "../push/loops.ts";
 import { start as s20 } from "../queue/loops.ts";
 import { start as s21 } from "../reviews/loops.ts";
+import { start as s33 } from "../sandbox/loops.ts";
 import { start as s22 } from "../slots/loops.ts";
 import { start as s23 } from "../status/loops.ts";
 import { start as s24 } from "../steer/loops.ts";
@@ -54,6 +55,7 @@ export function startAll(hub: Hub): void {
   s19(hub); // hub/push
   s20(hub); // hub/queue
   s21(hub); // hub/reviews
+  s33(hub); // hub/sandbox
   s22(hub); // hub/slots
   s23(hub); // hub/status
   s24(hub); // hub/steer

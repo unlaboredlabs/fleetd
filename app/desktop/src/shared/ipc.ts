@@ -218,6 +218,19 @@ export const RevylKeyRequest = z.strictObject({
 export type RevylKeyRequest = z.infer<typeof RevylKeyRequest>;
 
 /**
+ * The team's own key at a hosted sandbox provider (Settings › Hub › Machines › Sandboxes): main seals `key` to
+ * `boxPubKey`, the hub's own key from sandbox_get, and calls sandbox_connect with `provider` and, for E2B, `domain`.
+ * The hub gets the box, never the key, and nothing returns it.
+ */
+export const SandboxKeyRequest = z.strictObject({
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  provider: z.string().regex(/^[a-z0-9]{1,32}$/u),
+  key: z.string().trim().min(1).max(SECRET_MAX_BYTES),
+  domain: z.string().trim().max(253).optional(),
+});
+export type SandboxKeyRequest = z.infer<typeof SandboxKeyRequest>;
+
+/**
  * Create the hub's own GitHub App (Settings › Hub › Setup › GitHub): main asks the hub for its manifest, posts it to GitHub from
  * a loopback page, catches GitHub's code there and calls github_app_create itself; the App's keys go to the hub only.
  */
@@ -416,6 +429,7 @@ export const REQUESTS = {
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
   [IPC.revylKeySubmit]: z.tuple([HubId, RevylKeyRequest]),
+  [IPC.sandboxKeySubmit]: z.tuple([HubId, SandboxKeyRequest]),
   [IPC.mcpOauthClientSubmit]: z.tuple([HubId, McpOauthClientRequest]),
   [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),
   [IPC.githubAppCancel]: none,

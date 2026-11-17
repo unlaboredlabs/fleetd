@@ -31,6 +31,7 @@ import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
 import { RevylScreens } from "./revyl/index.ts";
+import { sandboxesOf } from "./sandbox/index.ts";
 import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
@@ -474,6 +475,12 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         if (frame.action === "revyl_check") {
           const revyl = screens(node).revyl;
           if (revyl instanceof RevylScreens) return void revyl.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
+        }
+        // A node where agents never run in sandboxes (macOS, the agents' Mac) answers below that it doesn't know them.
+        if (frame.action === "sandbox_check" || frame.action === "sandbox_limits") {
+          const sandboxes = sandboxesOf(node);
+          if (sandboxes && frame.action === "sandbox_limits") return void ctx.send({ t: "node_action_result", ...sandboxes.setLimits(frame as unknown as NodeAction) });
+          if (sandboxes) return void sandboxes.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
         }
         void runNodeAction(frame as unknown as NodeAction, {
           hold: () => sessions.hold(),

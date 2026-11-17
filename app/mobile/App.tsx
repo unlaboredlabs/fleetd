@@ -40,6 +40,7 @@ import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { Devices } from "./src/screens/Devices";
 import { ImportMemory } from "./src/screens/ImportMemory";
+import { Sandboxes } from "./src/screens/Sandboxes";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
 import { Vault } from "./src/screens/vault/Vault";
@@ -515,6 +516,7 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Sandboxes" component={Sandboxes} options={{ ...pushed(t, "Sandboxes"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultEdit" component={VaultEdit} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />

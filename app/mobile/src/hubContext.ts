@@ -130,6 +130,8 @@ export type SettingsParams = {
   Settings: undefined;
   ImportMemory: undefined;
   Devices: undefined;
+  /** The team's own hosted sandbox accounts, for admins. */
+  Sandboxes: undefined;
 } & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;

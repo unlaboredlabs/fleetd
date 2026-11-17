@@ -1,7 +1,7 @@
 // The slot board's rules, without I/O: the service in index.ts persists what
 // `takeOps` hands it and feeds it thread events, machine facts and the time.
 import type { MachineId, ProjectRef, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
-import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
+import { type Auto, setCap, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
 /** An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet. */
 export const SETTLE_MS = 10 * 60 * 1000;
@@ -26,7 +26,8 @@ export type Machine = {
   diskRoom?: number;
 };
 
-const machineCapOf = (m: Machine) => m.maxAgents ?? m.auto.cap;
+/** A person's number counts the machine's own slots; its hosted ones (sizing.ts) come on top either way. */
+const machineCapOf = (m: Machine) => (m.maxAgents === undefined ? m.auto.cap : setCap(m.maxAgents, m.auto));
 /** Why it fits that many, or "set" for a person's setting. */
 const machineWhy = (m: Machine) => (m.maxAgents !== undefined ? "set" : m.auto.why);
 

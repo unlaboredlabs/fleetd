@@ -131,6 +131,8 @@ export const IPC = {
   hubLinkSubmit: "hub-link:submit",
   /** invoke(RevylKeyRequest) → CallOutcome. Main seals the team's Revyl key to the hub's own key, then calls revyl_connect. */
   revylKeySubmit: "revyl:key-submit",
+  /** invoke(SandboxKeyRequest) → CallOutcome. Main seals a hosted sandbox provider's key to the hub's own key, then calls sandbox_connect. */
+  sandboxKeySubmit: "sandbox:key-submit",
   /**
    * invoke(McpOauthClientRequest) → CallOutcome. Main seals the person's own OAuth client secret to the hub's own key,
    * then calls mcp_oauth_start with the client.

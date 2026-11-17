@@ -173,6 +173,8 @@ export type NodeLoad = {
   memTotalBytes?: number;
   memPerAgentBytes?: number;
   diskPerAgentBytes?: number;
+  /** Agents the machine may run in hosted sandboxes past its own slots (shared/sandbox.ts `hostedMax`); absent for none. */
+  hostedMax?: number;
   limits?: LoginLimit[];
   disk?: NodeDisk;
   /** Absent off Linux, on a machine with no network hardware of its own (a container), and from older nodes. */
@@ -238,7 +240,9 @@ export type NodeActionKind =
   | "claude_login_code"
   | "hold"
   | "screens"
-  | "revyl_check";
+  | "revyl_check"
+  | "sandbox_check"
+  | "sandbox_limits";
 
 /** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
@@ -254,6 +258,10 @@ export type NodeAction = {
   screens?: unknown;
   /** `revyl_check`: the team's Revyl key sealed to this node's box key (base64), for Settings' Test (hub/revyl). */
   revyl?: string;
+  /** `sandbox_check`: `{"provider","key","domain"?}` sealed to this node's box key (base64), for Settings' Test (hub/sandbox). */
+  sandbox?: string;
+  /** `sandbox_limits`: the team's connected hosted providers and each one's limit, in the order agents go to them. */
+  limits?: { provider: string; max: number }[];
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
    * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores
@@ -277,7 +285,7 @@ export type NodeActionResult = {
   login_url?: string;
   /**
    * `revyl_check` that failed: why, as RevylCheck's `reason` (`no_cli` when this machine has no `revyl` and couldn't
-   * install it, `message` saying why).
+   * install it, `message` saying why). `sandbox_check` that failed: SandboxCheck's `reason`.
    */
   reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */

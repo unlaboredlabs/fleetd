@@ -11788,6 +11788,36 @@
         "revyl_test.output": {
           "$ref": "#/$defs/RevylState"
         },
+        "sandbox_connect.input": {
+          "$ref": "#/$defs/SandboxConnectInput"
+        },
+        "sandbox_connect.output": {
+          "$ref": "#/$defs/SandboxState"
+        },
+        "sandbox_disconnect.input": {
+          "$ref": "#/$defs/SandboxDisconnectInput"
+        },
+        "sandbox_disconnect.output": {
+          "$ref": "#/$defs/SandboxState"
+        },
+        "sandbox_get.input": {
+          "$ref": "#/$defs/SandboxGetInput"
+        },
+        "sandbox_get.output": {
+          "$ref": "#/$defs/SandboxState"
+        },
+        "sandbox_set.input": {
+          "$ref": "#/$defs/SandboxSetInput"
+        },
+        "sandbox_set.output": {
+          "$ref": "#/$defs/SandboxState"
+        },
+        "sandbox_test.input": {
+          "$ref": "#/$defs/SandboxTestInput"
+        },
+        "sandbox_test.output": {
+          "$ref": "#/$defs/SandboxState"
+        },
         "screen_end.input": {
           "$ref": "#/$defs/ScreenEndInput"
         },
@@ -12400,6 +12430,16 @@
         "revyl_route_set.output",
         "revyl_test.input",
         "revyl_test.output",
+        "sandbox_connect.input",
+        "sandbox_connect.output",
+        "sandbox_disconnect.input",
+        "sandbox_disconnect.output",
+        "sandbox_get.input",
+        "sandbox_get.output",
+        "sandbox_set.input",
+        "sandbox_set.output",
+        "sandbox_test.input",
+        "sandbox_test.output",
         "screen_end.input",
         "screen_end.output",
         "screen_open.input",
@@ -19160,6 +19200,179 @@
       ],
       "type": "object"
     },
+    "SandboxCheck": {
+      "description": "The last check of a provider's key (`sandbox_connect`, `sandbox_test`): never the key, nor any part of it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "fix": {
+          "description": "What to do about a failed check, in plain words.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What failed, in plain words, with the key masked. Absent while it works.",
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "$ref": "#/$defs/SandboxCheckReason"
+        }
+      },
+      "required": [
+        "at",
+        "ok"
+      ],
+      "type": "object"
+    },
+    "SandboxCheckReason": {
+      "description": "Why a hosted sandbox provider's key failed its last check, as a word the app acts on: `invalid_key` (the provider\nrefused it), `limit` (the account is at its plan's limit), `billing` (the account can't pay), `unreachable` (the\nprovider, or a self-hosted E2B's domain, didn't answer), `failed` (anything else, or no machine could test it).",
+      "enum": [
+        "invalid_key",
+        "limit",
+        "billing",
+        "unreachable",
+        "failed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SandboxConnectInput": {
+      "properties": {
+        "domain": {
+          "description": "E2B only: the API domain of a self-hosted E2B (E2B_DOMAIN); absent for E2B's own.",
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer",
+          "description": "How many of the team's agents may run there at once; absent keeps the one set, else 5."
+        },
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        },
+        "sealed": {
+          "description": "`{\"key\":\"<the provider's API key>\"}`, sealed (crypto_box_seal) to `boxPubKey`, base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "SandboxDisconnectInput": {
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "SandboxGetInput": {
+      "type": "object"
+    },
+    "SandboxProvider": {
+      "description": "A hosted sandbox provider a team connects with its own key.",
+      "enum": [
+        "e2b",
+        "boat",
+        "daytona"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SandboxProviderState": {
+      "description": "One hosted sandbox provider as the hub keeps it.",
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/SandboxCheck",
+          "description": "Absent before the first check, and while not connected."
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "domain": {
+          "description": "E2B only: the API domain of a self-hosted E2B; absent for E2B's own.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "How many of the team's agents may run there at once, across its machines; 0 while not connected.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        }
+      },
+      "required": [
+        "connected",
+        "limit",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "SandboxSetInput": {
+      "properties": {
+        "limit": {
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        }
+      },
+      "required": [
+        "limit",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "SandboxState": {
+      "description": "The team's hosted sandbox accounts: every provider, in the one fixed order agents go to the connected ones once the\nmachines' own slots are full.",
+      "properties": {
+        "boxPubKey": {
+          "description": "The hub's own box key (X25519, base64): `sandbox_connect`'s `sealed` is sealed to it.",
+          "type": "string"
+        },
+        "placing": {
+          "description": "Whether the team's machines place agents in hosted sandboxes: false while this fleetd has no hosted kind yet, and\nthe keys and limits are kept for the update that brings it.",
+          "type": "boolean"
+        },
+        "providers": {
+          "items": {
+            "$ref": "#/$defs/SandboxProviderState"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "boxPubKey",
+        "placing",
+        "providers"
+      ],
+      "type": "object"
+    },
+    "SandboxTestInput": {
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
     "ScreenEndInput": {
       "properties": {
         "sessionId": {
@@ -20055,6 +20268,11 @@
         {
           "const": "mac",
           "description": "A Mac for agents (D298): optional.",
+          "type": "string"
+        },
+        {
+          "const": "sandboxes",
+          "description": "Hosted sandboxes from the team's own E2B, boat.dev or Daytona account: optional.",
           "type": "string"
         }
       ],

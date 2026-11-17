@@ -4994,6 +4994,11 @@ export type NodeLoad = {
    */
   diskPerAgentBytes?: number;
   /**
+   * The agents the machine may run in hosted sandboxes once its own slots are full, added to its own cap: the
+   * team's limit of the providers its node can place agents in. Absent while it can place none, and from older nodes.
+   */
+  hostedMax?: number;
+  /**
    * What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
    * from older nodes.
    */
@@ -7126,6 +7131,83 @@ export type SafetyRule = {
   present?: boolean;
 };
 
+/**
+ * Why a hosted sandbox provider's key failed its last check, as a word the app acts on: `invalid_key` (the provider
+ * refused it), `limit` (the account is at its plan's limit), `billing` (the account can't pay), `unreachable` (the
+ * provider, or a self-hosted E2B's domain, didn't answer), `failed` (anything else, or no machine could test it).
+ */
+export type KnownSandboxCheckReason = "invalid_key" | "limit" | "billing" | "unreachable" | "failed";
+/** KnownSandboxCheckReason, or a value from a newer hub. */
+export type SandboxCheckReason = KnownSandboxCheckReason | (string & {});
+
+/** The last check of a provider's key (`sandbox_connect`, `sandbox_test`): never the key, nor any part of it. */
+export type SandboxCheck = {
+  at: Timestamp;
+  /** What to do about a failed check, in plain words. */
+  fix?: string;
+  /** What failed, in plain words, with the key masked. Absent while it works. */
+  message?: string;
+  ok: boolean;
+  reason?: SandboxCheckReason;
+};
+
+export type SandboxConnectInput = {
+  /** E2B only: the API domain of a self-hosted E2B (E2B_DOMAIN); absent for E2B's own. */
+  domain?: string;
+  /** How many of the team's agents may run there at once; absent keeps the one set, else 5. */
+  limit?: number;
+  provider: SandboxProvider;
+  /** `{"key":"<the provider's API key>"}`, sealed (crypto_box_seal) to `boxPubKey`, base64. */
+  sealed: string;
+};
+
+export type SandboxDisconnectInput = {
+  provider: SandboxProvider;
+};
+
+export type SandboxGetInput = { [key: string]: unknown };
+
+/** A hosted sandbox provider a team connects with its own key. */
+export type KnownSandboxProvider = "e2b" | "boat" | "daytona";
+/** KnownSandboxProvider, or a value from a newer hub. */
+export type SandboxProvider = KnownSandboxProvider | (string & {});
+
+/** One hosted sandbox provider as the hub keeps it. */
+export type SandboxProviderState = {
+  /** Absent before the first check, and while not connected. */
+  check?: SandboxCheck;
+  connected: boolean;
+  /** E2B only: the API domain of a self-hosted E2B; absent for E2B's own. */
+  domain?: string;
+  /** How many of the team's agents may run there at once, across its machines; 0 while not connected. */
+  limit: number;
+  provider: SandboxProvider;
+};
+
+export type SandboxSetInput = {
+  limit: number;
+  provider: SandboxProvider;
+};
+
+/**
+ * The team's hosted sandbox accounts: every provider, in the one fixed order agents go to the connected ones once the
+ * machines' own slots are full.
+ */
+export type SandboxState = {
+  /** The hub's own box key (X25519, base64): `sandbox_connect`'s `sealed` is sealed to it. */
+  boxPubKey: string;
+  /**
+   * Whether the team's machines place agents in hosted sandboxes: false while this fleetd has no hosted kind yet, and
+   * the keys and limits are kept for the update that brings it.
+   */
+  placing: boolean;
+  providers: SandboxProviderState[];
+};
+
+export type SandboxTestInput = {
+  provider: SandboxProvider;
+};
+
 export type ScreenEndInput = {
   sessionId?: BrowserSessionId;
   waitId?: string;
@@ -7475,7 +7557,7 @@ export type SetupStep = {
 };
 
 /** The steps, in the order they are listed. */
-export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "onepassword" | "mac";
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "onepassword" | "mac" | "sandboxes";
 /** KnownSetupStepId, or a value from a newer hub. */
 export type SetupStepId = KnownSetupStepId | (string & {});
 
@@ -10010,6 +10092,11 @@ export interface ToolMap {
   revyl_get: { input: RevylGetInput; output: RevylState };
   revyl_route_set: { input: RevylRouteSetInput; output: RevylState };
   revyl_test: { input: RevylTestInput; output: RevylState };
+  sandbox_connect: { input: SandboxConnectInput; output: SandboxState };
+  sandbox_disconnect: { input: SandboxDisconnectInput; output: SandboxState };
+  sandbox_get: { input: SandboxGetInput; output: SandboxState };
+  sandbox_set: { input: SandboxSetInput; output: SandboxState };
+  sandbox_test: { input: SandboxTestInput; output: SandboxState };
   screen_end: { input: ScreenEndInput; output: ScreenEndOutput };
   screen_open: { input: ScreenOpenInput; output: ScreenOpenOutput };
   screens_count: { input: ScreensCountInput; output: ScreensCountOutput };

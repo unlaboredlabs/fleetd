@@ -294,6 +294,15 @@
   flex-basis: 100%;
   margin: 0;
 }
+/* A hosted sandbox provider's limit, "500 at once" at most; a self-hosted E2B's domain beside its key. */
+.sandboxLimit {
+  width: 132px;
+}
+.domainField {
+  flex: 0 1 200px;
+  width: auto;
+  min-width: 0;
+}
 /* A phone kind's Revyl choice: room for its longest, "Our machines first, then Revyl". */
 .routeChoice {
   width: 236px;

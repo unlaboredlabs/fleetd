@@ -123,6 +123,7 @@ test("setup checks are there only once their step is set up", () => {
     githubApp: { appId: 1, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23", owner: "acme", htmlUrl: "", settingsUrl: "", createdAt: "2026-10-19T09:00:00.000Z" },
     onepassword: [["Sam"]],
     vault: { mode: "file", path: "/home/dev/.config/fleetd/vault.key", locked: false, unsafe: [], recoverySaved: true },
+    sandboxes: [["E2B", { at: "2026-10-19T09:00:00.000Z", ok: true }]],
   });
   expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });
@@ -576,7 +577,7 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   cleanup = t.done;
   const s = hubSources(t.hub);
   expect(s.machines()).toEqual([]);
-  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [] });
+  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [], sandboxes: [] });
   expect(s.reposWithoutCi()).toEqual([]);
   expect(s.bases("lab-a")).toEqual([]);
   expect(s.sameComputer("lab-a")).toEqual([]);
