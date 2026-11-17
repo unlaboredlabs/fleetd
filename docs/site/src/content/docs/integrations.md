@@ -84,16 +84,42 @@ fleetd registers itself with the service where the service allows it (dynamic cl
 the dialog says so and asks for an OAuth app of your own: make one in the service's developer settings, allow the
 **Redirect URL** the dialog shows (copy it exactly), and enter its client ID and secret. The secret is sealed in the app
 to the hub's own key. Signing in uses PKCE, and goes over https unless the service is on this machine or your tailnet.
+Some services accept only an https or loopback callback: open fleetd at the hub's https address (see
+[Troubleshooting](/docs/troubleshooting#hub)) and sign in from there.
 
 **Renewing.** A sign-in's token lasts a while (often an hour). The hub renews it before it ends, from half its life left
 and at most 30 minutes before, and hands the new one to the project's machine; the lead's next message picks it up,
-without starting a new conversation. Scheduled runs use it the same way.
+without starting a new conversation. Scheduled runs use it the same way. Where the service lists `offline_access`
+among its scopes, fleetd asks for it (with `openid` where listed too), since some services send the refresh token
+renewing needs only then.
+
 
 **When the service ends the sign-in** (you revoked fleetd's access, changed your password, or the sign-in expired with
 no way to renew it), the server shows **Signed out** with the service's reason and **Reconnect**, the lead goes without
 it, and its chat says so once: "mail is signed out: … the project can't use it until you press Reconnect". **Reconnect** signs
 in again with the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token
 has ended, the chat says that once too, and again when it works.
+
+## Example: Paper {#paper}
+
+Paper (paper.design) is a design canvas with a hosted MCP server. Your agents use it with your own Paper account; no
+key and no Paper app on the project's machine.
+
+1. Settings › the project › **Project** › **MCP servers** › **Add an MCP server**: name `paper`, **URL**
+   `https://mcp.paper.design`, key empty, **Agents get it too** on, then **Connect and test**.
+2. **Sign in**: Paper's sign-in page opens; sign in and allow fleetd. Paper takes only an https or loopback callback,
+   so open fleetd at the hub's https address (or on the hub's machine) first.
+3. **Test connection** on its row lists Paper's tools.
+
+The project's writers and reviewers then read Paper files (structure, screenshots, styles, JSX, text), create and edit
+artboards and frames, set text and styles, export images, and manage files, unasked. A writer that has the repo
+checked out can design a screen in Paper, build it, and open the PR in one task. There is no Paper editor inside
+fleetd: open the file in Paper's own app (web or desktop) to watch an agent's edits live, and ask agents to link the
+file in their results.
+
+**Plan.** Paper's free plan allows 100 MCP tool calls a week, about one small design session; a paid plan raises it.
+Paper's pricing page (paper.design/pricing) has the current numbers, which may change while its hosted MCP is in early
+access.
 
 ## Disconnect {#disconnect}
 

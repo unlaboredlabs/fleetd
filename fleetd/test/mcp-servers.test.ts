@@ -265,6 +265,85 @@ test("signs in with a registered client and PKCE, hands the token to the machine
   expect(getRow(hub, scope, "docs")).toBeUndefined();
 });
 
+/**
+ * A service shaped like an OpenID Connect sign-in in front of an MCP server: its resource names no scopes, its
+ * authorization server lists `offline_access` (unless `renews` is off), and it registers only https or loopback
+ * redirects.
+ */
+function oidcService() {
+  const seen = { registered: [] as Record<string, unknown>[] };
+  const config = { renews: true };
+  let port = 0;
+  const server: Bun.Server<undefined> = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const base = `http://127.0.0.1:${port}`;
+      if (url.pathname === "/") {
+        return new Response("", { status: 401, headers: { "www-authenticate": `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"` } });
+      }
+      if (url.pathname === "/.well-known/oauth-protected-resource") return Response.json({ resource: base, authorization_servers: [`${base}/login`] });
+      if (url.pathname === "/.well-known/oauth-authorization-server/login") {
+        return Response.json({
+          issuer: `${base}/login`,
+          authorization_endpoint: `${base}/login/authorize`,
+          token_endpoint: `${base}/login/token`,
+          registration_endpoint: `${base}/login/register`,
+          code_challenge_methods_supported: ["S256"],
+          scopes_supported: config.renews ? ["email", "offline_access", "openid", "profile"] : ["email", "openid", "profile"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+        });
+      }
+      if (url.pathname === "/login/register") {
+        const body = (await req.json()) as { redirect_uris: string[] };
+        const to = new URL(body.redirect_uris[0]!);
+        if (to.protocol === "http:" && to.hostname !== "127.0.0.1" && to.hostname !== "localhost") {
+          return Response.json({ error: "invalid_redirect_uri", error_description: `Invalid redirect URI: '${to}'` }, { status: 400 });
+        }
+        seen.registered.push(body);
+        return Response.json({ client_id: `client-${seen.registered.length}` }, { status: 201 });
+      }
+      return new Response("no", { status: 404 });
+    },
+  });
+  port = server.port ?? 0;
+  return { server, seen, config, base: `http://127.0.0.1:${port}` };
+}
+
+test("asks for offline_access where the sign-in lists it, so the server can be renewed, and says why a plain-http callback is refused", async () => {
+  const oidc = oidcService();
+  try {
+    const { call } = lab();
+    await call("mcp_server_set", {
+      scope,
+      name: "canvas",
+      enabled: true,
+      roles: { lead: true, writers: true, reviewers: true },
+      transport: { type: "http", url: `${oidc.base}/` },
+      integration: { readTools: [] },
+    });
+    // No scope named by the resource; the authorization server lists offline_access and the refresh grant.
+    oidc.config.renews = false;
+    const plain = new URL((await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://127.0.0.1:4795" })).authorizeUrl as string);
+    expect(plain.searchParams.get("scope")).toBeNull();
+    expect(oidc.seen.registered).toHaveLength(1);
+    oidc.config.renews = true;
+    const renewing = new URL((await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://127.0.0.1:4795" })).authorizeUrl as string);
+    expect(renewing.searchParams.get("scope")).toBe("openid offline_access");
+    // The client registered without that scope isn't reused: fleetd registers again, asking for it.
+    expect(oidc.seen.registered).toHaveLength(2);
+    expect(oidc.seen.registered[1]).toMatchObject({ scope: "openid offline_access", grant_types: ["authorization_code", "refresh_token"] });
+    expect(renewing.searchParams.get("client_id")).toBe("client-2");
+    // A hub reached over plain http on a tailnet: the service refuses the callback, and the person hears how to fix it.
+    await expect(call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4790" })).rejects.toThrow(
+      /Invalid redirect URI.*takes only an https or loopback callback/,
+    );
+  } finally {
+    oidc.server.stop(true);
+  }
+});
+
 test("the integrations policy reads names, blocks money and credentials, and asks for the rest", () => {
   const crm = {
     scope,
