@@ -5,14 +5,14 @@
 // sealed to its own box key (`sealedTo`) for a check of it (`test`), never into an agent's session. The hub knows no
 // provider's API: the node's client asks. Every use is logged, without the key.
 //
-// Placement is by count alone: a machine's own slots first, then the connected providers in PROVIDERS' order up to each
+// Placement is by count alone: a machine's own slots first, then the connected providers in ORDER up to each
 // one's limit, then the queue. The limits reach the team's machines (`sandbox_limits`), whose nodes report what they
 // may place (`load.hostedMax`, added to their cap in hub/slots/sizing.ts). Until a hosted kind lands no node places
 // any (`placing` is false), so connecting a provider changes neither where agents run nor a machine's cap.
 import type { KnownSandboxProvider, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, PROVIDERS, reasonOf } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -41,7 +41,7 @@ const rowOf = (hub: Hub, provider: KnownSandboxProvider): Row | undefined => row
 
 function known(provider: string): KnownSandboxProvider {
   if (isProvider(provider)) return provider;
-  throw new ToolError("invalid", `provider is ${PROVIDERS.join(", ")}, not ${provider}.`);
+  throw new ToolError("invalid", `provider is ${ORDER.join(", ")}, not ${provider}.`);
 }
 
 function checkOf(r: Row): SandboxCheck | undefined {
@@ -54,7 +54,7 @@ function checkOf(r: Row): SandboxCheck | undefined {
 
 export function state(hub: Hub): SandboxState {
   const all = rows(hub);
-  const providers = PROVIDERS.map((p): SandboxProviderState => {
+  const providers = ORDER.map((p): SandboxProviderState => {
     const r = all.find((x) => x.provider === p);
     if (!r) return { provider: p, connected: false, limit: 0 };
     const check = checkOf(r);
@@ -66,7 +66,7 @@ export function state(hub: Hub): SandboxState {
 /** The connected providers' limits, in the order agents go to them. */
 export function limits(hub: Hub): Limit[] {
   const all = rows(hub);
-  return PROVIDERS.flatMap((p) => {
+  return ORDER.flatMap((p) => {
     const r = all.find((x) => x.provider === p);
     return r ? [{ provider: p, max: r.max_agents }] : [];
   });
@@ -261,7 +261,7 @@ export function sendLimits(hub: Hub, machineIds?: string[]): void {
 /** For hub/doctor: each connected provider's name and last check, in the order agents go to them. */
 export function checks(hub: Hub): [name: string, check?: SandboxCheck][] {
   const all = rows(hub);
-  return PROVIDERS.flatMap((p) => {
+  return ORDER.flatMap((p) => {
     const r = all.find((x) => x.provider === p);
     return r ? [[NAMES[p], checkOf(r)] as [string, SandboxCheck | undefined]] : [];
   });

@@ -10,7 +10,8 @@ import { sandboxProviders } from "../src/hub/doctor/checks.ts";
 import { guides } from "../src/hub/setup/index.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { Sandboxes } from "../src/node/sandbox/hosted.ts";
-import { ProviderError, type ProviderAuth, type ProviderId } from "../src/sandbox/providers/index.ts";
+import { provider, ProviderError, type ProviderAuth, type ProviderId } from "../src/sandbox/providers/index.ts";
+import { boatStandIn, daytonaStandIn, e2bStandIn, KEY as STANDIN_KEY } from "./sandbox/stand_ins.ts";
 import { domainOf, hostedMax } from "../src/shared/sandbox.ts";
 import type { NodeAction } from "../src/shared/node_link.ts";
 import { addMachine, caller, testHub } from "./screens_helpers.ts";
@@ -47,12 +48,12 @@ const standIn = (id: ProviderId, auth: ProviderAuth) => ({
   },
 });
 
-/** A Linux machine of the team's whose node answers as node/sandbox does. */
+/** A Linux machine of the team's whose node answers as node/sandbox does, with `lister` for the provider's client. */
 const nodes = new Map<string, Sandboxes>();
-function machine(id: string, kinds: ProviderId[] = []) {
+function machine(id: string, kinds: ProviderId[] = [], lister: ConstructorParameters<typeof Sandboxes>[2] = standIn) {
   const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
   addMachine(t.hub, id, { boxPubKey: box.publicKey() });
-  nodes.set(id, new Sandboxes(box, kinds, standIn));
+  nodes.set(id, new Sandboxes(box, kinds, lister));
   t.link.link(id, ["sandbox"]);
 }
 beforeEach(() => {
@@ -129,6 +130,29 @@ test("limits reach the team's machines in the fixed order, at each change and as
   await call(admin, "sandbox_disconnect", { provider: "e2b" });
   expect(nodes.get("box2")!.hostedMax()).toBe(0);
 });
+
+const STAND_INS = { e2b: e2bStandIn, boat: boatStandIn, daytona: daytonaStandIn } as const;
+for (const id of ["e2b", "boat", "daytona"] as const) {
+  test(`Test reaches ${id}'s stand-in server through the real client: its key works, a wrong one is refused`, async () => {
+    const server = STAND_INS[id]();
+    try {
+      const api = id === "boat" ? `${server.url}/api/v1` : server.url;
+      // The node's own client, only pointed at the stand-in server.
+      machine("devbox", [], (p, auth, o) => provider(p, auth, { ...o, urls: { api } }));
+      const on = await call(admin, "sandbox_connect", { provider: id, sealed: sealed(STANDIN_KEY) });
+      expect(on.providers.find((p: { provider: string }) => p.provider === id).check).toEqual({ at: expect.any(String), ok: true });
+      expect(server.calls.length).toBeGreaterThan(0);
+      expect(server.boxes.size).toBe(0);
+      const wrong = "wrong-key-987654321";
+      const off = await call(admin, "sandbox_connect", { provider: id, sealed: sealed(wrong) });
+      const check = off.providers.find((p: { provider: string }) => p.provider === id).check;
+      expect(check).toMatchObject({ ok: false, reason: "invalid_key", message: expect.stringMatching(/^devbox: /) });
+      expect(JSON.stringify(off)).not.toContain(wrong);
+    } finally {
+      server.stop();
+    }
+  });
+}
 
 test("hostedMax counts only the providers a node can place, and a domain is a host", () => {
   const limits = [{ provider: "e2b" as const, max: 10 }, { provider: "boat" as const, max: 3 }];

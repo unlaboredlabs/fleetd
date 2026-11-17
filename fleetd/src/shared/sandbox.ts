@@ -7,12 +7,15 @@ import type { KnownSandboxCheckReason, KnownSandboxProvider } from "./contracts.
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
 export const CAP_SANDBOX = "sandbox";
 
-/** Every provider, in the order agents go to the connected ones once a machine's own slots are full. */
-export const PROVIDERS: readonly KnownSandboxProvider[] = ["e2b", "boat", "daytona"];
+/**
+ * Every provider, in the placement order: the order agents go to the connected ones once a machine's own slots are
+ * full, which Settings shows. (sandbox/providers' own PROVIDERS is only the clients' list, in no such order.)
+ */
+export const ORDER: readonly KnownSandboxProvider[] = ["e2b", "boat", "daytona"];
 
 export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { e2b: "E2B", boat: "boat.dev", daytona: "Daytona" };
 
-export const isProvider = (p: string): p is KnownSandboxProvider => (PROVIDERS as readonly string[]).includes(p);
+export const isProvider = (p: string): p is KnownSandboxProvider => (ORDER as readonly string[]).includes(p);
 
 /** A provider's limit when none was set at connect. */
 export const DEFAULT_LIMIT = 5;
@@ -27,13 +30,13 @@ export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limi
 /** A check's reason as one this build knows; anything else is `failed`. */
 export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includes(r as KnownSandboxCheckReason) ? (r as KnownSandboxCheckReason) : "failed");
 
-/** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in PROVIDERS' order. */
+/** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
 
 /**
  * How many agents a machine may run in hosted sandboxes beyond its own slots: the limits of the connected providers its
  * node has a hosted kind for (`kinds`). Placement fills the machine's own slots first, then these providers in
- * PROVIDERS' order up to each one's limit, then the hub queues. The limit is the team's total for a provider.
+ * ORDER up to each one's limit, then the hub queues. The limit is the team's total for a provider.
  */
 export function hostedMax(limits: readonly Limit[], kinds: readonly KnownSandboxProvider[]): number {
   return limits.filter((l) => kinds.includes(l.provider)).reduce((n, l) => n + Math.max(0, Math.trunc(l.max)), 0);

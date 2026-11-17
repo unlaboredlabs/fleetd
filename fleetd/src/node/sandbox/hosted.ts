@@ -5,7 +5,7 @@
 // kept and reported as none: connecting a provider changes neither where agents run nor the cap.
 import type { KnownSandboxCheckReason, KnownSandboxProvider } from "../../shared/contracts.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, hostedMax, isProvider, type Limit, NAMES, PROVIDERS, reasonOf } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, hostedMax, isProvider, type Limit, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
 import type { Node } from "../api.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
@@ -37,10 +37,10 @@ export class Sandboxes {
     return hostedMax(this.#limits, this.kinds);
   }
 
-  /** `node_action` sandbox_limits: the team's connected providers' limits, kept in PROVIDERS' order. */
+  /** `node_action` sandbox_limits: the team's connected providers' limits, kept in ORDER. */
   setLimits(frame: NodeAction): NodeActionResult {
     const given = Array.isArray(frame.limits) ? frame.limits : [];
-    this.#limits = PROVIDERS.flatMap((p) => {
+    this.#limits = ORDER.flatMap((p) => {
       const l = given.find((g) => g?.provider === p);
       const max = Number(l?.max);
       return l && Number.isFinite(max) && max >= 0 ? [{ provider: p, max: Math.trunc(max) }] : [];

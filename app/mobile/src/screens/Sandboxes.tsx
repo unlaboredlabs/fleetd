@@ -13,6 +13,9 @@ import { ListRow, ListSection } from "../ui/List";
 import { confirmDestructive, errorWords, Note, Problem, useRead } from "./manage/parts";
 import { sealToHub } from "./vault/api";
 
+/** Connect and Test wait for the provider's answer from one of the team's machines (the hub waits up to 45 s for it). */
+const CHECK_TIMEOUT_MS = 60_000;
+
 export function Sandboxes() {
   const t = useTheme();
   const { session } = useHub();
@@ -80,7 +83,7 @@ function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey
     const sealed = sealToHub({ key: typed }, boxPubKey);
     if (sealed === null) return setProblem("The hub's key didn't come through. Try again.");
     const d = takesDomain(p.provider) ? domain.trim() : "";
-    void run("connect", () => session.call("sandbox_connect", { provider: p.provider, sealed, ...(d === "" ? {} : { domain: d }) }), "Not connected").then(() => setKey(""));
+    void run("connect", () => session.call("sandbox_connect", { provider: p.provider, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS), "Not connected").then(() => setKey(""));
   };
   const pickLimit = () => {
     const choices = limitChoices(p.limit);
@@ -110,7 +113,7 @@ function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey
         {p.connected ? (
           <>
             <ListRow title="At Once" value={limitWords(p.limit)} {...(busy === null ? { onPress: pickLimit } : {})} chevron={false} />
-            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => session.call("sandbox_test", { provider: p.provider }), "Not tested") } : {})} chevron={false} />
+            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => session.call("sandbox_test", { provider: p.provider }, CHECK_TIMEOUT_MS), "Not tested") } : {})} chevron={false} />
             <ListRow title={busy === "disconnect" ? "Disconnecting…" : "Disconnect"} destructive {...(busy === null ? { onPress: disconnect } : {})} chevron={false} />
           </>
         ) : (
