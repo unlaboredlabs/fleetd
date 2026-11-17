@@ -473,10 +473,26 @@ function lazyHooks(get: () => LeadSocketHooks | undefined): LeadSocketHooks {
   };
 }
 
+/** The box's sockets, in its host dir. The launcher's tools are given them relative to that dir (their cwd), so no
+ * address outgrows a socket's 108 bytes however deep the node's home is. */
+export const SOCKS = { api: "api.sock", fs: "fs.sock", net: "net.sock", vsock: "vsock.sock" } as const;
+
+/** Where to connect to the socket `name` in `dir`: its path, or on Linux, when that is too long for a socket address,
+ * the same socket through an open fd of the dir (`done` closes it once connected), as the session host's dial does. */
+export function socketAt(dir: string, name: string): { path: string; done: () => void } {
+  const path = join(dir, name);
+  if (path.length < 100 || process.platform !== "linux") return { path, done: () => {} };
+  const fd = openSync(dir, "r");
+  let open = true;
+  return { path: `/proc/self/fd/${fd}/${name}`, done: () => open && ((open = false), closeSync(fd)) };
+}
+
 /** A stream to the guest helper: the VMM's hybrid vsock socket, after `CONNECT <port>` and its `OK`. */
 export function vsockDial(dir: string, port: number): Promise<Duplex> {
   return new Promise((resolve, reject) => {
-    const s = connect(join(dir, "vsock.sock"));
+    const at = socketAt(dir, SOCKS.vsock);
+    const s = connect(at.path);
+    s.once("connect", at.done).once("close", at.done);
     let head = Buffer.alloc(0);
     const fail = (why: string) => {
       s.destroy();
@@ -543,22 +559,22 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
  * that means this machine. */
 export const PASTA_FLAGS = ["-q", "-f", "--config-net", "-t", "none", "-u", "none", "-T", "none", "-U", "none", "--no-map-gw"];
 
-/** The launcher's script: passt and virtiofsd in the background, then the VMM once both listen; it ends with the VMM,
- * and its helpers with it. passt runs in a network namespace of its own, which pasta links to this machine's network,
+/** The launcher's script, run in the box's host dir: passt and virtiofsd in the background, then the VMM once both
+ * listen, each with the box's sockets by name in that dir (SOCKS); it ends with the VMM, and its helpers with it. passt runs in a network namespace of its own, which pasta links to this machine's network,
  * behind a shell that first routes this machine's own addresses (`blocks`, ./net.ts) nowhere. Their pids go to `pids`
  * as `<vmm> <pasta> <virtiofsd>`. */
 export function launcherScript(b: BootPlan, now: number): string {
   const { dir, tools, check, view } = b;
   const viewDir = join(dir, "view");
-  const virtiofsd = [tools.virtiofsd, `--socket-path=${join(dir, "fs.sock")}`, `--shared-dir=${viewDir}`, "--sandbox=namespace", "--announce-submounts", "--cache=auto", "--log-level=error"];
-  const passt = [tools.passt, "--vhost-user", "--socket", join(dir, "net.sock"), "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
+  const virtiofsd = [tools.virtiofsd, `--socket-path=${SOCKS.fs}`, `--shared-dir=${viewDir}`, "--sandbox=namespace", "--announce-submounts", "--cache=auto", "--log-level=error"];
+  const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
   // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
-  const inNamespace = [blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
+  const inNamespace = [`cd ${q(dir)} || exit 1`, blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
   const pasta = `(exec -a pasta ${[tools.passt, ...PASTA_FLAGS, "--", "/bin/sh", "-c", inNamespace].map(q).join(" ")})`;
   const vmm = [
     tools.cloudHypervisor,
     "--api-socket",
-    `path=${join(dir, "api.sock")}`,
+    `path=${SOCKS.api}`,
     "--kernel",
     tools.kernel,
     "--cmdline",
@@ -570,11 +586,11 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--memory",
     `size=${GUEST_MEM_BYTES / 2 ** 20}M,shared=on`,
     "--fs",
-    `tag=view,socket=${join(dir, "fs.sock")}`,
+    `tag=view,socket=${SOCKS.fs}`,
     "--net",
-    `vhost_user=true,socket=${join(dir, "net.sock")},num_queues=2`,
+    `vhost_user=true,socket=${SOCKS.net},num_queues=2`,
     "--vsock",
-    `cid=3,socket=${join(dir, "vsock.sock")}`,
+    `cid=3,socket=${SOCKS.vsock}`,
     "--serial",
     `file=${join(dir, "console.log")}`,
     "--console",
