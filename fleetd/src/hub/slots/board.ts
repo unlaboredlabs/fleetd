@@ -8,6 +8,7 @@
 // says each live session's claude runs (`places`): a box counts against its provider while it lives, held or idle
 // between turns, and a run that comes back goes where its claude still is.
 import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
+import type { NodeLoad } from "../../shared/node_link.ts";
 import { type Limit, NAMES } from "../../shared/sandbox.ts";
 import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
@@ -730,6 +731,18 @@ export const SANDBOX_FIX_MAX = 300;
 export function clip(text: string, max: number): string {
   const chars = [...text];
   return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join("")}…` : text;
+}
+
+/** A cap's reason with where the machine's agents run: in a VM each, or as plain processes and why (a person reads
+ * it beside the machine's cap). Here, beside `clip`, so fleetd cloud sizes its machines with it too. */
+export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T & { sandbox?: SlotSandbox } {
+  if (!sandbox) return auto;
+  if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own`, sandbox: { kind: "microvm" } };
+  // Whole, or cut with an ellipsis: a reason is never dropped from the line people read.
+  const reason = clip(String(sandbox.why ?? "") || "no reason given", SANDBOX_WHY_MAX);
+  const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
+  const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}) };
+  return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
 }
 
 /** The board's state as the apps and `cap_set` show it: no count below 0, a machine's `why` cut to WHY_MAX ("auto" only
