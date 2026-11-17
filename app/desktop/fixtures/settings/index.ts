@@ -206,7 +206,8 @@ function machineRoles(f: Fixture) {
     }
     return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux, screenSettings: true };
   });
-  f.answer("machine_roles", undefined, { machines: entries });
+  // With how long recordings are kept, as the hub and fleetd cloud both answer it.
+  f.answer("machine_roles", undefined, { machines: entries, retention: { retentionDays: 30, maxGbPerProject: 20 } });
   for (const e of entries) {
     for (const roles of [["agents"], ["sessions"], ["agents", "sessions"]]) {
       f.answer("machine_roles_set", { machineId: asText(e["machineId"]), roles }, { machine: { ...clone(e), roles } });

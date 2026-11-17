@@ -52,7 +52,7 @@ export const typedRepo = (text: string): { readonly repo: RepoDraft } | { readon
   return { repo: { kind: "folder", path: trimmed(src.path) } };
 };
 
-type Listed = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "workspaceRoot" | "repos">;
+type Listed = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "workspaceRoot" | "repos" | "archivedAt">;
 
 /** The bot whose own folder is `path` on `machineId`: adding it would take that bot's place, so it isn't added. */
 export const botAtFolder = (projects: Readonly<Record<string, Listed>>, machineId: string | undefined, path: string): Listed | undefined =>
@@ -61,6 +61,7 @@ export const botAtFolder = (projects: Readonly<Record<string, Listed>>, machineI
 /**
  * The bot that is the checkout a failed clone found in its way (`at`, the hub's path, or the GitHub repo its own
  * checkout tracks): adding that checkout to another bot archives it read-only (hub/projects/repos.ts attachCheckout).
+ * One archived already isn't named: nothing more happens to it.
  */
 export const botHolding = (projects: Readonly<Record<string, Listed>>, machineId: string, repo: string, at: string | undefined, self: string): Listed | undefined => {
   const key = `github.com/${repo}`.toLowerCase();
@@ -68,12 +69,24 @@ export const botHolding = (projects: Readonly<Record<string, Listed>>, machineId
     (p) =>
       p.machineId === machineId &&
       p.projectId !== self &&
+      p.archivedAt === undefined &&
       ((at !== undefined && trimmed(p.workspaceRoot) === trimmed(at)) || (p.repos ?? []).some((r) => r.checkout.projectId === p.projectId && r.repoKey?.toLowerCase() === key)),
   );
 };
 
 /** The repo whose folder becomes the bot's own: the first folder listed. None: the hub makes a folder for it. */
 export const ownRepo = (repos: ReadonlyArray<RepoDraft>): RepoDraft | undefined => repos.find((r) => r.kind === "folder");
+
+/**
+ * Why `to` can't make the bot: with no folder of its own listed (`typed`, the add field's text, counts), its machine
+ * makes one, which a node from before W123 can't (no `projectsRoot`). Null when it can.
+ */
+export const needsUpdate = (to: { readonly name: string; readonly projectsRoot?: string | undefined }, repos: ReadonlyArray<RepoDraft>, typed?: string | null): string | null => {
+  const t = typed == null ? null : typedRepo(typed);
+  const all = t !== null && "repo" in t ? [...repos, t.repo] : repos;
+  if (ownRepo(all) !== undefined || to.projectsRoot !== undefined) return null;
+  return `${to.name} needs a fleetd update to make a bot with no folder: update fleetd there, or add a folder that's already on ${to.name}.`;
+};
 
 export type RepoState =
   /** Waits for the bot to be made. */

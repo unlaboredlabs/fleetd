@@ -345,7 +345,7 @@ no longer holds stops misleading the agents:
   start within 3 hours of that (the hub was down, the lead was busy all that time, the login was out of usage) waits
   for the next night. On the night the clocks go forward past that hour, it starts when they land. Bots start
   a minute apart.
-- **Which projects:** each one with the refresh on (the default; turn it off in its
+- **Which bots:** each one with the refresh on (the default; turn it off in its
   [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
   A quiet bot costs nothing. Its [switch on Instructions & memory](/docs/automations#the-nightly-memory-refresh)
   shows its next and last run, and its Run now refreshes the bot at once.
@@ -441,7 +441,7 @@ A lead is woken with the `lead.wake` prompt: its bot's state, then one line per 
 wake.
 
 ```
-# project lab (devbox/lab), 2026-10-19T14:02:11.000Z
+# bot lab (devbox/lab), 2026-10-19T14:02:11.000Z
 agents: 3 running of 6 (auto: memory 18 GB), 1 queued, 0 free
 
 ## Work

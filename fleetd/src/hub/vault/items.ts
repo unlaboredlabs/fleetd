@@ -78,7 +78,7 @@ function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDr
   }
   switch (s.scope) {
     case undefined:
-      throw new ToolError("invalid", "A variable names its project: scope project, machineId and projectId.");
+      throw new ToolError("invalid", "A variable names its bot: scope project, machineId and projectId.");
     case "person":
       throw updateApp();
     case "hub":

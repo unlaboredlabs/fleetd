@@ -158,8 +158,9 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
  * pasted or dropped URL or path) goes in its repos unless something is being made.
  */
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
-  // A bot made or refused while the dialog was hidden is done with: a new one starts on a fresh form.
-  if (!busy(ui.add) && ui.add.phase.kind !== "form") set(fresh());
+  // A bot made while the dialog was hidden is done with: a new one starts on a fresh form. One refused shows why,
+  // with Back to what was typed.
+  if (!busy(ui.add) && ui.add.phase.kind === "made") set(fresh());
   if (prefill && !busy(ui.add)) {
     const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
     const src = addSource(prefill.text);
@@ -196,8 +197,8 @@ const withRepo = (repos: ReadonlyArray<RepoDraft>, r: RepoDraft): ReadonlyArray<
 
 export const setName = (name: string): void => set({ ...omit(ui, "refused"), name });
 
-/** The add field opened (""), typed in, or closed (null). */
-export const setAdding = (adding: string | null): void => set({ ...omit(ui, "note"), adding });
+/** The add field opened (""), typed in, or closed (null): what was said about its text goes. */
+export const setAdding = (adding: string | null): void => set({ ...omit(ui, "note", "refused"), adding });
 
 /** A repo into the list, the add field closed. */
 export const addRepo = (r: RepoDraft): void => set({ ...omit(ui, "note", "refused"), repos: withRepo(ui.repos, r), adding: null });

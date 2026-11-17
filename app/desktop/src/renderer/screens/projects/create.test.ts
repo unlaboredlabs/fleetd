@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent } from "./contracts";
-import { botHolding, botName, busy, createStep, initialCreate, outcomeLine, typedRepo, type Call, type CreateState, type Draft, type Outcome } from "./create";
+import { botHolding, botName, busy, createStep, initialCreate, needsUpdate, outcomeLine, typedRepo, type Call, type CreateState, type Draft, type Outcome } from "./create";
 
 const live: CreateState = { ...initialCreate, live: true };
 const inspect = { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder", notes: [] };
@@ -115,8 +115,11 @@ describe("its repos", () => {
       "devbox/api-bot": { machineId: "devbox", projectId: "api-bot", title: "API", workspaceRoot: "/home/w/src/api/", threads, lastActivityAt: "" },
       "devbox/web-bot": { machineId: "devbox", projectId: "web-bot", title: "Web", workspaceRoot: "/srv/web", threads, lastActivityAt: "", repos: own("web-bot", "github.com/Acme/Web") },
       "devbox/p1": { machineId: "devbox", projectId: "p1", title: "Shop", workspaceRoot: "/home/w/src/shop", threads, lastActivityAt: "" },
+      "devbox/old": { machineId: "devbox", projectId: "old", title: "Old", workspaceRoot: "/srv/old", threads, lastActivityAt: "", archivedAt: "2026-11-01T00:00:00Z", repos: own("old", "github.com/acme/old") },
     };
     expect(botHolding(projects, "devbox", "acme/api", "/home/w/src/api", "p1")?.title).toBe("API");
+    // One archived already: using its checkout archives nothing more, so it isn't named.
+    expect(botHolding(projects, "devbox", "acme/old", "/srv/old", "p1")).toBeUndefined();
     expect(botHolding(projects, "devbox", "acme/web", undefined, "p1")?.title).toBe("Web");
     expect(botHolding(projects, "devbox", "acme/shop", "/home/w/src/shop", "p1")).toBeUndefined();
     expect(botHolding(projects, "buildbox", "acme/web", undefined, "p1")).toBeUndefined();
@@ -139,6 +142,17 @@ describe("its repos", () => {
       projects: [{ machineId: "devbox", projectId: "p1", title: "Shop", workspaceRoot: "/w", threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: "", repos: [{ name: "api", path: "/home/w/src/api", repoId: "R1", checkout: { machineId: "devbox", projectId: "c1" } }] }],
     })[0];
     expect(s.jobs.map((j) => j.state.t)).toEqual(["added", "adding"]);
+  });
+});
+
+describe("a machine whose node can't make a bot's folder", () => {
+  const old = { name: "devbox" };
+  it("says it needs a fleetd update, unless a folder is listed or typed in the add field", () => {
+    expect(needsUpdate(old, [])).toBe("devbox needs a fleetd update to make a bot with no folder: update fleetd there, or add a folder that's already on devbox.");
+    expect(needsUpdate(old, [{ kind: "clone", repo: "acme/shop" }], "acme/api")).toContain("needs a fleetd update");
+    expect(needsUpdate(old, [{ kind: "folder", path: "/home/w/src/docs" }])).toBeNull();
+    expect(needsUpdate(old, [], "/home/w/src/docs/")).toBeNull();
+    expect(needsUpdate({ name: "devbox", projectsRoot: "/home/w/fleetd/projects" }, [])).toBeNull();
   });
 });
 

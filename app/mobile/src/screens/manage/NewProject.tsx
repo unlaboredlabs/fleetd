@@ -7,7 +7,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, otherHost, ownRepo, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
+import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, needsUpdate, otherHost, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
@@ -17,7 +17,7 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { createCall, discover } from "./api";
 import { closeThenOpen } from "./arrival";
-import { createRefusal, machineName, NOT_CONNECTED } from "./model";
+import { createRefusal, machineName, NOT_CONNECTED, refusalNow } from "./model";
 import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, Symbol, useRead } from "./parts";
 
 type Props = NativeStackScreenProps<RootParams, "NewProject">;
@@ -55,6 +55,8 @@ export function NewProject({ navigation, route }: Props) {
   useEffect(() => session.onEvent((event) => send({ t: "event", event })), [session, send]);
   const live = state.hub.phase === "live";
   useEffect(() => send({ t: "live", live }), [live, send]);
+  // Back online: Create's "Not connected" no longer holds.
+  useEffect(() => setRefused((now) => refusalNow(now, live)), [live]);
   // After a drop, the next snapshot says which repos came in meanwhile.
   useEffect(() => {
     if (state.projects !== undefined) send({ t: "snapshot", projects: Object.values(state.projects) });
@@ -64,13 +66,9 @@ export function NewProject({ navigation, route }: Props) {
   const to = target(d, picked) ?? workers[0] ?? null;
   const nameIssue = nameProblem(name);
   const named = botName(name, repos);
-  // With no folder of its own listed, its machine makes one, which a node from before W123 can't.
-  const block =
-    to === null
-      ? "No machine is online to make it on: start fleetd on one of your machines."
-      : ownRepo(repos) === undefined && d !== null && d.workers.some((w) => w.machineId === to.machineId && w.projectsRoot === undefined)
-        ? `Update fleetd on ${to.name} to make a bot there, or add a folder that's already on it.`
-        : undefined;
+  // A machine whose node can't make a bot's folder takes one listed, or typed in the add field.
+  const toWorker = d?.workers.find((w) => w.machineId === to?.machineId);
+  const block = to === null ? "No machine is online to make it on: start fleetd on one of your machines." : toWorker === undefined ? undefined : (needsUpdate(toWorker, repos, adding) ?? undefined);
   const create = () => {
     if (nameIssue !== undefined) return;
     // A repo typed but not yet added goes in with the rest, or Create says why it can't.
@@ -210,7 +208,10 @@ export function NewProject({ navigation, route }: Props) {
             <FieldRow
               key="field"
               value={adding}
-              onChangeText={setAdding}
+              onChangeText={(v) => {
+                setAdding(v);
+                setRefused(undefined);
+              }}
               placeholder="owner/repo, a URL or a folder's path"
               autoFocus
               autoCapitalize="none"

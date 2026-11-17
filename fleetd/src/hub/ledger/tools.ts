@@ -171,7 +171,7 @@ function decideWorkstream(c: Database, r: ProjectRef, id: WorkstreamId | undefin
     open.length === 0
       ? "Your bot has no open workstream to scope this decision to."
       : "Your bot has several open workstreams.",
-    "Pass workstreamId W<n> from your digest, or scope project for a project-wide decision.",
+    "Pass workstreamId W<n> from your digest, or scope project for a bot-wide decision.",
   );
 }
 
