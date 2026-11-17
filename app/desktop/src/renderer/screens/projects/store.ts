@@ -209,12 +209,12 @@ export const removeRepo = (key: string): void => set({ ...omit(ui, "note"), repo
  * says which; a GitHub repo clones onto whichever machine it is.
  */
 export const pickMachine = (machine: string, from?: string): void => {
-  const moved = from !== undefined && from !== machine ? ui.repos.filter((r) => r.kind === "folder") : [];
+  const moved = from !== undefined && from !== machine ? ui.repos.flatMap((r) => (r.kind === "folder" ? [r.path] : [])) : [];
   if (moved.length === 0) {
     set({ ...omit(ui, "refused"), machine });
     return;
   }
-  const paths = moved.map((r) => (r.kind === "folder" ? tilde(r.path) : "")).join(", ");
+  const paths = moved.map(tilde).join(", ");
   const note = { text: `Took out ${paths}: ${moved.length === 1 ? "a folder" : "folders"} on ${machineName(from ?? "")}, not ${machineName(machine)}.`, problem: true };
   set({ ...omit(ui, "refused"), machine, repos: ui.repos.filter((r) => r.kind !== "folder"), note });
 };

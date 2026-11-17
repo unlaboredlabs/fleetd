@@ -90,6 +90,9 @@ export function NewProject({ navigation, route }: Props) {
     haptics.tap();
     send({ t: "start", draft: { name: botName(name, all), machineId: to.machineId, repos: all } });
   };
+  // The bar's ✓ is set once per phase, so it calls Create as it is now: with the field's text, the repos and the name typed since.
+  const createNow = useRef(create);
+  createNow.current = create;
   // Made from Import Memory: back there, where the paste waits. Else its chat.
   const openChat = (key: string) => (route.params?.back === true ? navigation.goBack() : closeThenOpen(navigation, key));
   const phase = s.phase;
@@ -112,11 +115,11 @@ export function NewProject({ navigation, route }: Props) {
         phase.kind === "made"
           ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.bot.project)) }
           : // Never grey while the link is down: pressed, it says why (createRefusal), as the line under the form does.
-            { label: "Create", enabled: phase.kind === "form", busy: phase.kind === "creating", onPress: create },
+            { label: "Create", enabled: phase.kind === "form", busy: phase.kind === "creating", onPress: () => createNow.current() },
       ),
     });
-    // `create` and `openChat` read what these are.
-  }, [navigation, t, phase, live, name, repos, to?.machineId, block]);
+    // `openChat` reads what these are; Create reads the newest `create` through its ref.
+  }, [navigation, t, phase]);
 
   const list = useMemo(() => (adding === null ? [] : repoSuggestions(adding, d, to?.machineId, repos.map(repoKey), SUGGESTIONS_SHOWN)), [adding, d, to?.machineId, repos]);
 
