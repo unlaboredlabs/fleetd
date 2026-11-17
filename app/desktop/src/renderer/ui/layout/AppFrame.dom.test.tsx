@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 /** The frame with a sidebar and an aside, each shown or not, and open by its toggle as shown unless said otherwise. */
-const render = (sidebar: boolean, aside: boolean, { label = "Projects", sidebarOpen = sidebar, asideOpen = aside } = {}) => {
+const render = (sidebar: boolean, aside: boolean, { label = "Bots", sidebarOpen = sidebar, asideOpen = aside } = {}) => {
   act(() =>
     root.render(
       <AppFrame
@@ -86,14 +86,14 @@ it("lays the frame out for a side at once, and slides it in", () => {
 
 it("gives a closing side's room to the main area at once, and keeps it drawn, inert and as it was, until its slide ends", () => {
   render(true, true);
-  render(false, false, { label: "Projects later" });
+  render(false, false, { label: "Bots later" });
   expect(has("noSidebar")).toBe(true);
   expect(has("withAside")).toBe(false);
   expect(side()?.dataset["motion"]).toBe("out");
   expect(aside()?.dataset["motion"]).toBe("out");
   expect(side()?.inert).toBe(true);
   // What it showed as it closed, its top row too, not what the frame was given after.
-  expect(side()?.textContent).toBe("HideProjects");
+  expect(side()?.textContent).toBe("HideBots");
   expect(aside()?.textContent).toBe("Agents");
   end(side());
   end(aside());

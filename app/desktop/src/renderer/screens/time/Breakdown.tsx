@@ -82,7 +82,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked, names }:
         <Summary b={b} order={order} />
         <div className={cx(s.empty)}>
           <Text strong>No agent time in this period</Text>
-          <Text tone="quiet">Nothing ran here in the range picked. Try a longer range or another project.</Text>
+          <Text tone="quiet">Nothing ran here in the range picked. Try a longer range or another bot.</Text>
         </div>
       </div>
     );

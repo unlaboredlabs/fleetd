@@ -420,7 +420,7 @@ test("pr_get joins GitHub's detail, the reviewer's verdict and the queue, with s
   const missing = await l.tools.call(l.hub, reader, "pr_get", { repo: "acme/web", number: 8 });
   expect("error" in missing && missing.error.kind === "tool" && missing.error.error.code).toBe("not_found");
   const nobody = await l.tools.call(l.hub, reader, "pr_get", { repo: "other/repo", number: 1 });
-  expect("error" in nobody && nobody.error.kind === "tool" && nobody.error.error.message).toBe("No project of this fleet lands PRs on other/repo.");
+  expect("error" in nobody && nobody.error.kind === "tool" && nobody.error.error.message).toBe("No bot of this fleet lands PRs on other/repo.");
 });
 
 test("pr_files pages a PR's files and pr_diff one file's lines", async () => {
@@ -445,7 +445,7 @@ test("pr_files pages a PR's files and pr_diff one file's lines", async () => {
   expect(l.gh.runs.filter((r) => r[1]?.includes("/files")).length).toBe(1);
 });
 
-test("pr_list shows the queue's Changes when GitHub's lists don't carry them, and refuses an unknown project", async () => {
+test("pr_list shows the queue's Changes when GitHub's lists don't carry them, and refuses an unknown bot", async () => {
   const l = toolLab();
   const out = await call(l, "pr_list", { projectRef: { machineId: "devbox", projectId: "web" } });
   expect(out.prs.map((r: any) => [r.number, r.queue?.changeId])).toEqual([[7, l.made.changeId]]);
@@ -453,5 +453,5 @@ test("pr_list shows the queue's Changes when GitHub's lists don't carry them, an
   const bad = await l.tools.call(l.hub, reader, "pr_list", { projectRef: { machineId: "devbox", projectId: "web" }, cursor: "nope" });
   expect("error" in bad && bad.error.kind === "tool" && bad.error.error.code).toBe("invalid");
   const gone = await l.tools.call(l.hub, reader, "pr_list", { projectRef: { machineId: "devbox", projectId: "nope" } });
-  expect("error" in gone && gone.error.kind === "tool" && gone.error.error.message).toBe("No project nope on devbox.");
+  expect("error" in gone && gone.error.kind === "tool" && gone.error.error.message).toBe("No bot nope on devbox.");
 });

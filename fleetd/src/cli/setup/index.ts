@@ -253,7 +253,7 @@ async function initPlain(opts: InitOptions): Promise<number> {
     if (typeof failure?.message !== "string" || f instanceof Error) throw f;
     return fail(`${failure.message}. Fix: ${failure.fix}`);
   }
-  say("next: run fleetd init in a terminal to add workers, a first project and the desktop app (fleetd init --yes takes every default)");
+  say("next: run fleetd init in a terminal to add workers, a first bot and the desktop app (fleetd init --yes takes every default)");
   return 0;
 }
 

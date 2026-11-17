@@ -206,7 +206,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
     if (held.length > 0) {
       throw new TransferError(
         "refused",
-        `This hub already has data (${held.join(", ")}). An export loads into a fresh hub only, before any project is added or machine with projects joins. Nothing was changed.`,
+        `This hub already has data (${held.join(", ")}). An export loads into a fresh hub only, before any bot is added or machine with bots joins. Nothing was changed.`,
       );
     }
     const skipped: string[] = [];

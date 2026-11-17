@@ -613,7 +613,7 @@ export class Executors {
         type: "project.removed",
         machineId,
         projectId,
-        summary: jsPrefix(`Project "${title}" on ${machineId} was removed`, 200),
+        summary: jsPrefix(`Bot "${title}" on ${machineId} was removed`, 200),
         data: { title },
       });
     }

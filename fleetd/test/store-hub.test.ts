@@ -61,7 +61,7 @@ function machineRows(c: Database, tables: [string, Column[]][], t: string, machi
 
 const tableList = (list: readonly string[]) => list as readonly string[];
 
-test("removing a machine forgets its rows and leaves another's with the same project ids", () => {
+test("removing a machine forgets its rows and leaves another's with the same bot ids", () => {
   const db = HubDb.memory();
   const store = new HubStore(db);
   const tables = machineTables(db.conn);
@@ -83,7 +83,7 @@ test("removing a machine forgets its rows and leaves another's with the same pro
   expect(store.machineRemove("worker")).toBe(0);
 });
 
-test("forgetting a removed machine's project leaves its other project and another's with the same id", () => {
+test("forgetting a removed machine's bot leaves its other bot and another's with the same id", () => {
   const db = HubDb.memory();
   const store = new HubStore(db);
   const tables = machineTables(db.conn);
@@ -113,7 +113,7 @@ test("forgetting a removed machine's project leaves its other project and anothe
 const project = (projectId: string, at: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   machineId: "devbox",
   projectId,
-  title: `Project ${projectId}`,
+  title: `Bot ${projectId}`,
   workspaceRoot: `/home/me/${projectId}`,
   threads: { running: 0, idle: 0, failed: 0 } as ProjectSummary["threads"],
   lastActivityAt: at,
@@ -125,7 +125,7 @@ test("an unpicked icon is derived from its id, the same as the Rust hub's", () =
   expect(derived({ machineId: "devbox", projectId: "app" })).toEqual({ face: "wink", color: "teal" });
 });
 
-test("projects keep the node's report and wear what the hub keeps of them", () => {
+test("bots keep the node's report and wear what the hub keeps of them", () => {
   const db = HubDb.memory();
   const store = new HubStore(db);
   // The hub's own fields in a node's report are dropped: the hub serves them from its tables.

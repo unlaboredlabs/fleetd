@@ -137,7 +137,7 @@ test("picks the least busy connected worker", () => {
   expect(bestWorker([{ ...w("buildbox", true, true, 0), capable: false }, w("devbox", true, true, 9)])).toBe("devbox");
 });
 
-test("project events always fit the log with their addId", () => {
+test("bot events always fit the log with their addId", () => {
   const long = `/home/me/${"é".repeat(490)}/storefront`;
   const checks = Array.from({ length: 60 }, (_, n) => ({ context: `a long required check name ${n}` }));
   const gh = answers({ repo: { default_branch: "main" }, rules: [{ type: "required_status_checks", parameters: { required_status_checks: checks } }] });

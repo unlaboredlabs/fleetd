@@ -87,7 +87,7 @@ const render = async (page: "editor" | "project") => {
       if (tool === "profile_create") {
         const made = profile(9, String(input["name"]), input);
         profiles = [...profiles, made];
-        return Promise.resolve({ ok: true, output: { profile: made, next: `Projects allow ${made.name} once they pick it.` } });
+        return Promise.resolve({ ok: true, output: { profile: made, next: `Bots allow ${made.name} once they pick it.` } });
       }
       if (tool === "profile_update") {
         const moves = input["default"] === true;
@@ -190,7 +190,7 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
     },
   ]);
   expect(rows().at(-1)).toMatch(/^quickClaude Opus 5\.5 · high effort · fast/u);
-  expect(host.textContent).toContain("Projects allow quick once they pick it.");
+  expect(host.textContent).toContain("Bots allow quick once they pick it.");
 });
 
 it("renames a profile, sends only what changed, and deletes it after a confirm", async () => {
@@ -209,7 +209,7 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   await click(button("Cancel"));
   await click(button("Edit high"));
   await click(button("Delete…"));
-  expect(host.textContent).toContain("Delete high? No project allows it after.");
+  expect(host.textContent).toContain("Delete high? No bot allows it after.");
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 1 } });
   expect(rows().map((r) => r.split("Claude")[0])).toEqual(["choresdefault · lead", "wide"]);
@@ -245,17 +245,17 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   // Deleting it says leads go back to the default, and they do.
   await click(button("Edit wide"));
   await click(button("Delete…"));
-  expect(host.textContent).toContain("Delete wide? No project allows it after, and leads go back to high at their next start.");
+  expect(host.textContent).toContain("Delete wide? No bot allows it after, and leads go back to high at their next start.");
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 3 } });
   expect(leadPicker().textContent).toContain("high");
   expect(rows()[0]).toMatch(/^highdefault · lead/u);
 });
 
-it("tells a project which profile leads run on: an admin the way to change it, a member who to ask", async () => {
+it("tells a bot which profile leads run on: an admin the way to change it, a member who to ask", async () => {
   profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every project › Agents");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every bot › Agents");
   act(() => root.unmount());
   root = createRoot(host);
   me = { name: "Sam", role: "member" };
@@ -271,7 +271,7 @@ it("offers fast mode only on a model that has it", async () => {
   expect(fast.closest("label")?.textContent).toContain("This model has no fast mode.");
 });
 
-it("allows a project the default for good and another with project_set", async () => {
+it("allows a bot the default for good and another with project_set", async () => {
   await render("project");
   const high = toggle("checkbox", "high");
   expect([high.getAttribute("aria-checked"), high.disabled]).toEqual(["true", true]);

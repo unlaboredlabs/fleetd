@@ -82,7 +82,7 @@ export function refusal(hub: Hub, r: ProjectRef, order: string): string | undefi
   } catch (e) {
     return `The hub could not read ${order}: ${(e as Error).message}.`;
   }
-  if (!w || w.projectRef.machineId !== r.machineId || w.projectRef.projectId !== r.projectId) return `The project has no order ${order}.`;
+  if (!w || w.projectRef.machineId !== r.machineId || w.projectRef.projectId !== r.projectId) return `The bot has no order ${order}.`;
   if (w.state !== "open") return `${order} is closed: its agents are done.`;
   const m = r.machineId;
   if (!link(hub).can(m, CAP_ORDER_ENV)) return `${m}'s node is too old to take an order's variables: update fleetd there.`;

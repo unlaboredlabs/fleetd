@@ -19,7 +19,7 @@ const by = (caller: Caller) => (isHuman(caller) ? "human" : caller.keyId);
  * unknown as one that doesn't exist.
  */
 function granted(hub: Hub, caller: Caller, id: string, role: Role): Automation {
-  const unknown = () => new ToolError("not_found", `There is no automation ${id}.`, "automation_list with the project's projectRef shows its automations.");
+  const unknown = () => new ToolError("not_found", `There is no automation ${id}.`, "automation_list with the bot's projectRef shows its automations.");
   const a = automations(hub).get(id);
   if (!a) throw unknown();
   try {
@@ -67,7 +67,7 @@ export function register(tools: Registry): void {
         ? URL_ONCE
         : automation.webhook
           ? "Already made by this request; automation_rotate shows a new webhook URL."
-          : "Its runs open orders for the project's lead; automation_run runs it now.";
+          : "Its runs open orders for the bot's lead; automation_run runs it now.";
     return { automation, ...(webhook === undefined ? {} : { webhookUrl: webhook }), next };
   });
 

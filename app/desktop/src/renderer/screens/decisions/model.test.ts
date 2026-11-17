@@ -30,7 +30,7 @@ describe("the Decisions tab's threads", () => {
     expect(t?.head).toBe(now);
     expect(t?.live).toBe(true);
     expect(t?.earlier).toEqual([second, first]);
-    expect(t && metaLine(t)).toBe("You · Whole project · 2 earlier");
+    expect(t && metaLine(t)).toBe("You · This bot · 2 earlier");
   });
 
   it("keeps one key apart per scope, and names an order by its title", () => {
@@ -38,7 +38,7 @@ describe("the Decisions tab's threads", () => {
     const checkout = decision({ key: "payments.provider", value: "adyen", scope: order("W3") });
     const threads = threadsOf([wide, checkout], ORDERS);
     expect(threads.map((t) => [t.head.value, t.where.label])).toEqual([
-      ["stripe", "Whole project"],
+      ["stripe", "This bot"],
       ["adyen", "Checkout v2"],
     ]);
   });
@@ -67,7 +67,7 @@ describe("the Decisions tab's threads", () => {
     expect(t?.where.label).toBe("An order");
     const shown = t === undefined ? "" : [t.words, metaLine(t), fateWord(t.head), whoWord(t.head)].join(" ");
     expect(shown).not.toMatch(/\b[DW]\d+\b/u);
-    expect(placesOf(threadsOf([unknownOrder], ORDERS)).map((p) => p.label)).toEqual(["Whole project", "An order"]);
+    expect(placesOf(threadsOf([unknownOrder], ORDERS)).map((p) => p.label)).toEqual(["This bot", "An order"]);
   });
 
   it("counts only the decisions in force", () => {

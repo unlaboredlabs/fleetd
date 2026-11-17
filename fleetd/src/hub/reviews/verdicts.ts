@@ -32,7 +32,7 @@ export async function record(hub: Hub, caller: VerdictCaller, input: ReviewVerdi
   }
   const task = readTask(hub.db.conn, taskId);
   if (!task || task.projectRef.machineId !== caller.projectRef.machineId || task.projectRef.projectId !== caller.projectRef.projectId) {
-    throw new ToolError("not_found", `No task ${taskId} in this project.`, "Pass taskId with a review task of your project.");
+    throw new ToolError("not_found", `No task ${taskId} in this bot.`, "Pass taskId with a review task of your bot.");
   }
   const recorded: ReviewVerdict = { taskId, ...verdict };
   if (task.kind !== "review") throw new ToolError("invalid", `${task.taskId} is a ${task.kind} task; only review tasks record verdicts.`);

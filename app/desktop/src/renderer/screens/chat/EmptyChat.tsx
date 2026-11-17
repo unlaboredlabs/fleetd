@@ -10,7 +10,7 @@ import s from "./view.module.css";
 export const STARTERS = [
   "Look around and tell me what needs work first.",
   "Find what’s failing in CI and fix it.",
-  "Explain how this project is put together.",
+  "Explain how this bot's code is put together.",
 ] as const;
 
 export function EmptyChat({ project, title }: { project: ProjectRef; title: string }) {

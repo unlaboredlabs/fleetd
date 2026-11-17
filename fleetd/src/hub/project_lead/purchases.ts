@@ -73,7 +73,7 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
   if (caller.agent.kind !== "lead" || !isProject(hub.db.conn, r, false)) {
     throw new ToolError(
       "forbidden",
-      "Only a project's lead pays at a checkout or asks for a secure input, and this session is none.",
+      "Only a bot's lead pays at a checkout or asks for a secure input, and this session is none.",
       "leave the payment to the person and say so",
     );
   }
@@ -92,7 +92,7 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
         throw new ToolError(
           "invalid",
           "You have no card to pay with.",
-          "ask the person to pick one: the project's Settings › Payments, from a card in fleetd's vault; then ask again",
+          "ask the person to pick one: the bot's Settings › Payments, from a card in fleetd's vault; then ask again",
         );
       }
       const opened = openPurchase(a, r, open, paysWith, noAsk);
@@ -171,7 +171,7 @@ export function register(tools: Registry): void {
         : [],
     );
     const next = !paysWith
-      ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the project can " +
+      ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the bot can " +
         "pay; each purchase is recorded, with no ask."
       : list.length === 0
         ? "No purchases yet."
@@ -181,7 +181,7 @@ export function register(tools: Registry): void {
   tools.add("project_card_set", (hub, caller, input) => {
     requireRole(caller, "operate", input.machineId);
     if (!isHuman(caller)) {
-      throw new ToolError("forbidden", "Only a person picks the card a project pays with.", "Pick it in the app: the project's Settings › Payments.");
+      throw new ToolError("forbidden", "Only a person picks the card a bot pays with.", "Pick it in the app: the bot's Settings › Payments.");
     }
     const r = projectRefOf(hub, input);
     if (input.card !== undefined) checkCardPick(hub, input.card);
@@ -190,8 +190,8 @@ export function register(tools: Registry): void {
     return {
       ...(paysWith ? { card: paysWith } : {}),
       next: paysWith
-        ? `The project pays with ${cardLabel(paysWith)} from now on, with no ask at each purchase.`
-        : "The project has no card now: it can't pay at a checkout.",
+        ? `The bot pays with ${cardLabel(paysWith)} from now on, with no ask at each purchase.`
+        : "The bot has no card now: it can't pay at a checkout.",
     };
   });
 }

@@ -212,7 +212,7 @@ export class Live {
 export const live = (hub: Hub) => hub.area("browser.live", (h) => new Live(h));
 
 const noSession = (id: string) =>
-  new ToolError("not_found", `No screen ${id}.`, "Call browser_sessions for the project's screens.");
+  new ToolError("not_found", `No screen ${id}.`, "Call browser_sessions for the bot's screens.");
 
 /** The machine a session runs on: the one hosting it for an agent elsewhere, else its agent's (its project's). */
 export const runsOn = (hub: Hub, s: BrowserSession) => runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;

@@ -10,7 +10,7 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app under **Built-in prompts** (at the foot of a project's Instructions), and in
+Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app under **Built-in prompts** (at the foot of a bot's Instructions), and in
 the [table at the end of this page](#prompts). You can edit each one. What fleetd fills into them, such as the event
 lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
@@ -38,7 +38,7 @@ Agents act through fleetd's MCP tools. The list, generated from the code, is in
 
 ### How the lead talks to you {#chat}
 
-Each project's lead talks to you in that project's chat. It is told to:
+Each bot's lead talks to you in that bot's chat. It is told to:
 
 - Lead with the state: what is done, what is running, what is blocked.
 - Keep it short and plain, with no internal ids, keys or branch names.
@@ -53,10 +53,10 @@ Each project's lead talks to you in that project's chat. It is told to:
 
 ### The tagged chat, a trial {#tagged-chat}
 
-A project's **Tagged chat** switch (Settings › Projects › the project › Trial; off by default) has the hub tag each
+A bot's **Tagged chat** switch (Settings › Bots › the bot › Trial; off by default) has the hub tag each
 chat message with the order it is about and the person it is for, and lets a person move a message to another order
 (**About…** in its menu). A closed order's messages stay in the chat as they were. Anyone on the hub who may use
-the project can turn it on or off; a tool client does it with `project_settings_set` and `chatTags: true`.
+the bot can turn it on or off; a tool client does it with `project_settings_set` and `chatTags: true`.
 
 While it is on, each message you write reaches the lead with what it is about: "Alice Chen writes in your chat about
 Apple Pay (W12)", or "…, not about an order". The lead is also told to:
@@ -101,7 +101,7 @@ The lead is also told to:
 - Start the writers first, largest part first, and plan while they work. Writers read what they need, with no survey
   agent ahead of them. A part's docs and tests go to that part's writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
   [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.
-- Read the digest's Elsewhere section before spawning: claims, other projects' agents on the same repo, and commits
+- Read the digest's Elsewhere section before spawning: claims, other bots' agents on the same repo, and commits
   that landed outside fleetd. Work that already landed isn't built again, and work a person has claimed is theirs: the
   lead asks you in chat before touching it.
 - Never relax a review, CI, approval or check to go faster. Idle is fine.
@@ -135,7 +135,7 @@ ends with its turn, so a reviewer waits for its builds and tests to finish befor
 
 ### Agents hear when GitHub is unreachable {#github-unreachable}
 
-fleetd's landing scanner asks each project's origin every minute. When git on a machine can't reach GitHub at all (the
+fleetd's landing scanner asks each bot's origin every minute. When git on a machine can't reach GitHub at all (the
 network, not a refused login), each agent running there is told once, however long it lasts: "This machine can't reach
 GitHub right now; keep your work committed and push when it's back." When a later scan reaches GitHub again, each is
 told once more, so agents don't each diagnose the outage and ask their lead. An agent launched while GitHub gives the
@@ -166,8 +166,8 @@ repo's settings enable them:
 Lighter servers (TypeScript, Pyright, gopls and the rest) stay as you set them. Agents still build, test and read
 code; they lose only the LSP tool's go-to-definition and diagnostics for those languages.
 
-To turn them back on for a project, add the [project variable](/docs/projects#env) `HEAVY_LANGUAGE_SERVERS` with the
-value `1`; for every project on a machine, put `HEAVY_LANGUAGE_SERVERS=1` in its
+To turn them back on for a bot, add the [bot variable](/docs/projects#env) `HEAVY_LANGUAGE_SERVERS` with the
+value `1`; for every bot on a machine, put `HEAVY_LANGUAGE_SERVERS=1` in its
 [`claude.env`](/docs/config-and-files). Each agent's next start uses the plugins your settings enable. Plan on about
 5 GB more per running agent for rust-analyzer (clangd and the JVM servers are in the same range), and lower the
 machine's [max agents](/docs/projects#max-agents) to match (Settings › Hub › Machines, or
@@ -199,13 +199,13 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
-- A lead has at most 32 tasks open at once, or twice its project's max agents when that is more.
+- A lead has at most 32 tasks open at once, or twice its bot's max agents when that is more.
 - A refusal says why and what to do instead.
-- A lead changes its own project's setup when you ask it to (`repo_add`, `repo_remove`, `project_setup`): each change
+- A lead changes its own bot's setup when you ask it to (`repo_add`, `repo_remove`, `project_setup`): each change
   is one chat line with Undo, and what guards people stays yours. See
   [What the lead sets up](/docs/projects#lead-setup).
-- A lead never creates a project. It proposes one (`project_propose`), and the project exists only after you tap
-  **Create it** on its card, in every approval mode. See [A new project, proposed](/docs/projects#lead-propose).
+- A lead never creates a bot. It proposes one (`project_propose`), and the bot exists only after you tap
+  **Create it** on its card, in every approval mode. See [A new bot, proposed](/docs/projects#lead-propose).
 
 Every tool and its inputs: [Agent tools](/docs/reference/agent-tools). The lead-side `fleetd` commands stay, for you.
 
@@ -220,8 +220,8 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings › a project › Instructions & memory, then **Built-in prompts** at the foot of the page, for one project's own
-texts. Hub › Every project › Instructions has the same row for the hub-wide ones (owners and admins only: the hub refuses
+In the app: Settings › a bot › Instructions & memory, then **Built-in prompts** at the foot of the page, for one bot's own
+texts. Hub › Every bot › Instructions has the same row for the hub-wide ones (owners and admins only: the hub refuses
 anyone else). Most changes belong in the instructions above that row. The list shows your edits first and the rest behind their
 groups: open a prompt, edit it and Save. "Reset to the built-in" drops your edit.
 
@@ -231,11 +231,11 @@ On the hub machine:
 |---|---|
 | `fleetd prompts show lead.start` | Print the text in effect. `--default` prints fleetd's. |
 | `fleetd prompts edit lead.start` | Edit in `$VISUAL` or `$EDITOR`, see warnings, then `Save? [Y/n]`. |
-| `fleetd prompts edit task.brief.write --project builder-1/app` | Edit one project's version. |
+| `fleetd prompts edit task.brief.write --project builder-1/app` | Edit one bot's version. |
 | `fleetd prompts diff lead.start` | fleetd's text against yours. |
 | `fleetd prompts reset lead.start` | Go back to fleetd's text. |
 
-- A project's version beats the hub-wide one, which beats fleetd's.
+- A bot's version beats the hub-wide one, which beats fleetd's.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompt_get` (without an `id` it lists them), and `prompt_set` (with `dryRun` to see the
   warnings only, and `reset: true` to go back).
@@ -255,7 +255,7 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings › a project › Instructions & memory for one project's, and Settings › Hub › Every project › Instructions for every project's (owners
+In the app: Settings › a bot › Instructions & memory for one bot's, and Settings › Hub › Every bot › Instructions for every bot's (owners
 and admins only). On the hub machine:
 
 ```sh
@@ -272,30 +272,30 @@ warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes
 
 ## Memory {#memory}
 
-Leads remember how you work and what each project decided, so you don't say "concise" or "no npm" twice. When you
+Leads remember how you work and what each bot decided, so you don't say "concise" or "no npm" twice. When you
 correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
 an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
 - **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start get it; on a hub with several people, a
-  project's lead gets nobody's (see below).
-- **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
+  bot's lead gets nobody's (see below).
+- **Each bot** (`MEMORY.md`, plus topic files for detail): only that bot's sessions get it. Another bot
   never sees it.
 
-A lead gets your memory and its project's `MEMORY.md` in its system prompt at the start of each session, after your
-instructions; writers get them in theirs. A project's lead answers everyone who shares the hub in one long session, so on a
+A lead gets your memory and its bot's `MEMORY.md` in its system prompt at the start of each session, after your
+instructions; writers get them in theirs. A bot's lead answers everyone who shares the hub in one long session, so on a
 hub with several people it starts with no one's memory: anyone's would stay in its context while it answers the
 others. When it remembers something in user scope, it goes to the memory of the person whose message it is
 answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
 mid-session reaches the next session.
 
-Read, edit or delete your own memory in Settings › Your memory, and each project's in Settings › a project ›
+Read, edit or delete your own memory in Settings › Your memory, and each bot's in Settings › a bot ›
 Instructions & memory. Nobody else
 reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
 the hub. A hub with no people yet keeps one shared `user.md`, read and edited as Your memory; once it has people, its
 owner gets a copy as their own memory, and the old file stays on disk, read by no agent.
 
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
-cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per project. A
+cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per bot. A
 write past one is refused, and the lead merges entries instead. Memory never holds a secret.
 
 ### Import memory {#memory-import}
@@ -304,15 +304,15 @@ Bring what another assistant (ChatGPT, Claude, Grok) knows about you, instead of
 Your memory › Import memory:
 
 1. **Copy prompt**, and paste it into a chat with the other assistant. It asks for everything that assistant has
-   stored about you, in five parts (instructions, identity, career, projects, preferences), one dated line per entry,
+   stored about you, in five parts (instructions, identity, career, bots, preferences), one dated line per entry,
    in a single code block, and to say whether that is all of it. It also asks it to leave secrets out. The prompt is
    `memory.export`; an admin can change it under Built-in prompts, and the phone shows the same text.
 2. **Paste its answer** into the box and press **Add to Memory**. A minute or so later it says how many entries it
    added.
 
 The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
-[Claude accounts](/docs/people#claude)), in one of the hub's projects, so everyone on the hub can read what it writes. On a hub with no project yet, import
-offers **New project** first; while its machine is offline, it says so, and you try again
+[Claude accounts](/docs/people#claude)), in one of the hub's bots, so everyone on the hub can read what it writes. On a hub with no bot yet, import
+offers **New bot** first; while its machine is offline, it says so, and you try again
 once it's back. That turn has no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
 that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
 memory, which the hub writes the way the lead's `remember` does:
@@ -320,9 +320,9 @@ memory, which the hub writes the way the lead's `remember` does:
 - An entry your memory already says is skipped. One that updates an entry (a new job title) replaces it.
 - An entry that holds a key, token or password is refused, whatever the model let through.
 - Your memory's cap holds. When the import doesn't fit, instructions go in first, then preferences, identity, career
-  and projects; the ones left out are listed, so you can trim your memory and import again.
+  and bots; the ones left out are listed, so you can trim your memory and import again.
 
-Nothing else changes: no project's memory, nobody else's. The list above the import shows the new entries at once,
+Nothing else changes: no bot's memory, nobody else's. The list above the import shows the new entries at once,
 on every device.
 
 ### The approval checker {#checker}
@@ -337,20 +337,20 @@ the cases that always ask) hold past it, and anything else it answers asks you.
 
 ### The nightly refresh {#memory-refresh}
 
-Each night the lead tidies each project's memory, so what was said in chat but never remembered isn't lost, and what
+Each night the lead tidies each bot's memory, so what was said in chat but never remembered isn't lost, and what
 no longer holds stops misleading the agents:
 
 - **When:** around 04:00 in your time zone: the global decision `policy.tz` (the one quiet hours use), else the hub
-  machine's zone. The global decision `policy.memory_refresh_at` moves it, as `HH:MM`. A project whose refresh can't
+  machine's zone. The global decision `policy.memory_refresh_at` moves it, as `HH:MM`. A bot whose refresh can't
   start within 3 hours of that (the hub was down, the lead was busy all that time, the login was out of usage) waits
-  for the next night. On the night the clocks go forward past that hour, it starts when they land. Projects start
+  for the next night. On the night the clocks go forward past that hour, it starts when they land. Bots start
   a minute apart.
 - **Which projects:** each one with the refresh on (the default; turn it off in its
   [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
-  A quiet project costs nothing. Its [switch on Instructions & memory](/docs/automations#the-nightly-memory-refresh)
-  shows its next and last run, and its Run now refreshes the project at once.
+  A quiet bot costs nothing. Its [switch on Instructions & memory](/docs/automations#the-nightly-memory-refresh)
+  shows its next and last run, and its Run now refreshes the bot at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
-  characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it
+  characters), the active decisions and every memory file of the bot, plus the memory of the person whose chat it
   is: the one person who wrote since the last refresh.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
   writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
@@ -365,11 +365,11 @@ no longer holds stops misleading the agents:
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
   many more there were; Undo all takes those back too, and stays while any of them is left. A night that changed nothing shows nothing. In Settings
-  (Your memory, or a project's Instructions & memory), an entry the refresh wrote links to its line.
+  (Your memory, or a bot's Instructions & memory), an entry the refresh wrote links to its line.
 
 ## The checklist {#checklist}
 
-Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
+Each bot's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
 each to do, doing or done, linked to its pull request or agent. Its start prompt tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
 You see the list in the panel, under [Plan](/docs/desktop-app#checklist), where you can delete items and clear
@@ -384,7 +384,7 @@ it first, with how long it has sat, and the lead ticks it, removes it, restarts 
 
 ## Skills {#skills}
 
-Every agent gets the [skills](/docs/skills) of its repo (`.agents/skills`, `.claude/skills`), its project and the hub,
+Every agent gets the [skills](/docs/skills) of its repo (`.agents/skills`, `.claude/skills`), its bot and the hub,
 listed by name and description as `fleetd:<name>`. It opens one with the Skill tool when it needs it.
 
 ## When fleetd changes a default you edited {#updates}
@@ -400,7 +400,7 @@ Your version stays in use.
 A release can fold a prompt into another one or drop it. Your edit to it then stops applying, but fleetd keeps it and
 never moves it for you.
 
-1. Open Built-in prompts, a project's or the hub-wide ones. Among your edits, each one is marked "no longer sent";
+1. Open Built-in prompts, a bot's or the hub-wide ones. Among your edits, each one is marked "no longer sent";
    opening it says why, shows your old text, and names the prompt to copy it into.
 2. Paste what you still want into the prompt it names. If none takes its place, use your
    [instructions](#instructions).
@@ -422,7 +422,7 @@ chat messages before the one it answers.
 
 ## See exactly what an agent was told {#told}
 
-Open an agent in the panel's Agents beside a project's chat (⌥⌘B), then **What it was told**. It shows the exact first
+Open an agent in the panel's Agents beside a bot's chat (⌥⌘B), then **What it was told**. It shows the exact first
 message, which version of each prompt it used, and the tools it never gets.
 
 On the hub machine:
@@ -437,7 +437,7 @@ fleetd prompts show --session <machine>/<thread>
 
 ### Wake events {#wake-events}
 
-A lead is woken with the `lead.wake` prompt: its project's state, then one line per thing that happened since its last
+A lead is woken with the `lead.wake` prompt: its bot's state, then one line per thing that happened since its last
 wake.
 
 ```
@@ -458,7 +458,7 @@ agents: 3 running of 6 (auto: memory 18 GB), 1 queued, 0 free
 
 Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
 C4) are for the lead's tools; the lead doesn't repeat them to you. The state and the event lines are facts in a format
-fixed in code, the same in every project; the words around them are `lead.wake`.
+fixed in code, the same in every bot; the words around them are `lead.wake`.
 
 Some lines leave the lead nothing to decide, so they never wake it on their own: they go out with its next wake. An
 agent whose run died (its node stopped, claude was killed, a stall) and that fleetd resumed, and an agent whose machine
@@ -517,12 +517,12 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); no message on routine wakes; writes only when the human must act or decide, when what they asked about lands, fails or is blocked, when main stays red, or to answer them (prompt only); batches what lands in a wake into one short line, never one message per PR; always posts when an order the human asked for finishes (prompt only); never posts a status-only or "nothing needs you" message; a turn with nothing to say replies \`(quiet)\`, which fleetd never posts (prompt only); flags a message for the human's look (\`nudge\`) only for a showcase, something to try or a risk, never routine news (prompt only); no fleetd ids, tool names, paths or process words unless asked (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; splits approved work into parts whose files don't overlap and runs them in parallel while slots are free (prompt only); only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
-| `assistant.start` | a lead's start and every fresh start in a project with no repo, instead of the lead prompt, followed by the state block | asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through \`request\_secret\`; keeps the person's private life in its own memory, never in user scope (prompt only); takes an agent's chat message as input, never as the person's answer or approval; searches its whole chat before saying it doesn't know what the person said earlier (prompt only) |
+| `assistant.start` | a lead's start and every fresh start in a bot with no repo, instead of the lead prompt, followed by the state block | asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through \`request\_secret\`; keeps the person's private life in its own memory, never in user scope (prompt only); takes an agent's chat message as input, never as the person's answer or approval; searches its whole chat before saying it doesn't know what the person said earlier (prompt only) |
 | `lead.voice` | after the lead prompt, at every lead start | the casual voice stays out of commits, PR bodies, docs and briefs (prompt only) |
-| `assistant.voice` | after the lead with no repo prompt, at every start of a lead in a project with no repo, instead of the lead's voice | the casual voice stays out of what it drafts for the person (prompt only) |
-| `lead.profiles` | after the lead prompt, while the project allows more than the default profile (project\_set) | another profile only when its note fits the work (prompt only); reviews always run on the default; a task whose review finds blockers twice is redone on the default (prompt only) |
+| `assistant.voice` | after the lead with no repo prompt, at every start of a lead in a bot with no repo, instead of the lead's voice | the casual voice stays out of what it drafts for the person (prompt only) |
+| `lead.profiles` | after the lead prompt, while the bot allows more than the default profile (project\_set) | another profile only when its note fits the work (prompt only); reviews always run on the default; a task whose review finds blockers twice is redone on the default (prompt only) |
 | `lead.memory` | once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh | only reads and writes memory: \`memory\_read\`, \`remember\` and \`forget\`; adds to the user memory of the person whose chat it read, never replaces or removes an entry there |
-| `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
+| `lead.wake` | each time fleetd brings the lead up to date: the bot's state, then one line per event since the last time |  |
 | `chat.human` | with each chat message the human sends the lead |  |
 | `chat.agent` | with each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |
 
@@ -548,7 +548,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now |  |
-| `agent.message` | per agent\_message, from another agent of the project, at the agent's next tool boundary or with its next run | a peer's note: the brief and the lead outrank it (prompt only) |
+| `agent.message` | per agent\_message, from another agent of the bot, at the agent's next tool boundary or with its next run | a peer's note: the brief and the lead outrank it (prompt only) |
 | `review.unreported` | to a train reviewer whose turn ended without a verdict, once, before a new reviewer starts |  |
 | `pr.fix` | to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings | never merges; the train does (prompt only) |
 | `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |

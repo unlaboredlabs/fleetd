@@ -88,7 +88,7 @@ test("a worker builds with its share of the machine, its cargo taking turns, and
   await settled("l1", "l1-r1");
 });
 
-test("a former project's lead runs its commands in the home it kept", async () => {
+test("a former bot's lead runs its commands in the home it kept", async () => {
   const own = join(ownHomeDir(node, "p1"), "home");
   mkdirSync(own, { recursive: true });
   await launch("n1", { role: "assistant" });
@@ -140,7 +140,7 @@ test("a review elsewhere reads its pr's head, fetched from the remote", async ()
   await settled("rv1", "rv1-r1");
 });
 
-test("a removed project takes the home its project kept", async () => {
+test("a removed bot takes the home its bot kept", async () => {
   await ok("project_remove", { projectId: "p1" });
   expect(existsSync(ownHomeDir(node, "p1"))).toBe(false);
 });

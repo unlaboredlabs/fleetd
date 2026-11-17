@@ -53,7 +53,7 @@ describe("the log", () => {
   it("gives each recipient its own receipt", () => {
     expect(logReceipt(to("T2577", "delivered", { at: "2026-11-08T23:02:00Z" }))).toBe("read it at its next step");
     expect(logReceipt(to("T2574", "held"))).toBe("isn’t running: held for its next run");
-    expect(logReceipt(to("T9", "refused", { detail: "no agent T9 in this project" }))).toBe("not sent: no agent T9 in this project");
+    expect(logReceipt(to("T9", "refused", { detail: "no agent T9 in this bot" }))).toBe("not sent: no agent T9 in this bot");
     expect(logReceipt(to("T2567", "not_woken", { detail: "it has finished and isn’t waiting on T2584" }))).toBe("wasn’t woken: it has finished and isn’t waiting on T2584. Held for its next run");
   });
 

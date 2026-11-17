@@ -193,7 +193,7 @@ describe("rows", () => {
     expect(shownItems(list, "all", "alpha.io").map((i) => i.itemId)).toEqual(["V3"]);
   });
 
-  it("puts the team's logins, cards and addresses on the Vault page, and a project's variables on its tab", () => {
+  it("puts the team's logins, cards and addresses on the Vault page, and a bot's variables on its tab", () => {
     const project = { kind: "project", machineId: "devbox", projectId: "shop" } as const;
     const kinds = ["login", "card", "address", "env"] as const;
     const scopes = ["person", "project", "order", "hub"] as const;
@@ -217,7 +217,7 @@ describe("rows", () => {
     expect(teamServed(["vault", "vault_team"])).toBe(true);
   });
 
-  it("never names the personal or hub scope for a new item: the team's names none, a project's variable its project", () => {
+  it("never names the personal or hub scope for a new item: the team's names none, a bot's variable its bot", () => {
     expect(placeOf({ kind: "team" })).toEqual({});
     expect(placeOf({ kind: "project", machineId: "devbox", projectId: "shop" })).toEqual({ scope: "project", machineId: "devbox", projectId: "shop" });
     expect(pageKinds({ kind: "team" })).toEqual(["login", "card", "address"]);

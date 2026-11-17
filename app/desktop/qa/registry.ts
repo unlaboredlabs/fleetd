@@ -1024,9 +1024,9 @@ export const screens: readonly Screen[] = [
     variant: "starter",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await page.getByRole("button", { name: "Explain how this project is put together." }).click();
+      await page.getByRole("button", { name: "Explain how this bot's code is put together." }).click();
       const box = page.getByRole("textbox", { name: "Message the lead" });
-      await expect(box).toHaveValue("Explain how this project is put together.");
+      await expect(box).toHaveValue("Explain how this bot's code is put together.");
       await expect(box).toBeFocused();
     },
   },
@@ -1148,7 +1148,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["live-3", "live-20"],
     variant: "island-to-panel",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await page.locator('[data-opens="panel"]').click();
       await panel.waitFor({ state: "detached" });
       const island = page.locator("[data-island]");
@@ -1167,7 +1167,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const chat = page.getByRole("list", { name: "Conversation with the lead" });
       await chat.getByRole("link", { name: /^#10$|\/pull\/10$/u }).click();
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen^="prs.detail"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen^="prs.detail"]').waitFor();
       await expect(page).toHaveURL(/\/prs\/(acme\/storefront\/)?10$/u);
     },
   },
@@ -1242,7 +1242,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting", "agents-work"],
     variant: "panel",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).waitFor();
     },
   },
   {
@@ -1252,7 +1252,7 @@ export const screens: readonly Screen[] = [
     variant: "panel-closed",
     open: async (page) => {
       await page.locator('[data-opens="panel"]').click();
-      await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
+      await page.getByRole("complementary", { name: "Bot panel" }).waitFor({ state: "detached" });
     },
   },
   // The panel's Artifacts (W367): the reports published in the chat, newest first; a Markdown one at an older version
@@ -1263,7 +1263,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["artifacts-published"],
     variant: "panel-artifacts",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifacts"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen="artifacts"]').waitFor();
     },
   },
   {
@@ -1272,7 +1272,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["artifacts-published"],
     variant: "panel-artifact-md",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifact"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen="artifact"]').waitFor();
     },
   },
   {
@@ -1281,7 +1281,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["artifacts-published"],
     variant: "panel-artifact-older",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await expect(panel.getByRole("button", { name: "Show the newest" })).toBeVisible();
     },
   },
@@ -1300,7 +1300,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["artifacts-none"],
     variant: "panel-artifacts-empty",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifacts.empty"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen="artifacts.empty"]').waitFor();
     },
   },
   // The panel's Plan: how far along, doing and to do, done folded; done unfolded; and none set yet.
@@ -1310,7 +1310,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-listed"],
     variant: "panel-checklist",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="checklist"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen="checklist"]').waitFor();
       await expect(page.getByRole("progressbar", { name: "Checklist progress" })).toHaveAttribute("aria-valuenow", "2");
     },
   },
@@ -1320,7 +1320,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-listed"],
     variant: "panel-checklist-done",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.getByRole("button", { name: /^Done/u }).click();
       await expect(panel.getByRole("button", { name: /^Done/u })).toHaveAttribute("aria-expanded", "true");
     },
@@ -1332,7 +1332,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-listed"],
     variant: "panel-checklist-hover",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.locator('[data-item="4"]').hover();
       await expect(panel.getByRole("button", { name: "Delete “Gift cards apply before tax”" })).toBeVisible();
     },
@@ -1343,7 +1343,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-listed"],
     variant: "panel-checklist-cleared",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.getByRole("button", { name: "Clear done" }).click();
       await expect(panel.getByRole("button", { name: "Clear done" })).toHaveCount(0);
       await page.getByRole("button", { name: "Undo" }).waitFor();
@@ -1355,7 +1355,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-empty"],
     variant: "panel-checklist-empty",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).getByText("No plan yet").waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).getByText("No plan yet").waitFor();
     },
   },
   // Shipping at its merge line (a link to the train): a PR in CI as a card with its checks among the PRs, the ones that
@@ -1441,7 +1441,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-chats"],
     variant: "no-repo",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.locator('[data-screen="asked"]').waitFor();
       await expect(page.getByRole("textbox", { name: "Message the lead" })).toBeVisible();
       await expect(page.getByRole("navigation", { name: "Sidebar" })).not.toContainText("Taxes");
@@ -1454,7 +1454,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-chats"],
     variant: "asked-open",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.locator('[data-screen="asked"]').waitFor();
       for (const ask of ["N7", "N8"]) {
         const row = panel.locator(`[data-ask="${ask}"] > button`);
@@ -1471,7 +1471,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-chats"],
     variant: "skill",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skill"]').waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).locator('[data-screen="skill"]').waitFor();
     },
   },
   {
@@ -1480,7 +1480,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-chats"],
     variant: "skill-history",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Project panel" });
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
       await panel.getByRole("button", { name: /^History/u }).click();
       await panel.getByRole("region", { name: "Version 2 to 3" }).waitFor();
     },
@@ -1636,7 +1636,7 @@ export const screens: readonly Screen[] = [
       const pill = page.locator('[data-opens="panel"]');
       if ((await pill.getAttribute("aria-pressed")) === "true") {
         await pill.click();
-        await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
+        await page.getByRole("complementary", { name: "Bot panel" }).waitFor({ state: "detached" });
       }
       const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"] > [data-reorder-row]');
       await expect(grid).toHaveCount(3);
@@ -2090,7 +2090,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const pill = page.locator('[data-opens="panel"]');
       if ((await pill.getAttribute("aria-pressed")) !== "true") await pill.click();
-      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).waitFor();
       await expect(pill).toHaveAttribute("aria-pressed", "true");
     },
   },
@@ -2103,7 +2103,7 @@ export const screens: readonly Screen[] = [
     sizes: ["narrow"],
     open: async (page) => {
       await page.locator('[data-opens="panel"]').click();
-      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
+      await page.getByRole("complementary", { name: "Bot panel" }).waitFor();
     },
   },
   // The smallest window: the sidebar has hidden itself, and the chat's title starts after the traffic lights.
@@ -2449,7 +2449,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-links"],
     variant: "from-panel",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).getByRole("button", { name: "Project settings" }).click();
+      await page.getByRole("complementary", { name: "Bot panel" }).getByRole("button", { name: "Bot settings" }).click();
       await expect(page.getByRole("link", { name: /^Max agents/u })).toHaveCount(0);
     },
   },
@@ -3180,7 +3180,7 @@ export const screens: readonly Screen[] = [
     variant: "no-sessions",
     open: async (page) => {
       await expect(page.locator('[data-screen="agents"]')).toBeVisible();
-      await expect(page.getByRole("complementary", { name: "Project panel" }).getByRole("button", { name: "New screen", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("complementary", { name: "Bot panel" }).getByRole("button", { name: "New screen", exact: true })).toHaveCount(0);
     },
   },
   {
@@ -3465,8 +3465,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["agents-work"],
     variant: "all",
     open: async (page) => {
-      await page.getByRole("button", { name: /^Other projects/u }).click();
-      await expect(page.getByRole("button", { name: /^Other projects/u })).toHaveAttribute("aria-expanded", "true");
+      await page.getByRole("button", { name: /^Other bots/u }).click();
+      await expect(page.getByRole("button", { name: /^Other bots/u })).toHaveAttribute("aria-expanded", "true");
     },
   },
   // Every live state's glyph at once (ui/DESIGN.md): working, thinking, waiting on you, queued and paused; a queued
@@ -4082,7 +4082,7 @@ export const screens: readonly Screen[] = [
     variant: "to-default",
     open: async (page) => {
       const storefront = page.getByRole("region", { name: "Max agents" });
-      await storefront.getByText("Set for this project. The default is 16.").waitFor();
+      await storefront.getByText("Set for this bot. The default is 16.").waitFor();
       await storefront.getByRole("button", { name: "Use the default" }).click();
       await storefront.getByText("Max agents, the default: 16, was 12.").waitFor();
       await storefront.getByText("Follows the default: the hub's fleet cap.").waitFor();

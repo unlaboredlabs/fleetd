@@ -13,7 +13,7 @@ export const MODES: ReadonlyArray<{ readonly mode: ApprovalMode; readonly label:
   {
     mode: "yolo",
     label: "YOLO",
-    description: "Nothing asks, and each action shows in the log. A new project starts in this mode.",
+    description: "Nothing asks, and each action shows in the log. A new bot starts in this mode.",
   },
 ];
 

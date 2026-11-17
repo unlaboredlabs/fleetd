@@ -69,7 +69,7 @@ export function OnePasswordSettings() {
       {!live ? (
         <GroupNote>Not connected. Connect to a hub to set up 1Password.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <GroupNote>This hub reads 1Password only with a project&apos;s OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.</GroupNote>
+        <GroupNote>This hub reads 1Password only with a bot&apos;s OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.</GroupNote>
       ) : read.error instanceof CallError && read.error.error.code === "forbidden" ? (
         <GroupNote>This device&apos;s key belongs to no person, so it has no 1Password of its own. Pair the app as yourself to set it up.</GroupNote>
       ) : read.isLoadingError ? (
@@ -160,7 +160,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       )}
     </>
   );
-  const help = "The token is kept encrypted on the hub's machines. A project's own 1Password token wins over it.";
+  const help = "The token is kept encrypted on the hub's machines. A bot's own 1Password token wins over it.";
   const shown = tried ?? (token?.lastTest === undefined ? undefined : { test: token.lastTest });
   const verdict = shown === undefined ? null : "error" in shown ? { ok: false, text: shown.error } : vaultsLine(shown.test, nowMs);
   return (
@@ -204,7 +204,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       {removing ? (
         <ConfirmRemove
           title="Remove your 1Password token?"
-          description="Each machine forgets it. Agents started from then on fill logins only where their project has its own OP_SERVICE_ACCOUNT_TOKEN."
+          description="Each machine forgets it. Agents started from then on fill logins only where their bot has its own OP_SERVICE_ACCOUNT_TOKEN."
           action="Remove"
           onRemove={() => hubCall("onepassword_remove", {}).then(() => (setTried(undefined), refetch(["onepassword_get"])))}
           onClose={() => setRemoving(false)}

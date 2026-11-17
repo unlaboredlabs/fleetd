@@ -305,11 +305,11 @@ function setupChanged(f: Fixture): Fixture {
     ...extra,
   });
   const messages = [
-    msg(1, "human", "Add our API repo to this project, call the project Storefront, and point agents at the staging API.", 600),
+    msg(1, "human", "Add our API repo to this bot, call the bot Storefront, and point agents at the staging API.", 600),
     msg(2, "system", "Added the repo api", 540, { setupChanged: { kind: "repo_added", names: ["api"] } }),
-    msg(3, "system", "Renamed the project to Storefront", 530, { setupChanged: { kind: "title" } }),
+    msg(3, "system", "Renamed the bot to Storefront", 530, { setupChanged: { kind: "title" } }),
     msg(4, "system", "Set the variable API_BASE", 520, { setupChanged: { kind: "env", names: ["API_BASE"], undone: true } }),
-    msg(5, "lead", "The api repo is cloned and part of the project, and the project is called Storefront. Agents get API_BASE for staging.", 500),
+    msg(5, "lead", "The api repo is cloned and part of the bot, and the bot is called Storefront. Agents get API_BASE for staging.", 500),
   ];
   const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 5, lastMessageAt: t(500) });
   for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
@@ -347,6 +347,6 @@ export default defineGroup({
     leadSteered(Fixture.from(base("typical"), "lead-steered", "storefront's lead mid-turn after start and a steer, 1-16, with nothing from it yet and no agents at work.")),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
     worktreesKept(Fixture.from(base("typical"), "lead-worktrees", "storefront's chat with the night's cleanup line: 6 worktrees kept for unsaved work.")),
-    setupChanged(Fixture.from(base("typical"), "lead-setup", "storefront's chat with its lead's setup changes: a repo added, the project renamed, a variable undone.")),
+    setupChanged(Fixture.from(base("typical"), "lead-setup", "storefront's chat with its lead's setup changes: a repo added, the bot renamed, a variable undone.")),
   ],
 });

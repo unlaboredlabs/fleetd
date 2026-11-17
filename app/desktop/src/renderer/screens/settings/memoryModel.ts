@@ -28,7 +28,7 @@ export function capState(text: string, cap: number): CapState {
 /** The project's files together after an edit of one of them, against the project's cap. */
 export function projectCapState(files: ReadonlyArray<MemoryFile>, edited: { readonly name: string; readonly text: string } | null, cap: number): CapState {
   const total = files.reduce((sum, f) => sum + (edited && fileName(f) === edited.name ? charCount(edited.text) : f.chars), 0);
-  return { chars: total, cap, line: `${n(total)} of ${n(cap)} characters across this project`, over: total > cap };
+  return { chars: total, cap, line: `${n(total)} of ${n(cap)} characters across this bot`, over: total > cap };
 }
 
 /** The chat line that said "Remembered: …", which a note links to. */

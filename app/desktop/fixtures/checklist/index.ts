@@ -40,8 +40,8 @@ const listed = (base: Fixture): Fixture => {
 };
 
 const empty = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "checklist-empty", "Checklist: a project whose lead has set none.");
-  f.answer("checklist_get", { projectRef: STOREFRONT }, { projectRef: STOREFRONT, items: [], next: "The project's lead keeps this list; it is empty until the lead sets one." });
+  const f = Fixture.from(base, "checklist-empty", "Checklist: a bot whose lead has set none.");
+  f.answer("checklist_get", { projectRef: STOREFRONT }, { projectRef: STOREFRONT, items: [], next: "The bot's lead keeps this list; it is empty until the lead sets one." });
   return f;
 };
 

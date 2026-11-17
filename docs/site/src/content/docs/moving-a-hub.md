@@ -35,11 +35,11 @@ one too, or reads it from `FLEETD_VAULT_PASSPHRASE`.
 
 ## Import {#import}
 
-Import loads into a **fresh hub only**: one that was set up (`fleetd init`) and has no project, chat, order, task,
-decision, vault item or second person yet. Machines may already have joined it, as long as none brought a project. A
+Import loads into a **fresh hub only**: one that was set up (`fleetd init`) and has no bot, chat, order, task,
+decision, vault item or second person yet. Machines may already have joined it, as long as none brought a bot. A
 hub that has data is refused with a line that names what it found, and nothing is changed.
 
-1. On the new hub machine, install fleetd and run `fleetd init`. Add no project.
+1. On the new hub machine, install fleetd and run `fleetd init`. Add no bot.
 2. Stop the hub: `systemctl --user stop fleetd-hub`, or on a Mac `launchctl bootout gui/$(id -u)/sh.fleetd.hub`.
    Import refuses while a hub has the database open.
 3. Load the file. It asks for the export's passphrase, or takes it as export does.
@@ -70,7 +70,7 @@ Everything the hub keeps across its own restart:
 
 | | |
 |---|---|
-| Projects | Each project with its settings, picture, repos, instructions, MCP servers and plain variables. |
+| Bots | Each bot with its settings, picture, repos, instructions, MCP servers and plain variables. |
 | Chats | Every message, pin and section, with attachments. |
 | Work | Orders, tasks and their results, agents' sessions as records, checklists, reviews, the merge train's state. |
 | Knowledge | Decisions, memory, skills and their versions, artifacts and their versions, prompts you changed. |
@@ -89,7 +89,7 @@ the new hub's own keys. The hub's own keys are never in the file.
 
 | Left behind | Why | Afterwards |
 |---|---|---|
-| Machines' keys | A machine's enrolment is with one hub. | Each machine is carried as an offline placeholder under its id, so its projects keep their place. Join it again: on the hub, `fleetd pair --worker <machine-id>`, then the command it prints on that machine. Add `--rejoin` to it when the new hub answers at the old hub's address. |
+| Machines' keys | A machine's enrolment is with one hub. | Each machine is carried as an offline placeholder under its id, so its bots keep their place. Join it again: on the hub, `fleetd pair --worker <machine-id>`, then the command it prints on that machine. Add `--rejoin` to it when the new hub answers at the old hub's address. |
 | Keys and device sign-ins | A key signs a device in to one hub. | The owner pairs again with `fleetd pair`. Everyone else gets `fleetd invite --person <personId>`, which makes a device of the person they already are. Agents' keys are made again as agents start. |
 | Phones' push tokens | They belong to the sign-ins. | Each phone registers again when it signs in. |
 | Open pairing, invite and join codes | They are single use and short lived. | Print new ones. |
@@ -104,8 +104,8 @@ the new hub's own keys. The hub's own keys are never in the file.
 Agents that were running when the export was taken aren't moved: their sessions live on the machines. Let them finish
 or stop them first, export, and start work again on the new hub once its machines have joined.
 
-Projects find their folders by machine id and path. A machine that joins the new hub under the id it had, with its
-checkouts where they were, picks its projects up as they were.
+Bots find their folders by machine id and path. A machine that joins the new hub under the id it had, with its
+checkouts where they were, picks its bots up as they were.
 
 ## The file {#file}
 

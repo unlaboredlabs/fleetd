@@ -39,7 +39,7 @@ const hub = (over: Partial<HubInput> = {}): HubInput => ({
 });
 
 describe("what agents do on the Mac", () => {
-  it("names each simulator's and build's agent and project from the hub, with how long", () => {
+  it("names each simulator's and build's agent and bot from the hub, with how long", () => {
     const view = menuBarView(
       read({
         activity: {

@@ -4,7 +4,7 @@ import { linesOf, nameOf, projectDirName, projectTarget, youTarget } from "../sr
 import { markShadowed } from "../src/hub/skills/kept.ts";
 import { isLocal, parse, sourceOf } from "../src/hub/skills/source.ts";
 
-test("which memory file a target is, a project's directory name, and a file's lines", () => {
+test("which memory file a target is, a bot's directory name, and a file's lines", () => {
   expect(nameOf({})).toBe("user.md");
   expect(nameOf(projectTarget({ machineId: "m", projectId: "p" }))).toBe("MEMORY.md");
   expect(nameOf(projectTarget({ machineId: "m", projectId: "p" }, "deploys"))).toBe("deploys.md");

@@ -175,7 +175,7 @@ test("releaseOf: FLEETD_BASE_URL, else the edge release for an edge build, else 
   expect(releaseOf("1.2.3", "")).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/v1.2.3", false]);
 });
 
-test("remove runs the undo steps, erases each project through the erase it is given, and forgets the machine", async () => {
+test("remove runs the undo steps, erases each bot through the erase it is given, and forgets the machine", async () => {
   writeFileSync(
     join(hubHome, "setup.json"),
     JSON.stringify({

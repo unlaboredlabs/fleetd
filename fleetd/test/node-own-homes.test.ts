@@ -64,7 +64,7 @@ test("a start stopped halfway is finished by the next: nothing lost, never both"
   expect(cookie(join(h.kept, "bee"))).toBe("used");
 });
 
-test("a profile a browser still runs on stays where it is, still the project's, and moves at a start that finds it free", () => {
+test("a profile a browser still runs on stays where it is, still the bot's, and moves at a start that finds it free", () => {
   const h = home();
   profile(join(h.old, "ada"), "used");
   symlinkSync("devbox-4242", join(h.old, "ada", "SingletonLock"));

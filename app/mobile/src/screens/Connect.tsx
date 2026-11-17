@@ -48,7 +48,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
-        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways ? "Your projects and approvals." : "Your projects and approvals, from your own hub."}</Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways ? "Your bots and approvals." : "Your bots and approvals, from your own hub."}</Text>
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
       {ways ? (

@@ -6,7 +6,7 @@ const KEY = "devbox/p1";
 const ref = { machineId: "devbox", projectId: "p1" };
 const base = { chatStates: {}, requests: [], leadActivity: {}, running: {} };
 
-describe("a project's bot on the phone", () => {
+describe("a bot's bot on the phone", () => {
   it("is idle, done with a new reply, at work while its lead works, and needs you over all", () => {
     expect(botOf(base, KEY)).toBe("idle");
     expect(botOf(base, KEY, true)).toBe("done");

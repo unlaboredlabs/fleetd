@@ -135,7 +135,7 @@ export function hasFile(root: string, relPath: string, sha256: string): boolean 
 /** A file under the project's root, at most 1 MiB, never through a symlink out of it. */
 export function readProjectFile(root: string, path: string): string | undefined {
   if (path.startsWith("/") || path.split("/").some((p) => p === ".."))
-    throw Object.assign(new Error(`${path} is not a path inside the project`), { code: "invalid" });
+    throw Object.assign(new Error(`${path} is not a path inside the bot`), { code: "invalid" });
   let real: string;
   try {
     real = realpathSync(join(root, path));
@@ -146,7 +146,7 @@ export function readProjectFile(root: string, path: string): string | undefined 
   try {
     rootReal = realpathSync(root);
   } catch {}
-  if (real !== rootReal && !real.startsWith(rootReal + sep)) throw Object.assign(new Error(`${path} leads outside the project`), { code: "invalid" });
+  if (real !== rootReal && !real.startsWith(rootReal + sep)) throw Object.assign(new Error(`${path} leads outside the bot`), { code: "invalid" });
   if (statSync(real).size > 1024 * 1024) throw Object.assign(new Error(`${path} is larger than 1 MiB`), { code: "invalid" });
   return readFileSync(real, "utf8");
 }

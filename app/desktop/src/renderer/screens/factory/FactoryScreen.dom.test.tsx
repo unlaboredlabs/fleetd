@@ -72,7 +72,7 @@ const mount = async (answer: (input: MetricsGetInput) => MetricsGetOutput, scope
 const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
 const text = () => host.textContent;
 
-it("shows the four tiles, the projects table and every merge for all projects", async () => {
+it("shows the four tiles, the bots table and every merge for all bots", async () => {
   const out = metricsAnswer({ now: new Date(NOW).toISOString(), projects });
   await mount(() => out);
   expect(screen()).toBe("factory");
@@ -80,13 +80,13 @@ it("shows the four tiles, the projects table and every merge for all projects", 
     expect(host.querySelector(`[role="group"][aria-label="${label}"]`)).not.toBeNull();
   }
   expect(text()).toContain(`${out.tiles.merged.n} in 30 days`);
-  expect(text()).toContain("Projects");
+  expect(text()).toContain("Bots");
   expect(host.querySelectorAll("#factory-list ~ * tbody tr, section[aria-labelledby='factory-list'] tbody tr")).toHaveLength(Math.min(100, out.merges.length));
   expect(asked[0]).toMatchObject({ compare: false });
   expect(asked[0]?.projectRef).toBeUndefined();
 });
 
-it("asks for the route's project, and leaves out the projects table", async () => {
+it("asks for the route's bot, and leaves out the bots table", async () => {
   await mount((input) => metricsAnswer({ now: new Date(NOW).toISOString(), projects, ...(input.projectRef === undefined ? {} : { project: input.projectRef }) }), project);
   expect(asked[0]?.projectRef).toEqual({ machineId: project.machineId, projectId: project.projectId });
   expect(host.querySelector("section[aria-labelledby='factory-repos']")).toBeNull();

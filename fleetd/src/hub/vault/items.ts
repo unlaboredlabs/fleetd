@@ -62,7 +62,7 @@ function projectFor(hub: Hub, v: Viewer, machineId: string | undefined, projectI
   if (v.system) return r;
   if (!hubStore(hub).projectGet(r)) throw unknownProject(r);
   if (!allows(v.caller, "operate", r.machineId)) {
-    throw new ToolError("forbidden", `You can't change ${r.projectId}'s variables.`, "Ask someone who operates the project.");
+    throw new ToolError("forbidden", `You can't change ${r.projectId}'s variables.`, "Ask someone who operates the bot.");
   }
   return r;
 }
@@ -82,7 +82,7 @@ function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDr
     case "person":
       throw updateApp();
     case "hub":
-      throw new ToolError("invalid", "Variables belong to a project or an order, not the team vault.");
+      throw new ToolError("invalid", "Variables belong to a bot or an order, not the team vault.");
     case "project":
       return { scope: "project", ...projectFor(hub, v, s.machineId, s.projectId) };
     case "order": {
@@ -90,7 +90,7 @@ function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDr
       const w = s.workstreamId;
       const order = w !== undefined && /^W[1-9][0-9]{0,9}$/.test(w) ? workstreamGet(hub.db.conn, w) : undefined;
       if (!v.system && (!order || order.projectRef.machineId !== r.machineId || order.projectRef.projectId !== r.projectId || order.state !== "open")) {
-        throw new ToolError("invalid", `${w ?? "That"} is no open order of ${r.projectId}.`, "Name an open order of the project.");
+        throw new ToolError("invalid", `${w ?? "That"} is no open order of ${r.projectId}.`, "Name an open order of the bot.");
       }
       return { scope: "order", ...r, workstreamId: w! };
     }
@@ -277,7 +277,7 @@ export function moveItem(hub: Hub, v: Viewer, itemId: string, to: { machineId?: 
   if (row.kind === "env") {
     scope = { scope: "project", ...projectFor(hub, v, to.machineId, to.projectId) };
   } else {
-    if (to.machineId !== undefined || to.projectId !== undefined) throw new ToolError("invalid", "A login, card or address moves to the team vault, not to a project.");
+    if (to.machineId !== undefined || to.projectId !== undefined) throw new ToolError("invalid", "A login, card or address moves to the team vault, not to a bot.");
     scope = { scope: "hub", personId: v.person! };
   }
   const draft: ItemDraft = { kind: row.kind, ...scope, ...(row.envName !== undefined ? { envName: row.envName } : {}), label: row.label, meta: row.meta };

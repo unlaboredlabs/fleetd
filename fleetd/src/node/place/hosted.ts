@@ -268,7 +268,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
     async start(launch: Launch): Promise<HostLink> {
       const env = launch.env;
       if (!ACCOUNT_CLEARS.slice(0, 2).some((k) => env[k]) && !env.ANTHROPIC_AUTH_TOKEN)
-        throw new LaunchError("this agent runs on the machine's own Claude login, which never leaves the machine: give its project a Claude account to run it in a hosted sandbox");
+        throw new LaunchError("this agent runs on the machine's own Claude login, which never leaves the machine: give its bot a Claude account to run it in a hosted sandbox");
       let l: Live;
       try {
         l = await ensure(provider, session, dir, launch.cwd, env);

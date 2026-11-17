@@ -42,7 +42,7 @@ export const linkGrants = (device: Grant[], cap: Role): Grant[] => capped(device
 
 /** Why a link key can't be used: the request goes no further. */
 export const dead = (message: string) =>
-  new ToolError("forbidden", message, "Ask the person to make a new link on this hub and add it to their project's Linked hubs.");
+  new ToolError("forbidden", message, "Ask the person to make a new link on this hub and add it to their bot's Linked hubs.");
 
 /** A link this hub keeps for one of its projects, its key still sealed. */
 export type Kept = {

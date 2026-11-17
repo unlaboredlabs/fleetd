@@ -75,7 +75,7 @@ export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?
   if (missing) {
     return (
       <div className={s.screen} data-screen="checklist.missing">
-        <PanelEmpty title="This project isn’t on the hub" />
+        <PanelEmpty title="This bot isn’t on the hub" />
       </div>
     );
   }
@@ -149,8 +149,8 @@ export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?
             </section>
           ))}
         {!withAsked ? null : (
-          <section aria-label="Asked of other projects" ref={askedAt}>
-            <GroupLabel label="Asked of other projects" count={rows?.length} />
+          <section aria-label="Asked of other bots" ref={askedAt}>
+            <GroupLabel label="Asked of other bots" count={rows?.length} />
             {rows === undefined ? (
               asked.isError ? (
                 <div className={s.askedNote} role="alert">

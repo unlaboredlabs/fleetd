@@ -544,7 +544,7 @@ test.skipIf(process.platform !== "linux")("a box that can't reach Claude runs no
   await processPlace.stop(dir);
 }, 30_000);
 
-test.skipIf(process.platform !== "linux")("an endpoint only a project's own settings name, unreachable, sends that session to a plain process and leaves the machine on VMs", async () => {
+test.skipIf(process.platform !== "linux")("an endpoint only a bot's own settings name, unreachable, sends that session to a plain process and leaves the machine on VMs", async () => {
   const gw = await gateway();
   const closed = gw.port;
   gw.close();

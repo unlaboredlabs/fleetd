@@ -476,7 +476,7 @@ test("hosted agents mid-step don't hold their node's update", async () => {
   expect(fake.held).toEqual([]);
 });
 
-test("a project mid-step or an approved command is waited for, its hosted agents not held", async () => {
+test("a bot mid-step or an approved command is waited for, its hosted agents not held", async () => {
   for (const [inbox, busy] of [
     [1, undefined],
     [0, "1 approved command"],

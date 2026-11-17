@@ -67,7 +67,7 @@ export const installMenu = (
     {
       label: "File",
       submenu: [
-        item(opener, "go:projects.add", "New Project…"),
+        item(opener, "go:projects.add", "New Bot…"),
         item(opener, "composer.focus", "Focus Composer"),
         separator,
         ...(mac ? [{ role: "close" } as const] : [item(opener, "settings.open", "Settings…"), separator, { role: "quit" } as const]),
@@ -105,11 +105,11 @@ export const installMenu = (
       ],
     },
     {
-      label: "Project",
+      label: "Bot",
       submenu: [
-        item(opener, "project.previous", "Previous Project"),
-        item(opener, "project.next", "Next Project"),
-        item(opener, "project.nextNeedsYou", "Next Project That Needs You"),
+        item(opener, "project.previous", "Previous Bot"),
+        item(opener, "project.next", "Next Bot"),
+        item(opener, "project.nextNeedsYou", "Next Bot That Needs You"),
       ],
     },
     { role: "windowMenu" },

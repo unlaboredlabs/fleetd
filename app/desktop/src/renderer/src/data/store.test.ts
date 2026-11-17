@@ -127,7 +127,7 @@ describe("connection", () => {
   });
 });
 
-describe("a project's work", () => {
+describe("a bot's work", () => {
   const start = () => withBoard(run([live(), snapshot(10)]), [card("W1", { prs: [{ changeId: "C1", number: 7, repo: "acme/storefront", reviewsDone: 0, reviewsNeeded: 1, state: "reviewing", url: "https://github.com/acme/storefront/pull/7" }] })]);
 
   it("takes its agents' status from the live feed, and the finished ones from its orders' details", () => {
@@ -144,7 +144,7 @@ describe("a project's work", () => {
     expect(work(s)?.doneLanes.map((l) => l.laneId)).toEqual(["T0"]);
   });
 
-  it("is empty for a project with no orders, and keeps the board when a read adds finished orders", () => {
+  it("is empty for a bot with no orders, and keeps the board when a read adds finished orders", () => {
     let s = start();
     expect(selectProjectWork("buildbox/acme")(s)?.lanes).toEqual([]);
     s = ingest(s, {
@@ -173,7 +173,7 @@ describe("events patch what they change", () => {
     expect(s.orderEvents["W2"]?.map((e) => e.seq)).toEqual([2]);
   });
 
-  it("scoped boards replace only their project's orders", () => {
+  it("scoped boards replace only their bot's orders", () => {
     let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W9", { projectRef: { machineId: "buildbox", projectId: "acme" } })]);
     s = ingest(s, {
       tool: "orders_board",
@@ -237,7 +237,7 @@ describe("live frames", () => {
   });
 });
 
-describe("one state word per project", () => {
+describe("one state word per bot", () => {
   // The typical fixture's billing project: the Status row (status_get) said "idle" while its lead was
   // waiting on a reply. The hub's chat state is the one source, so the dot, the header and the row agree.
   it("takes needs-you from the hub's chat state only, whatever the Status row says", () => {
@@ -310,7 +310,7 @@ describe("unread chats", () => {
     event: { seq, at: "2026-10-19T10:00:00.000Z", type: "chat.message", summary: "", data: { projectRef: project, messageId: `m${chatSeq}`, seq: chatSeq, author: "lead", state: "final" } },
   });
 
-  it("follows each project's newest message, opened or not, and never moves back", () => {
+  it("follows each bot's newest message, opened or not, and never moves back", () => {
     let s = withBoard(run([live(), snapshot(1), waiting(2, 4)]), []);
     expect(selectProjectRow("devbox/storefront")(s)?.lastSeq).toBe(4);
     s = run([message(3, 5)], s);
@@ -336,7 +336,7 @@ describe("the live agents", () => {
     ingest(s, { tool: "agents_list", input: {}, output: { agents, at: "2026-10-19T10:00:00.000Z" } });
   const frame = (lanes: ReturnType<typeof liveLane>[]): HubFrame => ({ t: "live", frame: { at: "2026-10-19T10:00:02.000Z", full: false, lanes } });
 
-  it("lists working agents by project, the lead first and then oldest first, and never a finished one or an idle lead", () => {
+  it("lists working agents by bot, the lead first and then oldest first, and never a finished one or an idle lead", () => {
     const s = listed(run([live(), snapshot(1)]), [
       row("T2", { startedAt: "2026-10-19T09:30:00.000Z" }),
       row("T1"),

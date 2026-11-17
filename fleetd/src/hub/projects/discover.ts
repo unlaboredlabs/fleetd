@@ -85,7 +85,7 @@ export function nodeProblem(m: MachineId, e: unknown): ProjectProblem {
   }
   // An older node can't decode the call and never answers it.
   if (e instanceof ExecutorError && e.kind === "node_failed" && e.extra.nodeMessage?.startsWith("no answer within")) {
-    return problem("node_too_old", `${m}'s node did not answer: it may predate adding projects`, `Run fleetd update on ${m}`);
+    return problem("node_too_old", `${m}'s node did not answer: it may predate adding bots`, `Run fleetd update on ${m}`);
   }
   return problem("other", e instanceof Error ? e.message : String(e), `fleetd doctor shows what is wrong on ${m}`);
 }
@@ -182,7 +182,7 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
   const m = given ?? bestWorker(hub);
   if (m === undefined) {
     throw problemError(
-      problem("no_worker", "no machine is online to add the project on", "Start a node (fleetd node run on the machine) or pass a machine id"),
+      problem("no_worker", "no machine is online to add the bot on", "Start a node (fleetd node run on the machine) or pass a machine id"),
     );
   }
   const machine = store(hub).machineGet(m);
@@ -190,8 +190,8 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
   if (machine.agentsMac === true) {
     throw new ToolError(
       "invalid",
-      `${m} is the agents' Mac: a tool for every project's agents, where no project lives`,
-      "Add the project on another machine; its agents use the Mac with `mac run` and `mac sim`",
+      `${m} is the agents' Mac: a tool for every bot's agents, where no bot lives`,
+      "Add the bot on another machine; its agents use the Mac with `mac run` and `mac sim`",
     );
   }
   requireRepoNode(hub, m);

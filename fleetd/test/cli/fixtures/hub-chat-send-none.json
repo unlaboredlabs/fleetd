@@ -1,5 +1,5 @@
 {
   "code": 3,
   "stdout": "",
-  "stderr": "fleetd chat: no project devbox/nope: the hub has none yet\n"
+  "stderr": "fleetd chat: no bot devbox/nope: the hub has none yet\n"
 }

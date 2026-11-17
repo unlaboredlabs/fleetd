@@ -79,8 +79,8 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
     return (
       <div className={s.scroll} data-screen="settings.projects">
         <div className={s.column}>
-          <PageHead title="Projects" />
-          <Text tone="quiet">Not connected. Connect to a hub to change its projects' settings.</Text>
+          <PageHead title="Bots" />
+          <Text tone="quiet">Not connected. Connect to a hub to change its bots' settings.</Text>
         </div>
       </div>
     );
@@ -89,7 +89,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead title="Project" />
+        <PageHead title="Bot" />
         {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>
@@ -145,7 +145,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   };
   return (
     <>
-      <SettingsSection title="Project">
+      <SettingsSection title="Bot">
         <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
         <BotColorSetting project={summary ?? { ...ref, title: settings.title }} />
         <NameSetting settings={settings} />
@@ -240,7 +240,7 @@ function NameSetting({ settings }: { settings: Settings }) {
     <SettingsRow
       reveal="projects.name"
       title="Name"
-      hint="How fleetd shows the project. Its folder keeps its own name."
+      hint="How fleetd shows the bot. Its folder keeps its own name."
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       line={
         <>
@@ -249,7 +249,7 @@ function NameSetting({ settings }: { settings: Settings }) {
               <EchoText echo={echo} />
             </span>
           ) : dirty && title === "" ? (
-            <span className={s.lineBlock}>A project needs a name.</span>
+            <span className={s.lineBlock}>A bot needs a name.</span>
           ) : null}
           <Truncate size="sm" tone="quiet" mono>
             {settings.workspaceRoot}
@@ -258,7 +258,7 @@ function NameSetting({ settings }: { settings: Settings }) {
       }
       control={
         <>
-          <Input aria-label="Project name" className={s.nameField} value={draft} maxLength={200} onChange={(e) => setDraft(e.target.value)} />
+          <Input aria-label="Bot name" className={s.nameField} value={draft} maxLength={200} onChange={(e) => setDraft(e.target.value)} />
           {dirty ? (
             <Button
               variant="primary"
@@ -367,7 +367,7 @@ function EnvInVault({ count, projectRef }: { count: number; projectRef: Ref }) {
     <SettingsRow
       reveal="projects.env"
       title="Environment variables"
-      hint="Given to every agent the project starts. They are kept in the project's vault."
+      hint="Given to every agent the bot starts. They are kept in the bot's vault."
       line={count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}
       control={
         <Button variant="secondary" onClick={() => navigate({ id: "settings", tab: "project-vault", for: `${projectRef.machineId}/${projectRef.projectId}` })}>
@@ -393,7 +393,7 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
     <SettingsRow
       reveal="projects.env"
       title="Environment variables"
-      hint="Given to every agent the project starts. Secrets are never shown again."
+      hint="Given to every agent the bot starts. Secrets are never shown again."
       line={echo !== null ? <EchoText echo={echo} /> : full ? `It holds the most it can, ${String(ENV_MAX)}: remove one to add another.` : null}
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       control={
@@ -620,7 +620,7 @@ function PasteEnv(props: { env: ReadonlyArray<ProjectEnvVar>; onClose: () => voi
         ) : null}
         {over ? (
           <Text size="sm" tone="danger">
-            A project takes at most {ENV_MAX} variables.
+            A bot takes at most {ENV_MAX} variables.
           </Text>
         ) : null}
         {total !== null ? (
@@ -641,7 +641,7 @@ function ConfirmRemove(props: { v: ProjectEnvVar; onClose: () => void; onRemove:
       open
       onOpenChange={(open) => !open && !busy && props.onClose()}
       title={`Remove ${props.v.name}?`}
-      description={props.v.kind === "secret" ? "Its value is gone from the machine; set it again to bring it back." : "New agents of the project start without it."}
+      description={props.v.kind === "secret" ? "Its value is gone from the machine; set it again to bring it back." : "New agents of the bot start without it."}
       footer={
         <>
           <Button onClick={props.onClose} disabled={busy}>

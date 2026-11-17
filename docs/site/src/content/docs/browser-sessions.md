@@ -11,8 +11,8 @@ app and take it over. The node records the screen and uploads the recording to t
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
 [Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents share app by app. iOS simulators aren't
 screens you open: each one an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
-[open one yourself](#yours) too. The app shows every project's on the [Screens page](#page), and each
-project's under **Agents › Screens**. A team that connects its own Revyl account also gets
+[open one yourself](#yours) too. The app shows every bot's on the [Screens page](#page), and each
+bot's under **Agents › Screens**. A team that connects its own Revyl account also gets
 [iPhones and Android phones from Revyl](#revyl), routed next to its own machines. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
 
@@ -20,17 +20,17 @@ project's under **Agents › Screens**. A team that connects its own Revyl accou
 
 **Screens** in the sidebar says "needs you" when a screen asks for you, else how many are live: one count for the
 whole hub (`screens_count`), read again as screens start, change hands and end. The page shows every screen of the
-projects you can see, in three groups:
+bots you can see, in three groups:
 
 - **Needs you**: screens whose agent asked you to take over, each with a large picture, its reason and **Take over**.
-- **Live**: a grid of pictures. Over each, its project and where it runs (`Browser · devbox`, `Android · buildbox`,
+- **Live**: a grid of pictures. Over each, its bot and where it runs (`Browser · devbox`, `Android · buildbox`,
   `Agents' Mac`); under it, what it's for, its state, who has it and the agent's latest step (`Typed "SAVE10" in @e12`,
   `Tapped "Add to cart"`).
 - **Recent**: screens that ended, newest first, with how they ended and when: the first 12, then **Show more**.
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
-right opens a short sentence: the kind, the machine with its slots in use, and the project. A full machine
-gives you its next free slot. **All screens**, the icon beside **Screens** in a project's Agents tab in the panel, opens the page too.
+right opens a short sentence: the kind, the machine with its slots in use, and the bot. A full machine
+gives you its next free slot. **All screens**, the icon beside **Screens** in a bot's Agents tab in the panel, opens the page too.
 
 The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
 seconds, shrinks it to at most 640 pixels a side and sends it to each app showing the page. It takes no capture of its
@@ -48,9 +48,9 @@ it was logged.
    agent runs `agent-browser skills get core` once for how to use it.
 3. **`session_end`**. The node kills that Chrome, deletes its profile, and uploads the recording.
 
-The browser of a lead that does its own work (a project with no repo) is the exception: it keeps one profile of the
-project's own between sessions, launched fresh for each session rather than taken warm, so the sites it signed into
-stay signed in ([Projects › Sign-ins](/docs/projects#sign-ins)).
+The browser of a lead that does its own work (a bot with no repo) is the exception: it keeps one profile of the
+bot's own between sessions, launched fresh for each session rather than taken warm, so the sites it signed into
+stay signed in ([Bots › Sign-ins](/docs/projects#sign-ins)).
 
 An agent has one screen open at a time. Its screen also ends when the agent's claude exits (its work is done, it was
 stopped or it went idle), or after 30 minutes without an `agent-browser` command. A screen never outlives its task:
@@ -102,8 +102,8 @@ there. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
-You can open a screen of your own: **New screen**, the plus beside **Screens** in a project's Agents tab in the panel, on the
-[Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
+You can open a screen of your own: **New screen**, the plus beside **Screens** in a bot's Agents tab in the panel, on the
+[Screens page](#page), or **New screen…** in the command palette (⌘K) for the bot on screen. On the phone, **New Screen** is on a bot's
 ⓘ page ([Phone app](/docs/mobile#screens)).
 
 1. **Pick the kind**: a browser, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
@@ -113,17 +113,17 @@ You can open a screen of your own: **New screen**, the plus beside **Screens** i
    Settings › Hub › Machines that fixes it; anyone else is told whom to ask.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Pick a PR** (optional, Android): one of the project's open PRs, whose CI build is installed before you get
+3. **Pick a PR** (optional, Android): one of the bot's open PRs, whose CI build is installed before you get
    it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
    unless set in [Settings](#settings). The picker says the machine's own.
 
 Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
-to, so it has no Hand back. You need operate on the project's machine to open one, as to take a screen over.
+to, so it has no Hand back. You need operate on the bot's machine to open one, as to take a screen over.
 
-A browser you open on a project's own machine runs on the profile the project keeps
-([Projects › Sign-ins](/docs/projects#sign-ins)): a site you sign in to there stays signed in for its lead. While the
+A browser you open on a bot's own machine runs on the profile the bot keeps
+([Bots › Sign-ins](/docs/projects#sign-ins)): a site you sign in to there stays signed in for its lead. While the
 lead's browser is on that profile, yours opens on a fresh one, and so does one on another machine. One browser at a
 time runs on the profile, so close yours before the lead needs its own.
 
@@ -185,7 +185,7 @@ recorded. They can't stop an agent that sets out to get around them, for example
 | `actions` | One JSON line per step: `session_start`, each `agent-browser` command with the start of its output, how long it took and when in the video it ran, each `fill_credential` with its reference, and `session_end`. A step that clicked or typed names the element it acted on: the agent's ref for it (`@e3`), a CSS selector, and its box in the video's pixels. A person's takeover and handback are steps too. |
 | `dom` | The page's HTML after each step that changed it, with its URL and title, and that step's element. |
 
-Before anything leaves the machine, the node scrubs the text files. The project's
+Before anything leaves the machine, the node scrubs the text files. The bot's
 [secret variables](/docs/projects#env) and the screen's MCP secrets are masked as `***NAME***`, in every form a page
 shows them: as written, JSON- or HTML-escaped, URL-encoded or encoded as a form submits it, and in base64, inside a
 longer string too. Each value filled from 1Password is masked so too, as `***op://…***`. A video can't be
@@ -206,7 +206,7 @@ the value into the page itself.
    `field: "password"` into `#password`, which submits the form. `field: "otp"` types the current one-time code,
    made on the hub, so the seed never leaves it. `vault_items` lists the logins the agent may use, by label and site.
 3. **The hub checks before it sends.** The node hosting the browser asks the hub for the value. The hub checks, from
-   its own records, which project and order the session works for, that the item is in the team vault
+   its own records, which bot and order the session works for, that the item is in the team vault
    ([who uses what](/docs/vault#scopes)) and that the page is on its sites. Only then does it seal the value to that
    node. Each fill, and each refusal, is in the item's activity.
 
@@ -216,7 +216,7 @@ the value into the page itself.
 (Settings › You › Your accounts › 1Password) lets you and your leads search it and bring items in. Make it read one
 vault made for fleetd ([why](/docs/security#agent-reach)). For this release, `fill_credential` still takes an `op://`
 reference: it fills from the vault item imported from it, else reads 1Password as before and proposes importing the
-item. A project's own `OP_SERVICE_ACCOUNT_TOKEN` variable still serves those references, and the node keeps any token
+item. A bot's own `OP_SERVICE_ACCOUNT_TOKEN` variable still serves those references, and the node keeps any token
 to itself (no agent, setup command or MCP server gets it in its environment). In the release after, `op://` references
 are refused.
 
@@ -256,9 +256,9 @@ logins made for agents.
 
 ## On the hub {#hub}
 
-The hub keeps each recording for **30 days**, and up to **20 GB** per project, deleting a project's oldest first. It
+The hub keeps each recording for **30 days**, and up to **20 GB** per bot, deleting a bot's oldest first. It
 checks every hour. An upload still in progress counts toward the size, and is never cut short. One its machine never
-finished is treated as a recording from a day after it started: it goes past the 30 days, or when its project is over
+finished is treated as a recording from a day after it started: it goes past the 30 days, or when its bot is over
 its size. An expired screen keeps its row, with no files. An owner or admin changes the days with
 **Keep screen recordings for**, under What runs where in **Settings › Hub › Machines**; the size limit stays as a safety net. An admin key on every machine changes
 both with `browser_retention_set`.
@@ -284,7 +284,7 @@ machine hosts screens:
   waiting.
 
 **Keep screen recordings for**, under What runs where on Settings › Hub › Machines itself, sets how many days the hub
-keeps them, for every project ([On the hub](#hub)).
+keeps them, for every bot ([On the hub](#hub)).
 
 A switch writes the machine's node.json for you: the kind's `enabled`; the rest of the file stays as it is. Turning Android on opts the machine in, so it installs what it needs, as the setting
 below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
@@ -337,7 +337,7 @@ its time. Each stage goes to the log as it ends, with its own time (`ms`) and th
 - **hub screen launch**: `node start` (the node's answer), `recorded` (the node's report of it live) and `control`
   (the person's control, confirmed by the node);
 - **node browser**: `install`, `warm browser`, `cold browser` or `kept browser` (from the pool, launched now, or
-  launched on a project's kept profile), `secrets` and `session open`, which **node browser open** splits into
+  launched on a bot's kept profile), `secrets` and `session open`, which **node browser open** splits into
   `recorder`, `discover` and `page`;
 - **node desktop**: `prepare`, `warm display` or `cold display` (with **node display**'s `xvfb` or `container`),
   `connect`, `secrets` and `session open`.

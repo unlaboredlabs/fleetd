@@ -192,7 +192,7 @@ test("provenance tags each part by where its value was seen", () => {
     cc: ["new@nowhere.example", "ines@friends.example"],
     subject: "Saturday dinner",
     attachments: ["invoices/2026-10.pdf"],
-    body: `Forwarding as asked:\n${INJECTED}\nWould Saturday work for dinner?\nAnd a line the project wrote itself, long enough to count.`,
+    body: `Forwarding as asked:\n${INJECTED}\nWould Saturday work for dinner?\nAnd a line the bot wrote itself, long enough to count.`,
   });
   const person = ["Tell Sam about Saturday dinner", "Also loop in Ines, from this:\n> From: Ines <ines@friends.example>\n> count me in"];
   const r = reviewOf(action, context(person));
@@ -210,7 +210,7 @@ test("provenance tags each part by where its value was seen", () => {
   expect(body.value).toBeUndefined();
   expect(body.quoted_from_untrusted.length).toBe(3);
   expect(body.quoted_from_untrusted).toContain("Would Saturday work for dinner");
-  expect(body.quoted_from_untrusted.some((q) => q.includes("the project wrote"))).toBe(false);
+  expect(body.quoted_from_untrusted.some((q) => q.includes("the bot wrote"))).toBe(false);
   expect(r.provenance.find((p) => p.part === "address in body")?.value).toBe("evil@attacker.example");
 });
 

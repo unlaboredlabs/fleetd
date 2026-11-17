@@ -76,6 +76,6 @@ it("a team this device joined by invitation never opens on Connect a computer: G
   const stop = await render({ cloud: true, invited: true });
   expect(screen()).not.toBe("setup.machine");
   expect(host.textContent).not.toContain("Connect this computer");
-  expect(host.textContent).toContain("Add a project");
+  expect(host.textContent).toContain("Add a bot");
   stop();
 });

@@ -21,7 +21,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "your-memory": "Your memory",
   devices: "Your devices",
   hubs: "Hubs & devices",
-  projects: "Project",
+  projects: "Bot",
   agents: "Agents",
   instructions: "Instructions & memory",
   automations: "Automations",
@@ -45,9 +45,9 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
  */
 export const pagePath = (tab: Tab): string => {
   const on = pageOf(tab);
-  if (on === "project-vault") return "Project › Vault";
+  if (on === "project-vault") return "Bot › Vault";
   if (!isHubTab(on)) return PAGE_LABEL[on];
-  return `${isEveryProject(on) ? "Every project" : "Hub"} › ${PAGE_LABEL[on]}`;
+  return `${isEveryProject(on) ? "Every bot" : "Hub"} › ${PAGE_LABEL[on]}`;
 };
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
@@ -73,7 +73,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "github.account", label: "Your GitHub", tab: "accounts", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
   { key: "onepassword", label: "1Password", tab: "accounts", keywords: ["1password", "one password", "password", "logins", "sign in", "vault", "fill", "credentials"] },
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
-  page("vault", ["vault", "team vault", "passwords", "logins", "cards", "credit card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every project", "hub-wide"]),
+  page("vault", ["vault", "team vault", "passwords", "logins", "cards", "credit card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every bot", "hub-wide"]),
   { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
@@ -83,10 +83,10 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "devices", label: PAGE_LABEL.devices, tab: "hubs", keywords: ["devices", "phone", "signed in", "keys"] },
   { key: "devices.pair", label: "Pair a phone", tab: "hubs", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   { key: "hubs.links", label: "Hub links", tab: "hubs", keywords: ["hub link", "links to this hub", "link key", "other hub", "revoke"] },
-  page("projects", ["project settings", "repo", "repository"]),
-  { key: "projects.picture", label: "Project icon", tab: "projects", keywords: ["avatar", "photo", "image", "picture", "face"] },
+  page("projects", ["bot settings", "repo", "repository"]),
+  { key: "projects.picture", label: "Bot icon", tab: "projects", keywords: ["avatar", "photo", "image", "picture", "face"] },
   { key: "projects.color", label: "Bot color", tab: "projects", keywords: ["avatar", "colour", "bot", "pebble", "palette"] },
-  { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
+  { key: "projects.name", label: "Bot name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.setup", label: "Setup", tab: "projects", keywords: ["setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
@@ -96,16 +96,16 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.mcp", label: "MCP servers", tab: "projects", keywords: ["mcp", "integrations", "tools", "servers", "connections", "connect", "oauth", "sign in"] },
   { key: "projects.payments", label: "Payments", tab: "projects", keywords: ["card", "credit card", "pay", "purchase", "buy", "book", "checkout", "1password"] },
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },
-  { key: "projects.skills", label: "Project skills", tab: "projects", keywords: ["skill", "skills", "learned", "history", "versions", "revert"] },
-  { key: "projects.archive", label: "Archive project", tab: "projects", keywords: ["archive", "bring back", "unarchive", "hide", "restore"] },
+  { key: "projects.skills", label: "Bot skills", tab: "projects", keywords: ["skill", "skills", "learned", "history", "versions", "revert"] },
+  { key: "projects.archive", label: "Archive bot", tab: "projects", keywords: ["archive", "bring back", "unarchive", "hide", "restore"] },
   { key: "projects.delete", label: "Delete bot", tab: "projects", keywords: ["remove", "delete", "forget", "project"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },
   { key: "agents.profiles", label: "Allowed profiles", tab: "agents", keywords: ["task profiles", "profile", "allowed", "model", "effort"] },
   { key: "agents.skills", label: "Skills", tab: "agents", keywords: ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"] },
   page("instructions", ["custom instructions", "rules", "my text", "project"]),
-  { key: "memory", label: "Project memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules", "refresh", "nightly", "tidy"] },
-  { key: "project-vault", label: "Project variables", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token"] },
+  { key: "memory", label: "Bot memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules", "refresh", "nightly", "tidy"] },
+  { key: "project-vault", label: "Bot variables", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token"] },
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
   page("prompts", ["prompt", "templates", "system prompt", "lead", "reviewer", "writer", "voice"]),
   page("hub.people", ["team", "roles", "admin", "owner", "member", "remove", "claude account", "github account", "everyone's account", "usage"]),
@@ -123,14 +123,14 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
-  { key: "hub.profiles", label: "Agents for every project", tab: "hub.profiles", keywords: ["every project", "hub-wide"] },
-  { key: "hub.task-profiles", label: "Profiles", tab: "hub.profiles", keywords: ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"] },
+  { key: "hub.profiles", label: "Agents for every bot", tab: "hub.profiles", keywords: ["every bot", "hub-wide"] },
+  { key: "hub.task-profiles", label: "Profiles", tab: "hub.profiles", keywords: ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every bot"] },
   { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
-  { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.profiles", keywords: ["every project", "hub-wide", "global"] },
-  { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.profiles", keywords: ["mcp", "tools", "servers", "global", "every project"] },
+  { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.profiles", keywords: ["every bot", "hub-wide", "global"] },
+  { key: "hub.mcp", label: "MCP servers for every bot", tab: "hub.profiles", keywords: ["mcp", "tools", "servers", "global", "every bot"] },
   { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.profiles", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
-  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.profiles", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
-  { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
+  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.profiles", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every bot"] },
+  { key: "hub.instructions", label: "Instructions for every bot", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
   { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
   page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps"]),
   // Hub accounts was a page once: its name still finds the accounts, on Setup, and each of its options the account that holds it.

@@ -186,7 +186,7 @@ describe("the list", () => {
     expect(words(items)).toEqual(["Open 1", 11, "Merged 1", "cut"]);
   });
 
-  it("finds a PR a link names by number alone in the project's list", () => {
+  it("finds a PR a link names by number alone in the bot's list", () => {
     const rows = [row({ number: 11 }), row({ number: 4, repo: "acme/docs" })];
     expect(resolvePr({ repo: null, number: 4 }, rows)).toEqual({ repo: "acme/docs", number: 4 });
     expect(resolvePr({ repo: null, number: 99 }, rows)).toBe("unknown");

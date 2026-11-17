@@ -89,7 +89,7 @@ describe("routes", () => {
     expect(parseHash("#/settings/hub.people")).toEqual({ id: "settings", tab: "general" });
   });
 
-  it("opens the Factory on one project, else on every project", () => {
+  it("opens the Factory on one bot, else on every bot", () => {
     expect(toHash({ id: "factory", project: null })).toBe("#/factory");
     expect(toHash({ id: "factory", project: storefront })).toBe("#/factory?project=devbox/storefront");
     expect(parseHash("#/factory?project=devbox/storefront")).toEqual({ id: "factory", project: storefront });

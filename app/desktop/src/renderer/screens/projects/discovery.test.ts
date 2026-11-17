@@ -33,7 +33,7 @@ const out: ProjectDiscoverOutput = {
 };
 
 describe("discovery", () => {
-  it("lists checkouts by machine, then GitHub, and marks what is already a project", () => {
+  it("lists checkouts by machine, then GitHub, and marks what is already a bot", () => {
     const d = discovery(out, names);
     expect(d.best).toBe("devbox");
     expect(d.ghOn).toBe("the hub");
@@ -88,7 +88,7 @@ describe("what New bot offers to add", () => {
 });
 
 describe("the agents' Mac", () => {
-  it("are no project's home: not offered, and their checkouts not listed", () => {
+  it("are no bot's home: not offered, and their checkouts not listed", () => {
     const mac: ProjectDiscoverOutput = {
       ...out,
       machines: [...out.machines, { machineId: "mac", online: true, cloneRoot: "/Users/agents/src", repos: [{ path: "/Users/agents/src/storefront", name: "storefront", repo: "acme/storefront" }] }],

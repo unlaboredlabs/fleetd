@@ -144,7 +144,7 @@ test("a question its lead answered mid-run no longer lets a message restart it",
   k.hub.shutdown.abort();
 });
 
-test("one message reaches each recipient, refuses those outside the project, and caps 20 a minute", async () => {
+test("one message reaches each recipient, refuses those outside the bot, and caps 20 a minute", async () => {
   const k = await setup();
   const sent = await k.dm(["T1", "T1", "T9", "T2"], "rebase on #42");
   expect(sent.to.map((t) => [t.taskId, t.outcome])).toEqual([

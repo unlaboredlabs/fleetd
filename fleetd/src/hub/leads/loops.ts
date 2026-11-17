@@ -26,8 +26,8 @@ import { leadWiring } from "./ports.ts";
 import { wire as wirePorts } from "./wiring.ts";
 import { intake } from "./workstreams.ts";
 
-export const STOPPED_REASON = "its project was removed";
-export const REPO_REASON = "its repo was removed from the project";
+export const STOPPED_REASON = "its bot was removed";
+export const REPO_REASON = "its repo was removed from the bot";
 const SCAN_LIMIT = 10_000;
 const OUTCOME_WORKSTREAMS = 20;
 

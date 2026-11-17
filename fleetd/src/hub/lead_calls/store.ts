@@ -78,7 +78,7 @@ export function directoryOver(db: HubDb): Directory {
       if (lead) return { agent: { kind: "lead" }, projectRef: { machineId: lead.machine_id, projectId: lead.project_id } };
       throw new ToolError(
         "forbidden",
-        `session ${threadId} is neither a project's lead nor a task, so it can't make fleetd's lead calls`,
+        `session ${threadId} is neither a bot's lead nor a task, so it can't make fleetd's lead calls`,
         "a person runs these commands from their own shell; agents use their fleetd tools",
       );
     },

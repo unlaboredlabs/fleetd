@@ -118,7 +118,7 @@ export class PromptHub {
       kind: "instructions",
       group: "instructions",
       title: "Custom instructions",
-      sentWhen: "appended to every lead and task first message, global then project",
+      sentWhen: "appended to every lead and task first message, global then bot",
       perProject: true,
       placeholders: [],
       rules: [],
@@ -143,7 +143,7 @@ export class PromptHub {
           scope: "project",
           projectRef: { machineId: "devbox", projectId: "storefront" },
           text: "Route anything about checkout or payments to storefront, never to docs-site.",
-          why: "orders are now written to a project's lead in its chat, so nothing routes them",
+          why: "orders are now written to a bot's lead in its chat, so nothing routes them",
         },
       ];
     }

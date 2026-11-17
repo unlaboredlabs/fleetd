@@ -5,7 +5,7 @@ import { groups, installLine, isSkillName, nameProblem, rowKey, shadowLine, slug
 
 const skill = (over: Partial<SkillSummary>): SkillSummary => ({ name: "release", origin: "global", description: "", files: [], ...over });
 
-describe("Settings → Projects → Agents", () => {
+describe("Settings → Bots → Agents", () => {
   it("takes the Agent Skills spec's names, and turns a typed one into one", () => {
     expect(isSkillName("pr-review")).toBe(true);
     for (const bad of ["", "PR", "-a", "a-", "a--b", "a_b", "a".repeat(65)]) expect(isSkillName(bad)).toBe(false);
@@ -36,7 +36,7 @@ describe("Settings → Projects → Agents", () => {
     expect(rowKey(list[0] ?? skill({}))).toBe("global/release");
   });
 
-  it("is on a project's Agents, found by search", () => {
+  it("is on a bot's Agents, found by search", () => {
     expect(searchSettings("skills.sh")[0]?.tab).toBe("agents");
   });
 });

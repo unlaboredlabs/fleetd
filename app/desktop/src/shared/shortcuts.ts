@@ -5,7 +5,7 @@
 
 export type Platform = "darwin" | "linux" | "win32" | "other";
 
-export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer" | "Screens";
+export type ShortcutSection = "General" | "Bots" | "Go to" | "Composer" | "Screens";
 
 export interface Shortcut {
   readonly keys: string;
@@ -15,7 +15,7 @@ export interface Shortcut {
 }
 
 const jump = Object.fromEntries(
-  [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`project.open.${n}`, { keys: `Mod+${n}`, title: `Open Project ${n} in the Sidebar`, section: "Projects" }]),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`project.open.${n}`, { keys: `Mod+${n}`, title: `Open Bot ${n} in the Sidebar`, section: "Bots" }]),
 ) as Record<`project.open.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`, Shortcut>;
 
 export const SHORTCUTS = {
@@ -25,9 +25,9 @@ export const SHORTCUTS = {
   "sidebar.toggle": { keys: "Mod+B", title: "Toggle Sidebar", section: "General" },
   "panel.toggle": { keys: "Mod+Alt+B", title: "Toggle Panel", section: "General" },
   ...jump,
-  "project.previous": { keys: "Mod+[", title: "Previous Project", section: "Projects" },
-  "project.next": { keys: "Mod+]", title: "Next Project", section: "Projects" },
-  "project.nextNeedsYou": { keys: "Mod+.", title: "Next Project That Needs You", section: "Projects" },
+  "project.previous": { keys: "Mod+[", title: "Previous Bot", section: "Bots" },
+  "project.next": { keys: "Mod+]", title: "Next Bot", section: "Bots" },
+  "project.nextNeedsYou": { keys: "Mod+.", title: "Next Bot That Needs You", section: "Bots" },
   "factory.open": { keys: "Mod+;", title: "Factory", section: "Go to" },
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
@@ -49,7 +49,7 @@ export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: reado
   { where: "Command palette", keys: ["Mod+K"], title: "Show its other actions" },
   { where: "Command palette", keys: ["Esc", "Backspace"], title: "Back from the actions" },
   { where: "Composer", keys: ["Mod+↩"], title: "Stop the agent’s current step and send now" },
-  { where: "Sidebar", keys: ["Alt+↑", "Alt+↓"], title: "Move the project up or down" },
+  { where: "Sidebar", keys: ["Alt+↑", "Alt+↓"], title: "Move the bot up or down" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 

@@ -300,7 +300,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
         <div className={cx(s.column, s.wide)}>
           <PageHead title={name} lead={toList}>
-            One text for every project: the hub&apos;s owners and admins change it in Hub › Every project › Instructions.
+            One text for every bot: the hub&apos;s owners and admins change it in Hub › Every bot › Instructions.
           </PageHead>
           <SettingsSection bare>
             <div data-text="code">
@@ -346,7 +346,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         description={
           d && target(d).scope === "project"
             ? `Your edit for ${here} is deleted; ${here} gets the hub-wide text again. New agents get it; running ones keep theirs.`
-            : "The hub-wide edit is deleted. Projects with their own edit keep it. New agents get the built-in text; running ones keep theirs."
+            : "The hub-wide edit is deleted. Bots with their own edit keep it. New agents get the built-in text; running ones keep theirs."
         }
         footer={
           <>

@@ -122,7 +122,7 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
     try {
       rules = await found.toolRules(hub, r);
     } catch (error) {
-      throw ExecutorError.failed(m, "launch", `the project's policy file was not read: ${(error as Error).message}`);
+      throw ExecutorError.failed(m, "launch", `the bot's policy file was not read: ${(error as Error).message}`);
     }
   }
   let chosen: Chosen | undefined;
@@ -225,8 +225,8 @@ function archivedLead(hub: Hub, r: ThreadRef): [string, string] | undefined {
   const held = repos.holders(hub.db.conn, { machineId: r.machineId, projectId: lead.project_id })[0];
   if (!held) return undefined;
   return [
-    `This project is archived: its directory is repo ${held.repo.name} of project ${held.project.projectId} on ${held.project.machineId}.`,
-    "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
+    `This bot is archived: its directory is repo ${held.repo.name} of bot ${held.project.projectId} on ${held.project.machineId}.`,
+    "Write to that bot's lead instead; project_repo_remove takes the repo out of it and brings this bot back.",
   ];
 }
 

@@ -4,7 +4,7 @@ description: Pair the desktop app with more than one hub, each under a name you 
 ---
 
 The desktop app can be paired with several [hubs](/docs/glossary#hub) at once. Use this to keep work apart, for
-example your own projects on one hub and your company's on another, each with its own machines, people and keys,
+example your own bots on one hub and your company's on another, each with its own machines, people and keys,
 and still see all of it in one window.
 
 Each hub gets a name you choose, such as Personal, Acme or Side project, and an optional colour. Names are free text,
@@ -51,8 +51,8 @@ The phone app has the same under Settings, **Restart Hub**, for admins.
 
 ## One sidebar {#sidebar}
 
-Each hub's projects sit under its name in the sidebar, in the order you added the hubs. Click a hub's name to
-collapse its group. A collapsed group still says how many of its projects need you. ⌘1 to ⌘9 count only the rows you
+Each hub's bots sit under its name in the sidebar, in the order you added the hubs. Click a hub's name to
+collapse its group. A collapsed group still says how many of its bots need you. ⌘1 to ⌘9 count only the rows you
 can see.
 
 With one hub there is no name and no group, so the sidebar looks as it always has.
@@ -64,10 +64,10 @@ Every hub counts toward what needs you:
 | Where | With several hubs |
 |---|---|
 | The sidebar | Each row's mark (reply, approve, secret, blocked) sits in its hub's group. |
-| The Dock badge | Counts the projects that need you on every hub. |
-| Notifications | Come from every hub, each under its own quiet hours. The title starts with the hub's name, and clicking one opens that hub's project. |
+| The Dock badge | Counts the bots that need you on every hub. |
+| Notifications | Come from every hub, each under its own quiet hours. The title starts with the hub's name, and clicking one opens that hub's bot. |
 | Status | Has a section per hub, under its name. |
-| Commands (⌘K) | Lists every hub's projects, each with its hub's name beside its machine. |
+| Commands (⌘K) | Lists every hub's bots, each with its hub's name beside its machine. |
 
 ## Managing a hub {#admin}
 
@@ -83,7 +83,7 @@ hub. Click your name for a row per hub: its name beside a dot while it's connect
 with **Retry** or **Pair again**. A click on a connected hub's row opens it in Settings › You › Hubs & devices, which says why a
 hub is out of reach.
 
-A hub that's out of reach only affects its own group. Its projects show as they were last seen, marked "as of 09:02",
+A hub that's out of reach only affects its own group. Its bots show as they were last seen, marked "as of 09:02",
 and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its row in the menu
 says "Acme refused the key", with **Pair again**.
 

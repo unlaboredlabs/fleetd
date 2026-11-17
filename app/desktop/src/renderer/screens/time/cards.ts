@@ -41,7 +41,7 @@ export interface Card {
 
 const DECIDED: Record<string, string> = {
   policy: "the machine's policy, at once",
-  hub_rule: "a project tool rule",
+  hub_rule: "a bot tool rule",
   lead: "the lead",
 };
 
@@ -122,7 +122,7 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
 export const laneCard = (m: Model, row: number, tokens: number): Card => {
   const r = m.rows[row];
   if (r === undefined) return { title: "", mono: false, lines: [], hint: "" };
-  const title = r.kind === "lead" ? "The project's lead" : r.role !== undefined && r.kind !== "other" ? `${ROLE_WORD[r.role]}: ${r.name}` : r.name;
+  const title = r.kind === "lead" ? "The bot's lead" : r.role !== undefined && r.kind !== "other" ? `${ROLE_WORD[r.role]}: ${r.name}` : r.name;
   const lines = [`${r.to - r.from} spans · ${fmtDur(r.agentMs)} of agent time`];
   const who = [ranOn(r), tokens > 0 ? `${fmtTokens(tokens)} output tokens` : undefined].filter((x) => x !== undefined);
   if (who.length > 0) lines.push(who.join(" · "));

@@ -94,7 +94,7 @@ afterEach(() => {
 
 const row = (): HTMLElement => {
   const found = [...host.querySelectorAll<HTMLElement>("button")].find((b) => b.textContent.startsWith("storefront"));
-  if (found === undefined) throw new Error("no project row");
+  if (found === undefined) throw new Error("no bot row");
   return found;
 };
 const items = () => [...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent);

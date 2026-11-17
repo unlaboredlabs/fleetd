@@ -1,5 +1,5 @@
 {
-  "note": "A project's checker at work (W239): what it let through, as one quiet line; a send it asks about, with why; a forward it blocked, which the person may approve anyway; and a final Confirm on a site with the page's screenshot. devbox; no personal data.",
+  "note": "A bot's checker at work (W239): what it let through, as one quiet line; a send it asks about, with why; a forward it blocked, which the person may approve anyway; and a final Confirm on a site with the page's screenshot. devbox; no personal data.",
   "items": [
     {
       "line": "Let through without asking you: `send_message` on `gmail`, to sam@example.com. The checker's reason: you asked to tell Sam that Saturday works"

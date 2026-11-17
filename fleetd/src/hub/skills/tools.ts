@@ -46,7 +46,7 @@ function scopeProject(hub: Hub, caller: Caller, scope: SkillScope, r: ProjectRef
   throw new ToolError(
     "forbidden",
     "Global skills reach every machine's agents, so they take admin on every machine, and this key lacks it.",
-    "Use a key with admin on every machine, or keep the skill in one project.",
+    "Use a key with admin on every machine, or keep the skill in one bot.",
   );
 }
 
@@ -98,7 +98,7 @@ export async function installFrom(
     throw new ToolError(
       "forbidden",
       "A lead installs from a remote source only.",
-      "Give owner/repo or a GitHub URL; a person can install a local one on the project's Settings › Agents.",
+      "Give owner/repo or a GitHub URL; a person can install a local one on the bot's Settings › Agents.",
     );
   }
   const fetched = await fetch(source);
@@ -142,7 +142,7 @@ export function register(tools: Registry): void {
     return {
       skills: list,
       ...(repoUnavailable === undefined ? {} : { repoUnavailable }),
-      ...(r ? {} : { next: "skills_list with projectRef adds that project's skills and its repo's." }),
+      ...(r ? {} : { next: "skills_list with projectRef adds that bot's skills and its repo's." }),
     };
   });
 
@@ -260,15 +260,15 @@ export function register(tools: Registry): void {
     if (input.off && !kept) {
       throw new ToolError(
         "not_found",
-        `The hub keeps no skill called ${input.name} for this project.`,
-        "Only the hub's skills turn off here: one in the repo's or a project's folder reaches its sessions from              there, so remove it from that folder.",
+        `The hub keeps no skill called ${input.name} for this bot.`,
+        "Only the hub's skills turn off here: one in the repo's or a bot's folder reaches its sessions from              there, so remove it from that folder.",
       );
     }
     versions.setOff(hub.db, input.projectRef, input.name, input.off);
     changed(hub, input.projectRef, [input.name], caller.name);
     return {
       ok: true,
-      next: input.off ? "Off: the project's sessions don't get it from their next start." : "On: the project's sessions get it from their next start.",
+      next: input.off ? "Off: the bot's sessions don't get it from their next start." : "On: the bot's sessions get it from their next start.",
     };
   });
 }

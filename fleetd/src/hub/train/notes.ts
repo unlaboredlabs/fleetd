@@ -14,7 +14,7 @@ export const NEVER_RAN_WAIT_MS = 5 * 60_000;
 /** The start of `lastError` on a Change whose CI timed out rather than went red. */
 export const CI_TIMED_OUT = "CI timed out";
 /** The `lastError` of a Change that left the train with its project (`dropRemovedChanges`). */
-export const REMOVED_PROJECT = "its project was removed from fleetd";
+export const REMOVED_PROJECT = "its bot was removed from fleetd";
 export const CI_WATCHED = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
 export const CI_SUPERSEDED = "a push to the PR replaced the head its CI ran on; the train takes the new head";
 export const CI_CANCELLED = "its CI timed out, then was cancelled, and re-running it didn't finish it";

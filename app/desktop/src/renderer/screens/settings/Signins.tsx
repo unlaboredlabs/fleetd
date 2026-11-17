@@ -27,7 +27,7 @@ export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: bo
     <SettingsRow
       reveal="projects.signins"
       title="Sign-ins"
-      hint={`Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.`}
+      hint={`Its browser stays signed in to the sites it signed into, on ${machine}, for this bot alone.`}
       line={done ? <span role="status">Forgotten. Its next browser session starts signed out.</span> : kept === false ? "None kept yet." : null}
       control={
         kept === false || done ? undefined : (
@@ -107,7 +107,7 @@ export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
     <SettingsRow
       reveal="projects.skills"
       title="Skills"
-      hint="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
+      hint="What this bot's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
       control={
         <Button
           variant="secondary"

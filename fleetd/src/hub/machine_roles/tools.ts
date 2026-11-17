@@ -111,7 +111,7 @@ function machineRolesSet(
   if (!row) throw new ToolError("not_found", `No machine ${m}.`);
   let next: string | undefined;
   if (before.agents && !after.agents) {
-    next = `${m} takes no new agents: those running finish their work, and its projects' agents wait.`;
+    next = `${m} takes no new agents: those running finish their work, and its bots' agents wait.`;
   } else if (!before.agents && after.agents) {
     next = `${m} runs agents again: queued ones start as slots free.`;
   } else if (input.macTool !== undefined) {

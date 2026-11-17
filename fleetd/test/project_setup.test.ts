@@ -143,7 +143,7 @@ test("a lead adds a repo by GitHub URL: the clone runs on, and its end posts the
   expect(k.names()).toEqual(["shop"]);
   expect(k.lines().map((m) => [m.text, m.setupChanged])).toEqual([["Added the repo shop", { kind: "repo_added", names: ["shop"] }]]);
   expect(k.wakes).toEqual([
-    { kind: "line", line: "request", text: "repo_add: shop is cloned and is a repo of the project now, at /home/me/src/shop on devbox. spawn_agent takes it with repo." },
+    { kind: "line", line: "request", text: "repo_add: shop is cloned and is a repo of the bot now, at /home/me/src/shop on devbox. spawn_agent takes it with repo." },
   ]);
   expect(k.db.query("SELECT COUNT(*) AS n FROM project_setup_clones").get()).toEqual({ n: 0 });
   // A person's Undo takes the cloned repo out again.
@@ -197,11 +197,11 @@ test("a lead whose clone a hub restart cut off is told at the hub's next start",
   expect(k.db.query("SELECT COUNT(*) AS n FROM project_setup_clones").get()).toEqual({ n: 0 });
 });
 
-test("a folder that is a project of its own is a person's to add: a lead's repo_add never archives a project", async () => {
+test("a folder that is a bot of its own is a person's to add: a lead's repo_add never archives a bot", async () => {
   const k = await rig((call) => (call.op === "repo_inspect" && call.path === "/home/me/site" ? { ok: { kind: "repo_facts", exists: true, isGit: true, workflowFiles: [] } } : undefined));
   expect(refusal(await k.send("th-lead", { op: "repo_add", path: "/home/me/site" }))).toEqual({
     code: "forbidden",
-    message: `/home/me/site is the project Site. ${PEOPLE_ONLY.project_folder}`,
+    message: `/home/me/site is the bot Site. ${PEOPLE_ONLY.project_folder}`,
   });
   expect(k.names()).toEqual([]);
   expect(k.lines()).toEqual([]);
@@ -210,7 +210,7 @@ test("a folder that is a project of its own is a person's to add: a lead's repo_
   expect((await k.ok(ada, "project_repo_add", { ...NOTES, path: "/home/me/site" })).archived).toEqual({ machineId: "devbox", projectId: "site" });
 });
 
-test("the setup calls are a lead's, for its own project: a task, a person's shell and another project's session are refused", async () => {
+test("the setup calls are a lead's, for its own bot: a task, a person's shell and another bot's session are refused", async () => {
   const k = await rig();
   for (const call of [{ op: "repo_add", path: "/home/me/src/api" }, { op: "repo_remove", repo: "api" }, { op: "project_setup", title: "Mine" }]) {
     const task = refusal(await k.send("th-task", call));
@@ -219,12 +219,12 @@ test("the setup calls are a lead's, for its own project: a task, a person's shel
     // A person's shell in the project's folder: the app is where a person changes it.
     expect(refusal(await k.send(undefined, call))).toEqual({
       code: "forbidden",
-      message: `${call.op} is a project's lead's call, from its own session.`,
-      fix: "A person changes the same in the project's settings in the app.",
+      message: `${call.op} is a bot's lead's call, from its own session.`,
+      fix: "A person changes the same in the bot's settings in the app.",
     });
     // The lead's session from another project's folder acts on no project but its own.
     expect(refusal(await k.send("th-lead", call, "/home/me/site"))?.message).toBe(
-      "this session works for project devbox/notes, not for the project its working directory is in",
+      "this session works for bot devbox/notes, not for the bot its working directory is in",
     );
   }
   expect(k.names()).toEqual([]);
@@ -262,7 +262,7 @@ test.each(NAMED)("%s is people's: project_setup with %s is refused to a lead and
   expect(k.lines()).toEqual([]);
 });
 
-test("a repo call that names another project is refused the same way", async () => {
+test("a repo call that names another bot is refused the same way", async () => {
   const k = await rig();
   for (const thread of ["th-lead", "th-task"]) {
     expect(refusal(await k.send(thread, { op: "repo_add", path: "/home/me/src/api", projectId: "site" }))?.message).toBe(`repo_add has no projectId. ${PEOPLE_ONLY.another_project}`);
@@ -316,17 +316,17 @@ test("project_setup sets the title, icon, color and setup commands, one line eac
   const k = await setupRig();
   const call = { title: " Storefront ", icon: { face: "wink", color: "teal" }, color: "coral", setup: { commands: ["bun install", "bun run build"] } };
   const out = await k.setup(call);
-  expect(out.changed).toEqual(["Renamed the project to Storefront", "Changed the project's icon and color", "Set the setup commands"]);
-  expect(out.next).toBe("Renamed the project to Storefront. Changed the project's icon and color. Set the setup commands. Each is one line in the chat, which the person can undo.");
+  expect(out.changed).toEqual(["Renamed the bot to Storefront", "Changed the bot's icon and color", "Set the setup commands"]);
+  expect(out.next).toBe("Renamed the bot to Storefront. Changed the bot's icon and color. Set the setup commands. Each is one line in the chat, which the person can undo.");
   expect([k.shop()?.title, k.shop()?.avatarColor, icon.picked(k.db, PROJECT)]).toEqual(["Storefront", "coral", { face: "wink", color: "teal" }]);
   expect(projectSettings(k.hub).setupIn(PROJECT, undefined)?.commands).toEqual(["bun install", "bun run build"]);
   expect(k.n.calls.find((c) => c.op === "project_upsert" && c.title === "Storefront")).toMatchObject({ projectId: "p1", workspaceRoot: "/srv/p1" });
   expect(k.lines().map((m) => [m.author, m.text, m.setupChanged])).toEqual([
-    ["system", "Renamed the project to Storefront", { kind: "title" }],
-    ["system", "Changed the project's icon and color", { kind: "look" }],
+    ["system", "Renamed the bot to Storefront", { kind: "title" }],
+    ["system", "Changed the bot's icon and color", { kind: "look" }],
     ["system", "Set the setup commands", { kind: "setup" }],
   ]);
-  expect(await k.setup(call)).toMatchObject({ changed: [], next: "Nothing changed: the project already has all of it." });
+  expect(await k.setup(call)).toMatchObject({ changed: [], next: "Nothing changed: the bot already has all of it." });
   expect(k.lines()).toHaveLength(3);
 
   // No commands turns the setup off, and its Undo brings them back.
@@ -354,14 +354,14 @@ test("project_setup sets the title, icon, color and setup commands, one line eac
 
 test("project_setup takes a picture from the lead's working directory; an icon after it replaces it, and Undo brings the picture back", async () => {
   const k = await setupRig({ "th-lead:logo.png": png(64, 64, noisy) });
-  expect((await k.setup({ picture: "logo.png" })).changed).toEqual(["Changed the project's picture"]);
+  expect((await k.setup({ picture: "logo.png" })).changed).toEqual(["Changed the bot's picture"]);
   const first = avatar.of(k.db, PROJECT);
   expect(first).toMatch(/^[0-9a-f]{16}$/);
   expect(k.shop()?.avatar).toBe(first as string);
   // The same picture again is no change; a file outside the working directory is the node's to refuse.
   expect((await k.setup({ picture: "logo.png" })).changed).toEqual([]);
   expect((await refusalOf(k.setup({ picture: "../p2/logo.png" }))).message).toBe("../p2/logo.png is outside your working directory.");
-  expect((await k.setup({ icon: { face: "joy", color: "sun" } })).changed).toEqual(["Changed the project's icon"]);
+  expect((await k.setup({ icon: { face: "joy", color: "sun" } })).changed).toEqual(["Changed the bot's icon"]);
   expect(avatar.of(k.db, PROJECT)).toBeUndefined();
   const [picture, picked] = k.lines();
   await k.undo(picked);
@@ -458,14 +458,14 @@ test("project_setup refuses a value that looks like a key, a secret a person set
   k.done();
 });
 
-test("project_setup archives the project, and only a person brings it back", async () => {
+test("project_setup archives the bot, and only a person brings it back", async () => {
   const k = await setupRig();
   const out = await k.setup({ archive: true });
-  expect(out.changed).toEqual(["Archived the project"]);
-  expect(out.next).toEndWith("The project is archived: say so in one line and end your turn; nothing wakes you until a person brings it back.");
+  expect(out.changed).toEqual(["Archived the bot"]);
+  expect(out.next).toEndWith("The bot is archived: say so in one line and end your turn; nothing wakes you until a person brings it back.");
   expect(k.shop()?.archivedAt).toBeDefined();
   expect((await k.setup({ archive: true })).changed).toEqual([]);
-  expect((await refusalOf(k.setup({ archive: false }))).message).toBe("archive takes true only: a person brings an archived project back, from the app.");
+  expect((await refusalOf(k.setup({ archive: false }))).message).toBe("archive takes true only: a person brings an archived bot back, from the app.");
   expect(await k.undo(k.lines()[0])).toEqual({ ok: true, next: "Its lead starts with the next chat message." });
   expect(k.shop()?.archivedAt).toBeUndefined();
   k.done();
@@ -476,7 +476,7 @@ test("project_setup checks the whole call before it changes anything, and a fail
   const bad: [Record<string, unknown>, string][] = [
     [{}, "project_setup changes nothing as sent."],
     [{ title: "Mine", icon: { face: "wink", color: "teal" }, picture: "logo.png" }, "Give icon or picture, not both: an icon replaces a picture."],
-    [{ title: "   " }, "A project's title has at least one letter."],
+    [{ title: "   " }, "A bot's title has at least one letter."],
   ];
   for (const [call, message] of bad) expect((await refusalOf(k.setup(call))).message).toBe(message);
   expect((await refusalOf(k.setup({ title: "Mine", setup: { commands: ["make"], repo: "nope" } }))).code).toBe("not_found");
@@ -486,12 +486,12 @@ test("project_setup checks the whole call before it changes anything, and a fail
   expect([k.shop()?.title, k.lines()]).toEqual(["Shop", []]);
   // This hub keeps no prompt files, so the instructions fail after the title took: the refusal says so.
   const part = await refusalOf(k.setup({ title: "Mine", instructions: "Ship small." }));
-  expect(part.message).toEndWith(" Changed before that, each with its line in the chat: Renamed the project to Mine.");
-  expect(k.lines().map((m) => m.text)).toEqual(["Renamed the project to Mine"]);
+  expect(part.message).toEndWith(" Changed before that, each with its line in the chat: Renamed the bot to Mine.");
+  expect(k.lines().map((m) => m.text)).toEqual(["Renamed the bot to Mine"]);
   k.done();
 });
 
-test("project_setup writes and clears the project's Instructions, and Undo restores the text that was there", async () => {
+test("project_setup writes and clears the bot's Instructions, and Undo restores the text that was there", async () => {
   const { hub, done } = testHub();
   const tools = new Registry();
   registerAll(tools);
@@ -501,11 +501,11 @@ test("project_setup writes and clears the project's Instructions, and Undo resto
   const text = () => prompts(hub.db).overrideOf(entryOr(INSTRUCTIONS), FILED)?.text;
   const undo = async (m: ChatMessage | undefined) => tools.call(hub, hubCaller("operate", true), "project_setup_undo", { projectRef: FILED, messageId: m?.messageId });
   expect(text()).toBeUndefined();
-  expect((await setup({ instructions: "Ship small PRs.\n" })).changed).toEqual(["Wrote the project's instructions"]);
+  expect((await setup({ instructions: "Ship small PRs.\n" })).changed).toEqual(["Wrote the bot's instructions"]);
   expect(text()).toBe("Ship small PRs.\n");
   expect((await setup({ instructions: "Ship small PRs.\n" })).changed).toEqual([]);
-  expect((await setup({ instructions: "A person merges.\n" })).changed).toEqual(["Wrote the project's instructions"]);
-  expect((await setup({ instructions: "" })).changed).toEqual(["Cleared the project's instructions"]);
+  expect((await setup({ instructions: "A person merges.\n" })).changed).toEqual(["Wrote the bot's instructions"]);
+  expect((await setup({ instructions: "" })).changed).toEqual(["Cleared the bot's instructions"]);
   expect(text()).toBeUndefined();
   const [first, second, cleared] = setupLines(hub, FILED);
   expect(await undo(cleared)).toEqual({ output: { ok: true } });

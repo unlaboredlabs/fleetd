@@ -92,7 +92,7 @@ describe("filters", () => {
     expect(o.spans).toBe(true);
   });
 
-  it("narrow a project by machine, and scope a machine on its own", () => {
+  it("narrow a bot by machine, and scope a machine on its own", () => {
     const p = queryOf({ ...DEFAULT_FILTERS, project: { machineId: "devbox", projectId: "storefront" }, machine: "devbox", role: "reviewer" }, undefined, now);
     expect(p.scope.kind).toBe("project");
     expect(p.breakdown.filters).toEqual({ machineId: "devbox", role: "reviewer" });

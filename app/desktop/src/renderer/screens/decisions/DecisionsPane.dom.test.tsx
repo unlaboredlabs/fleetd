@@ -113,11 +113,11 @@ describe("the Decisions pane", () => {
     expect(rows[0]?.textContent).toContain("Payments provider");
     expect(rows[1]?.textContent).toContain("API health path");
     // Who decided, where it applies and how many came before are a row's hover, not a line under it.
-    expect(host.textContent).not.toMatch(/Checkout v2|Whole project|earlier/u);
+    expect(host.textContent).not.toMatch(/Checkout v2|This bot|earlier/u);
     act(() => rows[0]?.querySelector("button")?.focus());
     expect(document.querySelector("[role='tooltip']")?.textContent).toBe("You · Checkout v2 · 1 earlier");
     act(() => rows[1]?.querySelector("button")?.focus());
-    expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Lead · Whole project");
+    expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Lead · This bot");
     expect(host.textContent).not.toMatch(/\b[DW]\d+\b/u);
   });
 
@@ -130,7 +130,7 @@ describe("the Decisions pane", () => {
     // The filter is who decided and where it applies, in one menu.
     act(() => void host.querySelector("[aria-label='Filter decisions']")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
     const choices = [...document.querySelectorAll<HTMLElement>("[role='menuitemradio']")];
-    expect(choices.map((i) => i.textContent)).toEqual(["Anyone", "The lead", "You", "Everywhere", "Whole project", "Checkout v2"]);
+    expect(choices.map((i) => i.textContent)).toEqual(["Anyone", "The lead", "You", "Everywhere", "This bot", "Checkout v2"]);
     act(() => choices[2]?.click());
     await settle();
     expect([...host.querySelectorAll("[data-decision]")].map((r) => r.textContent)).toEqual([expect.stringContaining("adyen")]);

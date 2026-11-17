@@ -243,7 +243,7 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
   c.query(
     `UPDATE events SET data = json_set(json_remove(data, '$.data'), '$.summary', ?3)
      WHERE type = 'project.removed' AND machine_id = ?1 AND json_extract(data, '$.projectId') = ?2`,
-  ).run(m, p, `A project on ${m} was removed`);
+  ).run(m, p, `A bot on ${m} was removed`);
   return { recordings, blobs };
 }
 

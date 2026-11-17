@@ -118,7 +118,7 @@ export function register(tools: Registry): void {
     const id = input.decisionId;
     const old = decisions(hub).get(id);
     if (!old || !canReadDecision(hub, caller, old)) {
-      throw new ToolError("not_found", `No decision ${id}.`, "Call decisions_list for the project's decisions.");
+      throw new ToolError("not_found", `No decision ${id}.`, "Call decisions_list for the bot's decisions.");
     }
     const project = decisionProject(hub.db.conn, old.scope);
     if (project) requireRole(caller, "operate", project.machineId);
@@ -156,7 +156,7 @@ function ownWorkstream(c: Database, r: ProjectRef, id: WorkstreamId): Workstream
   if (owner && owner.machineId === r.machineId && owner.projectId === r.projectId) return id;
   throw new ToolError(
     "not_found",
-    `There is no workstream ${id} in your project.`,
+    `There is no workstream ${id} in your bot.`,
     "Use a workstream id from the digest at the top of your last wake.",
   );
 }
@@ -169,8 +169,8 @@ function decideWorkstream(c: Database, r: ProjectRef, id: WorkstreamId | undefin
   throw new ToolError(
     "invalid",
     open.length === 0
-      ? "Your project has no open workstream to scope this decision to."
-      : "Your project has several open workstreams.",
+      ? "Your bot has no open workstream to scope this decision to."
+      : "Your bot has several open workstreams.",
     "Pass workstreamId W<n> from your digest, or scope project for a project-wide decision.",
   );
 }
@@ -199,8 +199,8 @@ export function decisionsSearch(hub: Hub, r: ProjectRef, call: DecisionsSearchCa
       if (decisions(hub).get(query)) {
         throw new ToolError(
           "forbidden",
-          `${query} is another project's decision.`,
-          "Search this project's decisions; ask your lead about another project's.",
+          `${query} is another bot's decision.`,
+          "Search this bot's decisions; ask your lead about another bot's.",
         );
       }
       throw new ToolError("not_found", `No decision ${query}.`);

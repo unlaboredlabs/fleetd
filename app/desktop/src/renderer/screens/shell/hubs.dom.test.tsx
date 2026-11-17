@@ -173,7 +173,7 @@ it("shows both hubs in one sidebar under their names, each with its own connecti
   expect(rowNamed("storefront")).toBeDefined();
   // The offline hub's group waits without claiming to load; the live one's rows are there regardless.
   const acme = host.querySelector('section[aria-label="Acme"]');
-  expect(acme?.querySelector('[aria-label="Loading projects"]')?.getAttribute("aria-busy")).toBe("false");
+  expect(acme?.querySelector('[aria-label="Loading bots"]')?.getAttribute("aria-busy")).toBe("false");
   // One offline marks your name, saying which; the card has both.
   expect(you()).toBe("You, Can't reach Acme");
   expect(hubCards()).toEqual([
@@ -192,7 +192,7 @@ it("shows both hubs in one sidebar under their names, each with its own connecti
   expect(fake.badge.at(-1)).toBe(2);
 });
 
-it("opens a project on its own hub, and that hub alone gets its calls", async () => {
+it("opens a bot on its own hub, and that hub alone gets its calls", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -291,7 +291,7 @@ it("⌘1–9 open the rows on show, as the sidebar numbers them, a collapsed hub
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("keeps each hub's projects in its own group, newest first, and numbers the rows on show", async () => {
+it("keeps each hub's bots in its own group, newest first, and numbers the rows on show", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -347,7 +347,7 @@ it("keeps the chat it shows streaming when `#/` comes back before the page reads
   reset();
 });
 
-it("opens `#/`'s last project on its own hub, the chat streaming from there, even if the redirect is never read", async () => {
+it("opens `#/`'s last bot on its own hub, the chat streaming from there, even if the redirect is never read", async () => {
   // The last project opened was Acme's billing (kept by hub and project, shell's LAST_PROJECT).
   window.localStorage.setItem("fleetd.lastProject", "a1b2:laptop/billing");
   window.location.hash = "#/";
@@ -384,14 +384,14 @@ it("with one hub, shows no name and no group: the sidebar is as it always was", 
   });
   await settle();
   expect(groups()).toEqual([]);
-  expect(host.textContent).not.toContain("Projects");
+  expect(host.textContent).not.toContain("Bots");
   expect(you()).toBe("You");
   expect(hubCards()).toEqual([["Hub", "live"]]);
   act(() => rowNamed("storefront")?.click());
   expect(window.location.hash).toBe("#/project/devbox/storefront");
 });
 
-it("says which hub a new project goes to with several hubs, the hub on screen first, and nothing with one", async () => {
+it("says which hub a new bot goes to with several hubs, the hub on screen first, and nothing with one", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },

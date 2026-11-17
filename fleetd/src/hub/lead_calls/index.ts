@@ -109,8 +109,8 @@ export class LeadCalls {
     if (own.machineId !== project.machineId || own.projectId !== project.projectId) {
       throw new ToolError(
         "forbidden",
-        `this session works for project ${own.machineId}/${own.projectId}, not for the project its working directory is in`,
-        "act only on your own project, from its workspace",
+        `this session works for bot ${own.machineId}/${own.projectId}, not for the bot its working directory is in`,
+        "act only on your own bot, from its workspace",
       );
     }
     return agent;

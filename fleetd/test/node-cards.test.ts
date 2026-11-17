@@ -118,7 +118,7 @@ async function click(d: Awaited<ReturnType<typeof driver>>, page: string, select
   for (const type of ["mousePressed", "mouseReleased"]) await d.ok("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }, page);
 }
 
-test.skipIf(!chrome)("an approved purchase fills the card into the provider's frame once, and the project never sees it", async () => {
+test.skipIf(!chrome)("an approved purchase fills the card into the provider's frame once, and the bot never sees it", async () => {
   const r = await rig();
   cleanups.push(r.done);
   const { site, charges } = checkout();
@@ -132,7 +132,7 @@ test.skipIf(!chrome)("an approved purchase fills the card into the provider's fr
 
   // Only a project's lead pays at a checkout.
   await r.call("session_start", { purpose: "Book" }, "t-worker");
-  expect((await r.call("purchase_request", purchase("127.0.0.1"), "t-worker")).error).toMatchObject({ code: "forbidden", message: "Only a project's lead pays at a checkout." });
+  expect((await r.call("purchase_request", purchase("127.0.0.1"), "t-worker")).error).toMatchObject({ code: "forbidden", message: "Only a bot's lead pays at a checkout." });
 
   r.broker.lead(THREAD, "assistant", "proj-1");
   const started = await r.call("session_start", { purpose: "Book the hotel" });

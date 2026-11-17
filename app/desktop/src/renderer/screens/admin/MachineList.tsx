@@ -105,9 +105,9 @@ function LeftoverProjects() {
   return (
     <SettingsSection
       title="Left from removed machines"
-      hint="These projects' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in fleetd."
+      hint="These bots' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in fleetd."
     >
-      <SettingsList label="Projects left from removed machines">
+      <SettingsList label="Bots left from removed machines">
         {projects.map((p) => (
           <SettingsListRow
             key={`${p.machineId}/${p.projectId}`}

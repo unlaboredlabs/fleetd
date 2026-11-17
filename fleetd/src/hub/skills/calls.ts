@@ -41,7 +41,7 @@ async function install(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
   if (scope === "global") {
     throw new ToolError(
       "forbidden",
-      "A lead installs skills for its own project only: global ones take an admin.",
+      "A lead installs skills for its own bot only: global ones take an admin.",
       "Install it with scope project, or ask the human to install it globally from Settings > Skills.",
     );
   }
@@ -58,13 +58,13 @@ async function install(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
   return {
     installed: names,
     commit,
-    next: `Installed ${list}, pinned to this commit; the human updates it on the project's Settings › Agents. Sessions started from now get it (yours from its next start): name it in a brief and the agent uses it.`,
+    next: `Installed ${list}, pinned to this commit; the human updates it on the bot's Settings › Agents. Sessions started from now get it (yours from its next start): name it in a brief and the agent uses it.`,
   };
 }
 
 function save(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   if (call.op !== "skill_save") throw new ToolError("invalid", `${call.op} is not a skill save.`);
-  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only the project's lead saves its skills.");
+  if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only the bot's lead saves its skills.");
   const { name, text, why } = call as { name?: unknown; text?: unknown; why?: unknown };
   if (typeof name !== "string" || !isSkillName(name)) throw invalid("skill_save call: name is a skill name");
   if (typeof text !== "string") throw invalid("skill_save call: text is the whole SKILL.md");

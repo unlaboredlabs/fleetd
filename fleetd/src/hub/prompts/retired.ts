@@ -3,7 +3,7 @@
 export type Retired = { id: string; title: string; why: string; target?: string };
 
 export const RETIRED: Retired[] = [
-  { id: "lead.digest", title: "Lead: project digest", why: "the state block at the top of the lead's messages is fixed text now", target: "lead.start" },
+  { id: "lead.digest", title: "Lead: bot digest", why: "the state block at the top of the lead's messages is fixed text now", target: "lead.start" },
   { id: "digest.workstream.no_brief", title: "Digest: order without a brief", why: "the state block at the top of the lead's messages is fixed text now", target: "lead.start" },
   { id: "digest.finish_all_idle", title: "Digest: finish-all is idle", why: "finish-all went: a lead lists the open work and opens an order per item itself", target: "lead.start" },
   { id: "digest.answer.withdrawn", title: "Digest: an ask the human dropped", why: "the lead hears the human in its chat now", target: "lead.start" },
@@ -53,9 +53,9 @@ export const RETIRED: Retired[] = [
   { id: "permission.denied.human", title: "Tool denied by the human", why: "sessions run with full access, so no tool call waits on a person; a risky command goes through gated_run" },
   { id: "permission.denied.answer", title: "Tool denied with thread_answer", why: "sessions run with full access, so no tool call waits on a person; a risky command goes through gated_run" },
   { id: "tool.denied", title: "Tool call denied", why: "sessions run with full access, so no tool call waits on a person; a risky command goes through gated_run" },
-  { id: "router", title: "Order router", why: "one lead per project: an order goes to its project's lead, no router" },
+  { id: "router", title: "Order router", why: "one lead per bot: an order goes to its bot's lead, no router" },
   { id: "status.headline", title: "Status headline", why: "the status view has no generated headline" },
-  { id: "router.retry", title: "Order router, second try", why: "one lead per project: an order goes to its project's lead, no router" },
+  { id: "router.retry", title: "Order router, second try", why: "one lead per bot: an order goes to its bot's lead, no router" },
   { id: "retro", title: "Retro / triage", why: "fleetd no longer runs a retro; edit the lead prompt yourself" },
   { id: "judge", title: "Judge", why: "fleetd no longer checks a claim of done; the lead closes work and says why" },
   { id: "judge.research", title: "Research judge", why: "fleetd no longer checks a claim of done; the lead closes work and says why" },

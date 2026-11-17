@@ -60,7 +60,7 @@ afterAll(async () => {
   home.done();
 });
 
-test("a project is upserted and a subscribe gets a snapshot, then live summaries", async () => {
+test("a bot is upserted and a subscribe gets a snapshot, then live summaries", async () => {
   expect(await ok("project_upsert", { projectId: "p1", title: "demo", workspaceRoot: repo })).toEqual({ kind: "done" });
   await ok("subscribe", { caughtUp: true });
   const snapshot = frames.find((f) => f.t === "machine_event" && (f.event as { type: string }).type === "snapshot") as Record<string, any>;
@@ -184,7 +184,7 @@ test("files: attachments are written under .fleetd/attachments and found again b
   expect((await ok("list_files", { projectId: "p1", query: "", limit: 10 })).paths).toEqual([]);
 });
 
-test("windows, items, spans and the project calls answer from the store and the checkout", async () => {
+test("windows, items, spans and the bot calls answer from the store and the checkout", async () => {
   frames.length = 0;
   await ok("subscribe", { after: 0, spansAfter: 0 });
   await ok("send", { sessionId: "s1", runId: "r5", text: "spans: please" });

@@ -93,14 +93,14 @@ test("a message the lead took is announced again as delivered, stamped after its
   done();
 });
 
-test("chat_send refuses an empty message, an agent's `now`, and an unknown project", async () => {
+test("chat_send refuses an empty message, an agent's `now`, and an unknown bot", async () => {
   const { call, done } = withFlow();
   expect(call(human, "chat_send", { projectRef: PROJECT, text: "", clientRequestId: "c1" })).rejects.toThrow("text is empty");
   expect(call(caller("operate"), "chat_send", { projectRef: PROJECT, text: "go", now: true, clientRequestId: "c1" })).rejects.toThrow(
     "Only a person can stop the lead's step.",
   );
   expect(call(human, "chat_send", { projectRef: { machineId: "lab-a", projectId: "nope" }, text: "x", clientRequestId: "c1" })).rejects.toThrow(
-    "No project nope on lab-a.",
+    "No bot nope on lab-a.",
   );
   done();
 });
@@ -159,7 +159,7 @@ test("nudge flags the lead's newest reply, or the one still landing; chat_nudge_
   expect(chat(hub).openNudges(PROJECT).map((m) => m.messageId)).toEqual([message.messageId]);
   const task = { ...lead, agent: { kind: "task" as const, taskId: "T1" } };
   expect(await refusal(() => nudge?.(task, { op: "nudge", reason: "x" }))).toBe(
-    "Only a project's lead nudges, and only its own messages.",
+    "Only a bot's lead nudges, and only its own messages.",
   );
   expect(await call(human, "chat_nudge_clear", { projectRef: PROJECT, messageId: message.messageId })).toEqual({ ok: true });
   expect(chat(hub).openNudges(PROJECT)).toEqual([]);

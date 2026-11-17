@@ -4,7 +4,7 @@
 export const IMPORT_ENTRIES_MAX = 200;
 
 /** The fix of the refusal on a hub with no live project; newer apps match its `reason`. */
-export const NO_PROJECT_FIX = "Add a project first, then import again.";
+export const NO_PROJECT_FIX = "Add a bot first, then import again.";
 
 /** One entry of the turn's answer. */
 export type Distilled = { kind?: string; text: string; replaces?: string };

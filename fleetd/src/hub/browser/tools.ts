@@ -33,12 +33,12 @@ export function register(tools: Registry): void {
 export const person = (caller: Caller) => `human:${caller.name}`;
 
 const notFound = (id: string) =>
-  new ToolError("not_found", `No screen ${id}.`, "Call browser_sessions for the project's screens.");
+  new ToolError("not_found", `No screen ${id}.`, "Call browser_sessions for the bot's screens.");
 
 export const unknownProject = (r: { machineId: string; projectId: string }) =>
   new ToolError(
     "not_found",
-    `No project ${r.projectId} on ${r.machineId}.`,
+    `No bot ${r.projectId} on ${r.machineId}.`,
     `Call project_get with machineId ${r.machineId} and no projectId.`,
     undefined,
     "It was removed, or its machine was: the projects list has the ones that are left.",

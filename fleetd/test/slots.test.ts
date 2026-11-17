@@ -130,7 +130,7 @@ class Kit {
 }
 
 describe("board", () => {
-  test("room is what a task of the project could take now", () => {
+  test("room is what a task of the bot could take now", () => {
     const [a, b] = [project_("pa"), project_("pb")];
     const k = Kit.fleet(10);
     expect(k.board.room(a)).toBe(10);
@@ -143,7 +143,7 @@ describe("board", () => {
     expect(k.board.room(a)).toBe(1);
   });
 
-  test("a project follows the default until it has a max of its own", () => {
+  test("a bot follows the default until it has a max of its own", () => {
     const a = project_("pa");
     const k = Kit.fleet(10);
     expect([k.board.maxAgentsOf(a), k.board.maxSource(a)]).toEqual([10, { kind: "fleet" }]);
@@ -176,7 +176,7 @@ describe("board", () => {
     expect([s2.used, s2.queued]).toEqual([1, 0]);
   });
 
-  test("the fleet cap and each project's max agents both hold", () => {
+  test("the fleet cap and each bot's max agents both hold", () => {
     const [a, b] = [project_("pa"), project_("pb")];
     const k = Kit.fleet(3);
     k.setCap(undefined, [a, 1]);
@@ -614,7 +614,7 @@ describe("cap_set", () => {
     );
   });
 
-  test("raising a project's max starts queued agents, logs agents.cap and wakes the lead", async () => {
+  test("raising a bot's max starts queued agents, logs agents.cap and wakes the lead", async () => {
     const { hub } = kit();
     const r = project_("p1");
     project(hub, r);
@@ -636,7 +636,7 @@ describe("cap_set", () => {
     ]);
   });
 
-  test("the fleet cap needs admin everywhere, and a project max above it is refused", async () => {
+  test("the fleet cap needs admin everywhere, and a bot max above it is refused", async () => {
     const { hub, tools, ok, refused } = kit();
     // The tasks area wires it; until then the test does.
     tools.add("cap_set", capSet);

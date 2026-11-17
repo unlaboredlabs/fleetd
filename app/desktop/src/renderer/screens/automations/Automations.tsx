@@ -81,7 +81,7 @@ export function Automations({ route }: { route: SettingsRoute }) {
             />
           ) : null}
           {ref && editing === "new" ? <Editor projectRef={ref} onClose={() => setEditing(null)} onUrl={(u) => setUrl(u)} /> : null}
-          {list.data && automations.length === 0 && editing !== "new" ? <GroupNote>{name ? `${name} has no automations yet.` : "Pick a project."}</GroupNote> : null}
+          {list.data && automations.length === 0 && editing !== "new" ? <GroupNote>{name ? `${name} has no automations yet.` : "Pick a bot."}</GroupNote> : null}
           {list.data === undefined && !list.isLoadingError && ref ? <GroupNote>Loading automations…</GroupNote> : null}
           {automations.length === 0 ? null : (
             <ul className={s.list} aria-label="Automations">

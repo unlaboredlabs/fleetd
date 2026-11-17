@@ -58,7 +58,7 @@ afterAll(async () => {
   home.done();
 });
 
-test("vault variables reach a project's sessions, an order's only that order's, and never another project's; secrets masked", async () => {
+test("vault variables reach a bot's sessions, an order's only that order's, and never another bot's; secrets masked", async () => {
   // As the vault delivers them: the project's set (a plain one, a secret sealed to this node), then an order's.
   const saved = await ok("project_env", {
     projectId: "p1",

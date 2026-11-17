@@ -368,7 +368,7 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
   throw new ToolError(
     "forbidden",
     "Only the hub's owners and admins change task profiles.",
-    "Ask an owner or admin; they change them on Settings › Hub › Every project › Agents in the app.",
+    "Ask an owner or admin; they change them on Settings › Hub › Every bot › Agents in the app.",
   );
 }
 
@@ -431,7 +431,7 @@ export function register(tools: Registry): void {
     const lead = input.lead === true ? leadLine(profile) : "";
     return {
       profile,
-      next: `Projects allow ${profile.name} once they pick it on their Agents page (project_set); new agents on it run ${profile.model} at ${profile.effort}.${lead}`,
+      next: `Bots allow ${profile.name} once they pick it on their Agents page (project_set); new agents on it run ${profile.model} at ${profile.effort}.${lead}`,
     };
   });
 
@@ -490,6 +490,6 @@ export function register(tools: Registry): void {
     const lead = profile.lead
       ? ` Leads ran on it, so they start on the default, ${s.defaultProfile().name}, again from their next start.`
       : "";
-    return { ok: true, next: `${profile.name} is gone, and no project allows it any more.${lead}` };
+    return { ok: true, next: `${profile.name} is gone, and no bot allows it any more.${lead}` };
   });
 }

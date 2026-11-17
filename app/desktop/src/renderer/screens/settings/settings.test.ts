@@ -121,15 +121,15 @@ group("the editor", () => {
     expect(insertAt("abc", 99, 99, "X")).toEqual({ value: "abcX", caret: 4 });
   });
 
-  it("saves a hub-wide-only prompt hub-wide even with a project picked", () => {
+  it("saves a hub-wide-only prompt hub-wide even with a bot picked", () => {
     const d = { perProject: false, scope: "default" } as PromptDetail;
     const storefront = parseScope("devbox/storefront");
     expect(editScope(d, storefront)).toBe("global");
     expect(editScope({ ...d, perProject: true }, storefront)).toBe("project");
     expect(editScope({ ...d, perProject: true }, HUB)).toBe("global");
-    expect(effectLine(d, storefront, "acme/storefront")).toBe("In effect: fleetd's built-in text. This prompt has one hub-wide text: saving changes it for every project.");
+    expect(effectLine(d, storefront, "acme/storefront")).toBe("In effect: fleetd's built-in text. This prompt has one hub-wide text: saving changes it for every bot.");
     expect(effectLine({ ...d, perProject: true, scope: "project" }, storefront, "acme/storefront")).toBe("In effect: acme/storefront's own edit. Saving changes it for acme/storefront only.");
-    expect(effectLine({ ...d, scope: "global" }, HUB, null)).toBe("In effect: the hub-wide edit. Saving changes it for every project without its own edit.");
+    expect(effectLine({ ...d, scope: "global" }, HUB, null)).toBe("In effect: the hub-wide edit. Saving changes it for every bot without its own edit.");
   });
 
   it("says who still keeps a safety rule the text dropped", () => {
@@ -242,7 +242,7 @@ group("the prose diff", () => {
 });
 
 group("settings state", () => {
-  it("round-trips a link to one prompt of one project", () => {
+  it("round-trips a link to one prompt of one bot", () => {
     const hash = formatRoute({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });
     expect(hash).toBe("#/settings/prompts?prompt=task.brief.write&for=devbox/storefront");
     expect(parseRoute(hash)).toEqual({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });

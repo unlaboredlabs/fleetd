@@ -158,7 +158,7 @@ test("lead_start launches once with the lead prompt and digest; a wake reaches i
   expect(out.output).toMatchObject({ threadId: "lead-1", state: "starting", sessionGeneration: 0 });
   expect(launches.length).toBe(1);
   expect(launches[0]?.role).toBe("lead");
-  expect(launches[0]?.prompt).toContain("# project Shop (lab-a/p1)");
+  expect(launches[0]?.prompt).toContain("# bot Shop (lab-a/p1)");
   expect(launches[0]?.prompt).toContain("- W1 open: add dark mode");
   expect(launches[0]?.system).toContain("## Automations");
   await tools.call(hub, caller("operate"), "lead_start", { machineId: "lab-a", projectId: "p1" });

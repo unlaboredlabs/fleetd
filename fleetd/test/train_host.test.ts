@@ -77,7 +77,7 @@ test("a long-running writer behind a hundred newer tasks is still the train's wr
   expect(host.writers(project("p2"))).toEqual([]);
 });
 
-test("the branch prefix of a removed project is skipped, and an unread one warns once, then hourly", async () => {
+test("the branch prefix of a removed bot is skipped, and an unread one warns once, then hourly", async () => {
   const { k, hub } = lab();
   const offline = project("offline");
   addProject(hub, offline);
@@ -106,7 +106,7 @@ test("the branch prefix of a removed project is skipped, and an unread one warns
   expect(lines.filter((l) => l.includes("(4 like it held back)")).length).toBe(1);
 });
 
-test("a failed project read never takes a PR off the train", async () => {
+test("a failed bot read never takes a PR off the train", async () => {
   const { k, hub } = lab();
   const live = project("live");
   addProject(hub, live);

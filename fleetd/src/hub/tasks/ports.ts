@@ -209,7 +209,7 @@ function projectAt(hub: Hub, m: MachineId, root: string): string {
   const p = store(hub)
     .projectsList(m)
     .find((p) => p.workspaceRoot === root);
-  if (!p) throw new PortError(false, `no project on ${m} has its workspace root at ${root}`);
+  if (!p) throw new PortError(false, `no bot on ${m} has its workspace root at ${root}`);
   return p.projectId;
 }
 

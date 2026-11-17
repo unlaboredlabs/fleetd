@@ -48,7 +48,7 @@ describe("settings search", () => {
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");
     expect(tabs("task profiles", true)).toContain("hub.profiles");
     // Memory is yours on You › Your memory, a project's on its Instructions & memory, with its nightly refresh (D212).
-    expect([tabOf("instructions"), tabOf("memory"), tabOf("project memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
+    expect([tabOf("instructions"), tabOf("memory"), tabOf("bot memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
     expect([tabOf("setup commands"), tabOf("linked hubs"), tabOf("subscription")]).toEqual(["projects", "projects", "accounts"]);
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
@@ -102,15 +102,15 @@ describe("settings search", () => {
     expect(first("hubs")).toEqual(["hubs", "hubs", "Hubs & devices"]);
     expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
     expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
-    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Every project › Agents"]);
-    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Every project › Agents"]);
-    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Every project › Agents"]);
-    expect(first("instructions for every project")).toEqual(["hub.instructions", "hub.instructions", "Every project › Instructions"]);
+    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Every bot › Agents"]);
+    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Every bot › Agents"]);
+    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Every bot › Agents"]);
+    expect(first("instructions for every bot")).toEqual(["hub.instructions", "hub.instructions", "Every bot › Instructions"]);
     // The hub's vault for every project is the team vault now (D492): its old name finds the Vault page.
-    expect(first("vault for every project")).toEqual(["vault", "vault", "Vault"]);
+    expect(first("vault for every bot")).toEqual(["vault", "vault", "Vault"]);
     expect(first("team card")).toEqual(["vault", "vault", "Vault"]);
-    expect(first("project variables")).toEqual(["project-vault", "project-vault", "Project › Vault"]);
-    expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every project › Vault"]);
+    expect(first("bot variables")).toEqual(["project-vault", "project-vault", "Bot › Vault"]);
+    expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every bot › Vault"]);
     // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
     expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);
     expect(first("connections")?.[1]).toBe("accounts");

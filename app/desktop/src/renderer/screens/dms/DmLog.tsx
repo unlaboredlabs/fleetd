@@ -70,7 +70,7 @@ export function DmLog({ project }: { project: ProjectKey }) {
     <div className={s.log} data-screen={items === undefined && log.error === null ? "activity.dms.loading" : "activity.dms"}>
       <div className={s.filterRow}>
         <Text size="xs" tone="quiet">
-          Every DM between this project’s agents, newest first
+          Every DM between this bot’s agents, newest first
         </Text>
         {known.length === 0 ? null : (
           <Select
@@ -102,7 +102,7 @@ export function DmLog({ project }: { project: ProjectKey }) {
         <div aria-busy="true" aria-label="Loading the DMs" />
       ) : items.length === 0 ? (
         <EmptyState title={agent === ANY ? "No DMs yet" : `No DMs for ${agent}`}>
-          When this project’s agents tell each other something, every message shows here with what became of it.
+          When this bot’s agents tell each other something, every message shows here with what became of it.
         </EmptyState>
       ) : (
         <div className={s.list}>

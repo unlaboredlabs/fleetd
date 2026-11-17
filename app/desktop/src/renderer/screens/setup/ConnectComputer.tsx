@@ -158,7 +158,7 @@ function Joined({ name, onAddProject, onAnother }: { name: string; onAddProject:
             {`${name} is connected`}
           </Text>
           <Text as="p" tone="quiet">
-            Agents run on it from now on. Start a project to give them work.
+            Agents run on it from now on. Start a bot to give them work.
           </Text>
         </div>
         <div className={s.machine}>
@@ -172,7 +172,7 @@ function Joined({ name, onAddProject, onAnother }: { name: string; onAddProject:
         </div>
         <div className={s.next}>
           <Button variant="primary" className={s.connect} onClick={onAddProject}>
-            New project
+            New bot
           </Button>
           <Button variant="quiet" size="md" onClick={onAnother}>
             Connect another computer

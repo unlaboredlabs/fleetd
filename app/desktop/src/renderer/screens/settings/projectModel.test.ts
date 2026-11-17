@@ -7,7 +7,7 @@ import { searchSettings } from "./search";
 
 const AT = "2026-10-19T10:00:00.000Z";
 
-describe("Settings → Projects", () => {
+describe("Settings → Bots", () => {
   it("reads a pasted .env: comments, export, quotes and a later line winning", () => {
     const vars = parseDotEnv(
       [
@@ -33,7 +33,7 @@ describe("Settings → Projects", () => {
     // Credentials start as secrets.
     expect(byName["STRIPE_KEY"]).toMatchObject({ value: "sk_test_42", kind: "secret", problem: null });
     expect(byName["1BAD"]?.problem).toBeTruthy();
-    expect(byName["FLEETD_THREAD_ID"]?.problem).toContain("a project can't set it");
+    expect(byName["FLEETD_THREAD_ID"]?.problem).toContain("a bot can't set it");
   });
 
   it("takes values of any number of lines up to 64 KiB, plain or secret", () => {
@@ -85,13 +85,13 @@ describe("Settings → Projects", () => {
     expect(withKind(chain, "secret").problem).toContain("never closed");
   });
 
-  it("holds a project's values to 512 KiB together, naming the total", () => {
+  it("holds a bot's values to 512 KiB together, naming the total", () => {
     const env = [
       { name: "A", kind: "secret" as const, fingerprint: "ab12cd34", bytes: 300 * 1024, updatedAt: AT },
       { name: "B", kind: "plain" as const, value: "b", bytes: 1, updatedAt: AT },
     ];
     const big = "x".repeat(212 * 1024);
-    expect(totalProblem(env, [{ name: "C", value: big }])).toBe("A project's variables take at most 512 KiB together; these would take 513 KiB.");
+    expect(totalProblem(env, [{ name: "C", value: big }])).toBe("A bot's variables take at most 512 KiB together; these would take 513 KiB.");
     // Replacing or removing one frees its share.
     expect(totalProblem(env, [{ name: "A", value: big }])).toBeNull();
     expect(totalProblem(env, [{ name: "C", value: big }], ["B"])).toBeNull();
@@ -119,7 +119,7 @@ describe("Settings → Projects", () => {
     expect(deleteConfirmed("", "")).toBe(false);
   });
 
-  it("links to one project's settings and finds them by the words people use", () => {
+  it("links to one bot's settings and finds them by the words people use", () => {
     expect(parseRoute("#/settings/projects?for=devbox/p1")).toMatchObject({ tab: "projects", for: "devbox/p1" });
     expect(searchSettings("env")[0]?.key).toBe("projects.env");
     expect(searchSettings("secrets").map((o) => o.key)).toContain("projects.env");

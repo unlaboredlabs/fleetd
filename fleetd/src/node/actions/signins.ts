@@ -28,6 +28,6 @@ export function forgetSignins(home: string, projectId: string): void {
   try {
     rmSync(dir, { recursive: true, force: true });
   } catch (error) {
-    throw new Error(`project ${projectId}'s browser sign-ins were not forgotten: cannot delete ${dir}: ${(error as Error).message}`);
+    throw new Error(`bot ${projectId}'s browser sign-ins were not forgotten: cannot delete ${dir}: ${(error as Error).message}`);
   }
 }

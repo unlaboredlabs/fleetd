@@ -36,7 +36,7 @@ const report = (state: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-test("a node's session report is filed under its project and task, and tells the app", async () => {
+test("a node's session report is filed under its bot and task, and tells the app", async () => {
   setup();
   const answer = await t.calls.call(agent("devbox", "p1", "T7"), report("live"));
   expect(answer).toEqual({ result: { sessionId: S1, state: "live" } });
@@ -177,7 +177,7 @@ test("a watch of a session that ended, or with no node, is refused on the socket
   const person = caller("read", { kind: "human" });
   const socket = fakeSocket();
   await t.app.deliver(as(socket, person), { t: "browser_watch", session: "nope" });
-  expect(socket.sent).toEqual([{ t: "error", code: "not_found", message: "No screen nope.", fix: "Call browser_sessions for the project's screens." }]);
+  expect(socket.sent).toEqual([{ t: "error", code: "not_found", message: "No screen nope.", fix: "Call browser_sessions for the bot's screens." }]);
 });
 
 test("a person's input goes to the node only while they drive", async () => {
@@ -216,7 +216,7 @@ test("a screen whose task ended is ended on the hub, and its node told once per 
   expect(tellNodes(t.hub, told)).toBe(1);
 });
 
-test("retention expires old recordings and a project's oldest past its size", async () => {
+test("retention expires old recordings and a bot's oldest past its size", async () => {
   setup();
   const who = agent("devbox", "p1");
   const [OLD, NEW] = [`B${"a".repeat(32)}`, `B${"c".repeat(32)}`];
@@ -367,7 +367,7 @@ test("the hub's loops bind the live view to the hub's own /app when nothing else
   }
 });
 
-test("a project's lead pays at a checkout: never a trading site, only with its card, once, and the chat says so", async () => {
+test("a bot's lead pays at a checkout: never a trading site, only with its card, once, and the chat says so", async () => {
   setup();
   t.hub.db.conn
     .query("INSERT INTO project_settings (machine_id, project_id, card_ref) VALUES ('devbox', 'p1', 'op://Personal/Visa/number')")

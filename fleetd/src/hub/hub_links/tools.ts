@@ -57,8 +57,8 @@ export function register(tools: Registry): void {
       if (input.projects.length === 0) {
         throw new ToolError(
           "invalid",
-          "A link limited to no project reaches nothing.",
-          "Name at least one project, or leave projects out for all of yours.",
+          "A link limited to no bot reaches nothing.",
+          "Name at least one bot, or leave bots out for all of yours.",
         );
       }
       for (const p of input.projects) {
@@ -71,7 +71,7 @@ export function register(tools: Registry): void {
       key,
       link,
       next:
-        "Shown once: paste it into the other hub's project, Linked hubs. It acts as you on this hub, at the " +
+        "Shown once: paste it into the other hub's bot, Linked hubs. It acts as you on this hub, at the " +
         "lesser of your role here and this device's grants, never above operate; revoke it here at any time.",
     };
   });
@@ -120,7 +120,7 @@ export function register(tools: Registry): void {
     if (linkId === undefined) {
       throw new ToolError(
         "invalid",
-        `This project has a linked hub called ${input.label} already.`,
+        `This bot has a linked hub called ${input.label} already.`,
         "Pick another label, or remove that link first.",
       );
     }
@@ -145,7 +145,7 @@ export function register(tools: Registry): void {
     personOnly(caller);
     const link = keptGet(hub.db, input.linkId);
     if (!link) {
-      throw new ToolError("not_found", `No linked hub ${input.linkId} here.`, "hub_links_get with the project lists its links.");
+      throw new ToolError("not_found", `No linked hub ${input.linkId} here.`, "hub_links_get with the bot lists its links.");
     }
     // Anyone who operates on the project's machine changes its links (D491).
     requireRole(caller, "operate", link.project.machineId);

@@ -143,7 +143,7 @@ const render = async (page: "project" | "instructions" = "project") => {
       const repo = tool === "project_settings_get" ? (input as { repo?: string }).repo : undefined;
       if (repo !== undefined) {
         const own = repoAnswers[repo];
-        return Promise.resolve(own ? { ok: true, output: { settings: own } } : { ok: false, error: { code: "not_found", message: `Project p1 on devbox has no repo ${repo}.` } });
+        return Promise.resolve(own ? { ok: true, output: { settings: own } } : { ok: false, error: { code: "not_found", message: `Bot p1 on devbox has no repo ${repo}.` } });
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
@@ -151,7 +151,7 @@ const render = async (page: "project" | "instructions" = "project") => {
       if (tool === "memory_refresh_run") return Promise.resolve({ ok: true, output: { memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin" }, why: "Nothing new since the last refresh." } });
       if (tool === PROJECT_TOOLS.approvals && approvalsFail > 0) {
         approvalsFail -= 1;
-        return Promise.resolve({ ok: false, error: { code: "not_found", message: `${PROJECT_TOOLS.approvals}: no approvals row for project p1 on devbox` } });
+        return Promise.resolve({ ok: false, error: { code: "not_found", message: `${PROJECT_TOOLS.approvals}: no approvals row for bot p1 on devbox` } });
       }
       if (tool === PROJECT_TOOLS.approvals) return Promise.resolve({ ok: true, output: { approvals, log: approvedLog } });
       if (tool === PROJECT_TOOLS.approvalsSet) {
@@ -176,7 +176,7 @@ const render = async (page: "project" | "instructions" = "project") => {
         const url = (input as { url?: string }).url;
         return Promise.resolve({
           ok: true,
-          output: url ? { path: "/home/w/src/web", addId: "a1" } : { path: "/home/w/src/api", next: "api is a repo of the project now, at /home/w/src/api on devbox." },
+          output: url ? { path: "/home/w/src/web", addId: "a1" } : { path: "/home/w/src/api", next: "api is a repo of the bot now, at /home/w/src/api on devbox." },
         });
       }
       if (tool === "project_repo_remove") {
@@ -250,7 +250,7 @@ const dialog = () => {
   return d;
 };
 
-describe("Settings → Projects", () => {
+describe("Settings → Bots", () => {
   it("shows a secret by its fingerprint only, and no read-only Worktrees row", async () => {
     await render();
     const text = document.body.textContent;
@@ -260,7 +260,7 @@ describe("Settings → Projects", () => {
     expect(document.querySelector('[aria-label="Worktrees"]')).toBeNull();
   });
 
-  it("on a hub with a vault, says how many variables there are and opens the project's Vault instead", async () => {
+  it("on a hub with a vault, says how many variables there are and opens the bot's Vault instead", async () => {
     features = ["vault"];
     await render();
     const env = document.querySelector<HTMLElement>("section[aria-label='Environment variables']");
@@ -293,7 +293,7 @@ describe("Settings → Projects", () => {
   it("keeps the page on screen through the resync a saved setting brings, never Loading… or a remount", async () => {
     await render();
     const page = document.querySelector('[data-screen="settings.projects"]');
-    const name = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]');
+    const name = document.querySelector<HTMLInputElement>('input[aria-label="Bot name"]');
     if (page === null || name === null) throw new Error("no page");
     answers = [{ ...settings, title: "shop" }];
     await type(name, "shop");
@@ -310,13 +310,13 @@ describe("Settings → Projects", () => {
     expect(calls.filter((c) => c.tool === "project_settings_get").length).toBeGreaterThan(reads);
     expect(page.textContent).not.toContain("Loading…");
     expect(document.querySelector('[data-screen="settings.projects"]')).toBe(page);
-    expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
+    expect(document.querySelector('input[aria-label="Bot name"]')).toBe(name);
     await act(async () => new Promise((r) => setTimeout(r, 100)));
-    expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
+    expect(document.querySelector('input[aria-label="Bot name"]')).toBe(name);
     expect(name.value).toBe("shop");
   });
 
-  it("refreshes memory every night with no switch, and runs it now beside the project's memory", async () => {
+  it("refreshes memory every night with no switch, and runs it now beside the bot's memory", async () => {
     await render();
     expect(document.body.textContent).not.toContain("Refresh now");
     act(() => root.unmount());
@@ -403,7 +403,7 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
 
-  it("erases a project with no repo as any other, saying what goes, and deletes its folder only when that is ticked", async () => {
+  it("erases a bot with no repo as any other, saying what goes, and deletes its folder only when that is ticked", async () => {
     const folder = "/home/w/.fleetd/node/projects/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
@@ -431,7 +431,7 @@ describe("Settings → Projects", () => {
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
   });
 
-  it("forgets a project's sign-ins after asking, a project of code's too", async () => {
+  it("forgets a bot's sign-ins after asking, a bot of code's too", async () => {
     repos = [web];
     answers = [{ ...settings, signinsKept: true }];
     await render();
@@ -448,13 +448,13 @@ describe("Settings → Projects", () => {
     expect(document.body.textContent).toContain("Forgotten. Its next browser session starts signed out.");
   });
 
-  it("opens a project's skills on its Agents page, where the one list of them is", async () => {
+  it("opens a bot's skills on its Agents page, where the one list of them is", async () => {
     await render();
     await click(button("Open its skills"));
     expect(window.location.hash).toBe("#/settings/agents?for=devbox/p1");
   });
 
-  it("sets a project's approval mode and lists what ran without asking, each with its chat line", async () => {
+  it("sets a bot's approval mode and lists what ran without asking, each with its chat line", async () => {
     answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
     await settle();
@@ -472,7 +472,7 @@ describe("Settings → Projects", () => {
     const yoloChoice = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"));
     // The row's hint says YOLO is what a new project starts in; the choice itself is only its name.
     expect(yoloChoice?.textContent).toBe("YOLO");
-    expect(part?.querySelector("[data-hint]")?.textContent).toContain("Nothing asks, and each action shows in the log. A new project starts in this mode.");
+    expect(part?.querySelector("[data-hint]")?.textContent).toContain("Nothing asks, and each action shows in the log. A new bot starts in this mode.");
     const yolo = yoloChoice?.querySelector<HTMLElement>('[role="radio"]');
     if (!yolo) throw new Error("no YOLO choice");
     await click(yolo);
@@ -480,7 +480,7 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === PROJECT_TOOLS.approvalsSet)?.input).toEqual({ machineId: "devbox", projectId: "p1", mode: "yolo" });
   });
 
-  it("says plainly when a project's approvals can't be read, never the lookup's error, and tries again", async () => {
+  it("says plainly when a bot's approvals can't be read, never the lookup's error, and tries again", async () => {
     approvalsFail = 1;
     answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
@@ -495,7 +495,7 @@ describe("Settings → Projects", () => {
     expect(part()?.textContent).not.toContain("couldn't be loaded");
   });
 
-  it("archives a project, and brings an archived one back", async () => {
+  it("archives a bot, and brings an archived one back", async () => {
     await render();
     await click(button("Archive"));
     await settle();
@@ -532,7 +532,7 @@ describe("Settings → Projects", () => {
     expect(calls.some((c) => c.tool === "project_remove")).toBe(false);
   });
 
-  it("deletes a project whose machine was removed: it is only forgotten in fleetd", async () => {
+  it("deletes a bot whose machine was removed: it is only forgotten in fleetd", async () => {
     const { worktrees: _, ...gone } = settings;
     answers = [{ ...gone, worktreesUnknown: "devbox was removed from this hub." }];
     await render();
@@ -554,7 +554,7 @@ describe("Settings → Projects", () => {
   });
 });
 
-describe("Settings → Projects → Repos", () => {
+describe("Settings → Bots → Repos", () => {
   /** The page, then each repo's read, which starts once the project's settings are in. */
   const renderRepos = async () => {
     await render();
@@ -580,7 +580,7 @@ describe("Settings → Projects → Repos", () => {
     expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
   });
 
-  it("shows one repo's remote, base and checkout, and its setup as the project's", async () => {
+  it("shows one repo's remote, base and checkout, and its setup as the bot's", async () => {
     repos = [web];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     await renderRepos();
@@ -641,7 +641,7 @@ describe("Settings → Projects → Repos", () => {
     await click(button("Add repo"));
     await settle();
     expect(calls).toContainEqual({ tool: "project_repo_add", input: { machineId: "devbox", projectId: "p1", path: "/home/w/src/api" } });
-    expect(section().textContent).toContain("api is a repo of the project now");
+    expect(section().textContent).toContain("api is a repo of the bot now");
     await type(field, "acme/web");
     await type(name, "front");
     await click(button("Add repo"));
@@ -653,7 +653,7 @@ describe("Settings → Projects → Repos", () => {
     expect(button("Add repo").disabled).toBe(true);
   });
 
-  it("removes a repo once asked, never the project's own directory", async () => {
+  it("removes a repo once asked, never the bot's own directory", async () => {
     repos = [web, api];
     await renderRepos();
     const removeIn = (n: string) => section().querySelector(`[role="listitem"][aria-label="${n}"] button`);

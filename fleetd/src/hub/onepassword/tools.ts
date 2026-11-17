@@ -85,7 +85,7 @@ export function register(tools: Registry): void {
       .map((m) => m.machineId)
       .filter((m) => !saved.sealedOn.some((s) => s.machineId === m));
     let next =
-      "Agents started from now on in your orders fill logins with it, unless their project has its own " +
+      "Agents started from now on in your orders fill logins with it, unless their bot has its own " +
       "OP_SERVICE_ACCOUNT_TOKEN. Press Test to list the vaults it reads.";
     if (problems.length > 0) next = `${next} ${problems.join(" ")}`;
     return { token: saved, missingOn, next };
@@ -97,7 +97,7 @@ export function register(tools: Registry): void {
     accountRemoved(hub, refOf(p), "1Password token");
     return {
       ok: true,
-      next: "Each machine forgot it. Agents started from now on fill logins only with their project's own OP_SERVICE_ACCOUNT_TOKEN.",
+      next: "Each machine forgot it. Agents started from now on fill logins only with their bot's own OP_SERVICE_ACCOUNT_TOKEN.",
     };
   });
 
@@ -114,16 +114,16 @@ export function register(tools: Registry): void {
       if (!isProject(hub, project)) {
         throw new ToolError(
           "not_found",
-          `${project.projectId} on ${project.machineId} is no project here, or it is archived.`,
-          "project_get shows the projects and their ids.",
+          `${project.projectId} on ${project.machineId} is no bot here, or it is archived.`,
+          "project_get shows the bots and their ids.",
         );
       }
       // A project's lead fills with its own token only: a member's own token's cards are never offered.
       if (!hasOwnToken(hub, project)) {
         throw new ToolError(
           "invalid",
-          "A project pays only with a 1Password token of its own: your own token's cards can't fill at its checkout.",
-          "Add OP_SERVICE_ACCOUNT_TOKEN as a secret in the project's Settings › Environment variables, then pick a card.",
+          "A bot pays only with a 1Password token of its own: your own token's cards can't fill at its checkout.",
+          "Add OP_SERVICE_ACCOUNT_TOKEN as a secret in the bot's Settings › Environment variables, then pick a card.",
         );
       }
       nodeReady(hub, project.machineId);

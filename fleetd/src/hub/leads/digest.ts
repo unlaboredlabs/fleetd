@@ -127,7 +127,7 @@ export function renderLeadDigest(input: DigestInput): string {
   const ranked = rankDecisions(input.decisions, open);
   const keys: string[] = [];
   for (const d of ranked) if (!keys.includes(d.key)) keys.push(d.key);
-  let head = `# project ${oneLine(input.title, 80)} (${input.projectRef.machineId}/${input.projectRef.projectId}), ${input.at}`;
+  let head = `# bot ${oneLine(input.title, 80)} (${input.projectRef.machineId}/${input.projectRef.projectId}), ${input.at}`;
   if (input.agents) head += `\n${agentsLineText(input.agents)}`;
   if (input.idle !== undefined) head += `\n${input.idle}`;
   if (input.usage !== undefined) head += `\n${usageLine(input.projectRef.machineId, input.usage)}`;

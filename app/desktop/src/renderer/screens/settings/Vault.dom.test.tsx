@@ -195,7 +195,7 @@ it("shows no Vault row on a hub that doesn't serve it, and one under You where i
   expect([...host.querySelectorAll("nav button")].map((b) => b.textContent)).toContain("Vault");
 });
 
-it("lists the team's logins, cards and addresses with no tag, and the project's variables on its own tab", async () => {
+it("lists the team's logins, cards and addresses with no tag, and the bot's variables on its own tab", async () => {
   await render("#/settings/vault");
   expect(rows()).toEqual(["Amazonamazon.com", "Team VisaVisa ••4242"]);
   expect(host.textContent).not.toContain("Everyone");
@@ -254,7 +254,7 @@ const openPlus = async () => {
   return [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
 };
 
-it("adds logins, cards, addresses or a 1Password import on the Vault page, and variables or a .env on a project's", async () => {
+it("adds logins, cards, addresses or a 1Password import on the Vault page, and variables or a .env on a bot's", async () => {
   await render("#/settings/vault");
   expect((await openPlus()).map((m) => m.textContent)).toEqual(["Login", "Card", "Address", "Import from 1Password…"]);
   act(() => root.unmount());
@@ -287,7 +287,7 @@ it("names a picked vault card the list doesn't have by its label, never its raw 
   expect(host.textContent).not.toContain("vault:V");
 });
 
-it("picks the project's card from the vault cards its work can use, kept as vault:<id>", async () => {
+it("picks the bot's card from the vault cards its work can use, kept as vault:<id>", async () => {
   await render("#/settings/projects?for=devbox/shop", TEAM, <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
   expect(host.textContent).toContain("from the vault");
   await click(button("Pick a card…"));
@@ -321,12 +321,12 @@ it("shows the items set aside for the person under the list, each to move or del
   await click(button("Move to team vault", aside));
   expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }]);
   // A variable goes to a project, picked first: Add stays off until one is.
-  await click(button("Add to a project…", aside));
+  await click(button("Add to a bot…", aside));
   const dialog = document.querySelector<HTMLElement>("[role='dialog']");
   if (dialog === null) throw new Error("no dialog");
   expect(button("Add", dialog).disabled).toBe(true);
   const picker = dialog.querySelector<HTMLElement>("[role='combobox']");
-  if (picker === null) throw new Error("no project picker");
+  if (picker === null) throw new Error("no bot picker");
   await act(async () => {
     picker.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
     await Promise.resolve();
@@ -346,7 +346,7 @@ it("lists an older hub's items as one list, the person's own among them, with no
   expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
 });
 
-it("keeps only the vault key on Hub › Every project › Vault", async () => {
+it("keeps only the vault key on Hub › Every bot › Vault", async () => {
   await render("#/settings/hub/vault", TEAM, <HubVault />);
   expect(host.querySelector("[data-screen='settings.hub.vault']")).not.toBeNull();
   expect(host.textContent).toContain("Recovery code");

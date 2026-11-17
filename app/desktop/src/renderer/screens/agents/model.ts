@@ -256,7 +256,7 @@ const claimRow = (item: WorkItem, nowMs: number, titleOf: (key: ProjectKey) => s
 };
 
 const workRow = (item: WorkItem, titleOf: (key: ProjectKey) => string | undefined): ElsewhereRow => {
-  const whose = item.projectRef === undefined ? "another project" : (titleOf(projectKey(item.projectRef)) ?? "another project");
+  const whose = item.projectRef === undefined ? "another bot" : (titleOf(projectKey(item.projectRef)) ?? "another bot");
   if (item.kind === "pr") return { id: item.id, tag: "PR", title: item.title, meta: `open PR outside fleetd · ${item.id}`, dim: false };
   if (item.kind === "change") return { id: item.id, tag: "PR", title: item.title, meta: `${whose}’s PR · ${CHANGE_WORD[item.state] ?? item.state}`, dim: false };
   return { id: item.id, tag: "Agent", title: item.title, meta: `${whose}’s agent · ${item.state}`, dim: false };

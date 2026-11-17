@@ -29,7 +29,7 @@ describe("event effects", () => {
     expect(fx.resync).toBe(false);
   });
 
-  it("a thread event refetches its project", () => {
+  it("a thread event refetches its bot", () => {
     const thread = effectsOf(e("thread.completed", undefined, { threadId: "t1", machineId: "devbox", projectId: "storefront" }));
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
@@ -53,7 +53,7 @@ describe("event effects", () => {
     expect(thread.invalidate.map((i) => i.tool)).not.toContain("agents_list");
   });
 
-  it("the Elsewhere group: work_list on claims, landings and any project's writers and PRs", () => {
+  it("the Elsewhere group: work_list on claims, landings and any bot's writers and PRs", () => {
     for (const type of ["work.claimed", "work.ended", "work.landed", "task.started", "change.state", "pr.merged", "project.added"]) {
       expect(tools(e(type)), type).toContain("work_list");
     }
@@ -99,7 +99,7 @@ describe("event effects", () => {
     expect(effectsOf(e("chat.sections"))).toEqual({ invalidate: [{ tool: "chat_sections_get" }], resync: false });
   });
 
-  it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
+  it("a machine or bot coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // A repo removed from a project can bring its checkout back as a project of its own.
     expect(effectsOf(e("project.settings")).resync).toBe(true);

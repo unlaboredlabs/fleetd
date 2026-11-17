@@ -72,7 +72,7 @@ export function applyProjectEnv(
   for (const name of remove) delete file.vars[name];
   for (const change of set) {
     const name = change.name;
-    if (envNameReserved(name)) throw new Error(`${name} is fleetd's or claude's own: a project can't set it`);
+    if (envNameReserved(name)) throw new Error(`${name} is fleetd's or claude's own: a bot can't set it`);
     if (change.sealed === undefined) {
       file.vars[name] = { value: change.value ?? "", secret: false };
       continue;
@@ -93,10 +93,10 @@ export function applyProjectEnv(
     file.vars[name] = { value, secret: true };
   }
   const names = Object.keys(file.vars).length;
-  if (names > PROJECT_ENV_MAX) throw new Error(`a project takes at most ${PROJECT_ENV_MAX} variables; this would make ${names}`);
+  if (names > PROJECT_ENV_MAX) throw new Error(`a bot takes at most ${PROJECT_ENV_MAX} variables; this would make ${names}`);
   const total = Object.values(file.vars).reduce((n, e) => n + Buffer.byteLength(e.value), 0);
   if (total > ENV_TOTAL_MAX_BYTES)
-    throw new Error(`A project's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.`);
+    throw new Error(`A bot's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.`);
   writeProject(home, projectId, file);
   return saved;
 }
@@ -173,13 +173,13 @@ export function deliverOrderVar(home: string, projectId: string, orderId: string
   const project = projectVars(home, projectId);
   const names = new Set([...project.map(([n]) => n), ...Object.keys(order.vars)]).size;
   if (names > PROJECT_ENV_MAX)
-    throw new Error(`an order's agents take at most ${PROJECT_ENV_MAX} variables with the project's; this would make ${names}`);
+    throw new Error(`an order's agents take at most ${PROJECT_ENV_MAX} variables with the bot's; this would make ${names}`);
   const total =
     project.filter(([n]) => !(n in order.vars)).reduce((s, [, v]) => s + Buffer.byteLength(v), 0) +
     Object.values(order.vars).reduce((s, v) => s + Buffer.byteLength(v), 0);
   if (total > ENV_TOTAL_MAX_BYTES)
     throw new Error(
-      `An order's agents take at most 512 KiB of variables together with the project's; these would take ${Math.ceil(total / 1024)} KiB.`,
+      `An order's agents take at most 512 KiB of variables together with the bot's; these would take ${Math.ceil(total / 1024)} KiB.`,
     );
   try {
     mkdirPrivate(join(home, ORDER_DIR));

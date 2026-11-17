@@ -20,19 +20,19 @@ export type PeopleOnly =
 
 /** Who can do it and where, in one line. */
 export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
-  approval_mode: "Only a person changes a project's approval mode: in the app, the chat's menu or the project's settings.",
-  sites: "Only a person allows a site: they answer the card its first visit shows, or add it in the project's settings in the app.",
-  agents: "Only a person picks a project's profiles and models and sets its max agents: Settings › Projects › Agents in the app.",
-  card: "Only a person gives a project a card: the project's Vault in the app, on their own device.",
-  vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a project's variables in its Vault tab. For a secret you need, call request_secret.",
-  mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Every project › Tools & skills, or the project's own settings, in the app.",
-  prompts: "Only a person edits prompts: the project's settings › Prompts in the desktop app. The project's Instructions are yours to write: project_setup with instructions.",
+  approval_mode: "Only a person changes a bot's approval mode: in the app, the chat's menu or the bot's settings.",
+  sites: "Only a person allows a site: they answer the card its first visit shows, or add it in the bot's settings in the app.",
+  agents: "Only a person picks a bot's profiles and models and sets its max agents: Settings › Bots › Agents in the app.",
+  card: "Only a person gives a bot a card: the bot's Vault in the app, on their own device.",
+  vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a bot's variables in its Vault tab. For a secret you need, call request_secret.",
+  mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Every bot › Tools & skills, or the bot's own settings, in the app.",
+  prompts: "Only a person edits prompts: the bot's settings › Prompts in the desktop app. The bot's Instructions are yours to write: project_setup with instructions.",
   hub_links: "Only a person links hubs: Settings › You › Hubs in the app.",
-  delete: "Only a person deletes a project: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
+  delete: "Only a person deletes a bot: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
   create:
-    "Only a person creates a project. When they ask you for one, propose it with project_propose: their Approve on its card makes it, as theirs. Or they make it themselves: New project in the app, or `fleetd project add` from their own terminal.",
-  another_project: "A lead sets up only its own project. Another project is set up by its own lead (project_message writes to it) or by a person in the app.",
-  project_folder: "That folder is a project of its own, and adding it as a repo would archive that project: only a person does that, in this project's settings in the app.",
+    "Only a person creates a bot. When they ask you for one, propose it with project_propose: their Approve on its card makes it, as theirs. Or they make it themselves: New bot in the app, or `fleetd project add` from their own terminal.",
+  another_project: "A lead sets up only its own bot. Another bot is set up by its own lead (project_message writes to it) or by a person in the app.",
+  project_folder: "That folder is a bot of its own, and adding it as a repo would archive that bot: only a person does that, in this bot's settings in the app.",
 };
 
 /** The names a call might carry for each, lowercase with nothing but letters and digits. */

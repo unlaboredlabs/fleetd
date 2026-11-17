@@ -89,7 +89,7 @@ export const updateApp = () =>
   new ToolError(
     "invalid",
     "This app is older than the hub: update it to add vault items.",
-    "The hub keeps logins, cards and addresses in one team vault now, and variables per project.",
+    "The hub keeps logins, cards and addresses in one team vault now, and variables per bot.",
     "vault_update_app",
   );
 

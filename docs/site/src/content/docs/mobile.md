@@ -1,19 +1,19 @@
 ---
 title: Phone app
-description: Chat with your projects and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners, and update it over the air.
+description: Chat with your bots and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners, and update it over the air.
 ---
 
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
-[projects](/docs/projects), with what needs you on top, and their chats, live as the lead writes. A chat with an
+[bots](/docs/projects), with what needs you on top, and their chats, live as the lead writes. A chat with an
 [approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with its count, and **Needs you**
 shows only those; you answer each from its card in the chat, with everything it would do. While the lead works, the
-send button is **Stop**, which stops its running step and the project's agents, as on the desktop (a key that may
+send button is **Stop**, which stops its running step and the bot's agents, as on the desktop (a key that may
 not stop it, such as a Read member's, has no Stop). What you were writing in a chat (its words, picked files and the
 reply quote) stays there as you go between chats and when the app starts again; a file still uploading when the app
 closes is left out. Notifications show the full text,
 end-to-end encrypted. You can [watch and take over](#screens) a lead's or agent's screen when it needs
 you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, read a chat's
-[artifacts](#artifacts), make, rename, archive and delete projects, and on an iPhone
+[artifacts](#artifacts), make, rename, archive and delete bots, and on an iPhone
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd and restart the hub. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
@@ -83,11 +83,11 @@ filter or a search is a flat list with no labels.
 
 Your sections are yours: the hub keeps them, in your order, for each person, so they're the same in the desktop app and
 on each of your phones. A teammate's sections never change your list, and each hub keeps its own. A name is up to 40
-characters, no two sections share one, and you can have up to 50. A project that's deleted leaves its section by itself;
+characters, no two sections share one, and you can have up to 50. A bot that's deleted leaves its section by itself;
 an archived one keeps its place. A change shows at once and is sent when the hub is next reachable. If the hub refuses
 it, the list goes back and a line over it says why.
 
-## Projects {#manage}
+## Bots {#manage}
 
 Tap **+** at the top of Chats for **New Bot**: a name, then its repos, none, one or several. **Add Repo** takes a
 GitHub repo to clone (`owner/repo` or its URL) or the path of a folder already on the machine, with what the hub found
@@ -98,21 +98,21 @@ failed with **Retry**.
 Hold a chat in Chats for **Archive**: it goes under the **Archived** filter at once, with **Undo** over the list for a
 few seconds. Hold an archived one for **Unarchive**.
 
-The **ⓘ** at the top of a chat opens its project's page:
+The **ⓘ** at the top of a chat opens its bot's page:
 
 - **Its icon**: tap the avatar, or **Edit** under it. Pick one of nine glass faces and one of twelve colors; the
   icon at the top shows it at once, and **Done** keeps it. Or **Choose Photo** or **Take Photo** (and, once it has
   one, **Remove Photo**): a photo opens in **Move and Scale**, pinch to zoom, drag to move, then **Choose**. Every
-  phone and desktop shows it. A project nobody picked for wears one made from its id. The hub keeps only a
+  phone and desktop shows it. A bot nobody picked for wears one made from its id. The hub keeps only a
   photo's circle, at most 512 px, without its location or other metadata.
-- **Agents**: the lead and the agents working now, each with its state. Then the project's open orders, its
+- **Agents**: the lead and the agents working now, each with its state. Then the bot's open orders, its
   **To-do** and its merges of the last two weeks, each opening its pull request. Change these in the chat or the
   desktop app.
 - **Name**: rename it. Its folder keeps its name.
 - **Agent profiles**, when the hub has more than one: the profiles its lead may run agents on. The hub's default is
   always allowed.
 - **Machine** and **Folder**: where it runs, read only.
-- **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the project's
+- **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the bot's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
   and what it learned, as in the desktop app's settings.
 - **Artifacts**: the chat's [artifacts](#artifacts). Linking a hub is done in the desktop
@@ -151,11 +151,11 @@ and a slow connection skips frames rather than falling behind. Only a person's d
 operate on its machine. What you type goes to the page; the action log says that you took over,
 never what you typed.
 
-**New Screen**, on a project's ⓘ page, opens a screen of your own: a browser unless you pick another kind, and the
+**New Screen**, on a bot's ⓘ page, opens a screen of your own: a browser unless you pick another kind, and the
 machine when more than one can. A kind no machine can host says why in its row; picked, it says why in full under
 **Can't open**, with **Turn On** for an owner or admin where it is only switched off on a machine, or whom to ask. It
 opens in the live view with you in control, and **End Screen** closes it. A browser starts on a blank page: tap the bar
-at the top to say where it goes. It runs on the project's own machine, on the profile the project keeps, so a site you
+at the top to say where it goes. It runs on the bot's own machine, on the profile the bot keeps, so a site you
 sign in to there stays signed in for its lead. On a full machine, **Wait** keeps your place for its next slot, and the
 screen opens once it has one. A PR's build opens from the desktop app. See
 [Open one yourself](/docs/browser-sessions#yours).
@@ -163,7 +163,7 @@ screen opens once it has one. A PR's build opens from the desktop app. See
 ## Artifacts {#artifacts}
 
 The reports a lead or its agents [publish](/docs/chat#artifacts) in a chat show there as a card; tapping it, or a link
-to it in a message, opens it. **Artifacts**, on the project's ⓘ page, lists them newest first, each with its format,
+to it in a message, opens it. **Artifacts**, on the bot's ⓘ page, lists them newest first, each with its format,
 who published it, when and its version, then the files sent in the chat (tapping one opens the share sheet). A
 Markdown artifact reads as the chat's own formatted text. An HTML one runs on an iPhone fenced as on the desktop: its
 scripts on, nothing loaded past the page itself, no storage, cookies or files; a link in it opens in your browser.
@@ -214,7 +214,7 @@ On an iPhone, **fleetd** is in the share sheet of Safari, Photos and any other a
 images into a chat you pick, with a message of your own if you want one.
 
 1. Tap **Share**, then **fleetd**. The sheet shows what you're sharing, with **Add a message** under it.
-2. Pick a chat: your most recent ones are in a row on top, then every project, with **Search chats**.
+2. Pick a chat: your most recent ones are in a row on top, then every bot, with **Search chats**.
 3. Tap **Send**. Images go up first, then the message with them, and the sheet closes once the hub has it.
 
 A link goes as its page title and address, after your message. Images the hub doesn't take as they are, such as HEIC
@@ -237,7 +237,7 @@ of them can go on the Action Button. They sign in to your hub as the app does, w
 
 | Action | What it does | Returns |
 | --- | --- | --- |
-| **Open Chat** | Opens a project's chat. | |
+| **Open Chat** | Opens a bot's chat. | |
 | **Send Message** | Sends text, files or both to a chat as you, without opening the app. Optionally waits for the reply. | The reply's text, with **Wait for Reply** on |
 | **Run Automation** | Runs one of your [automations](/docs/automations) now, as **Run now** does. | |
 | **Open Approvals** | Opens Chats on **Needs You**. | |
@@ -281,13 +281,13 @@ If an action can't run, it says why:
 
 In the Shortcuts app's **Automation** tab, or on the Action Button:
 
-- **Arrive home → Send Message:** "I'm home" to a project of yours, which can turn the lights on or post your evening
+- **Arrive home → Send Message:** "I'm home" to a bot of yours, which can turn the lights on or post your evening
   plan.
-- **Action Button → Take Screenshot, then Send Message with it as Files:** what's on screen goes to a project with
+- **Action Button → Take Screenshot, then Send Message with it as Files:** what's on screen goes to a bot with
   "What's wrong here?".
-- **Work Focus → Focus filter:** only your projects notify while you work.
+- **Work Focus → Focus filter:** only your bots notify while you work.
 - **NFC tag → Run Automation:** tap a tag on your desk to start your morning brief.
-- **CarPlay connects → Get Latest Messages, then Speak Text:** hear a project's last replies on the drive.
+- **CarPlay connects → Get Latest Messages, then Speak Text:** hear a bot's last replies on the drive.
 - **Time of day, 9:00 → Get Waiting Approvals, then If Count is greater than 0, Show Notification:** a morning nudge
   when something waits on you.
 

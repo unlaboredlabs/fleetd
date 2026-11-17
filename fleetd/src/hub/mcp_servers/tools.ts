@@ -81,7 +81,7 @@ export function projectOf(hub: Hub, scope: McpScope): ProjectRef | undefined {
   if (scope.kind !== "project") return undefined;
   const r = { machineId: scope.machineId, projectId: scope.projectId };
   if (!store(hub).projectGet(r)) {
-    throw new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
+    throw new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
   }
   return r;
 }
@@ -107,8 +107,8 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
     // Only a project's lead asks before a tool runs: one saved for every project would reach agents unasked.
     throw new ToolError(
       "invalid",
-      "An integration asks you before its tools send anything, which only a project's lead does.",
-      "Add it in one project's settings: its lead asks you before each send.",
+      "An integration asks you before its tools send anything, which only a bot's lead does.",
+      "Add it in one bot's settings: its lead asks you before each send.",
     );
   }
   if (project && input.integration && !nodeCan(hub, project.machineId, CAP_ONE_LEAD_MODE)) {
@@ -122,7 +122,7 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
   const s = mcpServers(hub);
   const before = s.get(scope, input.name);
   if (!before && s.list(scope).length >= MCP_SERVERS_MAX) {
-    const place = scope.kind === "global" ? "for every project" : "in this project";
+    const place = scope.kind === "global" ? "for every bot" : "in this bot";
     throw new ToolError("invalid", `There are already ${MCP_SERVERS_MAX} MCP servers ${place}, the most fleetd takes.`, "Remove one first.");
   }
   const savedSecret = (field: McpField, name: string): McpValue | undefined =>
@@ -145,8 +145,8 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
           if (project && x.machineId !== project.machineId) {
             throw new ToolError(
               "invalid",
-              `${v.name} is sealed to ${x.machineId}, but the project's machine is ${project.machineId}.`,
-              "Seal a project server's secrets to its own machine.",
+              `${v.name} is sealed to ${x.machineId}, but the bot's machine is ${project.machineId}.`,
+              "Seal a bot server's secrets to its own machine.",
             );
           }
           targets.add(x.machineId);

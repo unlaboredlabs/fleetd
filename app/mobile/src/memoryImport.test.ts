@@ -83,15 +83,15 @@ describe("Add to Memory", () => {
 });
 
 describe("when the hub can't import", () => {
-  const NONE = { code: "invalid", reason: NO_PROJECT, message: "Import memory runs in a project, and this hub has none yet.", fix: "Add a project first, then import again." };
+  const NONE = { code: "invalid", reason: NO_PROJECT, message: "Import memory runs in a bot, and this hub has none yet.", fix: "Add a bot first, then import again." };
 
-  it("offers New Project when the hub has none, and keeps the paste for after", () => {
+  it("offers New Bot when the hub has none, and keeps the paste for after", () => {
     const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NONE } });
     expect(s.phase.t === "failed" && needsProject(s.phase.error)).toBe(true);
     expect(s.text).toBe("Ada, Berlin");
     expect(canAdd(s)).toBe(true);
     // Its fix may change, its reason stays.
-    expect(needsProject({ code: "invalid", reason: NO_PROJECT, message: "No project yet.", fix: "Add one." })).toBe(true);
+    expect(needsProject({ code: "invalid", reason: NO_PROJECT, message: "No bot yet.", fix: "Add one." })).toBe(true);
     expect(needsProject({ code: "invalid", reason: "other", message: "Too long." })).toBe(false);
     // Another refusal, or its machine offline, is said as it is.
     expect(needsProject({ code: "invalid", message: "Too long." })).toBe(false);

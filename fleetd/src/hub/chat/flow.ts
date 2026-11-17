@@ -174,7 +174,7 @@ function writerOf(hub: Hub, caller: Caller, input: ChatSendInput): Writer {
   if (input.session !== undefined) {
     if (leadThread(hub, r)?.threadId === input.session) {
       throw refusedWith(
-        "This project's lead can't write to its own chat.",
+        "This bot's lead can't write to its own chat.",
         "What you write in your turn is your chat message; talk to your agents with message_agent.",
       );
     }
@@ -200,7 +200,7 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
   const r = input.projectRef;
   requireRole(caller, "operate", r.machineId);
   if (input.text === "" && !(input.attachments?.length ?? 0)) throw new ToolError("invalid", "text is empty: write something, or attach a file");
-  if (!store(hub).projectGet(r)) throw new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, "Pick a project from fleetd_status.");
+  if (!store(hub).projectGet(r)) throw new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, "Pick a bot from fleetd_status.");
   const archived = archivedNote(hub, r);
   if (archived) throw new ToolError("invalid", archived.message, archived.fix);
   const writer = writerOf(hub, caller, input);
@@ -414,7 +414,7 @@ export function skillsOf(hub: Hub, r: ProjectRef, message: ChatMessage): string 
   const lines = names.map((name) => {
     const kept = skills.get("project", r, name) ?? skills.get("global", undefined, name);
     if (!kept) return `- fleetd:${name} (from the repo's .agents/skills or .claude/skills)`;
-    return `- fleetd:${name} (${kept.scope === "project" ? "this project's" : "a global"} skill): ${descriptionOf(kept.text)}`;
+    return `- fleetd:${name} (${kept.scope === "project" ? "this bot's" : "a global"} skill): ${descriptionOf(kept.text)}`;
   });
   return `\n\nSkills the human named: use each with the Skill tool, or name it in an agent's brief. One added since your session started isn't in your skill list yet: read $FLEETD_SKILLS_DIR/<name>/SKILL.md instead.\n${lines.join("\n")}`;
 }

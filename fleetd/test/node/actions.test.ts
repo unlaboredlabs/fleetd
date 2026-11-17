@@ -201,7 +201,7 @@ test("a session gets its role's MCP servers, its skills as a plugin and its Clau
     mcpRole: "lead",
     mcp: { userServers: false, servers: [fake, writersOnly, ownName] },
     skills: [
-      { name: "triage", origin: "project", files: [{ path: "SKILL.md", text: "---\nname: triage\ndescription: project copy\n---\n" }] },
+      { name: "triage", origin: "project", files: [{ path: "SKILL.md", text: "---\nname: triage\ndescription: bot copy\n---\n" }] },
       { name: "standup", origin: "global", files: [{ path: "SKILL.md", text: "---\nname: standup\ndescription: d\n---\n" }, { path: "../escape", text: "x" }] },
     ],
     claudeAccount: { kind: "person", personId: "p_aaaaaaaa" },
@@ -360,7 +360,7 @@ test("read_image reads an image from the session's own folder only, and checks i
   await ok("stop", { sessionId: "s3" });
 });
 
-test("a project's kept sign-ins are forgotten, and go with its project", async () => {
+test("a bot's kept sign-ins are forgotten, and go with its bot", async () => {
   const inbox = join(home.dir, "inbox");
   mkdirSync(inbox);
   await ok("project_upsert", { projectId: "n1", title: "inbox", workspaceRoot: inbox });

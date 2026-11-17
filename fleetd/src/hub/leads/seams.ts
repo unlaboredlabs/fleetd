@@ -23,7 +23,7 @@ export function requireHuman(caller: Caller, tool: string): void {
 export const unknownProject = (r: ProjectRef) =>
   new ToolError(
     "not_found",
-    `No project ${r.projectId} on ${r.machineId}.`,
+    `No bot ${r.projectId} on ${r.machineId}.`,
     `Call project_get with machineId ${r.machineId} and no projectId.`,
     undefined,
     "It was removed, or its machine was: the projects list has the ones that are left.",
@@ -39,7 +39,7 @@ export const unknownMachine = (machineId: string) =>
   );
 
 export const unknownThread = (r: { machineId: string; threadId: string }) =>
-  new ToolError("not_found", `No thread ${r.threadId} on ${r.machineId}.`, "Call project_get to list the project's threads.");
+  new ToolError("not_found", `No thread ${r.threadId} on ${r.machineId}.`, "Call project_get to list the bot's threads.");
 
 /** At most `max` items, and whether more were left out (api/grants.rs `cap`). */
 export function cap<T>(items: T[], max: number): { items: T[]; truncated?: true } {

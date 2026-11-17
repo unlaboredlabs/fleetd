@@ -1,9 +1,9 @@
 ---
 title: Automations
-description: Run a stored prompt on a schedule, from a webhook, or with Run now. Each run becomes an order the project's lead starts on its own.
+description: Run a stored prompt on a schedule, from a webhook, or with Run now. Each run becomes an order the bot's lead starts on its own.
 ---
 
-An automation is a prompt you keep for a project, plus what starts it:
+An automation is a prompt you keep for a bot, plus what starts it:
 
 - **Schedule**: a 5-field cron read in a time zone, such as `0 9 * * 1-5` in `Europe/Berlin` (09:00 on
   weekdays, Berlin time). The app uses your computer's zone (an edited automation keeps the one it was saved with);
@@ -12,18 +12,18 @@ An automation is a prompt you keep for a project, plus what starts it:
 - **Webhook**: a secret URL. A `POST` to it starts a run, and the request body goes to the lead with the prompt.
 - **Run now**: from the app, or by the lead.
 
-Each run opens an [order](/docs/glossary#workstream) for the project's lead, marked as coming from the automation. The
+Each run opens an [order](/docs/glossary#workstream) for the bot's lead, marked as coming from the automation. The
 lead starts the work without asking you first. Reviews, the [merge train](/docs/merge-train) and
-[approvals](/docs/approvals-and-secrets) still apply, as they do for any order. If the project has no lead yet, the
+[approvals](/docs/approvals-and-secrets) still apply, as they do for any order. If the bot has no lead yet, the
 run starts one.
 
 The nightly [memory refresh](/docs/what-agents-are-told#memory-refresh) is built in, not an automation: it opens
-no order, and it is on the project's Instructions & memory, beside the memory it tidies (see
+no order, and it is on the bot's Instructions & memory, beside the memory it tidies (see
 [below](#the-nightly-memory-refresh)).
 
 ## Manage them in the app
 
-Open **Settings → Projects**, pick a project, then its **Automations** tab. There you can:
+Open **Settings → Bots**, pick a bot, then its **Automations** tab. There you can:
 
 - **New automation**: a name, the prompt, and its triggers. While you type a cron, the editor shows it in words
   ("At 09:00, Monday to Friday (Europe/Berlin)") or says what's wrong with it.
@@ -36,25 +36,25 @@ Open **Settings → Projects**, pick a project, then its **Automations** tab. Th
 
 ## The nightly memory refresh
 
-It isn't in the Automations list. The nightly memory refresh, on the project's Instructions & memory, is the hub's
-own job for every project, always on, so it has no prompt to edit, no webhook, no switch and no Delete. It shows:
+It isn't in the Automations list. The nightly memory refresh, on the bot's Instructions & memory, is the hub's
+own job for every bot, always on, so it has no prompt to edit, no webhook, no switch and no Delete. It shows:
 
-- **Its hour**, such as "Every night at 04:00 (Europe/Berlin)". The hour is the hub's, the same for every project.
+- **Its hour**, such as "Every night at 04:00 (Europe/Berlin)". The hour is the hub's, the same for every bot.
   An admin sets it with the `policy.memory_refresh_at` decision, in the zone of `policy.tz`.
 - **Next run** and **Last run**: what the last refresh changed in memory, as its chat line counts it ("2 added, 1
   updated, 1 removed"), or that it was skipped and why. A quiet day, with no chat and no order changes, is skipped.
-- **Run now**: refreshes the project's memory at once, the way the night's refresh does. It doesn't start, and says
+- **Run now**: refreshes the bot's memory at once, the way the night's refresh does. It doesn't start, and says
   why, while one is already running, nothing is new since the last one, the
-  lead is mid-turn, or the project's machine is offline, out of usage or too old.
+  lead is mid-turn, or the bot's machine is offline, out of usage or too old.
 
 From an MCP client, `automation_list` returns it as `memoryRefresh`, and `memory_refresh_run` is its Run now.
 
-You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a project's
+You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a bot's
 automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#lead-tools).
 
 ## One-time runs: reminders and follow-ups {#one-time}
 
-Ask a project's lead "remind me at 18:00 to call mom" or "check back on the refund Friday", and it makes an automation with a
+Ask a bot's lead "remind me at 18:00 to call mom" or "check back on the refund Friday", and it makes an automation with a
 one-time schedule: `at`, one date and time such as `2026-11-03T18:00`. The lead works out the date and time from your
 words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs/what-agents-are-told#your-time).
 
@@ -63,7 +63,7 @@ words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs
 - At that time it opens an order for the lead once. The lead's message lands in the chat, so it reaches
   your phone's notifications like any reply.
 - Then it is **Done**: it stays in the list with its run, and runs again only with a new time (**Edit**) or Run now.
-  When a project's 50 automations are full, the oldest done one makes room for a new one.
+  When a bot's 50 automations are full, the oldest done one makes room for a new one.
 - Delete it to cancel it before it runs. Paused, it doesn't run; resuming it after its time is refused until it has
   a new time.
 - A time that has already passed is refused. Given with `Z` or an offset, it is kept as the zone's own clock time.
@@ -104,10 +104,10 @@ The schedule runs on the hub's clock. If the hub was down when a run was due, th
 comes back, marked late. A hub that was down for three hours of an hourly schedule runs it once, not three times.
 A run the hub stopped in the middle of, before its order opened, gets its order when the hub starts again.
 
-## When a project goes
+## When a bot goes {#when-a-project-goes}
 
-Removing a project deletes its automations and their run history: their schedules stop and their webhook URLs
-answer `404`. Orders their runs opened stop with the project.
+Removing a bot deletes its automations and their run history: their schedules stop and their webhook URLs
+answer `404`. Orders their runs opened stop with the bot.
 
 ## Webhooks
 
@@ -130,7 +130,7 @@ curl -X POST --data '{"alert":"disk 91% on db-2"}' "$FLEETD_WEBHOOK_URL"
 |---|---|
 | `202` | A run started (`state` is `running`; the JSON has its `runId` and the `workstreamId` of its order), or, while a run is open, the call was kept (`state` is `queued`) and goes in one follow-up order once that run ends. |
 | `200` | Recorded, but skipped: `state` is `skipped` and `why` says why (the automation is paused, or 20 calls already wait). |
-| `404` | The URL isn't valid: a wrong secret, a rotated URL, a deleted automation, or one whose project was removed. |
+| `404` | The URL isn't valid: a wrong secret, a rotated URL, a deleted automation, or one whose bot was removed. |
 | `413` | The body is over 16 KiB. |
 
 The body goes into the order as far as it fits, and the lead can read the whole body of a run. A wrong secret is
@@ -143,6 +143,6 @@ tunnel or a reverse proxy in front of the hub, and give the service that address
 
 ## From an MCP client
 
-A key with the operate role on the project's machine can use the same tools as the app: `automation_list`,
+A key with the operate role on the bot's machine can use the same tools as the app: `automation_list`,
 `automation_create`, `automation_update`, `automation_pause`, `automation_rotate`, `automation_delete`,
 `automation_run` and `automation_runs`. See [MCP clients](/docs/mcp-clients).

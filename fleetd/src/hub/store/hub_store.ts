@@ -163,7 +163,7 @@ function forgetRef(conn: Database, table: "sidebar_orders" | "chat_pins", r: Pro
 /** An empty machine or project id is the hub's own, not a project's (hub/project_lead/erase.rs `a_project`). */
 function aProject(r: ProjectRef): void {
   if (r.machineId === "" || r.projectId === "") {
-    throw new Error("an empty machine or project id is the hub's own, not a project's: nothing was erased");
+    throw new Error("an empty machine or bot id is the hub's own, not a bot's: nothing was erased");
   }
 }
 

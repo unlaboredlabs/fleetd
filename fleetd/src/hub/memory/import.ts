@@ -64,7 +64,7 @@ function place(hub: Hub): ProjectRef {
   if (!first) {
     throw new ToolError(
       "invalid",
-      "Import memory runs in one of this hub's projects, and it has none yet. Everyone on this hub can read what it writes.",
+      "Import memory runs in one of this hub's bots, and it has none yet. Everyone on this hub can read what it writes.",
       NO_PROJECT_FIX,
       "no_project",
     );
@@ -74,7 +74,7 @@ function place(hub: Hub): ProjectRef {
   if (!found) {
     throw new ToolError(
       "machine_offline",
-      `The projects' machine, ${first.machineId}, is offline or runs a fleetd too old for this.`,
+      `The bots' machine, ${first.machineId}, is offline or runs a fleetd too old for this.`,
       `Bring ${first.machineId} online with an up-to-date fleetd, then try again.`,
     );
   }

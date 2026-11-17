@@ -71,14 +71,14 @@ export const unreachable = (label: string, url: string, why: string) =>
     "failed",
     `Can't reach ${label} at ${url}: ${why}.`,
     `A hub link needs ${label}'s hub reachable from this hub, over a tailnet or HTTPS. Check it is up and its URL ` +
-      "in the project's Linked hubs; nothing was sent.",
+      "in the bot's Linked hubs; nothing was sent.",
   );
 
 export const noLongerWorks = (label: string, message: string) =>
   new ToolError(
     "forbidden",
     `The link to ${label} no longer works: ${message}`,
-    `Ask the person to make a new link on ${label} and add it in the project's Linked hubs.`,
+    `Ask the person to make a new link on ${label} and add it in the bot's Linked hubs.`,
   );
 
 /** The wait before calling a hub again after failed read `attempt` (0 first) in a row, `jitter` in 0.8..1.2. */

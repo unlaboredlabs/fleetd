@@ -31,7 +31,7 @@ export function parseChatArgs(argv: string[]): ChatArgs {
     if (v.flag("wait") || v.flag("follow") || v.flag("now")) {
       throw new ArgError("--now, --wait and --follow are for sending, not history");
     }
-    if (p.length !== 2) throw new ArgError("expected fleetd chat history <project>");
+    if (p.length !== 2) throw new ArgError("expected fleetd chat history <bot>");
     const raw = v.str("page");
     let page = 1;
     if (raw !== undefined) {
@@ -44,7 +44,7 @@ export function parseChatArgs(argv: string[]): ChatArgs {
     const [project, ...words] = p;
     const text = words.join(" ");
     if (project === undefined || text.trim() === "") {
-      throw new ArgError(`expected fleetd chat <machine>/<project> "<text>"`);
+      throw new ArgError(`expected fleetd chat <machine>/<bot> "<text>"`);
     }
     command = { kind: "send", project, text, now: v.flag("now"), wait: v.flag("wait"), follow: v.flag("follow") };
   }
@@ -275,8 +275,8 @@ async function projectRef(socket: Socket, given: string): Promise<any> {
   } catch (error) {
     why =
       projects.length === 0
-        ? `no project ${given}: the hub has none yet`
-        : (error as Error).message.replace("no order or project", "no project");
+        ? `no bot ${given}: the hub has none yet`
+        : (error as Error).message.replace(/no order or (project|bot)/, "no bot");
   }
   if (named === undefined) throw new Refused(why);
   const r = { machineId: named[0], projectId: named[1] };

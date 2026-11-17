@@ -78,7 +78,7 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   const input = item.secureInput;
   const where =
     kind === "fill" && input !== undefined
-      ? `into the ${input.label} field for ${input.site.name}, in the project's browser on ${machine.name}`
+      ? `into the ${input.label} field for ${input.site.name}, in the bot's browser on ${machine.name}`
       : kind === "order"
       ? `${item.envName === undefined ? "" : `as ${item.envName} `}for ${path}'s agents on ${machine.name}, until the order closes`
       : kind === "env"

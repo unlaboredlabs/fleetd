@@ -256,7 +256,7 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
         dispatch({ type: "submit" });
       }}
     >
-      <Head face="mark" title="Set up this Mac for agents" line="Every project's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
+      <Head face="mark" title="Set up this Mac for agents" line="Every bot's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
       {state.notice === undefined ? null : (
         <div className={s.notice} role="status">
           <Text size="sm" strong>

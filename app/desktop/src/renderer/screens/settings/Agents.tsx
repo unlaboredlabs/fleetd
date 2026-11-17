@@ -221,7 +221,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
     <SettingsRow
       title={props.title ?? "Max agents"}
       titleId={`${id}-label`}
-      hint="The most agents this project runs at once. At 1, the lead works through its tasks in order."
+      hint="The most agents this bot runs at once. At 1, the lead works through its tasks in order."
       line={sourceLine(props.slots, a)}
       control={
         <>
@@ -384,7 +384,7 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
               <SettingsRow
                 reveal="agents.profiles"
                 title="Allowed profiles"
-                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every project › Agents."
+                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every bot › Agents."
               >
                 <AllowedProfiles projectRef={ref} />
               </SettingsRow>

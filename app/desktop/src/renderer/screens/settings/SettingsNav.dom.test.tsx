@@ -142,14 +142,14 @@ const pickTab = async (set: string, name: string) => {
   for (let i = 0; i < 3; i++) await settle();
 };
 
-it("has You and Projects for a member as one flat list, Projects listing the projects, each opening its four pages under tabs", async () => {
+it("has You and Bots for a member as one flat list, Bots listing the bots, each opening its four pages under tabs", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Bots"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
   // Nothing to pick and nothing nested in the sidebar.
   expect(nav()?.querySelector("[role='combobox'], [role='group'], select")).toBeNull();
 
-  await click(button("Projects", nav() ?? document));
+  await click(button("Bots", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/projects");
   expect(screen()).toBe("settings.projects.list");
   const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Bots']");
@@ -159,42 +159,42 @@ it("has You and Projects for a member as one flat list, Projects listing the pro
   expect(screen()).toBe("settings.projects");
   // Named in the route so a reload or a copied link lands on it.
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/docs");
-  expect(button("Projects", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Bots", nav() ?? document).getAttribute("aria-current")).toBe("page");
 
   // Each of the project's pages is one tab from there, on the same project.
-  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Project']");
-  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Project", "Agents", "Instructions & memory", "Automations"]);
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Bot']");
+  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Bot", "Agents", "Instructions & memory", "Automations"]);
   for (const [name, tab, data] of [
     ["Agents", "agents", "settings.agents"],
     ["Instructions & memory", "instructions", "settings.instructions"],
     ["Automations", "automations", "settings.automations"],
-    ["Project", "projects", "settings.projects"],
+    ["Bot", "projects", "settings.projects"],
   ]) {
-    await pickTab("Project", name ?? "");
+    await pickTab("Bot", name ?? "");
     expect(screen(), name).toBe(data);
     expect(window.location.hash, name).toMatch(new RegExp(`^#/settings/${tab ?? ""}\\?(.*&)?for=devbox/docs`, "u"));
   }
 });
 
-it("says Projects isn't connected while the hub isn't live, rather than loading for good", async () => {
+it("says Bots isn't connected while the hub isn't live, rather than loading for good", async () => {
   await render("#/settings/projects", false, false);
   expect(screen()).toBe("settings.projects.list");
   expect(host.textContent).toContain("Not connected. Connect to a hub to change its bots' settings.");
   expect(host.textContent).not.toContain("Loading…");
 });
 
-it("keeps the opened project across its tabs, and Projects goes back to the list", async () => {
+it("keeps the opened bot across its tabs, and Bots goes back to the list", async () => {
   await render("#/settings/instructions?for=devbox/storefront", false);
   expect(screen()).toBe("settings.instructions");
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
-  await pickTab("Project", "Agents");
+  await pickTab("Bot", "Agents");
   expect(window.location.hash).toBe("#/settings/agents?for=devbox/storefront");
-  await click(button("Projects", nav() ?? document));
+  await click(button("Bots", nav() ?? document));
   expect(screen()).toBe("settings.projects.list");
   expect(window.location.hash).toBe("#/settings/projects");
 });
 
-it("opens a project's built-in prompts from the one row at the foot of its Instructions, a page of its own with the way back", async () => {
+it("opens a bot's built-in prompts from the one row at the foot of its Instructions, a page of its own with the way back", async () => {
   await render("#/settings/instructions?for=devbox/storefront", false);
   const row = host.querySelector<HTMLAnchorElement>("[data-part='builtin-prompts'] a");
   expect(row?.textContent).toBe("Built-in prompts");
@@ -208,7 +208,7 @@ it("opens a project's built-in prompts from the one row at the foot of its Instr
   // No tab of the project's, and no picker: the page is the project's, and goes back to its Instructions.
   expect(host.querySelector("[role='tablist']")).toBeNull();
   expect(host.querySelector("#prompts-scope")).toBeNull();
-  expect(button("Projects", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Bots", nav() ?? document).getAttribute("aria-current")).toBe("page");
   await click(button("‹ Instructions"));
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
   expect(screen()).toBe("settings.instructions");
@@ -232,15 +232,15 @@ const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']"
 
 it("has ten rows for an admin and six for a member, one fewer each on a hub without the vault", async () => {
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Setup"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Bots", "People", "Machines", "Every bot", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Setup"]);
+  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Bots", "People", "Machines", "Every bot", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
-  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects"]);
+  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Bots"]);
 });
 
 // Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of
@@ -253,20 +253,20 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/your-memory", "settings.your-memory", null, "Your memory"],
   ["#/settings/devices", "settings.hubs", "settings.devices", "Hubs & devices"],
   ["#/settings/hubs", "settings.hubs", null, "Hubs & devices"],
-  ["#/settings/projects", "settings.projects.list", null, "Projects"],
-  ["#/settings/agents?for=devbox/docs", "settings.agents", null, "Projects"],
-  ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "Projects"],
-  ["#/settings/automations?for=devbox/docs", "settings.automations", null, "Projects"],
-  ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "Projects"],
-  ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "Projects"],
+  ["#/settings/projects", "settings.projects.list", null, "Bots"],
+  ["#/settings/agents?for=devbox/docs", "settings.agents", null, "Bots"],
+  ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "Bots"],
+  ["#/settings/automations?for=devbox/docs", "settings.automations", null, "Bots"],
+  ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "Bots"],
+  ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "Bots"],
   ["#/settings/hub/people", "settings.hub.people", null, "People"],
   ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
   ["#/settings/hub/updates", "settings.hub.machines", "settings.hub.updates", "Machines"],
-  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Every project"],
-  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Every project"],
-  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every project"],
-  ["#/settings/hub/vault", "settings.hub.vault", null, "Every project"],
-  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every project"],
+  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Every bot"],
+  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Every bot"],
+  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every bot"],
+  ["#/settings/hub/vault", "settings.hub.vault", null, "Every bot"],
+  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every bot"],
   ["#/settings/hub/accounts", "settings.hub.setup", "settings.hub.accounts", "Setup"],
   ["#/settings/hub/setup", "settings.hub.setup", null, "Setup"],
 ];

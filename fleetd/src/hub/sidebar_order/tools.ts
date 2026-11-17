@@ -20,7 +20,7 @@ export function register(tools: Registry): void {
       throw new ToolError(
         "forbidden",
         "Only a person keeps a sidebar order, from one of their own devices.",
-        "Pair the app as yourself, then drag a project in its sidebar.",
+        "Pair the app as yourself, then drag a bot in its sidebar.",
       );
     }
     putRefs(hub.db.conn, "sidebar_orders", person, input.order);

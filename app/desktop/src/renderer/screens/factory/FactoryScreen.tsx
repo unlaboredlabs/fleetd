@@ -68,7 +68,7 @@ export function FactoryScreen(props: FactoryScreenProps) {
     [projectRows],
   );
   const projectTitle = (ref: ProjectRef): string =>
-    projects.find((p) => p.machineId === ref.machineId && p.projectId === ref.projectId)?.title ?? `a project on ${ref.machineId}`;
+    projects.find((p) => p.machineId === ref.machineId && p.projectId === ref.projectId)?.title ?? `a bot on ${ref.machineId}`;
   const orderTitle = (id: string): string | undefined => orders?.[id]?.title;
 
   // Each new question is asked as of now (unless a test pins it); the frame holds, dimmed, until it is answered.
@@ -93,7 +93,7 @@ export function FactoryScreen(props: FactoryScreenProps) {
         group: "actions",
         run: () => changeFilters({ ...filters, compare: !filters.compare }),
       },
-      { id: "factory:all", title: "Factory: all projects", group: "actions", enabled: () => project !== null, run: () => changeProject(null) },
+      { id: "factory:all", title: "Factory: all bots", group: "actions", enabled: () => project !== null, run: () => changeProject(null) },
     ],
     [filters.compare, project === null],
   );
@@ -232,8 +232,8 @@ function Figures(p: FiguresProps) {
           <Text strong>No merges in this range.</Text>
           <Text tone="quiet">
             {coverage.length === 0
-              ? "fleetd counts merges in your projects' repos. Add a project to see what comes out of it."
-              : "fleetd reads the default branch of every project's repo: merges by the train, by you, or by anyone else show up here."}
+              ? "fleetd counts merges in your bots' repos. Add a bot to see what comes out of it."
+              : "fleetd reads the default branch of every bot's repo: merges by the train, by you, or by anyone else show up here."}
           </Text>
         </div>
       ) : (
@@ -278,7 +278,7 @@ function SeenSheet({ open, onOpenChange, data }: { open: boolean; onOpenChange: 
       open={open}
       onOpenChange={onOpenChange}
       title="Your minutes, from what fleetd sees"
-      description="Each act you make (a chat message, an approval, a review, a steer, time with the app open on a project) counts the least time it could take; acts under five minutes apart join into one stretch."
+      description="Each act you make (a chat message, an approval, a review, a steer, time with the app open on a bot) counts the least time it could take; acts under five minutes apart join into one stretch."
     >
       <div className={cx(s.section)}>
         {human !== undefined ? (

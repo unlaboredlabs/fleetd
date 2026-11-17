@@ -37,7 +37,7 @@ test("a line merge keeps both sides' changes and marks a clash", () => {
   expect(merge("a\n", "b\n", "c\n").conflicts).toBe(true);
 });
 
-test("a project id never steers where an override is written", () => {
+test("a bot id never steers where an override is written", () => {
   const home = tempHome();
   const outside = tempHome();
   const db = openHubDb(home.dir);
@@ -81,7 +81,7 @@ test("a reflowed default is not a changed default", () => {
   home.done();
 });
 
-test("a renamed prompt's overrides move to its new id at the hub's start, base and all, hub-wide and per project", () => {
+test("a renamed prompt's overrides move to its new id at the hub's start, base and all, hub-wide and per bot", () => {
   const home = tempHome();
   const db = openHubDb(home.dir);
   const dir = promptsDir(db) as string;

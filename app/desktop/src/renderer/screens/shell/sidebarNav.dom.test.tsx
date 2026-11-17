@@ -141,7 +141,7 @@ describe("the Screens button", () => {
     return calls;
   };
 
-  it("says how many are live from one hub-wide count, never a project's list", async () => {
+  it("says how many are live from one hub-wide count, never a bot's list", async () => {
     const calls = await counted({ live: 3, asking: 0 });
     expect(row("Screens").getAttribute("aria-label")).toBe("Screens · 3 live");
     expect(calls.filter((t) => t === "screens_count")).toHaveLength(1);

@@ -31,7 +31,7 @@ const gated = (requestId: string, createdAt = AT): HumanRequest => ({
 });
 
 describe("lists", () => {
-  it("is undefined until the projects loaded", () => {
+  it("is undefined until the bots loaded", () => {
     expect(lists({ projects: undefined, chatStates: {}, requests: undefined })).toBeUndefined();
   });
 
@@ -49,7 +49,7 @@ describe("lists", () => {
     expect(chatList({ projects, chatStates: {}, requests: [] }, noPrefs)?.map((r) => r.key)).not.toContain("m1/old");
   });
 
-  it("shows an archived project while an approval of its waits, as the badges count it", () => {
+  it("shows an archived bot while an approval of its waits, as the badges count it", () => {
     const projects = { "m1/a": project("a", "Ada"), "m1/old": project("old", "Old", { archivedAt: AT }) };
     const waiting = { ...gated("r1"), projectRef: { machineId: "m1", projectId: "old" } };
     const out = lists({ projects, chatStates: {}, requests: [waiting] });
@@ -235,34 +235,34 @@ describe("approvals", () => {
   });
 });
 
-describe("a lead's proposal for a new project", () => {
+describe("a lead's proposal for a new bot", () => {
   const card = (shown: Record<string, unknown>): HumanRequest => ({
     ...asked("r1"),
-    text: "mcp__fleetd__project_propose: Proposes a new project",
+    text: "mcp__fleetd__project_propose: Proposes a new bot",
     permission: {
       requestId: "p1",
       threadId: "t1",
       toolName: "mcp__fleetd__project_propose",
-      summary: "Proposes a new project",
-      preview: { title: "Create the project “Pricing page”", input: JSON.stringify(shown, null, 2), server: "fleetd", tool: "project_propose", action: "write" },
+      summary: "Proposes a new bot",
+      preview: { title: "Create the bot “Pricing page”", input: JSON.stringify(shown, null, 2), server: "fleetd", tool: "project_propose", action: "write" },
     },
   });
   const shown = { machineId: "devbox", path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
 
   it("shows all that approving it makes on the card's face, and its input under Details", () => {
     const view = approvalView(card(shown), "storefront");
-    expect(view.title).toBe("storefront wants to create the project “Pricing page”");
+    expect(view.title).toBe("storefront wants to create the bot “Pricing page”");
     expect(view.risk).toBeUndefined();
     expect(view.fields.filter((f) => f.more !== true)).toEqual([
       { label: "Repo", value: "acme/pricing-page", mono: true },
       { label: "Folder", value: "/home/dev/src/pricing-page", mono: true },
       { label: "On", value: "devbox" },
-      { label: "Asked", value: "mcp__fleetd__project_propose: Proposes a new project", lines: true },
+      { label: "Asked", value: "mcp__fleetd__project_propose: Proposes a new bot", lines: true },
     ]);
     expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input"]);
   });
 
-  it("says a project with no repo has none", () => {
+  it("says a bot with no repo has none", () => {
     const view = approvalView(card({ ...shown, repo: null, path: "/home/dev/fleetd/projects/pricing-page" }), "storefront");
     expect(view.fields.slice(0, 3).map((f) => [f.label, f.value])).toEqual([
       ["Repo", "None"],

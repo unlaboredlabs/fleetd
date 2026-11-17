@@ -51,7 +51,7 @@ export function sessionContext(hub: Hub, caller: LeadCaller, sessionId: unknown)
   if (typeof sessionId !== "string" || !/^B[0-9a-f]{32}$/.test(sessionId)) throw new ToolError("invalid", "sessionId: expected a browser session id");
   const s = browserSession(hub, sessionId);
   if (!s || !sameProject(s.projectRef, caller.projectRef)) {
-    throw new ToolError("not_found", `No browser session ${sessionId} of this project.`, "Fill only in a session this agent opened.");
+    throw new ToolError("not_found", `No browser session ${sessionId} of this bot.`, "Fill only in a session this agent opened.");
   }
   if (s.state !== "live") throw new ToolError("forbidden", `The browser session ${sessionId} has ended.`, "Open a new one.");
   const host = runsOn(hub, s);
@@ -211,7 +211,7 @@ export class Fills {
     const entry = Number.isInteger(n) ? v.audit.get(n) : undefined;
     const r = caller.projectRef;
     if (!entry || entry.machineId !== r.machineId || entry.projectId !== r.projectId || (entry.action !== "fill" && entry.action !== "purchase")) {
-      throw new ToolError("not_found", `No fill ${String(call.auditId)} of this project.`);
+      throw new ToolError("not_found", `No fill ${String(call.auditId)} of this bot.`);
     }
     if (caller.via !== undefined && entry.data.host !== caller.via) throw new ToolError("forbidden", "Only the machine that filled reports the fill.");
     const ok = call.ok === true;

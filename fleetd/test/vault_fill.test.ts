@@ -73,7 +73,7 @@ test("a login fills on its site and subdomains, sealed to the hosting node; vaul
   for (const r of rows) expect(r.data).not.toContain("planted-pw-77");
 });
 
-test("refused: off its site, over http, a card, an unknown session, another project's session, another machine", async () => {
+test("refused: off its site, over http, a card, an unknown session, another bot's session, another machine", async () => {
   await shopLogin();
   await save({ kind: "card", label: "Visa", sealed: k.sealToHub({ number: "4242424242424242" }) });
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example.evil.test/" }))).code).toBe("forbidden");
@@ -91,7 +91,7 @@ test("refused: off its site, over http, a card, an unknown session, another proj
   expect(lines.filter((t) => t.startsWith("An agent tried to fill")).length).toBe(1);
 });
 
-test("a team login fills in every project's sessions, whoever added it; an item set aside fills nowhere", async () => {
+test("a team login fills in every bot's sessions, whoever added it; an item set aside fills nowhere", async () => {
   const id = await save({ kind: "login", label: "Bo's mail", sites: ["mail.example"], sealed: k.sealToHub({ password: "bo-pw" }) }, k.memberDevice);
   expect((await fill({ item: "Bo's mail", field: "password", page: "https://mail.example/" })).itemId).toBe(id);
   const S2 = "B0123456789abcdef0123456789abcd02";
@@ -133,7 +133,7 @@ test("an op:// reference fills the item imported from it; one not imported says 
   expect((await fill({ ref: "op://Fleet/Shop/password", field: "password", page: "https://shop.example/" })).label).toBe("Shop");
 });
 
-test("30 fills an hour per item per project, then refused until the hour has passed", async () => {
+test("30 fills an hour per item per bot, then refused until the hour has passed", async () => {
   await shopLogin();
   for (let i = 0; i < 30; i++) await fill({ item: "Shop", field: "username", page: "https://shop.example/" });
   expect((await refused(fill({ item: "Shop", field: "username", page: "https://shop.example/" }))).reason).toBe("vault_rate_limited");

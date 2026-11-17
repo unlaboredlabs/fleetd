@@ -60,7 +60,7 @@ const TITLES = [
   "Checkout keeps the cart across sign-in",
   "Nightly export resumes after a crash",
   "Retry webhooks with backoff",
-  "Quick start opens a project's chat",
+  "Quick start opens a bot's chat",
   "Drop the legacy coupon table",
   "Price badges read the locale",
   "Orders page loads in one query",

@@ -3,7 +3,7 @@ import { botStateOf, type BotIn } from "./bot";
 
 const of = (b: Partial<BotIn>) => botStateOf({ needs: false, blocked: false, running: 0, doing: undefined, done: false, ...b });
 
-describe("a project's bot", () => {
+describe("a bot's state", () => {
   it("shows what matters most: you, a block, work, thinking, a new reply, else idle", () => {
     expect(of({})).toBe("idle");
     expect(of({ done: true })).toBe("done");

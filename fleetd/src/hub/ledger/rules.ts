@@ -133,7 +133,7 @@ export const NO_MATCH = "No active decision matches; record one with decisions_r
 /** decisions_record's `next`. */
 export function recordedNext(decision: Decision): string {
   const supersedes = decision.supersedes ? ` and supersedes ${decision.supersedes}` : "";
-  return `${decision.decisionId} is active${supersedes}. Leads use it instead of asking; a project's lead is woken with it.`;
+  return `${decision.decisionId} is active${supersedes}. Leads use it instead of asking; a bot's lead is woken with it.`;
 }
 
 /** An overturn of a decision no longer active. */

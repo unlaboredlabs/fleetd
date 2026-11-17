@@ -20,7 +20,7 @@ const AT = "2026-10-27T09:00:00.000Z";
 const home = (f: Fixture): { machineId: string; projectId: string } => {
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const first = projects[0];
-  if (first === undefined) throw new Error("integrations fixtures: the base has no project");
+  if (first === undefined) throw new Error("integrations fixtures: the base has no bot");
   first["title"] = "Home";
   delete first["repos"];
   const ref = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };
@@ -122,7 +122,7 @@ const signin = (base: Fixture): Fixture => {
   const f = Fixture.from(
     base,
     "integrations-signin",
-    "A project's servers that sign in with OAuth: mail signed in, calendar signed out by its service with Reconnect, and notes being added, which asks for sign-in.",
+    "A bot's servers that sign in with OAuth: mail signed in, calendar signed out by its service with Reconnect, and notes being added, which asks for sign-in.",
   );
   const ref = home(f);
   const scope = { kind: "project", ...ref };
@@ -190,7 +190,7 @@ const paperConnected = (base: Fixture): Fixture => {
 };
 
 const approvals = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-approvals", "A project's approvals with the checker on, and four actions that ran without asking.");
+  const f = Fixture.from(base, "integrations-approvals", "A bot's approvals with the checker on, and four actions that ran without asking.");
   const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
   f.answer(PROJECT_TOOLS.approvals, ref, { approvals: CHECKER, log: LOG });
@@ -198,7 +198,7 @@ const approvals = (base: Fixture): Fixture => {
 };
 
 const approvalsLong = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-approvals-long", "A busy YOLO project's approvals: 400 actions ran without asking, read in pages.");
+  const f = Fixture.from(base, "integrations-approvals-long", "A busy YOLO bot's approvals: 400 actions ran without asking, read in pages.");
   const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
   for (const [input, output] of longLogPages()) f.answer(PROJECT_TOOLS.approvals, { ...ref, ...input }, { approvals: { ...CHECKER, mode: "yolo" }, ...output });

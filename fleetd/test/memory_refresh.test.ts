@@ -123,7 +123,7 @@ test("a node that can't hold the session to its memory tools gets no refresh, an
   expect(skipped()).toBe(2);
 });
 
-test("a quiet project gets no refresh and no line", async () => {
+test("a quiet bot gets no refresh and no line", async () => {
   const { hub, node } = setup();
   // A line of fleetd's own is not activity.
   chat(hub).systemLine(PROJECT, "PR #4 merged");
@@ -133,7 +133,7 @@ test("a quiet project gets no refresh and no line", async () => {
   expect(job(hub, PROJECT).lastRun?.state).toBe("skipped");
 });
 
-test("an active project gets one session that reads its chat, memory and decisions, and opens no order", async () => {
+test("an active bot gets one session that reads its chat, memory and decisions, and opens no order", async () => {
   const { hub, clock, node } = setup();
   Memory.of(hub).set(projectTarget(PROJECT), "- Deploys freeze on Fridays.\n");
   say(hub, "human", "The Friday freeze is over since the launch.");
@@ -228,7 +228,7 @@ test("the row lists its hour, next night and last run; Run now is held by the ni
   expect(node.launches[0]!.clientRequestId).toBe(`fleetd-memory:${PROJECT.machineId}/${PROJECT.projectId}:${clock.ms}`);
   expect(job(hub, PROJECT).lastRun).toMatchObject({ trigger: "manual", state: "running" });
   expect(await runNow(hub, PROJECT)).toBe("A refresh is already running.");
-  expect(await runNow(hub, { ...PROJECT, projectId: "gone" })).toBe(`There is no project ${PROJECT.machineId}/gone.`);
+  expect(await runNow(hub, { ...PROJECT, projectId: "gone" })).toBe(`There is no bot ${PROJECT.machineId}/gone.`);
 
   // The tool answers with the row, and why when nothing started.
   const tools = new Map<string, (hub: Hub, c: unknown, input: unknown) => unknown>();
@@ -376,7 +376,7 @@ test("an answer that isn't entries adds nothing; a failed turn says so", async (
   expect(mine()).toBe("");
 });
 
-test("it runs in any live project of the hub, another person's former Only me one too; with none it is refused", async () => {
+test("it runs in any live bot of the hub, another person's former Only me one too; with none it is refused", async () => {
   const { hub, imported } = importSetup(() => '{"entries":[]}');
   hub.db.conn.query("UPDATE project_settings SET only_me = 1, owner_person = 'pe_someone1'").run();
   const out = await imported("stuff");
@@ -387,7 +387,7 @@ test("it runs in any live project of the hub, another person's former Only me on
     () => undefined,
     (e: ToolError) => e,
   );
-  expect(refused).toMatchObject({ code: "invalid", reason: "no_project", fix: "Add a project first, then import again." });
+  expect(refused).toMatchObject({ code: "invalid", reason: "no_project", fix: "Add a bot first, then import again." });
   expect(refused?.message).toContain("Everyone on this hub can read what it writes.");
 });
 
@@ -415,7 +415,7 @@ test("by default the refresh launches through the executor, and the import runs 
   expect(last.why).not.toContain("not ported");
 });
 
-test("automation_list carries the refresh's row for a project the hub knows", async () => {
+test("automation_list carries the refresh's row for a bot the hub knows", async () => {
   const { hub } = setup();
   const tools = new Map<string, (hub: Hub, c: unknown, input: unknown) => unknown>();
   registerAutomationTools({ add: (n: string, h: never) => tools.set(n, h) } as unknown as Registry);

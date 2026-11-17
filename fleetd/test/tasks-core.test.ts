@@ -56,10 +56,10 @@ test("a spawn is refused for a closed order, an unknown profile, and past the fa
     return "spawned";
   };
   expect(await refusal(k.t.spawn(k.lead, { workstreamId: "W9", title: "x", kind: "read", prompt: "x" }))).toBe(
-    "not_found: No workstream W9 in this project.",
+    "not_found: No workstream W9 in this bot.",
   );
   expect(await refusal(k.spawn("x", "read", { profile: "max" }))).toBe(
-    "invalid: Not spawned: this project doesn't allow profile max; it allows high, medium.",
+    "invalid: Not spawned: this bot doesn't allow profile max; it allows high, medium.",
   );
   k.hub.db.conn.query("UPDATE workstreams SET data = json_set(data, '$.state', 'done') WHERE n = 1").run();
   expect(await refusal(k.spawn("x"))).toBe("invalid: Workstream W1 is done; tasks run only for open workstreams.");
@@ -109,7 +109,7 @@ test("a run that completes ends the task done, wakes its lead, and finds its bra
   k.hub.shutdown.abort();
 });
 
-test("an unread host falls back to a PR on the project's own remote in the report, never another repo's", async () => {
+test("an unread host falls back to a PR on the bot's own remote in the report, never another repo's", async () => {
   const k = tasksKit();
   k.ports.branchPrAnswer = async () => {
     throw { kind: "unread", why: "502" };
@@ -214,7 +214,7 @@ test("a cancel the node can't carry out keeps the task and its slot", async () =
   expect(k.t.get("T1")?.state).toBe("running");
 });
 
-test("past the project's max agents a task queues for a slot, and starts when one frees", async () => {
+test("past the bot's max agents a task queues for a slot, and starts when one frees", async () => {
   const k = tasksKit();
   void k.t.run();
   slots(k.hub).setCap({ maxAgents: { projectRef: P, maxAgents: 1 } });
@@ -268,7 +268,7 @@ test("ask_lead, brief_read and wait_ci answer a task's own agent; the lead calls
   expect(leadCalls(k.hub).handler("wait_ci")).toBeDefined();
 });
 
-test("wait_ci takes only a run or PR of the task's project, and a finished one wakes the task", async () => {
+test("wait_ci takes only a run or PR of the task's bot, and a finished one wakes the task", async () => {
   const k = tasksKit();
   void k.t.run();
   await k.spawn("CI", "read");
@@ -277,7 +277,7 @@ test("wait_ci takes only a run or PR of the task's project, and a finished one w
     .run();
   const task = { projectRef: P, by: "lead:lab-a/p1", agent: { kind: "task" as const, taskId: "T1" } };
   await expect(Promise.resolve().then(() => leadCall(k.hub, k.t, task, { op: "wait_ci", url: "https://github.com/other/repo/actions/runs/5" }))).rejects.toThrow(
-    "other/repo is not one of this project's repos.",
+    "other/repo is not one of this bot's repos.",
   );
   const ok = await leadCall(k.hub, k.t, task, { op: "wait_ci", url: "https://github.com/acme/shop/actions/runs/42/job/7" });
   expect(ok.url).toBe("https://github.com/acme/shop/actions/runs/42");

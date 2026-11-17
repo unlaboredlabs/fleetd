@@ -173,7 +173,7 @@ systemctl --user restart fleetd-node.service    # a node, on that machine
 
 ## Work is stuck {#stuck}
 
-Ask the lead in the chat what it is waiting on. `fleetd status` with the project shows its state, why it is blocked
+Ask the lead in the chat what it is waiting on. `fleetd status` with the bot shows its state, why it is blocked
 and why its bar last fell:
 
 ```sh
@@ -188,7 +188,7 @@ fleetd status storefront
 | The lead's turn ended with no reply, and its thread says it stalled | The turn made no progress for 10 minutes (20 inside a tool that states no timeout), so fleetd interrupted it. | Nothing at first: the lead carries on once by itself. If that turn ends the same way, it waits for your next message or the next event. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
-Then check the logs (above) for the hub and the project's worker.
+Then check the logs (above) for the hub and the bot's worker.
 
 ### An agent was slow to start {#slow-start}
 

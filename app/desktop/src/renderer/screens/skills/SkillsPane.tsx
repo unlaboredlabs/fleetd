@@ -47,7 +47,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
     return (
       <div className={s.screen} data-screen="skill.gone">
         <div className={s.empty}>
-          <EmptyState title={`No skill called ${name}`}>It was deleted, or it was never this project’s.</EmptyState>
+          <EmptyState title={`No skill called ${name}`}>It was deleted, or it was never this bot’s.</EmptyState>
         </div>
       </div>
     );
@@ -119,7 +119,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
             </div>
             {!own ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>
-                {listed.origin === "global" ? "Every project gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this project’s folder: change it there."}
+                {listed.origin === "global" ? "Every bot gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this bot’s folder: change it there."}
               </Text>
             ) : listed.install ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>

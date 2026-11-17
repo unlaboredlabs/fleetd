@@ -16,13 +16,13 @@ device paired before belongs to them, and the lead's prompts don't change.
 |---|---|
 | Owner | Everything an admin may, and make, unmake or remove owners. A hub always keeps at least one owner. |
 | Admin | Invite people, change roles (never an owner's), remove people (never an owner), and change hub-wide settings. |
-| Member | Work in every project: chat with leads, approve commands, enter secrets, tick the checklist. |
+| Member | Work in every bot: chat with leads, approve commands, enter secrets, tick the checklist. |
 
 A device never holds more than its person's role allows. A member's device operates on every machine, even one
 paired with `admin`. Each device keeps its own cap too: a device paired `--role read` stays read-only. Admin options
 live on the Hub pages of the app's Settings, which only owners and admins see.
 
-Every project is open to everyone on the hub ([Who sees a project](/docs/projects#who-sees)). Per-project roles come
+Every bot is open to everyone on the hub ([Who sees a bot](/docs/projects#who-sees)). Per-project roles come
 later.
 
 ## Invite someone {#invite}
@@ -66,7 +66,7 @@ the desktop app: **Sign out** on its row, then confirm, and its key stops workin
 [hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out
 anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
 once: an app it has open is disconnected, and its phone gets no more notifications. What a removed person did keeps their name, and
-their projects stay as they are, open to everyone on the hub.
+their bots stay as they are, open to everyone on the hub.
 
 ## Claude accounts {#claude}
 
@@ -76,7 +76,7 @@ configuration**. They can switch at any time.
 | Work | Runs on |
 |---|---|
 | An order's agents (writers, readers, reviewers) | The choice of the person who started the order |
-| A project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
+| A bot's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
 | Work nobody started (automations, train fixes, the nightly memory refresh) | The same as the lead |
 
 - **The hub's API configuration** is a Claude API key and an optional custom endpoint (`ANTHROPIC_BASE_URL`). An
@@ -115,8 +115,8 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
 **Settings › You › Vault** is the hub's one team vault ([Vault](/docs/vault)): every login, card and address, listed for
-everyone and filled by every project's agents. Anyone adds one; its creator or an owner or admin shows, changes or
-deletes it. A person removed from the hub leaves theirs behind for admins to manage. Variables are each project's. The
+everyone and filled by every bot's agents. Anyone adds one; its creator or an owner or admin shows, changes or
+deletes it. A person removed from the hub leaves theirs behind for admins to manage. Variables are each bot's. The
 only items that are a person's alone are those the [upgrade to one team vault](/docs/vault#team-vault) set aside on a
 hub with several people: nobody else lists them, admins included, and they go with their person when removed.
 

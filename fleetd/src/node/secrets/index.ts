@@ -101,7 +101,7 @@ export function deliverSecret(frame: SecretDeliver, ctx: SecretsContext): Secret
   if (sink.machineId !== ctx.machineId) return fail(`the sink is on ${sink.machineId}, not on ${ctx.machineId}`);
   const notSealed = `the value was not sealed to ${ctx.machineId}'s current box key: seal it to the machine's boxPubKey again`;
   if (sink.kind === "order") {
-    if (!frame.projectId) return fail(`the hub named no project for order ${sink.path}`);
+    if (!frame.projectId) return fail(`the hub named no bot for order ${sink.path}`);
     const name = frame.envName ?? secretEnvName(frame.secretKey);
     if (!name) return fail(`${frame.secretKey} names no valid variable: ask again with --env-name`);
     const plain = ctx.boxKey.open(Buffer.from(frame.sealed, "base64"));

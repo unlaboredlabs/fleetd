@@ -492,7 +492,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {made !== undefined ? "New project" : preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
+          {made !== undefined ? "New bot" : preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
         </Text>
         {warning === undefined ? null : (
           <Text size="xs" tone={warning.tone} strong>
@@ -511,7 +511,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             : made !== undefined
               ? (
                   <>
-                    {marks(`${who} wants to create the project “`)}
+                    {marks(`${who} wants to create the bot “`)}
                     <Exact text={made.title} />”
                   </>
                 )

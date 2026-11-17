@@ -156,7 +156,7 @@ function lab(serve: ServeStatus = async () => undefined) {
 const scope = { kind: "project", machineId: "lab", projectId: "p1" } as const;
 const sealedFor = (value: string) => Buffer.from(seal(publicKeyOf(NODE_SECRET), new TextEncoder().encode(value))).toString("base64");
 
-test("a project's server keeps only its secrets' fingerprints, and its sessions get them by name", async () => {
+test("a bot's server keeps only its secrets' fingerprints, and its sessions get them by name", async () => {
   const { hub, link, call, person } = lab();
   const agent = { ...person, kind: undefined } as Caller;
   const input = {

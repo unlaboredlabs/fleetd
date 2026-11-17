@@ -53,7 +53,7 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
         <div className={s.toolbar}>
           <Back project={project} />
         </div>
-        <PanelEmpty title="This project isn’t on the hub" />
+        <PanelEmpty title="This bot isn’t on the hub" />
       </div>
     );
   }

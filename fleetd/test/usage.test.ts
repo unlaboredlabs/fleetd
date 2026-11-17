@@ -564,7 +564,7 @@ describe("the hub's tools and lead call", () => {
     } as never;
     const call = (machineId?: string) =>
       leadCalls(hub).handler("usage_resume")!(caller, { op: "usage_resume", ...(machineId ? { machineId } : {}) } as never);
-    await expect(call("other")).rejects.toThrow("A lead resumes only the machine its project runs on (devbox), not other.");
+    await expect(call("other")).rejects.toThrow("A lead resumes only the machine its bot runs on (devbox), not other.");
     const first = (await call()) as Record<string, unknown>;
     expect(first).toMatchObject({ machineId: "devbox", resumed: 0, breakerCleared: true });
     clock.ms += LEAD_RESUME_EVERY_MS - 1;

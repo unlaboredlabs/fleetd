@@ -99,7 +99,7 @@ export function steerReceipt(s: Steer): SteerReceipt {
 export function steerFailed(code: string): string {
   switch (code) {
     case "forbidden":
-      return "This computer’s key can’t steer this project’s agents.";
+      return "This computer’s key can’t steer this bot’s agents.";
     case "offline":
     case "disconnected":
       return "Not connected to the hub, so it wasn’t sent.";

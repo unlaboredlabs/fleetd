@@ -57,7 +57,7 @@ describe("the box", () => {
 
 describe("a stop that didn't stop", () => {
   it("says why in one plain sentence, never the hub's words", () => {
-    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop this project’s work.");
+    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop this bot’s work.");
     expect(stopFailed("offline")).toMatch(/^Not connected/);
     expect(stopFailed("disconnected")).toBe(stopFailed("offline"));
     expect(stopFailed("timeout")).toMatch(/may still be working/);
@@ -102,10 +102,10 @@ describe("receipts", () => {
   });
 });
 
-describe("a project's draft", () => {
+describe("a bot's draft", () => {
   const layer = (answer: () => Promise<unknown>) => ({ call: vi.fn(answer) as unknown as DataLayer["call"] });
 
-  it("keeps its words per project, and drops an emptied draft", () => {
+  it("keeps its words per bot, and drops an emptied draft", () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
     d.set("devbox/api", (x) => ({ ...x, text: "half a thought" }));
     d.set("devbox/web", (x) => ({ ...x, text: "other" }));
@@ -198,7 +198,7 @@ describe("a draft after quitting", () => {
     };
   };
 
-  it("keeps each project's words, once typing pauses, and brings them back on the next start", () => {
+  it("keeps each bot's words, once typing pauses, and brings them back on the next start", () => {
     vi.useFakeTimers();
     const storage = memory();
     const d = createDrafts(layer);

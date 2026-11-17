@@ -15,7 +15,7 @@ const entry = (state: PurchaseLogEntry["state"]): PurchaseLogEntry => ({
   },
 });
 
-describe("a project's payments", () => {
+describe("a bot's payments", () => {
   it("offers the person's cards, the one picked even if no longer listed, and no card", () => {
     const cards = [{ ref: "op://Shared/Amex", title: "Amex", vault: "Shared" }];
     expect(cardOptions(cards, "op://Personal/Visa").map((o) => o.label)).toEqual(["Visa (Personal)", "Amex (Shared)", "No card"]);

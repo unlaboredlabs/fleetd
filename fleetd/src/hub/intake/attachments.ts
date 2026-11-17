@@ -422,7 +422,7 @@ export async function get(hub: Hub, caller: Caller, input: AttachmentGetInput): 
   const project = input.projectRef;
   if (!allows(caller, "read", project.machineId)) throw forbidden("read", project.machineId);
   const id = input.attachmentId;
-  const gone = () => new ToolError("not_found", `No attachment ${id} in this project.`, "Unused uploads expire after 24 h; attach the file again.");
+  const gone = () => new ToolError("not_found", `No attachment ${id} in this bot.`, "Unused uploads expire after 24 h; attach the file again.");
   const r = row(hub, id);
   if (!r) throw gone();
   if (r.by !== caller.keyId && !inProject(hub, numberOf(id), project)) throw gone();

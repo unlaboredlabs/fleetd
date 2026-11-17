@@ -6,7 +6,7 @@ const href = (pr: PrKey) => `#/prs/${pr.repo ?? "-"}/${String(pr.number)}`;
 const linked = (md: string) => prLinks(machineCode(md), href);
 
 describe("PR mentions in chat text", () => {
-  it("link #N and PR #N to the project's PR", () => {
+  it("link #N and PR #N to the bot's PR", () => {
     expect(linked("Opened #9 for it.")).toBe("Opened [#9](#/prs/-/9) for it.");
     expect(linked("PR #221 is up (and #222).")).toBe("[PR #221](#/prs/-/221) is up (and [#222](#/prs/-/222)).");
   });

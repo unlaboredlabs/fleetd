@@ -53,7 +53,7 @@ describe("a task profile's draft", () => {
   });
 });
 
-describe("a project's allowed profiles", () => {
+describe("a bot's allowed profiles", () => {
   it("leave the default out of project_set and keep the rest sorted", () => {
     expect(allowedAfter(["high", "medium"], "high", "quick", true)).toEqual(["medium", "quick"]);
     expect(allowedAfter(["high", "medium", "quick"], "high", "medium", false)).toEqual(["quick"]);

@@ -419,7 +419,7 @@ describe("Session", () => {
     expect(hub.links.length).toBe(1);
   });
 
-  it("shows a project's new name once the hub says it was renamed, without a restart", () => {
+  it("shows a bot's new name once the hub says it was renamed, without a restart", () => {
     const { hub, session } = setup();
     const before = hub.sentOf("snapshot").length;
     hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
@@ -720,7 +720,7 @@ describe("a chat's screens", () => {
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
     // Another person's project's screen: refused, and nothing changes here.
     const refused = session.control(live("human").sessionId, "agent");
-    hub.fail("browser_control", "forbidden", "inbox on m1 is another person's project: only its owner uses and manages it.");
+    hub.fail("browser_control", "forbidden", "inbox on m1 is another person's bot: only its owner uses and manages it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
   });

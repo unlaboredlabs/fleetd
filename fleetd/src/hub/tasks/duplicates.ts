@@ -30,7 +30,7 @@ function holder(item: WorkItem): string {
     const who = owner.kind === "human_session" ? "a person's session" : owner.kind === "agent_key" ? "an agent key" : "a lead";
     return owner.label !== undefined ? `${who}, ${owner.label}` : who;
   }
-  return item.projectRef ? `project ${item.projectRef.projectId}` : "outside fleetd";
+  return item.projectRef ? `bot ${item.projectRef.projectId}` : "outside fleetd";
 }
 
 /** `T12 "dark mode toggle" (running, project shop): same item P5`; a writer whose node didn't say is "changes unknown". */

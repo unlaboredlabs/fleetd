@@ -287,7 +287,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     ) : filter === "unread" ? (
       <EmptyState icon="doneAll" title="All Caught Up" body="Nothing you haven't read." />
     ) : filter === "needsYou" ? (
-      <EmptyState icon="doneAll" title="All Caught Up" body="When a project asks before it acts, its chat shows up here." />
+      <EmptyState icon="doneAll" title="All Caught Up" body="When a bot asks before it acts, its chat shows up here." />
     ) : filter === "pinned" ? (
       <EmptyState icon="pin" title="No Pinned Chats" body="Swipe a chat right, or hold it, and pin it to keep it on top." />
     ) : filter === "archived" ? (
@@ -295,7 +295,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     ) : needsComputer(paired, state) ? (
       <ConnectComputer />
     ) : (
-      <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a project, and its chat shows up here." />
+      <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a bot, and its chat shows up here." />
     );
 
   return (

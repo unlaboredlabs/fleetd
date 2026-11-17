@@ -1,19 +1,19 @@
 ---
 title: MCP servers
-description: Give agents more tools, globally or per project, from a command on their machine or a service over HTTP.
+description: Give agents more tools, globally or per bot, from a command on their machine or a service over HTTP.
 ---
 
 You can give fleetd's agents more tools through MCP servers: a GitHub or database server, your docs search, an internal
-API. Configure them in the desktop app, for every project or for one, and pick which agents get each.
+API. Configure them in the desktop app, for every bot or for one, and pick which agents get each.
 
-A project has one list of its MCP servers, on its Project page under **MCP servers**. A server for its lead alone asks
+A bot has one list of its MCP servers, on its Bot page under **MCP servers**. A server for its lead alone asks
 before it writes ([Integrations](/docs/integrations)), and may sign you in with your account
 ([OAuth](/docs/integrations#sign-in)); one its agents get too runs every tool unasked, for the roles you pick.
 
 ## Add a server {#add}
 
-Global servers are in Settings › **Hub** › **Every project** › **Agents**, for the hub's owners and admins only:
-click **Add server**. A project's own are in Settings › the project › **Project** › **MCP servers**: click **Add an MCP
+Global servers are in Settings › **Hub** › **Every bot** › **Agents**, for the hub's owners and admins only:
+click **Add server**. A bot's own are in Settings › the bot › **Bot** › **MCP servers**: click **Add an MCP
 server** and turn on **Agents get it too**, then **Edit** it on its row to pick its roles. The editor has:
 
 | Field | Is |
@@ -21,14 +21,14 @@ server** and turn on **Agents get it too**, then **Edit** it on its row to pick 
 | Name | How agents see its tools: `mcp__<name>__<tool>`. Letters, digits, `_` and `-`. `fleetd` is taken by fleetd's own tools. |
 | How agents reach it | **Command**: a program each agent's claude starts on its machine, speaking MCP over stdin and stdout, with its arguments one per line and its environment. **HTTP** (MCP's streamable HTTP) or **SSE** (its older event-stream transport): a URL, with headers. |
 | Environment or headers | Each value plain or secret. See [Secrets](#secrets). |
-| Agents get it too | Off: only each project's lead gets it. On: its writers and reviewers get it as well, and none of its tools asks you, since an agent can't stop to ask. A thread you start yourself gets none. A server saved for some kinds of agent before this switch is on. |
+| Agents get it too | Off: only each bot's lead gets it. On: its writers and reviewers get it as well, and none of its tools asks you, since an agent can't stop to ask. A thread you start yourself gets none. A server saved for some kinds of agent before this switch is on. |
 | On | Off keeps it saved but gives it to no one. |
 
-A project's server replaces a global one of the same name in that project, for every role, even while the project's
-is off: that's how to turn a global server off for one project.
+A bot's server replaces a global one of the same name in that bot, for every role, even while the bot's
+is off: that's how to turn a global server off for one bot.
 
 A command server starts in the agent's working directory with the agent's environment, the
-[project's variables](/docs/projects#env) included, plus its own environment.
+[bot's variables](/docs/projects#env) included, plus its own environment.
 
 ## When a change takes effect {#takes-effect}
 
@@ -45,11 +45,11 @@ restart). Removing a server works the same way.
 ## Secrets {#secrets}
 
 Mark a value **Secret** for a token, a password or an `Authorization` header. It is sealed in the app to each machine's
-key, as a [project's secret variables](/docs/projects#env) are: a project server's to its machine, a global one's to
+key, as a [bot's secret variables](/docs/projects#env) are: a bot server's to its machine, a global one's to
 every machine. The hub passes the sealed values on to the nodes without storing or logging them, and keeps only each
 node's fingerprint of the value. The node keeps them in `~/.fleetd/node/mcp-secrets/` (mode `0600`) and puts them into
 the MCP config it writes for each agent's claude (also `0600`). If an agent prints one, the node masks it as
-`***<server>.<NAME>***` before the output leaves the machine, as it masks a project's secrets.
+`***<server>.<NAME>***` before the output leaves the machine, as it masks a bot's secrets.
 
 A secret is never shown again. Editing a server keeps a saved secret you leave blank; type a value to replace it.
 
@@ -61,7 +61,7 @@ that server. The list says which machines lack its secrets: save the server agai
 ## Test connection {#test}
 
 **Test connection** has the node start the server (or connect to it), with its secrets, exactly as an agent's claude
-would, and list its tools within 30 seconds. A project's server is tested on its machine in the project's checkout; a
+would, and list its tools within 30 seconds. A bot's server is tested on its machine in the bot's checkout; a
 global one on the first machine online. On failure it says why: a command that isn't on the machine's `PATH`, the
 command's error output (secrets masked), an HTTP status such as 401 when a header is wrong, or no answer in time. A
 server given no key that answers 401 and asks for OAuth sign-in says so; a signed-in server whose token it turns away
@@ -70,7 +70,7 @@ has the token renewed and is tested again.
 ## Your own MCP servers {#your-own}
 
 Agents also get the MCP servers of your own claude setup (`~/.claude.json`, a repo's `.mcp.json`), as before. Turn
-**Agents also get their own MCP servers** off in Settings › Hub › Every project › Agents to give them only fleetd's tools and the servers
+**Agents also get their own MCP servers** off in Settings › Hub › Every bot › Agents to give them only fleetd's tools and the servers
 configured here: claude then runs with `--strict-mcp-config`. fleetd's own tools (`report`, `ask_lead`, the lead's
 tools) are always there and can't be replaced.
 
@@ -78,5 +78,5 @@ tools) are always there and can't be replaced.
 
 `mcp_servers_get` lists the servers, `mcp_server_set` adds or replaces one (each secret sealed to each machine's
 `boxPubKey`), `mcp_server_remove` removes one, `mcp_settings_set` turns your own servers on or off, and
-`mcp_server_test` tests one, and `mcp_oauth_start` opens a project server's [sign-in](/docs/integrations#sign-in). All
+`mcp_server_test` tests one, and `mcp_oauth_start` opens a bot server's [sign-in](/docs/integrations#sign-in). All
 but `mcp_servers_get` take a human key.

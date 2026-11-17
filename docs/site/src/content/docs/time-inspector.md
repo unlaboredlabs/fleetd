@@ -44,7 +44,7 @@ stream on each machine and the hub's own events, with no extra model calls.
 |---|---|
 | Desktop app | Factory › Agent time in the sidebar, or Agent time in the command palette. See [The desktop app](/docs/desktop-app#time). |
 | Terminal, one piece of work | `fleetd time W41`, with its [workstream](/docs/glossary#workstream) id |
-| Terminal, one project | `fleetd time storefront` |
+| Terminal, one bot | `fleetd time storefront` |
 | Terminal, the whole fleet | `fleetd time` |
 
 | Option | Does |
@@ -55,7 +55,7 @@ stream on each machine and the hub's own events, with no extra model calls.
 See the [CLI reference](/docs/reference/cli#time).
 
 In the app, the filter bar picks the work: "All work" for totals, or one piece of work by its title. One piece of
-work shows "Start to finish" as its range, and "‹ Chat" goes back to the project's chat. The figures read "wall" for
+work shows "Start to finish" as its range, and "‹ Chat" goes back to the bot's chat. The figures read "wall" for
 one piece of work, "wall of all work" for the totals. Agents go by what they worked on (with "2nd" when two did the same work), their model and output tokens,
 and every time is in your own time zone.
 

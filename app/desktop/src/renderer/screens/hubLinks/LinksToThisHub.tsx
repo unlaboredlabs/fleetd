@@ -31,7 +31,7 @@ export function LinksToThisHub({ label = "Links to this hub" }: { label?: string
   // Day-grained lines, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
   const row = (control: ReactNode, body: ReactNode) => (
-    <SettingsRow reveal="hubs.links" title={label} hint="A link lets your project on another hub work here as you. Paste its key into that project’s Linked hubs." control={control}>
+    <SettingsRow reveal="hubs.links" title={label} hint="A link lets your bot on another hub work here as you. Paste its key into that bot’s Linked hubs." control={control}>
       {body}
     </SettingsRow>
   );
@@ -118,12 +118,12 @@ function MintForm({ onCancel, onMade }: { onCancel: () => void; onMade: (out: Hu
           What it reaches
         </Text>
         <RadioGroup value={limit} onValueChange={(v) => setLimit(v === "some" ? "some" : "all")} aria-labelledby="link-limit">
-          <Radio value="all" label="Every project you can reach" />
-          <Radio value="some" label="Only some projects" disabled={projects.length === 0} />
+          <Radio value="all" label="Every bot you can reach" />
+          <Radio value="some" label="Only some bots" disabled={projects.length === 0} />
         </RadioGroup>
       </div>
       {limit === "some" ? (
-        <div className={s.stack} role="group" aria-label="Projects it reaches">
+        <div className={s.stack} role="group" aria-label="Bots it reaches">
           {projects.map((p) => (
             <Checkbox key={projectKey(p)} label={p.title} checked={picked.includes(projectKey(p))} disabled={busy} onCheckedChange={(on) => toggle(projectKey(p), on === true)} />
           ))}
@@ -181,7 +181,7 @@ function MadeKey({ made }: { made: HubLinkMintOutput }) {
         </Field>
       ) : null}
       <Text size="xs" tone="quiet">
-        {`Shown only now. On ${made.link.label}, open your project’s settings, Linked hubs, and paste it${address === undefined ? ", with the address that hub reaches this one at" : ` with this hub’s address, ${address}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
+        {`Shown only now. On ${made.link.label}, open your bot’s settings, Linked hubs, and paste it${address === undefined ? ", with the address that hub reaches this one at" : ` with this hub’s address, ${address}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
       </Text>
       {copied === false ? (
         <Text size="xs" tone="danger">

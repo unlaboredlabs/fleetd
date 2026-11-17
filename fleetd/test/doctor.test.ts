@@ -56,16 +56,16 @@ const base = (error?: [WorktreeBase["error"] extends infer E ? (E extends { kind
   ...(forkBehind === undefined ? {} : { forkBehind }),
 });
 
-test("a project git can't fetch fails the check with the login fix", () => {
+test("a bot git can't fetch fails the check with the login fix", () => {
   const now = "2026-10-25T07:00:00Z";
   expect(c.gitFetch("mbp", [], now)).toBeUndefined();
   const fine = c.gitFetch("mbp", [["shop", base()], ["blog", base(["offline", "offline"])]], now)!;
   expect(fine.status).toBe("ok");
   expect(fine.message).toBe(
-    "At each project's last start on mbp: shop fetched its remote; blog was offline (from origin/main @abc1234 as of 06:00 UTC).",
+    "At each bot's last start on mbp: shop fetched its remote; blog was offline (from origin/main @abc1234 as of 06:00 UTC).",
   );
   const local = { ...base(["no_remote", "no remote"]), ref: "main" };
-  expect(c.gitFetch("mbp", [["notes", local]], now)!.message).toBe("At each project's last start on mbp: notes has no remote.");
+  expect(c.gitFetch("mbp", [["notes", local]], now)!.message).toBe("At each bot's last start on mbp: notes has no remote.");
   const gone = c.gitFetch("mbp", [["shop", base(["no_access", "ERROR: Repository not found."])]], now)!;
   expect(gone.status).toBe("warn");
   expect(gone.message.startsWith("git can't fetch origin for shop: ERROR: Repository not found. Fix: check the remote's URL")).toBe(true);

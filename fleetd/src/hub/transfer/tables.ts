@@ -135,7 +135,7 @@ export const CARRIED = [
  * it as it is, so the import runs that migration on its rows as the hub's own update would have.
  */
 export const RETIRED: Record<string, string> = {
-  vault_shares: "the projects a person's vault item was shared with: the one-team-vault migration makes those items the team's",
+  vault_shares: "the bots a person's vault item was shared with: the one-team-vault migration makes those items the team's",
 };
 
 /** The tables import fills by itself, each with how. */

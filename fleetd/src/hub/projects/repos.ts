@@ -86,13 +86,13 @@ export function otherCheckouts(hub: Hub, r: ProjectRef): ProjectRef[] {
     .filter((c) => !same(c, r) && c.machineId === r.machineId);
 }
 
-const ownDirectory = (path: string) => new ToolError("invalid", `${path} is the project's own directory.`, "Give another checkout");
+const ownDirectory = (path: string) => new ToolError("invalid", `${path} is the bot's own directory.`, "Give another checkout");
 
 /** The contracts' `checked!` rules on ProjectRepoAddInput, with their words. */
 function checkInput(input: ProjectRepoAddInput): void {
   const bad = (why: string) => new ToolError("invalid", why);
   if (input.path !== undefined && input.url !== undefined) throw bad("give path or url, not both");
-  if (input.path === undefined && input.url === undefined) throw bad("give path (a checkout on the project's machine) or url (a GitHub repository)");
+  if (input.path === undefined && input.url === undefined) throw bad("give path (a checkout on the bot's machine) or url (a GitHub repository)");
   if (input.path !== undefined && (input.dest !== undefined || input.useExisting !== undefined)) throw bad("dest and useExisting go with url only");
 }
 
@@ -131,7 +131,7 @@ export async function addTo(hub: Hub, input: ProjectRepoAddInput, hooks: AddHook
   if (input.name !== undefined && repos.byName(hub.db.conn, r, input.name)) {
     throw new ToolError(
       "invalid",
-      `The project already has a repo named ${input.name}.`,
+      `The bot already has a repo named ${input.name}.`,
       "Give another name, or leave it out for one made from the repo's",
     );
   }
@@ -179,8 +179,8 @@ export async function addTo(hub: Hub, input: ProjectRepoAddInput, hooks: AddHook
 
 function added(m: MachineId, repo: ProjectRepo, archived: ProjectRef | undefined): ProjectRepoAddOutput {
   const path = repo.path ?? "";
-  let next = `${repo.name} is a repo of the project now, at ${path} on ${m}.`;
-  if (archived) next += ` The project ${archived.projectId} it was is archived: its chat and history stay, its lead no longer runs.`;
+  let next = `${repo.name} is a repo of the bot now, at ${path} on ${m}.`;
+  if (archived) next += ` The bot ${archived.projectId} it was is archived: its chat and history stay, its lead no longer runs.`;
   return { path, repo, ...(archived ? { archived } : {}), next };
 }
 
@@ -211,12 +211,12 @@ export async function attachCheckout(
   if (existing !== undefined) {
     checkout = { machineId: m, projectId: existing };
     const mine = repos.of(hub.db.conn, r).find((repo) => same(repo.checkout, checkout));
-    if (mine) throw new ToolError("invalid", `${path} is already the project's repo ${mine.name}.`, "project_repo_list shows its repos");
+    if (mine) throw new ToolError("invalid", `${path} is already the bot's repo ${mine.name}.`, "project_repo_list shows its repos");
     if (repos.of(hub.db.conn, checkout).some((repo) => !same(repo.checkout, checkout))) {
       throw new ToolError(
         "invalid",
-        `${path} is a project that holds repos of its own.`,
-        "Remove its other repos first (project_repo_remove), or add those repos to this project instead",
+        `${path} is a bot that holds repos of its own.`,
+        "Remove its other repos first (project_repo_remove), or add those repos to this bot instead",
       );
     }
     // A project of its own until now (no project held it yet): it is archived, once nothing runs in it.
@@ -224,7 +224,7 @@ export async function attachCheckout(
       if (TaskRecords.live(hub.db.conn, checkout, 1).length > 0) {
         throw new ToolError(
           "invalid",
-          `${path} is the project ${checkout.projectId} and its agents still run.`,
+          `${path} is the bot ${checkout.projectId} and its agents still run.`,
           "Stop them first (project_stop, or the chat's Stop), then add it",
         );
       }
@@ -290,7 +290,7 @@ export async function removeFrom(hub: Hub, project: ProjectRef, name: RepoName):
   const [r] = known(hub, project, true);
   const repo = repoNamed(hub, r, name) as ProjectRepo;
   if (same(repo.checkout, r)) {
-    throw new ToolError("invalid", `${repo.name} is the project's own directory.`, "project_remove removes the project itself");
+    throw new ToolError("invalid", `${repo.name} is the bot's own directory.`, "project_remove removes the bot itself");
   }
   repos.detach(hub.db.conn, r, repo.name);
   // Keyed on `repos`: a stop before this ends them at the next start.
@@ -301,13 +301,13 @@ export async function removeFrom(hub: Hub, project: ProjectRef, name: RepoName):
     type: "project.settings",
     machineId: r.machineId,
     projectId: r.projectId,
-    summary: `${repo.name} removed from the project`,
+    summary: `${repo.name} removed from the bot`,
     data: { repoRemoved: repo.name },
   });
   const path = repo.path ?? repo.checkout.projectId;
   let next = `Its checkout stays at ${path} on ${repo.checkout.machineId}, files and all.`;
   if (repos.holders(hub.db.conn, repo.checkout).length === 0) {
-    next += " No project holds it now, so it shows as a project of its own again; project_remove forgets it (its files stay).";
+    next += " No bot holds it now, so it shows as a bot of its own again; project_remove forgets it (its files stay).";
   }
   return { removed: repo, cancelled, next };
 }

@@ -672,7 +672,7 @@ export class Train {
         case "never_ran": {
           const one = stall.names.length === 1;
           what =
-            `the check${one ? "" : "s"} ${stall.names.join(", ")} never ran, and every other check finished and passed ${min(NEVER_RAN_WAIT_MS)} min ago. The project's train ` +
+            `the check${one ? "" : "s"} ${stall.names.join(", ")} never ran, and every other check finished and passed ${min(NEVER_RAN_WAIT_MS)} min ago. The bot's train ` +
             `settings or the repo's .fleetd/train.json name ${one ? "it" : "them"}: if a job was renamed or removed, fix the name there`;
           break;
         }
@@ -1856,8 +1856,8 @@ export class Train {
     // Only a project with several repos is held to them.
     if (repos.length >= 2 && !repos.some(([r]) => r === repo)) {
       throw this.refuse(projectRef, prUrl, {
-        message: `${repo} is not one of this project's repos (${repos.map(([r]) => r).join(", ")}).`,
-        fix: "enqueue a PR of one of its repos, or have a person add the repo to the project",
+        message: `${repo} is not one of this bot's repos (${repos.map(([r]) => r).join(", ")}).`,
+        fix: "enqueue a PR of one of its repos, or have a person add the repo to the bot",
       });
     }
     const after = next.upstreams(input.after ?? []);
@@ -1871,7 +1871,7 @@ export class Train {
       }
       const task = input.taskId !== undefined ? this.host.task(input.taskId) : undefined;
       if (input.taskId !== undefined && !(task && sameRef(task.projectRef, projectRef))) {
-        throw err("not_found", `No task ${input.taskId} in this project.`, "Call `agents`.");
+        throw err("not_found", `No task ${input.taskId} in this bot.`, "Call `agents`.");
       }
       const releasePr = await this.enqueueLocks.of(`${repo}#${prNumber}`).lock();
       let held = true;
@@ -1880,7 +1880,7 @@ export class Train {
         if (existing0) {
           // Another project's Change is its lead's alone.
           if (!sameRef(existing0.projectRef, projectRef)) {
-            throw err("invalid", `${prUrl} is already on the merge train for another project.`, "leave it to that project's lead; enqueue a PR of your own project's work");
+            throw err("invalid", `${prUrl} is already on the merge train for another bot.`, "leave it to that bot's lead; enqueue a PR of your own bot's work");
           }
           if (HEAD_STATES.includes(existing0.state) && after.some((u) => !(existing0.after ?? []).includes(u))) {
             releasePr();
@@ -1912,7 +1912,7 @@ export class Train {
         }
         const ws = this.host.workstream(workstreamId);
         if (!ws || !sameRef(ws.projectRef, projectRef)) {
-          throw err("not_found", `No workstream ${workstreamId} in this project.`, "Use a workstream id from your digest.");
+          throw err("not_found", `No workstream ${workstreamId} in this bot.`, "Use a workstream id from your digest.");
         }
         if (!ws.hasBrief) {
           throw this.refuse(projectRef, prUrl, { message: `${workstreamId} has no brief yet.`, fix: `register its brief with \`brief\` for ${workstreamId} first` });

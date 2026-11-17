@@ -87,9 +87,9 @@ const click = (el: HTMLElement) =>
     await Promise.resolve();
   });
 
-it("says a project's own max is its own, and goes back to the default", async () => {
+it("says a bot's own max is its own, and goes back to the default", async () => {
   await render(storefront);
-  expect(host.textContent).toContain("Set for this project. The default is 12.");
+  expect(host.textContent).toContain("Set for this bot. The default is 12.");
   await click(button("Use the default"));
   expect(calls).toEqual([{ tool: "cap_set", input: { project: { projectRef: storefront, followDefault: true } } }]);
   expect(host.textContent).toContain("Max agents, the default: 12, was 6.");

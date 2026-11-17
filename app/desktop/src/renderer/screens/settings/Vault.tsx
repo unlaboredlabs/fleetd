@@ -226,7 +226,7 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
               <>
                 {item.kind === "env" ? (
                   <Button size="sm" variant="secondary" onClick={() => setPicking(item)}>
-                    Add to a project…
+                    Add to a bot…
                   </Button>
                 ) : (
                   <Button size="sm" variant="secondary" onClick={() => toTeam(item)}>
@@ -285,7 +285,7 @@ function ToProjectDialog({ item, onClose }: { item: VaultItemSummary; onClose: (
     <Dialog
       open
       onOpenChange={(o) => (o ? undefined : onClose())}
-      title={`Add ${titleOf(item)} to a project`}
+      title={`Add ${titleOf(item)} to a bot`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -299,16 +299,16 @@ function ToProjectDialog({ item, onClose }: { item: VaultItemSummary; onClose: (
     >
       {projects === undefined ? (
         <Text size="sm" tone="quiet">
-          Loading the projects…
+          Loading the bots…
         </Text>
       ) : projects.length === 0 ? (
         <Text size="sm" tone="quiet">
-          No projects yet.
+          No bots yet.
         </Text>
       ) : (
         <Select
-          aria-label="Project"
-          placeholder="Pick a project"
+          aria-label="Bot"
+          placeholder="Pick a bot"
           value={picked}
           options={projects.map((p) => ({ value: `${p.machineId}/${p.projectId}`, label: p.title }))}
           onValueChange={setPicked}
@@ -515,9 +515,9 @@ export function ProjectVault({ project }: { project: string | null }) {
       <div className={s.scroll} data-screen="settings.project-vault">
         <div className={s.column}>
           <PageHead title="Vault" />
-          <Text tone="quiet">No project yet.</Text>
+          <Text tone="quiet">No bot yet.</Text>
           <Button size="sm" onClick={() => navigate({ id: "projects.add" })}>
-            New project
+            New bot
           </Button>
         </div>
       </div>

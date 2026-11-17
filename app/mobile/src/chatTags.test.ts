@@ -55,7 +55,7 @@ const ids = (out: readonly ChatItem[]): string[] => out.map((x) => x.id);
 const none = { lens: undefined, sendAbout: new Map<string, string>() };
 
 describe("openOrdersOf", () => {
-  it("is the project's open orders, oldest first, with their phase line", () => {
+  it("is the bot's open orders, oldest first, with their phase line", () => {
     const orders = [
       card("W2", "Search speed", { createdAt: "2026-10-28T09:00:00Z", phaseDetail: "1 working" }),
       card("W1", "Apple Pay", { createdAt: "2026-10-28T08:00:00Z" }),

@@ -17,7 +17,7 @@ const event = (summary: string, attention: "loud" | "urgent" | null, at: Partial
 const needed = { stillNeeded: () => true };
 
 describe("Notifier", () => {
-  it("opens the project's chat at the message it is about", () => {
+  it("opens the bot's chat at the message it is about", () => {
     const n = new Notifier();
     n.push(event("storefront: 1. Buy the domain? I'd say yes.", "urgent", { project: storefront, messageId: "m-7" }));
     expect(n.due(T0, FALLBACK_POLICY, needed)).toEqual({
@@ -61,7 +61,7 @@ describe("Notifier", () => {
     expect(n.due(T0 + 60 * MIN, policy, needed)?.body).toBe("loud one");
   });
 
-  it("drops a project you answered meanwhile", () => {
+  it("drops a bot you answered meanwhile", () => {
     const n = new Notifier();
     n.push(event("Q4 opened: secret STRIPE_KEY", "loud", { type: "request.opened", project: storefront }));
     expect(n.due(T0, FALLBACK_POLICY, { stillNeeded: (p) => p.projectId !== "storefront" })).toBeNull();
@@ -84,7 +84,7 @@ describe("Notifier", () => {
     expect(n.due(T0, FALLBACK_POLICY, { ...needed, enabled: (k) => k !== "machine" })?.body).toBe("Q4 opened: secret STRIPE_KEY");
   });
 
-  it("names the project when it is about one, and folds the lead's wait into the item that caused it", () => {
+  it("names the bot when it is about one, and folds the lead's wait into the item that caused it", () => {
     const n = new Notifier();
     const waiting = attentionEvent({ seq: 5, type: "chat.waiting", summary: "The lead waits on you", data: { projectRef: storefront, needsYou: true } });
     if (waiting === null) throw new Error("chat.waiting with needsYou is for attention");
@@ -128,7 +128,7 @@ describe("policy", () => {
     expect(policyFrom({ quiet: [] })).toBeNull();
   });
 
-  it("reads the project and the message an event marked for attention is about", () => {
+  it("reads the bot and the message an event marked for attention is about", () => {
     expect(
       attentionEvent({ seq: 1, type: "chat.message", summary: "s", attention: "urgent", machineId: "devbox", projectId: "storefront", data: { messageId: "m-1" } }),
     ).toEqual({ type: "chat.message", summary: "s", attention: "urgent", project: storefront, messageId: "m-1" });

@@ -20,7 +20,7 @@ export const NO_PROJECT = "no_project";
 
 const needsProject = (e: unknown): e is CallError => e instanceof CallError && e.error.reason === NO_PROJECT;
 
-export const NO_PROJECT_TEXT = "Import memory runs in a project, and this hub has none yet.";
+export const NO_PROJECT_TEXT = "Import memory runs in a bot, and this hub has none yet.";
 
 /** The model turn can take a minute or two; the hub stops it at four. */
 const IMPORT_TIMEOUT_MS = 300_000;
@@ -132,7 +132,7 @@ export function ImportMemory() {
                 <>
                   {" "}
                   <Button variant="link" size="sm" onClick={() => openAddProject()}>
-                    Add a project
+                    Add a bot
                   </Button>
                   , then import again.
                 </>

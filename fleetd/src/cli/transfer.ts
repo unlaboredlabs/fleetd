@@ -198,7 +198,7 @@ export async function importCommand(argv: string[]): Promise<CliResult> {
       "~/Library/LaunchAgents/sh.fleetd.hub.plist). Then:",
       ...(done.machines.length > 0
         ? [
-            "  Machines aren't carried. Join each one again under its id, so its projects find it: run this on",
+            "  Machines aren't carried. Join each one again under its id, so its bots find it: run this on",
             "  the hub machine, then the command it prints on that machine (with --rejoin when this hub",
             "  answers at the old hub's address).",
             ...done.machines.map((m) => `    fleetd pair --worker ${m.machineId}${m.name && m.name !== m.machineId ? `    # ${m.name}` : ""}`),

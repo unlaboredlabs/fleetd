@@ -109,7 +109,7 @@ test("only an owner or admin changes profiles; create, rename, default, lead, de
   expect(s.chosen("fast-lane")).toEqual({ profile: "fast-lane", model: "claude-haiku-5-5", effort: "low", fast: false, helperModel: s.defaultProfile().model });
   expect(s.chosen("gone").profile).toBe("high");
   const deleted = await k.ok(own, "profile_delete", { id: made.profile.id });
-  expect(deleted.next).toBe("fast-lane is gone, and no project allows it any more. Leads ran on it, so they start on the default, high, again from their next start.");
+  expect(deleted.next).toBe("fast-lane is gone, and no bot allows it any more. Leads ran on it, so they start on the default, high, again from their next start.");
   expect(s.allowed(r)).toEqual(["high"]);
   const high = s.defaultProfile();
   expect(await k.refused(own, "profile_delete", { id: high.id })).toBe("invalid");
@@ -125,7 +125,7 @@ test("only an owner or admin changes profiles; create, rename, default, lead, de
   expect(s.byName("high")?.refused).toBeUndefined();
 });
 
-test("picking an icon forgets the picture and says so; a project with no picture has none to get", async () => {
+test("picking an icon forgets the picture and says so; a bot with no picture has none to get", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -142,7 +142,7 @@ test("picking an icon forgets the picture and says so; a project with no picture
   expect(await k.refused(key("operate"), "project_icon_set", { machineId: "devbox", projectId: "nope", icon: { face: "joy", color: "sun" } })).toBe("not_found");
 });
 
-test("a project's bot color: slate until picked, kept with the project, announced, and only from the palette", async () => {
+test("a bot's bot color: slate until picked, kept with the bot, announced, and only from the palette", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -164,7 +164,7 @@ test("a project's bot color: slate until picked, kept with the project, announce
   expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarColor: "blue" })).toBe("forbidden");
 });
 
-test("a project's settings: setup per repo, an older app's onlyMe ignored, and what env_set refuses", async () => {
+test("a bot's settings: setup per repo, an older app's onlyMe ignored, and what env_set refuses", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -189,7 +189,7 @@ test("a project's settings: setup per repo, an older app's onlyMe ignored, and w
   expect(setup.settings).not.toHaveProperty("memoryRefresh");
   expect(setup.settings.setup).toEqual({ commands: ["bun install"], inputs: [] });
   expect(k.hub.db.conn.query<{ setup: string }, []>("SELECT setup FROM project_settings").get()?.setup).toBe('{"commands":["bun install"],"inputs":[]}');
-  expect(setup.next).toBe("New tasks of the project use these settings. devbox's node is too old to run setup commands: update fleetd there.");
+  expect(setup.next).toBe("New tasks of the bot use these settings. devbox's node is too old to run setup commands: update fleetd there.");
   // Each repo has its own setup, none falling back to the project's; the project's own directory's is the project's.
   k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'app', 'devbox', 'app')");
   k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'web', 'devbox', 'web')");
@@ -227,7 +227,7 @@ test("a project's settings: setup per repo, an older app's onlyMe ignored, and w
   const fat = Array.from({ length: 9 }, (_, i) => ({ kind: "plain", name: `F${i}`, value: "x".repeat(60 * 1024) }));
   const res = await k.call(bo, "project_env_set", set(fat));
   expect("error" in res && res.error.kind === "tool" && res.error.error.message).toBe(
-    "A project's variables take at most 512 KiB together; these would take 540 KiB.",
+    "A bot's variables take at most 512 KiB together; these would take 540 KiB.",
   );
   expect(await k.refused(bo, "project_env_set", set([{ kind: "plain", name: "A", value: "1" }]))).toBe("machine_offline");
 });

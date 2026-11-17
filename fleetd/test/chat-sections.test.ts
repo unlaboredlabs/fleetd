@@ -177,7 +177,7 @@ test("a set announces chat.sections to that person's devices only", async () => 
   expect(ok(await tools.call(hub, ada, "events_wait", { cursor: 1, timeoutSec: 0 })).events).toEqual([]);
 });
 
-test("a deleted project leaves its section at the next read, and an archived one keeps its place", async () => {
+test("a deleted bot leaves its section at the next read, and an archived one keeps its place", async () => {
   const { hub, get, set, ada } = setup();
   ok(
     await set(ada, [

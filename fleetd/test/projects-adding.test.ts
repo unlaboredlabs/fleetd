@@ -3,7 +3,7 @@ import { aProject, BY_KEY, BY_PROJECT, BY_THREAD } from "../src/hub/project_lead
 import { archivedNote, namesFolder, problem, problemError, slugOr } from "../src/hub/projects/adding.ts";
 import { nameFor } from "../src/hub/repos/names.ts";
 
-test("a new project's folder and a repo's name come from its title or key, with a fallback when nothing is left", () => {
+test("a new bot's folder and a repo's name come from its title or key, with a fallback when nothing is left", () => {
   expect(slugOr("  My Shop!  v2 ", "inbox")).toBe("my-shop-v2");
   expect(slugOr("!!!", "inbox")).toBe("inbox");
   expect(slugOr("a".repeat(60), "inbox")).toHaveLength(40);
@@ -21,10 +21,10 @@ test("a node's refusal names the folder as given or as ~ expands; a problem beco
   expect(problemError(problem("dest_exists", "Taken", "Pick another")).code).toBe("invalid");
   expect(problemError(problem("machine_offline", "Off", "Start it")).code).toBe("machine_offline");
   const [message] = archivedNote({ machineId: "m", projectId: "p" }, { name: "web" } as never);
-  expect(message).toBe("This project is archived: its directory is repo web of project p on m.");
+  expect(message).toBe("This bot is archived: its directory is repo web of bot p on m.");
 });
 
-test("erasing a project never takes a hub-wide key as a project's, and each table is listed once", () => {
+test("erasing a bot never takes a hub-wide key as a bot's, and each table is listed once", () => {
   expect(() => aProject({ machineId: "", projectId: "p" })).toThrow("nothing was erased");
   expect(() => aProject({ machineId: "m", projectId: "p" })).not.toThrow();
   const all = [...BY_PROJECT, ...BY_THREAD, ...BY_KEY];

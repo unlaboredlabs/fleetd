@@ -41,7 +41,7 @@ function readableProject(hub: Hub, caller: Caller, r: ProjectRef | undefined): v
   if (!r) return;
   requireRole(caller, "read", r.machineId);
   if (!store(hub).projectGet(r)) {
-    throw new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, "project_get without a projectId lists them.");
+    throw new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, "project_get without a projectId lists them.");
   }
 }
 
@@ -66,7 +66,7 @@ function mayEdit(caller: Caller, scope: PromptScope, r: ProjectRef | undefined):
   throw new ToolError(
     "forbidden",
     "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
-    "Ask an owner or admin (Settings › Hub › Every project › Instructions), or edit this project's own text instead.",
+    "Ask an owner or admin (Settings › Hub › Every bot › Instructions), or edit this bot's own text instead.",
   );
 }
 

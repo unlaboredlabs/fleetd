@@ -29,7 +29,7 @@ export function Repos({ rows, projectTitle, projectHref }: ReposProps) {
     <section className={cx(s.section)} aria-labelledby="factory-repos">
       <div className={cx(s.sectionHead)}>
         <Text as="h2" strong id="factory-repos">
-          Projects
+          Bots
         </Text>
         <Text size="xs" tone="quiet">
           One row per repo: a repo checked out on two machines counts once.

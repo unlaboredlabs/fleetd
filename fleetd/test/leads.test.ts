@@ -5,7 +5,7 @@ import { store } from "../src/hub/store/hub_store.ts";
 import type { ThreadSummary } from "../src/shared/contracts.ts";
 import { PROJECT, testHub } from "./hub-helpers.ts";
 
-test("a lead's state is read off its thread; a removed project's lead is stopped", () => {
+test("a lead's state is read off its thread; a removed bot's lead is stopped", () => {
   const { hub, done } = testHub();
   const area = leads(hub);
   expect(area.get(PROJECT)).toBeUndefined();

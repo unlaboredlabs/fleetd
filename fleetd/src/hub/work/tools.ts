@@ -103,7 +103,7 @@ async function scopeFor(
   let warning: string | undefined;
   if (!repoBound(hub, repoKey)) {
     await bindUnbound(hub, caller, node);
-    if (!repoBound(hub, repoKey)) warning = `no project bound to ${repoKey} yet; agents' work may be missing`;
+    if (!repoBound(hub, repoKey)) warning = `no bot bound to ${repoKey} yet; agents' work may be missing`;
   }
   const chosen =
     base ?? (bound && bound.repoKey === repoKey ? bound.base : (basesOf(hub.db.conn, repoKey).find((b) => isLine(b, 250)) ?? DEFAULT_BASE));

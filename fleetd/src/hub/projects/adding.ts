@@ -50,7 +50,7 @@ export function progressDue(last: Last | undefined, phase: CloneProgressData["ph
 /** Why an archived project refuses, and the fix (repos/mod.rs `archived_note`). */
 export function archivedNote(holding: ProjectRef, repo: ProjectRepo): [string, string] {
   return [
-    `This project is archived: its directory is repo ${repo.name} of project ${holding.projectId} on ${holding.machineId}.`,
-    "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
+    `This bot is archived: its directory is repo ${repo.name} of bot ${holding.projectId} on ${holding.machineId}.`,
+    "Write to that bot's lead instead; project_repo_remove takes the repo out of it and brings this bot back.",
   ];
 }

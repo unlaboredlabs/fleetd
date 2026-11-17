@@ -63,7 +63,7 @@ export function openKey(hub: Hub, link: Kept): string {
     throw new ToolError(
       "failed",
       `This hub can't open the key of the link to ${link.label}.`,
-      "Remove the link in the project's Linked hubs and add it again.",
+      "Remove the link in the bot's Linked hubs and add it again.",
     );
   }
   return opened;
@@ -77,9 +77,9 @@ function open(hub: Hub, project: ProjectRef, label: string): { link: Kept; key: 
     const labels = all.map((k) => k.label);
     throw new ToolError(
       "not_found",
-      `This project has no linked hub called ${label}.`,
+      `This bot has no linked hub called ${label}.`,
       labels.length === 0
-        ? "It has no linked hubs: the person adds one in the project's settings, Linked hubs."
+        ? "It has no linked hubs: the person adds one in the bot's settings, Linked hubs."
         : `Its linked hubs: ${labels.join(", ")}.`,
     );
   }
@@ -159,7 +159,7 @@ export async function status(hub: Hub, project: ProjectRef, label: string, req: 
     });
   }
   delete out.hubs;
-  out.next = `Projects on ${link.label} this project reaches. project_message with hub "${link.label}" writes to one's lead.`;
+  out.next = `Bots on ${link.label} this bot reaches. project_message with hub "${link.label}" writes to one's lead.`;
   return out;
 }
 

@@ -62,7 +62,7 @@ test("team items: anyone adds one; its creator or an admin shows, changes or del
   expect((await refusal(save(k.ownerDevice, { kind: "env", scope: "hub", envName: "X", sealed: k.sealToHub({ value: "y" }) }))).code).toBe("invalid");
 });
 
-test("an older app adding a person's own or hub-level item, or a project's login, is refused saying to update; its reads work", async () => {
+test("an older app adding a person's own or hub-level item, or a bot's login, is refused saying to update; its reads work", async () => {
   for (const scope of ["person", "hub", "project"]) {
     const e = await refusal(save(k.memberDevice, { kind: "login", scope, ...PROJECT, label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) }));
     expect([e.code, e.reason, e.message]).toEqual(["invalid", "vault_update_app", "This app is older than the hub: update it to add vault items."]);
@@ -79,7 +79,7 @@ test("an older app adding a person's own or hub-level item, or a project's login
   expect((await k.call<{ item: Item }>(k.memberDevice, "vault_get", { itemId: team.itemId })).item.scope).toBe("hub");
 });
 
-test("an item set aside: only its owner lists it, nothing fills it, and they move it to the team vault or a project, or delete it", async () => {
+test("an item set aside: only its owner lists it, nothing fills it, and they move it to the team vault or a bot, or delete it", async () => {
   const login = k.v.store.insert(
     { kind: "login", scope: "person", personId: k.member.personId, label: "Bo's own", meta: { sites: ["shop.example"], fields: ["username", "password"], source: { kind: "typed" } } },
     LOGIN,
@@ -120,7 +120,7 @@ test("a card is checked (Luhn, expiry), its brand and last 4 derived; an edit me
   expect(await reveal(k.ownerDevice, card.itemId, ["number", "month", "year", "cvc", "name"])).toEqual({ number: "4242424242424242", month: "04", year: "2031", cvc: "999" });
 });
 
-test("project variables: everyone who sees the project lists them; operate changes them; the creator or an admin reveals", async () => {
+test("bot variables: everyone who sees the bot lists them; operate changes them; the creator or an admin reveals", async () => {
   const item = await save(k.memberDevice, { kind: "env", scope: "project", ...PROJECT, envName: "STAGING_KEY", sealed: k.sealToHub({ value: "planted-st-1" }) });
   const asOwner = (await list(k.ownerDevice, { ...PROJECT })).find((i) => i.itemId === item.itemId)!;
   expect(asOwner.canEdit).toBe(true);

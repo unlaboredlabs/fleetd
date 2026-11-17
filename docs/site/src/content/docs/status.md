@@ -1,15 +1,15 @@
 ---
 title: Status
-description: Each project's state and its work in groups at a glance, in the terminal.
+description: Each bot's state and its work in groups at a glance, in the terminal.
 ---
 
-Status shows, for each project, what state it is in and where each piece of its work is. `fleetd status` prints it on
-the hub machine, and an MCP client reads the same rows with `status_get`. In the app, the sidebar marks a project
+Status shows, for each bot, what state it is in and where each piece of its work is. `fleetd status` prints it on
+the hub machine, and an MCP client reads the same rows with `status_get`. In the app, the sidebar marks a bot
 that is blocked or has CI red, and the line above the chat's message box says why.
 
 ## Each row {#rows}
 
-Status has one row per project:
+Status has one row per bot:
 
 | Column | Shows |
 |---|---|
@@ -23,10 +23,10 @@ and idle.
 
 ## A check red on main {#red-main}
 
-A check that fails on the base branch doesn't block the project: the [merge train](/docs/merge-train) keeps merging,
+A check that fails on the base branch doesn't block the bot: the [merge train](/docs/merge-train) keeps merging,
 since it waits only for each pull request's own checks. Status shows it as a warning instead, and says which check and whether a fix is under way: "`ios sessions` is red on main, fix in
 progress" while the [fix order](/docs/merge-train#after-merge) for it is open, "no fix under way" otherwise. The
-sidebar marks the project **CI red**, and the line above the chat's message box says the same. A project with more than one repo names the repo.
+sidebar marks the bot **CI red**, and the line above the chat's message box says the same. A bot with more than one repo names the repo.
 
 ## The groups {#groups}
 
@@ -66,8 +66,8 @@ storefront: working
 
 | Command | Shows |
 |---|---|
-| `fleetd status` | Every project. |
-| `fleetd status storefront` | One project, by id or title. |
+| `fleetd status` | Every bot. |
+| `fleetd status storefront` | One bot, by id or title. |
 
 | Option | Does |
 |---|---|

@@ -128,7 +128,7 @@ async function registerAt(
   }
   bindScope(hub, m, projectId, facts);
   // A git checkout is the project's own repo, with a remote or without; a plain folder holds none.
-  if (facts.isGit) ensureOwn(hub, project, path, "the project's own repo");
+  if (facts.isGit) ensureOwn(hub, project, path, "the bot's own repo");
   if (created) startApprovals(hub.db.conn, project);
   // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
   const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title: named, path, created, inspect });
@@ -153,7 +153,7 @@ function checkInput(input: ProjectAddInput): void {
     if (input.url !== undefined || input.dest !== undefined || input.useExisting !== undefined) {
       throw bad("create makes an empty folder: url, dest and useExisting don't go with it");
     }
-    if (input.path === undefined && input.title === undefined) throw bad("give title (the new project's name), path (its folder), or both");
+    if (input.path === undefined && input.title === undefined) throw bad("give title (the new bot's name), path (its folder), or both");
     return;
   }
   if (input.gitInit !== undefined) throw bad("gitInit goes with create only");
@@ -223,7 +223,7 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
 }
 
 const cantMake = (m: MachineId) =>
-  problemError(problem("node_too_old", `${m}'s node is too old to make a new project's folder`, `Run fleetd update on ${m}, or pick another machine`));
+  problemError(problem("node_too_old", `${m}'s node is too old to make a new bot's folder`, `Run fleetd update on ${m}, or pick another machine`));
 
 /**
  * Why the node didn't make the folder at `path`: it holds files already, or it can't be made there. The node names the
@@ -234,10 +234,10 @@ function folderRefused(m: MachineId, path: string) {
     const message = e instanceof ExecutorError && e.kind === "node_failed" ? e.extra.nodeMessage : undefined;
     if (message?.includes(FOLDER_NOT_EMPTY)) {
       throw problemError(
-        problem("dest_exists", `${path} on ${m} already holds files`, "Pick another folder for the new project, or add that one as it is by typing its path"),
+        problem("dest_exists", `${path} on ${m} already holds files`, "Pick another folder for the new bot, or add that one as it is by typing its path"),
       );
     }
-    if (message !== undefined && namesFolder(message, path)) throw new ToolError("invalid", message, "Pick another folder for the new project");
+    if (message !== undefined && namesFolder(message, path)) throw new ToolError("invalid", message, "Pick another folder for the new bot");
     throw problemError(nodeProblem(m, e));
   };
 }
@@ -264,9 +264,9 @@ async function create(hub: Hub, m: MachineId, input: ProjectAddInput, dryRun: bo
   const id = projectAt(hub, m, path);
   if (id !== undefined) {
     const named = store(hub).projectGet({ machineId: m, projectId: id })?.title ?? id;
-    throw problemError(problem("dest_exists", `${path} on ${m} is already the project ${named}`, "Open that project, or pick another folder for the new one"));
+    throw problemError(problem("dest_exists", `${path} on ${m} is already the bot ${named}`, "Open that bot, or pick another folder for the new one"));
   }
-  if (dryRun) return { ...dry(m, path, folder()), next: `project_add with create makes ${path} on ${m}, a new project.` };
+  if (dryRun) return { ...dry(m, path, folder()), next: `project_add with create makes ${path} on ${m}, a new bot.` };
   path = await folderMake(hub, m, path, gitInit, false).catch(folderRefused(m, path));
   const facts = await checkout(hub, m, path);
   const inspect = await inspectCheckout(hub, facts);
@@ -321,7 +321,7 @@ function intoProject(hub: Hub, m: MachineId, title: string | undefined, end?: Cl
       }
       return added;
     },
-    fix: `Add the checkout at ${path} on ${m} as a project`,
+    fix: `Add the checkout at ${path} on ${m} as a bot`,
     ...(end ? { failed: end.failed } : {}),
   });
 }

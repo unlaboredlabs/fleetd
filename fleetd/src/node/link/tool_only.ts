@@ -28,7 +28,7 @@ export function refusedOnMac(frame: HubFrame): NodeFrame | undefined {
           err: {
             code: "runner_unavailable",
             message: TOOL_ONLY,
-            fix: "start agents and projects on another machine; they use this Mac with `mac run` and `mac sim`",
+            fix: "start agents and bots on another machine; they use this Mac with `mac run` and `mac sim`",
           },
         },
       } as NodeFrame;

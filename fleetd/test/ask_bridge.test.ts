@@ -35,7 +35,7 @@ function setup() {
 
 const message = (text: string) => ({ op: "project_message", project: "storefront", text });
 
-test("a lead writes to another project's lead as its project, and a retry is the first ask", async () => {
+test("a lead writes to another bot's lead as its bot, and a retry is the first ask", async () => {
   const { hub, posts, clock } = setup();
   const inbox = ref("inbox");
   const first = (await answer(hub, inbox, message("Gift cards, please."))) as Record<string, unknown>;
@@ -47,10 +47,10 @@ test("a lead writes to another project's lead as its project, and a retry is the
   clock.ms += 11 * 60 * 1000;
   expect(((await answer(hub, inbox, message("Gift cards, please."))) as { handle: string }).handle).toBe("N3");
   // Its own project, an unknown one, and an archived asker are refused.
-  await expect(answer(hub, inbox, { op: "project_message", project: "Home", text: "x" })).rejects.toThrow("That is this lead's own project.");
-  await expect(answer(hub, inbox, { op: "project_message", project: "nope", text: "x" })).rejects.toThrow("No project nope on this hub.");
+  await expect(answer(hub, inbox, { op: "project_message", project: "Home", text: "x" })).rejects.toThrow("That is this lead's own bot.");
+  await expect(answer(hub, inbox, { op: "project_message", project: "nope", text: "x" })).rejects.toThrow("No bot nope on this hub.");
   hub.db.conn.run("UPDATE project_settings SET archived_ms = 1 WHERE project_id = 'inbox'");
-  await expect(answer(hub, inbox, message("x"))).rejects.toThrow("This project is archived");
+  await expect(answer(hub, inbox, message("x"))).rejects.toThrow("This bot is archived");
 });
 
 test("the asker hears when its order opens, its PRs merge or fail, and it closes", async () => {
@@ -105,7 +105,7 @@ test("a link's asks go out on its feed, not as wakes; asks sent through a kept l
     "they only read it",
   );
   await expect(bridge.projectMessage({ kind: "link", link: { ...link, projects: [ref("checkout")] } }, { project: "Storefront", text: "x" })).rejects.toThrow(
-    "is not one of this link's projects",
+    "is not one of this link's bots",
   );
   const handle = bridge.recordSent(ref("inbox"), "K1", { handle: "N7", projectRef: ref("far"), title: "Far" }, "Hello there", 5);
   expect(bridge.recordSent(ref("inbox"), "K1", { handle: "N7", projectRef: ref("far"), title: "Far" }, "Hello there", 6)).toBe(handle);
@@ -125,11 +125,11 @@ test("start fills the ask bridge whoever asked first, and registers the two lead
   await answer(hub, ref("inbox"), message("Gift cards, please."));
   const listed = await ok(key("read"), "project_asks", { project: ref("inbox") });
   expect(listed.asks).toEqual([{ toTitle: "Storefront", handle: "N1", to: ref("storefront"), text: "Gift cards, please.", at: "2026-10-17T10:00:00.000Z", orders: [] }]);
-  expect((await ok(key("read"), "project_asks", { project: ref("checkout") })).next).toBe("This project has asked no other project for anything yet.");
+  expect((await ok(key("read"), "project_asks", { project: ref("checkout") })).next).toBe("This bot has asked no other bot for anything yet.");
   stop.abort();
 });
 
-test("factory_status reads the other projects with their open orders, checklist and asks", async () => {
+test("factory_status reads the other bots with their open orders, checklist and asks", async () => {
   const { hub } = setup();
   found.statusRows = (_hub, _now) =>
     ["inbox", "storefront", "checkout"].map((id) => ({ projectRef: ref(id), title: id, state: "idle", agentsRunning: 0 }));
@@ -144,7 +144,7 @@ test("factory_status reads the other projects with their open orders, checklist 
   expect(shop.openOrders).toEqual([{ workstreamId: w.workstreamId, title: "Gift cards", asked: "N1" }]);
   expect(shop.checklist.map((i) => i.text)).toEqual(["ship gift cards"]);
   expect(shop.asks).toEqual([{ handle: "N1", text: "Gift cards, please.", at: "2026-10-17T10:00:00.000Z", orders: [w.workstreamId] }]);
-  expect(out.next).toBe("factory_status with project reads one. Write to a project's lead with project_message.");
+  expect(out.next).toBe("factory_status with project reads one. Write to a bot's lead with project_message.");
   delete found.statusRows;
 });
 

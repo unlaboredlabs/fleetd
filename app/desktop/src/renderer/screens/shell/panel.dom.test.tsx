@@ -230,7 +230,7 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-const panel = () => host.querySelector("aside[aria-label='Project panel']");
+const panel = () => host.querySelector("aside[aria-label='Bot panel']");
 /** The row of sections' tabs. */
 const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
 const button = (name: string) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === name || b.textContent === name);
@@ -284,7 +284,7 @@ it("is open on a first launch, and opens and closes with its toggle as the windo
   expect(panel()).not.toBeNull();
 });
 
-it("slides out when its toggle closes it, and goes at once when you leave the project's chat", async () => {
+it("slides out when its toggle closes it, and goes at once when you leave the bot's chat", async () => {
   // The frame's slide, which happy-dom never runs: a side waits for its end.
   const slide = document.createElement("style");
   slide.textContent = `.${frameStyles.aside ?? "aside"}[data-motion] { transition-property: transform; transition-duration: 180ms; }`;
@@ -371,19 +371,19 @@ it("says the agents and PRs show once you're connected while it has none to show
   expect(text()).not.toContain("once you’re connected");
 });
 
-it("lists the project's agents with the other projects' folded under them, keeps the fold open across a remount, and opens another project's agent", async () => {
+it("lists the bot's agents with the other bots' folded under them, keeps the fold open across a remount, and opens another bot's agent", async () => {
   await mount();
   const rows = () => [...(panel()?.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a") ?? [])].map((a) => a.getAttribute("href"));
   const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
   const tabCount = () => panel()?.querySelector("[role='tab']")?.textContent;
   // No switch between this project and all: the others' are one fold under its own.
-  expect(button("This project")).toBeUndefined();
-  expect(button("All projects")).toBeUndefined();
+  expect(button("This bot")).toBeUndefined();
+  expect(button("All bots")).toBeUndefined();
   expect(rows()).toEqual([`${CHAT}/agents/T1`]);
   expect(tabCount()).toBe("Agents1");
 
   // Every other project's, under its name; the one that waits on you first. The tab still counts this project's.
-  await click("Other projects2");
+  await click("Other bots2");
   expect(rows()).toEqual([`${CHAT}/agents/T1`, "#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
   expect(lines().indexOf("checkout")).toBeLessThan(lines().indexOf("Review the payment element change"));
   expect(tabCount()).toBe("Agents1");
@@ -400,7 +400,7 @@ it("lists the project's agents with the other projects' folded under them, keeps
   expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
 });
 
-it("folds the live work on the project's repo under its agents", async () => {
+it("folds the live work on the bot's repo under its agents", async () => {
   await mount();
   const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
   const other = () => [...(panel()?.querySelectorAll<HTMLElement>("[data-elsewhere]") ?? [])].map((el) => el.dataset["elsewhere"]);
@@ -516,7 +516,7 @@ it("lands each of the palette's Go to commands, and the view the panel was last 
   }
 });
 
-it("opens one skill with no tab of its own, and sends a link to the skills' list to the project's settings", async () => {
+it("opens one skill with no tab of its own, and sends a link to the skills' list to the bot's settings", async () => {
   await mount();
   await go(`${CHAT}/skills/taxes`);
   expect(panel()?.querySelector("[data-screen^='skill']")).not.toBeNull();
@@ -532,7 +532,7 @@ it("opens on Agents when it was last left on the skills' list", async () => {
   expect(panel()?.querySelector("[role='tab'][aria-selected='true'][data-section]")?.getAttribute("data-section")).toBe("agents");
 });
 
-it("shows Artifacts once the project has one, the moment its first is published", async () => {
+it("shows Artifacts once the bot has one, the moment its first is published", async () => {
   await mount({ features: ["artifacts"] });
   expect(panel()?.querySelector("[role='tab'][data-section='artifacts']")).toBeNull();
   artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
@@ -554,7 +554,7 @@ it("shows Artifacts for a chat with files sent in it and no report, so its Files
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
 });
 
-it("never shows Artifacts from a hub that doesn't serve them, whatever the project has", async () => {
+it("never shows Artifacts from a hub that doesn't serve them, whatever the bot has", async () => {
   artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
   await mount();
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
@@ -580,7 +580,7 @@ it("shows Agents with no screens from a hub that doesn't serve browser sessions,
   expect(panel()?.querySelector("[role='list']")?.textContent).not.toContain("Screens");
   // What the tab is, is its hover's, and the hover says only what this hub serves.
   act(() => panel()?.querySelector<HTMLElement>("[role='tab'][data-section='agents']")?.focus());
-  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("The AI workers on this project, and what each is doing right now.");
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("The AI workers on this bot, and what each is doing right now.");
   await go(`${CHAT}/sessions`);
   expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
   expect(panel()?.querySelector("[data-screen^='sessions']")).toBeNull();

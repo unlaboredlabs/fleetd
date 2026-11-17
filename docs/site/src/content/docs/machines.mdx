@@ -31,7 +31,7 @@ The phone's **Settings › Machines** has the same groups for an admin: the mach
 
 ## Add a machine in the app {#app}
 
-Open **Settings › Hub › Machines**. The plus beside **Machines** offers three ways, and a fourth for [the agents' Mac](/docs/agents-mac#app), a Mac every project's agents use but none runs on (**A Mac for agents**: a 6-digit code you type in the fleetd app on that Mac):
+Open **Settings › Hub › Machines**. The plus beside **Machines** offers three ways, and a fourth for [the agents' Mac](/docs/agents-mac#app), a Mac every bot's agents use but none runs on (**A Mac for agents**: a 6-digit code you type in the fleetd app on that Mac):
 
 | The machine is | Pick | What happens |
 |---|---|---|
@@ -79,7 +79,7 @@ wrong, one row each with its fix; a machine whose checks all pass shows nothing 
 |---|---|
 | Claude | `claude` isn't installed at the version fleetd was tested with, or isn't logged in. |
 | Git identity | The node's commits don't carry the hub's identity. |
-| GitHub access | git couldn't fetch a project's remote at the last agent start there. |
+| GitHub access | git couldn't fetch a bot's remote at the last agent start there. |
 | Screens | A screen kind it is set up to host besides browsers (Android, Linux desktop) isn't ready. |
 
 A row's fix is a command to copy, with the machine to run it on, or for Claude's login, **Log in…**; a screen kind
@@ -200,7 +200,7 @@ made and when it expires, but never the code itself. To take one back before it 
 To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
 
 A node keeps the machine id it joined with. The hub refuses to enroll a node home (its key in `node-key.pem`)
-already enrolled under another id, since that would put all its projects and chats on a second machine. To repair it, rejoin it under its own id: run `fleetd pair --worker <id>` on the hub and the line it prints.
+already enrolled under another id, since that would put all its bots and chats on a second machine. To repair it, rejoin it under its own id: run `fleetd pair --worker <id>` on the hub and the line it prints.
 To give it a new id, remove the old machine first (`fleetd machine remove <old id>`), then join under the new one.
 
 If the hub refuses the join (a spent code, say), the machine stays as it was: its node keeps its settings, and its
@@ -243,22 +243,22 @@ fleetd machine remove builder-1
 ```
 
 It stops and removes the node's service on that machine, revokes its key on the hub, and forgets everything the hub
-held of it, keyed by its id: its sessions, checkouts, settings and slots, and its projects, each erased as deleting it
+held of it, keyed by its id: its sessions, checkouts, settings and slots, and its bots, each erased as deleting it
 would: its chat, memory, skills, files, orders and tasks. A machine that joins again under the same id starts its
-projects afresh. Another machine's rows stay, even under the same project ids. The factory metrics stay as history,
-until their own retention prunes them. Open apps drop the machine and its projects at once. A node that is still linked
+bots afresh. Another machine's rows stay, even under the same bot ids. The factory metrics stay as history,
+until their own retention prunes them. Open apps drop the machine and its bots at once. A node that is still linked
 is cut off at its next heartbeat (within 15 s), and what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
-command again. The projects it left are also listed under **Left from removed machines** in Settings › Hub ›
-Machines, each with Remove, and Delete in Settings › Projects works for them too: no machine holds their files, so
-either only forgets the project in fleetd. The hub never forgets them on its own.
+command again. The bots it left are also listed under **Left from removed machines** in Settings › Hub ›
+Machines, each with Remove, and Delete in Settings › Bots works for them too: no machine holds their files, so
+either only forgets the bot in fleetd. The hub never forgets them on its own.
 
 | Option | Also does |
 |---|---|
 | `--purge` | Deletes `~/.fleetd/node` and `~/.fleetd/claude.env` on that machine. Your own `~/.claude` stays. |
-| `--force` | Removes it even while it runs projects' leads. |
+| `--force` | Removes it even while it runs bots' leads. |
 
-A machine that runs projects' leads, or one the app is still adding, isn't removed. Removing it would stop those leads
-or undo the add halfway. The refusal names the projects, and says how to repair the machine instead
+A machine that runs bots' leads, or one the app is still adding, isn't removed. Removing it would stop those leads
+or undo the add halfway. The refusal names the bots, and says how to repair the machine instead
 (`fleetd pair --worker <id>` and the line it prints, with `--rejoin`). To remove it anyway, press **Remove anyway** in
 the app, or pass `--force`.
 
@@ -306,7 +306,7 @@ place under the [agent caps](/docs/projects#max-agents), and their builds wait f
 | Free space where the worktrees live is below `minFreeGb` in [`node.json`](/docs/config-and-files#node-json): 10% of the disk or 20 GB by default, whichever is larger. | 10% above it. |
 | A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85% or at the window's reset. A reading with no reset time counts for 15 minutes. |
 
-The project's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
+The bot's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
 limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor`
 shows each machine's free space. A writer's worktree, build output included, goes once its PR merges, unless it holds
 uncommitted or unpushed work. A reader's or reviewer's goes when its task ends. When `sccache` is on the node's `PATH`,
@@ -318,11 +318,11 @@ unless `SCCACHE_CACHE_SIZE` says otherwise); fleetd's own dependencies take abou
 
 When agents on one machine hit their Claude login's usage or rate limit, fleetd parks them and pauses new turns on that
 login. They go on by themselves at the reset claude's message named, or as soon as a turn on that login completes. The
-project's Status row and its chat say so, with **Resume**.
+bot's Status row and its chat say so, with **Resume**.
 
 To go on sooner, once the login has capacity again:
 
-- In the app, press **Resume** on the project's Status row or on the chat's blocked line. Your device key needs
+- In the app, press **Resume** on the bot's Status row or on the chat's blocked line. Your device key needs
   operate on the machine (a paired app has it).
 - On the hub machine, run `fleetd usage` to see each machine's pause, and `fleetd usage resume <machine>` to lift
   one. Neither needs a key or `--hub`: they use the hub's own CLI key and reach the hub at the address it listens on.
@@ -330,7 +330,7 @@ To go on sooner, once the login has capacity again:
 
 Resume sends every parked agent "continue". An agent whose login is still limited parks again on its next turn, with
 the real reset. Whenever the lead takes a turn during the pause (you message it, say), its wake states the pause,
-when it ends and that you can press Resume. It can lift the pause on its own project's machine with `usage_resume`, at
+when it ends and that you can press Resume. It can lift the pause on its own bot's machine with `usage_resume`, at
 most once every 10 minutes, and that is recorded as the lead's.
 
 ## A fair share for each agent {#fair-share}
@@ -341,7 +341,7 @@ Agents on one machine share its CPUs, memory and disk. Each session gets:
 |---|---|
 | Build jobs | Each agent's share of the CPUs: the CPUs divided by the agents the machine fits, at least 2. fleetd sets `CARGO_BUILD_JOBS`, `MAKEFLAGS=-j<n>`, `CMAKE_BUILD_PARALLEL_LEVEL` and `GOFLAGS=-p=<n>`, and vitest's `VITEST_MAX_WORKERS` to `<n>` but at least 4, except any you set in `claude.env`, and a task's brief says what each is. |
 | Build turns | Agents' cargo builds take turns for the machine's build slots, so twenty agents compiling at once can't run it out of memory. A `cargo` of fleetd's own comes first on each agent's `PATH` (`~/.fleetd/node/build-slots/bin`) and hands every command to the real one; `build`, `check`, `clippy`, `test`, `bench`, `doc`, `rustc`, `install`, `fix`, `nextest`, `llvm-cov` and `miri` first take a slot, and hold it until they end. `cargo run` takes one for a `cargo build` of what it runs, then lets it go before the program starts, since that may run for hours. Other commands (`fmt`, `metadata`, `tree`) start at once, and so does a call that compiles nothing: `cargo -V`, a command's own `--version` or `--help` (`cargo nextest --version`), `cargo install --list`. A build takes one slot, and two when it builds a lib's tests beside the lib, a package's two biggest rustc at once: a `cargo test`, `nextest` or `llvm-cov` naming neither `--lib` of one package nor only other targets (`--test <name>`, `--doc`), or a `cargo build --all-targets`. With too few slots free, a build queues first come first served and prints one line, such as `fleetd: queued for a build slot (1 build ahead; 3 slots on this machine): it starts once one frees`. A running build is never stopped, and a slot frees the moment its build ends, however it ends. Slots: one per 16 GB of the machine's memory, at least 1, never more or fewer by load: 16 GB holds one build at its peak (fleetd's lib tests, 10.6 GB measured) and keeps a third of the machine for what runs beside the builds (agents, browsers, a tmpfs `/tmp`), so every slot busy still fits. A 16 GB laptop gets 1, a 32 GB one 2, the 60 GB devbox 3, a 128 GB machine 8. Set `buildSlots` in node.json to change it (no restart needed), or `0` to turn turns off. A task's brief says how many. |
-| Language servers | Claude Code's heavy language servers (rust-analyzer, clangd, the Java and Kotlin ones) are off in every session: each holds gigabytes per worktree outside the build slots. A project's `HEAVY_LANGUAGE_SERVERS=1` variable turns them back on. See [Heavy language servers are off](/docs/what-agents-are-told#language-servers). |
+| Language servers | Claude Code's heavy language servers (rust-analyzer, clangd, the Java and Kotlin ones) are off in every session: each holds gigabytes per worktree outside the build slots. A bot's `HEAVY_LANGUAGE_SERVERS=1` variable turns them back on. See [Heavy language servers are off](/docs/what-agents-are-told#language-servers). |
 | Scratch space | `TMPDIR`, `TMP`, `TEMP` and Claude Code's `CLAUDE_CODE_TMPDIR` point at `~/.fleetd/node/tmp/<16 hex characters, one per session>`, on disk. Never `/tmp`, which is often held in memory. Its files last until the task can no longer be continued, through node restarts: they go with its worktree (once its PR merges with nothing of its waiting: a `wait_ci`, a Monitor or a question to its lead; else `policy.worktree_days` after the task ends, even when the worktree is kept for unsaved work); a session without a worktree loses them when it is stopped, or at a node restart 3 days after its last change. The processes an agent started there (a database, a server) end when its session is reaped idle, so after a wait it starts them again from the data it kept. Apps on a Linux desktop get the desktop's own temp dir, removed when it ends, and the browser's install downloads to `~/.fleetd/node/browser/install-tmp`, removed after it. |
 | Its own memory scope (Linux) | When the node can reach your systemd user manager, each session runs in its own transient scope (`systemctl --user list-units 'run-*.scope'`, described as "fleetd agent …"). If memory runs out, the kernel's kill lands in one agent: the build it killed fails, and the agent sees the error and goes on. The scopes and the node's unit have `OOMPolicy=continue`, so an out-of-memory kill never fails an agent's scope or the node. A lead's and an agent's scope isn't part of the node's unit: restarting the node leaves them running, and the node picks them up again when it starts. One whose node doesn't come back within 15 minutes ends by itself, and `fleetd machine remove` ends them at once. If a scope can't be started, the session starts without one, and the node checks again 10 minutes later. Without a user manager (macOS, containers), sessions run as before. |
 | Killed last (Linux) | If memory runs out, the kernel kills an agent's processes before the hub or the node. The hub and node lower their OOM score as far as Linux lets them, which under a systemd user manager is its own score, 100 (`OOMScoreAdjust=-900` in their units; systemd's default for a user service is 200). Everything the node starts for an agent (its claude and everything that runs, builds included, a browser, an emulator, a Linux desktop) starts at 500. Their units also have `ManagedOOMPreference=avoid`, so systemd-oomd, where it runs, picks other cgroups first. A unit written before this gets them when its service next starts (below). Check with `cat /proc/$(systemctl --user show -p MainPID --value fleetd-node)/oom_score_adj`. macOS has no such score: it compresses and swaps before it ends anything, and launchd runs the hub and node as interactive, the last it ends. |
@@ -365,7 +365,7 @@ every agent on a Mac.
 |---|---|
 | Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only. `/tmp` is the VM's own and goes with it. |
 | Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). The internet and DNS work as before. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's and Android's adb, at the same `127.0.0.1` ports as before. |
-| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the project's, `--settings`, managed settings), the last one setting it winning. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
+| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the bot's, `--settings`, managed settings), the last one setting it winning. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
 | Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
@@ -391,13 +391,13 @@ A machine that can't run VMs never refuses agents: they run as plain processes, 
 | A VM's network needs the `ip` command, `nsenter` or `/dev/net/tun` | Install iproute2 or util-linux with the system's package manager; for `/dev/net/tun`, the line gives the command that loads the tun module. |
 | fetching the VM files for the first time | Wait: agents run in VMs once they're there. A fetch that fails is tried again an hour later. |
 | this node runs fleetd from source | Run an installed fleetd. |
-| the last VM didn't start: … (the box can't reach Claude at host:port, say) | The node tries VMs again 10 minutes later; until then every new agent runs as a plain process. The reason names the endpoint and the file that set it: check that this machine reaches it. An endpoint a project's own `.claude/settings.json` names sends only that agent to a plain process. |
+| the last VM didn't start: … (the box can't reach Claude at host:port, say) | The node tries VMs again 10 minutes later; until then every new agent runs as a plain process. The reason names the endpoint and the file that set it: check that this machine reaches it. An endpoint a bot's own `.claude/settings.json` names sends only that agent to a plain process. |
 
 **What stays shared on purpose.** A VM is a wall around the machine's processes, network and fleetd's own folders,
 not around your files:
 
 - **Your home folder is shared writable**, as a plain process has it, so the agent can read and change what you can
-  there: `~/.ssh` and its keys, `~/.config/gh` and other CLIs' logins, your other projects, and the package caches.
+  there: `~/.ssh` and its keys, `~/.config/gh` and other CLIs' logins, your other bots, and the package caches.
 - **Each repo's `.git` is shared writable** with every agent working in that repo, so an agent can change another's
   branch or refs, as it can as a plain process.
 - **The machine's Claude login** (`~/.claude`) is shared with a session that uses it.
@@ -420,7 +420,7 @@ meanwhile join it), and its next one starts as a plain process. Remove the key t
 
 A team can give its agents room past its machines' own [max agents](/docs/projects#max-agents) with its own account
 at a hosted sandbox provider: [E2B](https://e2b.dev), [boat.dev](https://boat.dev) or [Daytona](https://daytona.io).
-Each agent then runs in a sandbox of its own there, made by the machine that holds the project's checkout and gone
+Each agent then runs in a sandbox of its own there, made by the machine that holds the bot's checkout and gone
 when the agent ends. The provider bills the team directly, by the second while a sandbox runs; fleetd charges nothing
 for it and holds no account of its own. No machine joins the hub, and the hub talks to no provider.
 
@@ -512,7 +512,7 @@ fleetd machine set devbox --roles agents,sessions --max-sessions auto
 ```
 
 - **Agents only.** The machine hosts no screens. Its agents' screens run on a machine that does.
-- **Screens only.** The machine runs no agents: those running finish their work, and its projects' agents wait until
+- **Screens only.** The machine runs no agents: those running finish their work, and its bots' agents wait until
   it runs agents again. It hosts screens for agents on every machine.
 
 Screen slots are counted apart from agent slots. A machine hosts at most its screen cap at once: what it fits (one
@@ -538,7 +538,7 @@ waiting for a full machine's next slot gets it before any agent does.
 
 A screen on another machine works as one on the agent's own:
 
-- **Its secrets go sealed.** Before it starts, the agent's node seals the screen's secrets (its project's, its
+- **Its secrets go sealed.** Before it starts, the agent's node seals the screen's secrets (its bot's, its
   order's and its MCP servers') to the hosting machine's key, as the app seals a secret to a machine. The hub passes
   the box on and can't open it. The hosting machine scrubs the screen's action log and page snapshots with them,
   as for a screen of its own, and forgets them once the screen has started.

@@ -52,7 +52,7 @@ export function Setup({ settings, title, repo, reveal }: { settings: Settings; t
     <SettingsSection
       title={title}
       reveal={reveal}
-      hint="Runs in each new worktree, before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent."
+      hint="Runs in each new worktree, before its agent starts, with the bot's variables: install dependencies, generate code. The output shows on the agent."
     >
       <SettingsRow
         title="Commands"

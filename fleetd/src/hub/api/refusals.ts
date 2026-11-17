@@ -49,14 +49,14 @@ export const unknownMachine = (machineId: MachineId) =>
 export const unknownProject = (r: ProjectRef) =>
   new ToolError(
     "not_found",
-    `No project ${r.projectId} on ${r.machineId}.`,
+    `No bot ${r.projectId} on ${r.machineId}.`,
     `Call project_get with machineId ${r.machineId} and no projectId.`,
     undefined,
     "It was removed, or its machine was: the projects list has the ones that are left.",
   );
 
 export const unknownThread = (r: ThreadRef) =>
-  new ToolError("not_found", `No thread ${r.threadId} on ${r.machineId}.`, "Call project_get to list the project's threads.");
+  new ToolError("not_found", `No thread ${r.threadId} on ${r.machineId}.`, "Call project_get to list the bot's threads.");
 
 /** `ToolError::new(code, message)` with an optional fix: the plain refusal. */
 export const refusal = (code: ToolError["code"], message: string, fix?: string) => new ToolError(code, message, fix);

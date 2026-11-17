@@ -19,7 +19,7 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
   if (human && scope.kind === "project") {
     throw new ToolError(
       "forbidden",
-      `You can't change this project's MCP servers: that takes Operate access to ${scope.machineId}.`,
+      `You can't change this bot's MCP servers: that takes Operate access to ${scope.machineId}.`,
       "Ask the hub's owner or an admin to give it to you.",
     );
   }
@@ -27,13 +27,13 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
     throw new ToolError(
       "forbidden",
       "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
-      "Ask an owner or admin (Settings › Hub › Every project › Agents), or add the server to one project in its settings.",
+      "Ask an owner or admin (Settings › Hub › Every bot › Agents), or add the server to one bot in its settings.",
     );
   }
   throw new ToolError(
     "forbidden",
     "Only a person changes the MCP servers agents get, with operate on every machine they reach.",
-    "Change them in the desktop app: Settings › Hub › Every project › Agents, or the project's settings.",
+    "Change them in the desktop app: Settings › Hub › Every bot › Agents, or the bot's settings.",
   );
 }
 
@@ -48,7 +48,7 @@ export function checkScope(scope: unknown): McpScope {
 }
 
 export function notFound(scope: McpScope, name: string): ToolError {
-  const place = scope.kind === "global" ? "global" : `project ${scope.projectId}'s`;
+  const place = scope.kind === "global" ? "global" : `bot ${scope.projectId}'s`;
   return new ToolError("not_found", `No ${place} MCP server ${name}.`, "mcp_servers_get lists them.");
 }
 

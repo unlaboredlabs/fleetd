@@ -332,7 +332,7 @@ export class Prompts {
     if (scope === "default") throw new PromptError("invalid", "The shipped text cannot change; save a global or project override.");
     if (scope === "global") return undefined;
     if (!perProject(e)) throw new PromptError("invalid", `${e.id} has one hub-wide text; save it with scope global.`);
-    if (project === undefined) throw new PromptError("invalid", "A project override needs projectRef.");
+    if (project === undefined) throw new PromptError("invalid", "A bot override needs projectRef.");
     return project;
   }
 
@@ -458,7 +458,7 @@ export class Prompts {
     if (scope === "default") {
       throw new PromptError("invalid", "A retired prompt has no shipped text to reset; give scope global or project.");
     }
-    if (scope === "project" && project === undefined) throw new PromptError("invalid", "A project override needs projectRef.");
+    if (scope === "project" && project === undefined) throw new PromptError("invalid", "A bot override needs projectRef.");
     const file = this.fileOf(r.id, scope === "project" ? project : undefined);
     if (file !== undefined) removeFile(file);
   }

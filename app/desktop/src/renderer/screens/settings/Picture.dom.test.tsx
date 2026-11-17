@@ -175,7 +175,7 @@ const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "logo.png
 const previewBot = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="bot"] [data-bot]')?.getAttribute("data-bot");
 
 
-describe("Settings → Projects → Icon", () => {
+describe("Settings → Bots → Icon", () => {
   it("shows its bot, whatever icon the hub names or none, and its picture once it has one", async () => {
     await render(undefined);
     expect(previewBot()).toBe("idle");

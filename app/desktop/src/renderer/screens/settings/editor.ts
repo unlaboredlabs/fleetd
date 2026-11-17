@@ -123,7 +123,7 @@ export function warningLine(w: PromptWarning): string {
 export function resetLine(level: PromptScope, projectName: string): string {
   return level === "project"
     ? `${projectName}'s own edit is gone; it uses the hub-wide text again. New agents get it; running ones keep theirs.`
-    : "The hub-wide edit is gone; fleetd's built-in text applies to every project without its own edit. New agents get it; running ones keep theirs.";
+    : "The hub-wide edit is gone; fleetd's built-in text applies to every bot without its own edit. New agents get it; running ones keep theirs.";
 }
 
 export function savedLine(o: PromptSetOutput): string {
@@ -134,14 +134,14 @@ export function savedLine(o: PromptSetOutput): string {
 
 /** The editor's one quiet line: which text is in effect, and where a save lands. */
 export function effectLine(d: PromptDetail, s: Scope, projectName: string | null): string {
-  const name = projectName ?? "this project";
+  const name = projectName ?? "this bot";
   const inEffect = d.scope === "default" ? "fleetd's built-in text" : d.scope === "global" ? "the hub-wide edit" : `${name}'s own edit`;
   const lands =
     editScope(d, s) === "project"
       ? `Saving changes it for ${name} only.`
       : s.kind === "project"
-        ? "This prompt has one hub-wide text: saving changes it for every project."
-        : "Saving changes it for every project without its own edit.";
+        ? "This prompt has one hub-wide text: saving changes it for every bot."
+        : "Saving changes it for every bot without its own edit.";
   return `In effect: ${inEffect}. ${lands}`;
 }
 

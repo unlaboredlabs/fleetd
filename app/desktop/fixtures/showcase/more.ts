@@ -133,7 +133,7 @@ export const TEAM_STEPS = { alice: 1400, lead: 2900, said: 3800 } as const;
  */
 export const teamScene = (f: Fixture): void => {
   const p = arr(f.snapshot?.["projects"]).map(obj).find((x) => x["title"] === "checkout");
-  if (p === undefined) throw new Error("the showcase's hub has no checkout project");
+  if (p === undefined) throw new Error("the showcase's hub has no checkout bot");
   const ref: Ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
   // Its main is green here: the clip is about the chat.
   for (const row of arr(obj(f.output("status_get", {}))["rows"]).map(obj)) if (row["title"] === "checkout") delete row["warning"];

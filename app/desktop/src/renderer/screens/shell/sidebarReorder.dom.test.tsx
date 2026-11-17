@@ -222,28 +222,28 @@ const drag = async (title: string, dy: number, opts: { cancel?: boolean } = {}) 
 describe("dragging a row", () => {
   it("lifts it, opens a gap as it passes the others, and drops it there", async () => {
     mount();
-    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(titles("Bots")).toEqual(["api", "docs", "web"]);
     const el = button("api");
     pointer(el, "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 20);
     pointer(window, "pointermove", ROW / 2 + 2 * ROW + 2);
     // Lifted, riding the pointer, the two rows it passed slid up into its place.
-    const lifted = section("Projects").querySelector<HTMLElement>("[data-lifted]");
+    const lifted = section("Bots").querySelector<HTMLElement>("[data-lifted]");
     expect(lifted?.textContent).toContain("api");
     // Held past the last row's middle: it takes the last place, under the pointer (past the list's end it would leave
     // the pins).
     expect(lifted?.style.transform).toBe(`translateY(${String(2 * ROW + 2)}px)`);
-    expect(section("Projects").querySelector("[data-reorder]")).not.toBeNull();
-    const shifted = [...section("Projects").querySelectorAll<HTMLElement>("[data-reorder-row]:not([data-lifted])")].map((r) => r.style.transform);
+    expect(section("Bots").querySelector("[data-reorder]")).not.toBeNull();
+    const shifted = [...section("Bots").querySelectorAll<HTMLElement>("[data-reorder-row]:not([data-lifted])")].map((r) => r.style.transform);
     expect(shifted).toEqual([`translateY(-${String(ROW)}px)`, `translateY(-${String(ROW)}px)`]);
     pointer(window, "pointerup", ROW / 2 + 2 * ROW + 2);
     await settle(SETTLE_MS + 20);
 
-    expect(titles("Projects")).toEqual(["docs", "web", "api"]);
-    expect(section("Projects").querySelector("[data-lifted], [data-reorder]")).toBeNull();
+    expect(titles("Bots")).toEqual(["docs", "web", "api"]);
+    expect(section("Bots").querySelector("[data-lifted], [data-reorder]")).toBeNull();
     // The hub keeps the whole order.
     expect(saved()).toEqual([["docs", "web", "api"]]);
-    expect(announced("Projects")).toBe("api moved to 3 of 3");
+    expect(announced("Bots")).toBe("api moved to 3 of 3");
     // The release was the drop's, not a click on the row.
     expect(went).toEqual([]);
   });
@@ -258,7 +258,7 @@ describe("dragging a row", () => {
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "docs" }, message: null }]);
 
     await drag("docs", ROW, { cancel: true });
-    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(titles("Bots")).toEqual(["api", "docs", "web"]);
     expect(saved()).toEqual([]);
   });
 });
@@ -270,28 +270,28 @@ describe("letting go", () => {
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", ROW / 2 + ROW + 6);
-    expect(Object.fromEntries(onScreen("Projects"))).toEqual({ api: ROW + 6, docs: 0, web: 2 * ROW });
+    expect(Object.fromEntries(onScreen("Bots"))).toEqual({ api: ROW + 6, docs: 0, web: 2 * ROW });
   };
 
   it("takes the new order in that frame, and glides each row from where it was on screen into its slot", async () => {
     lift();
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     pointer(window, "pointerup", ROW / 2 + ROW + 6);
     // One render: the new order, each row drawn where it was, then gliding home over the settle's time.
-    glidesFrom("Projects", was, ["docs", "api", "web"]);
-    const api = rows("Projects")[1];
+    glidesFrom("Bots", was, ["docs", "api", "web"]);
+    const api = rows("Bots")[1];
     expect(api?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-spring)`);
     // A pin rides raised over the ones it passes, with its own shade: none of them is cut.
-    expect(cutsOf("Projects")).toEqual({ docs: [null, null], api: [null, null], web: [null, null] });
+    expect(cutsOf("Bots")).toEqual({ docs: [null, null], api: [null, null], web: [null, null] });
     expect(api?.style.transform).toBe("");
     // Raised until it lands; the others no longer make way.
     expect(api?.hasAttribute("data-lifted")).toBe(true);
-    expect(section("Projects").querySelector("[data-reorder]")).toBeNull();
+    expect(section("Bots").querySelector("[data-reorder]")).toBeNull();
     expect(saved()).toEqual([["docs", "api", "web"]]);
 
     await settle(SETTLE_MS + 20);
-    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
-    expect(rows("Projects").map((r) => [r.style.transform, r.style.transition])).toEqual([
+    expect(section("Bots").querySelector("[data-lifted]")).toBeNull();
+    expect(rows("Bots").map((r) => [r.style.transform, r.style.transition])).toEqual([
       ["", ""],
       ["", ""],
       ["", ""],
@@ -300,9 +300,9 @@ describe("letting go", () => {
 
   it("glides it back on Esc, and the rows that made way with it", async () => {
     lift();
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    glidesFrom("Projects", was, ["api", "docs", "web"]);
+    glidesFrom("Bots", was, ["api", "docs", "web"]);
     await settle(SETTLE_MS + 20);
     expect(saved()).toEqual([]);
   });
@@ -312,13 +312,13 @@ describe("letting go", () => {
     try {
       lift();
       pointer(window, "pointerup", ROW / 2 + ROW + 6);
-      expect(titles("Projects")).toEqual(["docs", "api", "web"]);
-      expect(rows("Projects").map((r) => [r.style.transform, r.style.transition])).toEqual([
+      expect(titles("Bots")).toEqual(["docs", "api", "web"]);
+      expect(rows("Bots").map((r) => [r.style.transform, r.style.transition])).toEqual([
         ["", ""],
         ["", ""],
         ["", ""],
       ]);
-      expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+      expect(section("Bots").querySelector("[data-lifted]")).toBeNull();
     } finally {
       media.mockRestore();
     }
@@ -328,16 +328,16 @@ describe("letting go", () => {
     lift();
     pointer(window, "pointerup", ROW / 2 + ROW + 6);
     await settle(SETTLE_MS + 20);
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     const styles = new MutationObserver(() => undefined);
-    styles.observe(section("Projects"), { attributes: true, attributeFilter: ["style"], subtree: true });
+    styles.observe(section("Bots"), { attributes: true, attributeFilter: ["style"], subtree: true });
     // The order the hub kept, as the sidebar's rows after the read: the same rows drawn again, then in that order.
     mount();
     mount([ROWS[1], ROWS[0], ROWS[2]].filter((r) => r !== undefined));
     await settle(SETTLE_MS + 20);
     expect(styles.takeRecords()).toEqual([]);
     styles.disconnect();
-    glidesFrom("Projects", was, ["docs", "api", "web"]);
+    glidesFrom("Bots", was, ["docs", "api", "web"]);
   });
 });
 
@@ -345,21 +345,21 @@ describe("a list that changes under a drag", () => {
   // A new project, first by title among the projects.
   const WITH_NEW = [row("aaa"), ...ROWS];
 
-  it("puts a lifted row back, and moves nothing, when another desktop's move or a new project arrives", async () => {
+  it("puts a lifted row back, and moves nothing, when another desktop's move or a new bot arrives", async () => {
     mount();
     const docs = button("docs");
     pointer(docs, "pointerdown", ROW + ROW / 2);
     pointer(window, "pointermove", ROW + ROW / 2 + 10);
     pointer(window, "pointermove", 3 * ROW);
-    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("docs");
+    expect(section("Bots").querySelector("[data-lifted]")?.textContent).toContain("docs");
     // A project comes first: by index, "docs" would now be "api".
     mount(WITH_NEW);
     // It goes back to its place: the pointer no longer moves it, and letting go drops nothing.
     pointer(window, "pointermove", 4 * ROW);
     pointer(window, "pointerup", 4 * ROW);
     await settle(SETTLE_MS + 20);
-    expect(section("Projects").querySelector("[data-lifted], [data-reorder]")).toBeNull();
-    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
+    expect(section("Bots").querySelector("[data-lifted], [data-reorder]")).toBeNull();
+    expect(titles("Bots")).toEqual(["aaa", "api", "docs", "web"]);
     expect(saved()).toEqual([]);
   });
 
@@ -371,11 +371,11 @@ describe("a list that changes under a drag", () => {
     pointer(window, "pointerup", ROW / 2 + ROW + 6);
     expect(saved()).toEqual([["docs", "api", "web"]]);
     // Another desktop's order arrives mid-glide, with a new project: they turn toward their places in it.
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     mount(WITH_NEW);
-    glidesFrom("Projects", was, ["aaa", "api", "docs", "web"]);
+    glidesFrom("Bots", was, ["aaa", "api", "docs", "web"]);
     await settle(SETTLE_MS + 20);
-    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+    expect(section("Bots").querySelector("[data-lifted]")).toBeNull();
   });
 
   it("finds a pressed row by its key at the lift, the list changed since the press", async () => {
@@ -384,11 +384,11 @@ describe("a list that changes under a drag", () => {
     // "api" goes before the lift: web is second now, not third.
     mount(ROWS.filter((p) => p.project.title !== "api"));
     pointer(window, "pointermove", 2 * ROW + ROW / 2 - 10);
-    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("web");
+    expect(section("Bots").querySelector("[data-lifted]")?.textContent).toContain("web");
     pointer(window, "pointermove", 0);
     pointer(window, "pointerup", 0);
     await settle(SETTLE_MS + 20);
-    expect(titles("Projects")).toEqual(["web", "docs"]);
+    expect(titles("Bots")).toEqual(["web", "docs"]);
     expect(saved()).toEqual([["web", "docs"]]);
   });
 });
@@ -460,7 +460,7 @@ describe("near the edge of a long sidebar", () => {
     const slow = scrolled();
     expect(slow).toBeGreaterThan(0);
     // Under the pointer: as far as the pointer went, plus what the list scrolled under it.
-    const lifted = section("Projects").querySelector<HTMLElement>("[data-lifted]");
+    const lifted = section("Bots").querySelector<HTMLElement>("[data-lifted]");
     expect(lifted?.style.transform).toBe(`translateY(${String(188 - ROW / 2 + scrolled())}px)`);
 
     // Nearer the edge, faster.
@@ -483,7 +483,7 @@ describe("near the edge of a long sidebar", () => {
     expect(scrolled()).toBe(held);
     restore();
     await settle(SETTLE_MS + 20);
-    expect(titles("Projects").indexOf("p00")).toBe(at);
+    expect(titles("Bots").indexOf("p00")).toBe(at);
     expect(at).toBeGreaterThan(3);
   });
 
@@ -534,32 +534,32 @@ describe("the keyboard", () => {
     mount();
     const docs = button("docs");
     act(() => docs.focus());
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     key("ArrowLeft");
     // It glides there, as a drop does.
-    glidesFrom("Projects", was, ["docs", "api", "web"]);
+    glidesFrom("Bots", was, ["docs", "api", "web"]);
     await settle();
     expect(document.activeElement).toBe(button("docs"));
-    expect(announced("Projects")).toBe("docs moved to 1 of 3");
+    expect(announced("Bots")).toBe("docs moved to 1 of 3");
     expect(saved().at(-1)).toEqual(["docs", "api", "web"]);
 
     // At the start it stays, and says so.
     key("ArrowLeft");
     await settle();
-    expect(announced("Projects")).toBe("docs is already first");
+    expect(announced("Bots")).toBe("docs is already first");
     expect(saved()).toHaveLength(1);
 
     // Without Alt an arrow is just an arrow.
     key("ArrowRight", false);
     await settle();
-    expect(titles("Projects")).toEqual(["docs", "api", "web"]);
+    expect(titles("Bots")).toEqual(["docs", "api", "web"]);
 
     key("ArrowRight");
     key("ArrowRight");
     await settle();
-    expect(titles("Projects")).toEqual(["api", "web", "docs"]);
+    expect(titles("Bots")).toEqual(["api", "web", "docs"]);
     expect(document.activeElement).toBe(button("docs"));
-    expect(announced("Projects")).toBe("docs moved to 3 of 3");
+    expect(announced("Bots")).toBe("docs moved to 3 of 3");
   });
 
   it("moves it a row with Alt+↑ and Alt+↓", async () => {
@@ -567,11 +567,11 @@ describe("the keyboard", () => {
     act(() => button("api").focus());
     key("ArrowDown");
     await settle();
-    expect(titles("Projects")).toEqual(["docs", "web", "api", "ada", "box"]);
-    expect(announced("Projects")).toBe("api moved to 3 of 5");
+    expect(titles("Bots")).toEqual(["docs", "web", "api", "ada", "box"]);
+    expect(announced("Bots")).toBe("api moved to 3 of 5");
     key("ArrowUp");
     await settle();
-    expect(titles("Projects")).toEqual(["api", "docs", "web", "ada", "box"]);
+    expect(titles("Bots")).toEqual(["api", "docs", "web", "ada", "box"]);
   });
 });
 
@@ -584,7 +584,7 @@ describe("the pins' grid", () => {
     const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(el.style.transform);
     return m === null ? [0, translated(el)] : [Number(m[1]), Number(m[2])];
   };
-  const cell = (title: string) => rows("Projects").find((r) => nameOf(r) === title) ?? host;
+  const cell = (title: string) => rows("Bots").find((r) => nameOf(r) === title) ?? host;
   beforeEach(() => {
     layout.mockImplementation(function (this: HTMLElement) {
       const list = this.parentElement;
@@ -606,9 +606,9 @@ describe("the pins' grid", () => {
     expect(moved(cell("web"))).toEqual([0, 0]);
     pointer(window, "pointerup", y - 4, CELL_W / 2 + 2 * CELL_W);
     await settle(SETTLE_MS + 20);
-    expect(titles("Projects")).toEqual(["docs", "api", "web", "ada"]);
+    expect(titles("Bots")).toEqual(["docs", "api", "web", "ada"]);
     expect(saved()).toEqual([["docs", "api", "web", "ada"]]);
-    expect(announced("Projects")).toBe("api moved to 2 of 4");
+    expect(announced("Bots")).toBe("api moved to 2 of 4");
   });
 
   it("carries one up a row, the cells it passes sliding on in reading order, a row's last down to the next", async () => {
@@ -623,13 +623,13 @@ describe("the pins' grid", () => {
     expect(moved(cell("web"))).toEqual([CELL_W, 0]);
     pointer(window, "pointerup", CELL_H / 2, CELL_W / 2);
     await settle(SETTLE_MS + 20);
-    expect(titles("Projects")).toEqual(["ada", "api", "docs", "web"]);
+    expect(titles("Bots")).toEqual(["ada", "api", "docs", "web"]);
     expect(saved()).toEqual([["ada", "api", "docs", "web"]]);
   });
 
   it("keeps the pins apart from the list: no line between them, and a chat that isn't pinned never joins the grid", () => {
     mount([...PINS, { ...row("misc"), pinned: false }]);
-    const grid = rows("Projects").filter((r) => r.parentElement?.className.includes("pins") === true);
+    const grid = rows("Bots").filter((r) => r.parentElement?.className.includes("pins") === true);
     expect(grid.map(nameOf)).toEqual(["api", "docs", "web", "ada"]);
     expect(host.querySelector("[data-pins-end]")).toBeNull();
   });
@@ -713,9 +713,9 @@ describe("pinning and unpinning by drag", () => {
   it("puts back a chat let go inside the list, whose order is its activity's, and a pin let go above the pins", async () => {
     mount([row("api"), unpinned("web"), unpinned("misc")]);
     await carry("web", GAP + 2 * ROW);
-    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    expect(titles("Bots")).toEqual(["api", "web", "misc"]);
     await carry("api", -40);
-    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    expect(titles("Bots")).toEqual(["api", "web", "misc"]);
     expect(saved()).toEqual([]);
     // The release was the drop's, not a click on the row.
     expect(went).toEqual([]);
@@ -784,7 +784,7 @@ describe("pinning and unpinning by drag", () => {
   it("keeps a drop out of another hub's group: let go over one, above or below, it goes back", async () => {
     mount([row("api"), unpinned("web"), unpinned("misc")]);
     // Another hub's group either side of this one's.
-    const own = section("Projects");
+    const own = section("Bots");
     const other = () => Object.assign(document.createElement("section"), { ariaLabel: "Other" });
     own.before(other());
     own.after(other());
@@ -794,7 +794,7 @@ describe("pinning and unpinning by drag", () => {
     await settle(SETTLE_MS + 20);
     await carry("api", GAP + 3 * ROW + 40);
     expect(saved()).toEqual([]);
-    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    expect(titles("Bots")).toEqual(["api", "web", "misc"]);
     // Inside it, the same drags pin and unpin: api leaves the hub's list, where misc is by now.
     await carry("misc", 10);
     await carry("api", GAP + 2 * ROW);
@@ -829,16 +829,16 @@ describe("a chat with new activity", () => {
 
   it("climbs to its place on the spring, drawn over the rows it passes, which make way below it", async () => {
     mount([unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     // web gets a message: its row is newest now.
     mount([unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
-    glidesFrom("Projects", was, ["web", "api", "docs"]);
-    const [web, api] = rows("Projects");
+    glidesFrom("Bots", was, ["web", "api", "docs"]);
+    const [web, api] = rows("Bots");
     expect(web?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-spring)`);
     expect(web?.dataset["gliding"]).toBe("up");
     expect(api?.dataset["gliding"]).toBe("down");
     await settle(SETTLE_MS + 20);
-    expect(rows("Projects").map((r) => [r.style.transform, r.dataset["gliding"]])).toEqual([
+    expect(rows("Bots").map((r) => [r.style.transform, r.dataset["gliding"]])).toEqual([
       ["", undefined],
       ["", undefined],
       ["", undefined],
@@ -852,7 +852,7 @@ describe("a chat with new activity", () => {
     mount([unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
     // web starts two rows down, right under docs' first place and a row under api's, and ends over both. Each hole
     // is where web is, seen from the row it is cut out of, and goes with it on the same spring.
-    expect(cutsOf("Projects")).toEqual({
+    expect(cutsOf("Bots")).toEqual({
       web: [null, null],
       api: [
         { bottom: 10000, holes: [[2 * ROW, 3 * ROW]] },
@@ -865,9 +865,9 @@ describe("a chat with new activity", () => {
     });
     const over = `${String(SETTLE_MS)}ms var(--ease-spring)`;
     const cut = `clip-path ${over}, mask-position ${over}`;
-    expect(rows("Projects").map((r) => r.style.transition)).toEqual([`transform ${over}`, `transform ${over}, ${cut}`, `transform ${over}, ${cut}`]);
+    expect(rows("Bots").map((r) => r.style.transition)).toEqual([`transform ${over}`, `transform ${over}, ${cut}`, `transform ${over}, ${cut}`]);
     await settle(SETTLE_MS + 20);
-    expect(rows("Projects").map((r) => [...cutNow(r), r.style.transition])).toEqual([
+    expect(rows("Bots").map((r) => [...cutNow(r), r.style.transition])).toEqual([
       ["", "", ""],
       ["", "", ""],
       ["", "", ""],
@@ -876,14 +876,14 @@ describe("a chat with new activity", () => {
 
   it("cuts one of two climbing at once where the other, drawn over it, crosses it, and the rows under both", () => {
     mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("misc", "09:02"), unpinned("web", "09:01")]);
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     // web and misc both get a message, web's the newer: web goes up three rows and passes misc, which goes up one.
     mount([unpinned("web", "09:06"), unpinned("misc", "09:05"), unpinned("api", "09:04"), unpinned("docs", "09:03")]);
-    glidesFrom("Projects", was, ["web", "misc", "api", "docs"]);
-    expect(rows("Projects").map((r) => r.dataset["gliding"])).toEqual(["up", "up", "down", "down"]);
+    glidesFrom("Bots", was, ["web", "misc", "api", "docs"]);
+    expect(rows("Bots").map((r) => r.dataset["gliding"])).toEqual(["up", "up", "down", "down"]);
     // misc is the lower of the two going up, so the page draws it over web: web is cut where misc is. api and docs
     // are under both, whose holes lie on each other half way.
-    expect(cutsOf("Projects")).toEqual({
+    expect(cutsOf("Bots")).toEqual({
       web: [
         { bottom: 10000, holes: [[-ROW, 0]] },
         { bottom: 10000, holes: [[ROW, 2 * ROW]] },
@@ -907,18 +907,18 @@ describe("a chat with new activity", () => {
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 2 * ROW + ROW / 2);
-    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("api");
-    expect(Object.fromEntries(onScreen("Projects"))).toEqual({ pin: 0, api: 2 * ROW, docs: ROW, web: 2 * ROW });
+    expect(section("Bots").querySelector("[data-lifted]")?.textContent).toContain("api");
+    expect(Object.fromEntries(onScreen("Bots"))).toEqual({ pin: 0, api: 2 * ROW, docs: ROW, web: 2 * ROW });
     mount([row("pin"), unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
-    expect(Object.fromEntries(paths("Projects"))).toEqual({ pin: { from: 0, to: 0 }, web: { from: 2 * ROW, to: 0 }, api: { from: 2 * ROW, to: ROW }, docs: { from: ROW, to: 2 * ROW } });
-    const [, web, api, docs] = rows("Projects");
+    expect(Object.fromEntries(paths("Bots"))).toEqual({ pin: { from: 0, to: 0 }, web: { from: 2 * ROW, to: 0 }, api: { from: 2 * ROW, to: ROW }, docs: { from: ROW, to: 2 * ROW } });
+    const [, web, api, docs] = rows("Bots");
     expect([web, api, docs].map((r) => [r?.dataset["gliding"], r?.hasAttribute("data-lifted")])).toEqual([
       ["up", false],
       ["up", true],
       ["down", false],
     ]);
     // api starts where web does and ends under it; docs is under both.
-    expect(cutsOf("Projects")).toEqual({
+    expect(cutsOf("Bots")).toEqual({
       pin: [null, null],
       web: [
         { bottom: 10000, holes: [[0, ROW]] },
@@ -932,7 +932,7 @@ describe("a chat with new activity", () => {
     });
     pointer(window, "pointerup", 2 * ROW + ROW / 2);
     await settle(SETTLE_MS + 20);
-    expect(rows("Projects").map((r) => [...cutNow(r), r.hasAttribute("data-lifted")])).toEqual([
+    expect(rows("Bots").map((r) => [...cutNow(r), r.hasAttribute("data-lifted")])).toEqual([
       ["", "", false],
       ["", "", false],
       ["", "", false],
@@ -942,13 +942,13 @@ describe("a chat with new activity", () => {
 
   it("uncovers a row the list has only now got as the rows under it make room: none of them is drawn on it", async () => {
     mount([unpinned("api", "09:04"), unpinned("web", "09:01")]);
-    const was = onScreen("Projects");
+    const was = onScreen("Bots");
     // A section unfolding, or a chat that is new: docs and misc come between api and web.
     mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("misc", "09:02"), unpinned("web", "09:01")]);
-    glidesFrom("Projects", was, ["api", "docs", "misc", "web"]);
+    glidesFrom("Bots", was, ["api", "docs", "misc", "web"]);
     // web starts where docs is: nothing of docs or misc shows yet. Its upper edge uncovers them on its way down, and
     // web itself is a hole in each, as any row drawn over another is.
-    expect(cutsOf("Projects")).toEqual({
+    expect(cutsOf("Bots")).toEqual({
       api: [null, null],
       docs: [
         { bottom: 0, holes: [[0, ROW]] },
@@ -962,9 +962,9 @@ describe("a chat with new activity", () => {
     });
     const over = `${String(SETTLE_MS)}ms var(--ease-spring)`;
     const cut = `clip-path ${over}, mask-position ${over}`;
-    expect(rows("Projects").map((r) => r.style.transition)).toEqual(["", cut, cut, `transform ${over}`]);
+    expect(rows("Bots").map((r) => r.style.transition)).toEqual(["", cut, cut, `transform ${over}`]);
     await settle(SETTLE_MS + 20);
-    expect(rows("Projects").map((r) => [...cutNow(r), r.style.transition])).toEqual([
+    expect(rows("Bots").map((r) => [...cutNow(r), r.style.transition])).toEqual([
       ["", "", ""],
       ["", "", ""],
       ["", "", ""],
@@ -977,7 +977,7 @@ describe("a chat with new activity", () => {
     try {
       mount([unpinned("api", "09:04"), unpinned("web", "09:01")]);
       mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("web", "09:01")]);
-      expect(rows("Projects").map((r) => [r.style.transform, ...cutNow(r), r.style.transition])).toEqual([
+      expect(rows("Bots").map((r) => [r.style.transform, ...cutNow(r), r.style.transition])).toEqual([
         ["", "", "", ""],
         ["", "", "", ""],
         ["", "", "", ""],
@@ -990,12 +990,12 @@ describe("a chat with new activity", () => {
   it("can't be dragged or moved with the keyboard: only a pinned chat can", async () => {
     mount([unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
     await drag("api", ROW + 6);
-    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
-    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+    expect(titles("Bots")).toEqual(["api", "docs", "web"]);
+    expect(section("Bots").querySelector("[data-lifted]")).toBeNull();
     act(() => button("docs").focus());
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true })));
     await settle();
-    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(titles("Bots")).toEqual(["api", "docs", "web"]);
     expect(saved()).toEqual([]);
   });
 });

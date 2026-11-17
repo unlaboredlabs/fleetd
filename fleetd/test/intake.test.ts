@@ -96,7 +96,7 @@ test("an unfinished upload expires on the hub, pieces file and all, and an orpha
   expect(short.message).toBe(`Upload ${next} lost pieces: 4 of its 8 bytes are here.`);
 });
 
-test("attachment_get reads a file of the project only", async () => {
+test("attachment_get reads a file of the bot only", async () => {
   const { hub } = rig();
   const shot = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new TextEncoder().encode(" bytes")]);
   const id = (await put(hub, me, { name: "shot.png", mime: "image/png", dataB64: b64(shot) })).attachmentId;
@@ -362,7 +362,7 @@ test("a lead and a task put a PNG in the chat; a lead message's block shows it, 
   expect(refs(hub, [mine.attachmentId, task.attachmentId]).map((r) => r.attachmentId)).toEqual([mine.attachmentId]);
 });
 
-test("chat_file takes only a file the node reads in the caller's own directory; another project's never shows; chat_image is gone", async () => {
+test("chat_file takes only a file the node reads in the caller's own directory; another bot's never shows; chat_image is gone", async () => {
   const { hub, asLead, call } = chatRig();
   const shot = png(40, 30, noisy);
   fakeNode(hub, {
@@ -404,7 +404,7 @@ test("chat_file puts a made file in the chat as a card; text under another name 
   expect((await refusal(call("chat_file", asLead("app"), "fake.pdf"))).message).toBe("fake.pdf changed while it was read.");
 });
 
-test("a person's Word document, workbook and CSV reach the lead in its project's folder, an Office file with its text beside it", async () => {
+test("a person's Word document, workbook and CSV reach the lead in its bot's folder, an Office file with its text beside it", async () => {
   const { hub } = chatRig();
   const node = fakeNode(hub, {});
   const lease = (await put(hub, me, {
@@ -455,7 +455,7 @@ test("the tools go through the registry: input decoded, a key without operate ev
   expect("error" in offline && offline.error.kind === "tool" && offline.error.error.code).toBeTruthy();
 });
 
-test("project_files asks the project's node for its files, best match first, and passes on that the list was cut", async () => {
+test("project_files asks the bot's node for its files, best match first, and passes on that the list was cut", async () => {
   const { hub } = rig();
   const tools = new Registry();
   registerAll(tools);

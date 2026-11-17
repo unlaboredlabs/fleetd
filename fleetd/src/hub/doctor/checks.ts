@@ -773,11 +773,11 @@ export function gitFetch(machineId: string, bases: [string, WorktreeBase][], now
           ? `${project} has no remote`
           : `${project} was offline (from ${start(b, now)})`,
     );
-    return machineEntry(machineId, "git_fetch", "ok", `At each project's last start on ${machineId}: ${each.join("; ")}.`);
+    return machineEntry(machineId, "git_fetch", "ok", `At each bot's last start on ${machineId}: ${each.join("; ")}.`);
   }
   const [project, base, kind] = first;
   const [text, command] = fetchFailedText(project, base, now);
-  const more = failing.length === 1 ? "" : ` ${failing.length - 1} more projects fail too.`;
+  const more = failing.length === 1 ? "" : ` ${failing.length - 1} more bots fail too.`;
   const status: DoctorStatus = kind === "auth" || kind === "no_ssh" ? "fail" : "warn";
   return machineEntry(machineId, "git_fetch", status, `${text}${more}`, manual(fixLabel(kind, machineId), command));
 }

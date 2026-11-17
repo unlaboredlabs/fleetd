@@ -75,9 +75,9 @@ export function NoProject() {
   if (projects === undefined) return <Text tone="quiet">Loading…</Text>;
   return (
     <div className={s.inline}>
-      <Text tone="quiet">No projects yet.</Text>
+      <Text tone="quiet">No bots yet.</Text>
       <Button size="sm" onClick={() => navigate({ id: "projects.add" })}>
-        New project
+        New bot
       </Button>
     </div>
   );

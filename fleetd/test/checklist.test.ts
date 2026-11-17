@@ -17,7 +17,7 @@ const lead: LeadCaller = { projectRef: PROJECT, by: "lead:lab-a/p1", agent: { ki
 const call = (body: Record<string, unknown>) => ({ op: "checklist", ...body }) as LeadCall;
 const shape = (items: unknown) => (items as { id: number; state: string; text: string }[]).map((i) => [i.id, i.state, i.text]);
 
-test("the lead sets and updates its project's list and the app reads it", async () => {
+test("the lead sets and updates its bot's list and the app reads it", async () => {
   const { hub, done } = testHub(Date.parse("2026-10-14T17:46:40Z"));
   const tools = new Registry();
   registerAll(tools);

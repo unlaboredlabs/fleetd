@@ -116,7 +116,7 @@ function remembered(hub: Hub, r: ProjectRef, caller: LeadCaller, item: Remembere
     record(hub.db, r, item);
     return;
   }
-  const where = item.scope === "user" ? " for every project" : item.topic !== undefined ? ` (${item.topic})` : "";
+  const where = item.scope === "user" ? " for every bot" : item.topic !== undefined ? ` (${item.topic})` : "";
   const text =
     item.forgotten === true
       ? item.reason !== undefined

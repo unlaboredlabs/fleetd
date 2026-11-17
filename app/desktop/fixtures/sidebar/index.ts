@@ -80,7 +80,7 @@ const colored = (f: Fixture): Fixture => {
 };
 
 const colors = (base: Fixture): Fixture => {
-  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: each project's bot in a color of its own, mobile in slate, the default."));
+  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: each bot in a color of its own, mobile in slate, the default."));
   // storefront's settings, where its color is picked.
   const storefront = obj(arr(f.snapshot?.["projects"]).find((p) => obj(p)["title"] === "storefront"));
   const ref = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };

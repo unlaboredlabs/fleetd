@@ -351,7 +351,7 @@ test("an export an older fleetd wrote: its rows go through the migrations it had
   expect(b.hub.db.all("SELECT proposed FROM project_setup_clones")).toEqual([]);
 });
 
-test("an export from before the D317 renames: what it kept under the old names arrives under the project's", async () => {
+test("an export from before the D317 renames: what it kept under the old names arrives under the bot's", async () => {
   const from = newPlace();
   rmSync(join(from.home, "hub.sqlite"));
   const old = new Database(join(from.home, "hub.sqlite"), { create: true, strict: true });
@@ -476,7 +476,7 @@ describe("an import that can't go through changes nothing", () => {
     const e = await refusal(importInto(from, from.file));
     expect(e.reason).toBe("refused");
     expect(e.message).toStartWith("This hub already has data (projects, chat messages, orders, tasks, ");
-    expect(e.message).toEndWith("An export loads into a fresh hub only, before any project is added or machine with projects joins. Nothing was changed.");
+    expect(e.message).toEndWith("An export loads into a fresh hub only, before any bot is added or machine with bots joins. Nothing was changed.");
     expect(stateOf(from)).toEqual(own);
 
     const { p: used } = await fresh();

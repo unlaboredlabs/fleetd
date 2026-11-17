@@ -113,7 +113,7 @@ export class Leads {
 
   private projectOf(r: ProjectRef): ProjectSummary {
     const p = store(this.hub).projectGet(r);
-    if (!p) throw new ToolError("not_found", `No project ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
+    if (!p) throw new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, `Call project_get with machineId ${r.machineId} and no projectId.`);
     return p;
   }
 
@@ -165,7 +165,7 @@ export class Leads {
   restart(r: ProjectRef): Promise<Lead> {
     return this.locked(async () => {
       const existing = this.records.leadGet(r);
-      if (!existing) throw new ToolError("not_found", `Project ${r.projectId} on ${r.machineId} has no lead to restart.`, "Call lead_start first.");
+      if (!existing) throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no lead to restart.`, "Call lead_start first.");
       return this.launch(r, this.projectOf(r), existing.sessionGeneration + 1);
     });
   }

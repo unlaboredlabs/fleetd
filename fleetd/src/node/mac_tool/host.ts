@@ -216,7 +216,7 @@ export class Host {
     const name = safePart(named);
     if (!name) throw refuse(`${named} can't name a folder`);
     const project = safePart(caller.projectId);
-    if (!project) throw refuse("the project's id can't name a folder");
+    if (!project) throw refuse("the bot's id can't name a folder");
     const dir = join(this.root, name);
     try {
       for (const sub of ["jobs", "in", "out", "tmp", "bin", "DerivedData"]) mkdirSync(join(dir, sub), { recursive: true });

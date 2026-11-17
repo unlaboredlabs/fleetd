@@ -47,7 +47,7 @@ export function promptVerdict(tool: string, input: unknown, automation: Automati
     return card ? { ask: card } : undefined;
   }
   if (tool === AUTOMATION_CONFIRM_TOOL) {
-    return automation ? { ask: automationPreview(automation) } : { deny: "Blocked by fleetd: this project has no such automation. automation_list names them." };
+    return automation ? { ask: automationPreview(automation) } : { deny: "Blocked by fleetd: this bot has no such automation. automation_list names them." };
   }
   if (tool === BRIDGE_TOOL) {
     const card = bridgePreview(input);

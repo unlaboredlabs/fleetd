@@ -98,7 +98,7 @@ async function answer(hub: Hub, caller: LeadCaller, call: Record<string, unknown
   if (caller.agent.kind !== "lead" || !isLiveProject(hub, r)) {
     throw new ToolError(
       "forbidden",
-      "Only a project's lead pays at a checkout or asks for a secure input, and this session is none.",
+      "Only a bot's lead pays at a checkout or asks for a secure input, and this session is none.",
       "leave the payment to the person and say so",
     );
   }
@@ -116,7 +116,7 @@ async function answer(hub: Hub, caller: LeadCaller, call: Record<string, unknown
         throw new ToolError(
           "invalid",
           "You have no card to pay with.",
-          "ask the person to pick one: the project's Settings › Payments, from a Credit Card item in their 1Password; then ask again",
+          "ask the person to pick one: the bot's Settings › Payments, from a Credit Card item in their 1Password; then ask again",
         );
       }
       const opened = openPurchase(a, r, open, card, noAsk);

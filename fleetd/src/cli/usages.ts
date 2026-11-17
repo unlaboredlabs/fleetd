@@ -14,7 +14,7 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              set up fleetd step by step in a terminal: the hub on this machine (home default
              ~/.fleetd/hub, kept running by a systemd or launchd user service), where it listens
              (your tailnet when there is one), the claude and gh logins, the machines that run
-             agents, a first project and the desktop app, then the hub's setup steps. Run it again to
+             agents, a first bot and the desktop app, then the hub's setup steps. Run it again to
              check and repair; it keeps what works. --yes takes every default. Without a
              terminal and without --yes it only sets up the hub. --url is how devices reach the
              hub (default http://<listen>); --git-identity is the commit author for every
@@ -87,46 +87,46 @@ export const GITHUB_APP_USAGE = `  github-app
 
 export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
          [--use-existing] [--yes] [--hub <url>]
-             add a project: a checkout or a plain folder on a machine (this one by default),
+             add a bot: a checkout or a plain folder on a machine (this one by default),
              or a GitHub repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one.
-             Everyone on the hub sees and uses it, as every project
+             Everyone on the hub sees and uses it, as every bot
   project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
-             start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
+             start a new, empty bot: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
              repo, unless --git-init; add a repo later with project repo add
   project list [--archived] [--machine <id>] [--hub <url>]
-  project archive <machine>/<project> [--hub <url>]
+  project archive <machine>/<bot> [--hub <url>]
              its lead stops and doesn't start again; its chat, memory and folder stay
-  project unarchive <machine>/<project> [--hub <url>]
+  project unarchive <machine>/<bot> [--hub <url>]
              bring it back: its lead starts with your next message
-  project stop <machine>/<project> --key-file <human key> [--yes] [--hub <url>]
+  project stop <machine>/<bot> --key-file <human key> [--yes] [--hub <url>]
              stop its lead's turn and its agents, as you; the lead and its chat stay,
              and the chat says what stopped
-  project remove <machine>/<project> [--yes] [--hub <url>]
+  project remove <machine>/<bot> [--yes] [--hub <url>]
              stop its agents and erase it: its chat, memory, skills, approvals, orders,
              automations and sign-ins; its files, branches and worktrees stay
-  project repo list <machine>/<project> [--hub <url>]
-  project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
+  project repo list <machine>/<bot> [--hub <url>]
+  project repo add <machine>/<bot> <path|github-url> [--name <n>] [--dest <dir>]
          [--use-existing] [--hub <url>]
-             add a repo to the project: a checkout on its machine, or a GitHub repo
-             cloned there, with progress. A checkout that is a project of its own is
+             add a repo to the bot: a checkout on its machine, or a GitHub repo
+             cloned there, with progress. A checkout that is a bot of its own is
              archived: its chat stays, its lead stops running
-  project repo remove <machine>/<project> <name> [--yes] [--hub <url>]
-             take the repo out of the project and end its agents; its files stay
-  project set <machine>/<project> --max-agents <n>|default [--pause-extras] [--hub <url>]
+  project repo remove <machine>/<bot> <name> [--yes] [--hub <url>]
+             take the repo out of the bot and end its agents; its files stay
+  project set <machine>/<bot> --max-agents <n>|default [--pause-extras] [--hub <url>]
   project set --fleet-cap <n> [--hub <url>]
-             the most agents the project runs at once (its lead not counted), or the
+             the most agents the bot runs at once (its lead not counted), or the
              fleet's cap on running agents (admin key); more wait queued and start as
              slots free. default: its machine's cap within the fleet cap, following
              both. Lowering stops nothing; --pause-extras has the newest agents above
              the new max push their work and wait
-  project set <machine>/<project> --profiles <name>,...|none [--hub <url>]
+  project set <machine>/<bot> --profiles <name>,...|none [--hub <url>]
              the task profiles its lead may run agents on besides the hub's default,
-             which every project allows; none: the default alone
-  project profiles [<machine>/<project>] [--hub <url>]
+             which every bot allows; none: the default alone
+  project profiles [<machine>/<bot>] [--hub <url>]
              the hub's task profiles: model, effort, fast mode and note, and which
-             the project allows
+             the bot allows
   project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
          [--fast on|off] [--note <text>] [--rename <new>] [--default] [--lead]
          [--delete] --key-file <human key> [--hub <url>]
@@ -146,7 +146,7 @@ export const HUB_KEY_USAGE = `  hub key create --name <name> --role <read|operat
              create an agent key for the MCP endpoint; prints the key once, or with --out writes it
              to a new file (0600) and prints the file's path
   hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>]
-             a named agent's key, to write in a project's chat (fleetd chat --key-file): its
+             a named agent's key, to write in a bot's chat (fleetd chat --key-file): its
              messages show as that agent's, never yours. Operate on every machine unless
              --machines. Written to a new file (0600), <hub home>/keys/<name>.key unless --out;
              prints only the file's path
@@ -175,18 +175,18 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
              default 30, for it to), then opens its pane
 `;
 
-export const PROMPTS_USAGE = `  prompts list [--project <machine>/<project>]
+export const PROMPTS_USAGE = `  prompts list [--project <machine>/<bot>]
              every prompt fleetd sends a model, which text is in effect, and
              "update" where a release changed the default you edited
-  prompts show <id> [--project <machine>/<project>] [--default]
+  prompts show <id> [--project <machine>/<bot>] [--default]
   prompts show --session <machine>/<thread>
              the text in effect (or the shipped one), or exactly what a session was told
-  prompts edit <id> [--project <machine>/<project>]
+  prompts edit <id> [--project <machine>/<bot>]
              edit it in $VISUAL or $EDITOR; warns when a placeholder or a safety rule is gone
-  prompts reset <id> [--project <machine>/<project>]
-  prompts diff <id> [--project <machine>/<project>]
+  prompts reset <id> [--project <machine>/<bot>]
+  prompts diff <id> [--project <machine>/<bot>]
              shipped vs yours; after a release changed it, what changed in each
-  instructions show|edit [--project <machine>/<project>]
+  instructions show|edit [--project <machine>/<bot>]
              your custom instructions, appended to every lead and task
 `;
 
@@ -206,9 +206,9 @@ export const PUSH_RELAY_USAGE = `  push-relay [--listen 127.0.0.1:4795]
              (admin key on every machine)
 `;
 
-export const TIME_USAGE = `  time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path>]
+export const TIME_USAGE = `  time [<order>|<bot>] [--since 7d] [--json] [--hub <url> --key-file <path>]
              where agents' time went: an order's critical path, agent time by category, the
-             slowest commands and the findings; a project by id or title (<machine>/<project>
+             slowest commands and the findings; a bot by id or title (<machine>/<bot>
              when two machines have one), the whole fleet with neither. --since takes 1h to
              400d, a date or an ISO time. Timelines are kept 30 days, daily totals 400. On the
              hub machine it needs no --hub or --key-file
@@ -217,17 +217,17 @@ export const TIME_USAGE = `  time [<order>|<project>] [--since 7d] [--json] [--h
 export const METRICS_USAGE = `  metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path>]
              what the factory turned out: PRs merged per day by route, time from order to
              merged, your minutes per merged PR and the share through fleetd, over the last
-             --days calendar days (1-400, today included) in this machine's zone; one project by
-             id or title (<machine>/<project> when two machines have one), the whole fleet
+             --days calendar days (1-400, today included) in this machine's zone; one bot by
+             id or title (<machine>/<bot> when two machines have one), the whole fleet
              without one. Landed changes are kept 400 days. On the hub machine it needs no
              --hub or --key-file
 `;
 
-export const STATUS_USAGE = `  status [<project>] [--watch] [--json] [--hub <url> --key-file <path>]
-             one row per project, as the app's Status screen shows it: what it is doing
+export const STATUS_USAGE = `  status [<bot>] [--watch] [--json] [--hub <url> --key-file <path>]
+             one row per bot, as the app's Status screen shows it: what it is doing
              (working, waiting on you, blocked and why, idle), its work in groups (waiting on
              you, in review, working, landing, idle, done), agents running and the last merge;
-             one project by id or title (<machine>/<project> when two machines have one).
+             one bot by id or title (<machine>/<bot> when two machines have one).
              --watch prints the rows again after each change; a stale row says so. On the hub
              machine it needs no --hub or --key-file
 `;
@@ -245,7 +245,7 @@ export const STEER_USAGE = `  steer T<n> "<text>" [--now] [--wait] --key-file <h
              steer one agent (T88) mid-run. Plain: it lands at the agent's next step, after the
              tool it is running returns. --now stops that step and delivers at once. --wait
              follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed.
-             Without --hub it uses the hub on this machine. To reach a project's lead, use
+             Without --hub it uses the hub on this machine. To reach a bot's lead, use
              fleetd chat
   steer withdraw S<n> --key-file <human key> [--hub <url>]
              take back a steer the agent has not taken in yet
@@ -253,14 +253,14 @@ export const STEER_USAGE = `  steer T<n> "<text>" [--now] [--wait] --key-file <h
              an order's (or one agent's) recent steers and their receipts
 `;
 
-export const CHAT_USAGE = `  chat <machine>/<project> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url>]
-             write to a project's lead, as the app does: it starts the lead's next turn, or lands at
+export const CHAT_USAGE = `  chat <machine>/<bot> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url>]
+             write to a bot's lead, as the app does: it starts the lead's next turn, or lands at
              its next step while it works; --now (a human key) stops that step and delivers at once.
              --wait prints the lead's reply when its turn ends; --follow streams it as it is written.
              Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent
              key as that agent, by its name
-  chat history <project> [--page <n>] --key-file <key> [--hub <url>]
-             the project's chat: who wrote each message, when, and what; the newest page, older
+  chat history <bot> [--page <n>] --key-file <key> [--hub <url>]
+             the bot's chat: who wrote each message, when, and what; the newest page, older
              ones with --page
 `;
 
@@ -307,7 +307,7 @@ export const MACHINE_ADD_USAGE = `  machine add <ssh-host> | --local [--machine-
              stop and remove the node's service on the machine, revoke its key on the hub and forget
              its rows there (run again, it clears what an older remove left); --purge also deletes
              ~/.fleetd/node and ~/.fleetd/claude.env there; refused while the machine runs
-             projects' leads, unless --force
+             bots' leads, unless --force
 `;
 
 export const machineUsage = () => `${MACHINE_ADD_USAGE}${MACHINE_SET_USAGE}`;
@@ -346,13 +346,13 @@ Homebrew commands are on the PATH there. None of your secrets go to the Mac unle
 
 export const EXPORT_USAGE = `  export [--out <file>] [--no-secrets] [--passphrase-file <file|->]
              write this hub's data to one file (default fleetd-export-<time>.tar here), beside
-             the running hub: projects, chats, orders, tasks, decisions, checklists, memory,
+             the running hub: bots, chats, orders, tasks, decisions, checklists, memory,
              skills, artifacts, attachments, recordings, automations, people and settings. The
              vault and the other secrets go in sealed under a passphrase you type (12 characters
              or more; for a script, --passphrase-file or FLEETD_EXPORT_PASSPHRASE), or stay out
              with --no-secrets. Machines' keys and device sign-ins are never in it
   import <file> [--no-secrets] [--passphrase-file <file|->]
-             load an export into this hub, which must be fresh (no projects yet) and stopped.
+             load an export into this hub, which must be fresh (no bots yet) and stopped.
              The whole file is checked first and it loads all or nothing. Afterwards machines
              join again under their ids and people sign in again; it prints the commands. An
              export from a newer fleetd is refused: update fleetd first

@@ -207,7 +207,7 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
                   setActionAt(0);
                 }
               }}
-              placeholder={actionsOf === null ? "Go to a project, a setting, Status or Time" : "Search actions"}
+              placeholder={actionsOf === null ? "Go to a bot, a setting, Status or Time" : "Search actions"}
               aria-label="Search"
               role="combobox"
               aria-expanded

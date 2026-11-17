@@ -26,7 +26,7 @@ describe("the sidebar's default order", () => {
   });
 });
 
-describe("a project's name", () => {
+describe("a bot's name", () => {
   it("takes one line under 80 characters, and says nothing about an empty box", () => {
     expect(nameProblem("")).toBeUndefined();
     expect(nameProblem("Ada")).toBeUndefined();
@@ -35,7 +35,7 @@ describe("a project's name", () => {
   });
 });
 
-describe("a project's delete", () => {
+describe("a bot's delete", () => {
   it("names what is erased and the folder the tickbox deletes", () => {
     const w = deleteWords("Ada", "devbox", "~/fleetd/ada");
     expect(w.message).toMatch(/^Ada stops now.*chat, memory, skills, approvals, purchases, automations and sign-ins\. The files in its folder stay unless you tick below\./u);

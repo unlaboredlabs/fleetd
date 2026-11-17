@@ -535,12 +535,12 @@ describe("an integration's approval", () => {
   });
 });
 
-describe("a lead's proposal for a new project", () => {
+describe("a lead's proposal for a new bot", () => {
   it("shows what would be made, and a person's one tap answers it", async () => {
     const hub = await render("Q41");
     const text = host.textContent;
-    expect(text).toContain("New project");
-    expect(text).toContain("The lead wants to create the project “Pricing page”");
+    expect(text).toContain("New bot");
+    expect(text).toContain("The lead wants to create the bot “Pricing page”");
     expect(one("[data-proposal]").textContent).toBe("Repoacme/pricing-pageFolder/home/dev/src/pricing-page");
     expect(text).toContain("on devbox");
     // Never as any tool's use, and its whole input stays one click away.
@@ -552,7 +552,7 @@ describe("a lead's proposal for a new project", () => {
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q41", decision: "approve" }]);
   });
-  it("says when a project has no repo, and No is one tap too", async () => {
+  it("says when a bot has no repo, and No is one tap too", async () => {
     const hub = await render("Q42");
     expect(one("[data-proposal]").textContent).toBe("RepoNoneFolder/home/dev/fleetd/projects/release-notes");
     await click(button("Don't create"));
@@ -561,9 +561,9 @@ describe("a lead's proposal for a new project", () => {
   });
   it("folds, once answered, to what was decided", async () => {
     const hub = await render("Q43");
-    expect(one("button[aria-expanded]").textContent).toMatch(/^Approved: a new project· you approved at /u);
+    expect(one("button[aria-expanded]").textContent).toMatch(/^Approved: a new bot· you approved at /u);
     await hub.show("Q44");
-    expect(one("button[aria-expanded]").textContent).toMatch(/^Declined: a new project· you said no at /u);
+    expect(one("button[aria-expanded]").textContent).toMatch(/^Declined: a new bot· you said no at /u);
     await hub.show("Q45");
     expect(one("button[aria-expanded]").textContent).toMatch(/^Approved, not created/u);
   });

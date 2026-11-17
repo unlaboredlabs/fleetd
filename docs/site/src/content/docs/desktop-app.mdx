@@ -1,9 +1,9 @@
 ---
 title: The desktop app
-description: Pair the app with your hub, chat with each project's lead, and the keyboard shortcuts.
+description: Pair the app with your hub, chat with each bot's lead, and the keyboard shortcuts.
 ---
 
-You'll pair the desktop app with your [hub](/docs/glossary#hub) and use it to chat with each project's
+You'll pair the desktop app with your [hub](/docs/glossary#hub) and use it to chat with each bot's
 [lead](/docs/glossary#lead).
 
 The app is installed with fleetd on any machine with a display. To add it on Linux without a display, see
@@ -48,16 +48,16 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your chats, newest first: each with its picture, name, time and newest line ("You: …" when you wrote it). A chat that moves glides to its place, and nothing moves while the pointer is over the list. Pin a chat from its right-click menu to keep it on top (up to 9, the same as on your phone), and drag a pinned one, or press ⌥↑ / ⌥↓ on one you've tabbed to, to order your pins. A pinned name cut short shows whole when you point at it. Group the rest under names of your own with **Move to section** in a chat's right-click menu, or by dragging a chat onto a section's label: [sections](/docs/projects#sections) are yours alone, the same on each of your devices, and a click on a label folds one. A dot at a row's end means it waits on you (amber; its tooltip says why: a reply, an approval, a secret or a block) or has a new message. Otherwise it says "CI red" while a check fails on main (which blocks nothing), or how many agents are working. New project is the round button at the top. At the bottom, your name opens a small menu: who you are, your hub's name beside a dot while it's connected (a click opens it in Settings › You › Hubs & devices, where its address, **Pair again** and **Disconnect** are), and Settings. Anything off is one more row with the one thing to do: **Retry** when the hub is out of reach, **Pair again** when it refused the key, **Update** or **Try again** for an update, and, for owners and admins, **Open** on a machine that is offline and **Finish** on setup steps left. A member is told to ask an admin instead. [Screens](/docs/browser-sessions#page) and Factory are the round buttons beside it. While all is well that's all it shows. An update says one word under your name (**Update**, **Updating…**, **Updated**, **Not updated**), and a small mark on your picture means a hub is out of reach or refused the key (for owners and admins, also a machine offline or setup steps left). |
-| The top row | No bar: the page's title and its controls float over the page. In a chat they are glass capsules the conversation scrolls under: the project's picture and name, then only [what needs you](#chat), if anything; its settings; and at the end the agents capsule, with how many agents are working, which opens and closes the panel. The panel starts at the window's top, so its tabs share this row. ⌘K opens the command palette. The sidebar floats in from the window's edge; ⌘B or View › Toggle Sidebar hides and shows it. |
-| The chat | The selected project's conversation with its lead. |
-| The panel | Beside a chat, on the right, one row of four tabs and a list under it: **Agents** (the project's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs), what [merges now](#train) among them), **Plan** (its [to-do](#checklist) and the work it asked other projects for) and **History** ([what happened](#activity) in it, with its [decisions](#decisions) a row away). Point at a tab for what it holds. The gear at the row's end opens the project's settings. **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them, before History, once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the agents capsule at the top right, ⌥⌘B or View › Toggle Panel. |
+| Sidebar | Your chats, newest first: each with its picture, name, time and newest line ("You: …" when you wrote it). A chat that moves glides to its place, and nothing moves while the pointer is over the list. Pin a chat from its right-click menu to keep it on top (up to 9, the same as on your phone), and drag a pinned one, or press ⌥↑ / ⌥↓ on one you've tabbed to, to order your pins. A pinned name cut short shows whole when you point at it. Group the rest under names of your own with **Move to section** in a chat's right-click menu, or by dragging a chat onto a section's label: [sections](/docs/projects#sections) are yours alone, the same on each of your devices, and a click on a label folds one. A dot at a row's end means it waits on you (amber; its tooltip says why: a reply, an approval, a secret or a block) or has a new message. Otherwise it says "CI red" while a check fails on main (which blocks nothing), or how many agents are working. New bot is the round button at the top. At the bottom, your name opens a small menu: who you are, your hub's name beside a dot while it's connected (a click opens it in Settings › You › Hubs & devices, where its address, **Pair again** and **Disconnect** are), and Settings. Anything off is one more row with the one thing to do: **Retry** when the hub is out of reach, **Pair again** when it refused the key, **Update** or **Try again** for an update, and, for owners and admins, **Open** on a machine that is offline and **Finish** on setup steps left. A member is told to ask an admin instead. [Screens](/docs/browser-sessions#page) and Factory are the round buttons beside it. While all is well that's all it shows. An update says one word under your name (**Update**, **Updating…**, **Updated**, **Not updated**), and a small mark on your picture means a hub is out of reach or refused the key (for owners and admins, also a machine offline or setup steps left). |
+| The top row | No bar: the page's title and its controls float over the page. In a chat they are glass capsules the conversation scrolls under: the bot's picture and name, then only [what needs you](#chat), if anything; its settings; and at the end the agents capsule, with how many agents are working, which opens and closes the panel. The panel starts at the window's top, so its tabs share this row. ⌘K opens the command palette. The sidebar floats in from the window's edge; ⌘B or View › Toggle Sidebar hides and shows it. |
+| The chat | The selected bot's conversation with its lead. |
+| The panel | Beside a chat, on the right, one row of four tabs and a list under it: **Agents** (the bot's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs), what [merges now](#train) among them), **Plan** (its [to-do](#checklist) and the work it asked other bots for) and **History** ([what happened](#activity) in it, with its [decisions](#decisions) a row away). Point at a tab for what it holds. The gear at the row's end opens the bot's settings. **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them, before History, once there is either. The bot's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the agents capsule at the top right, ⌥⌘B or View › Toggle Panel. |
 
 Drag the sidebar's right edge to make it wider or narrower, from 200 px up to 420 px or 40% of the window, whichever
 is smaller; double-click the edge to put it back. From the keyboard, Tab to the edge and use ← and →. In a window
 narrower than about 1000 px the sidebar and the panel hide themselves; ⌘B and ⌥⌘B show them again. The app remembers
 the sidebar's width, whether you left the panel open, the tab you had and its width. On macOS the Dock icon shows how
-many projects need you.
+many bots need you.
 
 ### The panel {#panel}
 
@@ -93,13 +93,13 @@ to start one with it. Other files dropped on a chat attach to your message. Righ
 | The island | A small capsule centred above the message box: what the lead is doing now when it's more than thinking ("Reading `rounding.ts`"; a long file name is shortened in the middle), a mark per agent at work and how many, and a red dot while a check is red on main. Click it for main's reason in full, a row per agent and the PRs they are on (an agent opens its work in [Agents](#agents), a PR number [the PR](/docs/chat#prs), **Open in the panel** the whole list), and, once agents have messaged each other, "8 DMs between agents", which opens their [DMs](#dms). With nothing to say, it isn't there. |
 | One-line events | Pull requests opened, merged or sent back. A PR's number or GitHub link here or in a message opens [the PR](/docs/chat#prs) in the panel. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
-| The top row | The project's name, then what needs you, and nothing when nothing does. While the lead waits on you, what for ("Waiting on you: 2 questions, asked at 09:02") and Show, which scrolls to it. Otherwise why the project is blocked, with Resume when its machine's usage pause is why. Otherwise what there is to look at ("2 to look at: the Machines page redesign"): Show scrolls to that message and rings it, Dismiss drops it; see [Things to look at](/docs/chat#look-at). A check red on main blocks nothing: it's the island's red dot. |
+| The top row | The bot's name, then what needs you, and nothing when nothing does. While the lead waits on you, what for ("Waiting on you: 2 questions, asked at 09:02") and Show, which scrolls to it. Otherwise why the bot is blocked, with Resume when its machine's usage pause is why. Otherwise what there is to look at ("2 to look at: the Machines page redesign"): Show scrolls to that message and rings it, Dismiss drops it; see [Things to look at](/docs/chat#look-at). A check red on main blocks nothing: it's the island's red dot. |
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the island above the message box shows three agents at work. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
+![The storefront bot's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the island above the message box shows three agents at work. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
 ### When the hub is out of reach {#offline}
 
-Your projects and recent chats stay on screen, marked "Offline, as of 09:02". You can keep writing: each message shows
+Your bots and recent chats stay on screen, marked "Offline, as of 09:02". You can keep writing: each message shows
 "queued" and sends by itself when the app reconnects, once, even if you quit in between. Edit or Dismiss takes a queued
 message back. The banner says why the hub doesn't answer and when the app tries again; Retry now tries at once.
 Approvals, secrets and Stop wait until the hub is back.
@@ -111,7 +111,7 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 ## Agents {#agents}
 
-The panel's **Agents** tab (⌥⌘B shows the panel) lists the project's agents at work under the orders they work on,
+The panel's **Agents** tab (⌥⌘B shows the panel) lists the bot's agents at work under the orders they work on,
 those waiting on you first: each one's role, its task, what it's doing and for how long. Under them, **Screens** lists
 the [screens](/docs/browser-sessions) they use: the icons beside it open the Screens page and a new screen. Click one to watch its work as it happens: what it was told,
 the commands it ran, the files it edited and what it's writing. Watching doesn't interrupt it. To change what it does,
@@ -119,17 +119,17 @@ tell the lead in the chat. Its PR number opens [the PR](/docs/chat#prs), and **W
 first message and prompts it started with; **All agents** or Esc goes back to the list. The [DMs](#dms) it sent other
 agents and got from them stand among its steps as cards.
 
-Under the project's own agents, folded, **Also on this repo** lists live work on the same repo and base that isn't
-theirs, read-only, and **Other projects** lists every other project's agents at work, each project under its name,
-those with an agent waiting on you first. Click an agent of another project to open its work beside that project's
+Under the bot's own agents, folded, **Also on this repo** lists live work on the same repo and base that isn't
+theirs, read-only, and **Other bots** lists every other bot's agents at work, each bot under its name,
+those with an agent waiting on you first. Click an agent of another bot to open its work beside that bot's
 chat. Neither is there when it has nothing to list, and what you unfolded stays so while the app runs.
 
-The project's [Max agents](/docs/projects#max-agents) is in its settings (the gear at the end of the panel's row, then
+The bot's [Max agents](/docs/projects#max-agents) is in its settings (the gear at the end of the panel's row, then
 **Agents**), or **Max agents** in the command palette.
 
 ## Merge line {#train}
 
-**Shipping** shows the project's [merge train](/docs/merge-train) among its pull requests. **Needs a look** comes
+**Shipping** shows the bot's [merge train](/docs/merge-train) among its pull requests. **Needs a look** comes
 first: the ones the train holds or sent back (a `hold` label, a conflict with the base, failed checks). Then
 **Merging now**, a card with the pull request the train has in hand, its stage (rebasing onto the base, running CI,
 merging) and the checks it waits on; pull requests that go through together as a batch share the card. **In line**
@@ -141,7 +141,7 @@ line. It only reads: the train itself decides what merges.
 
 ## To-do {#checklist}
 
-**Plan** shows the project's checklist as its lead keeps it: how much is done, then what's being done now,
+**Plan** shows the bot's checklist as its lead keeps it: how much is done, then what's being done now,
 what's still to do and, folded away, what's done. An item's pull request or agent opens in the panel. The lead
 updates the list as the work moves, and the view follows along as it does. Its count is the items still open.
 
@@ -149,13 +149,13 @@ You can tidy the list yourself. Point at an item for its delete button, or right
 **Clear**, beside **Done**, takes off every done item at once and shows only while something is done.
 Neither asks first: the items go at once, and **Undo** in the toast puts them back for a few seconds after, held
 while you point at it. Quitting before then still removes them. The lead's next wake tells it what you took off,
-and it leaves those off unless you ask again. To add or change an item, tell the lead in the chat. A project's lead
-starts a checklist when it plans work; until then the tab says there is none yet. **Asked of other projects**, under
-the list, is the work the lead asked your other projects for: see [Asked](/docs/projects#asked).
+and it leaves those off unless you ask again. To add or change an item, tell the lead in the chat. A bot's lead
+starts a checklist when it plans work; until then the tab says there is none yet. **Asked of other bots**, under
+the list, is the work the lead asked your other bots for: see [Asked](/docs/projects#asked).
 
 ## What happened {#activity}
 
-**History** shows what happened in the project while you were away, newest first: agents starting and
+**History** shows what happened in the bot while you were away, newest first: agents starting and
 finishing, reviews, merges, what was asked of you and what you answered. A line marks what came in since you last
 looked, and a run of the same thing (a pull request reviewed again and again) folds into one row. A line that names
 an agent or a pull request opens it. Its count is what came in since you last looked. Two agents'
@@ -164,7 +164,7 @@ the top right narrows the list to one kind of event; its **DMs** shows their log
 
 ## DMs between agents {#dms}
 
-A project's agents message each other directly ("DMs"): a writer tells the others what it found, asks the agent that
+A bot's agents message each other directly ("DMs"): a writer tells the others what it found, asks the agent that
 owns a file, or answers a question. A DM reaches a working agent at its next step, and its lead gets a quiet copy.
 It never starts an agent that has finished, except to answer a question that agent is waiting on; otherwise it is
 held for that agent's next run. Nothing about DMs shows in the chat itself.
@@ -172,16 +172,16 @@ held for that agent's next run. Nothing about DMs shows in the chat itself.
 | Where | What you see |
 |---|---|
 | An agent's work | Each DM it sent or got, as a card among its steps: "From T2573" or "To T2577" with that agent's title, the words cut at three lines (click for the rest), and what became of it: "Read at its next step, 23:02", "Held: it has finished…", "Woke it, 23:09: it answers what T2577 asked at 23:05", or "Didn't wake T2567: it has finished and isn't waiting on T2584. Held for its next run." The other agent's id opens its work. |
-| History, filtered to **DMs** | Every DM between the project's agents, newest first: who wrote to whom, the opening words, what became of it (delivered, held, woke, didn't wake) and when. Click a row for the full words and a line per recipient, ending with the lead's copy. **Any agent** narrows it to one agent's DMs. |
+| History, filtered to **DMs** | Every DM between the bot's agents, newest first: who wrote to whom, the opening words, what became of it (delivered, held, woke, didn't wake) and when. Click a row for the full words and a line per recipient, ending with the lead's copy. **Any agent** narrows it to one agent's DMs. |
 | The island above the message box | "8 DMs between agents" in what it opens, a way to the DMs log. |
 
-Everyone in the project sees the same DMs, members and admins alike, and a device paired read-only sees them too. Nobody
+Everyone in the bot sees the same DMs, members and admins alike, and a device paired read-only sees them too. Nobody
 can write, edit or delete one: agents write them, and they stay as the log. To change what an agent does after
 reading its DMs, steer it or tell the lead.
 
 ## Decisions {#decisions}
 
-**Decisions**, the line at the top of History, lists what the lead and you have decided in the project, one row per question with the answer in
+**Decisions**, the line at the top of History, lists what the lead and you have decided in the bot, one row per question with the answer in
 force first. What it replaced, or that you revoked it, folds under it. Search, or narrow the list with the filter beside it to who decided and
 where it applies; open a row for its why and history, and change or revoke the decision there. Its count is the
 decisions in force.
@@ -192,7 +192,7 @@ Open Factory › Agent time from the sidebar or the command palette (Agent time)
 
 | Tab | Shows |
 |---|---|
-| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Each agent's lane shows its model and output tokens. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
+| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Each agent's lane shows its model and output tokens. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the bot's chat. |
 | Breakdown | Agent time by group, with the slowest commands and CI checks. |
 | Insights | Findings, each with the spans behind it. |
 
@@ -204,8 +204,8 @@ Times are in your own time zone. How to read it: [Where time went](/docs/time-in
 
 Open Settings with ⌘, or the sidebar's Settings row. It takes the sidebar's place; Back returns to where you were. Type
 in "Search settings" to find an option or a prompt by name, and press Enter to open the first match. Its sidebar is one
-flat list of pages in three groups: **You** and **Projects** for everyone, and **Hub** for the hub's owners and admins
-only. The rule: what changes a teammate's work outside your project is in Hub.
+flat list of pages in three groups: **You** and **Bots** for everyone, and **Hub** for the hub's owners and admins
+only. The rule: what changes a teammate's work outside your bot is in Hub.
 
 A row shows its title and its control. What an option does is its hint: rest the pointer on the row's title or control,
 or on a section's label, or move there with Tab, and it shows under the title. A line stays under a title only when it
@@ -214,18 +214,18 @@ off and how to turn it on.
 
 | Page | Has |
 |---|---|
-| You › General | **Name**: what your teammates and the leads call you, changed in place: Enter or clicking away saves it, Escape puts the saved name back. Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), and a test. Their sound and the Dock badge, which counts the projects that need you, are your system's own switches for fleetd. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version**: the one status Hub › Machines › Updates shows (up to date, an update to take, one going on), with its button; a member takes only this app's own update, and reads that an owner or admin installs the hub's. |
+| You › General | **Name**: what your teammates and the leads call you, changed in place: Enter or clicking away saves it, Escape puts the saved name back. Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), and a test. Their sound and the Dock badge, which counts the bots that need you, are your system's own switches for fleetd. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version**: the one status Hub › Machines › Updates shows (up to date, an update to take, one going on), with its button; a member takes only this app's own update, and reads that an owner or admin installs the hub's. |
 | You › Your accounts | **Claude**: which Claude account the orders you start run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. **1Password**: your own service account token, optional, to [import from into the vault](/docs/vault#import), sealed to every machine, with Test, which lists the vaults it reads: it should read one (see [What an agent can reach](/docs/security#agent-reach)). |
-| You › Vault | The team vault: every login, card and address on the hub, which every project's agents fill in without seeing them: a search, a filter by kind, **+** to add one or import from 1Password, and the open item beside the list, with Show (behind Touch ID on a Mac that has it) and Copy, its sites, its activity, Edit and Delete for its creator or an admin. Under the list, only when it has some, the items the upgrade set aside for you, with Move to team vault and Delete. Only on a hub with the vault. See [Vault](/docs/vault). |
+| You › Vault | The team vault: every login, card and address on the hub, which every bot's agents fill in without seeing them: a search, a filter by kind, **+** to add one or import from 1Password, and the open item beside the list, with Show (behind Touch ID on a Mac that has it) and Copy, its sites, its activity, Edit and Delete for its creator or an admin. Under the list, only when it has some, the items the upgrade set aside for you, with Move to team vault and Delete. Only on a hub with the vault. See [Vault](/docs/vault). |
 | You › Your memory | How you work, as the leads remember it: read by the agents of work you start, and edited only by you. See [Memory](/docs/what-agents-are-told#memory). |
-| You › Hubs & devices | Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). **Your devices**: the devices signed in as you on each hub, each other one with **Sign out** (after a confirm, its key stops working at once, with the hub links made on it, which the confirm counts; this app's own has none), and **Pair a phone**: a one-time code (15 minutes) shown as a QR code for the [phone app](/docs/mobile#pair), with the hub's address and the code under it. Then **Hub links**, both halves in one place: the link keys made as you on each hub, and the other hubs your projects reach (see [Hub links](/docs/projects#hub-links)). |
-| Projects | Every project you can see, the archived ones last; click one to open its pages, as tabs, and **‹ Projects** at the top goes back to the list. **Project**: its icon and name, its repos and their setup, its agents' environment variables (a line with **Open Vault** on a hub with the vault), linked hubs, approvals, its one list of [MCP servers](/docs/mcp-servers), sign-ins, skills, payments, archive and deleting it (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), the [task profiles](/docs/projects#models) its lead may use (the default is always checked) and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' system prompt after the hub-wide ones, then what its leads remember about the project, and the nightly memory refresh's last run with **Run now**. **Automations**: its [automations](/docs/automations). **Built-in prompts**, a row at the foot of Instructions & memory: the prompts fleetd itself sends its agents, the project's edits first and the rest by group, to open, read and edit for this project. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). **Vault**: the project's variables and its orders', with **+** to add one or paste a `.env` ([Vault](/docs/vault)). |
+| You › Hubs & devices | Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). **Your devices**: the devices signed in as you on each hub, each other one with **Sign out** (after a confirm, its key stops working at once, with the hub links made on it, which the confirm counts; this app's own has none), and **Pair a phone**: a one-time code (15 minutes) shown as a QR code for the [phone app](/docs/mobile#pair), with the hub's address and the code under it. Then **Hub links**, both halves in one place: the link keys made as you on each hub, and the other hubs your bots reach (see [Hub links](/docs/projects#hub-links)). |
+| Bots | Every bot you can see, the archived ones last; click one to open its pages, as tabs, and **‹ Bots** at the top goes back to the list. **Bot**: its icon and name, its repos and their setup, its agents' environment variables (a line with **Open Vault** on a hub with the vault), linked hubs, approvals, its one list of [MCP servers](/docs/mcp-servers), sign-ins, skills, payments, archive and deleting it (see [Bot settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), the [task profiles](/docs/projects#models) its lead may use (the default is always checked) and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' system prompt after the hub-wide ones, then what its leads remember about the bot, and the nightly memory refresh's last run with **Run now**. **Automations**: its [automations](/docs/automations). **Built-in prompts**, a row at the foot of Instructions & memory: the prompts fleetd itself sends its agents, the bot's edits first and the rest by group, to open, read and edit for this bot. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). **Vault**: the bot's variables and its orders', with **+** to add one or paste a `.env` ([Vault](/docs/vault)). |
 
 ### Hub {#hub}
 
-Owners and admins see the Hub group under Projects; nobody else sees it, and the hub refuses its changes from anyone
+Owners and admins see the Hub group under Bots; nobody else sees it, and the hub refuses its changes from anyone
 else. While a required setup step is left, the sidebar's Settings row says how many (`2 left`) and opens on Hub ›
-Setup, and a hub with no projects yet opens on setup's welcome in place of Get started. With [several
+Setup, and a hub with no bots yet opens on setup's welcome in place of Get started. With [several
 hubs](/docs/several-hubs#admin), the group manages one at a time.
 
 | Page | Has |
@@ -233,11 +233,11 @@ hubs](/docs/several-hubs#admin), the group manages one at a time.
 | People | Everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on, with any usage pause. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub. |
 | Machines | Add machine, the hub's machines with Remove (and Repair while one is degraded or offline), each one's page with everything about it: [what is wrong with it](/docs/machines#checks), if anything, its [role](/docs/machines#roles), its [screens](/docs/browser-sessions#settings) and its [max agents](/docs/projects#max-agents). Then [**Sandboxes**](/docs/machines#sandboxes) (the team's own E2B, boat.dev or Daytona account, each with its limit) and **Recordings** (how many days the hub keeps them). |
 | Machines › Updates | On the Machines page, under the machines. One status: **Up to date** with the build everything runs, **Update available** with **Update** (one click updates the hub, then every machine, then this app), the update as it goes in one line, or what didn't go through. A machine is listed only when it didn't update or is behind, with why. Then **Update automatically** (off by default; as soon as a build is ready, at most one update in 10 minutes), which says why it holds back when it does. |
-| Every project | One page, with its parts as tabs: |
-| Every project › Agents | **Lead runs on**: the profile every project's lead starts on. Then the hub's [task profiles](/docs/projects#models): each one's model, reasoning level, fast mode and note. New profile, Edit (rename, change, mark as the default) and Delete. Then the global [MCP servers](/docs/mcp-servers) and whether agents also get their own, and the hub-wide [skills](/docs/skills). |
-| Every project › Instructions | The instructions for every project. |
-| Every project › Instructions › Built-in prompts | The row under the instructions opens the hub-wide prompts: the edited ones first, the rest by group. A project's own edit of one comes before the hub-wide text. |
-| Every project › Vault | Where the vault key is kept, its recovery code and **Rotate…**, and any variables still waiting to move in. Only on a hub with the vault. See [Vault](/docs/vault#key). |
+| Every bot | One page, with its parts as tabs: |
+| Every bot › Agents | **Lead runs on**: the profile every bot's lead starts on. Then the hub's [task profiles](/docs/projects#models): each one's model, reasoning level, fast mode and note. New profile, Edit (rename, change, mark as the default) and Delete. Then the global [MCP servers](/docs/mcp-servers) and whether agents also get their own, and the hub-wide [skills](/docs/skills). |
+| Every bot › Instructions | The instructions for every bot. |
+| Every bot › Instructions › Built-in prompts | The row under the instructions opens the hub-wide prompts: the edited ones first, the rest by group. A bot's own edit of one comes before the hub-wide text. |
+| Every bot › Vault | Where the vault key is kept, its recovery code and **Rotate…**, and any variables still waiting to move in. Only on a hub with the vault. See [Vault](/docs/vault#key). |
 | Setup | What the hub connects to and what it still needs; always listed, saying how many required steps are left while some are. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s, one row each. **Accounts** first, every one always: Claude, GitHub and 1Password, each row saying what it uses once it is set up, when it is needed until then, or that it needs a look. Then the other steps still left; the ones that are done fold into one line (**Show steps** lists them again, to change a value or test one). What needs you comes first. A row opens the step. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; a line on what leads and automations run on: the key, else the hub owner's subscription (see [Claude accounts](/docs/people#claude)); the switch "Members may use the hub's API key". **GitHub**: the hub's own [GitHub App](/docs/github). Under an account's controls, and on every other step: the values to paste, the pages to open, and Test; once an account is set up, its guide and that Test fold behind **Show the guide**, and the account's own Test is the one in sight. A step's result is saved where it lives: its button opens People or Machines, and for Claude and GitHub your own Your accounts. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
@@ -247,7 +247,7 @@ old to say; People there says the hub needs updating, with Update the hub, and t
 
 ⌘/ shows every shortcut in the app, and ⌘K finds any command by name. ⌘ is Ctrl on Linux.
 
-The command palette (⌘K) opens on the project you're in. Type a setting's own name ("max agents", "dark") to find it. What you open most rises to the top. Press ⌘K again to see the other actions for the selected item, such as a project's instructions.
+The command palette (⌘K) opens on the bot you're in. Type a setting's own name ("max agents", "dark") to find it. What you open most rises to the top. Press ⌘K again to see the other actions for the selected item, such as a bot's instructions.
 
 | Keys | Does |
 |---|---|
@@ -256,10 +256,10 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘L | Focus the message box |
 | ⌘B | Toggle the sidebar |
 | ⌥⌘B | Toggle the panel |
-| ⌘1 to ⌘9 | Open that project in the sidebar |
-| ⌥↑ / ⌥↓ | Move the focused project up or down the sidebar |
-| ⌘[ / ⌘] | Previous / next project |
-| ⌘. | Next project that wants you |
+| ⌘1 to ⌘9 | Open that bot in the sidebar |
+| ⌥↑ / ⌥↓ | Move the focused bot up or down the sidebar |
+| ⌘[ / ⌘] | Previous / next bot |
+| ⌘. | Next bot that wants you |
 | ⌘; | Factory |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |
