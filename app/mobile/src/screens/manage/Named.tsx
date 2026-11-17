@@ -1,10 +1,11 @@
 // A project's named services on its screen (MCP servers: Paper), as the desktop's rows at the head of its MCP servers
 // (namedServers.ts). Connect saves the server the manual form would, then opens the service's own sign-in page in the
-// in-app browser; once it is closed the row reads again and, signed in, tests it. Connected, a tap offers Test and
+// in-app browser; once the person is back (iOS: the sheet closed; Android, whose Custom Tab returns at once: the app
+// active again) the row reads again and, signed in, tests it. Connected, a tap offers Test and
 // Disconnect; one that needs a sign-in says so, and a tap signs in. Calls: namedApi.ts.
 import * as WebBrowser from "expo-web-browser";
-import { useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Platform } from "react-native";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { ActionSheetIOS, ActivityIndicator, Alert, AppState, Platform } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { NAMED, namedState, type McpServer, type Named, type ProjectRef } from "../../desktop";
 import { useHub } from "../../hubContext";
@@ -61,17 +62,40 @@ function Row({ entry, project, servers, reload }: { entry: Named; project: Proje
     setLine({ text: said.text });
   };
 
-  // The service's own page in the in-app browser; closed, the row reads again, and a sign-in that took is tested.
-  const signIn = async (sv: McpServer) => {
-    const page = await signInPage(session, sv, entry.label);
-    if (!page.ok) return failed("Couldn't sign in", page.error);
-    await WebBrowser.openBrowserAsync(page.value);
+  // A sign-in open in the browser, until the person is back from it.
+  const away = useRef(false);
+
+  // Back from the service's page: the row reads again, and a sign-in that took is tested.
+  const back = async () => {
+    away.current = false;
     reload();
     const now = await readServers(session, project);
     if (!now.ok) return failed("Couldn't read it again", now.error);
     const after = namedState(entry, now.value);
     if (after.kind === "connected") await runTest(after.server);
   };
+
+  // The service's own page in the in-app browser. iOS returns once its sheet is closed; Android's Custom Tab returns
+  // as it opens ("opened"), so there the app coming back to the front is the return.
+  const signIn = async (sv: McpServer) => {
+    const page = await signInPage(session, sv, entry.label);
+    if (!page.ok) return failed("Couldn't sign in", page.error);
+    away.current = true;
+    const shown = await WebBrowser.openBrowserAsync(page.value);
+    if (shown.type !== "opened") await back();
+  };
+
+  const returned = useEffectEvent(() => {
+    if (!away.current) return;
+    setBusy(true);
+    void back().finally(() => setBusy(false));
+  });
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") returned();
+    });
+    return () => sub.remove();
+  }, []);
 
   const go = (work: () => Promise<void>) => {
     if (busy) return;
