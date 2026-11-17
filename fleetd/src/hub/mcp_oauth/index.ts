@@ -233,8 +233,9 @@ export async function start(hub: Hub, server: McpServer, redirect: string, own?:
       redirectUri: redirect,
       ...(sealedSecret !== undefined ? { sealedSecret, tokenAuth: oauth.tokenAuthFor(found.authMethods) } : {}),
     };
-  } else if (earlier && (!earlier.registered || earlier.redirectUri === redirect)) {
-    // The person's own client keeps the redirect they gave it; a registered one is fleetd's for its redirect.
+  } else if (earlier && (!earlier.registered || (earlier.redirectUri === redirect && earlier.scope === found.scope))) {
+    // The person's own client keeps the redirect they gave it; a registered one is fleetd's for its redirect and the
+    // scope it registered with, so a service now asked for more registers fleetd again.
     client = {
       ...clientOf(found),
       clientId: earlier.clientId,

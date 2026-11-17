@@ -231,7 +231,6 @@ export async function discover(url: string, sse: boolean, net: Net): Promise<Dis
   const resource = listedResource !== undefined && originOf(listedResource) !== undefined && originOf(listedResource) === originOf(url) ? listedResource : url;
   const listed = strings(prm?.scopes_supported) ?? [];
   const scopeRaw = (challenge !== undefined ? challengeParam(challenge, "scope") : undefined) ?? (listed.length > 0 ? listed.join(" ") : undefined);
-  const scope = scopeRaw !== undefined && scopeRaw.trim() !== "" ? scopeRaw : undefined;
   // The resource names its authorization server; one without metadata is its own (MCP 2025-03-26).
   const named = str((prm?.authorization_servers as unknown[] | undefined)?.[0]);
   const issuer = named ?? new URL(url).origin;
@@ -252,6 +251,7 @@ export async function discover(url: string, sse: boolean, net: Net): Promise<Dis
   let revocation: string | undefined;
   let authMethods: string[] = [];
   let pkceMethods: string[] | undefined;
+  const words = (scopeRaw ?? "").split(/\s+/).filter((w) => w !== "");
   if (meta) {
     authorization = str(meta.authorization_endpoint);
     token = str(meta.token_endpoint);
@@ -259,6 +259,14 @@ export async function discover(url: string, sse: boolean, net: Net): Promise<Dis
     revocation = str(meta.revocation_endpoint);
     authMethods = strings(meta.token_endpoint_auth_methods_supported) ?? [];
     pkceMethods = strings(meta.code_challenge_methods_supported);
+    // A service that only renews a sign-in asked for `offline_access` sends no refresh token without it, and the
+    // server would go signed out when its first token ends: ask for it where the metadata lists it and the refresh grant.
+    // OpenID Connect grants it only beside `openid`, so that comes too where listed.
+    const supported = strings(meta.scopes_supported) ?? [];
+    const grants = strings(meta.grant_types_supported);
+    if (supported.includes("offline_access") && (grants === undefined || grants.includes("refresh_token"))) {
+      for (const w of ["openid", "offline_access"]) if (supported.includes(w) && !words.includes(w)) words.push(w);
+    }
   } else if (legacy) {
     [authorization, token, registration] = [`${base}/authorize`, `${base}/token`, `${base}/register`];
   } else {
@@ -273,6 +281,7 @@ export async function discover(url: string, sse: boolean, net: Net): Promise<Dis
     return v;
   };
   const optional = (v: string | undefined) => (v !== undefined && isSecure(v) ? v : undefined);
+  const scope = words.length > 0 ? words.join(" ") : undefined;
   return {
     resource,
     issuer,
@@ -301,6 +310,18 @@ async function jsonBody(answer: Response): Promise<Record<string, unknown>> {
   }
 }
 
+/** Whether `redirect` is plain http to a host other than this machine. */
+function plainHttpAway(redirect: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(redirect);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.replace(/^\[|\]$/g, "");
+  return u.protocol === "http:" && !(host === "localhost" || host === "::1" || ipv4(host)?.[0] === 127);
+}
+
 /** Registers fleetd as a client of the service for `redirect` (RFC 7591), a public one unless the service insists. */
 export async function register(d: Discovered, redirect: string, net: Net): Promise<Registered> {
   const at = d.registrationEndpoint;
@@ -325,7 +346,15 @@ export async function register(d: Discovered, redirect: string, net: Net): Promi
     throw new Error(`${host} can't be reached to register fleetd: ${describe(e)}`);
   }
   const out = await jsonBody(answer);
-  if (!answer.ok) throw new Error(`${host} wouldn't register fleetd as an app (${said(answer.status, out)[1]})`);
+  if (!answer.ok) {
+    const [error, words] = said(answer.status, out);
+    // OAuth 2.1 and RFC 8252 let a service refuse a plain-http redirect anywhere but this machine, a tailnet's too.
+    const hint =
+      error === "invalid_redirect_uri" && plainHttpAway(redirect)
+        ? ": it takes only an https or loopback callback, so open fleetd at the hub's https address (Tailscale Serve gives one) and sign in again"
+        : "";
+    throw new Error(`${host} wouldn't register fleetd as an app (${words})${hint}`);
+  }
   const clientId = str(out.client_id);
   if (!clientId) throw new Error(`${host} registered fleetd but sent no client id`);
   const clientSecret = str(out.client_secret) || undefined;
