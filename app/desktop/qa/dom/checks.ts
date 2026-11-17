@@ -599,7 +599,7 @@ export interface ScrollStep {
 const MAX_STEPS = 40;
 
 interface QaWindow {
-  __fleetdQaScrollers?: { el: Element; top: number; left: number }[];
+  __fleetdQaScrollers?: { el: Element; top: number; left: number; atEnd: boolean }[];
 }
 
 export function scrollSteps(): ScrollStep[] {
@@ -613,8 +613,14 @@ export function scrollSteps(): ScrollStep[] {
   }
   const root = document.scrollingElement;
   if (root && root.scrollHeight > root.clientHeight + SLOP && !scrollers.includes(root)) scrollers.push(root);
-  // Lists that start at the end (a conversation) are restored to where they were.
-  (window as QaWindow).__fleetdQaScrollers = scrollers.map((el) => ({ el, top: el.scrollTop, left: el.scrollLeft }));
+  // Lists are restored to where they were, and one at its end (a conversation) to its end: rows that grow while it is
+  // stepped through (a picture's bytes landing) leave the old offset above the end.
+  (window as QaWindow).__fleetdQaScrollers = scrollers.map((el) => ({
+    el,
+    top: el.scrollTop,
+    left: el.scrollLeft,
+    atEnd: el.scrollHeight - el.scrollTop - el.clientHeight <= SLOP,
+  }));
 
   const stops = (max: number, page: number, start: number) => {
     if (max <= SLOP) return [];
@@ -637,7 +643,9 @@ export function scrollToStep(step: ScrollStep) {
 }
 
 export function restoreScroll() {
-  for (const { el, top, left } of (window as QaWindow).__fleetdQaScrollers ?? []) el.scrollTo({ top, left, behavior: "instant" });
+  for (const { el, top, left, atEnd } of (window as QaWindow).__fleetdQaScrollers ?? []) {
+    el.scrollTo({ top: atEnd ? el.scrollHeight : top, left, behavior: "instant" });
+  }
 }
 
 const COLORS: Record<CheckId, string> = {
