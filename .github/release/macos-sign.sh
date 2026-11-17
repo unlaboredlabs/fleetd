@@ -23,6 +23,7 @@
 # Only Apple's transient answers are retried, NOTARY_TRIES times (default 5) with backoff from RETRY_DELAY seconds
 # (default 15, doubling), each retry logged with Apple's answer: notarytool submit that couldn't reach Apple or got a
 # 5xx, and a stapler CloudKit lookup that got no answer. A rejection, a missing ticket or a bad signature fails at once.
+# Signing goes through codesign/codesign, which signs again only when Apple's timestamp service didn't answer.
 set -euo pipefail
 tmp="${RUNNER_TEMP:?}"
 keychain="$tmp/fleetd-signing.keychain-db"
@@ -113,8 +114,8 @@ sign)
     # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`), Rust or Bun: a switch of
     # flavour keeps the signed identity (and the path) macOS's grants to a node go by.
     # MACOS_ENTITLEMENTS names the entitlements the Bun build's JIT needs (bun-entitlements.plist).
-    codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" --identifier sh.fleetd.cli \
-      ${MACOS_ENTITLEMENTS:+--entitlements "$MACOS_ENTITLEMENTS"} "$path"
+    "$(dirname "$0")/codesign/codesign" --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" \
+      --identifier sh.fleetd.cli ${MACOS_ENTITLEMENTS:+--entitlements "$MACOS_ENTITLEMENTS"} "$path"
     verify "$path"
   done
   ;;

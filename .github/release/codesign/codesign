@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Stands in for codesign on the macOS jobs' PATH: macos-sign.sh signs the CLI through it, and electron-builder (which
+# runs `codesign` by name) signs the app through it. It runs Apple's codesign and, only when Apple's timestamp service
+# didn't answer (it failed both macOS jobs for minutes on 2026-11-17), signs again: CODESIGN_TRIES times in all
+# (default 5), RETRY_DELAY seconds apart (default 15, doubling), each retry logged with codesign's answer on stderr and in
+# $RUNNER_TEMP/codesign-retries.log (electron-builder shows its tools' output only when they fail). Signing again is
+# safe: --force replaces the signature. Any other failure fails at once with codesign's own answer and status.
+set -uo pipefail
+real="${FLEETD_CODESIGN:-/usr/bin/codesign}"
+out="$(mktemp)"
+err="$(mktemp)"
+trap 'rm -f "$out" "$err"' EXIT
+try=1
+while :; do
+  "$real" "$@" > "$out" 2> "$err"
+  rc=$?
+  if [ "$rc" = 0 ] || [ "$try" -ge "${CODESIGN_TRIES:-5}" ] ||
+    ! grep -Eq 'The timestamp service is not available\.|A timestamp was expected but was not found\.' "$err"; then
+    cat "$out"
+    cat "$err" >&2
+    exit "$rc"
+  fi
+  wait=$((${RETRY_DELAY:-15} << (try - 1)))
+  line="::warning::codesign failed (try $try of ${CODESIGN_TRIES:-5}), retrying in ${wait}s. Apple said: $(tr '\n' ' ' < "$err")"
+  echo "$line" >&2
+  [ -z "${RUNNER_TEMP:-}" ] || echo "$line" >> "$RUNNER_TEMP/codesign-retries.log"
+  sleep "$wait"
+  try=$((try + 1))
+done
