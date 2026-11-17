@@ -77,6 +77,8 @@ fleetd-run app in between:
    your browser.
 2. You sign in there and allow fleetd. The service sends your browser back to a page the hub serves,
    `<hub>/oauth/callback`, at the address this app reaches the hub by, so it works from any computer that reaches it.
+   Where that address is plain http and the hub has an https one (its `--url`, or a Tailscale Serve https address in
+   front of its port), the page is at the https one, since many services accept only an https callback.
 3. The dialog moves on by itself: it tests the server and asks which tools may run unasked, as for a key. The lead gets
    the server at its next message, and says once that it is connected.
 

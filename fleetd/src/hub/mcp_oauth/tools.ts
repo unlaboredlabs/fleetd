@@ -6,6 +6,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Registry } from "../api/registry.ts";
 import { mcpServers } from "../mcp_servers/index.ts";
 import { checkScope, mayChange, notFound, projectOf } from "../mcp_servers/tools.ts";
+import { httpsFront } from "./https_front.ts";
 import { hubBoxKey, hubBoxPublic, start, urlOf } from "./index.ts";
 
 export function register(tools: Registry): void {
@@ -29,7 +30,7 @@ export function register(tools: Registry): void {
         "Give a command server its key in its environment instead.",
       );
     }
-    const redirect = redirectUri(hub, input.hubUrl);
+    const redirect = await redirectUri(hub, input.hubUrl);
     let own: { id: string; secret?: string } | undefined;
     if (input.client) {
       let secret: string | undefined;
@@ -89,9 +90,14 @@ export function register(tools: Registry): void {
   });
 }
 
-/** Where the service sends the browser back: `<hub>/oauth/callback`, at the address the app reaches the hub by. */
-export function redirectUri(hub: Hub, appUrl: string | undefined): string {
+/**
+ * Where the service sends the browser back: `<hub>/oauth/callback`, at the address the app reaches the hub by, or the
+ * hub's own https address when that one is plain http, since many services register only an https callback. The
+ * callback finds its sign-in by its state, so the app, still on http, carries on by itself.
+ */
+export async function redirectUri(hub: Hub, appUrl: string | undefined): Promise<string> {
   let base = appUrl !== undefined ? appUrl.trim() : hub.url();
+  if (!base.startsWith("https://")) base = (await httpsFront(hub)) ?? base;
   if (!base.includes("://")) base = `http://${base}`;
   let parsed: URL | undefined;
   try {
