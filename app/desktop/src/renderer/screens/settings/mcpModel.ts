@@ -1,7 +1,7 @@
 // The MCP servers pages' pure parts: a server's one-line summary, who gets it in words, which global servers a project
 // replaces, and the editor's draft turned into the request main seals and sends (mcp_server_set). A saved secret
 // left blank in the editor is kept as it is; typing a value replaces it.
-import type { McpRoles, McpScope, McpServer, McpValue } from "../../../shared/contracts";
+import type { McpRoles, McpScope, McpServer, McpServerSetInput, McpValue } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 
 export type TransportKind = "stdio" | "http" | "sse";
@@ -146,5 +146,30 @@ export const toRequest = (
       headers: stdio ? [] : values,
       boxes: secrets ? [...boxes] : [],
     },
+  };
+};
+
+/** A save that holds no secret's value (a named service's: namedServers.ts) as main's request, which seals none. */
+export const requestOf = (input: McpServerSetInput): McpServerRequest => {
+  // It holds plain values and kept secrets only; a sealed one can't be a request's, and has none here.
+  const values = (list: McpServerSetInput["env"]): McpServerRequest["env"] => {
+    const out: McpServerRequest["env"] = [];
+    for (const v of list ?? []) {
+      if (v.kind === "plain") out.push({ kind: "plain", name: v.name, value: v.value });
+      else if (v.kind === "keep") out.push({ kind: "keep", name: v.name });
+    }
+    return out;
+  };
+  const t = input.transport;
+  return {
+    scope: input.scope,
+    name: input.name,
+    enabled: input.enabled,
+    roles: input.roles,
+    transport: t.type === "stdio" ? { type: "stdio", command: t.command, args: t.args ?? [] } : t,
+    env: values(input.env),
+    headers: values(input.headers),
+    boxes: [],
+    ...(input.integration === undefined ? {} : { integration: input.integration.readTools === undefined ? {} : { readTools: input.integration.readTools } }),
   };
 };

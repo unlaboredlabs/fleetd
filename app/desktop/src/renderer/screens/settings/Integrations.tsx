@@ -4,10 +4,12 @@
 // (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never. A server
 // that wants the person to sign in instead (OAuth) opens its own sign-in page in the browser (mcp_oauth_start), which
 // sends them back to the hub; the dialog follows the server's sign-in until it is done, then tests it. A signed-out
-// server shows why, with Reconnect. Disconnect is mcp_server_remove, which also erases the key on the machine.
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
+// server shows why, with Reconnect. Disconnect is mcp_server_remove, which also erases the key on the machine. Named
+// services (namedServers.ts: Paper) head the list: Connect saves the server the manual form would and goes straight to
+// its sign-in page; signed in, its row says Connected, with Test, and Sign in when it needs one again.
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
-import type { McpOauthStartOutput, McpServer, McpTestResult } from "../../../shared/contracts";
+import type { McpOauthStartOutput, McpServer, McpServerSetOutput, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -27,8 +29,9 @@ import {
   testProblem,
   type SignInMark,
 } from "./integrationsModel";
-import { emptyDraft, globalsFor, nameProblem, rolesText, type Draft } from "./mcpModel";
+import { emptyDraft, globalsFor, nameProblem, requestOf, rolesText, type Draft } from "./mcpModel";
 import { ServerEditor } from "./McpServers";
+import { NAMED, namedInput, namedState, namedWord, turnOnInput, unnamed, type Named } from "./namedServers";
 import { CommandLine, Prose } from "../onboarding/Prose";
 import { AddButton, SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import { Plug } from "lucide-react";
@@ -66,7 +69,7 @@ function useConnect() {
   };
 }
 
-type Dialogs = { kind: "custom" } | { kind: "edit"; server: McpServer } | { kind: "disconnect"; server: McpServer } | { kind: "signin"; server: McpServer };
+type Dialogs = { kind: "custom" } | { kind: "edit"; server: McpServer } | { kind: "disconnect"; server: McpServer } | { kind: "signin"; server: McpServer; named?: Named | undefined };
 
 /** Whether a test says the server wants the person to sign in. */
 const wantsSignIn = (t: Tested | null | undefined): boolean => t !== null && t !== undefined && !("error" in t) && t.result.signIn === true;
@@ -252,7 +255,7 @@ function SignInFooter({ signIn, client, onCancel }: { signIn: SignIn; client: { 
 }
 
 /** Reconnect (or a first sign-in) from the list: signs in, then tests the server and shows what it found in its row. */
-function SignInDialog(props: { projectRef: Ref; server: McpServer; onClose: () => void; onTested: (name: string, t: Tested) => void }) {
+function SignInDialog(props: { projectRef: Ref; server: McpServer; named?: Named | undefined; onClose: () => void; onTested: (name: string, t: Tested) => void }) {
   const hubCall = useHubCall();
   const { server } = props;
   const [client, setClient] = useState({ id: "", secret: "" });
@@ -265,11 +268,21 @@ function SignInDialog(props: { projectRef: Ref; server: McpServer; onClose: () =
   });
   const url = server.transport.type === "stdio" ? "" : server.transport.url;
   const again = server.oauth?.signedInAt !== undefined;
+  // A named service goes straight to its sign-in page: there is nothing to read or type first. Once, as a dev
+  // build's effects run twice.
+  const began = useRef(false);
+  const { begin } = signIn;
+  const auto = props.named !== undefined;
+  useEffect(() => {
+    if (!auto || began.current) return;
+    began.current = true;
+    begin();
+  }, [auto, begin]);
   return (
     <Dialog
       open
       onOpenChange={(o) => !o && signIn.phase.kind !== "starting" && props.onClose()}
-      title={again ? `Reconnect ${server.name}` : `Sign in to ${server.name}`}
+      title={props.named !== undefined ? `Sign in to ${props.named.label}` : again ? `Reconnect ${server.name}` : `Sign in to ${server.name}`}
       footer={<SignInFooter signIn={signIn} client={client} onCancel={props.onClose} />}
     >
       <SignInBody signIn={signIn} url={url} why={server.oauth?.problem} client={client} setClient={setClient} />
@@ -319,9 +332,21 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
         </>
       }
     >
-      {all.length === 0 ? null : (
-        <SettingsList label="MCP servers">
-        {all.map((server) => (
+      <SettingsList label="MCP servers">
+        {NAMED.map((entry) => (
+          <NamedRow
+            key={entry.id}
+            entry={entry}
+            servers={all}
+            projectRef={projectRef}
+            machine={machine.name}
+            tests={tests}
+            onTested={tested}
+            onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
+            onSignIn={(s2) => setDialog({ kind: "signin", server: s2, named: entry })}
+          />
+        ))}
+        {unnamed(all).map((server) => (
           <Row
             key={server.name}
             title={server.name}
@@ -335,8 +360,7 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
             onSignIn={(s2) => setDialog({ kind: "signin", server: s2 })}
           />
         ))}
-        </SettingsList>
-      )}
+      </SettingsList>
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
@@ -357,8 +381,126 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
         <ServerEditor scope={projectRef} editing={dialog.server} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onSaved={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={machine.name} onClose={() => setDialog(null)} /> : null}
-      {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} onClose={() => setDialog(null)} onTested={tested} /> : null}
+      {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} named={dialog.named} onClose={() => setDialog(null)} onTested={tested} /> : null}
     </SettingsRow>
+  );
+}
+
+/** A named service's mark, in the row's icon colour, inset to weigh as much as the row's line icons. */
+function Mark({ entry }: { entry: Named }) {
+  const [x = 0, y = 0, w = 24, h = 24] = entry.mark.viewBox.split(" ").map(Number);
+  const pad = w * 0.12;
+  return (
+    <svg viewBox={`${String(x - pad)} ${String(y - pad)} ${String(w + 2 * pad)} ${String(h + 2 * pad)}`} fill="currentColor" aria-hidden data-mark={entry.id}>
+      <path d={entry.mark.path} />
+    </svg>
+  );
+}
+
+/**
+ * A named service (Paper) at the head of the list: Connect before it is added, then its state with Test and
+ * Disconnect, and Sign in whenever it needs one. A server saved by hand at its URL shows here, as this row.
+ */
+function NamedRow(props: {
+  entry: Named;
+  servers: ReadonlyArray<McpServer>;
+  projectRef: Ref;
+  machine: string;
+  tests: Readonly<Record<string, Tested>>;
+  onTested: (name: string, t: Tested) => void;
+  onDisconnect: (server: McpServer) => void;
+  onSignIn: (server: McpServer) => void;
+}) {
+  const { entry } = props;
+  const { hub } = useDataLayer();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState<"connect" | "on" | "test" | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const state = namedState(entry, props.servers);
+  const server = state.kind === "add" ? undefined : state.server;
+  const tested = server === undefined ? undefined : props.tests[server.name];
+  // Signed out, or its test found it wants a sign-in: Sign in is right on the row.
+  const signIn = state.kind === "signin" || (state.kind === "connected" && wantsSignIn(tested));
+  const word = namedWord(signIn && server !== undefined ? { kind: "signin", server, problem: undefined } : state);
+  const save = (request: McpServerRequest, then: (saved: McpServer) => void) => {
+    setProblem(null);
+    void window.fleetd.secret.mcpServer(hub, request).then(
+      (out) => {
+        setBusy(null);
+        if (!out.ok) {
+          setProblem(errorText(new CallError(out.error)));
+          return;
+        }
+        refetch(["mcp_servers_get", "setup_list"]);
+        then((out.output as McpServerSetOutput).server);
+      },
+      (e: unknown) => {
+        setBusy(null);
+        setProblem(errorText(e));
+      },
+    );
+  };
+  const connect = () => {
+    setBusy("connect");
+    save(requestOf(namedInput(entry, { kind: "project", ...props.projectRef }, props.servers.map((x) => x.name))), props.onSignIn);
+  };
+  const turnOn = (sv: McpServer) => {
+    setBusy("on");
+    save(requestOf(turnOnInput(sv)), () => undefined);
+  };
+  const test = (sv: McpServer) => {
+    setBusy("test");
+    setProblem(null);
+    hubCall("mcp_server_test", { scope: sv.scope, name: sv.name }).then(
+      (out) => {
+        setBusy(null);
+        props.onTested(sv.name, { machineId: out.machineId, result: out.result });
+      },
+      (e: unknown) => {
+        setBusy(null);
+        props.onTested(sv.name, { error: errorText(e) });
+      },
+    );
+  };
+  const why = problem ?? (state.kind === "signin" ? (state.problem ?? null) : null);
+  return (
+    <SettingsListRow
+      label={entry.label}
+      icon={<Mark entry={entry} />}
+      name={entry.label}
+      state={word === null ? undefined : { word: word.text, tone: word.tone }}
+      data={{ "data-named": entry.id, "data-named-state": state.kind }}
+      controls={
+        server === undefined ? (
+          <Button variant="primary" disabled={busy !== null} onClick={connect}>
+            {busy === "connect" ? "Connecting…" : "Connect"}
+          </Button>
+        ) : (
+          <>
+            {signIn ? (
+              <Button variant="primary" onClick={() => props.onSignIn(server)}>
+                Sign in
+              </Button>
+            ) : null}
+            {state.kind === "off" ? (
+              <Button variant="primary" disabled={busy !== null} onClick={() => turnOn(server)}>
+                {busy === "on" ? "Turning on…" : "Turn on"}
+              </Button>
+            ) : null}
+            <Button variant="ghost" disabled={busy !== null} onClick={() => test(server)}>
+              {busy === "test" ? "Testing…" : "Test"}
+            </Button>
+            <Button variant="ghost" disabled={busy !== null} onClick={() => props.onDisconnect(server)}>
+              Disconnect
+            </Button>
+          </>
+        )
+      }
+    >
+      {why === null ? null : <Prose size="sm" tone="danger" text={why} />}
+      {tested === undefined || signIn ? null : <Found tested={tested} machine={props.machine} brief />}
+    </SettingsListRow>
   );
 }
 

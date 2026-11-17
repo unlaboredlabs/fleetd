@@ -5,7 +5,8 @@ description: Connect a project to any MCP server, with a key or by signing in wi
 
 A project's lead can reach any service with an MCP server. You connect each one yourself in the project's settings,
 under **MCP servers** (the project's one list of them), with a key you make or by signing in with your own account. Your keys are sealed on the
-project's machine, and the lead never sees them.
+project's machine, and the lead never sees them. A named service, such as [Paper](#paper), heads the list and connects
+with one press.
 
 An integration reaches the project's lead alone: its agents never get one. Turn on **Agents get it too** when you add
 a server to give it to the project's writers and reviewers as well: then none of its tools asks you, since an agent
@@ -105,14 +106,19 @@ has ended, the chat says that once too, and again when it works.
 ## Example: Paper {#paper}
 
 Paper (paper.design) is a design canvas with a hosted MCP server. Your agents use it with your own Paper account; no
-key and no Paper app on the project's machine.
+key and no Paper app on the project's machine. It is a named service: **Paper** heads the project's **MCP servers**,
+with nothing to type.
 
-1. Settings › the project › **Project** › **MCP servers** › **Add an MCP server**: name `paper`, **URL**
-   `https://mcp.paper.design`, key empty, **Agents get it too** on, then **Connect and test**.
-2. **Sign in**: Paper's sign-in page opens; sign in and allow fleetd. Paper takes only an https or loopback callback,
-   so the hub needs an https address (its `--url`, or Tailscale Serve in front of its port) unless you sign in on its
-   machine.
-3. **Test connection** on its row lists Paper's tools.
+1. Settings › the project › **Project** › **MCP servers** › **Paper** › **Connect**. On the phone: the project's
+   screen › **MCP servers** › **Paper**.
+2. Paper's sign-in page opens: sign in and allow fleetd. The row then says **Connected**, and **Test** lists Paper's
+   tools.
+
+Connect saves what adding it by hand would: a server named `paper` (or `paper-2` when that name is taken) at
+`https://mcp.paper.design`, no key, **Agents get it too** on. A `paper` server you added by hand at that URL shows as
+this row. When the sign-in ends, the row says **Sign in needed**, with **Sign in**. Paper takes only an https or
+loopback callback, so the hub needs an https address (its `--url`, or Tailscale Serve in front of its port) unless you
+sign in on its machine.
 
 The project's writers and reviewers then read Paper files (structure, screenshots, styles, JSX, text), create and edit
 artboards and frames, set text and styles, export images, and manage files, unasked. A writer that has the repo

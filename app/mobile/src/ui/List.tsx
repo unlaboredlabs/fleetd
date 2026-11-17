@@ -6,6 +6,12 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-na
 import { shape, space, type, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 
+/** A row with a tile before its title: its hairline starts at the title. */
+const tiled = (props: unknown): boolean => {
+  const p = props as { icon?: unknown; mark?: unknown };
+  return p.icon !== undefined || p.mark !== undefined;
+};
+
 export function ListSection({ header, footer, children }: { header?: string; footer?: string; children: ReactNode }) {
   const t = useTheme();
   const rows = Children.toArray(children).filter(isValidElement);
@@ -19,7 +25,7 @@ export function ListSection({ header, footer, children }: { header?: string; foo
       <View style={[styles.group, { backgroundColor: t.cell }]}>
         {rows.map((row, i) => (
           <Fragment key={row.key ?? i}>
-            {i === 0 ? null : <View style={[styles.separator, { backgroundColor: t.separator, marginLeft: (row.props as { icon?: unknown }).icon === undefined ? space.lg : 58 }]} />}
+            {i === 0 ? null : <View style={[styles.separator, { backgroundColor: t.separator, marginLeft: tiled(row.props) ? 58 : space.lg }]} />}
             {row}
           </Fragment>
         ))}
@@ -36,6 +42,7 @@ export function ListRow({
   valueColor,
   valueDot,
   icon,
+  mark,
   tint,
   onPress,
   chevron = onPress !== undefined,
@@ -51,6 +58,8 @@ export function ListRow({
   /** A status dot's color, before the value: how a link is. */
   valueDot?: string | undefined;
   icon?: IconName;
+  /** In place of `icon`: a service's own mark, drawn white on the tile. */
+  mark?: ReactNode;
   /** The icon tile's color; the deep accent when unset. */
   tint?: string | undefined;
   onPress?: () => void;
@@ -65,10 +74,8 @@ export function ListRow({
   const stacked = useWindowDimensions().fontScale >= 1.35 && value !== undefined && detail === undefined;
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
-      {icon === undefined ? null : (
-        <View style={[styles.tile, { backgroundColor: tint ?? t.accentDeep }]}>
-          <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
-        </View>
+      {icon === undefined && mark === undefined ? null : (
+        <View style={[styles.tile, { backgroundColor: tint ?? t.accentDeep }]}>{mark ?? (icon === undefined ? null : <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />)}</View>
       )}
       {stacked ? (
         <View style={styles.grow}>
