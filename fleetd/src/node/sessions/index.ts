@@ -1246,7 +1246,7 @@ export class SessionService {
     const mark = marker(id);
     let link: HostLink;
     try {
-      link = await pick().start({
+      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain" }).start({
         fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
@@ -1874,7 +1874,7 @@ export class SessionService {
       );
     };
     const outcome = await setup.run(
-      pick(),
+      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain" }),
       plan,
       row.local.cwd,
       env,

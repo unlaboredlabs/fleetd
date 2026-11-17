@@ -338,6 +338,41 @@ if it isn't, so it starts at the next boot. The rewritten unit takes effect at i
 node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
 rather than exiting.
 
+## Each agent in its own VM {#vms}
+
+On a Linux machine that can run them, each task's agent runs in a small VM of its own
+([Cloud Hypervisor](https://www.cloudhypervisor.org)), not as a plain process: its kills, its `/tmp`, its memory and
+its network stay its own, and it can't reach the machine's local ports (the hub's among them). Nothing about tasks,
+chat, PRs, screens or resumes changes. Leads and a person's own threads stay plain processes, and so does every agent on
+a Mac.
+
+| What | How |
+|---|---|
+| Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only. `/tmp` is the VM's own and goes with it. |
+| Network | Its own, through passt, with no route back to this machine's loopback. Its browser and Android screens reach it at the same `127.0.0.1` ports as before. |
+| Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
+| Memory | Each VM is 4 GB and 2 CPUs. The machine's [max agents](/docs/projects#max-agents) counts 4.1 GB an agent for it, so a 60 GB machine runs 10 at once where it ran 22 as plain processes. Machines, or [hosted sandboxes](#sandboxes), add more. |
+| Speed | Builds and tests over the shared files take about 16% longer and a third more CPU than a plain process. |
+| What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user namespaces, and a DNS server the VM can reach. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
+
+The machine's max agents line says which: "memory 60 GB, about 4.4 GB an agent; each agent in a VM of its own", or
+"…; agents run as plain processes:" and the reason. A machine that can't run VMs never refuses agents: they run as plain
+processes, and the line says why.
+
+| Why it runs plain processes | Fix |
+|---|---|
+| turned off on this machine (node.json "sandbox": "process") | Remove the key. |
+| VMs need Linux with KVM; this machine runs macOS | None: a Mac runs plain processes. |
+| This user can't open /dev/kvm | Add the user to the `kvm` group (the line gives the command): the node then starts VMs through `sg kvm` within minutes, with no restart. |
+| AppArmor keeps this user from making the user namespace virtiofsd shares files from | The line gives the `sysctl` that allows it. |
+| No DNS server for VMs | Give systemd-resolved an upstream server: a VM can't use its local stub. |
+| fetching the VM files for the first time | Wait: agents run in VMs once they're there. A fetch that fails is tried again an hour later. |
+| this node runs fleetd from source | Run an installed fleetd. |
+
+**Turn it off on a machine.** Add `"sandbox": "process"` to its [`node.json`](/docs/config-and-files#node-json). New
+agents run as plain processes within a minute; agents in VMs keep running there until they end. Remove the key to
+turn VMs back on.
+
 ## Hosted sandboxes {#sandboxes}
 
 A team can give its agents room past its machines' own [max agents](/docs/projects#max-agents) with its own account
