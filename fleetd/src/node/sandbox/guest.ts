@@ -10,8 +10,16 @@
 //   forwarded TCP ports, and opens a channel for each connection there. The node decides what a channel is and whose
 //   session it acts as; nothing here names one.
 //
-// Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port`, and
-// `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`; guest → node `{"id":n,"ok":{…}}` or
+// - runs a command where the agent runs when the node asks (a worktree's setup commands), confined to its cwd and
+//   killed with its process group at its timeout or the node's `cancel`.
+//
+// With FLEETD_GUEST_ONCE=1 (a VM's kernel argument `fleetd.once=1`), the guest ends once the session host it started
+// ended, or when it ran neither a host nor a command for IDLE_MS: its init then powers the VM off, so a box goes with
+// its session, with the node or without it.
+//
+// Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port`,
+// `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`, `{"id":n,"op":"run","run","argv","cwd","env",
+// "timeoutSec","scrub"}` and `{"id":n,"op":"cancel","run"}`; guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // and `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines.
 import { type ChildProcess, spawn } from "node:child_process";
@@ -19,6 +27,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from
 import { createServer, connect, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
+import { runConfined, type RunOutcome } from "../cmd/index.ts";
 import { selfArgv } from "../util.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
@@ -30,6 +39,10 @@ const START_TIMEOUT_MS = 10_000;
 /** How long an ended connection to the session host may take to close before it is cut. */
 const CLOSE_MS = 2_000;
 const CONFIRM_MS = 200;
+/** A guest with FLEETD_GUEST_ONCE that ran nothing this long ends. */
+export const IDLE_MS = 10 * 60_000;
+/** How long a once guest outlives its session host, for the node to take the host's last lines. */
+const AFTER_HOST_MS = 2_000;
 
 export type HostInfo = { protocol: number; refused: Registration["refused"] };
 
@@ -39,6 +52,9 @@ type Options = {
   /** The address the TCP forwards listen on: 127.0.0.1 in a box; a stand-in box beside its node takes another of
    * 127/8, where the node's own ports aren't. */
   loopback: string;
+  /** Called once the guest is done (FLEETD_GUEST_ONCE): its session host ended, or it sat idle for `idleMs`. */
+  done?: () => void;
+  idleMs?: number;
 };
 
 const warn = (message: string) => process.stderr.write(`${new Date().toISOString()} WARN sandbox-guest: ${message}\n`);
@@ -49,8 +65,23 @@ export class Guest {
   #next = 2;
   #host: { dir: string; child: ChildProcess; info: HostInfo; pipe: HostPipe } | undefined;
   #server: Server | undefined;
+  /** Commands running for the node, by its run id. */
+  #runs = new Map<string, AbortController>();
+  #busyAt = Date.now();
+  #idle: ReturnType<typeof setInterval> | undefined;
 
-  constructor(readonly o: Options) {}
+  constructor(readonly o: Options) {
+    const done = o.done;
+    if (!done) return;
+    const idleMs = o.idleMs ?? IDLE_MS;
+    this.#idle = setInterval(() => {
+      if (this.#host || this.#runs.size) this.#busyAt = Date.now();
+      else if (Date.now() - this.#busyAt >= idleMs) {
+        clearInterval(this.#idle);
+        done();
+      }
+    }, Math.min(30_000, Math.max(50, idleMs / 4)));
+  }
 
   /** Listens for the node. */
   serve(): Promise<void> {
@@ -64,6 +95,8 @@ export class Guest {
   }
 
   stop(): void {
+    clearInterval(this.#idle);
+    for (const r of this.#runs.values()) r.abort();
     this.#server?.close();
     for (const l of this.#listeners.values()) l.close();
     this.#mux?.close("the guest stopped");
@@ -94,6 +127,8 @@ export class Guest {
     try {
       if (m.op === "listen") answer = { ok: await this.#listen(m) };
       else if (m.op === "start") answer = { ok: await this.#start(m) };
+      else if (m.op === "run") answer = { ok: await this.#run(m) };
+      else if (m.op === "cancel") answer = { ok: this.#runs.get(String(m.run))?.abort() ?? null };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
       answer = { error: (error as Error).message };
@@ -128,6 +163,32 @@ export class Guest {
     return target;
   }
 
+  /** Runs a command for the node, as the node runs a setup command on a plain machine. */
+  async #run(m: Record<string, unknown>): Promise<RunOutcome> {
+    const { run, argv, cwd, env, timeoutSec, scrub } = m as Record<string, unknown>;
+    if (typeof run !== "string" || typeof cwd !== "string" || !Array.isArray(argv) || !argv.every((a) => typeof a === "string") || typeof timeoutSec !== "number")
+      throw new Error("run needs a run id, argv, a cwd and a timeout");
+    if (this.#runs.has(run)) throw new Error(`run ${run} runs already`);
+    const abort = new AbortController();
+    this.#runs.set(run, abort);
+    try {
+      return await runConfined(
+        {
+          cwd,
+          argv: argv as string[],
+          timeoutSec,
+          ...(env && typeof env === "object" ? { env: { ...(env as Record<string, string>), ...imageEnv() } } : {}),
+          scrub: Array.isArray(scrub) ? scrub.filter((v): v is string => typeof v === "string") : [],
+          signal: abort.signal,
+        },
+        [cwd],
+      );
+    } finally {
+      this.#runs.delete(run);
+      this.#busyAt = Date.now();
+    }
+  }
+
   /** Starts the session's host, as the node starts one on a plain machine, and waits for it to register. */
   async #start(m: Record<string, unknown>): Promise<HostInfo> {
     const { sessionId, program, args, cwd, env } = m as { sessionId: unknown; program: unknown; args: unknown; cwd: unknown; env: unknown };
@@ -144,7 +205,7 @@ export class Guest {
     try {
       child = spawn(exe!, [...pre, SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])], {
         cwd,
-        env: (env && typeof env === "object" ? env : process.env) as NodeJS.ProcessEnv,
+        env: { ...(env && typeof env === "object" ? env : process.env), ...imageEnv() } as NodeJS.ProcessEnv,
         stdio: ["ignore", "ignore", log],
         detached: true,
       });
@@ -166,9 +227,34 @@ export class Guest {
       await Bun.sleep(5);
     }
     const info = { protocol: r.protocol, refused: r.refused ?? null };
-    if (!r.refused) this.#host = { dir, child, info, pipe: new HostPipe(dir, (n) => this.#mux?.control({ op: "hostLines", n })) };
+    if (!r.refused) {
+      this.#host = { dir, child, info, pipe: new HostPipe(dir, (n) => this.#mux?.control({ op: "hostLines", n })) };
+      const done = this.o.done;
+      if (done) child.once("exit", () => setTimeout(done, AFTER_HOST_MS));
+    }
     return info;
   }
+}
+
+/** Where a box's image names what its own programs need (Playwright's browsers, say): its init gives them to the guest,
+ * and the guest to every session host and command it starts, over what the node sent. */
+export const IMAGE_ENV = "/etc/fleetd/guest.env";
+
+/** The image's variables, as this guest got them. */
+export function imageEnv(file = IMAGE_ENV, own: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  let text = "";
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return out;
+  }
+  for (const line of text.split("\n")) {
+    const name = /^([A-Za-z_][A-Za-z0-9_]*)=/u.exec(line)?.[1];
+    const value = name ? own[name] : undefined;
+    if (name && value !== undefined) out[name] = value;
+  }
+  return out;
 }
 
 /** The guest's end of the session host's lines, across node links. */
@@ -295,17 +381,19 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`${USAGE}\n`);
     return 2;
   }
-  const guest = new Guest({ listen, dir, loopback: flag("--loopback") ?? "127.0.0.1" });
+  let finished!: () => void;
+  const over = new Promise<void>((r) => (finished = r));
+  const once = process.env.FLEETD_GUEST_ONCE === "1";
+  const guest = new Guest({ listen, dir, loopback: flag("--loopback") ?? "127.0.0.1", ...(once ? { done: () => finished() } : {}) });
   try {
     await guest.serve();
   } catch (error) {
     warn(`can't listen at ${listen}: ${(error as Error).message}`);
     return 1;
   }
-  await new Promise<void>((resolve) => {
-    process.once("SIGTERM", resolve);
-    process.once("SIGINT", resolve);
-  });
+  process.once("SIGTERM", finished);
+  process.once("SIGINT", finished);
+  await over;
   guest.stop();
   return 0;
 }

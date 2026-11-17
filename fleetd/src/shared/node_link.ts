@@ -183,6 +183,8 @@ export type NodeLoad = {
   android?: ScreenHealth;
   ios?: ScreenHealth;
   desktop?: ScreenHealth;
+  /** Where the machine's agents run: in a VM of their own each, or as plain processes and why (turned off, no KVM…). */
+  sandbox?: { kind: "microvm" } | { kind: "process"; why: string };
   mac?: MacHealth;
   /** The agents' Mac's iOS simulators: held by agents, how many may be at once, and agents waiting in line. */
   sims?: { inUse: number; budget: number; waiting: number };

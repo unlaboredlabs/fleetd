@@ -41,6 +41,8 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     own-tmp/             the node's own TMPDIR, for it and what it starts, when its environment sets none: as it starts, it removes what nothing changed for 6 hours and no running process holds
     cache/targets/       warm cargo builds handed from one reader or reviewer to the next (warmBuilds)
     build-slots/         the cargo wrapper first on agents' PATH, and the build turns
+    vm/                  what agents' VMs run on: Cloud Hypervisor, virtiofsd, passt, the guest kernel and root image, fetched and checked by the node
+    hosts/<session>/     each session's host: its registration, and for an agent in a VM its box (box.json), sockets and console.log
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
     order-env/<project>/ one order's variables, the secrets a person entered for its agents (mode 0600)
     claude-accounts/     the Claude API key and subscription tokens sealed to this machine (mode 0600)
@@ -93,6 +95,7 @@ after you change it.
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and usage](/docs/machines#guard). |
 | `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. A test build of a lib's tests beside its other targets takes two. Absent: one per 16 GB of the machine's memory, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
+| `sandbox` | `"process"` runs this machine's agents as plain processes instead of each in a VM of its own. Absent: a VM wherever the machine can run one. Read within a minute, no restart needed; agents running keep where they are. See [Each agent in its own VM](/docs/machines#vms). |
 | `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `sandbox`. |
 | `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`. |
 | `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled` (ignored on the agents' Mac, where simulators are always on), `deviceType`. |

@@ -9,6 +9,7 @@
 //   anywhere else is refused.
 import { connect } from "node:net";
 import { Duplex } from "node:stream";
+import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { HostHandlers, HostSocket } from "../runner/host.ts";
 import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
 import { GUEST_PROTOCOL, type HostInfo } from "./guest.ts";
@@ -44,6 +45,7 @@ export class Box {
   #bridge: HostBridge | undefined;
   #requests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   #nextId = 0;
+  #runs = 0;
   #over = false;
   #connecting = false;
   #goneResolve!: (why: string) => void;
@@ -68,6 +70,23 @@ export class Box {
     this.#hostRuns = !info.refused;
     this.#hostLines = 0;
     return info;
+  }
+
+  /** Runs a command in the box (a setup command), confined to its cwd, its group killed at its timeout or `r.signal`.
+   * A link that drops meanwhile ends the wait with a run that didn't finish. */
+  async run(r: ConfinedRun): Promise<RunOutcome> {
+    const run = `r${++this.#runs}`;
+    const cancel = () => void this.#request({ op: "cancel", run }).catch(() => {});
+    r.signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const m: Record<string, unknown> = { op: "run", run, argv: r.argv, cwd: r.cwd, timeoutSec: r.timeoutSec, scrub: r.scrub ?? [] };
+      if (r.env) m.env = r.env;
+      return (await this.#request(m, r.timeoutSec * 1000 + ANSWER_MS)) as RunOutcome;
+    } catch (error) {
+      return { exitCode: null, outputTail: "", timedOut: false, notRun: `the box didn't run it: ${(error as Error).message}` };
+    } finally {
+      r.signal?.removeEventListener("abort", cancel);
+    }
   }
 
   /** The session host's lines, for HostLink.connect: open until the session host or the guest is gone. */
@@ -115,8 +134,9 @@ export class Box {
         throw new Error(`the box's guest didn't answer the dial within ${HELLO_MS / 1000} s`);
       }),
     ]);
-    let hello!: (m: Record<string, unknown>) => void;
-    const said = new Promise<Record<string, unknown>>((r) => (hello = r));
+    let hello!: (m: Record<string, unknown> | undefined) => void;
+    // A link that closes before its hello (a VM whose guest isn't listening yet) fails the dial at once.
+    const said = new Promise<Record<string, unknown> | undefined>((r) => (hello = r));
     const mux: Mux = new Mux(link, {
       control: (m) => {
         if (m.op === "hello") hello(m);
@@ -126,7 +146,10 @@ export class Box {
         } else this.#answer(m);
       },
       open: (channel, target) => this.#open(channel, target),
-      closed: (why) => this.#dropped(mux, why),
+      closed: (why) => {
+        hello(undefined);
+        this.#dropped(mux, why);
+      },
     });
     this.#mux = mux;
     try {
@@ -158,15 +181,15 @@ export class Box {
     return undefined;
   }
 
-  #request(m: Record<string, unknown>): Promise<unknown> {
+  #request(m: Record<string, unknown>, ms = ANSWER_MS): Promise<unknown> {
     const mux = this.#mux;
     if (!mux || mux.closed) return Promise.reject(new Error("the box's link is down"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#requests.delete(id);
-        reject(new Error(`the box's guest didn't answer ${String(m.op)} within ${ANSWER_MS / 1000} s`));
-      }, ANSWER_MS);
+        reject(new Error(`the box's guest didn't answer ${String(m.op)} within ${Math.round(ms / 1000)} s`));
+      }, ms);
       this.#requests.set(id, {
         resolve: (v) => (clearTimeout(timer), resolve(v)),
         reject: (e) => (clearTimeout(timer), reject(e)),

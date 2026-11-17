@@ -16,7 +16,9 @@ import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
-import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame } from "./lead/index.ts";
+import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
+import { useVm } from "./place/index.ts";
+import { MicroVm, reportVm } from "./place/microvm.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
@@ -363,7 +365,13 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   // Probed now rather than by the first spawn.
   void currentScope();
   // Before any session starts: they're hosted by, and start their fleetd tools from, the node's pinned copy.
-  const sessions = await SessionService.start(configFor(home, fleetdDir(), pinSelf(home), boxKey));
+  const fleetd = pinSelf(home);
+  // A task's agent runs in a VM of its own where this machine can run one; its boxes are re-adopted with its sessions,
+  // before the node.sock hooks they answer calls with exist.
+  let leadHooks: LeadSocketHooks | undefined;
+  const vm = isAgentsMac(config) ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope });
+  useVm(vm);
+  const sessions = await SessionService.start(configFor(home, fleetdDir(), fleetd, boxKey));
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
   const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");
@@ -393,13 +401,14 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   relay.toolOnly = isAgentsMac(config);
   const link = node.area("link");
   const local = node.area("local");
-  const stopSocket = await serveLeadSocket(leadSocketPath(home), {
+  leadHooks = {
     relay,
     identify: (pid) => sessions.peerSession(pid),
     maskFor: (session) => sessions.maskFor(session),
     ...(local.any ? { browser: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
     ...(local.has("mac") ? { mac: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
-  });
+  };
+  const stopSocket = await serveLeadSocket(leadSocketPath(home), leadHooks);
   const shutdown = new AbortController();
   const wakes = new Wakes();
   runPower({ running: () => sessions.running(), wakes, onWake: () => sessions.woke(), signal: shutdown.signal });
@@ -568,6 +577,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
+      if (parts.load && vm) reportVm(parts.load, vm.status());
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },
@@ -607,6 +617,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     stopSocket();
     await stopAreas(node);
     await sessions.shutdown();
+    vm?.close();
   };
   return { node, sessions, stop, done };
 }
