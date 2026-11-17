@@ -77,6 +77,8 @@ fleetd-run app in between:
    your browser.
 2. You sign in there and allow fleetd. The service sends your browser back to a page the hub serves,
    `<hub>/oauth/callback`, at the address this app reaches the hub by, so it works from any computer that reaches it.
+   Where that address is plain http and the hub has an https one (its `--url`, or a Tailscale Serve https address in
+   front of its port), the page is at the https one, since many services accept only an https callback.
 3. The dialog moves on by itself: it tests the server and asks which tools may run unasked, as for a key. The lead gets
    the server at its next message, and says once that it is connected.
 
@@ -84,8 +86,8 @@ fleetd registers itself with the service where the service allows it (dynamic cl
 the dialog says so and asks for an OAuth app of your own: make one in the service's developer settings, allow the
 **Redirect URL** the dialog shows (copy it exactly), and enter its client ID and secret. The secret is sealed in the app
 to the hub's own key. Signing in uses PKCE, and goes over https unless the service is on this machine or your tailnet.
-Some services accept only an https or loopback callback: open fleetd at the hub's https address (see
-[Troubleshooting](/docs/troubleshooting#hub)) and sign in from there.
+A hub with no https address signs in to such a service only from its own machine: give it one (see
+[Troubleshooting](/docs/troubleshooting#hub)) and sign in again.
 
 **Renewing.** A sign-in's token lasts a while (often an hour). The hub renews it before it ends, from half its life left
 and at most 30 minutes before, and hands the new one to the project's machine; the lead's next message picks it up,
@@ -108,7 +110,8 @@ key and no Paper app on the project's machine.
 1. Settings › the project › **Project** › **MCP servers** › **Add an MCP server**: name `paper`, **URL**
    `https://mcp.paper.design`, key empty, **Agents get it too** on, then **Connect and test**.
 2. **Sign in**: Paper's sign-in page opens; sign in and allow fleetd. Paper takes only an https or loopback callback,
-   so open fleetd at the hub's https address (or on the hub's machine) first.
+   so the hub needs an https address (its `--url`, or Tailscale Serve in front of its port) unless you sign in on its
+   machine.
 3. **Test connection** on its row lists Paper's tools.
 
 The project's writers and reviewers then read Paper files (structure, screenshots, styles, JSX, text), create and edit

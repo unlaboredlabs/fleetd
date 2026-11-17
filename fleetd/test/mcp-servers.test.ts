@@ -9,6 +9,7 @@ import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
 import { getRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
 import { oauthCallback } from "../src/hub/mcp_oauth/callback.ts";
+import { type ServeStatus, serveFront } from "../src/hub/mcp_oauth/https_front.ts";
 import { mcpServers } from "../src/hub/mcp_servers/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { HubDb } from "../src/hub/store/db.ts";
@@ -114,11 +115,13 @@ class FakeLink implements Link {
   linkId = () => "L1";
 }
 
-function lab() {
+/** A hub on 127.0.0.1:4795; `serve` stands in for `tailscale serve status --json` (none by default). */
+function lab(serve: ServeStatus = async () => undefined) {
   let now = Date.parse("2026-11-08T10:00:00Z");
   const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4795 } }, HubDb.memory(), { now: () => now });
   const link = new FakeLink();
   hub.area("node_port", () => fakeNodePort(link));
+  hub.area("tailscale_serve", () => serve);
   const at = "2026-11-08T10:00:00.000Z";
   store(hub).machineUpsert({
     machineId: "lab",
@@ -382,4 +385,99 @@ test("sign-in URLs stay off plain HTTP to the internet, and challenges read as t
   expect(challengeParam('Bearer realm="x", resource_metadata="https://a/b", scope="read write"', "scope")).toBe("read write");
   expect(challengeParam('Bearer error="invalid_token", error_description="a \\"quoted\\" word"', "error_description")).toBe('a "quoted" word');
   expect(challengeParam("Basic realm=x", "realm")).toBeUndefined();
+});
+
+/** Tailscale Serve's status with an https front on `port` proxying to `to`, beside another site's. */
+const serving = (port: number, to: string) =>
+  JSON.stringify({
+    TCP: { [String(port)]: { HTTPS: true } },
+    Web: {
+      "devbox.example.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:8425" } } },
+      [`devbox.example.ts.net:${port}`]: { Handlers: { "/": { Proxy: to } } },
+    },
+  });
+
+test("the hub finds its Tailscale Serve https front by the port it proxies to", () => {
+  expect(serveFront(serving(4791, "http://100.100.1.2:4790"), { host: "100.100.1.2", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
+  expect(serveFront(serving(4791, "http://127.0.0.1:4790"), { host: "localhost", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
+  expect(serveFront(serving(4791, "http://100.100.1.2:4790"), { host: "0.0.0.0", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
+  // Port 443 is https's own: the address carries none.
+  expect(serveFront(serving(443, "http://127.0.0.1:4790"), { host: "127.0.0.1", port: 4790 })).toBe("https://devbox.example.ts.net");
+  // Another port, another host, or nothing served: no front.
+  expect(serveFront(serving(4791, "http://127.0.0.1:4790"), { host: "100.100.1.2", port: 4790 })).toBeUndefined();
+  expect(serveFront(serving(4791, "http://127.0.0.1:5000"), { host: "127.0.0.1", port: 4790 })).toBeUndefined();
+  expect(serveFront("{}", { host: "127.0.0.1", port: 4790 })).toBeUndefined();
+  expect(serveFront("not json", { host: "127.0.0.1", port: 4790 })).toBeUndefined();
+});
+
+/** A service that registers only an https or loopback callback, as many hosted MCP servers' sign-ins do. */
+function httpsOnlyService() {
+  let port = 0;
+  const server: Bun.Server<undefined> = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const base = `http://127.0.0.1:${port}`;
+      if (url.pathname === "/mcp") {
+        return new Response("", { status: 401, headers: { "www-authenticate": `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"` } });
+      }
+      if (url.pathname === "/.well-known/oauth-protected-resource") return Response.json({ resource: `${base}/mcp`, authorization_servers: [base] });
+      if (url.pathname === "/.well-known/oauth-authorization-server") {
+        return Response.json({
+          issuer: base,
+          authorization_endpoint: `${base}/authorize`,
+          token_endpoint: `${base}/token`,
+          registration_endpoint: `${base}/register`,
+          code_challenge_methods_supported: ["S256"],
+        });
+      }
+      if (url.pathname === "/register") {
+        const to = new URL(((await req.json()) as { redirect_uris: string[] }).redirect_uris[0]!);
+        if (to.protocol !== "https:" && to.hostname !== "127.0.0.1") {
+          return Response.json({ error: "invalid_redirect_uri", error_description: `Invalid redirect URI: '${to}'` }, { status: 400 });
+        }
+        return Response.json({ client_id: "https-client" }, { status: 201 });
+      }
+      if (url.pathname === "/token") return Response.json({ access_token: "at-https", refresh_token: "rt-https", token_type: "Bearer", expires_in: 3600 });
+      return new Response("no", { status: 404 });
+    },
+  });
+  port = server.port ?? 0;
+  return { server, base: `http://127.0.0.1:${port}` };
+}
+
+test("a sign-in from an app on plain http calls back at the hub's https front, and the app's dialog carries on", async () => {
+  const svc2 = httpsOnlyService();
+  try {
+    const server = {
+      scope,
+      name: "canvas",
+      enabled: true,
+      roles: { lead: true, writers: true, reviewers: true },
+      transport: { type: "http", url: `${svc2.base}/mcp` },
+      integration: { readTools: [] },
+    };
+    // No https front: the app's own plain-http address, which the service refuses.
+    const bare = lab();
+    await bare.call("mcp_server_set", server);
+    await expect(bare.call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4795" })).rejects.toThrow("Invalid redirect URI");
+    // Tailscale Serve fronts the hub over https: the callback goes there, whatever address the app is on.
+    const { hub, call } = lab(async () => serving(4791, "http://127.0.0.1:4795"));
+    await call("mcp_server_set", server);
+    const started = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4795" });
+    expect(started.redirectUri).toBe("https://devbox.example.ts.net:4791/oauth/callback");
+    const authorize = new URL(started.authorizeUrl as string);
+    expect(authorize.searchParams.get("redirect_uri")).toBe("https://devbox.example.ts.net:4791/oauth/callback");
+    // The browser lands on the https address; the hub finds the sign-in by its state, and the server the app shows connects.
+    const st = authorize.searchParams.get("state")!;
+    const page = (await oauthCallback(new Request(`https://devbox.example.ts.net:4791/oauth/callback?state=${st}&code=c-1`), { hub } as never))!;
+    expect(page.status).toBe(200);
+    expect(mcpServers(hub).get(scope, "canvas")!.oauth).toMatchObject({ status: "connected", signingIn: false });
+    // An app already on https keeps its own address.
+    const own = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "https://hub.example.com" });
+    expect(own.redirectUri).toBe("https://hub.example.com/oauth/callback");
+  } finally {
+    svc2.server.stop(true);
+  }
 });
