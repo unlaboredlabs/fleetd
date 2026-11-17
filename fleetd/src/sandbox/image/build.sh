@@ -23,9 +23,10 @@ git -C "$src" checkout -q --detach "$(pin .sources.virtiofsd.commit)"
 docker run --rm -v "$src:/src" -w /src \
   alpine@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f sh -euc '
     apk add -q cargo rust musl-dev libcap-ng-dev libcap-ng-static libseccomp-dev libseccomp-static
-    RUSTFLAGS="-C target-feature=+crt-static" cargo build -q --release --locked
+    # With --target, RUSTFLAGS reach only the binary: proc-macros stay dynamic, as they must.
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build -q --release --locked --target x86_64-alpine-linux-musl
     chown -R '"$(id -u):$(id -g)"' target'
-install -m 0755 "$src/target/release/virtiofsd" "$out/$(pin .assets.virtiofsd)"
+install -m 0755 "$src/target/x86_64-alpine-linux-musl/release/virtiofsd" "$out/$(pin .assets.virtiofsd)"
 
 # passt: its own static target.
 src=$work/passt
