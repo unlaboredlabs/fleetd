@@ -36,10 +36,13 @@ RUN curl -fsSL -o /tmp/gh.tgz https://github.com/cli/cli/releases/download/v2.10
 # on the devbox). The builds sit at a fixed path PLAYWRIGHT_BROWSERS_PATH names, since a local box's home is the
 # host's: /etc/fleetd/guest.env holds it for sessions started by `fleetd sandbox-guest`.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-RUN mkdir -p /tmp/pw && cd /tmp/pw \
- && bunx --bun playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
+# Playwright's installer runs under Node.js, as the node runs it (npx): a pinned Node 24 only for the install.
+RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz \
+ && echo "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb  /tmp/node.txz" | sha256sum -c - \
+ && mkdir -p /tmp/node /tmp/pw && tar -xJf /tmp/node.txz -C /tmp/node --strip-components=1 \
+ && cd /tmp/pw && PATH=/tmp/node/bin:$PATH npx --yes playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
  && chmod -R a+rX /opt/ms-playwright \
- && rm -rf /tmp/pw /root/.bun /root/.cache /var/lib/apt/lists/* \
+ && rm -rf /tmp/pw /tmp/node /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
  && mkdir -p /etc/fleetd \
  && printf 'PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\n' > /etc/fleetd/guest.env \
  && printf 'fleetd-box\n' > /etc/hostname \

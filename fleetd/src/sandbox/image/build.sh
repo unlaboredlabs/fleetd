@@ -36,7 +36,7 @@ make -s -C "$src" static
 install -m 0755 "$src/passt" "$out/$(pin .assets.passt)"
 
 # The root: the Dockerfile's image as a directory owned by root, then an ext4 holding exactly it.
-docker build -q -t fleetd-box -f "$here/Dockerfile" "$(mktemp -d "$work/ctx.XXXXXX")" >/dev/null
+docker build --progress=plain -t fleetd-box -f "$here/Dockerfile" "$(mktemp -d "$work/ctx.XXXXXX")" 2>&1 | tail -40
 box=$(docker create fleetd-box /bin/true)
 root=$work/root
 sudo mkdir "$root"
