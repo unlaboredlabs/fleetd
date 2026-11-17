@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
@@ -9,6 +8,7 @@ import { Broker, start } from "../src/node/browser/index.ts";
 import { findFfmpeg, readMeta, recordingsDir, VideoSink } from "../src/node/browser/record.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
 import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
+import { playwrightDirs } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
 
@@ -170,7 +170,7 @@ test("the agent's driver reaches its browser through the proxy, and waits while 
   expect(link.calls.at(-1)!.args.files).toEqual([{ file: "actions", bytes: ended.files[0]!.bytes }]);
 });
 
-const chrome = findChrome(join(homedir(), ".cache", "ms-playwright"));
+const chrome = playwrightDirs.map(findChrome).find((c) => c !== undefined);
 
 test.skipIf(!chrome)("a real headless Chrome: launched on its pipe, driven through the proxy, its frames to a watcher", async () => {
   const { launch } = await import("../src/node/browser/chrome.ts");
@@ -265,7 +265,7 @@ test("an agent's agent-browser command is a step of its session: in its action l
   expect(hb.busy.screens).toBe(1);
 });
 
-const ffmpeg = findFfmpeg(join(homedir(), ".cache", "ms-playwright"));
+const ffmpeg = playwrightDirs.map(findFfmpeg).find((f) => f !== undefined);
 
 test.skipIf(!ffmpeg)("the screencast's frames become the session's video, through Playwright's ffmpeg", async () => {
   const home = tempHome();

@@ -1,5 +1,6 @@
 // A node with a real headless Chrome for the browser's fill tests: the
-// node's broker on Playwright's headless shell from ~/.cache/ms-playwright (none: the tests skip), a fake 1Password
+// node's broker on Playwright's headless shell from PLAYWRIGHT_BROWSERS_PATH (a sandbox box's) or ~/.cache/ms-playwright
+// (none: the tests skip), a fake 1Password
 // in place of the SDK helper, and a CDP driver that reaches the browser only through the node's proxy, as an agent's
 // agent-browser does. Never a real vault or a real card.
 import { homedir } from "node:os";
@@ -12,8 +13,12 @@ import { Masker } from "../src/node/mask.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
 
+/** Where Playwright's builds may be: the environment's PLAYWRIGHT_BROWSERS_PATH (a sandbox box's), then its default. */
+export const playwrightDirs = [process.env.PLAYWRIGHT_BROWSERS_PATH, join(homedir(), ".cache", "ms-playwright")].filter(
+  (d): d is string => !!d && d !== "0",
+);
 /** FLEETD_TEST_CHROME (CI's own Chrome), else Playwright's headless shell. */
-export const chrome = process.env.FLEETD_TEST_CHROME || findChrome(join(homedir(), ".cache", "ms-playwright"));
+export const chrome = process.env.FLEETD_TEST_CHROME || playwrightDirs.map(findChrome).find((c) => c !== undefined);
 export const THREAD = "t-fill";
 export const TOKEN = "ops_fake-service-account-token-0123456789";
 
