@@ -183,7 +183,8 @@ const hubCalls = () => JSON.stringify(calls);
 describe("a project's MCP servers", () => {
   it("offers to add an MCP server, and says the lead's writes follow Approvals", async () => {
     await render();
-    expect(document.querySelectorAll('[role="listitem"]')).toHaveLength(0);
+    // Only the named services, each ready to connect.
+    expect([...document.querySelectorAll('[role="listitem"]')].map((r) => r.getAttribute("aria-label"))).toEqual(["Paper"]);
     expect(button("Add an MCP server")).toBeDefined();
     expect(document.body.textContent).toContain("Reads run unasked; anything else follows Approvals.");
     expect(document.body.textContent).not.toMatch(/xaq/iu);
@@ -458,5 +459,107 @@ describe("an MCP server that signs you in", () => {
     expect(row("mail").textContent).toContain("Signed in with auth.mail.example.");
     expect(row("mail").textContent).toContain("Works on devbox (mail 1.0): 1 tool runs without asking");
     expect(row("mail").querySelector("button")?.textContent).not.toBe("Reconnect");
+  });
+});
+
+const PAPER = "https://mcp.paper.design";
+const paper = (oauth?: NonNullable<McpServer["oauth"]>, url = PAPER): McpServer => ({
+  scope: { kind: "project", ...ref },
+  name: "paper",
+  enabled: true,
+  roles: { lead: true, writers: true, reviewers: true },
+  transport: { type: "http", url },
+  headers: [],
+  ...(oauth === undefined ? {} : { oauth }),
+  updatedAt: AT,
+});
+
+/** The hub says Paper's sign-in moved, as it does when the browser comes back. */
+const paperMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
+  project = [paper(oauth)];
+  seq += 1;
+  await act(async () => {
+    send({ t: "event", event: { seq, at: AT, type: "mcp.oauth", summary: "paper's sign-in changed", data: { name: "paper" } } });
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  await settle();
+};
+
+describe("named services", () => {
+  beforeEach(() => {
+    started = { authorizeUrl: "https://app.paper.design/oauth/authorize?client_id=c1&state=s1", redirectUri: "https://devbox.example.ts.net/oauth/callback" };
+    vi.stubGlobal("fleetd", {
+      platform: "linux",
+      openExternal: (url: string) => {
+        opened.push(url);
+        return Promise.resolve({ ok: true });
+      },
+      secret: {
+        mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
+          saved.push(request);
+          project = [paper()];
+          return Promise.resolve({ ok: true, output: { server: project[0] } });
+        },
+      },
+    });
+  });
+
+  it("connects Paper with one press: the manual form's server, then straight to its sign-in, then Connected with Test", async () => {
+    await render();
+    expect(row("Paper").querySelector("[data-mark=paper]")).not.toBeNull();
+    await click(button("Connect", row("Paper")));
+    expect(saved).toEqual([
+      {
+        scope: { kind: "project", ...ref },
+        name: "paper",
+        enabled: true,
+        roles: { lead: true, writers: true, reviewers: true },
+        transport: { type: "http", url: PAPER },
+        env: [],
+        headers: [],
+        boxes: [],
+      },
+    ]);
+    // Nothing else to press: the sign-in page is open.
+    expect(dialog().textContent).toContain("Sign in to Paper");
+    expect(calls.find((c) => c.tool === "mcp_oauth_start")?.input).toEqual({ scope: { kind: "project", ...ref }, name: "paper", hubUrl: "http://devbox:4710" });
+    expect(opened).toEqual(["https://app.paper.design/oauth/authorize?client_id=c1&state=s1"]);
+    await paperMoved({ status: "signed_out", issuer: "https://app.paper.design", signingIn: true });
+    tested = { machineId: "devbox", result: { server: "Paper 1.0", tools: [{ name: "get_basic_info", policy: "read" }] } };
+    await paperMoved({ status: "connected", issuer: "https://app.paper.design", signedInAt: "2026-10-27T11:00:00.000Z" });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const text = row("Paper").textContent;
+    expect(text).toContain("Connected");
+    expect(text).toContain("Works on devbox (Paper 1.0).");
+    expect(button("Test", row("Paper"))).toBeDefined();
+    expect(() => button("Connect", row("Paper"))).toThrow();
+  });
+
+  it("shows a paper server added by hand at Paper's URL as Paper, not twice", async () => {
+    project = [paper({ status: "connected", issuer: "https://app.paper.design", signedInAt: AT }, "https://mcp.paper.design/")];
+    await render();
+    expect([...document.querySelectorAll('[role="listitem"]')].map((r) => r.getAttribute("aria-label"))).toEqual(["Paper"]);
+    expect(row("Paper").textContent).toContain("Connected");
+    await click(button("Test", row("Paper")));
+    expect(calls.find((c) => c.tool === "mcp_server_test")?.input).toEqual({ scope: { kind: "project", ...ref }, name: "paper" });
+  });
+
+  it("says a sign-in is needed again, and Sign in goes straight to Paper's page", async () => {
+    project = [paper({ status: "signed_out", issuer: "https://app.paper.design", signedInAt: AT, problem: "`app.paper.design` ended the sign-in (revoked), so you need to sign in again." })];
+    await render();
+    const text = row("Paper").textContent;
+    expect(text).toContain("Sign in needed");
+    expect(text).toContain("app.paper.design ended the sign-in");
+    await click(button("Sign in", row("Paper")));
+    expect(calls.filter((c) => c.tool === "mcp_oauth_start")).toHaveLength(1);
+    expect(opened).toHaveLength(1);
+  });
+
+  it("names it paper-2 where a server of another URL is already paper", async () => {
+    project = [{ ...crm, name: "paper" }];
+    await render();
+    expect(row("paper").textContent).toContain("mcp.crm.example");
+    await click(button("Connect", row("Paper")));
+    expect(saved[0]?.name).toBe("paper-2");
   });
 });
