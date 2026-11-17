@@ -33,7 +33,8 @@ import type { Limit } from "../../shared/sandbox.ts";
 export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T {
   if (!sandbox) return auto;
   if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own` };
-  return { ...auto, why: `${auto.why}; agents run as plain processes: ${sandbox.why.slice(0, 300)}` };
+  const why = sandbox.fix ? `${sandbox.why} Fix: ${sandbox.fix}` : sandbox.why;
+  return { ...auto, why: `${auto.why}; agents run as plain processes: ${why.slice(0, 300)}` };
 }
 
 export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority } from "./board.ts";

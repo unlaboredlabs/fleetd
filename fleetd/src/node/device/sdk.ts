@@ -217,7 +217,7 @@ export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => b
       },
     };
   }
-  // Open it as the program will will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
+  // Open it as the program will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
   try {
     closeSync(openSync(dev, "r+"));
     return { ok: "direct" };

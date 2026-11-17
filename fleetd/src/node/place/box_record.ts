@@ -1,8 +1,13 @@
 // What a session's box left on this machine, by pid and start time: `<host dir>/box.json`, written by the microvm
 // place (./microvm.ts) once its VMM runs. Light on purpose: `fleetd session-host stop-all` (machine remove) and the
 // process place's own stop read it through ../runner/host.ts, and they import only the host's modules.
+//
+// A box nothing records (its host dir gone, or a node that crashed between its boot and its record) is found by the
+// marker the node puts in its launcher's environment, which the VMM and helpers inherit: `FLEETD_BOX=<host dir>`,
+// under this node's own `hosts` dir. Never by a process's name: another fleet's boxes on this machine carry another
+// home's dir, and stay untouched (reapLeaked).
 import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "../runner/procs.ts";
 import type { View } from "./view.ts";
 
@@ -14,8 +19,13 @@ export type BoxRecord = {
   /** The box's launcher: it leads the box's process group, its children are the VMM and its helpers, and it ends with
    * the VMM. Its pid is the session's recorded pid. */
   leader: BoxProc;
-  /** The VMM, virtiofsd and passt. */
+  /** The VMM, virtiofsd and passt (pasta, and the shell holding the box's network namespace). */
   helpers: BoxProc[];
+  /** The shell holding the box's network namespace, where its routes keep this machine's addresses out (./net.ts);
+   * absent for a box from before the namespace. */
+  net?: BoxProc;
+  /** This machine's addresses the box's routes keep out, as last set. */
+  blocked?: string[];
   /** This machine's TCP ports the box reaches at the same numbers (the browser proxy's, adb's). */
   tcp: number[];
   /** The vsock port the guest helper listens on, behind the VMM's hybrid vsock socket (`vsock.sock`). */
@@ -60,5 +70,62 @@ export async function destroyBox(dir: string): Promise<number> {
   signal(found, "SIGKILL");
   await gone(found, STOP_WAIT_MS);
   rmSync(boxFile(dir), { force: true });
+  return found.length;
+}
+
+/** The variable in a box launcher's environment (and so in its VMM's and helpers'): its host dir. */
+export const BOX_MARKER = "FLEETD_BOX";
+
+/** The host dir `pid`'s marker names, if it has one. */
+function markedDir(pid: number): string | undefined {
+  try {
+    const want = `${BOX_MARKER}=`;
+    return readFileSync(`/proc/${pid}/environ`, "latin1")
+      .split("\0")
+      .find((v) => v.startsWith(want))
+      ?.slice(want.length);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * SIGKILLs the boxes under `hosts` (a node's `<home>/hosts`) that nothing records: every process whose marker names a
+ * dir there, unless that dir's box.json records a box still running and the process is of it (the launcher's group or
+ * tree, or a recorded helper), with each one's group and tree. Run at the node's start, once the boxes it adopts are
+ * adopted and the dirs no session runs in are swept. Linux only; how many processes it ended.
+ */
+export async function reapLeaked(hosts: string): Promise<number> {
+  if (process.platform !== "linux") return 0;
+  const root = resolve(hosts);
+  const procs = table();
+  const marked: { p: Proc; dir: string }[] = [];
+  for (const p of procs) {
+    if (p.pid <= 1 || p.pid === process.pid || p.zombie) continue;
+    const dir = markedDir(p.pid);
+    if (dir && dirname(resolve(dir)) === root) marked.push({ p, dir: resolve(dir) });
+  }
+  if (!marked.length) return 0;
+  const owned = new Set<number>();
+  for (const dir of new Set(marked.map((m) => m.dir))) {
+    const r = readBox(dir);
+    if (!r || !boxAlive(r)) continue;
+    owned.add(r.leader.pid);
+    for (const p of descendants(procs, r.leader.pid)) owned.add(p.pid);
+    for (const p of procs) if (p.pgid === r.leader.pid) owned.add(p.pid);
+    for (const h of [...r.helpers, ...(r.net ? [r.net] : [])]) if (liveProc(h)) owned.add(h.pid);
+  }
+  const leaked = marked.map((m) => m.p).filter((p) => !owned.has(p.pid));
+  if (!leaked.length) return 0;
+  const own = statOf(process.pid)?.pgid;
+  // A leaked box's group is its dead or living launcher's, which only the box's processes are in.
+  const groups = new Set(leaked.map((p) => p.pgid).filter((g) => g > 1 && g !== own));
+  const found = dedupe([
+    ...leaked,
+    ...leaked.flatMap((p) => descendants(procs, p.pid)),
+    ...procs.filter((p) => groups.has(p.pgid) && p.pid !== process.pid),
+  ]).filter((p) => !owned.has(p.pid));
+  signal(found, "SIGKILL");
+  await gone(found, STOP_WAIT_MS);
   return found.length;
 }

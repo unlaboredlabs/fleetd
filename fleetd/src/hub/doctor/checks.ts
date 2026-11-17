@@ -12,7 +12,7 @@ import type {
   OnePasswordTest,
   SandboxCheck,
 } from "../../shared/contracts.ts";
-import type { MacHealth, NodeDisk, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
+import type { MacHealth, NodeDisk, NodeLoad, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
 import { doctorAlert, fetchFailedText, fixLabel, start } from "./base.ts";
 import { addCommand, type HubSetup, type MachineSetup, restartCommand } from "./config.ts";
@@ -701,6 +701,18 @@ function screen(machineId: string, name: string, offline: boolean, health: Scree
   const status: DoctorStatus = health.state === "unavailable" ? "fail" : "ok";
   const fix = health.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within minutes`, health.fix);
   return machineEntry(machineId, name, status, health.message, fix);
+}
+
+/** Where the machine's agents run (`vm`): in VMs of their own, or as plain processes with the reason and, where a
+ * person has one, its fix. By choice or the machine's design (turned off, macOS) passes; anything else warns, since
+ * its agents run without a VM's walls. Undefined offline and from a node that doesn't say (older, or the agents' Mac). */
+export function vms(machineId: string, offline: boolean, sandbox: NodeLoad["sandbox"]): DoctorCheck | undefined {
+  if (!sandbox || offline) return undefined;
+  if (sandbox.kind === "microvm") return machineEntry(machineId, "vm", "ok", `Agents on ${machineId} run in VMs of their own.`);
+  const why = `Agents on ${machineId} run as plain processes, not in VMs: ${sandbox.why}`;
+  if (sandbox.expected) return machineEntry(machineId, "vm", "ok", why);
+  const fix = sandbox.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within a minute`, sandbox.fix);
+  return machineEntry(machineId, "vm", "warn", why, fix);
 }
 
 /** Whether the machine can host android sessions; undefined where they are off (or offline, or an older node). */

@@ -6,13 +6,14 @@
 // end, the start-up sweep and `stop-all` leaving no process of it behind.
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { sendToNode } from "../../src/cli/agent_mcp/socket.ts";
 import { LeadRelay, leadSocketPath, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
+import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { pick, placeAt, useVm } from "../../src/node/place/index.ts";
 import { forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
@@ -42,13 +43,14 @@ afterAll(() => {
 const within = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
   Promise.race([p, Bun.sleep(ms).then(() => Promise.reject(new Error(`timed out: ${what}`)))]);
 
-const OK: VmCheck = { ok: true, kvm: "direct", dns: ["192.0.2.53"], tools: "ready" };
+const OK: VmCheck = { ok: true, kvm: "direct", dns: ["192.0.2.53"], tools: "ready", net: { ip: "/usr/sbin/ip", nsenter: "/usr/bin/nsenter" } };
 const TOOLS: VmTools = { cloudHypervisor: "/vm/ch", chRemote: "/vm/ch-remote", kernel: "/vm/vmlinux", virtiofsd: "/vm/virtiofsd", passt: "/vm/passt", root: "/vm/root.ext4" };
 
 /** The stand-in VM: sandbox-guest in a group it leads, its listen socket in the box's dir. */
 async function standInBoot(b: BootPlan): Promise<Booted> {
   // A VM's node.sock is in its own view and goes with it; a stand-in's is on this machine's disk.
   rmSync(join(dirname(dirname(b.dir)), "node.sock"), { force: true });
+  rmSync(join(dirname(dirname(b.dir)), "build-slots.sock"), { force: true });
   const child = spawn(process.execPath, [MAIN, "sandbox-guest", "--listen", join(b.dir, "link.sock"), "--dir", join(b.dir, "guest"), "--loopback", "127.0.0.2"], {
     cwd: b.dir,
     env: { ...process.env, FLEETD_GUEST_ONCE: "1" },
@@ -172,10 +174,10 @@ test("a task's agent gets a box where the machine can run one; a lead, and every
 });
 
 test("a machine that can't run VMs says why, in plain words, and fetches the VM files once while it waits", async () => {
-  expect(node({ config: { sandbox: "process" } }).vm.status()).toEqual({ kind: "process", why: `turned off on this machine (node.json "sandbox": "process")` });
+  expect(node({ config: { sandbox: "process" } }).vm.status()).toEqual({ kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true });
   expect(node({ fleetd: ["/usr/bin/bun", "/src/main.ts"] }).vm.status().kind).toBe("process");
   const noKvm = node({ check: { ok: false, why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" } });
-  expect(noKvm.vm.status()).toEqual({ kind: "process", why: "This user can't open /dev/kvm. Fix: sudo usermod -aG kvm $USER" });
+  expect(noKvm.vm.status()).toEqual({ kind: "process", why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" });
   let fetches = 0;
   let done!: () => void;
   const fetching = node({ tools: undefined, fetch: () => (fetches++, new Promise<void>((r) => (done = r))) });
@@ -322,12 +324,18 @@ test("a box's launcher, kernel line and forwards", () => {
   expect(line).toContain("fleetd.exe=/home/u/.fleetd/node/bin/fleetd fleetd.port=5000 fleetd.now=1700000000");
   expect(line).toContain("fleetd.dns=192.0.2.53,2001:db8::1 fleetd.once=1");
   const script = launcherScript(
-    { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: ["/home/u/.fleetd"], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }> },
+    { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: ["/home/u/.fleetd"], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: ["100.64.0.7"] },
     0,
   );
   // No route back to this machine's loopback, no inbound ports, a read-only root, and no root anywhere.
   for (const want of ["'--no-map-gw'", "'-t' 'none' '-u' 'none'", "readonly=on", "shared=on", "unshare --user --map-root-user --mount", "'--sandbox=namespace'"]) expect(script).toContain(want);
   expect(script).not.toContain("sudo");
+  // passt runs in pasta's network namespace, with no port either way and no gateway meaning this machine, behind the
+  // routes that keep this machine's own addresses out, which must be set before passt starts (or the box doesn't).
+  expect(script).toContain("(exec -a pasta '/vm/passt' '-q' '-f' '--config-net' '-t' 'none' '-u' 'none' '-T' 'none' '-U' 'none' '--no-map-gw' '--' '/bin/sh' '-c'");
+  const inNs = script.slice(script.indexOf("'/bin/sh' '-c'"));
+  expect(inNs.indexOf("rule add pref 10 table 4790 || exit 1")).toBeGreaterThan(0);
+  expect(inNs.indexOf("-batch")).toBeLessThan(inNs.indexOf("'--vhost-user'"));
   expect(forwards({ AGENT_BROWSER_CDP: "ws://127.0.0.1:41234/devtools/browser/t", ANDROID_ADB_SERVER_PORT: "15037" })).toEqual([41234, 15037]);
   expect(forwards({ AGENT_BROWSER_CDP: "ws://hub.example:9222/x" })).toEqual([]);
   // A Claude gateway on this machine is reached at its port; one elsewhere needs nothing.
@@ -353,4 +361,72 @@ test("a box's guest gives what it starts the image's own variables (Playwright's
   writeFileSync(file, "PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\n# a comment\nNOT SET=x\n");
   expect(imageEnv(file, { PLAYWRIGHT_BROWSERS_PATH: "/opt/ms-playwright", OTHER: "y" })).toEqual({ PLAYWRIGHT_BROWSERS_PATH: "/opt/ms-playwright" });
   expect(imageEnv(join(root, "none.env"), { PLAYWRIGHT_BROWSERS_PATH: "/x" })).toEqual({});
+});
+
+test("a box's network follows this machine's addresses: new ones are set out of its reach, and a failure is tried again", async () => {
+  const n = node();
+  let addrs = ["192.0.2.1"];
+  const plans: BootPlan[] = [];
+  const set: [number, string[]][] = [];
+  let failing = false;
+  const vm = new MicroVm({
+    ...n.vm.o,
+    addrs: () => addrs,
+    setBlocks: (holder, want) => {
+      if (failing) throw new Error("nsenter: No such process");
+      set.push([holder, want]);
+    },
+    // The stand-in's own process holds its "namespace".
+    boot: async (b) => (plans.push(b), { ...(await standInBoot(b)), net: { pid: process.pid, start: startOf(process.pid)! } }),
+  });
+  const dir = join(n.home, "hosts", "s-net");
+  await vm.bound({ sessionId: "s-net", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+  expect(plans[0]!.blocked).toEqual(["192.0.2.1"]);
+  expect(readBox(dir)).toMatchObject({ net: { pid: process.pid }, blocked: ["192.0.2.1"] });
+  await vm.keepOff();
+  expect(set).toEqual([]);
+  addrs = ["192.0.2.1", "2001:db8::2"];
+  failing = true;
+  await vm.keepOff();
+  expect(readBox(dir)!.blocked).toEqual(["192.0.2.1"]);
+  failing = false;
+  await vm.keepOff();
+  expect(set).toEqual([[process.pid, ["192.0.2.1", "2001:db8::2"]]]);
+  expect(readBox(dir)!.blocked).toEqual(["192.0.2.1", "2001:db8::2"]);
+  await vm.end(dir);
+  vm.close();
+});
+
+test("a box's builds take this machine's build slots, queued with every other agent's, and give them back however they end", async () => {
+  const n = node({ config: { buildSlots: 1 } });
+  const dir = join(n.home, "hosts", "s-build");
+  const place = n.vm.bound({ sessionId: "s-build", dir, role: "worker" });
+  const bin = join(root, "fake-cargo");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "cargo"), '#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && sleep 30\nexit 0\n');
+  chmodSync(join(bin, "cargo"), 0o755);
+  const env = { ...envOf(n.home), PATH: `${bin}:${process.env.PATH}` };
+  const build = (args: string, signal?: AbortSignal) =>
+    place.run({ cwd: n.cwd, argv: [process.execPath, MAIN, "build-slot", n.home, ...args.split(" ")], timeoutSec: 30, env, ...(signal ? { signal } : {}) });
+  // Another agent's build holds the machine's one slot: the box's queues on it, and runs once it frees.
+  const other = await take(slotsDir(n.home), 1, 1, 50, () => {});
+  const queued = build("build --release");
+  await Bun.sleep(1_500);
+  for (const fd of other) closeSync(fd);
+  const ran = await within(queued, 15_000, "the box's build");
+  expect(ran.exitCode).toBe(0);
+  expect(ran.outputTail).toContain("fleetd: queued for a build slot (next in line; 1 slot on this machine)");
+  expect(ran.outputTail).toContain("cargo ran: build --release");
+  // A build killed while it holds the slot gives it back at once.
+  const abort = new AbortController();
+  const slow = build("build slow", abort.signal);
+  await Bun.sleep(1_500);
+  let waited = false;
+  const next = take(slotsDir(n.home), 1, 1, 50, () => (waited = true));
+  await Bun.sleep(300);
+  expect(waited).toBe(true);
+  abort.abort();
+  expect((await slow).exitCode).toBeNull();
+  for (const fd of await within(next, 10_000, "the slot back")) closeSync(fd);
+  await n.vm.end(dir);
 });

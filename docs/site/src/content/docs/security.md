@@ -75,8 +75,11 @@ the hub running as a separate OS user, which fleetd doesn't set up.
 
 ## What an agent can reach on a machine {#agent-reach}
 
-An agent runs as the OS user its machine's node runs as, which is usually you, with no sandbox (as
-[leads run](#how-leads-run)). So on its machine it can reach what you can:
+An agent runs as the OS user its machine's node runs as, which is usually you. On a Linux machine that can run them,
+a task's agent runs in a [VM of its own](/docs/machines#vms): fleetd's own files are hidden from it and it can't reach
+the machine over the network, but your home folder is still shared writable, so the first two points below still hold.
+Leads, and agents on a Mac or on a machine without VMs, run with no sandbox (as [leads run](#how-leads-run)). So on its
+machine an agent can reach what you can:
 
 - your files: your home, your projects, and any key or token kept in them;
 - your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;

@@ -5,13 +5,16 @@
 // What a VM needs, none of it root (measured on the devbox, sandbox-per-agent-measurements):
 //   - x86_64 Linux (the pinned builds are x86_64; macOS has no KVM);
 //   - /dev/kvm read-write for this user, directly or through `sg kvm` (as the Android emulator takes it);
-//   - unprivileged user and mount namespaces, which `virtiofsd --sandbox namespace` runs in;
+//   - unprivileged user, mount and network namespaces: `virtiofsd --sandbox namespace` runs in the first two, and the
+//     box's network in a network namespace of its own (../../node/place/net.ts), with `ip` (iproute2) and `nsenter`
+//     (util-linux) to keep this machine's own addresses out of it, and /dev/net/tun for pasta's link to the network;
 //   - an upstream DNS server for the guest: passt can't hand out DNS where the host's resolver is a loopback stub
 //     (systemd-resolved's 127.0.0.53), so the box is given the servers behind it, from
 //     /run/systemd/resolve/resolv.conf;
 //   - the pinned files (tools.ts), there or still fetchable: a fetch that failed holds the machine back for an hour.
 import { readFileSync } from "node:fs";
 import { type Kvm, type KvmRefusal, kvmAt, sgOpens } from "../../node/device/sdk.ts";
+import { hostAddrs, netTools, type NetTools } from "../../node/place/net.ts";
 import { findTools, readState, vmDir } from "./tools.ts";
 
 export type VmCheck =
@@ -23,8 +26,11 @@ export type VmCheck =
       dns: string[];
       /** The pinned files are all there, or the VM kind fetches them (ensureTools) before its first box. */
       tools: "ready" | "fetch";
+      /** The commands a box's network namespace is set up with. */
+      net: NetTools;
     }
-  | { ok: false; why: string; fix?: string };
+  /** `expected`: by the machine's design (macOS, not x86_64), nothing to fix. */
+  | { ok: false; why: string; fix?: string; expected?: true };
 
 /** How long a failed fetch keeps the machine on plain processes before the next try. */
 export const RETRY_FETCH_MS = 60 * 60_000;
@@ -34,8 +40,12 @@ export type Probes = {
   platform: string;
   arch: string;
   kvm: () => { ok: Kvm } | { err: KvmRefusal };
-  /** Whether this user can make a user and mount namespace: undefined if so, else what stood in the way. */
+  /** Whether this user can make a user, mount and network namespace: undefined if so, else what stood in the way. */
   userns: () => string | undefined;
+  /** What a box's network namespace is set up with, or what of it this machine lacks. */
+  net: () => NetTools | { missing: string; fix?: string };
+  /** This machine's own addresses (../../node/place/net.ts hostAddrs), which a VM can't reach. */
+  addrs: () => string[];
   /** A file's text, or undefined when it can't be read. */
   read: (path: string) => string | undefined;
   /** The pinned files: there, never failed, or the last failure. */
@@ -59,9 +69,11 @@ export function machineProbes(home: string): Probes {
     kvm: () => kvmAt("/dev/kvm", "/etc/group", sgOpens, "VMs"),
     userns: () => {
       if (!Bun.which("unshare")) return "unshare (util-linux) isn't installed to try it";
-      const ran = Bun.spawnSync(["unshare", "--user", "--map-root-user", "--mount", "true"], { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+      const ran = Bun.spawnSync(["unshare", "--user", "--map-root-user", "--mount", "--net", "true"], { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
       return ran.success ? undefined : ran.stderr.toString().trim() || `unshare exited ${ran.exitCode}`;
     },
+    net: netTools,
+    addrs: () => hostAddrs(),
     read: readText,
     tools: () => {
       const dir = vmDir(home);
@@ -98,8 +110,8 @@ export function vmCheck(probes: Probes): VmCheck {
 }
 
 function check(p: Probes): VmCheck {
-  if (p.platform !== "linux") return { ok: false, why: `VMs need Linux with KVM; this machine runs ${p.platform === "darwin" ? "macOS" : p.platform}, so its agents run as plain processes.` };
-  if (p.arch !== "x64") return { ok: false, why: `VMs run on x86_64 machines for now; this one is ${p.arch}, so its agents run as plain processes.` };
+  if (p.platform !== "linux") return { ok: false, why: `VMs need Linux with KVM; this machine runs ${p.platform === "darwin" ? "macOS" : p.platform}, so its agents run as plain processes.`, expected: true };
+  if (p.arch !== "x64") return { ok: false, why: `VMs run on x86_64 machines for now; this one is ${p.arch}, so its agents run as plain processes.`, expected: true };
 
   const kvm = p.kvm();
   if ("err" in kvm) return { ok: false, why: kvm.err.why, ...(kvm.err.fix ? { fix: kvm.err.fix } : {}) };
@@ -123,9 +135,26 @@ function check(p: Probes): VmCheck {
     return { ok: false, why: `This user can't make the user namespace virtiofsd shares files from: ${[...userns].slice(0, 200).join("")}` };
   }
 
-  let dns = upstream(p.read("/etc/resolv.conf") ?? "");
-  if (dns.length === 0) dns = upstream(p.read("/run/systemd/resolve/resolv.conf") ?? "");
+  const net = p.net();
+  if ("missing" in net) {
+    return {
+      ok: false,
+      why: `A VM's network needs ${net.missing}, and this machine doesn't have it: the node keeps each VM off this machine's own addresses with it.`,
+      ...(net.fix ? { fix: net.fix } : {}),
+    };
+  }
+
+  const own = new Set(p.addrs());
+  const reachable = (conf: string | undefined) => upstream(conf ?? "").filter((ns) => !own.has(ns.toLowerCase()));
+  let dns = reachable(p.read("/etc/resolv.conf"));
+  if (dns.length === 0) dns = reachable(p.read("/run/systemd/resolve/resolv.conf"));
   if (dns.length === 0) {
+    if (upstream(p.read("/etc/resolv.conf") ?? "").length || upstream(p.read("/run/systemd/resolve/resolv.conf") ?? "").length) {
+      return {
+        ok: false,
+        why: "No DNS server for VMs: the only one this machine names is on this machine itself, which a VM can't reach. Name a server elsewhere (the router's, or a public one) in the system's DNS settings.",
+      };
+    }
     return {
       ok: false,
       why: "No DNS server for VMs: this machine's resolver is a local stub (such as systemd-resolved's 127.0.0.53), which a VM can't reach, and /run/systemd/resolve/resolv.conf names no server behind it.",
@@ -138,9 +167,9 @@ function check(p: Probes): VmCheck {
     if (p.now() < next) {
       return { ok: false, why: `Fetching the VM files failed: ${tools.failed}. The node tries again after ${new Date(next).toISOString().slice(11, 16)} UTC.` };
     }
-    return { ok: true, kvm: kvm.ok, dns, tools: "fetch" };
+    return { ok: true, kvm: kvm.ok, dns, tools: "fetch", net };
   }
-  return { ok: true, kvm: kvm.ok, dns, tools };
+  return { ok: true, kvm: kvm.ok, dns, tools, net };
 }
 
 /** The machine's own answer. */
