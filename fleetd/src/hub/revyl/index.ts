@@ -7,7 +7,7 @@
 import type { KnownRevylRoute, RevylCheck, RevylKind, RevylState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CHECK_WAIT, INSTALL_WAIT, KINDS, routeOf } from "../../shared/revyl.ts";
+import { CHECK_WAIT, checkFix, INSTALL_WAIT, KINDS, routeOf } from "../../shared/revyl.ts";
 import { CAP_REVYL } from "../../shared/screens_wire.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
@@ -169,10 +169,7 @@ export async function test(hub: Hub): Promise<RevylState> {
       ok: false,
       reason: reply.reason,
       message: `${m.name}: ${reply.message}`,
-      fix:
-        reply.reason === "invalid_key"
-          ? "Revyl refused the key: it may be wrong or expired. Make a new one in Revyl's dashboard (Settings › API Keys) and connect it again."
-          : `test again in a minute; if it keeps failing, run revyl doctor on ${m.name}`,
+      fix: checkFix(reply.reason, m.name),
     };
     break;
   }

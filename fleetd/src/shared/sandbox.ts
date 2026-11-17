@@ -30,6 +30,25 @@ export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limi
 /** A check's reason as one this build knows; anything else is `failed`. */
 export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includes(r as KnownSandboxCheckReason) ? (r as KnownSandboxCheckReason) : "failed");
 
+/** What fixes a failed check of `provider`'s key on `machine`, by its reason (the hub's and fleetd cloud's words). */
+export function checkFix(provider: KnownSandboxProvider, reason: string, machine: string): string {
+  const name = NAMES[provider];
+  switch (reason) {
+    case "invalid_key":
+      return `${name} refused the key: it may be wrong, revoked or from another account. Make a new one in ${name}'s dashboard and connect it again.`;
+    case "limit":
+      return `the ${name} account is at its plan's limit: raise the plan at ${name}, or lower the limit here`;
+    case "billing":
+      return `${name} won't run sandboxes on the account until its billing is sorted: check it in ${name}'s dashboard`;
+    case "unreachable":
+      return provider === "e2b"
+        ? `test again in a minute; with a self-hosted E2B, check its domain answers from ${machine}`
+        : `test again in a minute; if it keeps failing, check ${machine} reaches ${name}`;
+    default:
+      return `test again in a minute; if it keeps failing, update fleetd on ${machine}`;
+  }
+}
+
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
 

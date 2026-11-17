@@ -117,3 +117,10 @@ export const withoutNudges = (output: string) =>
 
 /** A refusal from Revyl about money or limits (a billing notice, no minutes left): never retried. */
 export const billingRefusal = (output: string) => /billing|payment|credit|free minutes|out of minutes|upgrade your plan|402/i.test(output);
+
+/** What fixes a failed check of the key on `machine` that Revyl answered, by its reason (the hub's and fleetd cloud's words). */
+export function checkFix(reason: "invalid_key" | "failed", machine: string): string {
+  return reason === "invalid_key"
+    ? "Revyl refused the key: it may be wrong or expired. Make a new one in Revyl's dashboard (Settings › API Keys) and connect it again."
+    : `test again in a minute; if it keeps failing, run revyl doctor on ${machine}`;
+}

@@ -12,7 +12,7 @@
 import type { KnownSandboxProvider, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -183,25 +183,6 @@ export async function sealedTo(hub: Hub, machineId: string, provider: KnownSandb
 /** How long the hub waits for a machine's check: the check's own wait and a grace. */
 export const CHECK_REPLY_SEC = CHECK_WAIT / 1000 + 15;
 
-/** What fixes a failed check, by its reason. */
-function fixFor(provider: KnownSandboxProvider, reason: string, machine: string): string {
-  const name = NAMES[provider];
-  switch (reason) {
-    case "invalid_key":
-      return `${name} refused the key: it may be wrong, revoked or from another account. Make a new one in ${name}'s dashboard and connect it again.`;
-    case "limit":
-      return `the ${name} account is at its plan's limit: raise the plan at ${name}, or lower the limit here`;
-    case "billing":
-      return `${name} won't run sandboxes on the account until its billing is sorted: check it in ${name}'s dashboard`;
-    case "unreachable":
-      return provider === "e2b"
-        ? `test again in a minute; with a self-hosted E2B, check its domain answers from ${machine}`
-        : `test again in a minute; if it keeps failing, check ${machine} reaches ${name}`;
-    default:
-      return `test again in a minute; if it keeps failing, update fleetd on ${machine}`;
-  }
-}
-
 /**
  * Checks the provider's key where agents' sandboxes are made: on the team's machines online that make them
  * (CAP_SANDBOX), in the order of their ids, the first that answers asks the provider for fleetd's sandboxes there,
@@ -230,7 +211,7 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
       break;
     }
     const reason = reasonOf(reply.reason);
-    check = { at, ok: false, reason, message: `${m.name}: ${reply.message}`, fix: fixFor(provider, reason, m.name) };
+    check = { at, ok: false, reason, message: `${m.name}: ${reply.message}`, fix: checkFix(provider, reason, m.name) };
     break;
   }
   check ??= {
