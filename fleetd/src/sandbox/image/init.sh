@@ -10,7 +10,7 @@
 #   - powers the VM off when sandbox-guest ends, which ends the VMM.
 # Kernel arguments it reads, each optional except fleetd.exe:
 #   fleetd.exe=<host path of fleetd>  fleetd.net=<addr/prefix>,<gateway>  fleetd.dns=<ip>[,<ip>…]
-#   fleetd.port=<vsock port the node dials>
+#   fleetd.port=<vsock port the node dials>  fleetd.now=<host clock, Unix seconds>
 # Every fleetd.<name>=<value> also reaches sandbox-guest as FLEETD_GUEST_<NAME>=<value>.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8
 
@@ -60,6 +60,8 @@ for word in $(cat /proc/cmdline); do
   case $word in fleetd.*=*) name=${word%%=*}; arg[${name#fleetd.}]=${word#*=} ;; esac
 done
 
+# A VM without a clock source for the date starts in 1970, and TLS refuses every certificate then.
+[ -z "${arg[now]}" ] || date -s "@${arg[now]}" >/dev/null || say "clock not set from fleetd.now=${arg[now]}"
 ip link set lo up
 if [ -n "${arg[net]}" ]; then
   IFS=, read -r addr gw <<<"${arg[net]}"
