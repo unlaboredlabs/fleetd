@@ -1,10 +1,9 @@
 // The services a project connects by name, one record each, at the top of its MCP servers (the desktop's Project page,
-// the phone's project screen). Connect saves the same server the manual form would (toRequest: mcp_server_set), then
-// signs in to it with the person's own account (mcp_oauth_start): nothing to type. A server already saved by hand at
-// an entry's URL is that entry, not a second one. Another service is one more record in NAMED. Pure, for both apps.
-import type { McpScope, McpServer, McpServerSetInput, McpValueSet } from "../../../shared/contracts";
-import type { McpServerRequest } from "../../../shared/ipc";
-import { draftOf, emptyDraft, toRequest } from "./mcpModel";
+// the phone's project screen). Connect saves the same server the manual form would (mcp_server_set), then signs in to
+// it with the person's own account (mcp_oauth_start): nothing to type. A server already saved by hand at an entry's URL
+// is that entry, not a second one. Another service is one more record in NAMED. Pure, for both apps: it imports the
+// hub's contract types alone (the phone has no zod, which the desktop's ipc.ts needs).
+import type { McpScope, McpServer, McpServerSetInput, McpValue, McpValueSet } from "../../../shared/contracts";
 
 export interface Named {
   readonly id: string;
@@ -71,38 +70,32 @@ export const nameFor = (entry: Named, taken: ReadonlyArray<string>): string => {
   return `${entry.name}-${String(n)}`;
 };
 
-/** What Connect saves: the manual form's server for the entry's URL, with no key. */
-export const namedRequest = (entry: Named, scope: McpScope, taken: ReadonlyArray<string>): McpServerRequest => {
-  const built = toRequest({ ...emptyDraft(), name: nameFor(entry, taken), kind: "http", url: entry.url, agents: entry.agents }, scope, []);
-  // The record is fixed, so it always builds; a failure here is a bad record in NAMED.
-  if (!built.ok) throw new Error(`${entry.id}: ${built.problem}`);
-  return built.request;
-};
+/** What Connect saves: the manual form's server for the entry's URL, with no key (as mcpModel's toRequest makes it). */
+export const namedInput = (entry: Named, scope: McpScope, taken: ReadonlyArray<string>): McpServerSetInput => ({
+  scope,
+  name: nameFor(entry, taken),
+  enabled: true,
+  roles: { lead: true, writers: entry.agents, reviewers: entry.agents },
+  transport: { type: "http", url: entry.url },
+  env: [],
+  headers: [],
+});
 
 /** A server turned off, saved again on, as it is otherwise: a key it was saved with is kept. */
-export const turnOnRequest = (server: McpServer): McpServerRequest | null => {
-  const built = toRequest({ ...draftOf(server), enabled: true }, server.scope, []);
-  return built.ok ? built.request : null;
-};
-
-/**
- * A request with no secret to seal, as mcp_server_set takes it: what the phone sends itself, where the desktop's main
- * sends it after sealing. Null when it holds a secret's value, which only the desktop seals.
- */
-export const setInput = (request: McpServerRequest): McpServerSetInput | null => {
-  const values = (list: McpServerRequest["env"]): McpValueSet[] | null => {
-    const out: McpValueSet[] = [];
-    for (const v of list) {
-      if (v.kind === "secret") return null;
-      out.push(v);
-    }
-    return out;
+export const turnOnInput = (server: McpServer): McpServerSetInput => {
+  const values = (list: readonly McpValue[] | undefined): McpValueSet[] =>
+    (list ?? []).map((v) => (v.kind === "secret" ? { kind: "keep", name: v.name } : { kind: "plain", name: v.name, value: v.value ?? "" }));
+  const t = server.transport;
+  return {
+    scope: server.scope,
+    name: server.name,
+    enabled: true,
+    roles: server.roles,
+    transport: t.type === "stdio" ? { type: "stdio", command: t.command, args: t.args ?? [] } : t,
+    env: values(server.env),
+    headers: values(server.headers),
+    ...(server.integration === undefined ? {} : { integration: server.integration }),
   };
-  const env = values(request.env);
-  const headers = values(request.headers);
-  if (env === null || headers === null) return null;
-  const transport = request.transport.type === "stdio" ? { type: "stdio" as const, command: request.transport.command, args: request.transport.args } : request.transport;
-  return { scope: request.scope, name: request.name, enabled: request.enabled, roles: request.roles, transport, env, headers };
 };
 
 export type NamedState =

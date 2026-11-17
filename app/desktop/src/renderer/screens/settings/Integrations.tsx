@@ -29,9 +29,9 @@ import {
   testProblem,
   type SignInMark,
 } from "./integrationsModel";
-import { emptyDraft, globalsFor, nameProblem, rolesText, type Draft } from "./mcpModel";
+import { emptyDraft, globalsFor, nameProblem, requestOf, rolesText, type Draft } from "./mcpModel";
 import { ServerEditor } from "./McpServers";
-import { NAMED, namedRequest, namedState, namedWord, turnOnRequest, unnamed, type Named } from "./namedServers";
+import { NAMED, namedInput, namedState, namedWord, turnOnInput, unnamed, type Named } from "./namedServers";
 import { CommandLine, Prose } from "../onboarding/Prose";
 import { AddButton, SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import { Plug } from "lucide-react";
@@ -443,13 +443,11 @@ function NamedRow(props: {
   };
   const connect = () => {
     setBusy("connect");
-    save(namedRequest(entry, { kind: "project", ...props.projectRef }, props.servers.map((x) => x.name)), props.onSignIn);
+    save(requestOf(namedInput(entry, { kind: "project", ...props.projectRef }, props.servers.map((x) => x.name))), props.onSignIn);
   };
   const turnOn = (sv: McpServer) => {
-    const request = turnOnRequest(sv);
-    if (request === null) return;
     setBusy("on");
-    save(request, () => undefined);
+    save(requestOf(turnOnInput(sv)), () => undefined);
   };
   const test = (sv: McpServer) => {
     setBusy("test");

@@ -1,8 +1,8 @@
 // The hub calls behind a project's named services on its screen (Named.tsx), as the desktop's MCP servers make them:
 // mcp_servers_get for the project's servers, Connect's mcp_server_set (the record the manual form saves, with no key:
-// namedRequest), mcp_oauth_start for its sign-in page, mcp_server_test, Turn On (mcp_server_set again) and Disconnect
+// namedInput), mcp_oauth_start for its sign-in page, mcp_server_test, Turn On (mcp_server_set again) and Disconnect
 // (mcp_server_remove). And what each row shows and does on a tap.
-import { namedRequest, setInput, turnOnRequest, type McpServer, type McpTestResult, type Named, type NamedState, type ProjectRef } from "../../desktop";
+import { namedInput, turnOnInput, type McpServer, type McpTestResult, type Named, type NamedState, type ProjectRef } from "../../desktop";
 import type { Hub, Result } from "./api";
 
 /** A test reaches the server from the project's machine, as the desktop's waits for it. */
@@ -15,10 +15,7 @@ export const readServers = async (hub: Hub, p: ProjectRef): Promise<Result<McpSe
   return r.ok ? { ok: true, value: r.output.project ?? [] } : r;
 };
 
-const save = async (hub: Hub, request: ReturnType<typeof turnOnRequest>): Promise<Result<McpServer>> => {
-  const input = request === null ? null : setInput(request);
-  // The entries carry no key, and a turned-off one keeps its own: there is never one to seal here.
-  if (input === null) return { ok: false, error: { code: "invalid", message: "This one has a key to type: change it in the desktop app." } };
+const save = async (hub: Hub, input: ReturnType<typeof namedInput>): Promise<Result<McpServer>> => {
   const r = await hub.call("mcp_server_set", input);
   return r.ok ? { ok: true, value: r.output.server } : r;
 };
@@ -27,14 +24,15 @@ const save = async (hub: Hub, request: ReturnType<typeof turnOnRequest>): Promis
 export const connect = (hub: Hub, entry: Named, p: ProjectRef, servers: readonly McpServer[]): Promise<Result<McpServer>> =>
   save(
     hub,
-    namedRequest(
+    namedInput(
       entry,
       scopeOf(p),
       servers.map((s) => s.name),
     ),
   );
 
-export const turnOn = (hub: Hub, server: McpServer): Promise<Result<McpServer>> => save(hub, turnOnRequest(server));
+/** On again as it was: a key it was saved with is kept, so there is never one to seal here. */
+export const turnOn = (hub: Hub, server: McpServer): Promise<Result<McpServer>> => save(hub, turnOnInput(server));
 
 /**
  * Its sign-in page, to open in the browser. The hub picks where the service sends the browser back (its https

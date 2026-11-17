@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { McpServer } from "../../../shared/contracts";
 import { customRequest } from "./integrationsModel";
-import { emptyDraft } from "./mcpModel";
-import { NAMED, nameFor, namedOf, namedRequest, namedState, namedWord, serverOf, turnOnRequest, unnamed } from "./namedServers";
+import { emptyDraft, requestOf } from "./mcpModel";
+import { NAMED, nameFor, namedInput, namedOf, namedState, namedWord, serverOf, turnOnInput, unnamed } from "./namedServers";
 
 const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
 const PAPER = NAMED.find((n) => n.id === "paper");
@@ -20,6 +20,12 @@ const server = (name: string, url: string, more: Partial<McpServer> = {}): McpSe
 });
 
 describe("named MCP servers", () => {
+  it("imports no package, so the phone reads it as it is", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const text = await readFile(new URL("./namedServers.ts", import.meta.url), "utf8");
+    expect([...text.matchAll(/from "([^"]+)"/gu)].map((m) => m[1])).toEqual(["../../../shared/contracts"]);
+  });
+
   it("ships Paper alone, each record complete", () => {
     expect(NAMED.map((n) => n.id)).toEqual(["paper"]);
     expect(PAPER).toMatchObject({ label: "Paper", url: "https://mcp.paper.design", name: "paper", agents: true });
@@ -28,7 +34,7 @@ describe("named MCP servers", () => {
   it("saves what the manual form saves for the same name, URL, no key and Agents get it too", () => {
     const manual = customRequest({ ...emptyDraft(), name: "paper", kind: "http", url: "https://mcp.paper.design" }, [], scope, [], true);
     expect(manual.ok).toBe(true);
-    expect(namedRequest(PAPER, scope, [])).toEqual(manual.ok ? manual.request : null);
+    expect(requestOf(namedInput(PAPER, scope, []))).toEqual(manual.ok ? manual.request : null);
   });
 
   it("knows a server by its URL, whatever its case or trailing slash", () => {
@@ -63,6 +69,6 @@ describe("named MCP servers", () => {
 
   it("turns one back on as it was, its key kept", () => {
     const off = server("paper", PAPER.url, { enabled: false, roles: { lead: true, writers: false, reviewers: false }, headers: [{ name: "Authorization", kind: "secret", sealedOn: [] }] });
-    expect(turnOnRequest(off)).toMatchObject({ name: "paper", enabled: true, roles: { lead: true, writers: false, reviewers: false }, headers: [{ kind: "keep", name: "Authorization" }] });
+    expect(turnOnInput(off)).toMatchObject({ name: "paper", enabled: true, roles: { lead: true, writers: false, reviewers: false }, headers: [{ kind: "keep", name: "Authorization" }] });
   });
 });
