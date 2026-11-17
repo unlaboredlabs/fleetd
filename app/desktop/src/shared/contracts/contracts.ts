@@ -7887,8 +7887,25 @@ export type SlotStatePerMachine = {
   maxAgents?: number;
   /** Agents running there now. */
   running: number;
+  /** Where its agents run: in VMs, or as plain processes and why; absent from a node that doesn't say. */
+  sandbox?: SlotSandbox;
   /** The term that sets `auto`, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */
   why: string;
+};
+
+/**
+ * Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes
+ * (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice
+ * or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).
+ */
+export type SlotSandbox = {
+  /** The plain processes are by choice or the machine's design: nothing to fix. */
+  expected?: boolean;
+  /** The command that fixes it, run on the machine. */
+  fix?: string;
+  kind: "microvm" | "process";
+  /** Why its agents run as plain processes, whole (cut with an ellipsis past 600 characters). */
+  why?: string;
 };
 
 export type SlotStatePerProject = {

@@ -11,6 +11,7 @@
 //
 // Hosted sandboxes come on top of it, by count in the board (board.ts): the team's limit for each provider is counted
 // across all machines there, never folded into one machine's cap.
+import type { SlotSandbox } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 
 const GIB = 2 ** 30;
@@ -25,8 +26,9 @@ export const UNMEASURED_WHY = "not measured yet";
 const MEM_PER_AGENT = 2_000_000_000;
 const DISK_PER_AGENT = 5_000_000_000;
 
-/** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */
-export type Auto = { cap: number; why: string };
+/** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs", and
+ * where its agents run as its node last said (slots/index.ts withSandbox). */
+export type Auto = { cap: number; why: string; sandbox?: SlotSandbox };
 
 /** Total memory in GB as the machine is sold: the kernel reports a little less than is installed. */
 const soldGb = (bytes: number) => Math.floor((bytes + GIB - 1) / GIB);

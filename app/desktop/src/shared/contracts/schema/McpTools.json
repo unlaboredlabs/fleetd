@@ -21102,6 +21102,38 @@
       ],
       "type": "object"
     },
+    "SlotSandbox": {
+      "description": "Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
+      "properties": {
+        "expected": {
+          "description": "The plain processes are by choice or the machine's design: nothing to fix.",
+          "type": "boolean"
+        },
+        "fix": {
+          "description": "The command that fixes it, run on the machine.",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "microvm",
+            "process"
+          ],
+          "type": "string"
+        },
+        "why": {
+          "description": "Why its agents run as plain processes, whole (cut with an ellipsis past 600 characters).",
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "SlotState": {
       "properties": {
         "cap": {
@@ -21186,9 +21218,12 @@
           "minimum": 0,
           "type": "integer"
         },
+        "sandbox": {
+          "$ref": "#/$defs/SlotSandbox"
+        },
         "why": {
           "description": "The term that sets `auto`, e.g. \"memory 18 GB, about 2 GB an agent\" or \"14 of 16 CPUs\".",
-          "maxLength": 200,
+          "maxLength": 1000,
           "minLength": 1,
           "type": "string"
         }

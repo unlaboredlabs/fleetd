@@ -7,7 +7,7 @@
 // heartbeats size machines (loops.ts); `cap_set` is `setCaps` in cap.ts.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "../../shared/clock.ts";
-import type { HubEventType, MachineId, ProjectRef, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
+import type { HubEventType, MachineId, ProjectRef, SlotSandbox, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
@@ -25,16 +25,20 @@ import {
   type SlotPriority,
   slotState,
 } from "./board.ts";
+import { clip, SANDBOX_FIX_MAX, SANDBOX_WHY_MAX } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
 import type { Limit } from "../../shared/sandbox.ts";
 
 /** A cap's reason with where the machine's agents run: in a VM each, or as plain processes and why (a person reads
  * it beside the machine's cap). */
-export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T {
+export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T & { sandbox?: SlotSandbox } {
   if (!sandbox) return auto;
-  if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own` };
-  const why = sandbox.fix ? `${sandbox.why} Fix: ${sandbox.fix}` : sandbox.why;
-  return { ...auto, why: `${auto.why}; agents run as plain processes: ${why.slice(0, 300)}` };
+  if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own`, sandbox: { kind: "microvm" } };
+  // Whole, or cut with an ellipsis: a reason is never dropped from the line people read.
+  const reason = clip(String(sandbox.why ?? "") || "no reason given", SANDBOX_WHY_MAX);
+  const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
+  const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}) };
+  return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
 }
 
 export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority } from "./board.ts";

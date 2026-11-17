@@ -7,7 +7,7 @@
 // the queue. Each held claim keeps its place, which the start carries to the node. The board follows where the node
 // says each live session's claude runs (`places`): a box counts against its provider while it lives, held or idle
 // between turns, and a run that comes back goes where its claude still is.
-import type { MachineId, ProjectRef, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
+import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import { type Limit, NAMES } from "../../shared/sandbox.ts";
 import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
@@ -100,6 +100,7 @@ export type MachineRow = {
   maxAgents?: number;
   auto: number;
   why: string;
+  sandbox?: SlotSandbox;
   running: number;
   diskRoom?: number;
 };
@@ -353,6 +354,9 @@ export class Board {
       if (Object.keys(places).length) m.places = { ...places };
       else delete m.places;
       m.placesAt = this.nowMs;
+      // Where its agents run comes with every heartbeat and isn't stored: kept as it was said last.
+      if (auto.sandbox) m.auto.sandbox = { ...auto.sandbox };
+      else delete m.auto.sandbox;
       if (m.auto.cap !== auto.cap || m.auto.why !== auto.why || m.name !== name) {
         m.auto = { ...auto };
         m.name = name;
@@ -698,6 +702,7 @@ export class Board {
         why: `${m.auto.why}${shared}`,
         running: this.localHeld(m.machineId),
       };
+      if (m.auto.sandbox) row.sandbox = { ...m.auto.sandbox };
       if (m.maxAgents !== undefined) row.maxAgents = m.maxAgents;
       const disk = this.diskRoom(m.machineId);
       if (disk !== undefined) row.diskRoom = disk;
@@ -715,7 +720,20 @@ export class Board {
   }
 }
 
-/** The board's state as the apps and `cap_set` show it: no count below 0, and a machine's `why` of 1 to 200 characters, else "auto". */
+/** The longest a machine's `why` goes to the apps, and its sandbox reason and fix: past them, each is cut with an
+ * ellipsis, never dropped (a VM refusal's reason with its fix runs to about 450 characters). */
+export const WHY_MAX = 1000;
+export const SANDBOX_WHY_MAX = 600;
+export const SANDBOX_FIX_MAX = 300;
+
+/** `text`, or its first `max - 1` characters and an ellipsis. */
+export function clip(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join("")}…` : text;
+}
+
+/** The board's state as the apps and `cap_set` show it: no count below 0, a machine's `why` cut to WHY_MAX ("auto" only
+ * when empty), and where its agents run. */
 export function slotState(s: BoardState): SlotState {
   const count = (n: number) => Math.max(n, 0);
   const out: SlotState = { cap: count(s.cap), used: count(s.used), queued: count(s.queued), perProject: [] };
@@ -734,8 +752,15 @@ export function slotState(s: BoardState): SlotState {
     const m: Record<string, unknown> = { machineId: row.machineId, cap: count(row.cap) };
     if (row.maxAgents !== undefined) m.maxAgents = count(row.maxAgents);
     m.auto = count(row.auto);
-    m.why = row.why.length >= 1 && row.why.length <= 200 ? row.why : "auto";
+    m.why = row.why ? clip(row.why, WHY_MAX) : "auto";
     m.running = count(row.running);
+    if (row.sandbox) {
+      const sb: SlotSandbox = { kind: row.sandbox.kind };
+      if (row.sandbox.why) sb.why = clip(row.sandbox.why, SANDBOX_WHY_MAX);
+      if (row.sandbox.fix) sb.fix = clip(row.sandbox.fix, SANDBOX_FIX_MAX);
+      if (row.sandbox.expected) sb.expected = true;
+      m.sandbox = sb;
+    }
     if (row.diskRoom !== undefined) m.diskRoom = count(row.diskRoom);
     return m as SlotStatePerMachine;
   });
