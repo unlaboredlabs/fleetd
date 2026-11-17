@@ -244,6 +244,9 @@ const REFUSALS: Readonly<Record<string, readonly [codes: ReadonlyArray<string>, 
   revyl_connect: [["invalid"], "a run has no Revyl key, and nothing it makes up is sealed to the hub's own key"],
   revyl_test: [["invalid"], "a run's hub has no Revyl key connected to test"],
   revyl_route_set: [["invalid"], "a route to Revyl needs a connected Revyl key, which a run's hub has none of"],
+  sandbox_connect: [["invalid"], "a run has no provider key, and nothing it makes up is sealed to the hub's own key"],
+  sandbox_set: [["invalid"], "a limit is a connected provider's, and a run's hub has none connected"],
+  sandbox_test: [["invalid"], "a run's hub has no provider key connected to test"],
 };
 
 /**

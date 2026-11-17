@@ -338,6 +338,43 @@ if it isn't, so it starts at the next boot. The rewritten unit takes effect at i
 node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
 rather than exiting.
 
+## Hosted sandboxes {#sandboxes}
+
+A team can give its agents room past its machines' own [max agents](/docs/projects#max-agents) with its own account
+at a hosted sandbox provider: [E2B](https://e2b.dev), [boat.dev](https://boat.dev) or [Daytona](https://daytona.io).
+Each agent then runs in a sandbox of its own there, made by the machine that holds the project's checkout and gone
+when the agent ends. The provider bills the team directly, by the second while a sandbox runs; fleetd charges nothing
+for it and holds no account of its own. No machine joins the hub, and the hub talks to no provider.
+
+**Not yet.** This fleetd keeps the keys and limits, and Test checks a key, but no agent runs in a hosted sandbox until
+the update that adds it: connecting one changes neither where agents run nor any machine's max agents. Settings says
+so above the providers while it is the case.
+
+**Connect one.** Make an API key at the provider: E2B in its console (**API keys**), boat.dev in its dashboard or with
+`boat api-key create`, Daytona in its dashboard (**Keys**). In **Settings › Hub › Machines › Sandboxes** (or
+Settings on the phone), an admin presses the provider's **Connect…**, pastes the key into its sealed field and
+presses Connect. For a self-hosted E2B, give its API domain (what `E2B_DOMAIN` would be) beside the key; leave it
+empty for E2B's own. The app seals the key to the hub, which keeps it sealed as it keeps [vault](/docs/vault) values:
+it is never shown again, logged or given to an agent, and each use is logged without it. **Disconnect** removes the
+key, its domain and its limit. The guided hub setup (`fleetd init`, the app's first run, Settings › Hub › Setup) lists
+it as an optional step, **Hosted sandboxes**.
+
+**Test.** Connect tests the key at once; **Test** does it again. The hub sends the key sealed to the team's Linux
+machines online, in the order of their ids, and the first asks the provider for fleetd's sandboxes there, which starts
+nothing. A key the provider refuses, an account at its plan's limit or behind on billing, and a provider (or
+self-hosted domain) that doesn't answer each read as such, with what to do. With no Linux machine online, Test says
+so: sandboxes are made there, never on a Mac.
+
+**Limit and order.** Each connected provider has one number, how many of the team's agents may run there at once
+(0 to 500; 5 until set; 0 keeps the key and sends none). Placement is by count alone and never moves an agent: a
+machine's own slots first, then the connected providers in the order listed (E2B, boat.dev, Daytona) up to each one's
+limit, then the agent waits in line. A machine counts its hosted room in its max agents, so the line says e.g.
+"memory 32 GB, about 2 GB an agent, and 20 in hosted sandboxes". A limit is the team's total for that provider, not
+per machine. Keep it at or under the provider's own (E2B Hobby runs 10 at once and an hour each; Pro 100 and 24 hours).
+
+MCP clients use `sandbox_get`, `sandbox_connect`, `sandbox_set`, `sandbox_test` and `sandbox_disconnect`. A key
+connected on one hub doesn't move with it: [connect it again](/docs/moving-a-hub) on the new hub.
+
 ## Machine roles {#roles}
 
 Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator or desktop](/docs/browser-sessions), or the agents' Mac's screen),

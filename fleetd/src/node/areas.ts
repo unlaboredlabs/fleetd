@@ -9,6 +9,7 @@ import { start as startDesktop, stop as stopDesktop } from "./desktop/index.ts";
 import { start as startHosts } from "./hosts/index.ts";
 import { start as startScreens } from "./screens/index.ts";
 import { start as startRevyl, stop as stopRevyl } from "./revyl/index.ts";
+import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
 export function registerAreas(node: Node): void {
@@ -18,6 +19,8 @@ export function registerAreas(node: Node): void {
   startDevices(node);
   // After the Android emulators': a Revyl screen's live-view frames come here, the rest go on to theirs.
   if (!isAgentsMac(node.config)) startRevyl(node);
+  // Hosted sandboxes' keys are tested, and their limits kept, only where agents run in sandboxes (Linux).
+  if (!isAgentsMac(node.config)) startSandboxes(node);
   startMac(node);
   // After the browser's: the desktops take the hub's live-view frames for their own ids and hand on the rest.
   startDesktop(node);

@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, REVYL_CONNECT_TIMEOUT_MS, submitProjectEnv, submitRevylKey, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, REVYL_CONNECT_TIMEOUT_MS, SANDBOX_CONNECT_TIMEOUT_MS, submitProjectEnv, submitRevylKey, submitSandboxKey, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -230,6 +230,34 @@ describe("the team's own Revyl key", () => {
     expect(JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk)))).toEqual({ key });
     // Its first check may install Revyl's CLI on a machine first: longer than a call's default 30 s.
     expect(sent[2]).toBe(REVYL_CONNECT_TIMEOUT_MS);
+  });
+});
+
+describe("the team's own key at a hosted sandbox provider", () => {
+  it("goes to sandbox_connect as {key} sealed to the hub's own key, with its provider and E2B's domain, never in the clear", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown, timeoutMs?: number) => {
+      sent.push(tool, input, timeoutMs);
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const key = "e2b_0123456789abcdef";
+    const request = { boxPubKey: rust.publicKey, provider: "e2b", key: `  ${key}\n`, domain: " e2b.example.com " };
+    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, key: "   " }]).ok).toBe(false);
+    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, provider: "E2B!" }]).ok).toBe(false);
+    expect((await submitSandboxKey(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("sandbox_connect");
+    const input = sent[1] as { provider: string; sealed: string; domain?: string };
+    expect(Object.keys(input).sort()).toEqual(["domain", "provider", "sealed"]);
+    expect(input).toMatchObject({ provider: "e2b", domain: "e2b.example.com" });
+    expect(JSON.stringify(input)).not.toContain(key);
+    expect(JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk)))).toEqual({ key });
+    expect(sent[2]).toBe(SANDBOX_CONNECT_TIMEOUT_MS);
+    sent.length = 0;
+    await submitSandboxKey({ boxPubKey: rust.publicKey, provider: "boat", key }, call);
+    expect(Object.keys(sent[1] as object).sort()).toEqual(["provider", "sealed"]);
   });
 });
 

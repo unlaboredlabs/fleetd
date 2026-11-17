@@ -49,6 +49,7 @@ const HUB_ACCOUNTS: Readonly<Record<string, Place>> = {
 const ADMIN: Readonly<Record<string, Place>> = {
   machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
   invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
+  sandboxes: { label: "Open Hub › Machines › Sandboxes", screen: { id: "settings", tab: "hub.machines" }, reveal: "hub.sandboxes" },
   ...HUB_ACCOUNTS,
 };
 

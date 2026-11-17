@@ -10,6 +10,7 @@ import type {
   DoctorStatus,
   GithubApp,
   OnePasswordTest,
+  SandboxCheck,
 } from "../../shared/contracts.ts";
 import type { MacHealth, NodeDisk, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -103,6 +104,8 @@ export type SetupFacts = {
   onepassword: [name: string, test?: OnePasswordTest][];
   /** The vault's root key (W549), as the hub loaded it. */
   vault?: VaultKeyFacts;
+  /** Each connected hosted sandbox provider (W688), by its name, with its key's last check. */
+  sandboxes?: [name: string, check?: SandboxCheck][];
 };
 
 /** What `hub/vault_key` reads. */
@@ -142,7 +145,7 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
  * The ids `setupChecks` answers for. Each is there only while its state is (someone joined, an App, a token, the
  * vault's key), so one missing from a read means it is gone, not that an earlier read still holds.
  */
-export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key"]);
+export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key", "hub/sandboxes"]);
 
 /** The setup checks the hub reads from its own state: someone else joined, the GitHub App. */
 export function setupChecks(facts: SetupFacts): DoctorCheck[] {
@@ -161,7 +164,27 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
   const vault = onepasswordVault(facts.onepassword);
   if (vault) out.push(vault);
   if (facts.vault) out.push(vaultKey(facts.vault));
+  const hosted = sandboxProviders(facts.sandboxes ?? []);
+  if (hosted) out.push(hosted);
   return out;
+}
+
+/**
+ * `hub/sandboxes`: the team's connected hosted sandbox providers, each from its key's last check. Absent while none is
+ * connected; ok while every one passed; else a warning naming the first that didn't, with its fix.
+ */
+export function sandboxProviders(providers: [string, SandboxCheck?][]): DoctorCheck | undefined {
+  if (providers.length === 0) return undefined;
+  const page = "Settings › Hub › Machines › Sandboxes";
+  const bad = providers.find(([, c]) => c?.ok !== true);
+  if (!bad) {
+    const names = providers.map(([n]) => n);
+    return hubEntry("sandboxes", "ok", `${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`} answered for the team's key.`);
+  }
+  const [name, check] = bad;
+  if (!check) return hubEntry("sandboxes", "unknown", `${name}'s key hasn't been tested yet: Test it in ${page}.`);
+  const fix = check.fix ? ` ${check.fix.charAt(0).toUpperCase()}${check.fix.slice(1)}.`.replace(/\.\.$/, ".") : "";
+  return hubEntry("sandboxes", "warn", `${name}: ${trimDots(check.message ?? "its key didn't pass its last test")}.${fix}`);
 }
 
 const RANK: Record<DoctorStatus, number> = { ok: 0, unknown: 1, warn: 2, fail: 3 };

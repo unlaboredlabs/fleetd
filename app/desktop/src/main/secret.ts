@@ -4,7 +4,7 @@
 import { fromBase64, toBase64 } from "../shared/base64";
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, RevylKeyRequest, SecretRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, RevylKeyRequest, SandboxKeyRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -77,6 +77,23 @@ export const submitRevylKey = async (
   const sealed = await seal(request.boxPubKey, JSON.stringify({ key: request.key.trim() }));
   if (!sealed.ok) return sealed;
   return call("revyl_connect", { sealed: sealed.sealed }, REVYL_CONNECT_TIMEOUT_MS);
+};
+
+/** How long sandbox_connect may take: its first check asks the provider from one of the team's machines. */
+export const SANDBOX_CONNECT_TIMEOUT_MS = 60_000;
+
+/**
+ * The team's own key at a hosted sandbox provider: trimmed, sealed as `{"key":…}` to the hub's own key (sandbox_get's
+ * boxPubKey), then sandbox_connect with the provider and E2B's domain, whose answer has the hub's first check of it.
+ */
+export const submitSandboxKey = async (
+  request: SandboxKeyRequest,
+  call: (tool: "sandbox_connect", input: ToolInput<"sandbox_connect">, timeoutMs?: number) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const sealed = await seal(request.boxPubKey, JSON.stringify({ key: request.key.trim() }));
+  if (!sealed.ok) return sealed;
+  const domain = request.domain?.trim();
+  return call("sandbox_connect", { provider: request.provider, sealed: sealed.sealed, ...(domain ? { domain } : {}) }, SANDBOX_CONNECT_TIMEOUT_MS);
 };
 
 /**

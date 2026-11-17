@@ -65,7 +65,7 @@ describe("setup steps", () => {
     // A fresh hub: Claude is failing, so it leads the accounts; the hub's own steps left follow, the done ones fold.
     const fresh = setupLayout(scenario("setup-fresh"));
     expect(ids(fresh.accounts)).toEqual(["claude", "github", "onepassword"]);
-    expect(ids(fresh.others)).toEqual(["people", "mac"]);
+    expect(ids(fresh.others)).toEqual(["people", "mac", "sandboxes"]);
     expect(ids(fresh.done)).toEqual(["address", "machines"]);
     expect(fresh.othersFirst).toBe(false);
     // An account that is done stays listed, where it was; one that needs someone now comes first.
@@ -73,14 +73,14 @@ describe("setup steps", () => {
     expect(ids(setupLayout(scenario("setup-github").map((st) => (st.id === "github" ? { ...st, status: "look" as const } : st))).accounts)).toEqual(["github", "claude", "onepassword"]);
     // Every step done: the accounts are still there, each a row; the rest is the one line.
     const all = setupLayout(scenario("setup-all"));
-    expect([ids(all.accounts), ids(all.others), ids(all.done)]).toEqual([["claude", "github", "onepassword"], [], ["address", "machines", "people", "mac"]]);
+    expect([ids(all.accounts), ids(all.others), ids(all.done)]).toEqual([["claude", "github", "onepassword"], [], ["address", "machines", "people", "mac", "sandboxes"]]);
     // Only a step that isn't an account needs someone now (a machine went offline): it comes before the accounts.
     const offline = setupLayout(scenario("setup-done").map((st) => (st.id === "machines" ? { ...st, status: "look" as const, failing: true } : st)));
-    expect(ids(offline.others)).toEqual(["machines", "people", "mac"]);
+    expect(ids(offline.others)).toEqual(["machines", "people", "mac", "sandboxes"]);
     expect(offline.othersFirst).toBe(true);
     // With an account asking too, the accounts keep their place.
     const both = setupLayout(scenario("setup-fresh").map((st) => (st.id === "machines" ? { ...st, status: "look" as const } : st)));
-    expect(ids(both.others)).toEqual(["machines", "people", "mac"]);
+    expect(ids(both.others)).toEqual(["machines", "people", "mac", "sandboxes"]);
     expect(both.othersFirst).toBe(false);
   });
 

@@ -15,6 +15,7 @@ import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react"
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { RevylScreens } from "../settings/Revyl";
+import { Sandboxes } from "../settings/Sandboxes";
 import { Recordings } from "../settings/Screens";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
@@ -137,7 +138,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 
 /**
  * The hub's machines, each a row that opens its own page with everything about it; the page's plus adds one (this
- * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then updates, the one
+ * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then Sandboxes, the team's
+ * own hosted sandbox accounts that take agents past the machines' own slots, then updates, the one
  * status of them and the Update automatically switch (a page of its own once: a link to it lands here), then Screens:
  * the team's own Revyl account and where each phone kind's screens run (on a hub that serves them), and how long
  * recordings are kept.
@@ -159,6 +161,7 @@ function Machines() {
         />
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
         <MachineList />
+        <Sandboxes />
         <Updates />
         <SettingsSection title="Screens" reveal="hub.recordings">
           <RevylScreens />

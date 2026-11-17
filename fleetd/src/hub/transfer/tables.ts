@@ -161,6 +161,7 @@ export const LEFT_OUT: Record<string, string> = {
   push_devices: "the phones' push tokens, which belong to their sign-ins",
   removed_node_keys: "the keys of machines the old hub removed: none of them links to the new one",
   revyl_account: "the team's Revyl key and its routes: an admin connects the key again on the new hub",
+  sandbox_providers: "the team's hosted sandbox keys and limits: an admin connects each again on the new hub",
   screen_waits: "a wait for a screen on one of the old hub's machines, minutes long",
   session_places: "which machine's process hosts each screen session",
   slot_claims: "the agent slots held on the old hub's machines; agents claim again",

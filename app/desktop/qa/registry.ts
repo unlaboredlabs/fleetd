@@ -86,6 +86,9 @@ export const fixtures = [
   "machines-revyl-off",
   "machines-revyl-on",
   "machines-revyl-failed",
+  // ...the team's own hosted sandbox accounts in Machines' Sandboxes section: none yet, and two connected, one refused.
+  "machines-sandboxes-off",
+  "machines-sandboxes-on",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -3623,6 +3626,27 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Connect…" }).click();
       await page.getByRole("textbox", { name: "Revyl API key" }).waitFor();
+    },
+  },
+  // W688: the team's own hosted sandbox accounts, one section on Machines: none connected, and two with a failed test.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-sandboxes-off", "machines-sandboxes-on"],
+    variant: "sandboxes",
+    open: async (page) => {
+      await page.locator("[data-sandboxes]").scrollIntoViewIfNeeded();
+    },
+  },
+  // ...Connect on E2B opens its sealed key field and the self-hosted domain beside it.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-sandboxes-off"],
+    variant: "sandboxes-connect",
+    open: async (page) => {
+      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect…" }).click();
+      await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
     },
   },
   // The plus opens Add machine's ways in over the list.

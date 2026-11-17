@@ -10,7 +10,9 @@
 // out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own Revyl
 // in Machines' Screens part (W676): `machines-revyl-off` with no key yet (each kind on our machines, its Revyl choices
 // off and why), `machines-revyl-on` connected (iOS simulators on Revyl only, Android ours first), and
-// `machines-revyl-failed` with a key Revyl refused.
+// `machines-revyl-failed` with a key Revyl refused. The team's own hosted sandbox accounts in Machines' Sandboxes
+// section (W688): `machines-sandboxes-off` with none connected, `machines-sandboxes-on` with E2B (self-hosted) and
+// Daytona connected, Daytona's key refused at its last test.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
@@ -241,6 +243,21 @@ function revyl(from: Fixture, name: string, note: string, state: JsonObject): Fi
   return f;
 }
 
+const SANDBOX_OFF = (provider: string): JsonObject => ({ provider, connected: false, limit: 0 });
+const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("e2b"), SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] };
+
+/** The admin's hub with the team's sandbox accounts as `state` has them; Connect, the limit, Test and Disconnect answer. */
+function sandboxes(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
+  const f = hub(from, name, note, () => []);
+  const e2b: JsonObject = { provider: "e2b", connected: true, limit: 5, check: { ok: true, at: f.now } };
+  f.answer("sandbox_get", undefined, state);
+  f.answer("sandbox_connect", undefined, { ...SANDBOXES_OFF, providers: [e2b, SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] });
+  f.answer("sandbox_test", undefined, state);
+  f.answer("sandbox_set", undefined, state);
+  f.answer("sandbox_disconnect", undefined, SANDBOXES_OFF);
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
@@ -261,6 +278,26 @@ export default defineGroup({
       connected: true,
       check: { ok: false, at: "2026-10-19T08:55:00.000Z", reason: "invalid_key", message: "Revyl refused the key (401): it is wrong, revoked or expired.", fix: "Make a new key in Revyl, then disconnect and connect it." },
       routes: { ios: "ours_first", android: "ours_first" },
+    }),
+    sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
+    sandboxes(base("typical"), "machines-sandboxes-on", "E2B (self-hosted) and Daytona connected, in the order agents go to them; Daytona's key refused at its last test", {
+      ...SANDBOXES_OFF,
+      providers: [
+        { provider: "e2b", connected: true, limit: 20, domain: "e2b.acme.internal", check: { ok: true, at: "2026-10-19T08:55:00.000Z" } },
+        SANDBOX_OFF("boat"),
+        {
+          provider: "daytona",
+          connected: true,
+          limit: 5,
+          check: {
+            ok: false,
+            at: "2026-10-19T08:55:00.000Z",
+            reason: "invalid_key",
+            message: "devbox: Daytona refused the key (401).",
+            fix: "Make a new one in Daytona's dashboard and connect it again.",
+          },
+        },
+      ],
     }),
     unwell(base("typical")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [

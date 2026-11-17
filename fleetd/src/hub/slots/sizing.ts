@@ -8,6 +8,9 @@
 // Only the default cap, for a machine no person set a number for. Disk is room, not a cap: the new agents its free
 // space takes above the guard's floor, 5 GB each. An older node may still send `memPerAgentBytes` and
 // `diskPerAgentBytes`, which count in place of these.
+//
+// Hosted sandboxes add to it: a node that places agents in the team's hosted sandboxes once its own slots are full
+// reports how many it may (`hostedMax`), and its cap is its own plus those, a person's number for it included.
 import type { NodeLoad } from "../../shared/node_link.ts";
 
 const GIB = 2 ** 30;
@@ -22,8 +25,11 @@ export const UNMEASURED_WHY = "not measured yet";
 const MEM_PER_AGENT = 2_000_000_000;
 const DISK_PER_AGENT = 5_000_000_000;
 
-/** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */
-export type Auto = { cap: number; why: string };
+/**
+ * A machine's cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs"; with
+ * `hosted`, the agents it may run in hosted sandboxes past its own, which `cap` includes.
+ */
+export type Auto = { cap: number; why: string; hosted?: number };
 
 /** Total memory in GB as the machine is sold: the kernel reports a little less than is installed. */
 const soldGb = (bytes: number) => Math.floor((bytes + GIB - 1) / GIB);
@@ -59,9 +65,18 @@ export function autoCap(load: NodeLoad): Auto {
   }
   // Memory first on a tie: it is the term a person can act on, and the one that fails when overrun.
   const [cap, why] = memTerm <= cpuTerm ? [memTerm, memWhy] : [cpuTerm, `${cpuTerm} of ${cpus} CPUs`];
-  if (cap > HARD_TOP) return { cap: HARD_TOP, why: `top of ${HARD_TOP}` };
-  return { cap, why };
+  return withHosted(cap > HARD_TOP ? { cap: HARD_TOP, why: `top of ${HARD_TOP}` } : { cap, why }, load.hostedMax);
 }
+
+/** `own` plus the agents the node may run in hosted sandboxes, when it reports any. */
+function withHosted(own: Auto, hostedMax: number | undefined): Auto {
+  const hosted = hostedMax !== undefined && Number.isFinite(hostedMax) ? Math.max(Math.trunc(hostedMax), 0) : 0;
+  if (hosted === 0) return own;
+  return { cap: own.cap + hosted, why: `${own.why}, and ${hosted} in hosted sandboxes`, hosted };
+}
+
+/** A machine's cap when a person set its number (`maxAgents`): theirs for its own slots, plus its hosted ones. */
+export const setCap = (maxAgents: number, auto: Auto) => maxAgents + (auto.hosted ?? 0);
 
 /** New agents the machine's free disk takes above the floor; undefined while the node reports no disk. */
 export function diskRoom(load: NodeLoad): number | undefined {

@@ -358,6 +358,39 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ways: [{ checks: [...MAC_CHECKS.map((id) => `*/mac_${id}`), "*/mac_one_node"] }],
       },
     ),
+    // Hosted sandboxes (W688): optional, the team's own account at each provider, its key sealed in Settings.
+    step(
+      "sandboxes",
+      "hub",
+      "Hosted sandboxes",
+      "Room past your machines' own agent cap: agents run in sandboxes at E2B, boat.dev or Daytona, on your account.",
+      { kind: "optional" },
+      {
+        parts: [
+          part(
+            "Make an API key at the provider",
+            "One account is enough; with more, agents go to E2B, then boat.dev, then Daytona. Each one bills you for its " +
+              "sandboxes while they run.",
+            [
+              link("E2B › API keys", "https://console.e2b.dev/?tab=keys"),
+              link("boat.dev › API keys", "https://docs.boat.dev/api-keys"),
+              link("Daytona › API keys", "https://app.daytona.io/dashboard/keys"),
+            ],
+            [value("Key name", name)],
+          ),
+          part(
+            "Connect it, and set a limit",
+            "Paste it in Settings › Hub › Machines › Sandboxes, with how many agents may run there at once; the app seals " +
+              "it on your device. For a self-hosted E2B, give its domain there too.",
+            [],
+            [],
+          ),
+        ],
+        place: "sandboxes",
+        test: "List fleetd's sandboxes at each connected provider, from one of your Linux machines",
+        ways: [way(undefined, ["hub/sandboxes"])],
+      },
+    ),
   ];
 }
 

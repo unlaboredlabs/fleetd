@@ -1959,6 +1959,12 @@
           "minimum": 0,
           "type": "integer"
         },
+        "hostedMax": {
+          "description": "The agents the machine may run in hosted sandboxes once its own slots are full, added to its own cap: the\nteam's limit of the providers its node can place agents in. Absent while it can place none, and from older nodes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "hosts": {
           "description": "What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent\nfrom older nodes.",
           "items": {
