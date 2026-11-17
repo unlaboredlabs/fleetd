@@ -222,13 +222,13 @@
   max-width: 100%;
 }
 /*
- * Bubble type is a step above the app's body, 15 on 22, in the same face: a one-line bubble is a capsule (radius
- * half its height), and a code card's radius is the bubble's less its padding, so their corners run parallel.
+ * Bubble type is a step above the app's body, 14 on 21, in the same face: a bubble is a crisp rounded box (14 px
+ * corners, the composer's), and a code card's corners are the controls' (--radius-lg).
  */
 .bubble {
-  --tight: 6px;
-  --prose-size: 15px;
-  --prose-leading: 22px;
+  --tight: 4px;
+  --prose-size: 14px;
+  --prose-leading: 21px;
   --prose-gap: 10px;
   --prose-head-gap: 16px;
   --prose-indent: 22px;
@@ -237,14 +237,14 @@
   --code-leading: 20px;
   --code-pad-y: 9px;
   --code-pad-x: 13px;
-  --code-radius: 10px;
+  --code-radius: var(--radius-lg);
   --code-inline-size: 0.87em;
   --code-inline-pad: 1px 4px;
   position: relative;
   min-width: 0;
   max-width: 100%;
-  padding: 7px 13px 8px;
-  border-radius: 19px;
+  padding: 7px 12px 8px;
+  border-radius: 14px;
   background: var(--bubble);
 }
 .bubble.wide {
@@ -521,6 +521,13 @@ span.changeUndo {
   justify-content: center;
   padding-top: var(--space-6);
   padding-bottom: var(--space-1);
+  font-family: var(--label-font);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+.day > * {
+  font-size: var(--label-size);
 }
 .clock {
   display: flex;

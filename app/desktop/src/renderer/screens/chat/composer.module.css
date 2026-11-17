@@ -22,8 +22,9 @@
   column-gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2);
-  /* Half its one-line height (8 + 28 + 8): round ends, which stay round as it grows. */
-  border-radius: 22px;
+  /* A crisp rounded slab, not a capsule: its corners the bubbles' less nothing, so the island and the words over it
+     share one corner. */
+  border-radius: 14px;
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of

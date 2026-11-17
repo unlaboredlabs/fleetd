@@ -15,56 +15,60 @@
   color-scheme: light;
   --bg: #ffffff;
   /* One near-invisible tone step from --bg, so the sidebar needs no border. */
-  --sidebar: #f5f5f3;
+  --sidebar: #f7f8f9;
   --raised: #ffffff;
-  --hover: #0000000a;
-  --selected: #00000012;
-  --hairline: #e6e6e2;
-  --border: #cfcfca;
+  --hover: #0e14200a;
+  --selected: #0e142012;
+  --hairline: #e6e8eb;
+  /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
+  --side-edge: #e6e6e2;
+  --border: #d5d9de;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
-  --bubble: #ececea;
+  --bubble: #f0f2f4;
   /* A Settings group: one soft fill under a section's rows, no lines between them (DESIGN.md). Controls on it are
      --raised. */
-  --group: #f4f4f2;
+  --group: #ffffff;
+  /* ...and its one hairline edge, which draws it on a page of the same white. */
+  --group-edge: #e6e8eb;
   /* Danger's one pill (Delete project, Remove machine): white words on it. */
-  --danger-fill: #c4302b;
+  --danger-fill: #c62f2a;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
-  --control-border: #7a7a75;
-  --text: #1c1c1a;
-  --quiet: #63635d;
-  --faint: #96968f;
-  --accent: #1d1d1f;
-  --accent-fill: #1d1d1f;
+  --control-border: #7b818a;
+  --text: #0c0e11;
+  --quiet: #5b616b;
+  --faint: #9399a2;
+  --accent: #0c0e11;
+  --accent-fill: #0c0e11;
   --on-accent: #ffffff;
   /* The accent as a large fill under white: your chat bubbles. The same near-black here; a quiet grey in dark, where
      a near-white bubble would glare. */
-  --accent-deep: #1d1d1f;
+  --accent-deep: #0c0e11;
   --on-accent-deep: #ffffff;
-  --link: #2360c4;
+  --link: #1d5fd3;
   /* A switch that's on keeps the blue it had before the accent went neutral, under its white thumb. */
   --switch-on: #2360c4;
-  --success: #287142;
-  --warning: #8c5a00;
-  --danger: #b63531;
-  --diff-add: #e7f4ea;
-  --diff-del: #fbebea;
-  --shadow: #0000001f;
+  --success: #1a6c3c;
+  --warning: #8a5800;
+  --danger: #b8322d;
+  --diff-add: #e8f5ec;
+  --diff-del: #fcecec;
+  --shadow: #0e14201f;
   /* Glass (the chat's floating capsules, ui/layout Capsule): a grey tint a step under --bg rather than white, so a
      capsule reads as material over the page and not as a white pill on it; the blur and saturation take the colour of
      what scrolls under it. Its edge is a hairline drawn inside, a brighter line along its top where light catches the
      rim, and a soft shadow that lifts it off the page. */
-  --glass: #f1f1efb8;
-  --glass-edge: #0000001a;
-  --glass-rim: #ffffffd9;
+  --glass: #ffffffc2;
+  --glass-edge: #0e14201c;
+  --glass-rim: #ffffffe6;
   --glass-lift: 0 1px 2px #0000000f, 0 6px 18px -6px #00000029;
-  --glass-pressed: #00000012;
+  --glass-pressed: #0e142012;
   /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
      shows, its edge firmer too. Laid over the glass, so the material stays. */
-  --glass-hover: #0000000a;
-  --glass-open: #0000001f;
-  --glass-edge-open: #0000002e;
+  --glass-hover: #0e14200a;
+  --glass-open: #0e14201c;
+  --glass-edge-open: #0e14202e;
   /* One restrained tint per agent role (live/chips.rs role_tint), clear of the accent and the status colours. */
   --role-implementer: #126c64;
   --role-reviewer: #6244bd;
@@ -99,42 +103,43 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1c1c1b;
-  --sidebar: #232322;
-  --raised: #2a2a29;
-  --hover: #ffffff0d;
-  --selected: #ffffff17;
-  --hairline: #323230;
+  --bg: #0d0e10;
+  --sidebar: #121316;
+  --raised: #18191c;
+  --hover: #e6ecf50d;
+  --selected: #e6ecf517;
+  --hairline: #24262a;
   /* The sidebar's edge: in dark its tone sits too close to --bg's to part them on its own. */
-  --side-edge: #00000059;
-  --border: #4a4a46;
-  --bubble: #30302e;
-  --group: #262625;
-  --danger-fill: #b23a35;
-  --control-border: #8a8a85;
-  --text: #ededea;
-  --quiet: #ababa5;
-  --faint: #74746e;
-  --accent: #f5f5f7;
-  --accent-fill: #f5f5f7;
-  --on-accent: #1d1d1f;
-  --accent-deep: #4c4c49;
+  --side-edge: #24262a;
+  --border: #33363c;
+  --bubble: #1c1e22;
+  --group: #121316;
+  --group-edge: #24262a;
+  --danger-fill: #b5332e;
+  --control-border: #7f858e;
+  --text: #eceef1;
+  --quiet: #9ba1ab;
+  --faint: #61666e;
+  --accent: #f3f4f6;
+  --accent-fill: #f3f4f6;
+  --on-accent: #0c0e11;
+  --accent-deep: #2a2d33;
   --on-accent-deep: #ffffff;
-  --link: #79abf5;
+  --link: #74a6ff;
   --switch-on: #2e69cc;
-  --success: #6cc28a;
-  --warning: #e3aa4a;
-  --danger: #f38c88;
-  --diff-add: #1f3326;
-  --diff-del: #3b2422;
-  --shadow: #00000066;
-  --glass: #2f2f2ea6;
-  --glass-edge: #ffffff17;
-  --glass-rim: #ffffff12;
+  --success: #5fc487;
+  --warning: #e2a945;
+  --danger: #f2847f;
+  --diff-add: #132a1c;
+  --diff-del: #33191a;
+  --shadow: #00000080;
+  --glass: #18191cb8;
+  --glass-edge: #ffffff1a;
+  --glass-rim: #ffffff0f;
   --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
   --glass-pressed: #ffffff1a;
   --glass-hover: #ffffff0f;
-  --glass-open: #ffffff24;
+  --glass-open: #ffffff21;
   --glass-edge-open: #ffffff2e;
   --role-implementer: #6ccbc0;
   --role-reviewer: #bba8f5;
@@ -158,8 +163,8 @@
 
 :root {
   /* Two voices with strict roles: the human voice and the machine voice. */
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Lilex", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Type scale (px). Most text is md; titles are md semibold (hierarchy from weight, not size). */
   --text-xs: 11px; /* metadata: counts, timestamps, field labels */
@@ -174,6 +179,11 @@
   --leading-lg: 24px;
   --leading-xl: 28px;
   --leading-display: 34px;
+  /* A section's label (Settings' sections, the sidebars' groups): the machine voice, small capitals spaced out, quiet.
+     The one place the mono speaks for the app rather than for a machine: it marks structure, never content. */
+  --label-font: var(--font-mono);
+  --label-size: 10.5px;
+  --label-tracking: 0.07em;
   /* Two weights, and a medium between them for a name that stands alone under its picture (the sidebar's pins). */
   --weight-regular: 400;
   --weight-medium: 500;
@@ -214,14 +224,14 @@
   /* Room for the macOS traffic lights in the hiddenInset title bar; 0 elsewhere (<html data-platform>). */
   --traffic-lights-inset: 0px;
 
-  --radius-sm: 4px;
+  --radius-sm: 5px;
   --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-lg: 8px;
   /* A Settings group's corners. */
-  --radius-group: 12px;
+  --radius-group: 10px;
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
-  --float-shadow: 0 8px 28px var(--shadow), 0 0 0 1px var(--hairline);
+  --float-shadow: 0 0 0 1px var(--hairline), 0 2px 4px -1px var(--shadow), 0 16px 36px -12px var(--shadow);
   /* What Show went to in a chat (what the lead waits on): a soft ring in the accent, fading out over --dur-shown. */
   --shown-ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --shown-ring-width: 4px;

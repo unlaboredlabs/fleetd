@@ -31,6 +31,11 @@
 .label {
   align-self: flex-start;
   margin: 0;
+  font-family: var(--label-font);
+  font-size: var(--label-size);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
 }
 /* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
 .title {
@@ -49,6 +54,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  border: 1px solid var(--group-edge);
   border-radius: var(--radius-group);
   background: var(--group);
 }
@@ -78,8 +84,8 @@
   align-items: center;
   column-gap: var(--space-6);
   min-width: 0;
-  min-height: 48px;
-  padding: var(--space-3) var(--space-4);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
 }
 .rowText {
   display: flex;

@@ -10,8 +10,8 @@ breaks a rule changes this page in the same PR and says why.
   Rows that have ended (merged, closed, done) step back to `--quiet`. A line between every row reads as clutter.
 - **Settings are soft groups** (`screens/settings/parts.tsx`; every Settings page, and the Vault's, is built from these
   and has no row, line or card style of its own):
-  - a section is a quiet 12 px label over **one soft group**: a `--group` fill with `--radius-group` corners and no
-    lines inside it (`SettingsSection`);
+  - a section is a quiet label in small mono capitals (`--label-*`) over **one group**: a `--group` fill inside one
+    `--group-edge` hairline, with `--radius-group` corners and no lines inside it (`SettingsSection`);
   - a row is a title in regular weight and **one control at its right end** (`SettingsRow`); a row that holds a list
     or a form puts it under its title, full width;
   - **at rest a row is its title and its control; what explains it is its `hint`.** The hint shows under the title, in

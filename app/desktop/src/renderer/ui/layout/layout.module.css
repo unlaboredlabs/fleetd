@@ -62,8 +62,8 @@
   background: var(--bg);
 }
 
-/* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat only by its own soft tone,
-   as a macOS Notes or Messages sidebar is (in dark, where the tones sit close, a faint line along its edge too). Its
+/* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat by its own cool tone and
+   one hairline drawn inside its edge, so it stays flush and the line takes no width. Its
    first row is the top row's full height, so the traffic lights, New and the chat's pill share one centre line. */
 .side {
   grid-area: side;
@@ -72,8 +72,6 @@
   min-width: 0;
   min-height: 0;
   background: var(--sidebar);
-}
-:global(html[data-theme="dark"]) .side {
   box-shadow: inset -1px 0 0 var(--side-edge);
 }
 /* The sidebar's right edge, a line with no width of its own: what it holds (a resize edge) sits over it. */
@@ -201,6 +199,13 @@
   min-width: 0;
   margin: 0;
   font-size: var(--text-md);
+}
+/* A page's own title (Settings', not the chat's glass pill): a step up and tight, its left edge on the page column's
+   (the frame row is in 12 px, the column 24). */
+.frameTitle:not([data-glass]) > .frameHeading {
+  padding-left: var(--space-3);
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 .frameDetail {
   flex: 0 1000 auto;
@@ -349,6 +354,13 @@ button[aria-pressed="true"] > .pressChevron {
 .sidebarSectionTitle {
   flex: 1;
   min-width: 0;
+  font-family: var(--label-font);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+.sidebarSectionTitle > * {
+  font-size: var(--label-size);
 }
 .sidebarItem {
   display: flex;
