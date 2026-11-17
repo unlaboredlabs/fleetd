@@ -141,7 +141,8 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(toggle(box, "Browser")?.getAttribute("aria-checked")).toBe("true");
   expect(toggle(box, "Android")?.getAttribute("aria-checked")).toBe("false");
   expect(toggle(box, "Android")?.disabled).toBe(false);
-  expect(box?.textContent).toContain("Ready");
+  // A kind ready or just off says nothing under its switch: only what stands in the way does.
+  expect(box?.textContent).not.toContain("Ready");
   // No iOS switch (D298); the agents' Mac can't run on Linux: its switch doesn't move, and says why and how to get one.
   expect(toggle(box, "iOS")).toBeNull();
   expect(toggle(box, "Agents’ Mac")?.disabled).toBe(true);
@@ -149,7 +150,9 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(box?.textContent).not.toContain("the Mac screen is a Mac's own");
   // Online: nothing about being offline.
   expect(box?.textContent).not.toContain("is offline");
-  expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
+  // The screens open now beside the limit; where the limit comes from is the row's hover.
+  expect(box?.textContent).toContain("1 open");
+  expect([...(box?.querySelectorAll("[data-hint]") ?? [])].some((h) => h.textContent.includes("(auto: 8 CPUs, 16 GB)"))).toBe(true);
   // One idle timeout, said rather than picked.
   expect(box?.textContent).toContain("An idle screen ends after 30 minutes.");
   expect(box?.querySelector("[aria-label^='Idle timeout']")).toBeNull();

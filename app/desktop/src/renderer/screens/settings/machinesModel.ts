@@ -35,11 +35,8 @@ export const roleWord = (m: Pick<MachineRolesEntry, "roles" | "mac"> | undefined
   return choice === "both" ? undefined : choice === "agents" ? "Agents only" : "Screens only";
 };
 
-/** "2 of 4 screens now (auto: 8 CPUs, 16 GB)"; "set" reads as "you set it". */
-export const sessionsLine = (m: MachineRolesEntry): string => {
-  const why = m.maxSessionsWhy === "set" ? "you set it" : m.maxSessionsWhy;
-  return `${m.sessionsLive} of ${m.maxSessions} ${m.maxSessions === 1 ? "screen" : "screens"} now (${why})`;
-};
+/** Where a machine's screens at once comes from, for its row's hover: "auto: 8 CPUs, 16 GB", or "you set it". */
+export const sessionsWhy = (m: Pick<MachineRolesEntry, "maxSessionsWhy">): string => (m.maxSessionsWhy === "set" ? "you set it" : m.maxSessionsWhy);
 
 /** The session cap's choices: auto, then 1 to 16, and the set value when it is above. */
 export const capChoices = (m: MachineRolesEntry): Array<{ value: string; label: string }> => {

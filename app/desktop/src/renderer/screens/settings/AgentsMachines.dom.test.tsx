@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// A machine's cap, on its page in Hub › Machines: its number and where it comes from, the slider that sets it and the
-// way back to auto; the note a fleet cap the CLI set gets there; and Settings → Projects → Agents' project slider past
+// A machine's agents, on its page in Hub › Machines: how many at once (where that comes from in its hover, what runs now
+// beside it), the slider that sets it and the way back to auto, and where they run (each in a VM, or as processes with
+// why and the fix); the line a fleet cap the CLI set gets under What runs where's Agents; and Settings → Projects → Agents' project slider past
 // its machine's cap, which says the machine holds it, with the way to that machine's page for an owner or admin and
 // nothing more for anyone else.
 import { act } from "react";
@@ -11,7 +12,8 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AgentsSettings, FleetCapNote, MachineCap } from "./Agents";
+import { AgentsSettings, MachineCap } from "./Agents";
+import { WhatRunsWhere } from "./Places";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Settings search reads the platform when it loads, before any test runs.
@@ -113,10 +115,10 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean, start: 
         <DataProvider layer={createDataLayer(hub)}>
           {page === "hub" ? (
             <>
-              <FleetCapNote />
+              <WhatRunsWhere />
               {["devbox", "builder"].map((id) => (
                 <section key={id} aria-label={id}>
-                  <MachineCap machineId={id} />
+                  <MachineCap machineId={id} name={id} />
                 </section>
               ))}
             </>
@@ -156,13 +158,14 @@ it("shows each machine's number, where it comes from, and a slider to change it"
   const devbox = section("devbox");
   expect(devbox.querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("22");
   expect(devbox.querySelector("[role='slider']")?.getAttribute("aria-valuemax")).toBe("50");
-  expect(devbox.textContent).toContain("Auto: memory 60 GB, about 2 GB an agent.");
-  expect(devbox.textContent).toContain("22 agents running now.");
+  // Where the number comes from is the row's hover; what runs now sits beside the number.
+  expect(devbox.querySelector("[data-hint]")?.textContent).toBe("Auto: memory 60 GB, about 2 GB an agent.");
+  expect(devbox.textContent).toContain("22 running22");
   expect([...devbox.querySelectorAll("button")].some((b) => b.textContent.trim() === "Use auto")).toBe(false);
   const builder = section("builder");
   expect(builder.querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("40");
-  expect(builder.textContent).toContain("Set by you. Auto would be 28: 28 of 32 CPUs.");
-  expect(builder.textContent).toContain("Agents on builder at once");
+  expect(builder.querySelector("[data-hint]")?.textContent).toBe("Set by you. Auto would be 28: 28 of 32 CPUs.");
+  expect(builder.textContent).toContain("At once");
   // No whole-fleet slider; the fleet cap of 50, below the machines' 62, is said with how to change it.
   expect(host.textContent).not.toContain("Whole fleet");
   expect(host.querySelector("[data-fleet-cap]")?.textContent).toContain("All machines together run at most 50 agents");
@@ -220,4 +223,44 @@ it("says a fleet cap the CLI set below the machines' total, and nothing without 
   const { fleetCap: _, ...none } = slots;
   await render("hub", true, { ...none, cap: 62 });
   expect(host.querySelector("[data-fleet-cap]")).toBeNull();
+});
+
+it("says where each machine's agents run: a VM, or a process with why and its fix, and by design only in the hover", async () => {
+  const fix = "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0";
+  await render("hub", true, {
+    ...slots,
+    perMachine: [
+      { machineId: "devbox", cap: 22, auto: 22, running: 22, why: "memory 60 GB, about 2 GB an agent; each agent in a VM of its own", sandbox: { kind: "microvm" } },
+      {
+        machineId: "builder",
+        cap: 40,
+        maxAgents: 40,
+        auto: 28,
+        running: 0,
+        why: `28 of 32 CPUs; agents run as plain processes: AppArmor blocks user namespaces. Fix: ${fix}`,
+        sandbox: { kind: "process", why: "AppArmor blocks user namespaces", fix },
+      },
+    ],
+  });
+  const vm = (id: string) => section(id).querySelector<HTMLElement>("[data-vm]");
+  expect(vm("devbox")?.getAttribute("data-vm")).toBe("on");
+  expect(vm("devbox")?.textContent).toContain("A VM");
+  // Its reason is the cap's alone: where its agents run is a row of its own.
+  expect(section("devbox").querySelector("[data-hint]")?.textContent).toBe("Auto: memory 60 GB, about 2 GB an agent.");
+  expect(vm("builder")?.getAttribute("data-vm")).toBe("off");
+  expect(vm("builder")?.textContent).toContain("A process");
+  expect(vm("builder")?.textContent).toContain("AppArmor blocks user namespaces. Run on builder:");
+  expect(vm("builder")?.textContent).toContain(fix);
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  const why = "VMs need Linux with KVM; this machine runs macOS, so its agents run as plain processes.";
+  await render("hub", true, {
+    ...slots,
+    perMachine: [{ machineId: "devbox", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent; agents run as plain processes: ${why}`, sandbox: { kind: "process", why, expected: true } }],
+  });
+  // By the machine's design: nothing to fix, so nothing under the row; why is its hover.
+  expect(vm("devbox")?.querySelector("[data-hint]")?.textContent).toBe(why);
+  expect(vm("devbox")?.textContent.replace(why, "")).not.toContain("macOS");
+  expect(vm("devbox")?.textContent).not.toContain("Run on");
 });

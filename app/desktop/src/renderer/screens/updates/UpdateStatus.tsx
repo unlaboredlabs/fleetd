@@ -2,7 +2,7 @@
 // button, then a row per machine to look at, only when there is one. Hub › Machines › Updates and General's Version both show it.
 import { useState } from "react";
 import { Button, copyText, Dot, InlineCode, Text } from "../../ui";
-import { SettingsList, SettingsListRow, SettingsRow } from "../settings/parts";
+import { SettingsList, SettingsListRow, SettingsRow, type Mark } from "../settings/parts";
 import { useUpdateAct } from "./hooks";
 import type { Status } from "./model";
 import s from "./updates.module.css";
@@ -32,17 +32,22 @@ function Command({ command }: { command: string }) {
   );
 }
 
-export function UpdateStatus({ status }: { status: Status }) {
+/** The status as Hub › Machines marks every place: neutral while it holds, waiting on someone, or failed. */
+const MARK: Readonly<Record<Status["kind"], Mark>> = { none: "off", current: "ready", available: "needs", updating: "ready", failed: "failed" };
+
+/** `marked`: as a row of Hub › Machines, its state the dot before its title (parts.tsx, PlaceMark), not after it. */
+export function UpdateStatus({ status, marked = false }: { status: Status; marked?: boolean }) {
   const act = useUpdateAct();
   const action = status.action;
   return (
     <>
       <SettingsRow
         label={status.title}
+        {...(marked ? { mark: status.kind === "available" && status.quiet === true ? "ready" : MARK[status.kind] } : {})}
         title={
           <span className={s.title} role={status.kind === "failed" ? "alert" : "status"}>
             {status.title}
-            {status.kind === "failed" ? <Dot color="var(--danger)" /> : null}
+            {status.kind === "failed" && !marked ? <Dot color="var(--danger)" /> : null}
           </span>
         }
         line={status.detail === undefined ? undefined : <Line text={status.detail} />}
@@ -63,10 +68,11 @@ export function UpdateStatus({ status }: { status: Status }) {
             <SettingsListRow
               key={row.key}
               label={row.name}
+              {...(marked ? { mark: row.tone === "danger" ? ("failed" as const) : ("needs" as const), markLabel: row.tone === "danger" ? "Didn't update" : "Behind" } : {})}
               name={
                 <span className={s.title}>
                   {row.name}
-                  {row.tone === "danger" ? <Dot color="var(--danger)" label="Didn't update" /> : null}
+                  {row.tone === "danger" && !marked ? <Dot color="var(--danger)" label="Didn't update" /> : null}
                 </span>
               }
               data={{ "data-update-machine": row.tone }}

@@ -168,6 +168,14 @@ scripts on, nothing loaded past the page itself, no storage, cookies or files; a
 Android doesn't run HTML artifacts yet and says to open them on an iPhone or the desktop app. With more than one
 version, **Versions** picks an older one, which says so over the page with the way back to the newest.
 
+## Machines {#machines}
+
+An admin has **Machines** in Settings, the desktop app's [Machines page](/docs/machines#page) in three groups: the
+machines and how each is; the providers the team connects with its own keys (E2B, boat.dev, Daytona, Revyl), each
+with what it can run, a tap opening one to connect it (its key in a secure field, sealed on the phone), set its limit,
+test or disconnect it; and what runs where, a row per kind, an iOS simulator's or Android's a choice while Revyl is
+connected, then how long recordings are kept. Members don't see it.
+
 ## Update fleetd {#update}
 
 An admin has **Update** in Settings, which says what the desktop app's Settings › Hub › Machines › Updates says, in the same

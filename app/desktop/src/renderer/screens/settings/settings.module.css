@@ -394,3 +394,19 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* Why something is off and the command that fixes it, as one block under its row's title. */
+.fixBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* A title with a quiet word beside it, on its line: a provider and what it can run. */
+.titleMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}

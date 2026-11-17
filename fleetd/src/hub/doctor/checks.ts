@@ -175,7 +175,7 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
  */
 export function sandboxProviders(providers: [string, SandboxCheck?][]): DoctorCheck | undefined {
   if (providers.length === 0) return undefined;
-  const page = "Settings › Hub › Machines › Sandboxes";
+  const page = "Settings › Hub › Machines › Providers";
   const bad = providers.find(([, c]) => c?.ok !== true);
   if (!bad) {
     const names = providers.map(([n]) => n);

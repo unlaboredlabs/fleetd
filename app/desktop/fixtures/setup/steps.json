@@ -458,7 +458,7 @@
         },
         {
           "links": [],
-          "note": "Paste it in Settings › Hub › Machines › Sandboxes, with how many agents may run there at once; the app seals it on your device. For a self-hosted E2B, give its domain there too.",
+          "note": "Paste it in Settings › Hub › Machines › Providers, with how many agents may run there at once; the app seals it on your device. For a self-hosted E2B, give its domain there too.",
           "title": "Connect it, and set a limit",
           "values": []
         }

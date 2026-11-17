@@ -207,6 +207,10 @@ export function SettingsSection(props: {
  */
 export function SettingsRow(props: {
   reveal?: string | undefined;
+  /** Where the row is a place agents or screens run (Hub › Machines): its state as a dot before the title. "none"
+   * keeps the dot's room, so a group's titles start in one line. */
+  mark?: Mark | "none" | undefined;
+  markLabel?: string | undefined;
   title: ReactNode;
   /** The row's name for assistive tech and tests, when `title` isn't plain words. */
   label?: string | undefined;
@@ -231,7 +235,8 @@ export function SettingsRow(props: {
     <section ref={ref} className={g.row} aria-label={label} aria-describedby={said(props.hint) ? hintId : undefined} tabIndex={-1} {...props.data}>
       <Hinted hint={props.hint}>
         <div className={g.rowHead}>
-          <div className={g.rowText}>
+          <div className={cx(g.rowText, props.mark !== undefined && g.marked)}>
+            {props.mark === undefined ? null : <PlaceMark mark={props.mark} label={props.markLabel} />}
             <Text {...(props.titleId === undefined ? {} : { id: props.titleId })} {...(stop ? { tabIndex: 0, className: g.title } : {})}>
               {props.title}
             </Text>
@@ -253,6 +258,8 @@ export function SettingsRow(props: {
 /** A row whose one control is a switch: the row's title is the switch's own words, so nothing is said twice. */
 export function SwitchRow(props: {
   reveal?: string | undefined;
+  mark?: Mark | "none" | undefined;
+  data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
   title: string;
   hint?: ReactNode | undefined;
   line?: ReactNode | undefined;
@@ -266,6 +273,8 @@ export function SwitchRow(props: {
   return (
     <SettingsRow
       reveal={props.reveal}
+      mark={props.mark}
+      data={props.data}
       title={<label htmlFor={id}>{props.title}</label>}
       label={props.title}
       hint={props.hint}
@@ -298,6 +307,9 @@ export function SettingsListRow(props: {
   /** The row's name for assistive tech and tests. */
   label: string;
   icon?: ReactNode | undefined;
+  /** In place of `icon`: the row is a place agents or screens run, its state a dot before the name (SettingsRow's). */
+  mark?: Mark | undefined;
+  markLabel?: string | undefined;
   /** A quiet word beside the name ("you", a role). */
   meta?: ReactNode | undefined;
   state?: { word: string; tone: TextTone } | undefined;
@@ -313,10 +325,12 @@ export function SettingsListRow(props: {
 }) {
   const name = <Text>{props.name}</Text>;
   const hintId = useId();
+  // Why it needs someone, as the row's tooltip: its dot's words, at its end or before its name.
+  const needsWords = props.needs ?? (props.mark !== undefined && props.mark !== "ready" ? props.markLabel : undefined);
   return (
     <Hinted hint={props.hint}>
       <div
-        className={cx(g.listRow, props.icon !== undefined && g.withIcon, props.open !== undefined && g.opens)}
+        className={cx(g.listRow, props.icon !== undefined && g.withIcon, props.mark !== undefined && g.withMark, props.open !== undefined && g.opens)}
         role="listitem"
         aria-label={props.label}
         aria-describedby={said(props.hint) ? hintId : undefined}
@@ -327,16 +341,17 @@ export function SettingsListRow(props: {
             {props.icon}
           </span>
         )}
+        {props.mark === undefined ? null : <PlaceMark mark={props.mark} label={props.markLabel} />}
         <div className={g.rowText}>
           <div className={g.name}>
             {props.open === undefined ? (
               name
             ) : "href" in props.open ? (
-              <a className={g.opener} href={props.open.href} title={props.needs}>
+              <a className={g.opener} href={props.open.href} title={needsWords}>
                 {name}
               </a>
             ) : (
-              <button type="button" className={g.opener} aria-expanded={props.expanded} onClick={props.open.onClick} title={props.needs}>
+              <button type="button" className={g.opener} aria-expanded={props.expanded} onClick={props.open.onClick} title={needsWords}>
                 {name}
               </button>
             )}
@@ -365,6 +380,19 @@ export function SettingsListRow(props: {
         )}
       </div>
     </Hinted>
+  );
+}
+
+/**
+ * A place's state, as one dot: ready (it runs agents or screens now), needs someone (offline, logged out), failed (a
+ * provider refused its key) or off (not connected, nothing to run on). "none" is its room, empty. Its words are its
+ * label; the row says them where they matter.
+ */
+export type Mark = "ready" | "needs" | "failed" | "off";
+
+export function PlaceMark({ mark, label }: { mark: Mark | "none"; label?: string | undefined }) {
+  return (
+    <span className={g.mark} data-mark={mark} {...(label === undefined || mark === "none" ? { "aria-hidden": true } : { role: "img", "aria-label": label })} />
   );
 }
 

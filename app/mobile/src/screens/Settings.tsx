@@ -1,7 +1,7 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
 // (how the link is, its address and version), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
-// (Cloud.tsx), for an admin Restart Hub and its update and the team's hosted Sandboxes, the Vault (screens/vault) on a
+// (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), the Vault (screens/vault) on a
 // hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
@@ -27,8 +27,7 @@ import { CloudSettings } from "./Cloud";
 import { RestartHub } from "./RestartHub";
 import { UpdateFleetd } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
-import { sandboxesShown } from "../sandboxes";
-import { serves } from "../desktop";
+import { machinesShown } from "../machines";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -145,9 +144,9 @@ export function Settings() {
       <CloudSettings />
       <RestartHub />
       <UpdateFleetd />
-      {sandboxesShown(state.admin, serves(state, "sandbox_get")) ? (
+      {machinesShown(state.admin) ? (
         <ListSection>
-          <ListRow title="Sandboxes" onPress={() => navigation.navigate("Sandboxes")} />
+          <ListRow title="Machines" onPress={() => navigation.navigate("Machines")} />
         </ListSection>
       ) : null}
       {vaultShown(hub) ? (

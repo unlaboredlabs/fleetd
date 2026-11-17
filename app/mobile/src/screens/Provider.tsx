@@ -1,27 +1,35 @@
-// Settings › Sandboxes, for admins (sandboxes.ts): the team's own hosted sandbox accounts, a section per provider in
-// the order agents go to them, and under them what it's for. One not connected takes its API key in a secure field (and E2B a self-hosted domain),
-// sealed here to the hub's box key before it leaves the phone; one connected has its limit, Test and Disconnect. A
-// hub too old for sandbox_get shows a line saying so.
+// Settings › Machines › a provider, for admins (machines.ts): one provider the team connects with its own key (E2B,
+// boat.dev, Daytona, Revyl). Not connected, its API key in a secure field (and E2B a self-hosted domain), sealed here
+// to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
 import { useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import type { SandboxProviderState, SandboxState } from "../../../desktop/src/shared/contracts";
-import { useHub } from "../hubContext";
-import { introFooter, limitChoices, limitWords, providerFooter, providerName, takesDomain } from "../sandboxes";
+import type { RevylState, SandboxState } from "../../../desktop/src/shared/contracts";
+import { useHub, type SettingsProps } from "../hubContext";
+import { canWords, limitChoices, limitWords, providerFooter, providerName, providersOf, specOf, takesDomain, type ProviderState } from "../machines";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
-import { confirmDestructive, errorWords, Note, Problem, useRead } from "./manage/parts";
+import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
 import { sealToHub } from "./vault/api";
 
 /** Connect and Test wait for the provider's answer from one of the team's machines (the hub waits up to 45 s for it). */
 const CHECK_TIMEOUT_MS = 60_000;
+/** Revyl's may first install its CLI on the machine it runs on (the hub waits up to 2.75 minutes). */
+const REVYL_TIMEOUT_MS = 180_000;
 
-export function Sandboxes() {
+export function Provider({ route }: SettingsProps<"Provider">) {
   const t = useTheme();
   const { session } = useHub();
-  const read = useRead(() => session.call("sandbox_get", {}), [session]);
+  const revyl = route.params.id === "revyl";
+  const read = useRead(() => session.call(revyl ? "revyl_get" : "sandbox_get", {}), [session, revyl]);
   const r = read.value;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
+  const state: ProviderState | undefined = !r.ok
+    ? undefined
+    : revyl
+      ? { id: "revyl", ...(r.output as RevylState) }
+      : providersOf(r.output as SandboxState, undefined).find((p) => p.id === route.params.id);
+  const boxPubKey = r.ok ? (r.output as { boxPubKey: string }).boxPubKey : "";
   return (
     <ScrollView
       style={{ backgroundColor: t.grouped }}
@@ -32,29 +40,21 @@ export function Sandboxes() {
       refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
     >
       {!r.ok ? (
-        <Problem text={r.error.code === "not_found" ? "This hub's fleetd is too old for hosted sandboxes: update it first." : `Couldn't read the sandboxes: ${errorWords(r.error)}`} />
+        <Problem text={`Couldn't read it: ${errorWords(r.error)}`} />
+      ) : state === undefined ? (
+        <Problem text="This hub doesn't have it." />
       ) : (
-        <Providers state={r.output as SandboxState} reload={read.reload} />
+        <Keyed p={state} boxPubKey={boxPubKey} reload={read.reload} />
       )}
     </ScrollView>
   );
 }
 
-function Providers({ state, reload }: { state: SandboxState; reload: () => void }) {
-  return (
-    <>
-      {state.providers.map((p) => (
-        <Provider key={p.provider} p={p} boxPubKey={state.boxPubKey} reload={reload} />
-      ))}
-      <Note>{introFooter(state)}</Note>
-    </>
-  );
-}
-
-function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey: string; reload: () => void }) {
+function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; reload: () => void }) {
   const t = useTheme();
   const { session } = useHub();
-  const name = providerName(p.provider);
+  const name = providerName(p.id);
+  const revyl = p.id === "revyl";
   const [key, setKey] = useState("");
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState<"connect" | "test" | "limit" | "disconnect" | null>(null);
@@ -82,12 +82,15 @@ function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey
     if (typed === "") return;
     const sealed = sealToHub({ key: typed }, boxPubKey);
     if (sealed === null) return setProblem("The hub's key didn't come through. Try again.");
-    const d = takesDomain(p.provider) ? domain.trim() : "";
-    void run("connect", () => session.call("sandbox_connect", { provider: p.provider, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS), "Not connected").then(() => setKey(""));
+    const d = takesDomain(p.id) ? domain.trim() : "";
+    const call = revyl
+      ? () => session.call("revyl_connect", { sealed }, REVYL_TIMEOUT_MS)
+      : () => session.call("sandbox_connect", { provider: p.id, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS);
+    void run("connect", call, "Not connected").then(() => setKey(""));
   };
   const pickLimit = () => {
-    const choices = limitChoices(p.limit);
-    const set = (n: number) => void run("limit", () => session.call("sandbox_set", { provider: p.provider, limit: n }), "Not changed");
+    const choices = limitChoices(p.limit ?? 0);
+    const set = (n: number) => void run("limit", () => session.call("sandbox_set", { provider: p.id, limit: n }), "Not changed");
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions({ title: `Agents at once in ${name}`, options: [...choices.map(limitWords), "Cancel"], cancelButtonIndex: choices.length }, (i) => {
         const n = choices[i];
@@ -100,20 +103,20 @@ function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey
   const disconnect = () =>
     confirmDestructive({
       title: `Disconnect ${name}?`,
-      message: `The team's ${name} key, its limit and its domain go from the hub.`,
+      message: revyl ? `The team's ${name} key goes from the hub, and phone screens run on your machines.` : `The team's ${name} key, its limit and its domain go from the hub.`,
       button: "Disconnect",
-      onConfirm: () => void run("disconnect", () => session.call("sandbox_disconnect", { provider: p.provider }), "Not disconnected"),
+      onConfirm: () => void run("disconnect", () => (revyl ? session.call("revyl_disconnect", {}) : session.call("sandbox_disconnect", { provider: p.id })), "Not disconnected"),
     });
 
   const footer = providerFooter(p);
   const footerText = problem ?? footer?.text;
   return (
     <>
-      <ListSection header={name} {...(footerText === undefined || problem !== undefined || footer?.problem === true ? {} : { footer: footerText })}>
+      <ListSection header={canWords(specOf(p.id))} {...(footerText === undefined || problem !== undefined || footer?.problem === true ? {} : { footer: footerText })}>
         {p.connected ? (
           <>
-            <ListRow title="At Once" value={limitWords(p.limit)} {...(busy === null ? { onPress: pickLimit } : {})} chevron={false} />
-            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => session.call("sandbox_test", { provider: p.provider }, CHECK_TIMEOUT_MS), "Not tested") } : {})} chevron={false} />
+            {p.limit === undefined ? null : <ListRow title="At Once" value={limitWords(p.limit)} {...(busy === null ? { onPress: pickLimit } : {})} chevron={false} />}
+            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => (revyl ? session.call("revyl_test", {}, REVYL_TIMEOUT_MS) : session.call("sandbox_test", { provider: p.id }, CHECK_TIMEOUT_MS)), "Not tested") } : {})} chevron={false} />
             <ListRow title={busy === "disconnect" ? "Disconnecting…" : "Disconnect"} destructive {...(busy === null ? { onPress: disconnect } : {})} chevron={false} />
           </>
         ) : (
@@ -135,7 +138,7 @@ function Provider({ p, boxPubKey, reload }: { p: SandboxProviderState; boxPubKey
                 style={[type.body, styles.input, { color: t.label }]}
               />
             </View>
-            {takesDomain(p.provider) ? (
+            {takesDomain(p.id) ? (
               <View style={styles.field}>
                 <TextInput
                   value={domain}

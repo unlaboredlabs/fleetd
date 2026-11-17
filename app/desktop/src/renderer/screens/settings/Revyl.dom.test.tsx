@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-// The team's own Revyl in Hub › Machines › Screens: Connect opens one sealed field whose key goes to main (never to
-// the hub as typed, never shown again), Test says whether it works, Disconnect removes it; each phone kind's route,
-// whose Revyl choices are off before a key is connected and say why, with Connect right there. A hub too old for
+// The team's own Revyl, a row of Hub › Machines' Providers: Connect opens one sealed field whose key goes to main
+// (never to the hub as typed, never shown again); its menu's Test says whether it works and Disconnect removes it.
+// Each phone kind's row of What runs where: your machines, a plain value, until Revyl is connected, then the route as
+// a choice (a route that still names Revyl stays a choice, and a member is told whom to ask). A hub too old for
 // revyl_get shows none of it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -12,7 +13,9 @@ import type { RevylKeyRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { RevylScreens } from "./Revyl";
+import { WhatRunsWhere } from "./Places";
+import { ProviderRows } from "./Providers";
+import { KINDS } from "../../../shared/providers";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -102,7 +105,8 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <RevylScreens />
+          <ProviderRows what={KINDS} />
+          <WhatRunsWhere />
         </DataProvider>
       </UiProvider>,
     );
@@ -128,6 +132,18 @@ const click = async (b: HTMLElement | undefined) => {
   await settle();
   await settle();
 };
+/** Revyl's menu (⋯): opens it and picks `label`. */
+const fromMenu = async (label: string) => {
+  const trigger = revyl()?.querySelector<HTMLElement>("button[aria-haspopup='menu']");
+  if (trigger === null || trigger === undefined) throw new Error("no menu on Revyl");
+  await act(async () => {
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await Promise.resolve();
+  });
+  const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === label);
+  if (item === undefined) throw new Error(`no ${label} in Revyl's menu`);
+  await click(item);
+};
 const field = () => host.querySelector<HTMLInputElement>("input[aria-label='Revyl API key']");
 const type = async (text: string) => {
   const input = field();
@@ -146,8 +162,9 @@ it("connects a key through one sealed field that goes to main only, then says it
   expect(revyl()?.getAttribute("data-revyl")).toBe("off");
   // Nothing under the row at rest (what it is lives in its hover): its title and Connect.
   expect(revyl()?.querySelector("[role='alert'], [role='status']")).toBeNull();
-  expect(button("Connect…", within(revyl()))).toBeDefined();
-  await click(button("Connect…"));
+  expect(revyl()?.querySelector("[data-mark='off']")).not.toBeNull();
+  expect(button("Connect", within(revyl()))).toBeDefined();
+  await click(button("Connect", within(revyl())));
   expect(field()?.hasAttribute("data-secret")).toBe(true);
   expect(button("Connect")?.disabled).toBe(true);
   await type(`  ${KEY}\n`);
@@ -159,18 +176,19 @@ it("connects a key through one sealed field that goes to main only, then says it
   expect(field()).toBeNull();
   expect(host.textContent).not.toContain(KEY);
   expect(revyl()?.textContent).toContain("Works");
-  expect(button("Test")).toBeDefined();
-  expect(button("Disconnect")).toBeDefined();
+  expect(revyl()?.querySelector("[data-mark='ready']")).not.toBeNull();
+  expect(revyl()?.querySelector("button[aria-haspopup='menu']")).not.toBeNull();
 });
 
-it("shows a Test that first installs Revyl's CLI as testing, with no words, then Works", async () => {
+it("shows a Test that first installs Revyl's CLI as Testing…, with nothing more, then Works", async () => {
   state = on;
   let release: () => void = () => undefined;
   testHeld = new Promise((r) => (release = r));
   await render();
-  await click(button("Test"));
-  expect(button("Testing…")?.disabled).toBe(true);
-  expect(revyl()?.querySelector("[role='alert'], [role='status']")).toBeNull();
+  await fromMenu("Test");
+  expect(revyl()?.querySelector("[role='status']")?.textContent).toBe("Testing…");
+  expect(revyl()?.querySelector<HTMLButtonElement>("button[aria-haspopup='menu']")?.disabled).toBe(true);
+  expect(revyl()?.querySelector("[role='alert']")).toBeNull();
   await act(async () => {
     release();
     await Promise.resolve();
@@ -186,50 +204,56 @@ it("says why Revyl's CLI couldn't be installed, with nothing to copy, and discon
   await render();
   // At rest, a working key says nothing.
   expect(revyl()?.textContent).not.toContain("Works");
-  await click(button("Test"));
+  await fromMenu("Test");
   expect(calls.some((c) => c.tool === "revyl_test")).toBe(true);
   // The node installs Revyl's CLI itself: only a download that failed reads here, as its reason, with no command.
   expect(revyl()?.querySelector("[role='alert']")?.textContent).toBe(`${NOT_INSTALLED} T${RETRY.slice(1)}`);
   expect(button("Copy", within(revyl()))).toBeUndefined();
   expect(revyl()?.textContent).not.toMatch(/curl|install\.sh/);
-  await click(button("Disconnect"));
+  expect(revyl()?.querySelector("[data-mark='failed']")).not.toBeNull();
+  await fromMenu("Disconnect");
   expect(calls.some((c) => c.tool === "revyl_disconnect")).toBe(true);
   expect(revyl()?.getAttribute("data-revyl")).toBe("off");
-  expect(button("Connect…")).toBeDefined();
+  expect(button("Connect", within(revyl()))).toBeDefined();
 });
 
-it("keeps each kind on our machines until a key is connected, saying why with Connect right there", async () => {
+it("keeps each phone kind on your machines, a plain value, until Revyl is connected, then offers its routes", async () => {
   await render();
-  for (const kind of ["ios", "android"]) {
-    expect(route(kind)?.querySelector("button[role='combobox']")?.textContent).toContain("Our machines only");
-    expect(route(kind)?.textContent).toContain("Revyl choices need a Revyl key.");
+  const kind = (k: string) => host.querySelector<HTMLElement>(`[data-where-kind="${k}"]`);
+  for (const k of ["ios", "android"]) {
+    expect(kind(k)?.querySelector("button[role='combobox']")).toBeNull();
+    expect(kind(k)?.querySelector("[data-where-value]")?.textContent).toBe("Your machines");
   }
-  expect(route("ios")?.textContent).toContain("iOS simulator");
-  expect(route("android")?.textContent).toContain("Android");
-  await click(button("Connect Revyl", within(route("android"))));
-  expect(field()).not.toBeNull();
+  expect(kind("ios")?.textContent).toContain("iOS simulator");
+  await click(button("Connect", within(revyl())));
+  await type(KEY);
+  await click(button("Connect", within(revyl())));
+  for (const k of ["ios", "android"]) expect(route(k)?.querySelector("button[role='combobox']")?.textContent).toContain("Your machines");
 });
 
-it("tells a member whom to ask, with no Connect", async () => {
+it("tells a member whom to ask while a route still names Revyl and no key is connected", async () => {
   admin = false;
+  state = { ...off, routes: { ios: "revyl_only", android: "ours_only" } };
   await render();
   // Once hub_info has said who this is.
   for (let i = 0; i < 20 && !(route("ios")?.textContent ?? "").includes("ask an admin"); i++) await settle();
   expect(route("ios")?.textContent).toContain("ask an admin to connect one in Settings › Hub › Machines");
-  expect(route("ios")).not.toBeNull();
-  expect(button("Connect Revyl", within(route("ios")))).toBeUndefined();
+  expect(route("android")).toBeNull();
 });
 
 it("shows each kind's route in effect once connected, with no line under it", async () => {
   state = { ...on, routes: { ios: "revyl_only", android: "ours_first" } };
   await render();
   expect(route("ios")?.querySelector("button[role='combobox']")?.textContent).toContain("Revyl only");
-  expect(route("android")?.querySelector("button[role='combobox']")?.textContent).toContain("Our machines first, then Revyl");
+  expect(route("android")?.querySelector("button[role='combobox']")?.textContent).toContain("Your machines first, then Revyl");
   expect(route("ios")?.textContent).not.toContain("needs a Revyl key");
 });
 
-it("shows nothing on a hub too old for Revyl", async () => {
+it("shows no Revyl on a hub too old for it, and each phone kind on your machines", async () => {
   state = { code: "not_found", message: "unknown tool revyl_get" };
   await render();
-  expect(host.textContent).toBe("");
+  expect(revyl()).toBeNull();
+  expect(host.querySelector("[data-revyl-route]")).toBeNull();
+  expect(host.querySelector("[data-where-kind='ios'] [data-where-value]")?.textContent).toBe("Your machines");
+  expect(host.querySelector("[role='alert']")).toBeNull();
 });

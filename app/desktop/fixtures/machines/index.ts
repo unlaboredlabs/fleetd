@@ -8,14 +8,14 @@
 // `machines-logged-out`, and Android's fix to run on it in `machines-warning`. `machines-one` is a hub just set up,
 // devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
 // out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own Revyl
-// in Machines' Screens part (W676): `machines-revyl-off` with no key yet (each kind on our machines, its Revyl choices
+// in Machines' Providers and What runs where (W676): `machines-revyl-off` with no key yet (each kind on our machines, its Revyl choices
 // off and why), `machines-revyl-on` connected (iOS simulators on Revyl only, Android ours first), and
 // `machines-revyl-failed` with a key Revyl refused. The team's own hosted sandbox accounts in Machines' Sandboxes
 // section (W688): `machines-sandboxes-off` with none connected, `machines-sandboxes-on` with E2B (self-hosted) and
 // Daytona connected, Daytona's key refused at its last test.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
-import { isObject, type JsonObject } from "../kit/json.ts";
+import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import steps from "../setup/steps.json" with { type: "json" };
 
 const RUN = "M0123456789abcdef0123456789abcdef";
@@ -185,8 +185,8 @@ function joinedWith(from: Fixture, name: string, note: string, mine: JsonObject[
 const machinesOf = (f: Fixture): JsonObject[] => (Array.isArray(f.snapshot?.["machines"]) ? f.snapshot["machines"].filter(isObject) : []);
 
 /** A hub just set up: devbox, which runs it, is its only machine. */
-function one(from: Fixture): Fixture {
-  const f = hub(from, "machines-one", "A hub just set up: devbox is its only machine, and well", () => []);
+function one(from: Fixture, name = "machines-one", note = "A hub just set up: devbox is its only machine, and well"): Fixture {
+  const f = hub(from, name, note, () => []);
   const { degradedReason: _, ...devbox } = machinesOf(f).find((m) => m["machineId"] === "devbox") ?? {};
   f.snapshot = { ...f.snapshot, machines: [{ ...devbox, status: "online", nodeVersion: "0.9.0" }] };
   f.update("machine_roles", (out) => (isObject(out) && Array.isArray(out["machines"]) ? { ...out, machines: out["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox") } : out));
@@ -194,8 +194,8 @@ function one(from: Fixture): Fixture {
 }
 
 /** Two machines that need someone beside devbox: buildbox's node gone for three days, and laptop with claude logged out. */
-function unwell(from: Fixture): Fixture {
-  const f = hub(from, "machines-unwell", "buildbox offline for three days and laptop with claude logged out, beside devbox", () => []);
+function unwell(from: Fixture, name = "machines-unwell", note = "buildbox offline for three days and laptop with claude logged out, beside devbox"): Fixture {
+  const f = hub(from, name, note, () => []);
   const gone = new Date(Date.parse(f.now) - 3 * 24 * 3600_000).toISOString();
   const machines = machinesOf(f).map((m) => (m["machineId"] === "buildbox" ? { ...m, status: "offline", lastSeenAt: gone, nodeVersion: "0.9.0" } : { ...m, nodeVersion: "0.9.0" }));
   f.snapshot = { ...f.snapshot, machines: [...machines, { ...laptop(f), status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" }] };
@@ -246,6 +246,28 @@ function revyl(from: Fixture, name: string, note: string, state: JsonObject): Fi
 const SANDBOX_OFF = (provider: string): JsonObject => ({ provider, connected: false, limit: 0 });
 const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("e2b"), SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] };
 
+const SANDBOXES_ON_PAUSED: JsonObject = {
+  ...SANDBOXES_OFF,
+  providers: [
+    { provider: "e2b", connected: true, limit: 20, domain: "e2b.acme.internal", check: { ok: true, at: "2026-10-19T08:55:00.000Z" } },
+    SANDBOX_OFF("boat"),
+    {
+      provider: "daytona",
+      connected: true,
+      limit: 5,
+      check: {
+        ok: false,
+        at: "2026-10-19T08:55:00.000Z",
+        reason: "invalid_key",
+        message: "devbox: Daytona refused the key (401).",
+        fix: "Make a new one in Daytona's dashboard and connect it again.",
+      },
+    },
+  ],
+};
+/** The same, on a hub whose machines place agents in them. */
+const SANDBOXES_ON: JsonObject = { ...SANDBOXES_ON_PAUSED, placing: true };
+
 /** The admin's hub with the team's sandbox accounts as `state` has them; Connect, the limit, Test and Disconnect answer. */
 function sandboxes(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
   const f = hub(from, name, note, () => []);
@@ -255,6 +277,63 @@ function sandboxes(from: Fixture, name: string, note: string, state: JsonObject)
   f.answer("sandbox_test", undefined, state);
   f.answer("sandbox_set", undefined, state);
   f.answer("sandbox_disconnect", undefined, SANDBOXES_OFF);
+  return f;
+}
+
+
+/** The hub's slot state with each machine's share: what it runs at once, what runs now, and where its agents run. */
+/** fleetd's everyday updates: the hub on 0.9.0 like its machines, Update automatically on. */
+function upToDate(f: Fixture): void {
+  if (f.state.phase === "live") f.state = { ...f.state, version: "0.9.0" };
+  f.answer("hub_update_status", {}, { settings: { auto: true, drainMinutes: 2 } });
+}
+
+function withShares(f: Fixture, perMachine: JsonObject[]): void {
+  upToDate(f);
+  // Kept as set here: the agents' sync otherwise remakes the slot state from the lanes, without machines.
+  f.agentsFromSlots = true;
+  const cap = perMachine.reduce((n, m) => n + (typeof m["cap"] === "number" ? m["cap"] : 0), 0);
+  const used = perMachine.reduce((n, m) => n + (typeof m["running"] === "number" ? m["running"] : 0), 0);
+  const put = (slots: JsonValue | undefined): JsonObject => ({ ...(isObject(slots) ? slots : { perProject: [], queued: 0 }), cap, used, perMachine });
+  if (f.snapshot) f.snapshot["slots"] = put(f.snapshot["slots"]);
+  for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = put(frame["slots"]);
+}
+
+const VM = "; each agent in a VM of its own";
+const MACOS = "VMs need Linux with KVM; this machine runs macOS, so its agents run as plain processes.";
+const APPARMOR = "AppArmor keeps this user from making the user namespace virtiofsd shares files from. The command lets unprivileged users make them again, now and after a reboot.";
+const APPARMOR_FIX = "echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-fleetd-userns.conf && sudo sysctl --system";
+const NO_VM = (why: string) => `; agents run as plain processes: ${why}`;
+
+/**
+ * The page as a team that has grown into it uses it: devbox well and busy, each agent in a VM; laptop with claude
+ * logged out, a Mac whose agents run as processes; buildbox offline for three days. E2B (self-hosted) and Daytona
+ * connected, Daytona's key refused; Revyl connected, iOS simulators on Revyl only. `places-vm-off` is devbox unable to
+ * run VMs, with the command that fixes it.
+ */
+function places(from: Fixture, name: string, note: string, devboxWhy: string, devboxSandbox: JsonObject): Fixture {
+  const f = unwell(from, name, note);
+  withShares(f, [
+    { machineId: "devbox", cap: 22, auto: 22, running: 8, why: `memory 60 GB, about 2 GB an agent${devboxWhy}`, sandbox: devboxSandbox },
+    { machineId: "laptop", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent${NO_VM(MACOS)}`, sandbox: { kind: "process", why: MACOS, expected: true } },
+  ]);
+  f.answer("sandbox_get", undefined, SANDBOXES_ON);
+  f.answer("revyl_get", undefined, { ...REVYL_OFF, connected: true, check: { ok: true, at: "2026-10-19T08:55:00.000Z" }, routes: { ios: "revyl_only", android: "ours_first" } });
+  f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
+  return f;
+}
+
+/** A hub just set up, as one machine and nothing connected: devbox alone, each agent in a VM. */
+function onePlace(from: Fixture): Fixture {
+  const f = one(from, "machines-places-one", "devbox alone and well, each agent in a VM; no sandbox provider or Revyl connected yet");
+  withShares(f, [{ machineId: "devbox", cap: 22, auto: 22, running: 3, why: `memory 60 GB, about 2 GB an agent${VM}`, sandbox: { kind: "microvm" } }]);
+  // The live feed as the snapshot has it: devbox alone, and well.
+  for (const frame of f.live) {
+    if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox").map((m) => ({ ...(m as JsonObject), status: "online", running: 3 }));
+  }
+  f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true });
+  f.answer("revyl_get", undefined, REVYL_OFF);
+  f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
   return f;
 }
 
@@ -280,26 +359,17 @@ export default defineGroup({
       routes: { ios: "ours_first", android: "ours_first" },
     }),
     sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
-    sandboxes(base("typical"), "machines-sandboxes-on", "E2B (self-hosted) and Daytona connected, in the order agents go to them; Daytona's key refused at its last test", {
-      ...SANDBOXES_OFF,
-      providers: [
-        { provider: "e2b", connected: true, limit: 20, domain: "e2b.acme.internal", check: { ok: true, at: "2026-10-19T08:55:00.000Z" } },
-        SANDBOX_OFF("boat"),
-        {
-          provider: "daytona",
-          connected: true,
-          limit: 5,
-          check: {
-            ok: false,
-            at: "2026-10-19T08:55:00.000Z",
-            reason: "invalid_key",
-            message: "devbox: Daytona refused the key (401).",
-            fix: "Make a new one in Daytona's dashboard and connect it again.",
-          },
-        },
-      ],
-    }),
+    sandboxes(base("typical"), "machines-sandboxes-on", "E2B (self-hosted) and Daytona connected, in the order agents go to them; Daytona's key refused at its last test", SANDBOXES_ON_PAUSED),
     unwell(base("typical")),
+    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; E2B and Daytona (refused) connected, Revyl connected", VM, { kind: "microvm" }),
+    places(
+      base("typical"),
+      "machines-places-vm-off",
+      "As places, devbox unable to run VMs: AppArmor, and the command that fixes it",
+      NO_VM(`${APPARMOR} Fix: ${APPARMOR_FIX}`),
+      { kind: "process", why: APPARMOR, fix: APPARMOR_FIX },
+    ),
+    onePlace(base("empty")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),
     ]),

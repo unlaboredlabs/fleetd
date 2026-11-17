@@ -1,19 +1,19 @@
-// The team's own Revyl account, in Hub › Machines › Screens (admins only, as the whole Hub group): one row to connect
-// its API key, test it and disconnect it, then where each phone kind's agent screens run. The key goes to main, which
-// seals it to the hub's own key (main/secret.ts) and calls revyl_connect: it never reaches the hub in the clear and is
-// never shown again. Connecting checks it at once, and the row says what the check found. Each kind's choice is
-// revyl_route_set; before a key is connected the Revyl choices stay listed but off, and the row says why, with
-// Connect right there. A hub too old for revyl_get shows none of it.
+// The team's own Revyl account in Hub › Machines (admins only, as the whole Hub group): its row of Providers
+// (Provider.tsx) to connect its API key, test it and disconnect it, and each phone kind's row of What runs where. The
+// key goes to main, which seals it to the hub's own key (main/secret.ts) and calls revyl_connect: it never reaches the
+// hub in the clear and is never shown again. Connecting checks it at once, and the row says what the check found. A
+// kind's route is revyl_route_set, a choice while Revyl is connected (or its route still names Revyl); a member is
+// told whom to ask. A hub too old for revyl_get shows none of it.
 import { useCallback, useState } from "react";
 import type { RevylKind, RevylRoute, RevylState } from "../../../shared/contracts";
-import { lacksTool } from "../../src/data/errors";
-import { CallError } from "../../src/data/queries";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, cx, Input, Select, Text } from "../../ui";
+import { useDataLayer } from "../../src/data/react";
+import { Select } from "../../ui";
 import { useHubRole } from "../admin/role";
-import { errorText, useHubCall, useLive } from "./hub";
-import { GroupNote, SettingsRow } from "./parts";
-import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine } from "./revylModel";
+import { errorText, useHubCall } from "./hub";
+import { SettingsRow } from "./parts";
+import { ConnectKey, ProviderRow, useProviderRun } from "./Provider";
+import { canWords, specOf } from "../../../shared/providers";
+import { revylLine, routeChoices, routeOffLine } from "./revylModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -29,147 +29,52 @@ function useReread() {
   return useCallback(() => layer.queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "call" && q.queryKey[1] === "revyl_get" }), [layer]);
 }
 
-/** The Revyl row and the two kinds' choices, as rows of the Screens section; nothing on a hub without them. */
-export function RevylScreens() {
-  const live = useLive();
-  const read = useToolQuery("revyl_get", noInput, { enabled: live });
+/** The team's own Revyl, as Providers.tsx lists every provider. */
+export function RevylRow({ state }: { state: RevylState }) {
   const [connecting, setConnecting] = useState(false);
-  if (read.error instanceof CallError && lacksTool(read.error.error)) return null;
-  if (read.error) return <GroupNote tone="danger">{`Couldn't read Revyl's settings: ${errorText(read.error)}`}</GroupNote>;
-  if (read.data === undefined) return null;
-  const state = read.data;
-  return (
-    <>
-      <RevylRow state={state} connecting={connecting} setConnecting={setConnecting} />
-      {REVYL_KINDS.map(({ kind, label }) => (
-        <RouteRow key={kind} kind={kind} label={label} state={state} onConnect={() => setConnecting(true)} />
-      ))}
-    </>
-  );
-}
-
-function RevylRow({ state, connecting, setConnecting }: { state: RevylState; connecting: boolean; setConnecting: (on: boolean) => void }) {
   const call = useHubCall();
   const reread = useReread();
-  const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
-  const [checked, setChecked] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const run = (what: "test" | "disconnect") => {
-    setBusy(what);
-    setProblem(null);
-    setChecked(false);
-    void (what === "test" ? call("revyl_test", noInput, { timeoutMs: TEST_TIMEOUT_MS }) : call("revyl_disconnect", noInput))
-      .then(
-        () => setChecked(what === "test"),
-        (e: unknown) => setProblem(`${what === "test" ? "Not tested" : "Not disconnected"}: ${errorText(e)}`),
-      )
-      .then(reread)
-      .finally(() => setBusy(null));
-  };
+  const { hub } = useDataLayer();
+  const { busy, checked, problem, run, setChecked } = useProviderRun(reread);
   const line = problem === null ? revylLine(state, checked) : { text: problem, tone: "danger" as const };
   const fix = line?.tone === "danger" && "fix" in line ? line.fix : undefined;
-  const control = state.connected ? (
-    <div className={s.inline}>
-      <Button size="sm" disabled={busy !== null} onClick={() => run("test")}>
-        {busy === "test" ? "Testing…" : "Test"}
-      </Button>
-      <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run("disconnect")}>
-        {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-      </Button>
-    </div>
-  ) : connecting ? undefined : (
-    <Button size="sm" onClick={() => setConnecting(true)}>
-      Connect…
-    </Button>
-  );
   return (
-    <SettingsRow
+    <ProviderRow
+      name="Revyl"
+      can={canWords(specOf("revyl"))}
       reveal="hub.revyl"
-      title="Revyl"
       hint={HINT}
-      line={line === null ? null : <span role={line.tone === "danger" ? "alert" : "status"}>{fix === undefined ? line.text : `${line.text} ${fix.charAt(0).toUpperCase()}${fix.slice(1)}`}</span>}
-      lineTone={line?.tone}
-      control={control}
-      data={{ "data-revyl": state.connected ? "connected" : "off" }}
-    >
-      {connecting && !state.connected ? (
+      connected={state.connected}
+      mark={!state.connected ? "off" : state.check !== undefined && !state.check.ok ? "failed" : "ready"}
+      line={
+        line === null
+          ? null
+          : { node: <span role={line.tone === "danger" ? "alert" : "status"}>{fix === undefined ? line.text : `${line.text} ${fix.charAt(0).toUpperCase()}${fix.slice(1)}`}</span>, tone: line.tone }
+      }
+      busy={busy}
+      onTest={() => run("test", () => call("revyl_test", noInput, { timeoutMs: TEST_TIMEOUT_MS }), "Not tested")}
+      onDisconnect={() => run("disconnect", () => call("revyl_disconnect", noInput), "Not disconnected")}
+      connecting={connecting}
+      onConnect={() => setConnecting(true)}
+      form={
         <ConnectKey
-          boxPubKey={state.boxPubKey}
+          name="Revyl"
+          seal={(key) => window.fleetd.secret.revylKey(hub, { boxPubKey: state.boxPubKey, key })}
+          reread={reread}
           onCancel={() => setConnecting(false)}
           onDone={() => {
             setConnecting(false);
             setChecked(true);
           }}
         />
-      ) : null}
-    </SettingsRow>
+      }
+      data={{ "data-revyl": state.connected ? "connected" : "off" }}
+    />
   );
 }
 
-/** The key's one field, its characters shown as dots, with Connect and Cancel. What was typed goes to main only. */
-function ConnectKey(props: { boxPubKey: string; onCancel: () => void; onDone: () => void }) {
-  const { hub } = useDataLayer();
-  const reread = useReread();
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const typed = keyOf(key);
-  const submit = async () => {
-    if (typed === null || busy) return;
-    setBusy(true);
-    setError(null);
-    const out = await window.fleetd.secret.revylKey(hub, { boxPubKey: props.boxPubKey, key: typed });
-    if (!out.ok) {
-      setBusy(false);
-      setError(out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}`);
-      return;
-    }
-    setKey("");
-    await reread();
-    setBusy(false);
-    props.onDone();
-  };
-  return (
-    <form
-      className={s.inline}
-      aria-label="Connect Revyl"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <Input
-        mono
-        aria-label="Revyl API key"
-        className={cx(s.secretValue, s.keyField)}
-        data-secret=""
-        value={key}
-        placeholder="Revyl API key"
-        autoComplete="off"
-        spellCheck={false}
-        autoFocus
-        disabled={busy}
-        onChange={(e) => setKey(e.target.value)}
-      />
-      <Button type="submit" size="sm" variant="primary" disabled={typed === null || busy}>
-        {busy ? "Connecting…" : "Connect"}
-      </Button>
-      <Button size="sm" variant="ghost" disabled={busy} onClick={props.onCancel}>
-        Cancel
-      </Button>
-      {error === null ? null : (
-        <span role="alert" className={s.keyError}>
-          <Text size="sm" tone="danger">
-            {error}
-          </Text>
-        </span>
-      )}
-    </form>
-  );
-}
-
-/** Where one kind's agent screens run: our machines, Revyl, or ours first. Revyl's choices say why they're off. */
-function RouteRow({ kind, label, state, onConnect }: { kind: RevylKind; label: string; state: RevylState; onConnect: () => void }) {
+/** Where one phone kind's agent screens run, a row of What runs where: your machines, Revyl, or yours first. */
+export function RouteRow({ kind, label, state }: { kind: RevylKind; label: string; state: RevylState }) {
   const call = useHubCall();
   const reread = useReread();
   // The page is the Hub group's, so an admin's until the hub says otherwise: no member's words while it is asked.
@@ -190,25 +95,16 @@ function RouteRow({ kind, label, state, onConnect }: { kind: RevylKind; label: s
       .then(reread)
       .finally(() => setBusy(false));
   };
-  const line =
-    problem !== null ? (
-      <span role="alert">{problem}</span>
-    ) : off === null ? null : (
-      <>
-        {`${off} `}
-        {admin ? (
-          <Button variant="link" size="sm" onClick={onConnect}>
-            Connect Revyl
-          </Button>
-        ) : null}
-      </>
-    );
+  // An admin has Connect on Revyl's own row, just above, and the Revyl choices say they need a key: nothing more here.
+  // Anyone else is told whom to ask.
+  const line = problem !== null ? <span role="alert">{problem}</span> : admin ? null : off;
   return (
     <SettingsRow
+      mark="none"
       title={label}
       line={line}
       lineTone={problem === null ? "quiet" : "danger"}
-      data={{ "data-revyl-route": kind }}
+      data={{ "data-revyl-route": kind, "data-where-kind": kind }}
       control={
         <Select
           aria-label={`Where ${label} screens run`}
