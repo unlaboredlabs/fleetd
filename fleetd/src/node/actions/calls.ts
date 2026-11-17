@@ -16,7 +16,6 @@ import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
 import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, tryAccount } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
-import { readImage } from "./image.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
 import { probe } from "./mcp_probe.ts";
@@ -24,6 +23,7 @@ import { applyToken, importedFields, importKind, OnePassword, readToken, TOKEN_E
 import { CallRefusal, invalid, notFound } from "./refusal.ts";
 import { forgetSignins } from "./signins.ts";
 import { repoSkills } from "./skills.ts";
+import { hostDir, placeAt } from "../place/index.ts";
 
 /** What these calls need of the node: its home and box key, its claude, and the session service's lookups. */
 export type CallContext = {
@@ -266,7 +266,12 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       // The session's own working directory, as this node started it: never one the call names.
       const root = ctx.sessionCwd(call.sessionId);
       if (!root) throw notFound(`no session ${call.sessionId} on this machine`);
-      const image = asInvalid(() => readImage(root, call.path, call.offset ?? 0, !!call.file));
+      let image;
+      try {
+        image = await placeAt(hostDir(ctx.home, call.sessionId)).read(root, call.path, call.offset ?? 0, !!call.file);
+      } catch (error) {
+        throw invalid((error as Error).message);
+      }
       return { kind: "image", name: image.name, mime: image.mime, bytes: image.bytes, dataB64: image.piece.toString("base64") };
     }
   }

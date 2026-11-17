@@ -23,7 +23,8 @@ import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
-import { endLeft, HostLink, LaunchError, launch as launchHost, marker, readRegistration, shutdown, startOf, stop as stopHost, sweep, type SessionCommand } from "../runner/host.ts";
+import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
+import { hostDir, pick, placeAt, sweep } from "../place/index.ts";
 import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
 import { buildJobsHere } from "../load/index.ts";
@@ -387,9 +388,10 @@ export class SessionService {
       const id = row.summary.sessionId;
       if (row.local.pid) {
         const dir = join(hosts, id);
+        const place = placeAt(dir);
         try {
-          const link = await HostLink.connect(dir);
-          if (link.pid === row.local.pid && existsSync(row.local.cwd)) {
+          const link = await place.adopt(dir);
+          if (link && link.pid === row.local.pid && existsSync(row.local.cwd)) {
             service.#adopt(row, link);
             adopted.add(id);
             const host = readRegistration(dir)?.hostPid;
@@ -397,11 +399,9 @@ export class SessionService {
             console.log(`${nowIso()} INFO re-adopted a session that ran on through the restart {"sessionId":"${id}","pid":${link.pid}}`);
             continue;
           }
-          await link.detach();
-          await stopHost(dir);
-        } catch {
-          if (existsSync(dir)) await stopHost(dir);
-        }
+          await link?.detach();
+        } catch {}
+        if (existsSync(dir)) await place.stop(dir);
       }
       if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, INTERRUPT_GRACE_MS);
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
@@ -869,7 +869,11 @@ export class SessionService {
     const ids = this.store.sessions().filter((r) => r.summary.projectId === projectId);
     for (const row of ids) if (this.#live.has(row.summary.sessionId)) await this.#stop(row.summary.sessionId, false, "the project was removed");
     // Its agents' tasks end with it, and what their sessions left running too.
-    for (const row of ids) if (row.local.role === "worker") await endLeft(join(this.home, "hosts", row.summary.sessionId));
+    for (const row of ids) {
+      if (row.local.role !== "worker") continue;
+      const dir = hostDir(this.home, row.summary.sessionId);
+      await placeAt(dir).end(dir);
+    }
     if (removeWorktrees && project) {
       try {
         await worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
@@ -1242,7 +1246,7 @@ export class SessionService {
     const mark = marker(id);
     let link: HostLink;
     try {
-      link = await launchHost({
+      link = await pick().start({
         fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
@@ -1382,7 +1386,7 @@ export class SessionService {
       settings,
       pluginDirs,
       env,
-      hostDir: join(this.home, "hosts", id),
+      hostDir: hostDir(this.home, id),
       isolated: row.local.cwd === join(this.home, "isolated"),
     };
   }
@@ -1870,6 +1874,7 @@ export class SessionService {
       );
     };
     const outcome = await setup.run(
+      pick(),
       plan,
       row.local.cwd,
       env,
@@ -2057,7 +2062,8 @@ export class SessionService {
     }
     // A task's stop is its end: what its session's tree left running in any of its turns goes now.
     if (row.local.role === "worker") {
-      const ended = await endLeft(join(this.home, "hosts", id));
+      const dir = hostDir(this.home, id);
+      const ended = await placeAt(dir).end(dir);
       if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
     }
     // A session's scratch goes with its worktree, or with its process when it has none.
@@ -2274,6 +2280,9 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
-    for (const id of [...this.#live.keys()]) await stopHost(join(this.home, "hosts", id));
+    for (const id of [...this.#live.keys()]) {
+      const dir = hostDir(this.home, id);
+      await placeAt(dir).stop(dir);
+    }
   }
 }
