@@ -44,7 +44,7 @@ export function checkScope(scope: unknown): McpScope {
   if (s?.kind === "project" && typeof s.machineId === "string" && typeof s.projectId === "string") {
     return { kind: "project", machineId: s.machineId, projectId: s.projectId };
   }
-  throw new ToolError("invalid", "scope is { kind: global } or { kind: bot, machineId, projectId }.");
+  throw new ToolError("invalid", "scope is { kind: global } or { kind: project, machineId, projectId }.");
 }
 
 export function notFound(scope: McpScope, name: string): ToolError {

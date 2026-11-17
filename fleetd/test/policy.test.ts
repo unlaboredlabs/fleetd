@@ -1,6 +1,7 @@
 // Ports crates/fleetd/src/hub/policy.rs's tests: the repo policy file, its checks, and its 60 s cache.
 import { expect, test } from "bun:test";
-import { parsePolicy, Policies, ReadFailure, toolRules } from "../src/hub/policy/index.ts";
+import { nodeHasNoProject, parsePolicy, Policies, ReadFailure, toolRules } from "../src/hub/policy/index.ts";
+import { noProject } from "../src/node/sessions/index.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { found } from "../src/hub/executor/sessions.ts";
@@ -81,4 +82,12 @@ test("the hub's start fills the launch hook with the policy file's rules", async
     hub.shutdown.abort();
     found.toolRules = saved;
   }
+});
+
+test("the hub knows a node's no-such-project refusal by its exact words, as this node and older ones send it", () => {
+  expect(nodeHasNoProject(noProject("p1"), "p1")).toBe(true);
+  expect(nodeHasNoProject("no project p1 on this machine", "p1")).toBe(true);
+  expect(nodeHasNoProject(noProject("p1"), "p2")).toBe(false);
+  expect(nodeHasNoProject("no bot p1 on this machine", "p1")).toBe(false);
+  expect(nodeHasNoProject(undefined, "p1")).toBe(false);
 });

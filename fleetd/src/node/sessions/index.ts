@@ -135,7 +135,8 @@ const notFound = (m: string) => new Refusal("not_found", m);
 const notPorted = (op: string) =>
   new Refusal("runner_unavailable", `${op} is not ported to the Bun node yet`, "run this machine's node on the Rust fleetd for it");
 
-export const noProject = (projectId: string) => `no bot ${projectId} on this machine`;
+/** The hub reads this refusal word for word (hub/policy `nodeHasNoProject`): never reword it. */
+export const noProject = (projectId: string) => `no project ${projectId} on this machine`;
 /** An id that names a file: nothing but letters, digits, `-` and `_`. */
 export const pathSafe = (id: string) => /^[A-Za-z0-9_-]+$/.test(id);
 const permissionItemId = (requestId: string) => `perm-${requestId}`;

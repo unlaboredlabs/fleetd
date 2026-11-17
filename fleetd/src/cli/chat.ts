@@ -276,7 +276,7 @@ async function projectRef(socket: Socket, given: string): Promise<any> {
     why =
       projects.length === 0
         ? `no bot ${given}: the hub has none yet`
-        : (error as Error).message.replace("no order or bot", "no bot");
+        : (error as Error).message.replace(/no order or (project|bot)/, "no bot");
   }
   if (named === undefined) throw new Refused(why);
   const r = { machineId: named[0], projectId: named[1] };

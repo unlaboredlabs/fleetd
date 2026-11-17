@@ -26,6 +26,9 @@ export class ReadFailure extends Error {
 /** Where a project's policy file comes from: the hub's asks the machine's node; tests use a fake. */
 export type PolicySource = (r: ProjectRef) => Promise<string | undefined>;
 
+/** Whether a node's refusal says it has no such project (node/sessions `noProject`): machine-read, so its words never change. */
+export const nodeHasNoProject = (message: unknown, projectId: string): boolean => message === `no project ${projectId} on this machine`;
+
 /** Reads the file from the project's workspace through the machine's node (executor `read_project_file`). */
 export function nodePolicySource(hub: Hub): PolicySource {
   return async (r) => {
@@ -37,7 +40,7 @@ export function nodePolicySource(hub: Hub): PolicySource {
       if (out.kind !== undefined && out.kind !== "file") throw ExecutorError.failed(r.machineId, "read", "the node sent no file");
       return out.contents ?? undefined;
     } catch (e) {
-      const noProject = e instanceof ExecutorError && e.extra.nodeMessage === `no project ${r.projectId} on this machine`;
+      const noProject = e instanceof ExecutorError && nodeHasNoProject(e.extra.nodeMessage, r.projectId);
       const error =
         e instanceof ExecutorError && e.kind === "not_connected"
           ? new ToolError("machine_offline", `Machine ${r.machineId} is offline.`, `Start the node on ${r.machineId} or check its network, then retry.`)
