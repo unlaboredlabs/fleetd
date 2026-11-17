@@ -162,6 +162,8 @@ export type SessionLaunch = {
   claudeAccount?: ClaudeAccount;
   onepassword?: PersonId;
   isolated?: boolean;
+  /** Where the hub's slot board placed it: "local", or the hosted provider whose box it runs in (node/place). */
+  place?: string;
 };
 
 /** A person's or policy's answer to a tool permission prompt. */
@@ -200,6 +202,8 @@ export type SessionCall =
       steer?: SteerTag;
       mcp?: McpSessionConfig;
       skills?: SkillBundle[];
+      /** Where the hub's slot board placed the run, for a session whose claude isn't running (SessionLaunch.place). */
+      place?: string;
     }
   | { op: "withdraw"; sessionId: ThreadId; runId: string }
   | { op: "interrupt"; sessionId: ThreadId; runId?: string; reason?: string }

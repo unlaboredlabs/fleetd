@@ -10,6 +10,10 @@
 //   forwarded TCP ports, and opens a channel for each connection there. The node decides what a channel is and whose
 //   session it acts as; nothing here names one.
 //
+// A hosted box has no unix socket the node reaches: there the guest listens on `--port` for one WebSocket at a time,
+// through the provider's private port, and takes it only with fleetd's own per-box secret in SECRET_HEADER (the
+// value of FLEETD_BOX_SECRET in its environment, given at its start, never at the box's create).
+//
 // - runs a command where the agent runs when the node asks (a worktree's setup commands), confined to its cwd and
 //   killed with its process group at its timeout or the node's `cancel`.
 //
@@ -19,16 +23,21 @@
 //
 // Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port`,
 // `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`, `{"id":n,"op":"run","run","argv","cwd","env",
-// "timeoutSec","scrub"}` and `{"id":n,"op":"cancel","run"}`; guest → node `{"id":n,"ok":{…}}` or
+// "timeoutSec","scrub"}` and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
+// `{"id":n,"op":"write","path","data":base64,"append"?,"mode"?}` and `{"id":n,"op":"read","path","offset","max"}`
+// (answers `{"data":base64,"size"}`); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // and `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines.
 import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
 import { createServer, connect, type Server, type Socket } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Duplex } from "node:stream";
 import { runConfined, type RunOutcome } from "../cmd/index.ts";
+import { timingSafeEqual } from "node:crypto";
 import { selfArgv } from "../util.ts";
+import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
 
@@ -43,6 +52,10 @@ const CONFIRM_MS = 200;
 export const IDLE_MS = 10 * 60_000;
 /** How long a once guest outlives its session host, for the node to take the host's last lines. */
 const AFTER_HOST_MS = 2_000;
+/** The most bytes one `read` answers: a control message's frame takes 1 MiB, base64 included. */
+export const READ_CHUNK = 512 * 1024;
+/** The variable holding the per-box secret a hosted guest takes its link with. */
+export const SECRET_ENV = "FLEETD_BOX_SECRET";
 
 export type HostInfo = { protocol: number; refused: Registration["refused"] };
 
@@ -69,6 +82,7 @@ export class Guest {
   #runs = new Map<string, AbortController>();
   #busyAt = Date.now();
   #idle: ReturnType<typeof setInterval> | undefined;
+  #ws: { stop(close?: boolean): void } | undefined;
 
   constructor(readonly o: Options) {
     const done = o.done;
@@ -94,15 +108,72 @@ export class Guest {
     });
   }
 
+  /** Listens for the node's WebSocket on `port` (all addresses: the provider's proxy reaches it from outside), taking
+   * one only with `secret` in SECRET_HEADER. */
+  serveWs(port: number, secret: string): void {
+    const want = Buffer.from(secret);
+    const ends = new WeakMap<object, Duplex>();
+    this.#ws = Bun.serve<undefined, never>({
+      port,
+      hostname: "0.0.0.0",
+      fetch: (req, server) => {
+        const got = Buffer.from(req.headers.get(SECRET_HEADER) ?? "");
+        if (want.length === 0 || got.length !== want.length || !timingSafeEqual(got, want)) return new Response("no", { status: 403 });
+        return server.upgrade(req) ? undefined : new Response("a WebSocket only", { status: 426 });
+      },
+      websocket: {
+        maxPayloadLength: 4 << 20,
+        idleTimeout: 0,
+        sendPings: true,
+        open: (ws) => {
+          let waiting: (() => void) | undefined;
+          const end: Duplex = new Duplex({
+            read() {},
+            write(chunk: Buffer, _encoding, callback) {
+              // -1: queued past Bun's buffer; it says drain when it can take more.
+              if (ws.send(chunk) === -1) waiting = callback;
+              else callback();
+            },
+            destroy(error, callback) {
+              try {
+                ws.close();
+              } catch {}
+              callback(error);
+            },
+          });
+          (end as Duplex & { drained?: () => void }).drained = () => {
+            const w = waiting;
+            waiting = undefined;
+            w?.();
+          };
+          ends.set(ws, end);
+          this.#link(end);
+        },
+        message: (ws, data) => {
+          const end = ends.get(ws);
+          end?.push(typeof data === "string" ? Buffer.from(data) : Buffer.from(data));
+        },
+        drain: (ws) => (ends.get(ws) as (Duplex & { drained?: () => void }) | undefined)?.drained?.(),
+        close: (ws) => {
+          const end = ends.get(ws);
+          ends.delete(ws);
+          end?.push(null);
+          end?.destroy();
+        },
+      },
+    });
+  }
+
   stop(): void {
     clearInterval(this.#idle);
     for (const r of this.#runs.values()) r.abort();
+    this.#ws?.stop(true);
     this.#server?.close();
     for (const l of this.#listeners.values()) l.close();
     this.#mux?.close("the guest stopped");
   }
 
-  #link(socket: Socket): void {
+  #link(socket: Duplex): void {
     this.#mux?.close("the node dialled again");
     const mux: Mux = new Mux(socket, {
       control: (m) => void this.#control(mux, m),
@@ -128,6 +199,8 @@ export class Guest {
       if (m.op === "listen") answer = { ok: await this.#listen(m) };
       else if (m.op === "start") answer = { ok: await this.#start(m) };
       else if (m.op === "run") answer = { ok: await this.#run(m) };
+      else if (m.op === "write") answer = { ok: await write(m) };
+      else if (m.op === "read") answer = { ok: await read(m) };
       else if (m.op === "cancel") answer = { ok: this.#runs.get(String(m.run))?.abort() ?? null };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
@@ -349,6 +422,34 @@ class HostPipe {
   }
 }
 
+/** `write`: a file of the box, its dirs made; `append` adds to it (a file sent in pieces). */
+async function write(m: Record<string, unknown>): Promise<number> {
+  if (typeof m.path !== "string" || !m.path.startsWith("/") || typeof m.data !== "string") throw new Error("write needs an absolute path and data");
+  const bytes = Buffer.from(m.data, "base64");
+  await mkdir(dirname(m.path), { recursive: true });
+  const mode = Number.isInteger(m.mode) ? (m.mode as number) : 0o600;
+  if (m.append) await appendFile(m.path, bytes);
+  else await writeFile(m.path, bytes, { mode });
+  await chmod(m.path, mode);
+  return bytes.length;
+}
+
+/** `read`: up to READ_CHUNK bytes of a file of the box from `offset`, and its size. */
+async function read(m: Record<string, unknown>): Promise<{ data: string; size: number }> {
+  if (typeof m.path !== "string") throw new Error("read needs a path");
+  const offset = Number.isInteger(m.offset) && (m.offset as number) > 0 ? (m.offset as number) : 0;
+  const max = Math.min(Number.isInteger(m.max) && (m.max as number) > 0 ? (m.max as number) : READ_CHUNK, READ_CHUNK);
+  const f = await open(m.path, "r");
+  try {
+    const size = (await f.stat()).size;
+    const buf = Buffer.alloc(Math.max(0, Math.min(max, size - offset)));
+    const { bytesRead } = buf.length ? await f.read(buf, 0, buf.length, offset) : { bytesRead: 0 };
+    return { data: buf.subarray(0, bytesRead).toString("base64"), size };
+  } finally {
+    await f.close();
+  }
+}
+
 /** A connection to the session host in `dir`, through an open fd of the dir when its own path is too long for a socket
  * address (as ../runner/host.ts dials). */
 function dialHost(dir: string): Socket {
@@ -368,7 +469,7 @@ function registration(dir: string): Registration | undefined {
   }
 }
 
-const USAGE = `usage: fleetd ${GUEST_COMMAND} --listen <unix path> --dir <dir>`;
+const USAGE = `usage: fleetd ${GUEST_COMMAND} (--listen <unix path> | --port <n>) --dir <dir>`;
 
 export async function main(argv: string[]): Promise<number> {
   const flag = (name: string) => {
@@ -376,19 +477,31 @@ export async function main(argv: string[]): Promise<number> {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   const listen = flag("--listen");
+  const port = Number(flag("--port"));
   const dir = flag("--dir");
-  if (!listen || !dir) {
+  if ((!listen && !(port > 0)) || !dir) {
     process.stderr.write(`${USAGE}\n`);
     return 2;
   }
   let finished!: () => void;
   const over = new Promise<void>((r) => (finished = r));
   const once = process.env.FLEETD_GUEST_ONCE === "1";
-  const guest = new Guest({ listen, dir, loopback: flag("--loopback") ?? "127.0.0.1", ...(once ? { done: () => finished() } : {}) });
+  const guest = new Guest({ listen: listen ?? "", dir, loopback: flag("--loopback") ?? "127.0.0.1", ...(once ? { done: () => finished() } : {}) });
   try {
-    await guest.serve();
+    if (listen) await guest.serve();
+    else {
+      // The secret goes no further: not into the session host's environment, nor any command's.
+      const secret = process.env[SECRET_ENV] ?? "";
+      delete process.env[SECRET_ENV];
+      if (secret.length < 16) {
+        warn(`${SECRET_ENV} is missing: no node could take the link`);
+        return 2;
+      }
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      guest.serveWs(port, secret);
+    }
   } catch (error) {
-    warn(`can't listen at ${listen}: ${(error as Error).message}`);
+    warn(`can't listen at ${listen ?? `port ${port}`}: ${(error as Error).message}`);
     return 1;
   }
   process.once("SIGTERM", finished);

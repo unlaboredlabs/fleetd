@@ -1,0 +1,320 @@
+// The node's hosted boxes: the team's provider keys as the hub sealed them to this node, each provider's client, its
+// template (built in the team's own account by itself on first use), and a box's whole life: created from the
+// template with labels and a lifetime and no secret, its bootstrap started with the box's own secret, fleetd handed
+// to it, and the guest's link opened (../box.ts). One box per agent; the node that made it destroys it, and reaps any
+// box of its own it no longer knows (`reap`).
+//
+// The keys never reach a box or a session: they stay in this process, and on disk only as the hub sealed them to this
+// node's box key (`<home>/sandbox/keys/<provider>`), so a node that restarts re-adopts its boxes before its hub link
+// is up.
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { Duplex } from "node:stream";
+import { randomBytes } from "node:crypto";
+import { GUEST_PORT, provider as makeProvider, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Size } from "../../../sandbox/providers/index.ts";
+import { hosted as hostedRecipe, templateName } from "../../../sandbox/providers/recipe.ts";
+import base from "../../../sandbox/image/Dockerfile" with { type: "text" };
+import { TESTED } from "../../runner/claude.ts";
+import { selfArgv, nowIso } from "../../util.ts";
+import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
+import { VERSION } from "../../../shared/version.ts";
+import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
+import { Box } from "../box.ts";
+import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
+
+/** Labels on every box: the machine that made it, and the session it runs. */
+export const MACHINE_LABEL = "fleetd-machine";
+export const SESSION_LABEL = "fleetd-session";
+/** How long a box lives unless extended; a live box is extended every EXTEND_MS. */
+export const LIFETIME_MS = 6 * 3600_000;
+export const EXTEND_MS = 3600_000;
+/** How long a provider that failed to make a box is left out of placement. */
+export const DOWN_MS = 10 * 60_000;
+/** How long a box's bootstrap or guest may take to answer its first dial. */
+const UP_MS = 90_000;
+
+type Opener = { open(sealed: Uint8Array): Uint8Array | null };
+
+/** What the node gives every box's link: how node.sock calls are answered. */
+export type Wiring = { lead: LeadSocketHooks };
+
+/** A box as the node keeps it: in `<hostDir>/place.json` (the hosted place). */
+export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[] };
+
+export class Boxes {
+  #auth = new Map<ProviderId, ProviderAuth>();
+  #clients = new Map<ProviderId, Provider>();
+  #templates = new Map<ProviderId, Promise<string>>();
+  #wiring: Wiring | undefined;
+  #reaper: ReturnType<typeof setInterval> | undefined;
+  /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
+  #down = new Map<ProviderId, { until: number; why: string }>();
+  /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
+  #making = new Set<string>();
+
+  constructor(
+    readonly home: string,
+    readonly machineId: string,
+    private readonly opener: Opener,
+    /** Tests: another provider than the real clients, and another fleetd source. */
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex> } = {},
+  ) {
+    for (const p of PROVIDERS) {
+      const sealed = this.#keyFile(p);
+      if (existsSync(sealed)) this.#take(p, readFileSync(sealed));
+    }
+  }
+
+  wire(w: Wiring): void {
+    this.#wiring = w;
+  }
+
+  #keyFile = (p: ProviderId) => join(this.home, "sandbox", "keys", p);
+
+  /** Opens a key the hub sealed to this node: `{"provider","key","domain"?}`. */
+  #take(p: ProviderId, sealed: Uint8Array): boolean {
+    const plain = this.opener.open(new Uint8Array(sealed));
+    if (!plain) return false;
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(plain)) as { provider?: unknown; key?: unknown; domain?: unknown };
+      if (parsed.provider !== p || typeof parsed.key !== "string" || !parsed.key) return false;
+      this.#auth.set(p, { key: parsed.key, ...(typeof parsed.domain === "string" && parsed.domain ? { domain: parsed.domain } : {}) });
+      this.#clients.delete(p);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      plain.fill(0);
+    }
+  }
+
+  /** The team's keys as the hub sent them last (sealed to this node, base64), by provider: one not sent is forgotten. */
+  setKeys(sealed: Partial<Record<string, string>>): void {
+    mkdirSync(join(this.home, "sandbox", "keys"), { recursive: true, mode: 0o700 });
+    for (const p of PROVIDERS) {
+      const b64 = sealed[p];
+      const bytes = b64 ? new Uint8Array(Buffer.from(b64, "base64")) : undefined;
+      if (bytes && this.#take(p, bytes)) writeFileSync(this.#keyFile(p), bytes, { mode: 0o600 });
+      else if (!b64) {
+        this.#auth.delete(p);
+        this.#clients.delete(p);
+        this.#templates.delete(p);
+        rmSync(this.#keyFile(p), { force: true });
+      }
+    }
+  }
+
+  /** The providers this node holds a key for. */
+  connected(): ProviderId[] {
+    return PROVIDERS.filter((p) => this.#auth.has(p));
+  }
+
+  /** Those it can make boxes in now: not set aside after a failure (`setAside`). */
+  usable(now = Date.now()): ProviderId[] {
+    return this.connected().filter((p) => (this.#down.get(p)?.until ?? 0) <= now);
+  }
+
+  /** A provider that couldn't make a box is offered to the hub's placement no more for DOWN_MS: the agents it would
+   * take run here or wait in line, rather than fail on it again. */
+  setAside(p: ProviderId, why: string, now = Date.now()): void {
+    this.#down.set(p, { until: now + DOWN_MS, why });
+    console.warn(`${nowIso()} WARN a hosted provider is set aside for ${DOWN_MS / 60_000} minutes {"provider":"${p}","why":${JSON.stringify(why)}}`);
+  }
+
+  client(p: ProviderId): Provider {
+    const auth = this.#auth.get(p);
+    if (!auth) throw new ProviderError("invalid_key", `This machine holds no ${p} key: an admin connects one in Settings › Hub › Machines.`);
+    let c = this.#clients.get(p);
+    if (!c) {
+      c = (this.o.provider ?? makeProvider)(p, auth);
+      this.#clients.set(p, c);
+    }
+    return c;
+  }
+
+  /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's needed. */
+  template(p: ProviderId): Promise<string> {
+    const recipe = hostedRecipe(base, { claude: TESTED });
+    const name = templateName(recipe);
+    const file = join(this.home, "sandbox", `template-${p}.json`);
+    let kept: { name?: string; id?: string } = {};
+    try {
+      kept = JSON.parse(readFileSync(file, "utf8"));
+    } catch {}
+    if (kept.name === name && kept.id) return Promise.resolve(kept.id);
+    let building = this.#templates.get(p);
+    if (!building) {
+      console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
+      building = this.client(p)
+        .build(recipe, { name, onLog: () => {} })
+        .then((id) => {
+          mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
+          writeFileSync(file, JSON.stringify({ name, id }));
+          console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
+          return id;
+        });
+      building.catch(() => this.#templates.delete(p));
+      this.#templates.set(p, building);
+    }
+    return building;
+  }
+
+  /** Where this node's fleetd comes from for a box: its own binary, and its release asset where it has one. */
+  source(): Source {
+    if (this.o.source) return this.o.source();
+    const argv = selfArgv();
+    if (argv.length !== 1) throw new ProviderError("failed", "Hosted sandboxes take fleetd's built binary, and this machine runs fleetd from its source.");
+    const exe = argv[0]!;
+    const sha256 = fileSha256Hex(exe);
+    let url: string | undefined;
+    try {
+      url = `${baseUrl(channelOf(VERSION, true))}/${pinnedName(cliAsset(), sha256)}`;
+    } catch {}
+    return { sha256, ...(url ? { url } : {}), bytes: async () => new Uint8Array(await Bun.file(exe).arrayBuffer()) };
+  }
+
+  /** Creates a box for `session` from the provider's template, starts its bootstrap and hands it fleetd. */
+  async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size): Promise<BoxRecord> {
+    const client = this.client(p);
+    const template = await this.template(p);
+    // A key per attempt, never the session's: boat and E2B keep a key a day after its box is gone, and a session's next
+    // box must be a new one.
+    const key = `fleetd-${randomBytes(12).toString("hex")}`;
+    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}) });
+    const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
+    this.#making.add(made.id);
+    // Its caller writes the record at once; until a while after, the reaper leaves the box.
+    const made_ = () => setTimeout(() => this.#making.delete(made.id), 60_000).unref?.();
+    try {
+      const boot = bootArgv(dirs);
+      await client.start(made.id, { argv: boot.argv, env: { ...boot.env, FLEETD_BOX_SECRET: record.secret } });
+      // Until fleetd's guest answers: a provider's proxy may take the link before the bootstrap listens.
+      const deadline = Date.now() + UP_MS;
+      for (let wait = 250; ; wait = Math.min(wait * 2, 3000)) {
+        const link = await this.#dialUp(record);
+        let word: Awaited<ReturnType<typeof firstWord>>;
+        try {
+          word = await firstWord(link);
+          if (word === "bootstrap") await deliver(link, this.source());
+        } finally {
+          link.close();
+        }
+        // The bootstrap, once it took fleetd, makes way for the guest: dialled again until the guest itself answers.
+        if (word === "guest") break;
+        if (Date.now() + wait >= deadline) throw new ProviderError("unreachable", `fleetd's guest didn't answer in the box within ${UP_MS / 1000} s`);
+        await Bun.sleep(word === "bootstrap" ? 300 : wait);
+      }
+      return record;
+    } catch (error) {
+      await client.destroy(made.id).catch(() => {});
+      throw error;
+    } finally {
+      made_();
+    }
+  }
+
+  /** The box's port, dialled until something there answers. */
+  async #dialUp(b: BoxRecord) {
+    const deadline = Date.now() + UP_MS;
+    for (let wait = 250; ; wait = Math.min(wait * 2, 3000)) {
+      try {
+        return await this.client(b.provider).connect(b.boxId, GUEST_PORT, b.secret);
+      } catch (error) {
+        if (Date.now() + wait >= deadline) throw error;
+        await Bun.sleep(wait);
+      }
+    }
+  }
+
+  /** A new byte stream to the box's guest. */
+  async dial(b: BoxRecord): Promise<Duplex> {
+    if (this.o.dial) return this.o.dial(b);
+    const web = await this.#dialUp(b);
+    // Node's own, which Bun has; its types here don't name it.
+    const fromWeb = (Duplex as unknown as { fromWeb(p: { readable: ReadableStream; writable: WritableStream }): Duplex }).fromWeb;
+    return fromWeb({ readable: web.readable, writable: web.writable });
+  }
+
+  /** The node's link to the guest in the box, for `session`. Its node.sock calls are answered by the node's hooks as
+   * they are when a call comes: a node re-adopts its boxes before its node.sock serves. */
+  open(b: BoxRecord, session: string): Promise<Box> {
+    const lead = new Proxy({} as LeadSocketHooks, {
+      get: (_t, k) => {
+        const hooks = this.#wiring?.lead;
+        if (!hooks) throw new Error("the node's node.sock isn't serving yet");
+        return hooks[k as keyof LeadSocketHooks];
+      },
+    });
+    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, lead, goneMs: 120_000 });
+  }
+
+  /** Deletes the box; one already gone is no error. */
+  async destroy(b: Pick<BoxRecord, "provider" | "boxId">): Promise<void> {
+    await this.client(b.provider).destroy(b.boxId);
+  }
+
+  /** Sets the box's life to LIFETIME_MS from now. */
+  extend(b: BoxRecord): Promise<void> {
+    return this.client(b.provider).lifetime(b.boxId, LIFETIME_MS);
+  }
+
+  /** Deletes this machine's boxes in every connected account that no session of `known()` holds. How many it deleted. */
+  async reap(known: () => Set<string>): Promise<number> {
+    let n = 0;
+    for (const p of this.connected()) {
+      let boxes;
+      try {
+        boxes = await this.client(p).list();
+      } catch (error) {
+        console.warn(`${nowIso()} WARN hosted boxes not swept {"provider":"${p}","error":${JSON.stringify((error as Error).message)}}`);
+        continue;
+      }
+      const keep = known();
+      for (const b of boxes) {
+        if (b.labels[MACHINE_LABEL] !== label(this.machineId) || keep.has(b.id) || this.#making.has(b.id)) continue;
+        try {
+          await this.client(p).destroy(b.id);
+          n++;
+        } catch {}
+      }
+    }
+    if (n) console.warn(`${nowIso()} WARN deleted hosted boxes no session of this machine holds {"deleted":${n}}`);
+    return n;
+  }
+
+  /** Sweeps at once and every `everyMs`. */
+  startReaper(known: () => Set<string>, everyMs = 10 * 60_000): void {
+    void this.reap(known);
+    this.#reaper = setInterval(() => void this.reap(known), everyMs);
+    this.#reaper.unref?.();
+  }
+
+  stop(): void {
+    if (this.#reaper) clearInterval(this.#reaper);
+  }
+}
+
+/** A label's value: lowercase letters, digits and hyphens, at most 63, as every provider takes. */
+export const label = (v: string) =>
+  v
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .slice(0, 63);
+
+let current: Boxes | undefined;
+
+/** The node's Boxes, once its start made them (node/sandbox/hosted.ts); undefined off Linux. */
+export const boxes = (): Boxes | undefined => current;
+export const setBoxes = (b: Boxes | undefined) => void (current = b);
+
+/** The box ids of every hosted session's record under `hosts` (`<hosts>/<session>/place.json`). */
+export function knownBoxes(hosts: string): Set<string> {
+  const out = new Set<string>();
+  for (const name of existsSync(hosts) ? readdirSync(hosts) : []) {
+    try {
+      const r = JSON.parse(readFileSync(join(hosts, name, "place.json"), "utf8")) as BoxRecord;
+      if (r.kind === "hosted" && r.boxId) out.add(r.boxId);
+    } catch {}
+  }
+  return out;
+}

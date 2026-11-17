@@ -1,19 +1,25 @@
 // Where an agent's session runs: a `Place`. The node starts, adopts, stops and ends a session's host, runs its setup
-// commands and reads its chat files through the session's place, never by host pids or paths of its own. Two kinds:
+// commands and reads its chat files through the session's place, never by host pids or paths of its own. Three kinds:
 // - `process` (./process.ts): the session host as a detached process on this machine;
 // - `microvm` (./microvm.ts): the session host in a VM of its own, the default for a task's agent wherever the machine
-//   can run one. It records its box in the session's host dir (`box.json`), which `placeAt` reads back.
+//   can run one. It records its box in the session's host dir (`box.json`), which `placeAt` reads back;
+// - `hosted` (./hosted.ts): the session host in a box of the team's own hosted provider, when the hub's slot board
+//   placed the session there. Its record is `place.json`, which `placeAt` reads first.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { Image } from "../actions/image.ts";
 import { sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
 import { boxFile, destroyBox } from "./box_record.ts";
-import type { MicroVm, PlaceFor } from "./microvm.ts";
+import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
+import type { ProviderId } from "../../sandbox/providers/index.ts";
+import { hostedPlace, readRecord } from "./hosted.ts";
 import { processPlace } from "./process.ts";
 
-export type { PlaceFor } from "./microvm.ts";
-export type PlaceKind = "process" | "microvm";
+export type PlaceKind = "process" | "microvm" | "hosted";
+
+/** The session a place is picked for (./microvm.ts), and where the hub placed it: `hosted` names the provider. */
+export type PlaceFor = MicroVmFor & { hosted?: ProviderId };
 
 /** Where one agent's session runs. Each session picks one at launch (`pick`); what it left is found by `placeAt`. */
 export interface Place {
@@ -43,9 +49,12 @@ let vm: MicroVm | undefined;
 export const useVm = (m: MicroVm | undefined) => void (vm = m);
 export const currentVm = () => vm;
 
-/** The place session `s`'s next start (and its setup commands) runs in: a task's agent in a VM where the machine can
- * run one, else a process. */
-export const pick = (s?: PlaceFor): Place => (s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace);
+/** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it
+ * in, else a task's agent in a VM where the machine can run one, else a process. */
+export const pick = (s?: PlaceFor): Place => {
+  if (s?.hosted) return hostedPlace(s.hosted, s.sessionId, s.dir);
+  return s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace;
+};
 
 /** A box whose node has no VMs now (turned off since it started): it can still be ended. */
 const strayBox: Place = {
@@ -57,6 +66,8 @@ const strayBox: Place = {
 
 /** The place the session whose host dir is `dir` was started in. */
 export const placeAt = (dir: string): Place => {
+  const hosted = readRecord(dir);
+  if (hosted) return hostedPlace(hosted.provider, hosted.session, dir);
   if (!existsSync(boxFile(dir))) return processPlace;
   if (!vm) return strayBox;
   return vm.bound({ sessionId: dir.split("/").at(-1)!, dir, role: "worker" });

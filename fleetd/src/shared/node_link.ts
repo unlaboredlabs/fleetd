@@ -173,8 +173,13 @@ export type NodeLoad = {
   memTotalBytes?: number;
   memPerAgentBytes?: number;
   diskPerAgentBytes?: number;
-  /** Agents the machine may run in hosted sandboxes past its own slots (shared/sandbox.ts `hostedMax`); absent for none. */
-  hostedMax?: number;
+  /** The hosted providers whose boxes the node can make (it holds their keys): the slot board may place agents there
+   * once its own slots are full, each up to the team's limit (hub/slots/board.ts). Absent for none. */
+  sandboxes?: string[];
+  /** Where each of the node's live sessions runs (thread id → "local" or a hosted provider): a hosted box from its
+   * making until it is destroyed, a claude on the machine while it lives. The slot board counts a box against its
+   * provider by it, held or idle. Absent for none. */
+  places?: Record<string, string>;
   limits?: LoginLimit[];
   disk?: NodeDisk;
   /** Absent off Linux, on a machine with no network hardware of its own (a container), and from older nodes. */
@@ -264,6 +269,9 @@ export type NodeAction = {
   sandbox?: string;
   /** `sandbox_limits`: the team's connected hosted providers and each one's limit, in the order agents go to them. */
   limits?: { provider: string; max: number }[];
+  /** `sandbox_limits`: each connected provider's `{"provider","key","domain"?}` sealed to this node's box key (base64),
+   * for the node to make agents' boxes with. Never given to a session. */
+  keys?: Record<string, string>;
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
    * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores

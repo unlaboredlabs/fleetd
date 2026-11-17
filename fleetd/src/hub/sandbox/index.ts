@@ -7,8 +7,8 @@
 //
 // Placement is by count alone: a machine's own slots first, then the connected providers in ORDER up to each
 // one's limit, then the queue. The limits reach the team's machines (`sandbox_limits`), whose nodes report what they
-// may place (`load.hostedMax`, added to their cap in hub/slots/sizing.ts). Until a hosted kind lands no node places
-// any (`placing` is false), so connecting a provider changes neither where agents run nor a machine's cap.
+// can make boxes in (`load.sandboxes`), and the slot board (hub/slots/board.ts) counts each provider's limit across
+// all of them. With the limits each machine gets the keys, sealed to its own box key: its node makes the boxes.
 import type { KnownSandboxProvider, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
@@ -18,13 +18,14 @@ import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
+import { slots } from "../slots/index.ts";
 import { store } from "../store/hub_store.ts";
 import { openRawToHub } from "../vault/items.ts";
 import { vault } from "../vault/index.ts";
 import { keyIdOf, openItem, sealItem } from "../vault/crypto.ts";
 
-/** Whether any of the team's machines places agents in hosted sandboxes: none until the hosted kind lands. */
-export const PLACING = false;
+/** Whether the team's machines place agents in hosted sandboxes once their own slots are full. */
+export const PLACING = true;
 
 /** A key's envelope is bound to its provider's row, as a vault item's is to its own. */
 const binding = (provider: KnownSandboxProvider) => ({ itemId: `sandbox:${provider}`, kind: "sandbox_key", scopeKey: "hub", version: 1 });
@@ -246,15 +247,23 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
   return state(hub);
 }
 
-/** The connected providers' limits to `machineIds` (every machine that makes sandboxes, by default). */
+/** The connected providers' limits to the slot board, and with their keys (each sealed to the machine's own box key)
+ * to `machineIds` (every machine that makes sandboxes, by default). */
 export function sendLimits(hub: Hub, machineIds?: string[]): void {
-  const frame = { t: "node_action" as const, id: "", action: "sandbox_limits", limits: limits(hub) };
+  const all = limits(hub);
+  try {
+    slots(hub).setHosted(all);
+  } catch (e) {
+    console.warn(`sandbox: limits not given to the slot board: ${(e as Error).message}`);
+  }
   const to = machineIds ?? store(hub).machinesList().map((m) => m.machineId);
   for (const m of to) {
     if (!link(hub).can(m, CAP_SANDBOX)) continue;
-    void link(hub)
-      .request(m, frame, { waitSec: 15 })
-      .catch((e: unknown) => console.warn(`sandbox: limits not sent to ${m}: ${(e as Error).message}`));
+    void (async () => {
+      const keys: Record<string, string> = {};
+      for (const l of all) keys[l.provider] = await sealedTo(hub, m, l.provider, "making agents' boxes");
+      await link(hub).request(m, { t: "node_action", id: "", action: "sandbox_limits", limits: all, keys }, { waitSec: 15 });
+    })().catch((e: unknown) => console.warn(`sandbox: limits not sent to ${m}: ${(e as Error).message}`));
   }
 }
 

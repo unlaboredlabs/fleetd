@@ -1,5 +1,6 @@
 // An order's card on the board, and a train's live line, without the hub (index.ts reads the parts and joins them):
 // the board's limits, an order's short title, its lanes and PR chips, and what the join asks of the rest of the hub.
+import { isProvider, NAMES } from "../../shared/sandbox.ts";
 import type {
   AgentLane,
   AgentRole,
@@ -37,6 +38,8 @@ export type Lookups = {
   live(r: ThreadRef): Pick<LiveLane, "activity" | "tokens" | "spark"> | undefined;
   /** The profile the project's lead session started on: the default for one started before fleetd kept it. */
   leadProfile(r: ProjectRef): string | undefined;
+  /** The hosted provider a task's slot runs in (hub/slots), when not its machine's own. */
+  hosted?(taskId: string): string | undefined;
 };
 
 export const text = (s: string, max: number) => jsPrefix(s, max);
@@ -158,6 +161,7 @@ export function taskLane(task: Task, prs: [Change, PrRef][], look: Lookups): Age
     (prUrl !== undefined ? prs.find(([c]) => c.prUrl === prUrl)?.[1] : undefined);
   const parts = task.threadRef ? look.live(task.threadRef) : undefined;
   const reason = reasonOf(task, status);
+  const hosted = look.hosted?.(task.taskId);
   const m = model(thread?.model);
   const e = effortOf(thread?.effort);
   return {
@@ -171,6 +175,7 @@ export function taskLane(task: Task, prs: [Change, PrRef][], look: Lookups): Age
     profile: task.profile,
     status,
     ...(reason !== undefined ? { statusReason: text(reason, 200) } : {}),
+    ...(hosted !== undefined && isProvider(hosted) ? { sandbox: NAMES[hosted] } : {}),
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
     ...(task.branch !== undefined ? { branch: task.branch } : {}),

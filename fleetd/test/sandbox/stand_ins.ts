@@ -2,6 +2,15 @@
 // calls fleetd's clients make with the shapes the providers' OpenAPI files give, checks the key's header on every call,
 // and records each call. A box's port is a WebSocket that echoes, after checking the provider's access header and
 // fleetd's secret. `fail` makes the next matching call answer a refusal.
+//
+// With a `Runner`, a box is more than a record: the command a client starts in it runs on this machine (its
+// environment as the provider would give it, the environment file of boat and Daytona read back from what the client
+// wrote), and the box's port is carried to the port the runner says, so a test drives a box's whole life.
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { dirname, join } from "node:path";
+import { stop as stopHost } from "../../src/node/runner/host.ts";
 import { frame } from "../../src/sandbox/providers/e2b.ts";
 
 export const KEY = "test-key-0123456789";
@@ -22,7 +31,30 @@ export type StandIn = {
 
 type Handler = (c: Call, s: StandIn) => Response | Promise<Response>;
 
-function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Headers, url: URL) => boolean): StandIn {
+/** Runs what a client starts in a box, here. */
+export type Runner = {
+  /** Every text the box's command reads (its environment's values, its environment file): the runner's own port in
+   * place of the guest's, say. */
+  rewrite(box: string, text: string): string;
+  exec(box: string, argv: string[], env: Record<string, string>): void;
+  /** Where the box's guest port goes; undefined: the echo. */
+  port(box: string): number | undefined;
+};
+
+/** A boat or Daytona launcher, run here: its environment file (written through the provider's file call) put where
+ * this machine keeps scratch files, read and removed by the command as in a box. */
+function launch(runner: Runner, box: string, command: string, files: Map<string, Uint8Array>): void {
+  const dir = join(process.env.TMPDIR ?? "/tmp", "stand-in-env");
+  mkdirSync(dir, { recursive: true });
+  const text = command.replace(/\/tmp\/\.fleetd-env-[0-9a-f-]+/g, (at) => {
+    const local = join(dir, at.slice(5));
+    writeFileSync(local, runner.rewrite(box, new TextDecoder().decode(files.get(at) ?? new Uint8Array())), { mode: 0o600 });
+    return local;
+  });
+  runner.exec(box, ["sh", "-c", text], {});
+}
+
+function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Headers, url: URL) => boolean, runner?: Runner): StandIn {
   const fails: Fail[] = [];
   const s: StandIn = {
     url: "",
@@ -33,14 +65,22 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
     fail: (f) => fails.push({ times: 1, ...f }),
     stop: () => server.stop(true),
   };
-  const server = Bun.serve({
+  type Link = { to?: number; secret?: string; peer?: WebSocket; held?: (string | Uint8Array)[] };
+  const server = Bun.serve<Link, never>({
     port: 0,
     async fetch(req, srv) {
       const url = new URL(req.url);
       if (url.pathname.startsWith("/ws/") || /^\/box\/[^/]+\/7787/.test(url.pathname)) {
         s.upgrades.push(req.headers);
+        const box = /^\/(?:ws|box)\/([^/?]+)/.exec(url.pathname)?.[1] ?? "";
+        const to = runner?.port(box);
+        // Carried to the box's own guest, which checks fleetd's secret itself.
+        if (to !== undefined) {
+          if (!portToken(req.headers, url)) return new Response("forbidden", { status: 403 });
+          return srv.upgrade(req, { data: { to, secret: req.headers.get("x-fleetd-box-secret") ?? "" } }) ? undefined : new Response("no", { status: 400 });
+        }
         if (!portToken(req.headers, url) || req.headers.get("x-fleetd-box-secret") !== SECRET) return new Response("forbidden", { status: 403 });
-        return srv.upgrade(req) ? undefined : new Response("no", { status: 400 });
+        return srv.upgrade(req, { data: {} }) ? undefined : new Response("no", { status: 400 });
       }
       const raw = req.method === "GET" || req.method === "DELETE" ? new Uint8Array() : new Uint8Array(await req.arrayBuffer());
       const text = new TextDecoder().decode(raw);
@@ -60,8 +100,29 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
       return route(c, s);
     },
     websocket: {
+      open(ws) {
+        const d = ws.data;
+        if (d.to === undefined) return;
+        d.held = [];
+        const peer = new WebSocket(`ws://127.0.0.1:${d.to}/`, { headers: { "x-fleetd-box-secret": d.secret ?? "" } } as never);
+        peer.binaryType = "arraybuffer";
+        d.peer = peer;
+        peer.onopen = () => {
+          for (const m of d.held!.splice(0)) peer.send(m);
+        };
+        peer.onmessage = (e) => ws.send(typeof e.data === "string" ? e.data : new Uint8Array(e.data as ArrayBuffer));
+        peer.onclose = () => ws.close();
+        peer.onerror = () => ws.close();
+      },
       message(ws, m) {
-        ws.send(m);
+        const d = ws.data;
+        if (!d.peer) return void ws.send(m);
+        const bytes = typeof m === "string" ? m : new Uint8Array(m);
+        if (d.peer.readyState === WebSocket.OPEN) d.peer.send(bytes);
+        else d.held!.push(bytes);
+      },
+      close(ws) {
+        ws.data.peer?.close();
       },
     },
   });
@@ -73,7 +134,7 @@ let n = 0;
 const nextId = (p: string) => `${p}${(++n).toString().padStart(8, "0")}`;
 
 /** E2B's platform API and each box's envd, on one server: a box's own host is `<url>/box/<id>/<port>`. */
-export function e2bStandIn(): StandIn {
+export function e2bStandIn(runner?: Runner): StandIn {
   const idem = new Map<string, string>();
   const builds = new Map<string, number>();
   return serve(
@@ -115,6 +176,12 @@ export function e2bStandIn(): StandIn {
       m = /^\/box\/([^/]+)\/49983\/process\.Process\/Start$/.exec(p);
       if (m) {
         s.boxes.get(m[1]!).started = c;
+        if (runner) {
+          const raw = c.body as Uint8Array;
+          const p = JSON.parse(new TextDecoder().decode(raw.subarray(5))).process as { cmd: string; args: string[]; envs: Record<string, string> };
+          const env = Object.fromEntries(Object.entries(p.envs ?? {}).map(([k, v]) => [k, runner.rewrite(m![1]!, v)]));
+          runner.exec(m[1]!, [p.cmd, ...(p.args ?? [])], env);
+        }
         const stream = new ReadableStream({
           start(ctl) {
             ctl.enqueue(frame({ event: { start: { pid: 42 } } }));
@@ -140,11 +207,12 @@ export function e2bStandIn(): StandIn {
       return Response.json({ code: 404, message: `no route ${c.method} ${p}` }, { status: 404 });
     },
     (h) => h.get("e2b-traffic-access-token") === "traffic-token",
+    runner,
   );
 }
 
 /** boat's API. */
-export function boatStandIn(): StandIn {
+export function boatStandIn(runner?: Runner): StandIn {
   const idem = new Map<string, string>();
   const commands: any[] = [];
   const saved = new Map<string, number>();
@@ -202,6 +270,8 @@ export function boatStandIn(): StandIn {
       if (m) {
         commands.push(c.body);
         s.boxes.get(m[1]!).commands = commands;
+        // Only a box's start (the one with an environment file), never a template build's steps.
+        if (runner && /\.fleetd-env-/.test(c.body.command)) launch(runner, m[1]!, c.body.command, s.files);
         return Response.json({ ok: true, type: "command.started", success: true, processId: commands.length, pid: 100 + commands.length, command: c.body.command, startedAt: "2026-01-01T00:00:00Z" });
       }
       m = /^\/sandboxes\/([^/]+)\/commands\/(\d+)$/.exec(p);
@@ -221,12 +291,13 @@ export function boatStandIn(): StandIn {
       return Response.json({ ok: false, code: "not_found", message: `no route ${c.method} ${p}` }, { status: 404 });
     },
     (_h, url) => url.searchParams.get("_token") === "port-token",
+    runner,
   );
   return s;
 }
 
 /** Daytona's API and toolbox, on one server: the toolbox is at `<url>/toolbox/<id>`. */
-export function daytonaStandIn(): StandIn {
+export function daytonaStandIn(runner?: Runner): StandIn {
   const snaps = new Map<string, number>();
   const s = serve(
     (h) => h.get("authorization") === `Bearer ${KEY}`,
@@ -274,7 +345,10 @@ export function daytonaStandIn(): StandIn {
           return Response.json({ exitCode: 0, result: "" });
         }
         if (m[2] === "/process/session") return new Response(null, { status: 201 });
-        if (/^\/process\/session\/[^/]+\/exec$/.test(m[2]!)) return Response.json({ cmdId: "c1" }, { status: 202 });
+        if (/^\/process\/session\/[^/]+\/exec$/.test(m[2]!)) {
+          if (runner) launch(runner, m[1]!, c.body.command, s.files);
+          return Response.json({ cmdId: "c1" }, { status: 202 });
+        }
         if (m[2] === "/files/download") {
           const f = s.files.get(c.query.get("path")!);
           return f ? new Response(f) : Response.json({ statusCode: 404, message: "file not found" }, { status: 404 });
@@ -292,6 +366,63 @@ export function daytonaStandIn(): StandIn {
       return Response.json({ statusCode: 404, message: `no route ${c.method} ${p}` }, { status: 404 });
     },
     (h) => h.get("x-daytona-preview-token") === "preview-token",
+    runner,
   );
   return s;
 }
+
+/** A Runner whose boxes run on this machine, each with a port and a dir of its own (its BOX_DIR): what it started goes
+ * at `cleanup`, by process group, and the session hosts its guests started by their records. */
+export function localRunner(dir: string, boxDir: string): { runner: Runner; track: (s: StandIn) => void; cleanup: () => Promise<void> } {
+  const ports = new Map<string, number>();
+  const groups: number[] = [];
+  const runner: Runner = {
+    rewrite: (box, text) =>
+      text
+        .replace(/^7787$/, String(ports.get(box)))
+        .replace(/FLEETD_BOOT_PORT='7787'/, `FLEETD_BOOT_PORT='${ports.get(box)}'`)
+        .replaceAll(boxDir, join(dir, box)),
+    exec: (box, argv, env) => {
+      const [cmd, ...args] = argv.map((a) => a.replaceAll(boxDir, join(dir, box)));
+      const child = spawn(cmd!, args, {
+        // The guest's forwards on 127.0.0.2, beside this machine's own ports on 127.0.0.1.
+        env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, FLEETD_BOOT_LOOPBACK: "127.0.0.2", ...env },
+        stdio: ["ignore", "inherit", "inherit"],
+        detached: true,
+      });
+      child.unref();
+      if (child.pid) groups.push(child.pid);
+    },
+    port: (box) => ports.get(box),
+  };
+  return {
+    runner,
+    // A box's port is known before its command runs: each box the stand-in records takes one.
+    track: (s) => {
+      const set = s.boxes.set.bind(s.boxes);
+      s.boxes.set = (k: string, v: unknown) => {
+        if (!ports.has(k)) void freePort().then((p) => ports.set(k, p));
+        return set(k, v);
+      };
+    },
+    cleanup: async () => {
+      for (const g of groups.splice(0)) {
+        try {
+          process.kill(-g, "SIGKILL");
+        } catch {}
+      }
+      for (const box of existsSync(dir) ? readdirSync(dir) : []) {
+        const hosts = join(dir, box, "guest");
+        if (existsSync(hosts)) for (const name of readdirSync(hosts)) await stopHost(join(hosts, name));
+      }
+    },
+  };
+}
+
+const freePort = () =>
+  new Promise<number>((resolve) => {
+    const s = createServer().listen(0, "127.0.0.1", () => {
+      const port = (s.address() as { port: number }).port;
+      s.close(() => resolve(port));
+    });
+  });

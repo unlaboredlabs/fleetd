@@ -10,6 +10,8 @@ export type Duplex = {
   /** Resolves when the link ends, by either side. */
   closed: Promise<void>;
   close(): void;
+  /** Sends one text message, outside the byte stream (the hosted bootstrap's control words). */
+  sendText(text: string): void;
 };
 
 /** Bytes buffered for sending past which a write waits. */
@@ -80,8 +82,10 @@ export function dial(d: Dial): Promise<Duplex> {
           ws.close();
         },
       });
-      resolve({ readable, writable, closed, close: () => ws.close() });
+      resolve({ readable, writable, closed, close: () => ws.close(), sendText: (t) => ws.send(t) });
     };
+    // A WebSocket can't be paused, so what arrives is queued as it comes: the mux's windows (node/sandbox/mux.ts, 256
+    // KiB a channel) bound how much of it is ever in flight.
     ws.onmessage = (e: MessageEvent) => {
       const data = e.data;
       const bytes = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data as ArrayBuffer);

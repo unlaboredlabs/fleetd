@@ -406,6 +406,7 @@ export class Tasks {
           }
         : {}),
       orderId: task.workstreamId,
+      ...(this.placeOf(task) !== undefined ? { place: this.placeOf(task) } : {}),
     });
     // Every later message to this thread renders from the texts it starts with. The thread runs either way.
     try {
@@ -632,7 +633,8 @@ export class Tasks {
       handoff = this.handoffReady(task);
       if (handoff === undefined) return { now: task };
     }
-    const request: SlotRequest = { holder: task.taskId, projectRef: r, priority: priorityOf(task.kind) };
+    // On a Claude account, not the machine's own login: a hosted box may take it.
+    const request: SlotRequest = { holder: task.taskId, projectRef: r, priority: priorityOf(task.kind), hostable: account !== undefined };
     // A machine at its agent limit queues the task until a slot frees.
     let next: StoredTask = { ...stored, task: { ...task } };
     const grant: Grant = slots(this.hub).acquire(request);
@@ -645,6 +647,15 @@ export class Tasks {
     this.starting.add(task.taskId);
     next = { ...next };
     return { go: { stored: next, fromQueue, ...(handoff !== undefined ? { handoff } : {}), recovering, fresh, compact, continuing } };
+  }
+
+  /** Where the slot board placed the task's slot: its machine's own, or a hosted provider's box. */
+  private placeOf(task: Task): string | undefined {
+    try {
+      return slots(this.hub).placeOf(task.taskId);
+    } catch {
+      return undefined;
+    }
   }
 
   /** The machine the task runs on: its repo checkout's. */
@@ -1370,7 +1381,8 @@ export class Tasks {
         const recovering = task.state === "queued" && task.recovery?.nextAt !== undefined;
         if (!recovering && !(task.state === "done" || task.state === "failed" || task.state === "idle")) return;
         const board = slots(this.hub);
-        board.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: priorityOf(task.kind) });
+        const hostable = this.ports.claudeAccountKey(task.projectRef, task.workstreamId, machineId) !== undefined;
+        board.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: priorityOf(task.kind), hostable });
         board.bind(task.taskId, threadRef);
         const { endedAt: _e, parked: _p, ...rest } = task;
         const next: Task = { ...rest, state: "running" };

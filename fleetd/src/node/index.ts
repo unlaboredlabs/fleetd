@@ -19,6 +19,8 @@ import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
 import { useVm } from "./place/index.ts";
 import { MicroVm, reportVm } from "./place/microvm.ts";
+import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
+import { hasBox, HOSTED_NO_MAC } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
@@ -371,6 +373,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   let leadHooks: LeadSocketHooks | undefined;
   const vm = isAgentsMac(config) ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope });
   useVm(vm);
+  // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
+  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(new Boxes(home, config.machineId, boxKey));
   const sessions = await SessionService.start(configFor(home, fleetdDir(), fleetd, boxKey));
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
@@ -403,12 +407,27 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const local = node.area("local");
   leadHooks = {
     relay,
-    identify: (pid) => sessions.peerSession(pid),
-    maskFor: (session) => sessions.maskFor(session),
+    identify: (pid: number) => sessions.peerSession(pid),
+    maskFor: (session: string) => sessions.maskFor(session),
     ...(local.any ? { browser: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
-    ...(local.has("mac") ? { mac: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
+    ...(local.has("mac")
+      ? {
+          // The agents' Mac builds from the agent's files on this machine: a hosted agent's are in its box.
+          mac: async (session: string, frame: Record<string, unknown>): Promise<Record<string, unknown>> =>
+            hasBox(session)
+              ? { error: { code: "invalid", message: HOSTED_NO_MAC, fix: "do without the agents' Mac and say so in your result" } }
+              : local.answer(session, frame),
+        }
+      : {}),
   };
   const stopSocket = await serveLeadSocket(leadSocketPath(home), leadHooks);
+  // A hosted box's node.sock calls are answered as this machine's own are, as the box's session.
+  boxes()?.wire({ lead: leadHooks });
+  // Where each live session runs: the hub's slot board counts hosted boxes, held or idle, by it.
+  node.area("hb").contribute((hb) => {
+    const places = sessions.places();
+    if (hb.load && Object.keys(places).length > 0) hb.load.places = places;
+  });
   const shutdown = new AbortController();
   const wakes = new Wakes();
   runPower({ running: () => sessions.running(), wakes, onWake: () => sessions.woke(), signal: shutdown.signal });
