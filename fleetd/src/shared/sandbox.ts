@@ -1,7 +1,7 @@
 // The team's own hosted sandbox accounts (W688), without the hub or the node: the providers in the one fixed order
-// agents go to them, the limit's bounds, what a node's check of a key found, and how many agents a node may place
-// beyond its own slots. The hub keeps the keys (hub/sandbox); a node checks one with the provider's client
-// (node/sandbox) and, once it has a hosted kind, creates one sandbox per agent there.
+// agents go to them, the limit's bounds, and what a node's check of a key found. The hub keeps the keys (hub/sandbox)
+// and its slot board places agents by count (hub/slots/board.ts); a node checks a key with the provider's client and
+// makes one box per agent there (node/sandbox, node/place/hosted.ts).
 import type { KnownSandboxCheckReason, KnownSandboxProvider } from "./contracts.ts";
 
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
@@ -32,15 +32,6 @@ export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includ
 
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
-
-/**
- * How many agents a machine may run in hosted sandboxes beyond its own slots: the limits of the connected providers its
- * node has a hosted kind for (`kinds`). Placement fills the machine's own slots first, then these providers in
- * ORDER up to each one's limit, then the hub queues. The limit is the team's total for a provider.
- */
-export function hostedMax(limits: readonly Limit[], kinds: readonly KnownSandboxProvider[]): number {
-  return limits.filter((l) => kinds.includes(l.provider)).reduce((n, l) => n + Math.max(0, Math.trunc(l.max)), 0);
-}
 
 /** A domain as typed (`https://e2b.example.com/`): its host and port, lower case; null when it isn't one. */
 export function domainOf(typed: string): string | null {

@@ -26,6 +26,7 @@ import {
   slotState,
 } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
+import type { Limit } from "../../shared/sandbox.ts";
 
 /** A cap's reason with where the machine's agents run: in a VM each, or as plain processes and why (a person reads
  * it beside the machine's cap). */
@@ -35,7 +36,7 @@ export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoa
   return { ...auto, why: `${auto.why}; agents run as plain processes: ${sandbox.why.slice(0, 300)}` };
 }
 
-export { GRANTED, type Grant, type MaxSource, type SlotPriority } from "./board.ts";
+export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority } from "./board.ts";
 
 const RUNNING: HubEventType[] = ["thread.started"];
 const STOPPED: HubEventType[] = [
@@ -78,13 +79,15 @@ export type SlotRequest = {
   holder: string;
   projectRef: ProjectRef;
   priority: SlotPriority;
+  /** It runs on a Claude account, not its machine's own login: a hosted sandbox may take it. */
+  hostable?: boolean;
 };
 
-const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT (holder) DO UPDATE SET machine_id = excluded.machine_id, project_id = excluded.project_id,
     priority = excluded.priority, thread_id = excluded.thread_id,
-    state = excluded.state, order_n = excluded.order_n`;
+    state = excluded.state, order_n = excluded.order_n, place = excluded.place, hostable = excluded.hostable`;
 
 function applyOp(conn: Database, op: Op): void {
   switch (op.op) {
@@ -100,6 +103,8 @@ function applyOp(conn: Database, op: Op): void {
           c.threadId ?? null,
           c.state,
           c.order,
+          c.place ?? null,
+          c.hostable ? 1 : 0,
         );
       return;
     }
@@ -164,6 +169,8 @@ type ClaimRow = {
   thread_id: string | null;
   state: string;
   order_n: number;
+  place: string | null;
+  hostable: number;
 };
 
 /** The persisted board: caps, max agents, machines and claims as the last hub left them. */
@@ -186,7 +193,7 @@ function load(db: HubDb): Board {
     });
   const claims = db
     .all<ClaimRow>(
-      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n FROM slot_claims",
+      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable FROM slot_claims",
     )
     .map((r): Claim => {
       const c: Claim = {
@@ -197,6 +204,8 @@ function load(db: HubDb): Board {
         order: r.order_n,
       };
       if (r.thread_id !== null) c.threadId = r.thread_id;
+      if (r.place !== null) c.place = r.place;
+      if (r.hostable) c.hostable = true;
       return c;
     });
   const sessionsOnly = db.all<{ machine_id: string }>("SELECT machine_id FROM machine_roles WHERE agents = 0");
@@ -300,12 +309,31 @@ export class Slots {
   observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
     const auto = withSandbox(autoCap(load), load.sandbox);
     const room = diskRoom(load);
-    this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room)]);
+    const sandboxes = Array.isArray(load.sandboxes) ? load.sandboxes.filter((p): p is string => typeof p === "string") : [];
+    const places: Record<string, string> = {};
+    if (load.places && typeof load.places === "object")
+      for (const [thread, at] of Object.entries(load.places)) if (typeof at === "string") places[thread] = at;
+    this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room, sandboxes, places)]);
   }
 
   /** Takes a slot now, or queues the request (reviews first, then the oldest) and says why. */
   acquire(request: SlotRequest): Grant {
-    return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority), false]);
+    return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority, request.hostable === true), false]);
+  }
+
+  /** The team's hosted providers' limits (hub/sandbox), in the order agents go to them. */
+  setHosted(limits: Limit[]): void {
+    this.locked((b) => [undefined, b.setHosted(limits)]);
+  }
+
+  /** Where the holder's slot runs: LOCAL or a hosted provider; undefined while it holds none. */
+  placeOf(holder: string): string | undefined {
+    return this.board.placeOf(holder);
+  }
+
+  /** Where the slot that follows the thread runs; undefined while none is held for it. */
+  placeOfThread(r: ThreadRef): string | undefined {
+    return this.board.placeOfThread(r.machineId, r.threadId);
   }
 
   /** The holder's slot follows `thread` from now on, taken again whenever it runs, even past the cap. */

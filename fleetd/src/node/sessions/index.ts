@@ -25,6 +25,8 @@ import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { hostDir, pick, placeAt, sweep } from "../place/index.ts";
+import { boxPlaces, hasBox } from "../place/hosted.ts";
+import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
 import { buildJobsHere } from "../load/index.ts";
@@ -257,6 +259,9 @@ export function settingsOverlay(
 }
 
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+
+/** The hosted provider a place names (the hub's slot board: "local" or a provider), or undefined for this machine. */
+const hostedOf = (place: string | undefined): ProviderId | undefined => ((PROVIDERS as readonly string[]).includes(place ?? "") ? (place as ProviderId) : undefined);
 
 /** The PreToolUse hook: free while there is no hold, `fleetd update-hold` while there is one (node/hold.rs). */
 export const holdHook = (fleetd: string[], home: string) => {
@@ -707,6 +712,14 @@ export class SessionService {
       case "send": {
         if (c.mcp) this.#refreshMcp(c.sessionId, c.mcp);
         if (c.skills) this.#refreshSkills(c.sessionId, c.skills);
+        // The hub's word on where its claude starts, if none runs: a live one, or a box still there, stays where it is
+        // (and the hub, told so by `places`, counts it there).
+        if (c.place !== undefined && this.store.session(c.sessionId) && !this.#live.has(c.sessionId) && !hasBox(c.sessionId))
+          this.update(c.sessionId, (x) => {
+            const h = hostedOf(c.place);
+            if (h) x.row.local.hosted = h;
+            else delete x.row.local.hosted;
+          });
         const mode = c.mode ?? "plain";
         const answered = mode === "now" ? new Promise<string>((resolve) => this.#sendNowWaiters.set(c.runId, resolve)) : undefined;
         try {
@@ -1071,6 +1084,7 @@ export class SessionService {
         ...(systemPrompt ? { systemPrompt } : {}),
         ...(launch.claudeAccount ? { claudeAccount: launch.claudeAccount } : {}),
         ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
+        ...(hostedOf(launch.place) ? { hosted: hostedOf(launch.place) } : {}),
         ...(taken ? { scratchOf: scratchOwner(taken) } : {}),
       },
     };
@@ -1246,7 +1260,7 @@ export class SessionService {
     const mark = marker(id);
     let link: HostLink;
     try {
-      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain" }).start({
+      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }).start({
         fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
@@ -1760,7 +1774,9 @@ export class SessionService {
   #setupDue(id: string): setup.Plan | undefined {
     const row = this.store.session(id);
     const lost = !!row?.local.baseRef && !existsSync(row.local.cwd);
-    return row && (row.local.setupPending || lost) ? row.local.setup : undefined;
+    // A hosted session's next start is in a new box, which has none of what setup made in the last one.
+    const freshBox = !!row && hostedOf(row.local.hosted) !== undefined && !hasBox(id) && !this.#live.has(id);
+    return row && (row.local.setupPending || lost || freshBox) ? row.local.setup : undefined;
   }
 
   /** Where a writer's worktree that is gone comes back from; undefined while it is there, or for a session in the
@@ -1874,7 +1890,7 @@ export class SessionService {
       );
     };
     const outcome = await setup.run(
-      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain" }),
+      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }),
       plan,
       row.local.cwd,
       env,
@@ -2271,6 +2287,15 @@ export class SessionService {
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
+  }
+
+  /** Where each live session runs now (its id → "local" or a hosted provider), for the hub's slot board: a claude
+   * on this machine while it lives, a hosted box from its making until it is destroyed. */
+  places(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const id of this.#live.keys()) out[id] = "local";
+    for (const [id, provider] of boxPlaces()) out[id] = provider;
+    return out;
   }
 
   /** Ends every session for good (tests, `machine remove`): each host is stopped with its claude. */

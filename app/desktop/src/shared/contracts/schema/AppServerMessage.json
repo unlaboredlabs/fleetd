@@ -1959,12 +1959,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "hostedMax": {
-          "description": "The agents the machine may run in hosted sandboxes once its own slots are full, added to its own cap: the\nteam's limit of the providers its node can place agents in. Absent while it can place none, and from older nodes.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "hosts": {
           "description": "What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent\nfrom older nodes.",
           "items": {
@@ -2016,6 +2010,20 @@
         "network": {
           "$ref": "#/$defs/NodeNetwork",
           "description": "Whether the machine's own network hardware holds an IPv4 address; absent off Linux, on a machine with no network\nhardware of its own (a container), and from older nodes."
+        },
+        "places": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Where each of the node's live sessions runs (thread id → \"local\" or a hosted provider): a hosted box from its\nmaking until it is destroyed, a claude on the machine while it lives. Absent for none, and from older nodes.",
+          "type": "object"
+        },
+        "sandboxes": {
+          "description": "The hosted providers whose boxes the machine's node can make (it holds their keys): the slot board places agents\nthere once the machine's own slots are full, each up to the team's limit. Absent for none, and from older nodes.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

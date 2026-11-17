@@ -145,9 +145,18 @@ export function e2b(auth: ProviderAuth, o: ClientOptions = {}): Provider {
         signal: r.signal,
       });
       if (ans.status === 404) throw new ProviderError("failed", `the box has no file ${path}`, 404);
-      const bytes = new Uint8Array(await ans.res.arrayBuffer());
-      if (bytes.length > max) throw new ProviderError("failed", `${path} in the box is larger than ${max} bytes`);
-      return bytes;
+      // Read no further than the cap: a server that ignores Range doesn't make the node hold the whole file.
+      const parts: Uint8Array[] = [];
+      let n = 0;
+      for await (const chunk of ans.res.body ?? []) {
+        n += chunk.length;
+        if (n > max) {
+          await ans.res.body?.cancel().catch(() => {});
+          throw new ProviderError("failed", `${path} in the box is larger than ${max} bytes`);
+        }
+        parts.push(chunk);
+      }
+      return new Uint8Array(Buffer.concat(parts));
     },
 
     async lifetime(id, ms, l = {}) {

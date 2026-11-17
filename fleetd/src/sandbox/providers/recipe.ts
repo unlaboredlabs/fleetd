@@ -79,28 +79,33 @@ function envPairs(rest: string): string[] {
 export type HostedPins = {
   /** `TESTED` of runner/claude.ts. */
   claude: string;
-  /** The fleetd release binary for linux x64 and its SHA-256. */
-  fleetd: { url: string; sha256: string };
+  /** The fleetd release binary for linux x64 and its SHA-256. The hosted kind leaves it out: each box gets the node's
+   * own fleetd at its start (node/sandbox/remote/bootstrap.ts), so a template outlives fleetd's updates. */
+  fleetd?: { url: string; sha256: string };
 };
 
 /** The hosted template's Dockerfile: the base recipe, then the pinned Claude Code and fleetd, for every user. */
 export function hosted(base: string, pins: HostedPins): string {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(pins.claude)) throw new Error(`claude's pin ${JSON.stringify(pins.claude)} isn't a version`);
-  if (!/^[0-9a-f]{64}$/.test(pins.fleetd.sha256)) throw new Error("fleetd's pin needs its SHA-256 in hex");
-  if (!/^https:\/\/[^\s'"]+$/.test(pins.fleetd.url)) throw new Error("fleetd's pin needs an https URL");
+  const f = pins.fleetd;
+  if (f && !/^[0-9a-f]{64}$/.test(f.sha256)) throw new Error("fleetd's pin needs its SHA-256 in hex");
+  if (f && !/^https:\/\/[^\s'"]+$/.test(f.url)) throw new Error("fleetd's pin needs an https URL");
   parse(base);
+  const fleetd = f
+    ? `RUN curl -fsSL ${f.url} -o /usr/local/bin/fleetd \\
+ && echo '${f.sha256}  /usr/local/bin/fleetd' | sha256sum -c - \\
+ && chmod 755 /usr/local/bin/fleetd
+`
+    : "";
   return `${base.trimEnd()}
 
-# Hosted boxes only: Claude Code and fleetd, pinned (sandbox/providers/recipe.ts).
+# Hosted boxes only: Claude Code${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts).
 RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \\
  && HOME=/opt/claude bash /tmp/claude-install.sh ${pins.claude} \\
  && ln -sf "$(readlink -f /opt/claude/.local/bin/claude)" /usr/local/bin/claude \\
  && chmod -R a+rX /opt/claude && rm -f /tmp/claude-install.sh \\
  && claude --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
-RUN curl -fsSL ${pins.fleetd.url} -o /usr/local/bin/fleetd \\
- && echo '${pins.fleetd.sha256}  /usr/local/bin/fleetd' | sha256sum -c - \\
- && chmod 755 /usr/local/bin/fleetd
-ENV DISABLE_AUTOUPDATER=1
+${fleetd}ENV DISABLE_AUTOUPDATER=1
 `;
 }
 

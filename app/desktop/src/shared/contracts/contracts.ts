@@ -306,6 +306,8 @@ export type AgentLane = {
   /** What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs. */
   profile?: ProfileName;
   role: AgentRole;
+  /** The hosted sandbox provider it runs in ("E2B", "boat.dev", "Daytona"); absent on its machine's own slots. */
+  sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
   /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
@@ -381,6 +383,8 @@ export type AgentRow = {
   projectRef: ProjectRef;
   projectTitle: string;
   role: AgentRole;
+  /** The hosted sandbox provider it runs in ("E2B", "boat.dev", "Daytona"); absent on its machine's own slots. */
+  sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
   /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
@@ -4994,11 +4998,6 @@ export type NodeLoad = {
    */
   diskPerAgentBytes?: number;
   /**
-   * The agents the machine may run in hosted sandboxes once its own slots are full, added to its own cap: the
-   * team's limit of the providers its node can place agents in. Absent while it can place none, and from older nodes.
-   */
-  hostedMax?: number;
-  /**
    * What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
    * from older nodes.
    */
@@ -5034,6 +5033,16 @@ export type NodeLoad = {
    * hardware of its own (a container), and from older nodes.
    */
   network?: NodeNetwork;
+  /**
+   * Where each of the node's live sessions runs (thread id → "local" or a hosted provider): a hosted box from its
+   * making until it is destroyed, a claude on the machine while it lives. Absent for none, and from older nodes.
+   */
+  places?: { [key: string]: string };
+  /**
+   * The hosted providers whose boxes the machine's node can make (it holds their keys): the slot board places agents
+   * there once the machine's own slots are full, each up to the team's limit. Absent for none, and from older nodes.
+   */
+  sandboxes?: string[];
 };
 
 /**

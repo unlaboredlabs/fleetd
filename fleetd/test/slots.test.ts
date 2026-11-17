@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
-import { Board, type Claim, GRANTED, type Machine, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
+import { Board, type Claim, GRANTED, LOCAL, type Machine, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
 import { capSet, machineLine, pausedLine, raisedLine } from "../src/hub/slots/cap.ts";
 import { Slots, slots, state } from "../src/hub/slots/index.ts";
 import { start } from "../src/hub/slots/loops.ts";
@@ -61,14 +61,6 @@ describe("sizing", () => {
     expect(autoCap({ ...machine(16, 32), memPerAgentBytes: 2_500_000_000 })).toEqual(
       auto(9, "memory 32 GB, about 2.5 GB an agent"),
     );
-  });
-
-  test("a node's hosted sandboxes add to its own cap, past the top too; none reported adds nothing", () => {
-    expect(autoCap({ ...machine(16, 32), hostedMax: 20 })).toEqual({ cap: 32, why: "memory 32 GB, about 2 GB an agent, and 20 in hosted sandboxes", hosted: 20 });
-    expect(autoCap({ ...machine(128, 512), hostedMax: 10 })).toEqual({ cap: HARD_TOP + 10, why: `top of ${HARD_TOP}, and 10 in hosted sandboxes`, hosted: 10 });
-    expect(autoCap({ ...machine(16, 32), hostedMax: 0 })).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
-    expect(autoCap({ ...machine(16, 32), hostedMax: -3 })).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
-    expect(autoCap(machine(16, 32))).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
   });
 
   test("disk room counts 5 GB agents above the floor", () => {
@@ -318,13 +310,110 @@ describe("board", () => {
     expect(k.grants).toEqual(["T3"]);
   });
 
-  test("a machine's hosted sandboxes come after its own slots, a person's number for them included", () => {
-    const air = project_("pa", "air");
-    const k = Kit.on(undefined, [{ machineId: "air", name: "air-box", auto: { cap: 5, why: "memory 18 GB, and 3 in hosted sandboxes", hosted: 3 } }]);
-    for (let n = 1; n <= 5; n++) expect(k.acquire(`T${n}`, air)).toEqual(GRANTED);
-    expect(k.acquire("T6", air)).toEqual(queued("machine cap: 5 of 5 running on air-box (memory 18 GB, and 3 in hosted sandboxes)"));
+  test("hosted: own slots first, then each provider in order up to its limit across machines, then the queue", () => {
+    const [air, big] = [project_("pa", "air"), project_("pb", "big")];
+    const k = Kit.on(undefined, [{ ...machine("air", 2), sandboxes: ["e2b", "boat"] }, { ...machine("big", 1), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 2 }, { provider: "boat", max: 1 }]);
+    const acquire = (h: string, r: ProjectRef, hostable = true) => k.board.acquire(h, r, "work", hostable);
+    expect(acquire("T1", air)).toEqual(GRANTED);
+    expect(acquire("T2", air)).toEqual(GRANTED);
+    // Its own slots full: E2B, then boat.
+    expect(acquire("T3", air)).toEqual(GRANTED);
+    expect(acquire("T4", big)).toEqual(GRANTED);
+    expect(acquire("T5", big)).toEqual(GRANTED);
+    expect(acquire("T6", air)).toEqual(GRANTED);
+    expect(["T1", "T2", "T3", "T4", "T5", "T6"].map((h) => k.board.placeOf(h))).toEqual([LOCAL, LOCAL, "e2b", LOCAL, "e2b", "boat"]);
+    // E2B's limit is the team's: big, which makes only E2B's boxes, waits; so does air.
+    expect(acquire("T7", big)).toEqual(queued("machine cap: 1 of 1 running on big-box (memory 18 GB), and hosted sandboxes are full: E2B 2 of 2"));
+    expect(acquire("T8", air)).toEqual(queued("machine cap: 2 of 2 running on air-box (memory 18 GB), and hosted sandboxes are full: E2B 2 of 2, boat.dev 1 of 1"));
+    // An E2B box freed goes to the first in line that can use it.
+    k.release("T3");
+    expect(k.board.placeOf("T7")).toBe("e2b");
+    expect(k.board.placeOf("T8")).toBeUndefined();
+    // The cap a machine shows is its own and the limits it can use; the total counts each limit once.
+    expect(k.board.state().perMachine.map((m) => [m.cap, m.why])).toEqual([
+      [5, "memory 18 GB, and 3 in hosted sandboxes"],
+      [3, "memory 18 GB, and 2 in hosted sandboxes"],
+    ]);
+    expect(k.board.total()).toBe(6);
+    // A person's number for a machine counts its own slots.
     k.board.setMachine("air", 1);
     expect(k.board.state().perMachine[0]!.cap).toBe(4);
+  });
+
+  test("hosted: an agent on the machine's own login stays on its slots, and says why", () => {
+    const air = project_("pa", "air");
+    const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 5 }]);
+    expect(k.board.acquire("T1", air, "work", false)).toEqual(GRANTED);
+    expect(k.board.acquire("T2", air, "work", false)).toEqual(
+      queued("machine cap: 1 of 1 running on air-box (memory 18 GB); hosted sandboxes take only agents on a Claude account, not this machine's own login"),
+    );
+    expect(k.board.acquire("T3", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.placeOf("T3")).toBe("e2b");
+  });
+
+  test("hosted: a machine whose node holds no key, or no limit set, adds nothing; a run that comes back keeps its box", () => {
+    const air = project_("pa", "air");
+    const k = Kit.on(undefined, [machine("air", 1)]);
+    k.board.setHosted([{ provider: "e2b", max: 5 }]);
+    expect(k.board.acquire("T1", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.acquire("T2", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB)"));
+    // Its node now holds E2B's key.
+    k.board.observeMachine("air", "air-box", { cap: 1, why: "memory 18 GB" }, undefined, ["e2b"]);
+    k.freed();
+    expect(k.board.placeOf("T2")).toBe("e2b");
+    // T2's run ends and comes back while T1's slot freed: it goes back where its box is.
+    k.board.bind("T2", "air", "th2");
+    k.board.observe("air", "th2", false);
+    k.release("T1");
+    expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.placeOf("T2")).toBe("e2b");
+    expect(k.board.placeOfThread("air", "th2")).toBe("e2b");
+  });
+
+  test("hosted: a box counts against its provider while it lives, held or idle, until its node says it is gone", () => {
+    const air = project_("pa", "air");
+    const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 1 }]);
+    const auto = { cap: 1, why: "memory 18 GB" };
+    expect(k.board.acquire("T1", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.placeOf("T2")).toBe("e2b");
+    k.board.bind("T2", "air", "th2");
+    k.board.observeMachine("air", "air-box", auto, undefined, ["e2b"], { th2: "e2b" });
+    // T2's turn ends; its box stays until its claude idles out, and still counts.
+    k.board.observe("air", "th2", false);
+    expect(k.board.acquire("T3", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: E2B 1 of 1"));
+    // T2's next turn goes back to its box, whatever else is free.
+    k.release("T1");
+    expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.placeOf("T2")).toBe("e2b");
+    expect(k.board.placeOf("T3")).toBe(LOCAL);
+    // Once the node says the box is gone, its room is free again.
+    k.board.observe("air", "th2", false);
+    expect(k.board.acquire("T4", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: E2B 1 of 1"));
+    expect(k.board.observeMachine("air", "air-box", auto, undefined, ["e2b"], {})).toBe(true);
+    k.board.evaluate();
+    expect(k.board.placeOf("T4")).toBe("e2b");
+  });
+
+  test("hosted: a run whose claude still lives on its machine stays there, and waits for a slot of its own", () => {
+    const air = project_("pa", "air");
+    const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 5 }]);
+    const auto = { cap: 1, why: "memory 18 GB" };
+    expect(k.board.acquire("T1", air, "work", true)).toEqual(GRANTED);
+    k.board.bind("T1", "air", "th1");
+    k.board.observe("air", "th1", false);
+    k.board.observeMachine("air", "air-box", auto, undefined, ["e2b"], { th1: LOCAL });
+    expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
+    expect(k.board.placeOf("T2")).toBe(LOCAL);
+    // T1's claude is still alive here: it doesn't go to E2B behind its node's back, it waits for its own slot.
+    expect(k.board.acquire("T1", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB); its Claude still runs there, so it waits for a slot of its own"));
+    // A Monitor of its own wakes it: it runs where its claude is.
+    k.board.observe("air", "th1", true);
+    expect(k.board.placeOf("T1")).toBe(LOCAL);
   });
 
   test("a saved fleet cap holds under the machines' total", () => {

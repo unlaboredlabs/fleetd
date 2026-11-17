@@ -12,7 +12,7 @@ import { Duplex } from "node:stream";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { HostHandlers, HostSocket } from "../runner/host.ts";
 import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
-import { GUEST_PROTOCOL, type HostInfo } from "./guest.ts";
+import { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./guest.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
 
 const HELLO_MS = 5_000;
@@ -105,6 +105,29 @@ export class Box {
   async forward(port: number): Promise<void> {
     this.#tcp.add(port);
     if (this.#mux) await this.#request({ op: "listen", tcp: port });
+  }
+
+  /** Writes `bytes` to `path` in the box, in pieces a frame takes. */
+  async write(path: string, bytes: Uint8Array, mode = 0o600): Promise<void> {
+    const piece = (READ_CHUNK * 3) / 4;
+    for (let at = 0; at === 0 || at < bytes.length; at += piece) {
+      const data = Buffer.from(bytes.subarray(at, at + piece)).toString("base64");
+      await this.#request({ op: "write", path, data, append: at > 0, mode }, ANSWER_MS * 4);
+    }
+  }
+
+  /** `path` in the box, refused past `max` bytes. */
+  async read(path: string, max: number): Promise<Uint8Array> {
+    const parts: Buffer[] = [];
+    let at = 0;
+    for (;;) {
+      const got = (await this.#request({ op: "read", path, offset: at, max: READ_CHUNK }, ANSWER_MS * 4)) as { data: string; size: number };
+      if (got.size > max) throw new Error(`${path} in the box is larger than ${max} bytes`);
+      const b = Buffer.from(got.data, "base64");
+      parts.push(b);
+      at += b.length;
+      if (b.length === 0 || at >= got.size) return new Uint8Array(Buffer.concat(parts));
+    }
   }
 
   /** Lets go of the link (the node's shutdown): the guest and its session go on, for the next node to dial. */

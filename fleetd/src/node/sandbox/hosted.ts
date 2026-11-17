@@ -1,17 +1,15 @@
 // The team's own hosted sandbox accounts on a machine that runs agents (W688): Settings' Test of a provider's key, and
-// the team's limits, which the heartbeat turns into the agents this machine may run in hosted sandboxes past its own
-// slots (`load.hostedMax`, which the hub adds to its cap: hub/slots/sizing.ts). The hub seals a key to this node for a
-// check only; it never reaches an agent's session. Until a hosted kind lands (HOSTED_KINDS is empty), the limits are
-// kept and reported as none: connecting a provider changes neither where agents run nor the cap.
+// the team's limits and keys, sealed to this node's box key, with which it makes agents' boxes (./remote/boxes.ts).
+// The heartbeat names the providers it holds keys for (`load.sandboxes`); the hub's slot board places agents there by
+// count once this machine's own slots are full. A key never reaches an agent's session or a box.
 import type { KnownSandboxCheckReason, KnownSandboxProvider } from "../../shared/contracts.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, hostedMax, isProvider, type Limit, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, isProvider, type Limit, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
 import type { Node } from "../api.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
-
-/** The providers this node's sessions can run in (the hosted kind's): none until it lands. */
-export const HOSTED_KINDS: readonly KnownSandboxProvider[] = [];
+import { Boxes, boxes as currentBoxes, knownBoxes, setBoxes } from "./remote/boxes.ts";
+import { join } from "node:path";
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
@@ -23,8 +21,9 @@ export class Sandboxes {
 
   constructor(
     private readonly box: Opener,
-    private readonly kinds: readonly KnownSandboxProvider[] = HOSTED_KINDS,
     private readonly provider: Lister = realProvider,
+    /** Where the keys go, for the hosted place's boxes. */
+    private readonly boxes?: Pick<Boxes, "setKeys" | "usable">,
   ) {}
 
   /** The team's limits the hub sent last, in the order agents go to the providers. */
@@ -32,9 +31,10 @@ export class Sandboxes {
     return this.#limits;
   }
 
-  /** Agents this machine may run in hosted sandboxes past its own slots, by count alone. */
-  hostedMax(): number {
-    return hostedMax(this.#limits, this.kinds);
+  /** The connected providers this node can make boxes in: it holds their keys. */
+  placeable(): KnownSandboxProvider[] {
+    const held = this.boxes?.usable() ?? [];
+    return this.#limits.map((l) => l.provider).filter((p) => held.includes(p));
   }
 
   /** `node_action` sandbox_limits: the team's connected providers' limits, kept in ORDER. */
@@ -45,6 +45,7 @@ export class Sandboxes {
       const max = Number(l?.max);
       return l && Number.isFinite(max) && max >= 0 ? [{ provider: p, max: Math.trunc(max) }] : [];
     });
+    if (frame.keys && typeof frame.keys === "object") this.boxes?.setKeys(frame.keys);
     return { id: frame.id, ok: true, message: `${this.#limits.length} hosted providers' limits kept` };
   }
 
@@ -87,15 +88,23 @@ const byNode = new WeakMap<Node, Sandboxes>();
 /** The node's Sandboxes; undefined where agents never run in sandboxes (macOS, the agents' Mac). */
 export const sandboxesOf = (node: Node): Sandboxes | undefined => byNode.get(node);
 
-/** Linux machines that run agents: the capability, and the heartbeat's `load.hostedMax` while it is above 0. */
+/** Linux machines that run agents: the capability, the boxes' keys and their reaper, and the heartbeat's
+ * `load.sandboxes` while the node holds any key. */
 export function start(node: Node): Sandboxes | undefined {
   if (process.platform !== "linux") return undefined;
-  const s = new Sandboxes(loadOrCreateBoxKey(node.home));
+  const key = loadOrCreateBoxKey(node.home);
+  // Made before the sessions start (node/index.ts), so they re-adopt their boxes.
+  const boxes = currentBoxes() ?? new Boxes(node.home, node.config.machineId, key);
+  setBoxes(boxes);
+  const s = new Sandboxes(key, realProvider, boxes);
   byNode.set(node, s);
   node.area("caps").contribute(() => [CAP_SANDBOX]);
   node.area("hb").contribute((hb) => {
-    const max = s.hostedMax();
-    if (hb.load && max > 0) hb.load.hostedMax = max;
+    const can = s.placeable();
+    if (hb.load && can.length > 0) hb.load.sandboxes = can;
   });
+  // The boxes of this machine no session here holds any more (a crash between a box's create and its record, a
+  // delete that failed) go, by their labels.
+  boxes.startReaper(() => knownBoxes(join(node.home, "hosts")));
   return s;
 }

@@ -1,7 +1,15 @@
 // The slot board's rules, without I/O: the service in index.ts persists what
 // `takeOps` hands it and feeds it thread events, machine facts and the time.
+//
+// Where a slot runs is the board's call too, by count alone (D547): a machine's own slots first; once they are full,
+// the team's hosted providers in their fixed order (shared/sandbox.ts ORDER), each up to its limit counted across all
+// machines, for a task that runs on a Claude account and on a machine whose node can make that provider's boxes; then
+// the queue. Each held claim keeps its place, which the start carries to the node. The board follows where the node
+// says each live session's claude runs (`places`): a box counts against its provider while it lives, held or idle
+// between turns, and a run that comes back goes where its claude still is.
 import type { MachineId, ProjectRef, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
-import { type Auto, setCap, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
+import { type Limit, NAMES } from "../../shared/sandbox.ts";
+import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
 /** An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet. */
 export const SETTLE_MS = 10 * 60 * 1000;
@@ -24,10 +32,18 @@ export type Machine = {
   maxAgents?: number;
   /** New agents its free disk took at the last heartbeat; undefined while its node reports no disk. */
   diskRoom?: number;
+  /** The hosted providers its node can make boxes in (it holds their keys), as its last heartbeat said. */
+  sandboxes?: string[];
+  /** Where each of its live sessions runs now (thread → LOCAL or a provider), as its last heartbeat said: a hosted
+   * box from its making until it is destroyed, a claude on the machine while it lives. */
+  places?: Record<string, string>;
 };
 
-/** A person's number counts the machine's own slots; its hosted ones (sizing.ts) come on top either way. */
-const machineCapOf = (m: Machine) => (m.maxAgents === undefined ? m.auto.cap : setCap(m.maxAgents, m.auto));
+/** A machine's own slots: a person's number, else what it fits. */
+const machineCapOf = (m: Machine) => m.maxAgents ?? m.auto.cap;
+
+/** Where a held slot runs: the machine's own slots, or a hosted provider's box. */
+export const LOCAL = "local";
 /** Why it fits that many, or "set" for a person's setting. */
 const machineWhy = (m: Machine) => (m.maxAgents !== undefined ? "set" : m.auto.why);
 
@@ -48,6 +64,10 @@ export type Claim = {
   threadId?: string;
   state: ClaimState;
   order: number;
+  /** Where it runs or last ran: LOCAL (or undefined) on its machine's own slots, else a hosted provider. */
+  place?: string;
+  /** It runs on a Claude account, not its machine's own login: a hosted box may take it. */
+  hostable?: boolean;
 };
 
 /** The machine whose cap a claim counts against: where it runs. */
@@ -96,7 +116,7 @@ export type MaxSource =
   | { kind: "auto"; why: string };
 
 /** The narrowest limit a queued claim waits behind. */
-type Limit = "fleet" | "machine" | "project";
+type Wait = "fleet" | "machine" | "project";
 
 /** What holds a task back from a machine, in the order `block` checks. */
 type Block = "fleet" | "no_agents" | "machine" | "disk" | "project";
@@ -121,6 +141,8 @@ export class Board {
   private ops: Op[] = [];
   /** Machines whose role is sessions only: they run no agents. */
   private sessionsOnly: MachineId[] = [];
+  /** The team's connected hosted providers' limits, in the order agents go to them. */
+  private hosted_: Limit[] = [];
 
   constructor(cap: number | undefined, maxAgents: [ProjectRef, number][], machines: Machine[], claims: Claim[]) {
     this.cap_ = cap;
@@ -189,17 +211,91 @@ export class Board {
     return this.cap_;
   }
 
-  /** The fleet cap when set, else what the machines fit together. */
+  /** The team's hosted providers' limits, in the order agents go to them. Raising one starts what now fits. */
+  setHosted(limits: Limit[]): boolean {
+    const before = JSON.stringify(this.hosted_);
+    this.hosted_ = limits.map((l) => ({ ...l }));
+    return JSON.stringify(this.hosted_) !== before;
+  }
+
+  hosted(): readonly Limit[] {
+    return this.hosted_;
+  }
+
+  /** The fleet cap when set, else what the machines fit together and the hosted limits any of them can use. */
   total(): number {
-    return this.cap_ ?? this.machines.reduce((n, m) => n + this.machineCap(m.machineId), 0);
+    if (this.cap_ !== undefined) return this.cap_;
+    const own = this.machines.reduce((n, m) => n + this.ownCap(m.machineId), 0);
+    const hosted = this.hosted_.filter((l) => this.machines.some((m) => this.canHost(m.machineId, l.provider))).reduce((n, l) => n + l.max, 0);
+    return own + hosted;
+  }
+
+  /** Whether `m` runs agents and its node can make `provider`'s boxes. */
+  private canHost(m: MachineId, provider: string): boolean {
+    return this.runsAgents(m) && (this.machine(m)?.sandboxes ?? []).includes(provider);
+  }
+
+  /** The hosted limits machine `m` can use: those of the providers its node makes boxes in. */
+  private hostedCap(m: MachineId): number {
+    return this.hosted_.filter((l) => this.canHost(m, l.provider)).reduce((n, l) => n + l.max, 0);
+  }
+
+  /** Where the node says the claim's thread runs now, if its claude or box lives. */
+  private liveAt(c: Pick<Claim, "threadId" | "projectRef">): string | undefined {
+    return c.threadId === undefined ? undefined : this.machine(claimMachine(c as Claim))?.places?.[c.threadId];
+  }
+
+  /** Held claims on `m`'s own slots: where its node says their claude runs, else where the board placed them. */
+  private localHeld(m: MachineId): number {
+    return this.claims_.filter((c) => c.state === "held" && claimMachine(c) === m && (this.liveAt(c) ?? c.place ?? LOCAL) === LOCAL).length;
+  }
+
+  /** `provider`'s boxes across all machines: every live one a node reports, held or idle between turns, and each held
+   * claim placed there whose box no report shows yet. */
+  private hostedUse(provider: string): number {
+    let n = 0;
+    for (const m of this.machines) for (const at of Object.values(m.places ?? {})) if (at === provider) n++;
+    return n + this.claims_.filter((c) => c.state === "held" && c.place === provider && this.liveAt(c) === undefined).length;
+  }
+
+  /** Where claim `c` would run on `m` now; undefined when it can't yet. A claude still alive runs where it is: its box
+   * already counts against its provider; on the machine, it needs a free slot. Else where it ran last while that has
+   * room, then the machine's own slots, then each hosted provider in order. */
+  private freePlace(c: Pick<Claim, "place" | "hostable" | "threadId" | "projectRef">, m: MachineId): string | undefined {
+    if (!this.runsAgents(m)) return undefined;
+    const localFree = this.localHeld(m) < this.ownCap(m);
+    const live = c.threadId === undefined ? undefined : this.machine(m)?.places?.[c.threadId];
+    if (live !== undefined && live !== LOCAL) return live;
+    if (live === LOCAL) return localFree ? LOCAL : undefined;
+    const hostedFree = (p: string) => c.hostable === true && this.canHost(m, p) && this.hostedUse(p) < (this.hosted_.find((l) => l.provider === p)?.max ?? 0);
+    if (c.place && c.place !== LOCAL && hostedFree(c.place)) return c.place;
+    if (localFree) return LOCAL;
+    return this.hosted_.find((l) => hostedFree(l.provider))?.provider;
+  }
+
+  /** The claim's place (LOCAL or a provider), or undefined while it holds no slot. */
+  placeOf(holder: string): string | undefined {
+    const c = this.claims_[this.idx(holder)];
+    return c && c.state === "held" ? (c.place ?? LOCAL) : undefined;
+  }
+
+  /** The place of the held claim that follows `threadId` on `m`. */
+  placeOfThread(m: MachineId, threadId: string): string | undefined {
+    const c = this.claims_.find((x) => x.threadId === threadId && claimMachine(x) === m);
+    return c && c.state === "held" ? (c.place ?? LOCAL) : undefined;
   }
 
   private machine(m: MachineId): Machine | undefined {
     return this.machines.find((x) => x.machineId === m);
   }
 
-  /** The machine's cap: a person's setting, else what it fits; UNMEASURED until its node reports. */
+  /** The machine's cap: its own slots and the hosted limits it can use. */
   machineCap(m: MachineId): number {
+    return this.ownCap(m) + this.hostedCap(m);
+  }
+
+  /** The machine's own slots: a person's setting, else what it fits; UNMEASURED until its node reports. */
+  ownCap(m: MachineId): number {
     if (!this.runsAgents(m)) return 0;
     const machine = this.machine(m);
     return machine ? machineCapOf(machine) : UNMEASURED;
@@ -219,25 +315,35 @@ export class Board {
   }
 
   /** A heartbeat's facts. True when the machine now takes more than before. */
-  observeMachine(machineId: MachineId, name: string, auto: Auto, diskRoom: number | undefined): boolean {
+  observeMachine(machineId: MachineId, name: string, auto: Auto, diskRoom: number | undefined, sandboxes: string[] = [], places: Record<string, string> = {}): boolean {
     const roomBefore = this.diskRoom(machineId) ?? Infinity;
     const capBefore = this.machineCap(machineId);
     const m = this.machine(machineId);
+    let freed = false;
     if (!m) {
       const machine: Machine = { machineId, name, auto: { ...auto } };
       if (diskRoom !== undefined) machine.diskRoom = diskRoom;
+      if (sandboxes.length) machine.sandboxes = [...sandboxes];
+      if (Object.keys(places).length) machine.places = { ...places };
       this.machines.push(machine);
       this.ops.push({ op: "machine", machineId, name, auto: { ...auto } });
     } else {
       if (diskRoom === undefined) delete m.diskRoom;
       else m.diskRoom = diskRoom;
+      if (sandboxes.length) m.sandboxes = [...sandboxes];
+      else delete m.sandboxes;
+      // A box destroyed or a claude ended since frees room, for this machine's queue or any machine's for a provider.
+      const was = m.places ?? {};
+      freed = Object.entries(was).some(([thread, at]) => places[thread] !== at);
+      if (Object.keys(places).length) m.places = { ...places };
+      else delete m.places;
       if (m.auto.cap !== auto.cap || m.auto.why !== auto.why || m.name !== name) {
         m.auto = { ...auto };
         m.name = name;
         this.ops.push({ op: "machine", machineId, name, auto: { ...auto } });
       }
     }
-    return this.machineCap(machineId) > capBefore || (this.diskRoom(machineId) ?? Infinity) > roomBefore;
+    return freed || this.machineCap(machineId) > capBefore || (this.diskRoom(machineId) ?? Infinity) > roomBefore;
   }
 
   claims(): readonly Claim[] {
@@ -306,21 +412,21 @@ export class Board {
   }
 
   /** What holds a task of the project back from a slot on machine `m` now. `fresh`: it would start a new agent. */
-  private block(r: ProjectRef, m: MachineId, fresh: boolean): Block | undefined {
-    const [used, onMachine, running] = this.held(r, m);
+  private block(r: ProjectRef, m: MachineId, fresh: boolean, c: Pick<Claim, "place" | "hostable" | "threadId"> = {}): Block | undefined {
+    const [used, , running] = this.held(r, m);
     if (this.cap_ !== undefined && used >= this.cap_) return "fleet";
     if (!this.runsAgents(m)) return "no_agents";
-    if (onMachine >= this.machineCap(m)) return "machine";
+    if (this.freePlace({ ...c, projectRef: r }, m) === undefined) return "machine";
     if (fresh && this.diskRoom(m) === 0) return "disk";
     if (running >= this.maxOn(r, m)) return "project";
     return undefined;
   }
 
   /** Why a task of the project cannot take a slot on machine `m` now, or undefined if it can. */
-  private blocker(r: ProjectRef, m: MachineId, fresh: boolean): string | undefined {
-    const block = this.block(r, m, fresh);
+  private blocker(r: ProjectRef, m: MachineId, fresh: boolean, c: Pick<Claim, "place" | "hostable" | "threadId"> = {}): string | undefined {
+    const block = this.block(r, m, fresh, c);
     if (block === undefined) return undefined;
-    const [used, onMachine, running] = this.held(r, m);
+    const [used, , running] = this.held(r, m);
     const machine = this.machine(m);
     const name = machine?.name ?? m;
     switch (block) {
@@ -330,7 +436,12 @@ export class Board {
         return `${name} runs no agents: its role is screens only (a hub admin changes it in Settings › Hub › Machines)`;
       case "machine": {
         const why = machine ? machineWhy(machine) : UNMEASURED_WHY;
-        return `machine cap: ${onMachine} of ${this.machineCap(m)} running on ${name} (${why})`;
+        const own = `machine cap: ${this.localHeld(m)} of ${this.ownCap(m)} running on ${name} (${why})`;
+        const usable = this.hosted_.filter((l) => this.canHost(m, l.provider));
+        if (usable.length === 0) return own;
+        if (c.threadId !== undefined && machine?.places?.[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
+        if (c.hostable !== true) return `${own}; hosted sandboxes take only agents on a Claude account, not this machine's own login`;
+        return `${own}, and hosted sandboxes are full: ${usable.map((l) => `${NAMES[l.provider]} ${this.hostedUse(l.provider)} of ${l.max}`).join(", ")}`;
       }
       case "disk":
         return `disk: no room for another agent on ${name} until the new worktrees settle or space frees`;
@@ -340,10 +451,10 @@ export class Board {
   }
 
   /** The narrowest limit the project's tasks on machine `m` wait behind now. */
-  private limit(r: ProjectRef, m: MachineId): Limit | undefined {
-    const [used, onMachine, running] = this.held(r, m);
+  private limit(r: ProjectRef, m: MachineId): Wait | undefined {
+    const [used, , running] = this.held(r, m);
     if (running >= this.maxOn(r, m)) return "project";
-    if (onMachine >= this.machineCap(m) || this.diskRoom(m) === 0) return "machine";
+    if (this.freePlace({ hostable: true, projectRef: r }, m) === undefined || this.diskRoom(m) === 0) return "machine";
     if (this.cap_ !== undefined && used >= this.cap_) return "fleet";
     return undefined;
   }
@@ -391,13 +502,14 @@ export class Board {
       .filter(([c]) => c.state === "queued")
       .sort(([a], [b]) => rank(a.priority) - rank(b.priority) || a.order - b.order);
     for (const [c, i] of queue) {
-      if (this.block(c.projectRef, claimMachine(c), c.threadId === undefined) === undefined) this.grant(i);
+      if (this.block(c.projectRef, claimMachine(c), c.threadId === undefined, c) === undefined) this.grant(i);
     }
   }
 
   /** Holds claim `i`'s slot; a new agent's start counts against its machine's disk room until it settles. */
   private grant(i: number): void {
     const c = this.claims_[i] as Claim;
+    c.place = this.freePlace(c, claimMachine(c)) ?? LOCAL;
     c.state = "held";
     if (c.threadId === undefined) this.starts.push([c.holder, claimMachine(c), this.nowMs]);
     this.save(i);
@@ -407,19 +519,20 @@ export class Board {
    * Asking again for a holder that already has a slot returns granted; for one already queued, its current reason.
    * An idle holder joins the back of the queue.
    */
-  acquire(holder: string, projectRef: ProjectRef, priority: SlotPriority): Grant {
+  acquire(holder: string, projectRef: ProjectRef, priority: SlotPriority, hostable = false): Grant {
     let i = this.idx(holder);
     if (i >= 0) {
       const c = this.claims_[i] as Claim;
       if (c.state === "held") return GRANTED;
       c.projectRef = { ...projectRef };
       c.priority = priority;
+      c.hostable = hostable;
       if (c.state === "idle") {
         c.state = "queued";
         c.order = this.nextOrder++;
       }
     } else {
-      const c: Claim = { holder, projectRef: { ...projectRef }, priority, state: "queued", order: this.nextOrder++ };
+      const c: Claim = { holder, projectRef: { ...projectRef }, priority, state: "queued", order: this.nextOrder++, hostable };
       this.claims_.push(c);
       i = this.claims_.length - 1;
     }
@@ -427,7 +540,7 @@ export class Board {
     this.evaluate();
     const c = this.claims_[i] as Claim;
     if (c.state === "held") return GRANTED;
-    const reason = this.blocker(projectRef, claimMachine(c), c.threadId === undefined);
+    const reason = this.blocker(projectRef, claimMachine(c), c.threadId === undefined, c);
     return reason === undefined ? GRANTED : queuedGrant(reason);
   }
 
@@ -469,6 +582,9 @@ export class Board {
     const c = this.claims_[i];
     if (!c) return false;
     if (running) {
+      // A thread that ran with no grant (a Monitor of its own woke it) runs where its claude lives, as its node says;
+      // else where the board would place it now.
+      if (c.state !== "held") c.place = this.liveAt(c) ?? this.freePlace(c, machineId) ?? c.place ?? LOCAL;
       c.state = "held";
       this.save(i);
       return false;
@@ -555,11 +671,12 @@ export class Board {
     rows.sort((a, b) => b.running - a.running);
     const count = (s: ClaimState) => this.claims_.filter((c) => c.state === s).length;
     const perMachine = this.machines.slice(0, 50).map((m) => {
+      const hosted = this.hostedCap(m.machineId);
       const row: MachineRow = {
         machineId: m.machineId,
-        cap: machineCapOf(m),
+        cap: machineCapOf(m) + hosted,
         auto: m.auto.cap,
-        why: m.auto.why,
+        why: hosted ? `${m.auto.why}, and ${hosted} in hosted sandboxes` : m.auto.why,
         running: this.claims_.filter((c) => c.state === "held" && claimMachine(c) === m.machineId).length,
       };
       if (m.maxAgents !== undefined) row.maxAgents = m.maxAgents;

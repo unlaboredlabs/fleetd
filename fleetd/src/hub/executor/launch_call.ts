@@ -40,6 +40,8 @@ export type LaunchOptions = {
   claudeAccount?: ClaudeAccount;
   onepassword?: PersonId;
   isolated?: boolean;
+  /** Where the slot board placed it: its machine's own slots ("local"), or a hosted provider's box. */
+  place?: string;
   /** This model and effort in place of the profile's. */
   model?: [string, Effort];
 };
@@ -100,6 +102,7 @@ export function launchCall(m: MachineId, input: LaunchInput, options: LaunchOpti
     ...(options.setup !== undefined ? { setup: options.setup } : {}),
     ...(options.claudeAccount !== undefined ? { claudeAccount: options.claudeAccount } : {}),
     ...(options.onepassword !== undefined ? { onepassword: options.onepassword } : {}),
+    ...(options.place !== undefined ? { place: options.place } : {}),
     ...(options.isolated ? { isolated: true } : {}),
   };
   return call;

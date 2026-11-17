@@ -381,10 +381,6 @@ Each agent then runs in a sandbox of its own there, made by the machine that hol
 when the agent ends. The provider bills the team directly, by the second while a sandbox runs; fleetd charges nothing
 for it and holds no account of its own. No machine joins the hub, and the hub talks to no provider.
 
-**Not yet.** This fleetd keeps the keys and limits, and Test checks a key, but no agent runs in a hosted sandbox until
-the update that adds it: connecting one changes neither where agents run nor any machine's max agents. Settings says
-so above the providers while it is the case.
-
 **Connect one.** Make an API key at the provider: E2B in its console (**API keys**), boat.dev in its dashboard or with
 `boat api-key create`, Daytona in its dashboard (**Keys**). In **Settings › Hub › Machines › Sandboxes** (or
 Settings on the phone), an admin presses the provider's **Connect…**, pastes the key into its sealed field and
@@ -401,11 +397,56 @@ self-hosted domain) that doesn't answer each read as such, with what to do. With
 so: sandboxes are made there, never on a Mac.
 
 **Limit and order.** Each connected provider has one number, how many of the team's agents may run there at once
-(0 to 500; 5 until set; 0 keeps the key and sends none). Placement is by count alone and never moves an agent: a
-machine's own slots first, then the connected providers in the order listed (E2B, boat.dev, Daytona) up to each one's
-limit, then the agent waits in line. A machine counts its hosted room in its max agents, so the line says e.g.
-"memory 32 GB, about 2 GB an agent, and 20 in hosted sandboxes". A limit is the team's total for that provider, not
-per machine. Keep it at or under the provider's own (E2B Hobby runs 10 at once and an hour each; Pro 100 and 24 hours).
+(0 to 500; 5 until set; 0 keeps the key and sends none). It is the team's total for that provider, across all its
+machines; keep it at or under the provider's own (E2B Hobby runs 10 at once and an hour each; Pro 100 and 24 hours).
+
+**How placement picks.** By count alone, when an agent's run starts: its machine's own slots first; once those are
+full, the connected providers in the order listed (E2B, boat.dev, Daytona), each up to its limit; then the agent waits
+in line, and the line says why, e.g. "machine cap: 10 of 10 running on devbox (memory 60 GB), and hosted sandboxes
+are full: E2B 5 of 5". A sandbox counts against its provider's limit for as long as it runs, the idle minutes
+between an agent's turns included, so the team never has more running than the limit. A run that comes back to an
+agent whose sandbox (or Claude on its machine) still runs goes back to it. Only an agent on a Claude account goes to a sandbox: one on its machine's own Claude login stays on its
+machine's slots (that login never leaves the machine). A machine's max agents shows its own slots and the limits it
+can use. Where an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B · receipt-dates".
+
+**What differs from an agent on its machine.**
+- *Files.* The sandbox starts from the agent's worktree on its machine: the repo cloned from its origin with the
+  order's GitHub token, at the same path, then its commits and uncommitted work. Ignored files (`node_modules`,
+  `target/`) don't travel, so the repo's [setup commands](/docs/projects#setup) run again in each new sandbox. When the
+  sandbox ends, its commits and uncommitted work come back to the worktree on the machine. Until then, the machine's
+  copy shows the work as it was when the sandbox started.
+- *Life.* A sandbox goes when its agent's Claude does: after 10 minutes idle (unless a Monitor or a screen holds
+  it), at a stop, or when the task ends. The next message makes a new one and resumes the conversation. It is never
+  paused or kept at the provider. A sandbox that dies on its own (the provider's 24 hour cap, an outage) loses what
+  wasn't committed and pushed; the agent's next turn starts a new one.
+- *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
+  GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
+- *The same as on the machine:* chat, PRs and pushes (the pre-push gate included), `fleetd` tools, Monitors,
+  `chat_file`, artifacts, resume, browser screens and Android emulators (their ports are carried to the sandbox), and
+  a Claude gateway on the machine's loopback.
+- *Refused, in plain words:* a Linux desktop's `launch` (the agent's files aren't on the machine), the agents' Mac and
+  iOS simulators, and an agent on the machine's own Claude login.
+- *Failures.* A key the provider refuses, its plan's limit, billing or an outage fail that run with the provider's
+  words on the agent; the machine leaves that provider out for 10 minutes, and fleetd's recovery starts the run again on
+  the machine's own slots or puts it in line.
+
+**What the machine does.** The first agent to need a provider builds fleetd's template in the team's account (the
+same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with); it takes a few minutes,
+once per Claude Code version. Each sandbox gets the machine's own fleetd at its start: a release build's from GitHub,
+fetched by the sandbox itself, else the machine sends it (about 57 MB). The machine labels each sandbox with its own
+id and deletes, every 10 minutes, any of its own that no agent holds any more.
+
+**Cost.** Providers bill by the second while a sandbox runs, idle or not. At the default size (2 vCPUs, 4 GiB),
+from their published rates:
+
+| Provider | Per agent-hour | Besides |
+|---|---|---|
+| E2B | about $0.17 | Pro is $150 a month (Hobby can't run real tasks: an hour each) |
+| Daytona | about $0.17 | |
+| boat.dev | about $0.02 (small: 2 vCPUs, 4 GB) | its $20 plan starts 12 sandboxes a minute, 100 at once |
+
+Ten agents for 8 hours a day on 22 days come to about $290 a month at E2B's rate, plus its plan. A sandbox that waits
+on CI with nothing to do costs the same as one that works, until its 10 idle minutes are up.
 
 MCP clients use `sandbox_get`, `sandbox_connect`, `sandbox_set`, `sandbox_test` and `sandbox_disconnect`. A key
 connected on one hub doesn't move with it: [connect it again](/docs/moving-a-hub) on the new hub.

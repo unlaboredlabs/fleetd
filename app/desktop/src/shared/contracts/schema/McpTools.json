@@ -421,6 +421,10 @@
         "role": {
           "$ref": "#/$defs/AgentRole"
         },
+        "sandbox": {
+          "description": "The hosted sandbox provider it runs in (\"E2B\", \"boat.dev\", \"Daytona\"); absent on its machine's own slots.",
+          "type": "string"
+        },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -668,6 +672,10 @@
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
+        },
+        "sandbox": {
+          "description": "The hosted sandbox provider it runs in (\"E2B\", \"boat.dev\", \"Daytona\"); absent on its machine's own slots.",
+          "type": "string"
         },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"

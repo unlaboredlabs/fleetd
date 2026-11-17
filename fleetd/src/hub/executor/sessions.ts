@@ -1,6 +1,7 @@
 // The executor's session calls (`send`, `send_with`, `withdraw`,
 // `answer`, `interrupt`, `interrupt_now`, `runner_info`, `runner_refusal`, and the run reads the tasks area uses).
 import type { DecidedBy, MachineId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
+import { slots } from "../slots/index.ts";
 import { CAP_PROFILE_NAMES, CAP_SYSTEM_PROMPT } from "../../shared/node_link.ts";
 import type {
   McpSessionConfig,
@@ -256,6 +257,11 @@ async function sendWithin(
   if (message === "") throw ExecutorError.failed(r.machineId, "send", "the message is empty");
   const [mcp, mcpSent] = changedMcp(hub, r);
   const [skills, skillsNow] = changedSkills(hub, r);
+  // Where the slot board placed a task's run: the node starts its claude there if none runs.
+  let place: string | undefined;
+  try {
+    place = slots(hub).placeOfThread(r);
+  } catch {}
   // A busy node may take a while to take it: a patient send goes again until it answers (the node dedupes on runId).
   const ex = executors(hub);
   const out = await (patient ? ex.callPatient.bind(ex) : ex.call.bind(ex))(
@@ -270,6 +276,7 @@ async function sendWithin(
       ...(opts.steer !== undefined ? { steer: { id: opts.steer, ...(opts.riders?.length ? { riders: opts.riders } : {}) } } : {}),
       ...(mcp ? { mcp } : {}),
       ...(skills ? { skills } : {}),
+      ...(place !== undefined ? { place } : {}),
     },
     READ_TIMEOUT_MS,
   );

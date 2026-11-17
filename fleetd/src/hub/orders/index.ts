@@ -1,6 +1,7 @@
 // The orders board: open workstreams joined with their agents (tasks and the project's lead), PRs, open requests and
 // the trains of their repos, for the app's board and order view. Reads the
 // existing stores; owns no table.
+import { slots } from "../slots/index.ts";
 import type {
   Change,
   OrderCard,
@@ -66,6 +67,13 @@ export function lookups(hub: Hub): Lookups {
       return s ? { status: s.status, ...(s.model !== undefined ? { model: s.model } : {}), ...(s.effort !== undefined ? { effort: s.effort } : {}) } : undefined;
     },
     live: (r) => peek<ActivityLive>(hub, "activity")?.live(r),
+    hosted: (taskId) => {
+      try {
+        return slots(hub).placeOf(taskId);
+      } catch {
+        return undefined;
+      }
+    },
     leadProfile: (r) => {
       const name = leadProfile(hub, r);
       if (name !== undefined) return name;

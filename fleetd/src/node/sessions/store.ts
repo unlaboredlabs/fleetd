@@ -58,6 +58,8 @@ export type SessionLocal = {
   allowedOnly?: boolean;
   role?: SessionRole;
   orderId?: string;
+  /** The hosted provider the hub's slot board placed its next start in (node/place/hosted.ts); absent: this machine. */
+  hosted?: string;
   setup?: Plan;
   setupPending?: boolean;
   profile?: string;

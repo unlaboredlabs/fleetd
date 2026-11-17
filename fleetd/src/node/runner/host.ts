@@ -343,6 +343,8 @@ export async function prepare(dir: string): Promise<void> {
 
 /** Ends the host in `dir` and its session, and the box it ran in if any, then removes the dir. */
 export async function stop(dir: string): Promise<void> {
+  // A hosted session's box (node/place/hosted.ts), loaded only where one is recorded.
+  if (existsSync(join(dir, "place.json"))) await (await import("../place/hosted.ts")).destroyHosted(dir);
   const registration = readRegistration(dir);
   if (existsSync(socketPath(dir))) {
     let closed!: () => void;

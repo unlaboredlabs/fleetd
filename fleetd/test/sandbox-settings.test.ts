@@ -1,8 +1,9 @@
 // The team's own hosted sandbox accounts (hub/sandbox, node/sandbox): each provider's key connected through a sealed
-// value, tested on a machine of the team's and removed, never shown; E2B's domain; the limit; the order; the limits a
-// node keeps and the hosted agents it reports, none until a hosted kind lands. A stand-in provider client answers:
+// value, tested on a machine of the team's and removed, never shown; E2B's domain; the limit; the order; the limits and
+// keys a node keeps (each key sealed to that node), the providers it reports it can place, and the slot board's
+// limits. A stand-in provider client answers:
 // nothing reaches a provider. The clients themselves are tested against stand-in servers (sandbox/providers).
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { boxKey } from "../src/hub/hub_links/store.ts";
 import { start as startSandboxLoops } from "../src/hub/sandbox/loops.ts";
@@ -12,7 +13,11 @@ import { NodeBoxKey } from "../src/node/identity.ts";
 import { Sandboxes } from "../src/node/sandbox/hosted.ts";
 import { provider, ProviderError, type ProviderAuth, type ProviderId } from "../src/sandbox/providers/index.ts";
 import { boatStandIn, daytonaStandIn, e2bStandIn, KEY as STANDIN_KEY } from "./sandbox/stand_ins.ts";
-import { domainOf, hostedMax } from "../src/shared/sandbox.ts";
+import { domainOf } from "../src/shared/sandbox.ts";
+import { Boxes } from "../src/node/sandbox/remote/boxes.ts";
+import { slots } from "../src/hub/slots/index.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { NodeAction } from "../src/shared/node_link.ts";
 import { addMachine, caller, testHub } from "./screens_helpers.ts";
 
@@ -50,10 +55,12 @@ const standIn = (id: ProviderId, auth: ProviderAuth) => ({
 
 /** A Linux machine of the team's whose node answers as node/sandbox does, with `lister` for the provider's client. */
 const nodes = new Map<string, Sandboxes>();
-function machine(id: string, kinds: ProviderId[] = [], lister: ConstructorParameters<typeof Sandboxes>[2] = standIn) {
+const homes = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-sandbox-settings-"));
+afterAll(() => rmSync(homes, { recursive: true, force: true }));
+function machine(id: string, lister: ConstructorParameters<typeof Sandboxes>[1] = standIn) {
   const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
   addMachine(t.hub, id, { boxPubKey: box.publicKey() });
-  nodes.set(id, new Sandboxes(box, kinds, lister));
+  nodes.set(id, new Sandboxes(box, lister, new Boxes(mkdtempSync(join(homes, `${id}-`)), id, box)));
   t.link.link(id, ["sandbox"]);
 }
 beforeEach(() => {
@@ -70,7 +77,7 @@ beforeEach(() => {
 test("connect: the key is kept sealed, checked at once on a machine of the team's, and never comes back", async () => {
   machine("devbox");
   const before = await call(member, "sandbox_get");
-  expect(before).toEqual({ boxPubKey: Buffer.from(publicKeyOf(boxKey(t.hub))).toString("base64"), placing: false, providers: [
+  expect(before).toEqual({ boxPubKey: Buffer.from(publicKeyOf(boxKey(t.hub))).toString("base64"), placing: true, providers: [
     { provider: "e2b", connected: false, limit: 0 },
     { provider: "boat", connected: false, limit: 0 },
     { provider: "daytona", connected: false, limit: 0 },
@@ -115,20 +122,26 @@ test("E2B alone takes a domain, cleaned; a limit is 0 to 500; set and disconnect
   expect(off.providers[0]).toEqual({ provider: "e2b", connected: false, limit: 0 });
 });
 
-test("limits reach the team's machines in the fixed order, at each change and as one links; none is placed yet", async () => {
+test("limits and keys reach the team's machines in the fixed order, at each change and as one links, and the slot board", async () => {
   machine("devbox");
   await call(admin, "sandbox_connect", { provider: "daytona", sealed: sealed(GOOD), limit: 4 });
   await call(admin, "sandbox_connect", { provider: "e2b", sealed: sealed(GOOD), limit: 10 });
+  const until = async (ok: () => boolean) => {
+    for (let i = 0; !ok() && i < 200; i++) await Bun.sleep(5);
+  };
   const node = nodes.get("devbox")!;
+  await until(() => node.placeable().length === 2);
   expect(node.limits).toEqual([{ provider: "e2b", max: 10 }, { provider: "daytona", max: 4 }]);
-  // No hosted kind on this node yet: the limits are kept, and it may place none.
-  expect(node.hostedMax()).toBe(0);
-  // A node that links later gets them as it links; one with a hosted kind for E2B may place E2B's limit.
-  machine("box2", ["e2b"]);
+  // The node holds both keys, each sealed to it, and says it can place agents there.
+  expect(node.placeable()).toEqual(["e2b", "daytona"]);
+  expect(slots(t.hub).placeOf("nobody")).toBeUndefined();
+  // A node that links later gets them as it links.
+  machine("box2");
+  await until(() => nodes.get("box2")!.placeable().length === 2);
   expect(nodes.get("box2")!.limits).toEqual([{ provider: "e2b", max: 10 }, { provider: "daytona", max: 4 }]);
-  expect(nodes.get("box2")!.hostedMax()).toBe(10);
   await call(admin, "sandbox_disconnect", { provider: "e2b" });
-  expect(nodes.get("box2")!.hostedMax()).toBe(0);
+  await until(() => nodes.get("box2")!.placeable().length === 1);
+  expect(nodes.get("box2")!.placeable()).toEqual(["daytona"]);
 });
 
 const STAND_INS = { e2b: e2bStandIn, boat: boatStandIn, daytona: daytonaStandIn } as const;
@@ -138,7 +151,7 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
     try {
       const api = id === "boat" ? `${server.url}/api/v1` : server.url;
       // The node's own client, only pointed at the stand-in server.
-      machine("devbox", [], (p, auth, o) => provider(p, auth, { ...o, urls: { api } }));
+      machine("devbox", (p, auth, o) => provider(p, auth, { ...o, urls: { api } }));
       const on = await call(admin, "sandbox_connect", { provider: id, sealed: sealed(STANDIN_KEY) });
       expect(on.providers.find((p: { provider: string }) => p.provider === id).check).toEqual({ at: expect.any(String), ok: true });
       expect(server.calls.length).toBeGreaterThan(0);
@@ -154,11 +167,7 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
   });
 }
 
-test("hostedMax counts only the providers a node can place, and a domain is a host", () => {
-  const limits = [{ provider: "e2b" as const, max: 10 }, { provider: "boat" as const, max: 3 }];
-  expect(hostedMax(limits, [])).toBe(0);
-  expect(hostedMax(limits, ["e2b", "boat", "daytona"])).toBe(13);
-  expect(hostedMax(limits, ["daytona"])).toBe(0);
+test("a domain is a host", () => {
   expect(domainOf("e2b.example.com:8443")).toBe("e2b.example.com:8443");
   expect(domainOf("http://box/")).toBe("box");
   expect(domainOf("a b")).toBeNull();

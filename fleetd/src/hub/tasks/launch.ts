@@ -58,6 +58,8 @@ export type LaunchRequest = {
   worktree?: Worktree;
   /** The task's order: its session gets the variables delivered for it. */
   orderId?: WorkstreamId;
+  /** Where the slot board placed it (hub/slots LOCAL, or a hosted provider). */
+  place?: string;
 };
 
 export type Worktree = {
