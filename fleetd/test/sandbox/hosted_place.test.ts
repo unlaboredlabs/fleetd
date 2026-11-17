@@ -147,14 +147,14 @@ test("a Claude endpoint on another tailnet host, which no hosted box's network r
   const cfg = join(tmp, "cfg-tailnet");
   mkdirSync(cfg, { recursive: true });
   writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: `https://gateway.tail1234.ts.net:${port}` } }));
-  const asked: { url: string; to: unknown }[] = [];
+  const asked: { url: string; to: unknown; boxUrl: string }[] = [];
   // In a real box the name is pinned to its loopback; the stand-in's own address for it is 127.0.0.3, and the node's
   // name for the gateway is 127.0.0.5. The check goes through the relay.
   // Each box beside this node takes an address of its own (a real one has its own loopback).
   let addr = "127.0.0.3";
   hostedReach.reach = async (box, r) => {
-    asked.push({ url: r.url, to: r.relay.to });
-    await reach(box, { label: r.label, relay: { port: r.relay.port, addr, to: { host: "127.0.0.5", port } }, url: `http://${addr}:${port}` });
+    asked.push({ url: r.url, to: r.relay?.to, boxUrl: r.boxUrl });
+    await reach(box, { label: r.label, relay: { port: r.relay!.port, addr, to: { host: "127.0.0.5", port } }, url: r.url, boxUrl: `http://${addr}:${port}` });
   };
   const start = (id: string) =>
     hostedPlace("e2b", id, join(home, "hosts", id)).start({
@@ -167,7 +167,7 @@ test("a Claude endpoint on another tailnet host, which no hosted box's network r
       env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
     });
   const link = await start("s-tail");
-  expect(asked).toEqual([{ url: `https://gateway.tail1234.ts.net:${port}`, to: { host: "gateway.tail1234.ts.net", port } }]);
+  expect(asked).toEqual([{ url: `https://gateway.tail1234.ts.net:${port}`, to: { host: "gateway.tail1234.ts.net", port }, boxUrl: `https://gateway.tail1234.ts.net:${port}` }]);
   expect(readRecord(join(home, "hosts", "s-tail"))!.relays).toEqual([{ port, addr: "127.0.0.3", to: { host: "127.0.0.5", port } }]);
   expect(JSON.stringify(await next(link))).toContain("m1");
   await placeAt(join(home, "hosts", "s-tail")).stop(join(home, "hosts", "s-tail"));
@@ -183,4 +183,14 @@ test("a Claude endpoint on another tailnet host, which no hosted box's network r
   expect(refused).toContain(`the box can't reach Claude at gateway.tail1234.ts.net:${port}`);
   expect(refused).toContain(`(the endpoint from ${join(cfg, "settings.json")})`);
   await placeAt(join(home, "hosts", "s-down")).stop(join(home, "hosts", "s-down"));
+  // A public endpoint (Anthropic's API, here by an internet IP, so no DNS is asked): the box's own network, no relay.
+  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://160.79.104.10" } }));
+  const seen: unknown[] = [];
+  hostedReach.reach = async (_box, r) => void seen.push(r);
+  rmSync(join(home, "node.sock"), { force: true });
+  const direct = await start("s-public");
+  expect(seen).toEqual([{ url: "https://160.79.104.10", boxUrl: "https://160.79.104.10", label: "160.79.104.10:443" }]);
+  expect(readRecord(join(home, "hosts", "s-public"))!.relays).toEqual([]);
+  expect(JSON.stringify(await next(direct))).toContain("m1");
+  await placeAt(join(home, "hosts", "s-public")).stop(join(home, "hosts", "s-public"));
 }, 60_000);

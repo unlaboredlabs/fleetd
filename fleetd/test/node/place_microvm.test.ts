@@ -169,13 +169,17 @@ test("a task's agent gets a box where the machine can run one; a lead, and every
     mkdirSync(dir, { recursive: true });
     writeFileSync(boxFile(dir), JSON.stringify({ kind: "microvm", leader: { pid: 1, start: 1 }, helpers: [], tcp: [], port: 5000 }));
     expect(placeAt(dir).kind).toBe("microvm");
-    expect(leavesBox(dir)).toBe(false);
+    expect(leavesBox(dir, [])).toBe(false);
     const off = node({ config: { sandbox: "process" } });
     useVm(off.vm);
     expect(pick({ sessionId: "s", dir, role: "worker" })).toBe(processPlace);
-    // A session still in its VM once VMs are off leaves it before its next turn, which runs as a plain process.
-    expect(leavesBox(dir)).toBe(true);
-    expect(leavesBox(join(n.home, "hosts", "plain"))).toBe(false);
+    // A session still in its VM once VMs are off leaves it before its next turn, which runs as a plain process; a run
+    // under way (a steer or a queued message arriving mid-turn) finishes in its box first.
+    expect(leavesBox(dir, [])).toBe(true);
+    expect(leavesBox(dir, [{ status: "completed" }, { status: "starting" }])).toBe(true);
+    expect(leavesBox(dir, [{ status: "running" }, { status: "queued" }])).toBe(false);
+    expect(leavesBox(dir, [{ status: "waiting" }])).toBe(false);
+    expect(leavesBox(join(n.home, "hosts", "plain"), [])).toBe(false);
   } finally {
     useVm(undefined);
   }
@@ -499,7 +503,8 @@ test.skipIf(process.platform !== "linux")("a Claude gateway only claude's own se
   const link = await n.vm.bound({ sessionId: "s-gateway", dir, role: "worker" }).start({ ...l, env: { ...l.env, CLAUDE_CONFIG_DIR: settingsWith("cfg-gw", `http://localhost:${gw.port}`) } });
   expect(await inits(link, 1)).toEqual(["m0"]);
   const box = readBox(dir)!;
-  expect(box.relays).toEqual([{ port: gw.port, to: { host: "localhost", port: gw.port } }]);
+  // Dialled where the gateway listens on this machine's loopback.
+  expect(box.relays).toEqual([{ port: gw.port, to: { host: "127.0.0.1", port: gw.port } }]);
   expect(n.vm.status().kind).toBe("microvm");
   // The box's own loopback (127.0.0.2 for a stand-in) at the gateway's port reaches the gateway, through the node.
   const before = gw.hits();
@@ -535,5 +540,21 @@ test.skipIf(process.platform !== "linux")("a box that can't reach Claude runs no
   }
   // Until FAILED_MS has passed.
   expect(n.vm.status(Date.now() + FAILED_MS + 61_000).kind).toBe("microvm");
+  await processPlace.stop(dir);
+}, 30_000);
+
+test.skipIf(process.platform !== "linux")("an endpoint only a project's own settings name, unreachable, sends that session to a plain process and leaves the machine on VMs", async () => {
+  const gw = await gateway();
+  const closed = gw.port;
+  gw.close();
+  const n = node({ reach: "real" });
+  const cwd = join(n.home, "wt-project");
+  mkdirSync(join(cwd, ".claude"), { recursive: true });
+  writeFileSync(join(cwd, ".claude", "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: `http://localhost:${closed}` } }));
+  const dir = join(n.home, "hosts", "s-project");
+  const link = await n.vm.bound({ sessionId: "s-project", dir, role: "worker" }).start(launch(n.home, "s-project", cwd, program("claude-project", ECHO_CLAUDE)));
+  expect(await inits(link, 1)).toEqual(["m0"]);
+  expect(existsSync(boxFile(dir))).toBe(false);
+  expect(n.vm.status().kind).toBe("microvm");
   await processPlace.stop(dir);
 }, 30_000);

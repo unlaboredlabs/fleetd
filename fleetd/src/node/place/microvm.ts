@@ -39,7 +39,7 @@ import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
-import { claudeEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
+import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, type Reach } from "./endpoint.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
@@ -277,16 +277,19 @@ export class MicroVm {
     // Claude, whatever its endpoint, through the node, checked from inside the box: a box that can't reach it runs
     // nothing, and the agent runs as a plain process instead of stalling on every call.
     const endpoint = claudeEndpoint(l);
+    let args: string[];
     try {
       const r = reachOf(endpoint.url);
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
       writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
-      this.#failed = undefined;
+      args = boxArgs(l.args, r);
     } catch (error) {
       const why = `${(error as Error).message} (the endpoint from ${endpoint.source})`;
       console.warn(`${nowIso()} WARN a VM couldn't reach Claude: the session runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify(why)}}`);
-      this.failed(why);
+      // The machine's own endpoint (its environment, its user's settings) fails every agent's VM alike; one a project's
+      // own settings name, only that project's.
+      if (!fromProject(endpoint, l.cwd)) this.failed(why);
       await this.#drop(l.dir);
       return processPlace.start(l);
     }
@@ -299,7 +302,7 @@ export class MicroVm {
       }
       // The guest runs as root over files the host's user owns, which claude refuses to skip its prompts for unless it
       // knows it's in a sandbox.
-      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args: l.args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
+      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
       const leader = held.record.leader;
       const registration: Registration = { protocol: info.protocol, hostPid: leader.pid, hostStart: leader.start, pid: leader.pid, start: leader.start, marker: "", refused: info.refused ?? null };
       writeFileSync(join(l.dir, "host.json"), JSON.stringify(registration));

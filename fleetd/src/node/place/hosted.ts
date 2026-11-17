@@ -25,7 +25,7 @@ import { boxes, type BoxRecord, EXTEND_MS } from "../sandbox/remote/boxes.ts";
 import { fetchBack, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
 import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
-import { claudeEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
+import { boxArgs, claudeEndpoint, publicEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
 import type { Place } from "./index.ts";
 
 /** What a hosted agent can't do, in plain words: its files are in its box, not on this machine. */
@@ -313,17 +313,21 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
         l.record.transcript = transcript;
         if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
       }
-      // Claude, whatever its endpoint (a tailnet one this box's network can't reach), through the node, checked from
-      // inside the box before the agent starts there.
+      // Claude: a public endpoint (Anthropic's API) on the box's own network, any other (a gateway on this machine or
+      // its tailnet, which a hosted box can't reach) through the node; checked from inside the box before the agent
+      // starts there.
       const endpoint = claudeEndpoint(launch);
+      let args: string[];
       try {
-        await (hostedReach.reach ?? reach)(box, reachOf(endpoint.url));
+        const r = reachOf(endpoint.url, { direct: await publicEndpoint(endpoint.url) });
+        await (hostedReach.reach ?? reach)(box, r);
+        args = boxArgs(launch.args, r);
       } catch (error) {
         throw new LaunchError(`${(error as Error).message} (the endpoint from ${endpoint.source})`);
       }
       l.record.relays = box.relays;
       save(dir, l.record);
-      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
+      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args, cwd: launch.cwd, env: boxEnv });
       const pid = nobodyPid(session);
       const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
       if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);
