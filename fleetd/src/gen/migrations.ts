@@ -168,6 +168,7 @@ import m164 from "../hub/store/migrations/202611131200_chat_tags.sql" with { typ
 import m165 from "../hub/store/migrations/202611131300_removed_node_keys.sql" with { type: "text" };
 import m166 from "../hub/store/migrations/202611161400_sim_screens.sql" with { type: "text" };
 import m167 from "../hub/store/migrations/202611161700_revyl.sql" with { type: "text" };
+import m168 from "../hub/store/migrations/202611171800_chat_folds_gone.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -338,4 +339,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611131300_removed_node_keys", sql: m165 },
   { name: "202611161400_sim_screens", sql: m166 },
   { name: "202611161700_revyl", sql: m167 },
+  { name: "202611171800_chat_folds_gone", sql: m168 },
 ];

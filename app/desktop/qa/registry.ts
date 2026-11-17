@@ -196,7 +196,7 @@ export const fixtures = [
   "stream-long",
   // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
   // diff, agent cards, the lead asking, and messages from Shortcuts and the Share Sheet.
-  // The tagged chat (fixtures/tags): Sam and Dana's, three orders open and one folded; one order open; the trial off.
+  // The tagged chat (fixtures/tags): Sam and Dana's, three orders open and one closed; one order open; the trial off.
   "tags-busy",
   "tags-one-order",
   "tags-off",
@@ -2153,23 +2153,9 @@ export const screens: readonly Screen[] = [
   // PR card with its diff, and an ask waiting on you.
   { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
   // The tagged chat (a project's trial): a quiet line over each run names its order and, over the lead's, whom it is
-  // for; the closed order folds into its landing line. With one order open no tag names it; with the trial off the chat
-  // is today's.
+  // for; the closed order's messages stay as bubbles where they were. With one order open no tag names it; with the
+  // trial off the chat is today's.
   { id: "chat", route: CHAT, fixtures: ["tags-busy", "tags-one-order", "tags-off"], variant: "tags", open: (page) => expect(page.locator("[data-entry=message]").first()).toBeVisible() },
-  // ...the fold opened: the closed order's messages, its approval card among them, under its line.
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["tags-busy"],
-    variant: "tags-unfolded",
-    open: async (page) => {
-      const fold = page.locator("[data-entry=fold]").getByRole("button");
-      await fold.click();
-      await expect(fold).toHaveAttribute("aria-expanded", "true");
-      await expect(page.getByText("Receipts should show the store’s VAT number.")).toBeVisible();
-      await page.mouse.move(0, 0);
-    },
-  },
   // ...a lens on one order, from its tag: only its messages (of the one about two orders, only its bubble), its
   // capsule by the chat's pill, and the box sending about it.
   {

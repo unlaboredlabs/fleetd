@@ -788,35 +788,6 @@
       ],
       "x-open": true
     },
-    "ChatFold": {
-      "description": "A closed order's fold, on the one message of the chat where its bubbles collapse: the last message about it. Every\nother message whose `about` (or a bubble's) is this order folds into it, except an inline item still open.",
-      "properties": {
-        "count": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "state": {
-          "$ref": "#/$defs/WorkstreamState"
-        },
-        "title": {
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "title",
-        "state",
-        "count"
-      ],
-      "type": "object"
-    },
     "ChatHistorySource": {
       "description": "Where a history message came from, for messages from before the chat existed (a read model; nothing is moved or\ndestroyed). Absent on messages written in the chat.",
       "oneOf": [
@@ -927,10 +898,6 @@
         "delivery": {
           "$ref": "#/$defs/ChatDelivery",
           "description": "A human message: how it reached the lead."
-        },
-        "fold": {
-          "$ref": "#/$defs/ChatFold",
-          "description": "The order it is about is closed, and its bubbles fold here."
         },
         "for": {
           "$ref": "#/$defs/PersonRef",

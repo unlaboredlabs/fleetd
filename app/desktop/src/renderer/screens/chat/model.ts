@@ -8,8 +8,7 @@ import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
 import { workedFor } from "../../../shared/turnWords";
 import { nameNow, type PersonNames } from "../admin/names";
-import type { ChatFold } from "../../../shared/contracts";
-import { aboutOf, stepsOf, tagKey, tagOf, type Step, type Tag, type Tags } from "./lens/tags";
+import { stepsOf, tagKey, tagOf, type Step, type Tag, type Tags } from "./lens/tags";
 
 export type Row =
   /**
@@ -45,8 +44,6 @@ export type Row =
       /** In a lens, of a message about several orders, the bubbles shown, by key. */
       readonly parts?: readonly string[] | undefined;
     }
-  /** A closed order's messages, folded into one line where its landing was said; `open`: they show under it. */
-  | { readonly kind: "fold"; readonly key: string; readonly fold: ChatFold; readonly open: boolean }
   /** Above the first message from before the chat existed. */
   | { readonly kind: "history"; readonly key: string }
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
@@ -186,7 +183,7 @@ export interface RowsInput {
   readonly names?: PersonNames | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
-  /** The project's chat is tagged (its trial is on): tags, folds and the lens, as lens/tags.ts lays them out. */
+  /** The project's chat is tagged (its trial is on): tags and the lens, as lens/tags.ts lays them out. */
   readonly tags?: Tags | undefined;
 }
 
@@ -226,39 +223,12 @@ export function chatRows(i: RowsInput): Row[] {
       ? -1
       : i.items.findIndex((item) => !isMine(item, i.me) && (item.message?.seq ?? -Infinity) > seen);
   const tags = i.tags;
-  const steps: readonly Step[] = tags === undefined ? i.items.map((item, n) => ({ kind: "item", item, n })) : stepsOf(i.items, tags, (item) => isMine(item, i.me));
+  const steps: readonly Step[] = tags === undefined ? i.items.map((item, n) => ({ item, n })) : stepsOf(i.items, tags);
   const nameOf = (p: { personId: string; name: string }) => nameNow(p, i.names);
-  // Under an opened fold's line, a closed order's messages from whenever: no day or time over them, and no New.
-  let inFold = false;
   /** Whom the lead's last run was to, in a lens. */
   let lensFor: string | undefined;
   steps.forEach((step) => {
-    if (step.kind === "fold") {
-      const at = stampOf(step.at, i.nowMs, i.timeZone);
-      day(step.at, at.day);
-      before = at;
-      out.push({ kind: "fold", key: `fold:${step.fold.workstreamId}`, fold: step.fold, open: step.open });
-      prev = undefined;
-      inFold = step.open;
-      return;
-    }
     const { item, n } = step;
-    const folded = step.folded === true;
-    if (inFold && !folded) prev = undefined;
-    inFold = folded;
-    if (folded) {
-      const run = prev === undefined || authorLabel(prev, i.me, i.names) !== authorLabel(item, i.me, i.names) || tagKey(prev) !== tagKey(item);
-      const by = otherPerson(item, i.me, i.names);
-      if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
-      else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
-      else {
-        // Under its fold's line, which names the order already.
-        const tag = run && tags !== undefined ? tagOf(item, { ...tags, lens: aboutOf(item) }, i.me, nameOf) : undefined;
-        out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && !isMine(item, i.me), history: isHistory(item), ...(by === undefined ? {} : { by }), ...extras(i.items, n), ...(tag === undefined ? {} : { tag }) });
-      }
-      prev = item.kind === "message" ? item : undefined;
-      return;
-    }
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;

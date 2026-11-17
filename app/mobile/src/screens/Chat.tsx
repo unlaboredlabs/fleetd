@@ -30,7 +30,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
-import { aboutChoices, aboutOf, foldCount, openOrdersOf, reveal, sendAbout, tagOf, taggedItems, type ChatAbout, type FoldLine, type OpenOrder, type Tag } from "../chatTags";
+import { aboutChoices, aboutOf, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
 import { aimOf, attachmentBubbles, bubbleTime, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
@@ -121,8 +121,6 @@ interface ThreadActions {
   readonly openInfo: () => void;
   /** A tag's order tapped: the chat narrowed to it, from the bubble it was on (`from`), where closing it goes back to. */
   readonly lens: (about: ChatAbout, from: string | undefined) => void;
-  /** A closed order's landing line tapped: its messages open under it, or fold again. */
-  readonly fold: (workstreamId: string) => void;
   /** About… on a bubble, in a tagged chat: moves its message to another open order or none; undefined with tags off. */
   readonly about: ((messageId: string, current: string | undefined) => void) | undefined;
 }
@@ -157,10 +155,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [lensOn, setLens] = useState<ChatAbout | null>(null);
   const lens = tagsOn ? lensOn : null;
   const lensId = lens?.workstreamId;
-  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
   const me = state.me;
   const sendsAbout = useMemo(() => sendAbout(sends), [sends]);
-  const shown = useMemo(() => (tagsOn ? taggedItems(items, { lens: lensId, opened, me, sendAbout: sendsAbout }) : items), [tagsOn, items, lensId, opened, me, sendsAbout]);
+  const shown = useMemo(() => (tagsOn ? taggedItems(items, { lens: lensId, sendAbout: sendsAbout }) : items), [tagsOn, items, lensId, sendsAbout]);
   // Lines show only while two or more orders are open.
   const showTags = tagsOn && openOrders.length >= 2;
   const tagFor = useMemo(() => (showTags ? (i: ChatItem) => tagOf(i, { show: true, me, lens: lensId }) : undefined), [showTags, me, lensId]);
@@ -173,17 +170,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and a lens's
   // capsule under it.
   const top = (Platform.OS === "ios" ? insets.top + BAR : 0) + (lens === null ? 0 : LENS_ROOM);
-  // A message a jump goes to (a search hit, a push, a tapped quote) that the lens or a fold hides: the lens closed, or
-  // its fold opened; true when it was hidden.
+  // A message a jump goes to (a search hit, a push, a tapped quote) that the lens hides: the lens closed; true when it
+  // was hidden.
   const showHidden = (messageId: string): boolean => {
-    const r = tagsOn ? reveal(items, messageId, { lens: lensId, opened, me, sendAbout: sendsAbout }) : undefined;
-    if (r === undefined) return false;
+    if (!tagsOn || !lensHides(items, messageId, { lens: lensId, sendAbout: sendsAbout })) return false;
     // The jump goes there, not back to where the lens was opened from.
-    if (r.lens === undefined) {
-      lensFrom.current = undefined;
-      setLens(null);
-    }
-    setOpened(r.opened);
+    lensFrom.current = undefined;
+    setLens(null);
     return true;
   };
 
@@ -363,7 +356,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       if (!chat.loadingOlder) void session.loadOlder(chatKey);
       return;
     }
-    // Folded into a finished order, or outside the lens: shown first, then landed on as the thread draws again.
+    // Outside the lens: shown first, then landed on as the thread draws again.
     if (found !== undefined && showHidden(found)) return;
     const first = landed.current === null;
     landed.current = wanted;
@@ -509,14 +502,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         haptics.tap();
         lensFrom.current = from;
         setLens(about);
-      },
-      fold: (workstreamId) => {
-        haptics.tap();
-        setOpened((was) => {
-          const next = new Set(was);
-          if (!next.delete(workstreamId)) next.add(workstreamId);
-          return next;
-        });
       },
       about: tagsOn
         ? (messageId, current) =>
@@ -849,7 +834,6 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, tags, le
       </View>
     );
   }
-  if (row.t === "fold") return <FoldRow line={row.line} onPress={() => actions.fold(row.line.fold.workstreamId)} />;
   const item = <ItemView item={row.item} side={row.side} first={row.first} tag={row.tag} tags={tags} lens={lens} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
   const body =
     row.side === "center" ? (
@@ -1462,32 +1446,6 @@ function TagLine({ tag, mine, onLens }: { tag: Tag; mine: boolean; onLens: (abou
   );
 }
 
-/** A closed order's messages folded into one line where it landed: its title and how many; tapped, they open under it. */
-function FoldRow({ line, onPress }: { line: FoldLine; onPress: () => void }) {
-  const t = useTheme();
-  const { fold, open } = line;
-  const count = foldCount(fold.count);
-  const how = fold.state === "stopped" ? "stopped" : "done";
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
-      accessibilityLabel={`${fold.title}, ${how}, ${count}`}
-      accessibilityHint={open ? "Folds them" : "Shows them"}
-      onPress={onPress}
-      hitSlop={6}
-      style={({ pressed }) => [styles.fold, { backgroundColor: t.fillQuiet }, pressed && { opacity: PRESSED_OPACITY }]}
-    >
-      <Icon name={fold.state === "stopped" ? "denied" : "check"} size={14} color={t.secondary} />
-      <Text style={[type.footnote, styles.shrink, { color: t.secondary }]} numberOfLines={1}>
-        <Text style={[styles.strong, { color: t.label }]}>{fold.title}</Text>
-        {` · ${count}`}
-      </Text>
-      <Icon name={open ? "chevronDown" : "chevron"} size={11} color={t.tertiary} weight="semibold" />
-    </Pressable>
-  );
-}
-
 /** A lens's capsule under the bar: the order it shows and how it is going; tapped, the whole chat again. */
 function LensCapsule({ about, phase, onClose }: { about: ChatAbout; phase: string | undefined; onClose: () => void }) {
   const t = useTheme();
@@ -1613,7 +1571,6 @@ const styles = StyleSheet.create({
   // In line with the words in the bubble under it, as an agent's name.
   tag: { marginLeft: metrics.padX, marginBottom: 1, maxWidth: "100%" },
   tagMine: { marginLeft: 0, marginRight: metrics.padX, alignSelf: "flex-end" },
-  fold: { flexDirection: "row", alignItems: "center", alignSelf: "center", gap: 6, maxWidth: "100%", marginVertical: space.sm, paddingLeft: 10, paddingRight: space.md, paddingVertical: 6, borderRadius: 16, borderCurve: "continuous" },
   lensRow: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   lensGlass: { borderRadius: 18, borderCurve: "continuous", maxWidth: "88%" },
   lens: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 14, paddingRight: 12, height: 36 },

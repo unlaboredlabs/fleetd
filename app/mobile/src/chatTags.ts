@@ -1,14 +1,12 @@
 // The tagged chat, a trial behind a project's switch (ProjectSummary.chatTags): the hub tags each message with the
-// order it is about (`about`, or each bubble's own when one message covers several), and a closed order's messages
-// fold into its landing line (`fold`). The phone draws a quiet line over a run of bubbles naming who and what, only
-// while two or more of the project's orders are open; a finished order is one line where it landed, which opens in
-// place; a lens narrows the same chat to one order's bubbles. With the switch off none of this runs and the chat is as
-// it was. Pure, so it is unit-tested; the desktop's chat follows the same rules.
+// order it is about (`about`, or each bubble's own when one message covers several). The phone draws a quiet line over
+// a run of bubbles naming who and what, only while two or more of the project's orders are open; a closed order's
+// messages stay where they were; a lens narrows the same chat to one order's bubbles. With the switch off none of this
+// runs and the chat is as it was. Pure, so it is unit-tested; the desktop's chat follows the same rules.
 import type { ChatItem, ChatMessage, ChatSend, OrderCard } from "./desktop";
 import { keyOf, type Key } from "./projectKey";
 
 export type ChatAbout = NonNullable<ChatMessage["about"]>;
-export type ChatFold = NonNullable<ChatMessage["fold"]>;
 
 /** A message on its way, sent from a lens: the order it is about (chat_send's `about`), kept for every resend. */
 export type LensSend = ChatSend & { readonly about?: string };
@@ -92,29 +90,6 @@ export const tagOf = (item: Pick<ChatItem, "author" | "message">, view: TagView)
   return { key: `${who ?? ""}|${order?.workstreamId ?? ""}`, endKey: `${who ?? ""}|${end?.workstreamId ?? ""}`, who, order };
 };
 
-/** A closed order's landing line, where its messages fold: `open` once tapped, with them under it. */
-export interface FoldLine {
-  readonly t: "fold";
-  readonly id: string;
-  readonly at: string;
-  readonly fold: ChatFold;
-  readonly open: boolean;
-}
-
-export const isFold = (x: ChatItem | FoldLine): x is FoldLine => (x as Partial<FoldLine>).t === "fold";
-
-/** The fold line's words, after the order's title: "6 messages". */
-export const foldCount = (n: number): string => (n === 1 ? "1 message" : `${String(n)} messages`);
-
-/** An inline card still waiting (an approval, a secret) never folds, nor a person's own message the lead hasn't answered. */
-const staysOut = (item: ChatItem, me: string | undefined, lastLeadSeq: number): boolean => {
-  const inline = item.message?.item;
-  if (inline !== undefined && inline.state === "open") return true;
-  if (item.author !== "human") return false;
-  const mine = item.message?.person === undefined || item.message.person.personId === me;
-  return mine && (item.message?.seq ?? Infinity) > lastLeadSeq;
-};
-
 /**
  * A lens's copy of a message about several orders: only the lens's bubbles. The same copy each time for the same
  * message, so a row that didn't change doesn't draw again (chatView.ts sameRow).
@@ -130,79 +105,25 @@ const lensCopy = (message: ChatMessage, lens: string): ChatMessage => {
 };
 
 /**
- * The thread's items with the trial's rules: in a lens, only its order's (and the person's own sends from it, and a
- * reply streaming in, not tagged till it ends); otherwise each closed order's messages as one line where it landed,
- * gathered under it once `opened`. `sendAbout` is the order each unsent message was sent from a lens on.
+ * The thread's items in a lens on `lens`: only its order's (and the person's own sends from it, and a reply streaming
+ * in, not tagged till it ends); all of them with no lens. `sendAbout` is the order each unsent message was sent from a
+ * lens on.
  */
-export const taggedItems = (
-  items: readonly ChatItem[],
-  o: { readonly lens: string | undefined; readonly opened: ReadonlySet<string>; readonly me: string | undefined; readonly sendAbout: ReadonlyMap<string, string> },
-): readonly (ChatItem | FoldLine)[] => {
+export const taggedItems = (items: readonly ChatItem[], o: { readonly lens: string | undefined; readonly sendAbout: ReadonlyMap<string, string> }): readonly ChatItem[] => {
   const lens = o.lens;
-  if (lens !== undefined) {
-    return items.flatMap((i): ChatItem[] => {
-      if (i.message === undefined) return i.state === "streaming" || (i.clientRequestId !== undefined && o.sendAbout.get(i.clientRequestId) === lens) ? [i] : [];
-      if (!ordersOf(i.message).includes(lens)) return [];
-      const message = lensCopy(i.message, lens);
-      return [message === i.message ? i : { ...i, message }];
-    });
-  }
-  // Where each closed order folds: the message the hub put its fold on.
-  const folds = new Map<string, { readonly holder: string; readonly fold: ChatFold }>();
-  for (const i of items) if (i.message?.fold !== undefined) folds.set(i.message.fold.workstreamId, { holder: i.id, fold: i.message.fold });
-  if (folds.size === 0) return items;
-  let lastLeadSeq = -1;
-  for (const i of items) if (i.author === "lead" && i.message !== undefined && i.message.seq > lastLeadSeq) lastLeadSeq = i.message.seq;
-  // Which fold each message goes into: only a message all of whose orders are closed (one also about an open order
-  // stays whole, in its place), into its first order's.
-  const into = (i: ChatItem): string | undefined => {
-    const ids = ordersOf(i.message);
-    return ids.length > 0 && ids.every((id) => folds.has(id)) ? ids[0] : undefined;
-  };
-  const gathered = new Map<string, ChatItem[]>();
-  const folded = new Set<string>();
-  for (const i of items) {
-    const ws = into(i);
-    if (ws === undefined || staysOut(i, o.me, lastLeadSeq) || folds.get(ws)?.holder === i.id) continue;
-    const group = gathered.get(ws);
-    if (group === undefined) gathered.set(ws, [i]);
-    else group.push(i);
-    folded.add(i.id);
-  }
-  const out: (ChatItem | FoldLine)[] = [];
-  for (const i of items) {
-    const fold = i.message?.fold;
-    if (fold !== undefined && folds.get(fold.workstreamId)?.holder === i.id) {
-      const open = o.opened.has(fold.workstreamId);
-      out.push({ t: "fold", id: `fold:${fold.workstreamId}`, at: i.at, fold, open });
-      if (open) out.push(...(gathered.get(fold.workstreamId) ?? []));
-      // Itself folded, unless it waits on someone or is also about an open order.
-      if (open || staysOut(i, o.me, lastLeadSeq) || into(i) === undefined) out.push(i);
-      continue;
-    }
-    if (!folded.has(i.id)) out.push(i);
-  }
-  return out;
+  if (lens === undefined) return items;
+  return items.flatMap((i): ChatItem[] => {
+    if (i.message === undefined) return i.state === "streaming" || (i.clientRequestId !== undefined && o.sendAbout.get(i.clientRequestId) === lens) ? [i] : [];
+    if (!ordersOf(i.message).includes(lens)) return [];
+    const message = lensCopy(i.message, lens);
+    return [message === i.message ? i : { ...i, message }];
+  });
 };
 
-/**
- * What makes a hidden message show, for a jump to it (a search hit, a push, a tapped quote): the lens closed when it
- * isn't about the lens's order, and its order's fold opened when it is folded. Undefined when it shows already, or isn't
- * in the chat.
- */
-export const reveal = (
-  items: readonly ChatItem[],
-  messageId: string,
-  o: Parameters<typeof taggedItems>[1],
-): { readonly lens: string | undefined; readonly opened: ReadonlySet<string> } | undefined => {
+/** Whether a jump to a message (a search hit, a push, a tapped quote) must close the lens: it is in the chat, outside it. */
+export const lensHides = (items: readonly ChatItem[], messageId: string, o: Parameters<typeof taggedItems>[1]): boolean => {
   const item = items.find((i) => i.message?.messageId === messageId);
-  if (item === undefined) return undefined;
-  const shows = (lens: string | undefined, opened: ReadonlySet<string>) => taggedItems(items, { ...o, lens, opened }).includes(item);
-  if (shows(o.lens, o.opened)) return undefined;
-  if (shows(undefined, o.opened)) return { lens: undefined, opened: o.opened };
-  const opened = new Set(o.opened);
-  for (const id of ordersOf(item.message)) opened.add(id);
-  return shows(undefined, opened) ? { lens: undefined, opened } : undefined;
+  return item !== undefined && !taggedItems(items, o).includes(item);
 };
 
 /** The About… menu's choices: the open orders, the one it is about now ticked, then Nothing. */

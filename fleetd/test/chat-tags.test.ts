@@ -1,6 +1,6 @@
 // The chat's tags trial (chat/tags.ts, artifact threads-design): off by default, and then nothing changes; on, the hub
-// tags each message with the order it is about, folds a closed order into its last message, and a person's move of a
-// message reaches the lead with its next wake.
+// tags each message with the order it is about, leaves a closed order's messages as they are, and a person's move of
+// a message reaches the lead with its next wake.
 import { expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import type { Trigger } from "../src/hub/api/lead_lines.ts";
@@ -10,7 +10,7 @@ import { touched } from "../src/hub/chat/about.ts";
 import { mirror } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { forLead } from "../src/hub/chat/lead_text.ts";
-import { humanAbout, refold, settleEnded, settleRun, tagAsked } from "../src/hub/chat/tags.ts";
+import { humanAbout, settleEnded, settleRun, tagAsked } from "../src/hub/chat/tags.ts";
 import { renderLeadStart } from "../src/hub/leads/prompt.ts";
 import { setChatTags } from "../src/hub/project_lead/store.ts";
 import { prompts } from "../src/hub/prompts/store.ts";
@@ -170,30 +170,7 @@ test("switch on: a run is settled once, so a message a person moved to no order 
   done();
 });
 
-test("switch on: a closed order folds into its last message, and a later message about it takes the fold", () => {
-  const { hub, done } = rig(true);
-  touched(hub, PROJECT, "W3");
-  const a = lead(hub, "Looking.", "lead:lead-1:a");
-  const b = lead(hub, "Found it.", "lead:lead-1:b");
-  close(hub, 3);
-  events(hub).append({ at: new Date(hub.clock.now()).toISOString(), type: "workstream.done", machineId: PROJECT.machineId, projectId: PROJECT.projectId, summary: "W3 is done", data: { workstreamId: "W3" } } as never);
-  // What the flow does as it follows workstream.done.
-  refold(hub, PROJECT, "W3");
-  expect(chat(hub).byId(a.messageId)?.fold).toBeUndefined();
-  expect(chat(hub).byId(b.messageId)?.fold).toEqual({ workstreamId: "W3", title: "Search speed", state: "done", count: 2 });
-  // The landing said after the close: the fold moves to it.
-  const landed = lead(hub, "[W3] Search speed is live.", "lead:lead-1:c");
-  expect(chat(hub).byId(b.messageId)?.fold).toBeUndefined();
-  expect(chat(hub).byId(landed.messageId)?.fold).toEqual({ workstreamId: "W3", title: "Search speed", state: "done", count: 3 });
-  // Each change reached the apps as a chat.message.
-  const folds = events(hub)
-    .page(0)
-    .events.filter((e) => e.type === "chat.message" && (e.data as { message?: ChatMessage }).message?.messageId === b.messageId);
-  expect(folds.map((e) => (e.data as { message: ChatMessage }).message.fold?.count)).toEqual([undefined, 2, undefined]);
-  done();
-});
-
-test("switch on: a wake that closes one order and works on another lands only a marked landing in the fold", () => {
+test("switch on: a closed order's messages stay as they were, and a landing marked [W3] in a wake on two orders is about W3", () => {
   const { hub, done } = rig(true);
   touched(hub, PROJECT, "W3");
   const found = lead(hub, "Found it: images are 2 MB.", "lead:lead-1:a");
@@ -201,22 +178,21 @@ test("switch on: a wake that closes one order and works on another lands only a 
   touched(hub, PROJECT, "W3");
   touched(hub, PROJECT, "W4");
   close(hub, 3);
-  // Unmarked, the landing is about no order, and W3 folds into the bubble before it.
+  events(hub).append({ at: new Date(hub.clock.now()).toISOString(), type: "workstream.done", machineId: PROJECT.machineId, projectId: PROJECT.projectId, summary: "W3 is done", data: { workstreamId: "W3" } } as never);
+  // Unmarked, the landing is about no order.
   const bare = lead(hub, "Search speed is live.", "lead:lead-1:b");
   expect(bare.about).toBeUndefined();
-  refold(hub, PROJECT, "W3");
-  expect(chat(hub).byId(found.messageId)?.fold?.workstreamId).toBe("W3");
-  expect(chat(hub).byId(bare.messageId)?.fold).toBeUndefined();
-  // Marked, as the lead's landing line says, it is about W3 and takes the fold.
+  // Marked, as the lead's landing line says, it is about W3.
   const landed = lead(hub, "[W3] Search speed is live.", "lead:lead-1:c");
   expect(landed.text).toBe("Search speed is live.");
   expect(landed.about).toEqual({ workstreamId: "W3", title: "Search speed" });
-  expect(chat(hub).byId(found.messageId)?.fold).toBeUndefined();
-  expect(chat(hub).byId(landed.messageId)?.fold).toEqual({ workstreamId: "W3", title: "Search speed", state: "done", count: 2 });
+  // Each message as it was written: nothing gathers the closed order's into one.
+  expect(chat(hub).byId(found.messageId)).toMatchObject({ text: "Found it: images are 2 MB.", about: { workstreamId: "W3", title: "Search speed" } });
+  for (const m of [found, bare, landed]) expect(Object.keys(chat(hub).byId(m.messageId) ?? {})).not.toContain("fold");
   done();
 });
 
-test("switch on: chat_about_set moves a message to another open order, refolds, and tells the lead with its next wake", async () => {
+test("switch on: chat_about_set moves a message to another open order and tells the lead with its next wake", async () => {
   const { hub, call, wakes, done } = rig(true);
   touched(hub, PROJECT, "W3");
   const chips = chat(hub).add(PROJECT, { author: "human", text: "also the filter chips overlap the results", person: DANA, about: { workstreamId: "W3", title: "Search speed" } }).message;
@@ -251,9 +227,9 @@ test("switch on: the lead's prompt carries the design's lines, and a person's me
   expect(on.system).toContain("don't start a bubble with a person's name.");
   expect(on.system).toContain("start each with the order's id in brackets, [W12]. fleetd hides it.");
   expect(on.system).toContain("is a person's correction: take it as theirs, and act on it if it changes the work.");
-  // A landing closes its order's fold, so it is a bubble about that order, not the one batched line.
-  expect(on.system).toContain("Landings: a short bubble per order, always starting with its [W12], in place of the one batched line.");
-  expect(on.system).toContain("the chat folds its messages into that bubble");
+  // A landing is a bubble about its order, not the one batched line.
+  expect(on.system).toContain("Landings: a short bubble per order, always starting with its [W12], in place of the one batched line, so each landing is tagged with its order");
+  expect(on.system).not.toContain("fold");
   expect(on.system).toContain("A question rings only the person it is for: who asked for the order your turn worked on, else the person you are answering.");
   // The lines sit under "When to speak", before "Plain words".
   const speak = on.system.indexOf("## When to speak");

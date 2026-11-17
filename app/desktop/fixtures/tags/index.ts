@@ -1,6 +1,6 @@
 // The tagged chat (a project's trial, `chatTags`), in storefront's chat on the typical hub, as Sam sees it on a hub
 // Dana shares: three orders open (Apple Pay, Search speed, Price filter) and one closed (the receipts' VAT number,
-// folded into its landing line, with its approval card). A lead message covers two orders, one bubble each; a
+// its messages and approval card still in the chat as bubbles). A lead message covers two orders, one bubble each; a
 // quick answer is about none. `tags-one-order`: the same with Apple Pay alone open, so no tag names an order.
 // `tags-off`: the trial off on the same chat, as every chat is today (the hub then tags nothing).
 import { commandApproval, firstProject, writeChat, type Draft, type Ref } from "../kit/chat.ts";
@@ -54,7 +54,7 @@ const chat = (f: Fixture): Draft[] => [
   sam(36, "yes, keep card entry", PAY),
   dana(33, "Add a price filter to search too", FILTER),
   split(32, DANA, [FILTER, "On it: two writers, the filter and keeping it in the link."], [SEARCH, "Search is slow because product images are 2 MB each on phones."]),
-  lead(20, "Receipts show the VAT number now, and the old ones are backfilled. It’s live.", DANA, VAT, { fold: { ...VAT, state: "done", count: 4 } }),
+  lead(20, "Receipts show the VAT number now, and the old ones are backfilled. It’s live.", DANA, VAT),
   sam(12, "how much of checkout do our tests cover?"),
   lead(11, "71% of checkout’s lines, least in the payment step (48%).", SAM),
   lead(3, "Found it: resize the images on upload, or lazy-load them? Rec: resize, it also cuts bandwidth.", DANA, SEARCH),
@@ -63,7 +63,7 @@ const chat = (f: Fixture): Draft[] => [
 /** The chat as the hub serves it with the trial off: no order on anything. */
 const untagged = (drafts: ReadonlyArray<Draft>): Draft[] =>
   drafts.map((d) => {
-    const { about: _a, fold: _f, ...extra } = d.extra ?? {};
+    const { about: _a, ...extra } = d.extra ?? {};
     return { ...d, extra, ...(d.parts === undefined ? {} : { parts: d.parts.map(({ about: _p, ...p }) => p) }) };
   });
 
@@ -125,11 +125,11 @@ function tagged(base: Fixture, name: string, note: string, opts: { on: boolean; 
 
 export default defineGroup({
   fixtures: (base) => [
-    tagged(base("typical"), "tags-busy", "Sam and Dana's tagged chat: three orders open, one folded into its landing line, a message about two orders.", {
+    tagged(base("typical"), "tags-busy", "Sam and Dana's tagged chat: three orders open, one closed with its messages in place, a message about two orders.", {
       on: true,
       open: [PAY, SEARCH, FILTER],
     }),
-    tagged(base("typical"), "tags-one-order", "The tagged chat with only Apple Pay open: no tag names an order; the closed one still folds.", { on: true, open: [PAY] }),
+    tagged(base("typical"), "tags-one-order", "The tagged chat with only Apple Pay open: no tag names an order.", { on: true, open: [PAY] }),
     tagged(base("typical"), "tags-off", "The same chat with the trial off: as every chat is today.", { on: false, open: [PAY, SEARCH, FILTER] }),
   ],
 });

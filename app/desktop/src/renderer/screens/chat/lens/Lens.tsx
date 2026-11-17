@@ -1,7 +1,7 @@
 // The tagged chat's pieces (lens/tags.ts lays them out): the quiet line over a run naming its order and whom it is
-// for, a closed order's fold, and the lens's capsule beside the chat's pill.
-import { ChevronRight, X } from "lucide-react";
-import type { ChatAbout, ChatFold } from "../../../../shared/contracts";
+// for, and the lens's capsule beside the chat's pill.
+import { X } from "lucide-react";
+import type { ChatAbout } from "../../../../shared/contracts";
 import { Capsule, cx, Tooltip } from "../../../ui";
 import { useBubbleActions } from "../actions";
 import type { Tag } from "./tags";
@@ -24,22 +24,6 @@ export function TagLine({ by, tag, mine, from, inner }: { by?: string | undefine
           {order.title}
         </button>
       ) : null}
-    </div>
-  );
-}
-
-/** A closed order's messages as one line where its landing was said: a dot for how it ended, its name, how many. */
-export function FoldLine({ fold, open }: { fold: ChatFold; open: boolean }) {
-  const tags = useBubbleActions()?.tags;
-  const ended = fold.state === "stopped" ? "Stopped" : "Done";
-  return (
-    <div className={l.foldRow} data-entry="fold">
-      <button type="button" className={l.fold} aria-expanded={open} onClick={() => tags?.toggleFold(fold.workstreamId)}>
-        <span className={cx(l.dot, fold.state === "stopped" && l.stopped)} role="img" aria-label={ended} />
-        <span className={l.foldTitle}>{fold.title}</span>
-        <span className={l.count}>{fold.count === 1 ? "1 message" : `${String(fold.count)} messages`}</span>
-        <ChevronRight className={l.chevron} aria-hidden />
-      </button>
     </div>
   );
 }
