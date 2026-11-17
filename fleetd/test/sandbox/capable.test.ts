@@ -6,11 +6,15 @@ import { RETRY_FETCH_MS, type Probes, upstream, vmCheck } from "../../src/sandbo
 const STUB = "# This is /run/systemd/resolve/stub-resolv.conf\nnameserver 127.0.0.53\noptions edns0 trust-ad\nsearch .\n";
 const UPSTREAM = "# This is /run/systemd/resolve/resolv.conf\nnameserver 192.168.1.1\nnameserver fe80::1%enp3s0\nnameserver 2606:4700:4700::1111\n";
 
+const NET = { ip: "/usr/sbin/ip", nsenter: "/usr/bin/nsenter" };
+
 const probes = (over: Partial<Probes> = {}): Probes => ({
   platform: "linux",
   arch: "x64",
   kvm: () => ({ ok: "direct" }),
   userns: () => undefined,
+  net: () => NET,
+  addrs: () => ["192.168.1.20", "fd7a:115c:a1e0::1"],
   read: (path) => ({ "/etc/resolv.conf": STUB, "/run/systemd/resolve/resolv.conf": UPSTREAM })[path],
   tools: () => "ready",
   now: () => 1_000_000,
@@ -18,12 +22,13 @@ const probes = (over: Partial<Probes> = {}): Probes => ({
 });
 
 test("a Linux machine with KVM, namespaces, DNS behind systemd-resolved's stub and its files can run VMs", () => {
-  expect(vmCheck(probes())).toEqual({ ok: true, kvm: "direct", dns: ["192.168.1.1", "2606:4700:4700::1111"], tools: "ready" });
+  expect(vmCheck(probes())).toEqual({ ok: true, kvm: "direct", dns: ["192.168.1.1", "2606:4700:4700::1111"], tools: "ready", net: NET });
   expect(vmCheck(probes({ kvm: () => ({ ok: "sg" }), tools: () => "fetch" }))).toEqual({
     ok: true,
     kvm: "sg",
     dns: ["192.168.1.1", "2606:4700:4700::1111"],
     tools: "fetch",
+    net: NET,
   });
 });
 
@@ -44,10 +49,12 @@ test("macOS and arm64 keep plain processes, and say so", () => {
   expect(vmCheck(probes({ platform: "darwin" }))).toEqual({
     ok: false,
     why: "VMs need Linux with KVM; this machine runs macOS, so its agents run as plain processes.",
+    expected: true,
   });
   expect(vmCheck(probes({ arch: "arm64" }))).toEqual({
     ok: false,
     why: "VMs run on x86_64 machines for now; this one is arm64, so its agents run as plain processes.",
+    expected: true,
   });
 });
 
@@ -86,4 +93,20 @@ test("a fetch that failed holds the machine back for an hour, then it may try ag
 test("a probe that throws is an answer of no, never a throw", () => {
   const check = vmCheck(probes({ userns: () => { throw new Error("spawn failed"); } }));
   expect(check).toEqual({ ok: false, why: "checking for VMs failed: spawn failed" });
+});
+
+test("a VM's network needs ip, nsenter and /dev/net/tun, and says which is missing", () => {
+  expect(vmCheck(probes({ net: () => ({ missing: "the `ip` command, which iproute2 installs" }) }))).toEqual({
+    ok: false,
+    why: "A VM's network needs the `ip` command, which iproute2 installs, and this machine doesn't have it: the node keeps each VM off this machine's own addresses with it.",
+  });
+  const tun = vmCheck(probes({ net: () => ({ missing: "/dev/net/tun, which the tun module makes", fix: "echo tun | sudo tee /etc/modules-load.d/fleetd-tun.conf && sudo modprobe tun" }) }));
+  expect(tun).toMatchObject({ ok: false, fix: "echo tun | sudo tee /etc/modules-load.d/fleetd-tun.conf && sudo modprobe tun" });
+});
+
+test("a DNS server on this machine itself is no DNS server for a VM, which can't reach it", () => {
+  const read = (path: string) => (path === "/etc/resolv.conf" ? "nameserver 192.168.1.20\nnameserver 9.9.9.9\n" : undefined);
+  expect(vmCheck(probes({ read }))).toMatchObject({ ok: true, dns: ["9.9.9.9"] });
+  const onlyOwn = (path: string) => (path === "/etc/resolv.conf" ? "nameserver 192.168.1.20\n" : undefined);
+  expect(vmCheck(probes({ read: onlyOwn }))).toMatchObject({ ok: false, why: expect.stringContaining("the only one this machine names is on this machine itself") });
 });

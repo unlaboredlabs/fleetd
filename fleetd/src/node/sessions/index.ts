@@ -24,6 +24,7 @@ import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
+import { reapLeaked } from "../place/box_record.ts";
 import { hostDir, pick, placeAt, sweep } from "../place/index.ts";
 import { boxPlaces, hasBox } from "../place/hosted.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
@@ -417,6 +418,8 @@ export class SessionService {
     }
     const stopped = await sweep(hosts, adopted);
     if (stopped) console.warn(`${nowIso()} WARN stopped sessions' hosts no session runs on {"stopped":${stopped}}`);
+    const reaped = await reapLeaked(hosts);
+    if (reaped) console.warn(`${nowIso()} WARN ended VMs no session's record holds (a removed host dir, or a node that stopped mid-boot) {"ended":${reaped}}`);
     const killed = await killOrphans(config.home, protectedPids);
     if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
     // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept).

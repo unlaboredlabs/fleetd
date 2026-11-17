@@ -5,12 +5,15 @@
 //   (commands, acks) the guest didn't confirm it took (./guest.ts HostPipe);
 // - each connection to the box's node.sock, answered as a node.sock call of the box's session (../lead/index.ts
 //   leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
-// - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1. A channel to
-//   anywhere else is refused.
+// - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1;
+// - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
+//   (../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
+// A channel to anywhere else is refused.
 import { connect } from "node:net";
 import { Duplex } from "node:stream";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { HostHandlers, HostSocket } from "../runner/host.ts";
+import { slotChannel } from "../build_slots.ts";
 import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
 import { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./guest.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
@@ -32,6 +35,8 @@ export type BoxOptions = {
   tcp: number[];
   /** How node.sock calls are answered (the node's serveLeadSocket hooks). */
   lead: LeadSocketHooks;
+  /** Where the guest listens for its builds' slots, and the node home whose slots they take. */
+  slots?: { sock: string; home: string };
   /** How long a dropped link is dialled again before the guest counts as gone. */
   goneMs?: number;
 };
@@ -183,6 +188,7 @@ export class Box {
       this.#hostRuns = host !== null && typeof host === "object";
       this.#hostLines = this.#hostRuns && Number.isInteger(host?.lines) ? (host!.lines as number) : 0;
       await this.#request({ op: "listen", unix: this.o.nodeSock });
+      if (this.o.slots) await this.#request({ op: "listen", unix: this.o.slots.sock });
       for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
     } catch (error) {
       if (this.#mux === mux) this.#mux = undefined;
@@ -200,6 +206,7 @@ export class Box {
     if (channel <= HOST) return undefined;
     // The target alone says what a channel is; nothing in it names a session.
     if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
+    if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return slotChannel(this.o.slots.home);
     if ("tcp" in target && this.#tcp.has(target.tcp)) return connect({ host: "127.0.0.1", port: target.tcp });
     return undefined;
   }

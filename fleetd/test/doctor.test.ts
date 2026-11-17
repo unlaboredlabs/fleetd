@@ -87,6 +87,25 @@ test("a project git can't fetch fails the check with the login fix", () => {
   expect(yesterday.message).toContain("as of 10-25 06:00 UTC");
 });
 
+test("the VM row says where agents run: in VMs, off by choice, or the reason with its fix, never an unexplained off", () => {
+  const inVms = c.vms("devbox", false, { kind: "microvm" })!;
+  expect([inVms.id, inVms.status, inVms.message]).toEqual(["devbox/vm", "ok", "Agents on devbox run in VMs of their own."]);
+  const off = c.vms("devbox", false, { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true })!;
+  expect([off.status, off.fix]).toEqual(["ok", undefined]);
+  expect(off.message).toBe(`Agents on devbox run as plain processes, not in VMs: turned off on this machine (node.json "sandbox": "process")`);
+  const noKvm = c.vms("devbox", false, { kind: "process", why: "devuser can't open /dev/kvm read-write.", fix: "sudo usermod -aG kvm devuser" })!;
+  expect([noKvm.status, noKvm.fix?.command, noKvm.message]).toEqual([
+    "warn",
+    "sudo usermod -aG kvm devuser",
+    "Agents on devbox run as plain processes, not in VMs: devuser can't open /dev/kvm read-write.",
+  ]);
+  // A reason with no command still says itself, and warns.
+  const noDns = c.vms("devbox", false, { kind: "process", why: "No DNS server for VMs." })!;
+  expect([noDns.status, noDns.fix, noDns.message.endsWith("No DNS server for VMs.")]).toEqual(["warn", undefined, true]);
+  expect(c.vms("devbox", true, { kind: "microvm" })).toBeUndefined();
+  expect(c.vms("devbox", false, undefined)).toBeUndefined();
+});
+
 test("screens fail with the fix a person runs, and say nothing where they are off or offline", () => {
   const broken = { state: "unavailable", message: "devuser may not use /dev/kvm.", fix: "sudo usermod -aG kvm devuser" };
   const entry = c.androidSessions("devbox", false, broken)!;

@@ -1,9 +1,16 @@
 // `fleetd build-slot <node home> <cargo's arguments>`: an agent's cargo build
 // takes one of the machine's build slots (a file under `<node home>/build-slots` it holds a flock on) while the real
 // cargo runs; with every slot in use it queues, first come first served. Every other cargo command runs at once.
+//
+// In a VM (../place/microvm.ts) the node's home is hidden, and a flock there would be the VM's alone (virtiofs keeps
+// locks inside the guest). So a build in a box asks the node for its slots instead, over the box's link
+// (`FLEETD_BUILD_SLOT_SOCK`, where the box's guest listens): the node takes them here, in the same queue as every
+// other agent's build, and holds them until the build's connection ends, however it ends (slotChannel).
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
+import { connect } from "node:net";
 import { constants } from "node:os";
 import { join } from "node:path";
+import { Duplex } from "node:stream";
 import { lock, tryLock } from "./flock.ts";
 
 export const COMMAND = "build-slot";
@@ -17,6 +24,10 @@ const RUN_VALUES = ["-p", "--package", "--bin", "--example", "-F", "--features",
 
 export const dir = (home: string) => join(home, "build-slots");
 export const binDir = (home: string) => join(dir(home), "bin");
+/** Where a box's builds ask the node for slots: a path the box's guest listens at (never a file on this machine). */
+export const slotSock = (home: string) => join(home, "build-slots.sock");
+/** A box's commands carry slotSock in it. */
+export const SLOT_SOCK_VAR = "FLEETD_BUILD_SLOT_SOCK";
 
 /** The slots `memTotal` bytes fit: one per 16 GB (as sold), at least one; unknown: 2. */
 export function slotsFit(memTotal: number | undefined): number {
@@ -243,14 +254,16 @@ function freeSlot(d: string, slots: number, need: number): number[] | undefined 
   return undefined;
 }
 
-/** Takes `need` of `slots` slots after every build queued before this one; `queued` hears once how many are ahead. */
-export async function take(d: string, slots: number, need: number, pollMs: number, queued: (ahead: number) => void): Promise<number[]> {
+/** Takes `need` of `slots` slots after every build queued before this one; `queued` hears once how many are ahead.
+ * `signal` gives up its place in the queue (it throws). */
+export async function take(d: string, slots: number, need: number, pollMs: number, queued: (ahead: number) => void, signal?: AbortSignal): Promise<number[]> {
   mkdirSync(d, { recursive: true, mode: 0o700 });
   const queue = join(d, "queue");
   const mine = ticket(queue);
   let told = false;
   try {
     for (;;) {
+      if (signal?.aborted) throw new Error("the build stopped waiting");
       const n = ahead(queue, mine.path);
       if (n === 0) {
         const slot = freeSlot(d, slots, need);
@@ -294,6 +307,105 @@ async function runCargo(cargo: string, args: string[], env: Record<string, strin
   return code;
 }
 
+/**
+ * The node's end of one box build's connection to slotSock: a line `{"need":n}` in; `{"queued":ahead,"slots":s}` out
+ * while it waits, then `{"go":true,"slots":s}` once the slots are taken, held until the box's end of the connection
+ * ends (the build is done, or killed, or the box went). `{"slots":0}`: no turns on this machine, build at once.
+ */
+export function slotChannel(home: string, pollMs = POLL_MS): Duplex {
+  let buf = "";
+  let asked = false;
+  let fds: number[] = [];
+  const stop = new AbortController();
+  const release = () => {
+    stop.abort();
+    for (const fd of fds) closeSync(fd);
+    fds = [];
+  };
+  const say = (m: Record<string, unknown>) => void channel.push(`${JSON.stringify(m)}\n`);
+  const ask = (line: string) => {
+    asked = true;
+    let need = 1;
+    try {
+      const n = (JSON.parse(line) as { need?: unknown }).need;
+      if (n === 2) need = 2;
+    } catch {}
+    const slots = slotsHere(home);
+    if (slots === undefined) {
+      say({ slots: 0 });
+      channel.push(null);
+      return;
+    }
+    take(dir(home), slots, need, pollMs, (ahead) => say({ queued: ahead, slots }), stop.signal).then(
+      (got) => {
+        if (stop.signal.aborted) for (const fd of got) closeSync(fd);
+        else {
+          fds = got;
+          say({ go: true, slots });
+        }
+      },
+      (error: Error) => {
+        if (!stop.signal.aborted) say({ error: error.message });
+        channel.push(null);
+      },
+    );
+  };
+  const channel = new Duplex({
+    read() {},
+    write(chunk: Buffer, _encoding, callback) {
+      if (!asked) {
+        buf += chunk.toString("utf8");
+        const nl = buf.indexOf("\n");
+        if (nl >= 0) ask(buf.slice(0, nl));
+        else if (buf.length > 4096) ask("{}");
+      }
+      callback();
+    },
+    // The build's end of it ended: its slots go back.
+    final(callback) {
+      release();
+      channel.push(null);
+      callback();
+    },
+  });
+  channel.on("close", release);
+  return channel;
+}
+
+/** Asks the node at `sock` (a box's slotSock) for `need` slots: the connection to hold while the build runs, or
+ * undefined for no turns. */
+async function askNode(sock: string, need: number, queued: (slots: number, ahead: number) => void): Promise<{ end: () => void } | undefined> {
+  return new Promise((resolve, reject) => {
+    const s = connect(sock);
+    let buf = "";
+    s.once("connect", () => s.write(`${JSON.stringify({ need })}\n`));
+    s.on("data", (chunk: Buffer) => {
+      buf += chunk.toString("utf8");
+      for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        let m: { queued?: number; slots?: number; go?: boolean; error?: string };
+        try {
+          m = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (m.error !== undefined) {
+          s.destroy();
+          reject(new Error(m.error));
+        } else if (m.go) resolve({ end: () => s.end() });
+        else if (m.queued !== undefined) queued(m.slots ?? 0, m.queued);
+        else if (m.slots === 0) {
+          s.destroy();
+          resolve(undefined);
+        }
+      }
+    });
+    s.on("error", reject);
+    s.once("close", () => reject(new Error("the node ended the connection")));
+  });
+}
+
 export async function main(argv: string[]): Promise<number> {
   const [home, ...args] = argv;
   if (home === undefined) {
@@ -308,6 +420,21 @@ export async function main(argv: string[]): Promise<number> {
   const held = process.env[HELD] !== undefined;
   const build = !held && !compilesNothing(args) ? buildFirst(args) : undefined;
   const waits = !held && (build !== undefined || heavy(args));
+  // In a box: the machine's slots, through the node.
+  const sock = process.env[SLOT_SOCK_VAR];
+  if (waits && sock) {
+    let held: { end: () => void } | undefined;
+    try {
+      held = await askNode(sock, slotsTaken(args), (slots, n) => process.stderr.write(`${queuedLine(slots, n)}\n`));
+    } catch (error) {
+      process.stderr.write(`fleetd: build slots unavailable (${(error as Error).message}): building without waiting\n`);
+    }
+    if (!held) return runCargo(cargo, args, process.env);
+    const code = await runCargo(cargo, build ?? args, { ...process.env, [HELD]: "1" });
+    held.end();
+    if (build !== undefined && code === 0) return runCargo(cargo, args, process.env);
+    return code;
+  }
   const slots = waits ? slotsHere(home) : undefined;
   if (slots === undefined) return runCargo(cargo, args, process.env);
   let slot: number[] | undefined;

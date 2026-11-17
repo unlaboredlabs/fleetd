@@ -342,22 +342,25 @@ rather than exiting.
 
 On a Linux machine that can run them, each task's agent runs in a small VM of its own
 ([Cloud Hypervisor](https://www.cloudhypervisor.org)), not as a plain process: its kills, its `/tmp`, its memory and
-its network stay its own, and it can't reach the machine's local ports (the hub's among them). Nothing about tasks,
-chat, PRs, screens or resumes changes. Leads and a person's own threads stay plain processes, and so does every agent on
-a Mac.
+its network stay its own, and it can't reach the machine itself over the network (the hub's port among them). Nothing
+about tasks, chat, PRs, screens or resumes changes. Leads and a person's own threads stay plain processes, and so does
+every agent on a Mac.
 
 | What | How |
 |---|---|
 | Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only. `/tmp` is the VM's own and goes with it. |
-| Network | Its own, through passt, with no route back to this machine's loopback. Its browser and Android screens reach it at the same `127.0.0.1` ports as before. |
+| Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). The internet and DNS work as before. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's, Android's adb, and a Claude gateway on this machine (`ANTHROPIC_BASE_URL` on `localhost`), at the same `127.0.0.1` ports as before. |
+| Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
+| Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
 | Memory | Each VM is 4 GB and 2 CPUs. The machine's [max agents](/docs/projects#max-agents) counts 4.1 GB an agent for it, so a 60 GB machine runs 10 at once where it ran 22 as plain processes. Machines, or [hosted sandboxes](#sandboxes), add more. |
 | Speed | Builds and tests over the shared files take about 16% longer and a third more CPU than a plain process. |
-| What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user namespaces, and a DNS server the VM can reach. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
+| What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user, mount and network namespaces, `ip` (iproute2), `nsenter` (util-linux) and `/dev/net/tun`, which most Linux machines have, and a DNS server the VM can reach, not on this machine itself. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
 
 The machine's max agents line says which: "memory 60 GB, about 4.4 GB an agent; each agent in a VM of its own", or
-"…; agents run as plain processes:" and the reason. A machine that can't run VMs never refuses agents: they run as plain
-processes, and the line says why.
+"…; agents run as plain processes:" and the reason. The doctor's `vm` row for the machine says the same, with the fix
+where there is one: it passes when agents run in VMs, or as plain processes by choice or on a Mac, and warns otherwise.
+A machine that can't run VMs never refuses agents: they run as plain processes, and both say why.
 
 | Why it runs plain processes | Fix |
 |---|---|
@@ -365,9 +368,29 @@ processes, and the line says why.
 | VMs need Linux with KVM; this machine runs macOS | None: a Mac runs plain processes. |
 | This user can't open /dev/kvm | Add the user to the `kvm` group (the line gives the command): the node then starts VMs through `sg kvm` within minutes, with no restart. |
 | AppArmor keeps this user from making the user namespace virtiofsd shares files from | The line gives the `sysctl` that allows it. |
-| No DNS server for VMs | Give systemd-resolved an upstream server: a VM can't use its local stub. |
+| No DNS server for VMs | Give systemd-resolved an upstream server: a VM can't use its local stub, or a server on this machine itself. |
+| A VM's network needs the `ip` command, `nsenter` or `/dev/net/tun` | Install iproute2 or util-linux with the system's package manager; for `/dev/net/tun`, the line gives the command that loads the tun module. |
 | fetching the VM files for the first time | Wait: agents run in VMs once they're there. A fetch that fails is tried again an hour later. |
 | this node runs fleetd from source | Run an installed fleetd. |
+
+**What stays shared on purpose.** A VM is a wall around the machine's processes, network and fleetd's own folders,
+not around your files:
+
+- **Your home folder is shared writable**, as a plain process has it, so the agent can read and change what you can
+  there: `~/.ssh` and its keys, `~/.config/gh` and other CLIs' logins, your other projects, and the package caches.
+- **Each repo's `.git` is shared writable** with every agent working in that repo, so an agent can change another's
+  branch or refs, as it can as a plain process.
+- **The machine's Claude login** (`~/.claude`) is shared with a session that uses it.
+- **The guest runs as root**, which this machine sees as you: files it writes are yours.
+
+Keep anything an agent must not read out of your home on that machine, or give agents a machine of their own.
+
+**Leaked VMs.** A VM goes with its agent, at stop and at the task's end, and powers itself off 2 s after its session
+ends, so one whose session is over doesn't stay. Each VM's processes carry a marker naming the folder
+the node made for it (`~/.fleetd/node/hosts/<session>`). At its start, the node ends every VM with its own marker that
+no session's record holds: one whose folder is gone, and one that started just before a crash, before its record was
+written. It finds them only by that marker under its own home, never by a process's name, so another fleet's VMs on the
+same machine (a second `FLEETD_HOME`) are never touched. `fleetd machine remove` ends them too.
 
 **Turn it off on a machine.** Add `"sandbox": "process"` to its [`node.json`](/docs/config-and-files#node-json). New
 agents run as plain processes within a minute; agents in VMs keep running there until they end. Remove the key to

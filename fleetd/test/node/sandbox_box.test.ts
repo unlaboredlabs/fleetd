@@ -218,6 +218,23 @@ test("a call from a box acts as the box's session and no other", async () => {
   boxB.close();
 }, 30_000);
 
+test("two boxes calling at once, each naming the other, act only as themselves", async () => {
+  const [a, b] = [await standIn(), await standIn()];
+  const hooks = leadHooks();
+  const boxA = await Box.open({ session: "s-a", dial: a.dial, nodeSock: a.nodeSock, tcp: [], lead: hooks });
+  const boxB = await Box.open({ session: "s-b", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: hooks });
+  const calls = Array.from({ length: 20 }, (_, i) => {
+    const [sock, own, other] = i % 2 ? [a.nodeSock, "s-a", "s-b"] : [b.nodeSock, "s-b", "s-a"];
+    return i % 4 < 2 ? call(sock, `op${i}`, other).then((r) => ({ r, own, other, claims: true })) : call(sock, `op${i}`).then((r) => ({ r, own, other, claims: false }));
+  });
+  for (const { r, own, other, claims } of await within(Promise.all(calls), 20_000, "the calls")) {
+    if (claims) expect(r).toMatchObject({ error: { code: "forbidden", message: `this call names session ${other} but runs in session ${own}` } });
+    else expect(r).toMatchObject({ result: { as: own } });
+  }
+  boxA.close();
+  boxB.close();
+}, 30_000);
+
 /** A local end for a channel the test opens itself: what came in, and whether the other side ended it. */
 function probe() {
   const got: Buffer[] = [];

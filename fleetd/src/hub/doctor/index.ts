@@ -189,6 +189,7 @@ export class Doctor {
     const load = s.load(id);
     out.push(checks.diskSpace(id, !online, load?.disk, s.paused(id)));
     for (const c of [
+      checks.vms(id, !online, load?.sandbox),
       checks.androidSessions(id, !online, load?.android),
       checks.iosSessions(id, !online, load?.ios),
       checks.desktopSessions(id, !online, load?.desktop),

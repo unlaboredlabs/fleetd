@@ -1,8 +1,10 @@
 // The `microvm` place: each agent's session runs in a Cloud Hypervisor VM of its own (design sandbox-per-agent-design
 // §2, §3, §5), the default wherever the machine can run one (../../sandbox/host/capable.ts). A box is:
 // - a launcher (bash, in a scope of its own at the agents' OOM score, like a session host) that leads the box's process
-//   group and starts passt (the network: `--no-map-gw`, so no route to this machine's loopback), virtiofsd (the files:
-//   ./view.ts, served from a user and mount namespace of its own) and the VMM, and ends with the VMM;
+//   group and starts passt (the network: in a network namespace of its own where this machine's own addresses lead
+//   nowhere, ./net.ts), virtiofsd (the files: ./view.ts, served from a user and mount namespace of its own) and the
+//   VMM, and ends with the VMM. It carries the box's marker (box_record.ts BOX_MARKER), so a box nothing records is
+//   still found at the node's next start;
 // - in the guest, `fleetd sandbox-guest` (the node's own binary over the share), reached through the VMM's hybrid vsock
 //   socket (`CONNECT <port>`), over which the node holds one link (../sandbox/box.ts) for the session host's lines, the
 //   session's node.sock calls and its TCP forwards.
@@ -20,6 +22,7 @@ import type { LeadSocketHooks } from "../lead/index.ts";
 import { leadSocketPath } from "../lead/index.ts";
 import { agentScoreLine } from "../oom.ts";
 import { HostLink, LaunchError, prepare, readRegistration, stop as stopHost, startOf, type Launch, type Registration } from "../runner/host.ts";
+import { table } from "../runner/procs.ts";
 import { hostScope, spawnScoped, type Scope } from "../runner/scope.ts";
 import { Box } from "../sandbox/box.ts";
 import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
@@ -29,8 +32,10 @@ import type { NodeLoad } from "../../shared/node_link.ts";
 import type { SessionRole } from "../../shared/sessions.ts";
 import { readConfig } from "../config.ts";
 import { homeDir, nowIso } from "../util.ts";
-import { boxAlive, boxFile, destroyBox, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
+import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
+import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
+import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
@@ -47,16 +52,31 @@ const GUEST_GW = "10.0.2.2";
 const BOOT_MS = 60_000;
 const DIAL_EVERY_MS = 100;
 const CHECK_EVERY_MS = 60_000;
+/** How often the node looks at this machine's addresses while boxes run, to keep each box off new ones. */
+export const ADDRS_EVERY_MS = 2_000;
 
 export type PlaceFor = { sessionId: string; dir: string; role: SessionRole };
 
-/** Where this machine's agents run, and why when it's a plain process. */
-export type VmStatus = { kind: "microvm" } | { kind: "process"; why: string };
+/** Where this machine's agents run, and why when it's a plain process: `fix` the command that fixes it, `expected` when
+ * it's by choice or the machine's design (turned off, macOS, the VM files on their way), nothing to fix. */
+export type VmStatus = { kind: "microvm" } | { kind: "process"; why: string; fix?: string; expected?: true };
 
-/** What a box needs started: its dir, its view, its port, the fleetd binary the guest runs, the tools and the check. */
-export type BootPlan = { dir: string; sessionId: string; view: View; port: number; exe: string; tools: VmTools; check: Extract<VmCheck, { ok: true }>; scope?: Scope };
-/** What a box's boot leaves: its launcher, and its VMM and helpers once they run. */
-export type Booted = { leader: BoxProc; helpers: BoxProc[] };
+/** What a box needs started: its dir, its view, its port, the fleetd binary the guest runs, the tools, the check, and
+ * this machine's addresses its network keeps out. */
+export type BootPlan = {
+  dir: string;
+  sessionId: string;
+  view: View;
+  port: number;
+  exe: string;
+  tools: VmTools;
+  check: Extract<VmCheck, { ok: true }>;
+  blocked: string[];
+  scope?: Scope;
+};
+/** What a box's boot leaves: its launcher, its VMM and helpers once they run, and the shell holding its network
+ * namespace. */
+export type Booted = { leader: BoxProc; helpers: BoxProc[]; net?: BoxProc };
 
 export type MicroVmOptions = {
   /** The node's home. */
@@ -73,6 +93,9 @@ export type MicroVmOptions = {
   fetch?: () => Promise<unknown>;
   boot?: (b: BootPlan) => Promise<Booted>;
   dial?: (dir: string, port: number) => Promise<Duplex>;
+  /** This machine's addresses, and how a box's routes are set to keep them out. */
+  addrs?: () => string[];
+  setBlocks?: (holder: number, want: string[]) => void;
   /** fleetd's folders hidden from a box: the fleetd dir, `~/.fleetd` and the node's home by default. */
   hidden?: string[];
   /** The person's home, shared whole. */
@@ -87,8 +110,44 @@ export class MicroVm {
   #boxes = new Map<string, Promise<Held>>();
   #checked: { at: number; status: VmStatus } | undefined;
   #fetching: Promise<unknown> | undefined;
+  #net: NetTools | undefined;
+  #watch: ReturnType<typeof setInterval>;
+  #warned = new Set<string>();
 
-  constructor(readonly o: MicroVmOptions) {}
+  constructor(readonly o: MicroVmOptions) {
+    this.#watch = setInterval(() => void this.keepOff(), ADDRS_EVERY_MS);
+    this.#watch.unref?.();
+  }
+
+  #addrs(): string[] {
+    return (this.o.addrs ?? hostAddrs)();
+  }
+
+  /** Sets each running box's routes to this machine's addresses as they are now, where they changed since: a new DHCP
+   * lease, IPv6's rotating addresses or a VPN coming up is out of a box's reach within ADDRS_EVERY_MS. */
+  async keepOff(): Promise<void> {
+    if (!this.#boxes.size) return;
+    const want = this.#addrs();
+    for (const [dir, going] of [...this.#boxes]) {
+      // A box still booting is set from the addresses as they are when it boots; the next look sees it.
+      const held = Bun.peek(going) as Held | Error | Promise<Held>;
+      const r = held instanceof Promise || held instanceof Error ? undefined : held.record;
+      if (!r?.net || same(r.blocked, want) || !liveProc(r.net)) continue;
+      try {
+        if (this.o.setBlocks) this.o.setBlocks(r.net.pid, want);
+        else {
+          this.#net ??= toolsOrThrow();
+          setBlocks(this.#net.nsenter, this.#net.ip, r.net.pid, want);
+        }
+        r.blocked = want;
+        if (this.#boxes.get(dir) === going) writeFileSync(boxFile(dir), JSON.stringify(r));
+        this.#warned.delete(dir);
+      } catch (error) {
+        if (!this.#warned.has(dir)) console.warn(`${nowIso()} WARN couldn't keep a VM off this machine's new addresses; trying again {"dir":${JSON.stringify(dir)},"error":${JSON.stringify((error as Error).message)}}`);
+        this.#warned.add(dir);
+      }
+    }
+  }
 
   /** Whether `s` runs in a box when the machine can: a task's agent. A lead or a person's own thread stays a process. */
   wants(s: PlaceFor): boolean {
@@ -109,14 +168,14 @@ export class MicroVm {
     try {
       off = readConfig(this.o.home)?.sandbox;
     } catch {}
-    if (off === "process") return { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")` };
-    if (this.o.fleetd.length !== 1) return { kind: "process", why: "this node runs fleetd from source, and a VM runs only its built binary" };
+    if (off === "process") return { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true };
+    if (this.o.fleetd.length !== 1) return { kind: "process", why: "this node runs fleetd from source, and a VM runs only its built binary", expected: true };
     if (/\s/u.test(this.o.fleetd[0]!)) return { kind: "process", why: `the fleetd binary's path has a space in it (${this.o.fleetd[0]})` };
     const check = (this.o.check ?? (() => canRunVms(this.o.home)))();
-    if (!check.ok) return { kind: "process", why: check.fix ? `${check.why} Fix: ${check.fix}` : check.why };
+    if (!check.ok) return { kind: "process", why: check.why, ...(check.fix ? { fix: check.fix } : {}), ...(check.expected ? { expected: true } : {}) };
     if (!this.#tools()) {
       this.#fetchTools();
-      return { kind: "process", why: "fetching the VM files (Cloud Hypervisor, the guest kernel and root image) for the first time" };
+      return { kind: "process", why: "fetching the VM files (Cloud Hypervisor, the guest kernel and root image) for the first time", expected: true };
     }
     return { kind: "microvm" };
   }
@@ -157,6 +216,12 @@ export class MicroVm {
     return [join(this.o.home, "sessions", s.sessionId), update, this.o.fleetd[0]!];
   }
 
+  /** A command's environment in a box: git's GitHub helper, and its builds' turns asked of the node over the box's
+   * link (the machine's build slots, not ones of the box's own). */
+  #inBox<E extends Record<string, string | undefined>>(env: E): E & Record<string, string> {
+    return { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as E & Record<string, string>;
+  }
+
   #hidden(): string[] {
     return this.o.hidden ?? [fleetdDir(), join(homeDir(), ".fleetd"), this.o.home];
   }
@@ -170,7 +235,7 @@ export class MicroVm {
       console.warn(`${nowIso()} WARN no VM for a setup command: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
       return processPlace.run(r);
     }
-    return held.box.run(r.env ? { ...r, env: gitInBox(r.env) } : r);
+    return held.box.run(r.env ? { ...r, env: this.#inBox(r.env) } : r);
   }
 
   async start(s: PlaceFor, l: Launch): Promise<HostLink> {
@@ -198,7 +263,7 @@ export class MicroVm {
       }
       // The guest runs as root over files the host's user owns, which claude refuses to skip its prompts for unless it
       // knows it's in a sandbox.
-      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args: l.args, cwd: l.cwd, env: { ...gitInBox(l.env), IS_SANDBOX: "1" } });
+      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args: l.args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
       const leader = held.record.leader;
       const registration: Registration = { protocol: info.protocol, hostPid: leader.pid, hostStart: leader.start, pid: leader.pid, start: leader.start, marker: "", refused: info.refused ?? null };
       writeFileSync(join(l.dir, "host.json"), JSON.stringify(registration));
@@ -233,8 +298,11 @@ export class MicroVm {
     if (!tools || !check.ok) throw new Error(check.ok ? "the VM files aren't there" : check.why);
     await prepare(s.dir);
     const at = Date.now();
-    const booted = await (this.o.boot ?? bootCloudHypervisor)({ dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, ...(scope ? { scope } : {}) });
-    const record: BoxRecord = { kind: "microvm", leader: booted.leader, helpers: booted.helpers, tcp: [], port: GUEST_PORT, view };
+    this.#net = check.net;
+    const blocked = this.#addrs();
+    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, ...(scope ? { scope } : {}) };
+    const booted = await (this.o.boot ?? bootCloudHypervisor)(plan);
+    const record: BoxRecord = { kind: "microvm", leader: booted.leader, helpers: booted.helpers, tcp: [], port: GUEST_PORT, view, ...(booted.net ? { net: booted.net, blocked } : {}) };
     writeFileSync(boxFile(s.dir), JSON.stringify(record));
     try {
       const box = await this.#open(s.dir, s.sessionId, record, at + BOOT_MS);
@@ -259,6 +327,7 @@ export class MicroVm {
           session,
           dial: () => dial(dir, record.port),
           nodeSock: leadSocketPath(this.o.home),
+          slots: { sock: slotSock(this.o.home), home: this.o.home },
           tcp: record.tcp,
           lead: lazyHooks(lead),
           ...(this.o.goneMs !== undefined ? { goneMs: this.o.goneMs } : {}),
@@ -315,9 +384,18 @@ export class MicroVm {
 
   /** Lets go of every box's link (the node's shutdown): the boxes and their sessions go on for the next node. */
   close(): void {
+    clearInterval(this.#watch);
     for (const held of this.#boxes.values()) void held.then((h) => h.box.close(), () => {});
     this.#boxes.clear();
   }
+}
+
+const same = (a: string[] | undefined, b: string[]) => a !== undefined && a.length === b.length && a.every((x, i) => x === b[i]);
+
+function toolsOrThrow(): NetTools {
+  const net = netTools();
+  if ("missing" in net) throw new Error(`this machine has no ${net.missing}`);
+  return net;
 }
 
 /** A heartbeat's word on where this machine's agents run: in VMs, sized at MEM_PER_AGENT_BYTES each for the hub's cap,
@@ -460,13 +538,23 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
   ].join(" ");
 }
 
+/** The flags pasta (passt's binary under that name) links a box's network namespace to this machine's network with:
+ * no ports in either way (`-t`/`-u` into it, `-T`/`-U` out of it to this machine's loopback), and no gateway address
+ * that means this machine. */
+export const PASTA_FLAGS = ["-q", "-f", "--config-net", "-t", "none", "-u", "none", "-T", "none", "-U", "none", "--no-map-gw"];
+
 /** The launcher's script: passt and virtiofsd in the background, then the VMM once both listen; it ends with the VMM,
- * and its helpers with it. Their pids go to `pids` as `<vmm> <passt> <virtiofsd>`. */
+ * and its helpers with it. passt runs in a network namespace of its own, which pasta links to this machine's network,
+ * behind a shell that first routes this machine's own addresses (`blocks`, ./net.ts) nowhere. Their pids go to `pids`
+ * as `<vmm> <pasta> <virtiofsd>`. */
 export function launcherScript(b: BootPlan, now: number): string {
   const { dir, tools, check, view } = b;
   const viewDir = join(dir, "view");
   const virtiofsd = [tools.virtiofsd, `--socket-path=${join(dir, "fs.sock")}`, `--shared-dir=${viewDir}`, "--sandbox=namespace", "--announce-submounts", "--cache=auto", "--log-level=error"];
   const passt = [tools.passt, "--vhost-user", "--socket", join(dir, "net.sock"), "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
+  // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
+  const inNamespace = [blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
+  const pasta = `(exec -a pasta ${[tools.passt, ...PASTA_FLAGS, "--", "/bin/sh", "-c", inNamespace].map(q).join(" ")})`;
   const vmm = [
     tools.cloudHypervisor,
     "--api-socket",
@@ -497,7 +585,7 @@ export function launcherScript(b: BootPlan, now: number): string {
   return [
     agentScoreLine(),
     `cd ${q(dir)} || exit 1`,
-    `${passt.map(q).join(" ")} 2>>box.log &`,
+    `${pasta} 2>>box.log &`,
     "p=$!",
     `unshare --user --map-root-user --mount --propagation private -- /bin/sh -c ${q(views)} 2>>box.log &`,
     "v=$!",
@@ -516,13 +604,14 @@ export function launcherScript(b: BootPlan, now: number): string {
 /** Starts a box's launcher, in a scope of its own that outlives the node, and waits for its VMM to run. */
 export async function bootCloudHypervisor(b: BootPlan): Promise<Booted> {
   mkdirSync(join(b.dir, "view"), { recursive: true });
+  writeFileSync(join(b.dir, "blocks"), blockLines(b.blocked));
   const log = openSync(join(b.dir, "box.log"), "a");
   let child;
   try {
     const started = await spawnScoped(b.scope && hostScope(b.scope), "/bin/bash", ["-c", launcherScript(b, Date.now())], b.sessionId, (program, argv, scope) =>
       spawn(program, argv, {
         cwd: b.dir,
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: homeDir(), LANG: "C.UTF-8", ...scope?.env },
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: homeDir(), LANG: "C.UTF-8", [BOX_MARKER]: b.dir, ...scope?.env },
         stdio: ["ignore", "ignore", log],
         // A group of its own, which it leads: the box's processes, killed as one.
         detached: true,
@@ -540,7 +629,13 @@ export async function bootCloudHypervisor(b: BootPlan): Promise<Booted> {
   const until = Date.now() + 15_000;
   for (;;) {
     const pids = readPids(b.dir);
-    if (pids) return { leader, helpers: pids };
+    if (pids) {
+      // pasta's child: the shell holding the box's network namespace.
+      const pasta = pids[1];
+      const holder = pasta && table().find((p) => p.ppid === pasta.pid && p.start !== undefined && !p.zombie);
+      const net = holder ? { pid: holder.pid, start: holder.start! } : undefined;
+      return { leader, helpers: net ? [...pids, net] : pids, ...(net ? { net } : {}) };
+    }
     if (startOf(pid) !== start || child.exitCode !== null) throw new Error(`the VM didn't start: ${boxLog(b.dir)}`);
     if (Date.now() >= until) {
       try {
