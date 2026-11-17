@@ -6,8 +6,8 @@
 // end, the start-up sweep and `stop-all` leaving no process of it behind.
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { connect } from "node:net";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { sendToNode } from "../../src/cli/agent_mcp/socket.ts";
@@ -16,7 +16,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
+import { forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, SOCKS, vsockDial, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -429,4 +429,41 @@ test("a box's builds take this machine's build slots, queued with every other ag
   expect((await slow).exitCode).toBeNull();
   for (const fd of await within(next, 10_000, "the slot back")) closeSync(fd);
   await n.vm.end(dir);
+});
+
+test.skipIf(process.platform !== "linux")("a box under a deep node home keeps every socket address short: its tools get them by name, the node dials through the dir", async () => {
+  // A host dir whose sockets' paths are far past a socket address's 108 bytes.
+  const dir = join(root, "a-node-home-deeper-than-a-socket-address-holds".repeat(2), "hosts", "0f1e2d3c-4b5a-4968-8776-655443322110");
+  mkdirSync(dir, { recursive: true });
+  expect(join(dir, SOCKS.vsock).length).toBeGreaterThan(108);
+  const script = launcherScript(
+    { dir, sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
+    0,
+  );
+  // Each tool runs in the dir (the launcher's cwd, and the namespace's shell's), and names each socket by itself.
+  for (const name of Object.values(SOCKS)) expect(script).not.toContain(join(dir, name));
+  // passt's and virtiofsd's are quoted once more, inside the shells that start them.
+  const inner = (...args: string[]) => args.map((x) => `'\\''${x}'\\''`).join(" ");
+  for (const arg of [inner("--socket-path=fs.sock"), inner("--socket", "net.sock"), "'path=api.sock'", "'tag=view,socket=fs.sock'", "'vhost_user=true,socket=net.sock,num_queues=2'", "'cid=3,socket=vsock.sock'"])
+    expect(script).toContain(arg);
+  expect(script).toContain(`\ncd '${dir}' || exit 1\n`);
+  expect(script).toContain(`'/bin/sh' '-c' 'cd ${inner(dir)} || exit 1\n`);
+  // A stand-in for the VMM's hybrid vsock socket in that dir, bound through an fd of it as the VMM binds by name.
+  const fd = openSync(dir, "r");
+  const vmm = createServer((s) => {
+    s.once("data", (line) => {
+      expect(line.toString()).toBe("CONNECT 5000\n");
+      s.write("OK 1073741824\nhello from the guest");
+    });
+  });
+  await new Promise<void>((r) => vmm.listen(`/proc/self/fd/${fd}/${SOCKS.vsock}`, r));
+  closeSync(fd);
+  try {
+    const link = await within(vsockDial(dir, 5000), 5_000, "the dial");
+    const got = await within(new Promise<string>((r) => link.once("data", (b: Buffer) => r(b.toString()))), 5_000, "the guest's bytes");
+    expect(got).toBe("hello from the guest");
+    link.destroy();
+  } finally {
+    vmm.close();
+  }
 });
