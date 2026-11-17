@@ -571,3 +571,20 @@ test("a VM agent on Anthropic's own API calls it exactly as set: the relay takes
   expect(seen).toMatchObject([{ url: "https://api.anthropic.com", boxUrl: "https://api.anthropic.com", relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } } }]);
   await n.vm.bound({ sessionId: "s-api", dir, role: "worker" }).stop(dir);
 }, 30_000);
+
+test("a setup command whose box doesn't boot runs as a plain process, and the machine says why, never silently", async () => {
+  const n = node();
+  const vm = new MicroVm({
+    ...n.vm.o,
+    boot: async () => {
+      throw new Error("the VM didn't start: Invalid socket path: net.sock");
+    },
+  });
+  const dir = join(n.home, "hosts", "s-noboot");
+  const ran = await vm.bound({ sessionId: "s-noboot", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["sh", "-c", "echo on the host"], timeoutSec: 5, env: envOf(n.home) });
+  expect(ran).toMatchObject({ exitCode: 0, outputTail: "on the host\n" });
+  const status = vm.status();
+  expect(status.kind).toBe("process");
+  expect(status.kind === "process" && status.why).toContain("the last VM didn't start: the VM didn't start: Invalid socket path: net.sock");
+  vm.close();
+});

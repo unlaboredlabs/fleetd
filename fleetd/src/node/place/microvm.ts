@@ -252,6 +252,7 @@ export class MicroVm {
       held = await this.#box(s, needs({ cwd: r.cwd, env: r.env ?? {}, argv: r.argv, ro: this.#base(s) }));
     } catch (error) {
       console.warn(`${nowIso()} WARN no VM for a setup command: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
+      this.failed((error as Error).message);
       return processPlace.run(r);
     }
     return held.box.run(r.env ? { ...r, env: this.#inBox(r.env) } : r);
