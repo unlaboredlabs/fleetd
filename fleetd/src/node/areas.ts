@@ -9,7 +9,7 @@ import { start as startDesktop, stop as stopDesktop } from "./desktop/index.ts";
 import { start as startHosts } from "./hosts/index.ts";
 import { start as startScreens } from "./screens/index.ts";
 import { start as startRevyl, stop as stopRevyl } from "./revyl/index.ts";
-import { start as startSandboxes } from "./sandbox/index.ts";
+import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
 export function registerAreas(node: Node): void {

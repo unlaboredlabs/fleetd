@@ -8,12 +8,15 @@ import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
 import { CAP_SANDBOX, CHECK_WAIT, hostedMax, isProvider, type Limit, NAMES, PROVIDERS, reasonOf } from "../../shared/sandbox.ts";
 import type { Node } from "../api.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
-import { provider as realProvider, ProviderError } from "./providers.ts";
+import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
 
 /** The providers this node's sessions can run in (the hosted kind's): none until it lands. */
 export const HOSTED_KINDS: readonly KnownSandboxProvider[] = [];
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
+
+/** A provider's client as Test uses it: only its list of fleetd's boxes. */
+export type Lister = (id: ProviderId, auth: ProviderAuth, o?: ClientOptions) => Pick<Provider, "list">;
 
 export class Sandboxes {
   #limits: Limit[] = [];
@@ -21,7 +24,7 @@ export class Sandboxes {
   constructor(
     private readonly box: Opener,
     private readonly kinds: readonly KnownSandboxProvider[] = HOSTED_KINDS,
-    private readonly provider = realProvider,
+    private readonly provider: Lister = realProvider,
   ) {}
 
   /** The team's limits the hub sent last, in the order agents go to the providers. */

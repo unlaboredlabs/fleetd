@@ -31,7 +31,7 @@ import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
 import { RevylScreens } from "./revyl/index.ts";
-import { sandboxesOf } from "./sandbox/index.ts";
+import { sandboxesOf } from "./sandbox/hosted.ts";
 import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";

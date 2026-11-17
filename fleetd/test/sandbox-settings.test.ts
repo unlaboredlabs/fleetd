@@ -1,7 +1,7 @@
 // The team's own hosted sandbox accounts (hub/sandbox, node/sandbox): each provider's key connected through a sealed
 // value, tested on a machine of the team's and removed, never shown; E2B's domain; the limit; the order; the limits a
 // node keeps and the hosted agents it reports, none until a hosted kind lands. A stand-in provider client answers:
-// nothing reaches a provider.
+// nothing reaches a provider. The clients themselves are tested against stand-in servers (sandbox/providers).
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { boxKey } from "../src/hub/hub_links/store.ts";
@@ -9,8 +9,8 @@ import { start as startSandboxLoops } from "../src/hub/sandbox/loops.ts";
 import { sandboxProviders } from "../src/hub/doctor/checks.ts";
 import { guides } from "../src/hub/setup/index.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
-import { Sandboxes } from "../src/node/sandbox/index.ts";
-import { ProviderError, type ProviderAuth, type ProviderId } from "../src/node/sandbox/providers.ts";
+import { Sandboxes } from "../src/node/sandbox/hosted.ts";
+import { ProviderError, type ProviderAuth, type ProviderId } from "../src/sandbox/providers/index.ts";
 import { domainOf, hostedMax } from "../src/shared/sandbox.ts";
 import type { NodeAction } from "../src/shared/node_link.ts";
 import { addMachine, caller, testHub } from "./screens_helpers.ts";
