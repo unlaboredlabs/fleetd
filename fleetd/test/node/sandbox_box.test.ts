@@ -75,6 +75,15 @@ async function standIn() {
     nodeSock: join(dir, "node.sock"),
     dial,
     links,
+    /** The current link swallows what the node writes to it from now on, as one that is dying. */
+    blackhole(): void {
+      const s = links.at(-1)!;
+      s.write = ((_chunk: unknown, ...rest: unknown[]) => {
+        const cb = rest.find((r) => typeof r === "function") as (() => void) | undefined;
+        cb?.();
+        return true;
+      }) as typeof s.write;
+    },
     /** Drops the current link and holds re-dials until the returned function is called. */
     drop(): () => void {
       let open!: () => void;
@@ -109,6 +118,14 @@ async function program(name: string, script: string): Promise<string> {
   chmodSync(path, 0o755);
   return path;
 }
+
+/** Says m0, then one init per line on its stdin: r1, r2, … */
+const ECHO_CLAUDE = `#!/bin/sh
+init() { echo "{\\"type\\":\\"system\\",\\"subtype\\":\\"init\\",\\"claude_code_version\\":\\"2.1.302\\",\\"model\\":\\"$1\\",\\"cwd\\":\\"/fake\\"}"; }
+init m0
+n=0
+while read line; do n=$((n+1)); init "r$n"; done
+`;
 
 /** Applies events as the session service does until `n` inits came; their models. */
 async function applyInits(link: HostLink, n: number): Promise<string[]> {
@@ -154,6 +171,31 @@ test("the session host's lines cross the box's link, and a link dropped and dial
   expect(exited).toBe(true);
   box.close();
   expect(await box.gone).toBe("the node let go of the box");
+}, 30_000);
+
+test("commands cross a dropped link once each: one a dying link swallowed, one sent while it was down", async () => {
+  const b = await standIn();
+  const box = await Box.open({ session: "s-cmd", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 10_000 });
+  const claude = await program("claude-echo", ECHO_CLAUDE);
+  await box.start({ sessionId: "s-cmd", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: marker("box-test-cmd") } });
+  const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
+  const send = (run: string) => link.send({ Send: { run_id: run, text: run, mode: "plain" } });
+  expect(await applyInits(link, 1)).toEqual(["m0"]);
+  send("run-1");
+  expect(await applyInits(link, 1)).toEqual(["r1"]);
+  await Bun.sleep(400);
+  b.blackhole();
+  send("run-2");
+  await Bun.sleep(100);
+  const open = b.drop();
+  send("run-3");
+  await Bun.sleep(200);
+  open();
+  expect(await applyInits(link, 2)).toEqual(["r2", "r3"]);
+  // Nothing came twice: the next one is r4.
+  send("run-4");
+  expect(await applyInits(link, 1)).toEqual(["r4"]);
+  box.close();
 }, 30_000);
 
 test("a call from a box acts as the box's session and no other", async () => {

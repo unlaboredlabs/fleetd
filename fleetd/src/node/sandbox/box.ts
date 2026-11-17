@@ -1,7 +1,8 @@
 // The node's side of one box: its one link to the box's guest helper (./guest.ts), dialled with whatever stream the
 // box kind gives (`dial`), and dialled again when it drops until the guest is gone for `goneMs`. Over it (./mux.ts):
-// - the session host's lines (`start`, then `dialHost`, which HostLink.connect takes as its dial): the host side of
-//   them stays open across drops, and the session host inside resends what the node didn't acknowledge;
+// - the session host's lines (`start`, then `dialHost`, which HostLink.connect takes as its dial), open across drops
+//   both ways: the session host inside resends the events the node didn't acknowledge, and the node resends the lines
+//   (commands, acks) the guest didn't confirm it took (./guest.ts HostPipe);
 // - each connection to the box's node.sock, answered as a node.sock call of the box's session (../lead/index.ts
 //   leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
 // - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1. A channel to
@@ -34,11 +35,12 @@ export type BoxOptions = {
   goneMs?: number;
 };
 
-
 export class Box {
   #mux: Mux | undefined;
   #tcp: Set<number>;
   #hostRuns = false;
+  /** How many of the node's lines the session host took, as the guest last said. */
+  #hostLines = 0;
   #bridge: HostBridge | undefined;
   #requests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   #nextId = 0;
@@ -64,6 +66,7 @@ export class Box {
   async start(l: { sessionId: string; program: string; args: string[]; cwd: string; env: Record<string, string | undefined> }): Promise<HostInfo> {
     const info = (await this.#request({ op: "start", ...l })) as HostInfo;
     this.#hostRuns = !info.refused;
+    this.#hostLines = 0;
     return info;
   }
 
@@ -75,7 +78,7 @@ export class Box {
     const bridge = new HostBridge(h);
     this.#bridge = bridge;
     // While a link is being set up, its setup opens the channel.
-    if (this.#mux && !this.#connecting) this.#mux.open(HOST, { host: true }, bridge.attach());
+    if (this.#mux && !this.#connecting) this.#mux.open(HOST, { host: true }, bridge.attach(this.#hostLines));
     return bridge.socket;
   }
 
@@ -101,11 +104,27 @@ export class Box {
   }
 
   async #dial(): Promise<void> {
-    const link = await this.o.dial();
+    // A dial that never answers (a vsock connect, say) counts as a failed one.
+    let late = false;
+    const dialled = this.o.dial();
+    dialled.then((l) => late && l.destroy(), () => {});
+    const link = await Promise.race([
+      dialled,
+      Bun.sleep(HELLO_MS).then(() => {
+        late = true;
+        throw new Error(`the box's guest didn't answer the dial within ${HELLO_MS / 1000} s`);
+      }),
+    ]);
     let hello!: (m: Record<string, unknown>) => void;
     const said = new Promise<Record<string, unknown>>((r) => (hello = r));
     const mux: Mux = new Mux(link, {
-      control: (m) => (m.op === "hello" ? hello(m) : this.#answer(m)),
+      control: (m) => {
+        if (m.op === "hello") hello(m);
+        else if (m.op === "hostLines" && Number.isInteger(m.n)) {
+          this.#hostLines = m.n as number;
+          this.#bridge?.confirm(this.#hostLines);
+        } else this.#answer(m);
+      },
       open: (channel, target) => this.#open(channel, target),
       closed: (why) => this.#dropped(mux, why),
     });
@@ -114,7 +133,9 @@ export class Box {
       const m = await Promise.race([said, Bun.sleep(HELLO_MS).then(() => undefined)]);
       if (!m || m.protocol !== GUEST_PROTOCOL)
         throw new Error(m ? `the guest speaks protocol ${String(m.protocol)}, this node ${GUEST_PROTOCOL}` : "the guest didn't say hello");
-      this.#hostRuns = m.host !== null && typeof m.host === "object";
+      const host = m.host as { lines?: unknown } | null;
+      this.#hostRuns = host !== null && typeof host === "object";
+      this.#hostLines = this.#hostRuns && Number.isInteger(host?.lines) ? (host!.lines as number) : 0;
       await this.#request({ op: "listen", unix: this.o.nodeSock });
       for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
     } catch (error) {
@@ -124,7 +145,7 @@ export class Box {
     }
     const bridge = this.#bridge;
     if (bridge && !bridge.closed) {
-      if (this.#hostRuns) mux.open(HOST, { host: true }, bridge.attach());
+      if (this.#hostRuns) mux.open(HOST, { host: true }, bridge.attach(this.#hostLines));
       else bridge.lost();
     }
   }
@@ -150,7 +171,12 @@ export class Box {
         resolve: (v) => (clearTimeout(timer), resolve(v)),
         reject: (e) => (clearTimeout(timer), reject(e)),
       });
-      mux.control({ id, ...m });
+      try {
+        mux.control({ id, ...m });
+      } catch (error) {
+        this.#requests.get(id)?.reject(error as Error);
+        this.#requests.delete(id);
+      }
     });
   }
 
@@ -197,10 +223,15 @@ export class Box {
   }
 }
 
-/** The node's end of the session host's lines, across links: what HostLink writes waits for a link, and what comes in
- * is handed on in whole lines only, so a link that drops mid-line leaves no half of it (the host resends it whole). */
+/** The node's end of the session host's lines, across links. What comes in is handed on in whole lines only, so a link
+ * that drops mid-line leaves no half of it (the host resends it whole). What HostLink writes is kept, line by line,
+ * until the guest confirms the host took it, and what it didn't confirm goes again on the next link: a command made
+ * while a link was dropping isn't lost, nor taken twice. */
 class HostBridge {
-  #pending: Buffer[] = [];
+  /** Lines written and not yet confirmed, after the first `#confirmed` lines. */
+  #sent: Buffer[] = [];
+  #confirmed = 0;
+  #partial: Buffer = Buffer.alloc(0);
   #end: Duplex | undefined;
   #ended = false;
   closed = false;
@@ -211,15 +242,23 @@ class HostBridge {
 
   constructor(readonly h: HostHandlers) {}
 
-  /** This link's end of channel 1. */
-  attach(): Duplex {
+  /** The host took the node's first `lines` lines. */
+  confirm(lines: number): void {
+    if (lines <= this.#confirmed) return;
+    this.#sent.splice(0, lines - this.#confirmed);
+    this.#confirmed = lines;
+  }
+
+  /** This link's end of channel 1, the host having taken `lines` of the node's lines: the rest go first. */
+  attach(lines: number): Duplex {
+    this.confirm(lines);
     let tail: Buffer = Buffer.alloc(0);
     const end: Duplex = new Duplex({
       read() {},
       write: (chunk: Buffer, _encoding, callback) => {
         const all = tail.length ? Buffer.concat([tail, chunk]) : chunk;
         const nl = all.lastIndexOf(10);
-        if (nl < 0) tail = all;
+        if (nl < 0) tail = Buffer.from(all);
         else {
           tail = Buffer.from(all.subarray(nl + 1));
           if (!this.closed) this.h.data(undefined, all.subarray(0, nl + 1));
@@ -236,16 +275,22 @@ class HostBridge {
       if (this.#end === end) this.#end = undefined;
     });
     this.#end = end;
-    for (const b of this.#pending.splice(0)) end.push(b);
+    for (const line of this.#sent) end.push(line);
     if (this.#ended) end.push(null);
     return end;
   }
 
   #write(data: Uint8Array): number {
     if (this.closed || this.#ended) return -1;
-    const copy = Buffer.from(data);
-    if (this.#end) this.#end.push(copy);
-    else this.#pending.push(copy);
+    const all = this.#partial.length ? Buffer.concat([this.#partial, data]) : Buffer.from(data);
+    let at = 0;
+    for (let nl = all.indexOf(10); nl >= 0; nl = all.indexOf(10, at)) {
+      const line = Buffer.from(all.subarray(at, nl + 1));
+      at = nl + 1;
+      this.#sent.push(line);
+      this.#end?.push(line);
+    }
+    this.#partial = Buffer.from(all.subarray(at));
     return data.length;
   }
 

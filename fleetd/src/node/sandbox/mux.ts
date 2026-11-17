@@ -94,8 +94,11 @@ export class Mux {
     return this.#closed;
   }
 
+  /** Sends a control message; throws for one longer than a frame takes (a start's environment, say). */
   control(message: Record<string, unknown>): void {
-    this.#send(frame(FRAME.DATA, CONTROL, Buffer.from(JSON.stringify(message))));
+    const bytes = Buffer.from(JSON.stringify(message));
+    if (bytes.length > MAX_FRAME) throw new Error(`a control message of ${bytes.length} bytes, past the ${MAX_FRAME} a frame takes`);
+    this.#send(frame(FRAME.DATA, CONTROL, bytes));
   }
 
   /** Opens `channel` to `target` on the other side, `local` its end here. */
