@@ -257,12 +257,15 @@ jobs:
             # electron-builder signs with the identity from the keychain above (it's on this job's search list) and
             # wants the name without its certificate-type prefix.
             export CSC_NAME="${MACOS_SIGN_IDENTITY#Developer ID Application: }"
+            # It runs `codesign` by name: this one signs again when Apple's timestamp service didn't answer.
+            export PATH="$GITHUB_WORKSPACE/.github/release/codesign:$PATH"
           else
             # Forks: an ad-hoc signature, which library validation under the hardened runtime would refuse.
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             args+=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
           fi
           "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder "${args[@]}"
+          cat "$RUNNER_TEMP/codesign-retries.log" 2>/dev/null || true
           mkdir -p ../../dist
           mv dist/mac-universal/fleetd.app ../../dist/fleetd.app
           lipo -info ../../dist/fleetd.app/Contents/MacOS/fleetd
