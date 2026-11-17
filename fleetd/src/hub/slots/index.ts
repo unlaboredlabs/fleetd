@@ -27,6 +27,14 @@ import {
 } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
 
+/** A cap's reason with where the machine's agents run: in a VM each, or as plain processes and why (a person reads
+ * it beside the machine's cap). */
+export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T {
+  if (!sandbox) return auto;
+  if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own` };
+  return { ...auto, why: `${auto.why}; agents run as plain processes: ${sandbox.why.slice(0, 300)}` };
+}
+
 export { GRANTED, type Grant, type MaxSource, type SlotPriority } from "./board.ts";
 
 const RUNNING: HubEventType[] = ["thread.started"];
@@ -290,7 +298,7 @@ export class Slots {
    * it takes more than before, starts the queued agents that now fit.
    */
   observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
-    const auto = autoCap(load);
+    const auto = withSandbox(autoCap(load), load.sandbox);
     const room = diskRoom(load);
     this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room)]);
   }

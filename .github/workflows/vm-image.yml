@@ -34,6 +34,8 @@ jobs:
     env:
       PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
       GH_TOKEN: ${{ github.token }}
+      # Publish runs gh in the build's output dir, outside the checkout, where gh can't read the repo from git.
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -61,6 +63,13 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+      - name: Check publish (dry run)
+        if: steps.recipe.outputs.published != 'true' && env.PUBLISH != 'true'
+        # Read-only: gh finds the repo from where Publish runs it, and the files it uploads are there.
+        run: |
+          cd "$RUNNER_TEMP/vm"
+          gh release list --limit 1 >/dev/null
+          ls -l root-x86_64.ext4.zst virtiofsd-x86_64 passt-x86_64 SHA256SUMS
       - name: Publish
         if: steps.recipe.outputs.published != 'true' && env.PUBLISH == 'true'
         env:

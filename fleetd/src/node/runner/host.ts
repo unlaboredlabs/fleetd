@@ -14,6 +14,7 @@ import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
+import { destroyBox } from "../place/box_record.ts";
 
 /** Bumped when the lines between a host and a node change incompatibly (host.rs PROTOCOL). */
 export const PROTOCOL = 1;
@@ -273,7 +274,7 @@ export class LaunchError extends Error {
  * doesn't stop) and connects to it once it registered.
  */
 export async function launch(l: Launch): Promise<HostLink> {
-  prepare(l.dir);
+  await prepare(l.dir);
   const log = openSync(join(l.dir, "host.log"), "w");
   let child: ChildProcess;
   try {
@@ -329,16 +330,18 @@ export async function startHost(l: Launch, log: number): Promise<ChildProcess> {
   return started.child;
 }
 
-/** Makes `dir` empty and private, stopping a host a previous spawn of the session left there. */
-function prepare(dir: string): void {
+/** Makes `dir` empty and private, stopping a host (or a box: ../place/box_record.ts) a previous spawn of the session
+ * left there. */
+export async function prepare(dir: string): Promise<void> {
   const left = readRegistration(dir);
   if (left && hostAlive(left)) killTree(left);
+  await destroyBox(dir);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   chmodSync(dir, 0o700);
 }
 
-/** Ends the host in `dir` and its session, then removes the dir. */
+/** Ends the host in `dir` and its session, and the box it ran in if any, then removes the dir. */
 export async function stop(dir: string): Promise<void> {
   const registration = readRegistration(dir);
   if (existsSync(socketPath(dir))) {
@@ -352,6 +355,7 @@ export async function stop(dir: string): Promise<void> {
     } catch {}
   }
   if (registration) killTree(registration);
+  await destroyBox(dir);
   rmSync(dir, { recursive: true, force: true });
 }
 

@@ -27,6 +27,9 @@ export type NodeConfig = {
   desktop?: Record<string, unknown>;
   mac?: Record<string, unknown>;
   agentsMac?: boolean;
+  /** Where this machine's agents run: in a VM of their own when it can run one (absent, the default), or `"process"`,
+   * as plain processes (node/place/microvm.ts). */
+  sandbox?: "process";
 };
 
 /** MachineId: `[a-z0-9-]{1,32}`. */
