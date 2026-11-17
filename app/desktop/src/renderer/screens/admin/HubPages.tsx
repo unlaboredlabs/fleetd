@@ -14,9 +14,7 @@ import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
-import { RevylScreens } from "../settings/Revyl";
-import { Sandboxes } from "../settings/Sandboxes";
-import { Recordings } from "../settings/Screens";
+import { ProvidersGroup, WhatRunsWhere } from "../settings/Places";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame, Part } from "../settings/Frames";
@@ -137,12 +135,11 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 }
 
 /**
- * The hub's machines, each a row that opens its own page with everything about it; the page's plus adds one (this
- * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then Sandboxes, the team's
- * own hosted sandbox accounts that take agents past the machines' own slots, then updates, the one
- * status of them and the Update automatically switch (a page of its own once: a link to it lands here), then Screens:
- * the team's own Revyl account and where each phone kind's screens run (on a hub that serves them), and how long
- * recordings are kept.
+ * One page, in the order a person comes to it (D550): the hub's machines and how each is (a row each, its state a dot,
+ * opening its own page with everything about it; the plus adds one, its steps opening above the list); the providers
+ * the team connects with its own keys, one list, each with what it can run; what runs where, a row per kind of work
+ * with the same choice; then updates, the one status of them and the Update automatically switch (a page of its own
+ * once: a link to it lands here).
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -151,22 +148,18 @@ function Machines() {
   return (
     <div className={s.scroll} data-screen="settings.hub.machines">
       <div className={s.column}>
-        <PageHead
-          title="Machines"
-          aside={
+        <PageHead title="Machines" />
+        <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
+        <MachineList
+          add={
             <span ref={addRef}>
               <AddButton label="Add machine" onClick={() => setOpen({ view: { kind: "choose" }, at: Date.now() })} />
             </span>
           }
         />
-        <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
-        <MachineList />
-        <Sandboxes />
+        <ProvidersGroup />
+        <WhatRunsWhere />
         <Updates />
-        <SettingsSection title="Screens" reveal="hub.recordings">
-          <RevylScreens />
-          <Recordings />
-        </SettingsSection>
       </div>
     </div>
   );

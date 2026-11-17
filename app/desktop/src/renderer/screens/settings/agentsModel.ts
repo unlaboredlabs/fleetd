@@ -2,6 +2,7 @@
 // every project, which only the CLI sets (unset, every machine's cap added up). The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
 // them. Pure, so it is tested without a screen.
 import type { ProjectRef, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
+import { isolationOf, type Isolation } from "./placesModel";
 
 export interface ProjectAgents {
   /** Agents of the project running now (its lead's own turns aside). Above `max` right after a lower. */
@@ -77,19 +78,31 @@ export interface MachineAgents {
   readonly running: number;
   /** Where the number comes from, in plain words. */
   readonly source: string;
+  /** Where its agents run: each in a VM, or as processes and why; undefined from a node that doesn't say. */
+  readonly isolation?: Isolation | undefined;
 }
 
 const sentence = (text: string): string => (text.endsWith(".") ? text : `${text}.`);
 
 /** Where a machine's number comes from: "Auto: memory 60 GB, about 2 GB an agent.", or a person's setting. */
 export function machineSource(m: SlotStatePerMachine): string {
-  if (m.maxAgents === undefined) return sentence(`Auto: ${m.why}`);
-  return sentence(`Set by you. Auto would be ${m.auto}: ${m.why}`);
+  // Where its agents run is a row of its own on the machine's page, not a part of the number's reason.
+  const { why } = isolationOf(m.why, m.sandbox);
+  if (m.maxAgents === undefined) return sentence(`Auto: ${why}`);
+  return sentence(`Set by you. Auto would be ${m.auto}: ${why}`);
 }
 
 /** Every machine the hub has measured or a person has set, in the hub's order. */
 export const machineAgents = (slots: SlotState): MachineAgents[] =>
-  (slots.perMachine ?? []).map((m) => ({ machineId: m.machineId, cap: m.cap, set: m.maxAgents !== undefined, auto: m.auto, running: m.running, source: machineSource(m) }));
+  (slots.perMachine ?? []).map((m) => ({
+    machineId: m.machineId,
+    cap: m.cap,
+    set: m.maxAgents !== undefined,
+    auto: m.auto,
+    running: m.running,
+    source: machineSource(m),
+    isolation: isolationOf(m.why, m.sandbox).isolation,
+  }));
 
 /** How many running agents a new max leaves over it: they finish their work, and no new one starts until under. */
 export const extrasOver = (running: number, next: number): number => Math.max(0, running - next);

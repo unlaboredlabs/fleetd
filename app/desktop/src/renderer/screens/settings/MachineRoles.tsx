@@ -25,9 +25,9 @@ export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
         />
       ) : (
         <SettingsRow
-          title={ROLE_TITLE[choice]}
+          title="Used for"
           label={`What ${m.name} is for`}
-          hint={ROLE_HELP[choice]}
+          hint={`${ROLE_TITLE[choice]}. ${ROLE_HELP[choice]}`}
           control={<Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles: rolesOf(roles) })} />}
         />
       )}

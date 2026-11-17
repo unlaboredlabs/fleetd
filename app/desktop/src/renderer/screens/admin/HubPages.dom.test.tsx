@@ -221,10 +221,13 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   // The page's plus is the way to add one; this hub has none yet, and the list says so.
   expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
-  expect(host.textContent).toContain("No machines yet. Add one with the plus above.");
-  // Updates is a part of the page, between the machines and their recordings.
+  expect(host.textContent).toContain("No machines yet. Add one with the plus.");
+  // The plus is the Machines group's, at its label's end, as every group on the page has one.
+  expect(host.querySelector("section[aria-label='Machines'] button[aria-label='Add machine']")).not.toBeNull();
+  // Updates is a part of the page, after What runs where, which stands on a hub without any provider (every kind on
+  // its machines); Providers stands back there, with nothing to list.
   expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();
-  expect(parts()).toEqual(["hub.recordings"]);
+  expect(parts()).toEqual(["hub.where"]);
 
   const setup = () => [...(nav()?.querySelectorAll("button") ?? [])].find((b) => b.textContent.startsWith("Setup")) as HTMLElement;
   await click(setup());

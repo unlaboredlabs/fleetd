@@ -208,7 +208,7 @@ export const HubLinkRequest = z.strictObject({
 export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
- * The team's own Revyl key (Settings › Hub › Machines › Screens): main seals `key` to `boxPubKey`, the hub's own key
+ * The team's own Revyl key (Settings › Hub › Machines › Providers): main seals `key` to `boxPubKey`, the hub's own key
  * from revyl_get, and calls revyl_connect. The hub gets the box, never the key, and nothing returns it.
  */
 export const RevylKeyRequest = z.strictObject({
@@ -218,7 +218,7 @@ export const RevylKeyRequest = z.strictObject({
 export type RevylKeyRequest = z.infer<typeof RevylKeyRequest>;
 
 /**
- * The team's own key at a hosted sandbox provider (Settings › Hub › Machines › Sandboxes): main seals `key` to
+ * The team's own key at a hosted sandbox provider (Settings › Hub › Machines › Providers): main seals `key` to
  * `boxPubKey`, the hub's own key from sandbox_get, and calls sandbox_connect with `provider` and, for E2B, `domain`.
  * The hub gets the box, never the key, and nothing returns it.
  */

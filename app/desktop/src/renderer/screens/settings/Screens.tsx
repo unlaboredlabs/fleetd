@@ -15,8 +15,8 @@ import { CommandLine } from "../onboarding/Prose";
 import { RunOn } from "../setup/Guide";
 import { navigate } from "../shell/navigation";
 import { GroupNote, SettingsRow } from "./parts";
-import { capChoices, hostsNote, sessionsLine } from "./machinesModel";
-import { daysChoices, elsewhereLine, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { capChoices, hostsNote, sessionsWhy } from "./machinesModel";
+import { blockedLine, daysChoices, elsewhereLine, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -85,7 +85,7 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
           <SettingsRow
             key={host}
             title={label}
-            line={elsewhereLine(m, host, c) ?? stateLine(c)}
+            line={elsewhereLine(m, host, c) ?? blockedLine(c)}
             control={<Toggle checked={switchOn(c)} disabled={kind.disabled || locked !== null} onCheckedChange={(on) => kind.set({ host, on })} aria-label={`${label} screens on ${m.name}`} />}
           >
             {fix === null ? null : <RunOn where={`${m.name}, for ${label}`} command={fix} />}
@@ -115,17 +115,19 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
       {kind.echo}
       <SettingsRow
         title="At once"
-        hint={`The most screens it hosts at once. ${idleLine(m)}`}
-        line={sessionsLine(m)}
+        hint={`The most screens it hosts at once (${sessionsWhy(m)}). ${idleLine(m)}`}
         control={
-          <Select
-            aria-label={`Most screens ${m.name} hosts at once`}
-            className={s.machineCap}
-            value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
-            options={capChoices(m)}
-            disabled={cap.disabled}
-            onValueChange={(v) => cap.set(v === "auto" ? { autoSessions: true } : { maxSessions: Number(v) })}
-          />
+          <>
+            <Text tone="quiet" tabular>{`${m.sessionsLive} open`}</Text>
+            <Select
+              aria-label={`Most screens ${m.name} hosts at once`}
+              className={s.machineCap}
+              value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
+              options={capChoices(m)}
+              disabled={cap.disabled}
+              onValueChange={(v) => cap.set(v === "auto" ? { autoSessions: true } : { maxSessions: Number(v) })}
+            />
+          </>
         }
       >
         {note === null ? null : (
@@ -169,6 +171,8 @@ export function Recordings() {
   return (
     <>
       <SettingsRow
+        reveal="hub.recordings"
+        mark="none"
         title="Keep screen recordings for"
         data={{ "data-screens-retention": "" }}
         control={<Select aria-label="Keep recordings for" className={s.machineCap} value={String(retention.retentionDays)} options={daysChoices(retention.retentionDays)} disabled={busy} onValueChange={(v) => set(Number(v))} />}

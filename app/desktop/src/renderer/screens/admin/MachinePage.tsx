@@ -25,10 +25,11 @@ import { errorText, useHubCall, useLive } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { MachineCap } from "../settings/Agents";
 import { MachineRole } from "../settings/MachineRoles";
-import { DangerButton, GroupNote, PageFrame, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
+import { DangerButton, GroupNote, PageFrame, PageHead, PlaceMark, SettingsRow, SettingsSection } from "../settings/parts";
+import { machineMark } from "../settings/placesModel";
 import { MachineScreens } from "../settings/Screens";
 import { toHash } from "../shell/routes";
-import { fixPlace, MACHINE_WAIT_MS, problemsOf, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
+import { fixPlace, MACHINE_WAIT_MS, needsOf, problemsOf, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
 import { RemoveMachine } from "./RemoveMachine";
 import { useServes } from "./role";
 import s from "../settings/settings.module.css";
@@ -100,6 +101,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
     [name],
   );
   const problems = checks.data === undefined ? [] : problemsOf(checks.data.checks, machineId);
+  const needs = machine === undefined ? undefined : needsOf(machine, checks.data?.checks, nowMs);
   return (
     <PageFrame.Provider value={frame}>
       <div className={s.scroll} data-screen="settings.hub.machine">
@@ -126,7 +128,10 @@ export function MachinePage({ machineId }: { machineId: string }) {
               )
             ) : (
               <>
-                <Text tone={machine.status === "online" ? "quiet" : "warning"}>{statusWords(machine, nowMs)}</Text>
+                <span className={a.state}>
+                  <PlaceMark mark={machineMark(machine.status, needs)} />
+                  <Text tone={machine.status === "online" ? "quiet" : "warning"}>{statusWords(machine, nowMs)}</Text>
+                </span>
                 {` · fleetd ${versionLabel(machine.nodeVersion)}`}
               </>
             )}
@@ -157,8 +162,13 @@ export function MachinePage({ machineId }: { machineId: string }) {
             </div>
           )}
           {machine === undefined || roles === undefined ? null : (
-            <SettingsSection title="Role" reveal="hub.roles">
+            <SettingsSection reveal="hub.roles">
               <MachineRole machine={roles} />
+            </SettingsSection>
+          )}
+          {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
+            <SettingsSection title="Agents" reveal="hub.caps">
+              <MachineCap machineId={machineId} name={machine.name} />
             </SettingsSection>
           )}
           {machine !== undefined && roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (
@@ -166,11 +176,6 @@ export function MachinePage({ machineId }: { machineId: string }) {
               <MachineScreens machine={roles} />
             </SettingsSection>
           ) : null}
-          {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
-            <SettingsSection title="Max agents" reveal="hub.caps">
-              <MachineCap machineId={machineId} />
-            </SettingsSection>
-          )}
           {machine === undefined ? null : (
             <SettingsSection>
               <SettingsRow

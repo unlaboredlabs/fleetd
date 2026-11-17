@@ -32,9 +32,9 @@ export function Updates() {
   return (
     <Part reveal="hub.updates" screen="settings.hub.updates">
       <SettingsSection title="Updates" data={{ "data-screen": "updates" }}>
-        <UpdateStatus status={status} />
+        <UpdateStatus status={status} marked />
+        <AutoUpdates inGroup />
       </SettingsSection>
-      <AutoUpdates />
     </Part>
   );
 }

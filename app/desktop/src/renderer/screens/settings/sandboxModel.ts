@@ -1,11 +1,11 @@
-// The words and choices of Hub › Machines › Sandboxes, pure so they are tested on their own: the team's own hosted
+// The words and choices of the hosted sandbox providers in Hub › Machines › Providers, pure so they are tested on their own: the team's own hosted
 // sandbox accounts (E2B, boat.dev, Daytona), each a key connected or not, its last check and its limit, in the one
 // fixed order agents go to them once a machine's own slots are full.
+import { specOf } from "../../../shared/providers";
 import type { SandboxCheck, SandboxProvider, SandboxProviderState, SandboxState } from "../../../shared/contracts";
 
-/** A provider's name as people know it; one a newer hub has is shown as it names it. */
-const NAMES: Readonly<Record<string, string>> = { e2b: "E2B", boat: "boat.dev", daytona: "Daytona" };
-export const providerName = (p: SandboxProvider): string => NAMES[p] ?? p;
+/** A provider's name as people know it (providersModel); one a newer hub has is shown as it names it. */
+export const providerName = (p: SandboxProvider): string => specOf(p).name;
 
 /** What each one is, for its row's hover. */
 const HINTS: Readonly<Record<string, string>> = {
@@ -18,22 +18,14 @@ export const providerHint = (p: SandboxProvider): string | undefined => HINTS[p]
 /** Only E2B takes a domain: a self-hosted E2B's. */
 export const takesDomain = (p: SandboxProvider): boolean => p === "e2b";
 
-/** The section's hover: what it is for, what it costs, the order, and that keys stay sealed. */
+/** Providers' hover: what a provider costs, the order agents go to them, and that keys stay sealed. */
 export const SECTION_HINT =
-  "When a machine's own agent slots are full, agents run in sandboxes on your team's own provider account, which bills " +
-  "you while they run. With more than one connected, agents go to them in the order listed. Keys are sealed and never " +
-  "shown again.";
+  "Your team's own accounts, which bill you while they run. Agents go to the connected ones in the order listed once " +
+  "your machines are full, up to each one's limit. Keys are sealed and never shown again.";
 
 /** While no machine places agents there yet, in the section, so nobody connects one expecting room today. */
 export const notPlacingLine = (state: Pick<SandboxState, "placing">): string | null =>
   state.placing ? null : "Agents don't run in hosted sandboxes yet: this fleetd keeps the keys and limits for the update that adds them.";
-
-/** With two or more connected: the order agents go to them, in words. */
-export const orderLine = (providers: ReadonlyArray<SandboxProviderState>): string | null => {
-  const on = providers.filter((p) => p.connected).map((p) => providerName(p.provider));
-  if (on.length < 2) return null;
-  return `Agents go to ${on.slice(0, -1).join(", then ")}, then ${on.at(-1)}.`;
-};
 
 /** The limit's choices: none, then up to 500, and the one set when it isn't among them. */
 const STEPS = [0, 1, 2, 3, 4, 5, 8, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 500];

@@ -155,3 +155,14 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* A machine's state at the head of its page: its dot, as the list has it, then its words. */
+.state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.state > [data-mark] {
+  align-self: center;
+  margin-top: 0;
+}

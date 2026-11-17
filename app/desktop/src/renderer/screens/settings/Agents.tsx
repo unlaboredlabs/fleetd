@@ -14,7 +14,6 @@ import {
   clampMax,
   extrasLine,
   extrasOver,
-  fleetCapLine,
   machineAgents,
   machineHolds,
   pauseLine,
@@ -33,6 +32,7 @@ import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { revealNext } from "./search";
+import { CommandLine } from "../onboarding/Prose";
 import s from "./settings.module.css";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
@@ -162,7 +162,7 @@ function CapSlider(props: { id: string; min?: number; max: number; disabled: boo
 }
 
 /** Under a slider: what letting go will do, what was done (with Undo), or why it wasn't. */
-function ResultLine(props: { id: string; state: SliderState; idle: string; done: (d: Done) => string; actions?: (d: Done) => ReactNode }) {
+function ResultLine(props: { id: string; state: SliderState; idle: string | null; done: (d: Done) => string; actions?: (d: Done) => ReactNode }) {
   const { state } = props;
   if (state.failed) {
     return (
@@ -192,6 +192,8 @@ function ResultLine(props: { id: string; state: SliderState; idle: string; done:
       </div>
     );
   }
+  // Nothing to say at rest: the line's place stays for assistive tech, out of the layout.
+  if (props.idle === null) return <span role="status" id={`${props.id}-line`} className={s.srOnly} />;
   return (
     <div role="status" id={`${props.id}-line`}>
       <Text size="xs" tone="quiet">
@@ -283,24 +285,43 @@ function MachineHolds(props: { note: string | null; machineId: string }) {
   );
 }
 
-/** A machine's max agents, on its page: what it runs at once, where that comes from, and the slider that changes it. */
-export function MachineCap({ machineId }: { machineId: string }) {
+/**
+ * A machine's agents, on its page: how many it runs at once, where that comes from, and the slider that changes it;
+ * then where they run, each in a VM of its own or as plain processes, with why and the command that fixes it.
+ */
+export function MachineCap({ machineId, name }: { machineId: string; name: string }) {
   const slots = useSlots();
   const live = useLive();
   if (!live || !slots) return <GroupNote>{live ? "Loading…" : "Connect to a hub to see and change this."}</GroupNote>;
   const m = machineAgents(slots).find((x) => x.machineId === machineId);
   if (m === undefined) return <GroupNote>It hasn&apos;t reported yet.</GroupNote>;
-  return <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />;
-}
-
-/** On Hub › Machines, under its machines, while a fleet cap the CLI set holds them back: what it is and how to change it. */
-export function FleetCapNote() {
-  const slots = useSlots();
-  const line = slots === undefined ? null : fleetCapLine(slots);
-  return line === null ? null : (
-    <GroupNote>
-      <span data-fleet-cap="">{line}</span>
-    </GroupNote>
+  return (
+    <>
+      <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />
+      {m.isolation === undefined ? null : (
+        <SettingsRow
+          reveal="hub.vm"
+          title="Each agent runs in"
+          hint={
+            !m.isolation.vm && m.isolation.expected
+              ? m.isolation.why
+              : "A VM of its own keeps an agent from the machine's other agents and its files. Where a machine can't run VMs, its agents run as plain processes."
+          }
+          control={<Text tone={!m.isolation.vm && !m.isolation.expected ? "warning" : "quiet"}>{m.isolation.vm ? "A VM" : "A process"}</Text>}
+          data={{ "data-vm": m.isolation.vm ? "on" : "off" }}
+        >
+          {/* Visible only when something is wrong; a choice or the machine's design is the hover's. */}
+          {m.isolation.vm || m.isolation.expected ? null : (
+            <div className={s.fixBlock}>
+              <Text size="sm" tone="warning">
+                {m.isolation.fix === undefined ? m.isolation.why : `${m.isolation.why} Run on ${name}:`}
+              </Text>
+              {m.isolation.fix === undefined ? null : <CommandLine command={m.isolation.fix} />}
+            </div>
+          )}
+        </SettingsRow>
+      )}
+    </>
   );
 }
 
@@ -313,9 +334,9 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
   const id = `agents-machine-${m.machineId}`;
   return (
     <SettingsRow
-      title={`Agents on ${m.machineId} at once`}
+      title="At once"
       titleId={`${id}-label`}
-      line={m.source}
+      hint={m.source}
       control={
         <>
           {m.set ? (
@@ -323,17 +344,13 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
               Use auto
             </Button>
           ) : null}
+          <Text tone="quiet" tabular>{`${m.running} running`}</Text>
           <Text tabular>{`${state.value}`}</Text>
         </>
       }
     >
       <CapSlider id={id} max={top} disabled={!live || top <= 1} state={state} />
-      <ResultLine
-        id={id}
-        state={state}
-        idle={`${m.running} ${m.running === 1 ? "agent" : "agents"} running now.`}
-        done={(d) => appliedLine(d.follow ? `${m.machineId}, auto` : m.machineId, d.from, d.to)}
-      />
+      <ResultLine id={id} state={state} idle={null} done={(d) => appliedLine(d.follow ? `${m.machineId}, auto` : m.machineId, d.from, d.to)} />
     </SettingsRow>
   );
 }

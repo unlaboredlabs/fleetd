@@ -9,7 +9,8 @@ import { setAuto, useAuto } from "./flow";
 import { SettingsSection, SwitchRow } from "../settings/parts";
 import { Line } from "./UpdateStatus";
 
-export function AutoUpdates() {
+/** `inGroup`: its one row, for a group that holds it (Hub › Machines' Updates); else a section of its own. */
+export function AutoUpdates({ inGroup = false }: { inGroup?: boolean }) {
   const layer = useDataLayer();
   const auto = useAuto(layer.hub);
   const administers = useSettledAdministers();
@@ -22,15 +23,16 @@ export function AutoUpdates() {
     setSaving(false);
     if (refused !== null) toast({ title: "Automatic updates didn't change", description: refused, tone: "danger" });
   };
-  return (
-    <SettingsSection data={{ "data-auto-updates": auto.on ? "on" : "off" }}>
-      <SwitchRow
-        title="Update automatically"
-        line={auto.on && auto.held !== null ? <Line text={shortLabels(auto.held)} /> : undefined}
-        checked={auto.on}
-        disabled={saving}
-        onCheckedChange={(on) => void turn(on)}
-      />
-    </SettingsSection>
+  const row = (
+    <SwitchRow
+      title="Update automatically"
+      {...(inGroup ? { mark: "none" as const } : {})}
+      line={auto.on && auto.held !== null ? <Line text={shortLabels(auto.held)} /> : undefined}
+      checked={auto.on}
+      disabled={saving}
+      onCheckedChange={(on) => void turn(on)}
+      {...(inGroup ? { data: { "data-auto-updates": auto.on ? "on" : "off" } } : {})}
+    />
   );
+  return inGroup ? row : <SettingsSection data={{ "data-auto-updates": auto.on ? "on" : "off" }}>{row}</SettingsSection>;
 }

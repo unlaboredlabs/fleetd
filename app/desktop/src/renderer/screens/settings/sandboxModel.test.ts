@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { domainOf, keyOf, limitChoices, notPlacingLine, orderLine, providerHint, providerLine, providerName, takesDomain, withFix } from "./sandboxModel";
+import { domainOf, keyOf, limitChoices, notPlacingLine, providerHint, providerLine, providerName, takesDomain, withFix } from "./sandboxModel";
 
 const at = "2026-11-17T09:00:00.000Z";
 
@@ -9,13 +9,6 @@ describe("the providers", () => {
     expect(takesDomain("e2b")).toBe(true);
     expect(takesDomain("boat")).toBe(false);
     expect(providerHint("e2b")).toContain("self-hosted");
-  });
-
-  it("says the order agents go to them only with two or more connected", () => {
-    const p = (provider: string, connected: boolean) => ({ provider, connected, limit: connected ? 5 : 0 });
-    expect(orderLine([p("e2b", true), p("boat", false), p("daytona", false)])).toBeNull();
-    expect(orderLine([p("e2b", true), p("boat", false), p("daytona", true)])).toBe("Agents go to E2B, then Daytona.");
-    expect(orderLine([p("e2b", true), p("boat", true), p("daytona", true)])).toBe("Agents go to E2B, then boat.dev, then Daytona.");
   });
 
   it("says while no agent runs there yet, and nothing once they do", () => {

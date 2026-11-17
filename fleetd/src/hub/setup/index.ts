@@ -380,7 +380,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           ),
           part(
             "Connect it, and set a limit",
-            "Paste it in Settings › Hub › Machines › Sandboxes, with how many agents may run there at once; the app seals " +
+            "Paste it in Settings › Hub › Machines › Providers, with how many agents may run there at once; the app seals " +
               "it on your device. For a self-hosted E2B, give its domain there too.",
             [],
             [],

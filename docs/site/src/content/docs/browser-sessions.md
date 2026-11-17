@@ -259,8 +259,8 @@ logins made for agents.
 The hub keeps each recording for **30 days**, and up to **20 GB** per project, deleting a project's oldest first. It
 checks every hour. An upload still in progress counts toward the size, and is never cut short. One its machine never
 finished is treated as a recording from a day after it started: it goes past the 30 days, or when its project is over
-its size. An expired screen keeps its row, with no files. An owner or admin changes the days under
-**Settings › Hub › Machines › Recordings**; the size limit stays as a safety net. An admin key on every machine changes
+its size. An expired screen keeps its row, with no files. An owner or admin changes the days with
+**Keep screen recordings for**, under What runs where in **Settings › Hub › Machines**; the size limit stays as a safety net. An admin key on every machine changes
 both with `browser_retention_set`.
 
 The app and any [MCP client](/docs/mcp-clients) read screens with `browser_sessions`: each one's agent and task,
@@ -272,18 +272,19 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 A machine's page in **Settings › Hub › Machines**, for a hub's owners and admins, has a **Screens** part when the
 machine hosts screens:
 
-- **A switch per kind**: Browser, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says:
-  ready, off, installing, or what stands in the way (no KVM, no docker or Xvfb, no grants). A kind the machine can't
+- **A switch per kind**: Browser, Android, Linux desktop and Agents' Mac. Under one, only what stands in the way, as
+  the machine's node says it (installing, no KVM, no docker or Xvfb, no grants): a kind ready or off says nothing more. A kind the machine can't
   run at all (the agents' Mac on Linux) can't be switched on, and says why. There's no iOS switch: the agents' Mac
   lends its [simulators](/docs/agents-mac#sim) to agents.
 - **The agents' Mac has one switch, Agents' Mac.** It offers only its own screen: no browser, Android or Linux
   desktop runs there, so its row has none of their switches, and New screen never offers it for them.
-- **How many at once**: its screen cap, Auto or a number ([Machine roles](/docs/machines#roles)).
-- **When an idle screen ends**: after 30 minutes without a command, said in a line, for every kind but the agents'
-  Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
+- **At once**: its screen cap, Auto or a number ([Machine roles](/docs/machines#roles)), with the screens open now
+  beside it. Its hover says where Auto's number comes from, and when an idle screen ends: after 30 minutes without a
+  command, for every kind but the agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept
+  waiting.
 
-**Recordings**, on Settings › Hub › Machines itself, sets how many days the hub keeps them, for every project
-([On the hub](#hub)).
+**Keep screen recordings for**, under What runs where on Settings › Hub › Machines itself, sets how many days the hub
+keeps them, for every project ([On the hub](#hub)).
 
 A switch writes the machine's node.json for you: the kind's `enabled`; the rest of the file stays as it is. Turning Android on opts the machine in, so it installs what it needs, as the setting
 below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
@@ -426,14 +427,15 @@ connect it, and agents then get iPhone and Android screens from Revyl as well as
 bills the team directly; fleetd charges nothing for it and holds no Revyl account of its own.
 
 **Connect it.** In Revyl's dashboard make an API key (Settings › API Keys). In **Settings › Hub › Machines ›
-Screens**, an admin pastes it into the **Revyl** row's sealed field and presses Test. The app seals the key to the
+Providers**, an admin presses **Connect** on the **Revyl** row, pastes the key into its sealed field and presses
+Connect, which tests it; **Test** in the row's menu tests it again. The app seals the key to the
 hub, which keeps it sealed as it keeps [vault](/docs/vault) values: it is never shown again, logged or given to an
 agent, and each use is logged without it. Test runs where agents' Revyl screens run: the hub sends the key sealed
 to the team's machines online, in the order of their ids, and the first that has or installs Revyl's CLI asks Revyl
 about it (`revyl device history`, which only Revyl's server answers and which starts nothing). The hub never runs
 `revyl` itself, so a hosted hub tests the same way, and on a single self-hosted box its own machine runs it. A key
 Revyl refuses (wrong or expired) reads as such, and when no machine online could install Revyl's CLI, Test says why
-(no network, an unsupported platform). Disconnect removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
+(no network, an unsupported platform). Disconnect, in the row's menu, removes the key, ends every Revyl screen running, and puts both kinds back on the team's machines.
 MCP clients use `revyl_get`, `revyl_connect`, `revyl_test`, `revyl_disconnect` and `revyl_route_set`.
 
 **Revyl's CLI installs itself.** A machine that needs `revyl` (a Test, or an agent's Revyl screen) uses the one on
@@ -442,12 +444,13 @@ Linux, x64 or arm64) from Revyl's GitHub releases, checks it against the checksu
 keeps it in `~/.fleetd/node/revyl/cli`: no script, no sudo, nothing system-wide. The first Test there takes a little
 longer. fleetd's builds don't ship it.
 
-**Route each kind.** Under the Revyl row, iOS simulator and Android each have one choice:
+**Route each kind.** Under **What runs where**, iOS simulator and Android each have one choice while Revyl is
+connected (until then, they say Your machines):
 
 | Route | Where an agent's phone comes from |
 |---|---|
-| Our machines first, then Revyl | The default once a key is connected. An Android emulator on the agent's own machine while it has a free screen slot (an emulator on another machine is one the agent can't drive yet); an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
-| Our machines only | As with no key, but when every machine that may take it is full, the agent waits in line for the next free slot, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
+| Your machines first, then Revyl | The default once a key is connected. An Android emulator on the agent's own machine while it has a free screen slot (an emulator on another machine is one the agent can't drive yet); an iOS simulator on the agents' Mac while one of its simulators is free. When they are full (or the team has none), Revyl. |
+| Your machines | As with no key, but when every machine that may take it is full, the agent waits in line for the next free slot, first come first served; iOS waits in the agents' Mac's own line (`mac sim start --wait`). |
 | Revyl only | Every phone of that kind is Revyl's. |
 
 The rule is fixed, never a guess from load: a slot is free or it isn't. When Revyl's own sessions are all in use,

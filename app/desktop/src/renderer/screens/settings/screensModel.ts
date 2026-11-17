@@ -57,6 +57,13 @@ export const stateLine = (check: HostCheck | undefined): string => {
 };
 
 /**
+ * The line under a kind's switch at rest, only while something stands in the way: nothing when it is ready or simply
+ * off, which its switch already says.
+ */
+export const blockedLine = (check: HostCheck | undefined): string | null =>
+  check !== undefined && (check.ready || check.off === "off") ? null : stateLine(check);
+
+/**
  * The command that lets a kind run, for the person to run on the machine: where it is on (or wanted) and something
  * it needs is missing or failed. None while it is off, on a machine that can't host it, restarting or installing.
  */

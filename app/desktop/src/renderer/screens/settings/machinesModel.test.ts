@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { capChoices, choiceOf, hostsNote, rolesOf, roleWord, sessionsLine } from "./machinesModel";
+import { capChoices, choiceOf, hostsNote, rolesOf, roleWord, sessionsWhy } from "./machinesModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -36,9 +36,9 @@ describe("machine roles", () => {
     expect(roleWord(undefined)).toBeUndefined();
   });
 
-  it("says a machine's session slots and where its cap comes from", () => {
-    expect(sessionsLine(devbox)).toBe("2 of 4 screens now (auto: 8 CPUs, 16 GB)");
-    expect(sessionsLine({ ...devbox, maxSessions: 1, maxSessionsSet: 1, maxSessionsWhy: "set", sessionsLive: 0 })).toBe("0 of 1 screen now (you set it)");
+  it("says where a machine's screens at once comes from", () => {
+    expect(sessionsWhy(devbox)).toBe("auto: 8 CPUs, 16 GB");
+    expect(sessionsWhy({ maxSessionsWhy: "set" })).toBe("you set it");
   });
 
   it("offers auto with what it fits, then 1 to 16, keeping a larger setting", () => {

@@ -195,7 +195,7 @@ const type = async (input: HTMLInputElement, value: string) => {
   });
 };
 
-it("lists the machines, each a name that opens its page, with one dot on the one that needs someone", async () => {
+it("lists the machines, each a name that opens its page, its state a dot before it and in words at its end", async () => {
   await render(<MachineList />);
   const names = [...host.querySelectorAll("[role='listitem']")].map((li) => li.getAttribute("aria-label"));
   // Online first, then by name.
@@ -204,13 +204,16 @@ it("lists the machines, each a name that opens its page, with one dot on the one
   // Every row ends in a chevron, so it reads as one that opens without a hover.
   for (const name of names) expect(row(name ?? "")?.lastElementChild?.lastElementChild?.matches("svg[aria-hidden='true']")).toBe(true);
 
-  // What it needs is one dot, the words its name and the row's tooltip: no state word, and none on a row that is well.
+  // Every row's state is the dot before its name: neutral while well, amber when it needs someone, its words at the
+  // row's end and in its tooltip.
+  expect(row("laptop")?.querySelector("[data-mark]")?.getAttribute("data-mark")).toBe("needs");
   expect(row("laptop")?.querySelector("[role='img']")?.getAttribute("aria-label")).toMatch(/^Offline since /u);
   expect(row("laptop")?.querySelector("a")?.title).toMatch(/^Offline since /u);
-  expect(row("devbox")?.querySelector("[role='img']")).toBeNull();
-  // A role other than the usual both is a quiet word beside the name, and all the words a row has.
-  expect(row("laptop")?.textContent).toBe("laptopAgents only");
-  expect(row("builder-1")?.textContent).toBe("builder-1");
+  expect(row("devbox")?.querySelector("[data-mark]")?.getAttribute("data-mark")).toBe("ready");
+  expect(row("devbox")?.querySelector("a")?.title).toBe("");
+  // A role other than the usual both is a quiet word beside the name; at the end, what is wrong, or what runs there.
+  expect(row("laptop")?.textContent).toMatch(/^laptopAgents onlyOffline since /u);
+  expect(row("builder-1")?.textContent).toBe("builder-1Idle");
 
   // No raw version on a row, and nothing to press but the row: Repair and Remove are on the machine's page.
   expect(row("devbox")?.textContent).not.toContain("0.9.0");
@@ -221,6 +224,7 @@ it("marks a machine that is online with claude logged out, saying which check fa
   checks = checksOf("builder-1");
   await render(<MachineList />);
   expect(row("builder-1")?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Claude is not logged in, so its sessions can't start");
+  expect(row("builder-1")?.textContent).toContain("Claude is not logged in, so its sessions can't start");
 });
 
 it("says a machine's state first on its page, and offers Repair only while it isn't online", async () => {
@@ -442,13 +446,14 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
   expect(problems()).toEqual(["android:warn"]);
 });
 
-it("holds a machine's role, screens and max agents on its page, under what is wrong with it", async () => {
+it("holds what a machine is for, its agents and its screens on its page, under what is wrong with it", async () => {
   checks = checksOf("builder-1");
   await render(<MachinePage machineId="builder-1" />);
   const parts = [...host.querySelectorAll("section[data-part]")].map((s) => s.getAttribute("data-part"));
-  expect(parts).toEqual(["hub.roles", "hub.screens", "hub.caps"]);
+  expect(parts).toEqual(["hub.roles", "hub.caps", "hub.screens"]);
   expect(host.querySelector("[data-roles='builder-1'] button[aria-pressed='true']")?.textContent).toBe("Both");
-  expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("0 of 4 screens now (auto: 8 CPUs, 16 GB)");
+  expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("0 open");
+  expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("(auto: 8 CPUs, 16 GB)");
   expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("An idle screen ends after 30 minutes.");
   // What is wrong comes first.
   const wrong = host.querySelector("[data-problems]");

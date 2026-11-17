@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeOffLine, usesRevyl } from "./revylModel";
+import { keyOf, REVYL_KINDS, revylLine, routeChoices, routeChosen, routeOffLine, usesRevyl } from "./revylModel";
 
 const at = "2026-10-19T09:00:00.000Z";
 /** The hub's own words when no machine could install Revyl's CLI for itself (fleetd/src/hub/revyl). */
@@ -10,18 +10,23 @@ describe("where each phone kind's agent screens run", () => {
   it("offers the three routes for iOS simulators and Android only", () => {
     expect(REVYL_KINDS.map((k) => k.kind)).toEqual(["ios", "android"]);
     expect(routeChoices(true, "ours_first")).toEqual([
-      { value: "ours_first", label: "Our machines first, then Revyl" },
-      { value: "ours_only", label: "Our machines only" },
+      { value: "ours_first", label: "Your machines first, then Revyl" },
+      { value: "ours_only", label: "Your machines" },
       { value: "revyl_only", label: "Revyl only" },
     ]);
   });
 
-  it("keeps the Revyl routes listed but off before a key is connected, each saying what it needs", () => {
-    const off = routeChoices(false, "ours_only");
-    expect(off.filter((o) => o.disabled === true).map((o) => o.value)).toEqual(["ours_first", "revyl_only"]);
-    for (const o of off.filter((c) => c.disabled === true)) expect(o.label).toContain("needs a Revyl key");
-    expect(off.find((o) => o.value === "ours_only")?.disabled).toBeUndefined();
+  it("offers only your machines before a key is connected (no choice greyed out), and the route that still names Revyl", () => {
+    expect(routeChoices(false, "ours_only")).toEqual([{ value: "ours_only", label: "Your machines" }]);
+    expect(routeChoices(false, "revyl_only")).toEqual([
+      { value: "ours_only", label: "Your machines" },
+      { value: "revyl_only", label: "Revyl only" },
+    ]);
     expect(usesRevyl("ours_only")).toBe(false);
+    // A choice only while there is one to make: Revyl connected, or a route that still names it.
+    expect(routeChosen(false, "ours_only")).toBe(false);
+    expect(routeChosen(false, "ours_first")).toBe(true);
+    expect(routeChosen(true, "ours_only")).toBe(true);
   });
 
   it("says why they're off: an admin gets Connect beside it, anyone else whom to ask; nothing once connected", () => {

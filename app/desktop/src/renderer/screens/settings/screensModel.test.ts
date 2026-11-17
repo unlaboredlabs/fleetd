@@ -1,7 +1,7 @@
 // Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { daysChoices, elsewhereLine, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { blockedLine, daysChoices, elsewhereLine, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -33,6 +33,11 @@ describe("a kind's switch", () => {
     // The node's own words start as a sentence does.
     expect(stateLine({ host: "desktop", ready: false, detail: "desktop screens run on Linux", off: "unsupported" })).toBe("Desktop screens run on Linux");
     expect(stateLine({ host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing" })).toBe("No docker, podman or Xvfb");
+    // At rest, only what stands in the way: a kind ready, or just off, says nothing (its switch does).
+    expect(blockedLine(check("browser"))).toBeNull();
+    expect(blockedLine(check("android"))).toBeNull();
+    expect(blockedLine(check("desktop"))).toBe("Starts after the screens open now end");
+    expect(blockedLine(undefined)).toBe("Not known yet");
     // A node before switches: on where it can host.
     expect(switchOn({ host: "browser", ready: true, detail: "Chrome" })).toBe(true);
   });

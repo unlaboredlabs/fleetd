@@ -89,6 +89,11 @@ export const fixtures = [
   // ...the team's own hosted sandbox accounts in Machines' Sandboxes section: none yet, and two connected, one refused.
   "machines-sandboxes-off",
   "machines-sandboxes-on",
+  // ...and the page as one model (W693): several machines with each one's state and load, both kinds of provider
+  // connected or not, and a machine whose agents can't run in VMs, with why.
+  "machines-places",
+  "machines-places-vm-off",
+  "machines-places-one",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -3608,6 +3613,24 @@ export const screens: readonly Screen[] = [
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
   // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the plus.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },
+  // W693: the page as one model, every place agents and screens run a row with its state as a dot: three machines (one
+  // busy, one logged out, one offline) with E2B, Daytona (refused) and Revyl connected; one machine and nothing
+  // connected; and each machine's page with where its agents run, in VMs or as processes and why.
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-places", "machines-places-one"], variant: "places" },
+  // ...Connect on a provider opens its key's sealed field in its row, the same for each of them.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-places-one"],
+    variant: "places-connect",
+    open: async (page) => {
+      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect" }).click();
+      await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
+    },
+  },
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/devbox", fixtures: ["machines-places", "machines-places-vm-off"], variant: "places" },
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-places"], variant: "places-offline" },
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-places"], variant: "places-laptop" },
   // W676: its Screens part with the team's own Revyl: no key yet (the Revyl choices off, why, and Connect Revyl),
   // connected (each kind's route), and a key Revyl refused at its last test.
   {
@@ -3626,7 +3649,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-revyl-off"],
     variant: "revyl-connect",
     open: async (page) => {
-      await page.getByRole("button", { name: "Connect…" }).click();
+      await page.locator("[data-revyl]").getByRole("button", { name: "Connect" }).click();
       await page.getByRole("textbox", { name: "Revyl API key" }).waitFor();
     },
   },
@@ -3647,7 +3670,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-sandboxes-off"],
     variant: "sandboxes-connect",
     open: async (page) => {
-      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect…" }).click();
+      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect" }).click();
       await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
     },
   },
@@ -3745,9 +3768,9 @@ export const screens: readonly Screen[] = [
   { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-well", "machines-logged-out", "machines-warning"] },
   // A machine that needs someone says why where its state is, with Repair beside it: buildbox offline for three days.
   { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-unwell"], variant: "offline" },
-  // The whole row opens its machine, its right end too: the dot and the chevron are marks, so the pointer falls
-  // through each to the row's link, which holds the dot's why as its tooltip. A click on the chevron, back, then one
-  // on the dot.
+  // The whole row opens its machine, its ends too: the dot, the state's words and the chevron are marks, so the
+  // pointer falls through each to the row's link, which holds the dot's why as its tooltip. A click on the chevron,
+  // back, one on the dot, back, then one on the words.
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines",
@@ -3755,7 +3778,8 @@ export const screens: readonly Screen[] = [
     variant: "from-dot",
     open: async (page) => {
       const row = page.getByRole("listitem", { name: "buildbox" });
-      for (const mark of [row.locator("svg").last(), row.getByRole("img", { name: /^Offline/u })]) {
+      // Its chevron, its dot and its state's words: each a part of the row, which opens its page.
+      for (const mark of [row.locator("svg").last(), row.getByRole("img", { name: /^Offline/u }), row.getByText(/^Offline since/u)]) {
         await page.evaluate(() => {
           window.location.hash = "#/settings/hub/machines";
         });

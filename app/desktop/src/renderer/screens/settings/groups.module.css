@@ -208,6 +208,7 @@
 /* ...but its dot and its chevron are marks, not controls: the pointer falls through them to the link, which opens the
    row and holds the dot's why as its tooltip. */
 .opens > .control > .needs,
+.opens > .control > .state,
 .opens > .control > .chevron {
   pointer-events: none;
 }
@@ -281,4 +282,52 @@
 }
 .hintLine + .hintLine {
   margin-top: var(--space-1);
+}
+
+/* A place agents or screens run (Hub › Machines): its state as one dot before its title, on the title's line, in a
+   room of its own so every title in the group starts in one line, rows with no dot keeping the room empty. A list's
+   row of places is a setting row's height, so the page keeps one rhythm. */
+.mark {
+  flex: none;
+  align-self: start;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+/* Ready is neutral, as the accent is: colour only where someone has to act. */
+.mark[data-mark="ready"] {
+  background: var(--quiet);
+}
+.mark[data-mark="needs"] {
+  background: var(--warning);
+}
+.mark[data-mark="failed"] {
+  background: var(--danger);
+}
+.mark[data-mark="off"] {
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+.marked {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: 2px;
+}
+.marked > :not(.mark) {
+  grid-column: 2;
+}
+.withMark {
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  padding-block: 14px;
+}
+/* What a place's state is in words, at its row's end: quiet while all is well, the dot's colour when not. */
+.state {
+  max-width: 260px;
+  min-width: 0;
+  text-align: end;
+}
+/* What a marked row holds under its title (a key's field) starts where its title does, past the dot's room. */
+.row:has(.marked) > .below {
+  padding-inline-start: calc(var(--space-4) + 8px + var(--space-3));
 }
