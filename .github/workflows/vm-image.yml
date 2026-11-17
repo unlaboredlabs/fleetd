@@ -56,7 +56,7 @@ jobs:
         if: steps.recipe.outputs.published != 'true' && env.PUBLISH != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: vm-${{ steps.recipe.outputs.tag }}
+          name: ${{ steps.recipe.outputs.tag }}
           path: ${{ runner.temp }}/vm/
           retention-days: 3
           compression-level: 0

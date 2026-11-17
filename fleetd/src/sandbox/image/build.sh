@@ -3,7 +3,7 @@
 # static build of, with their SHA256SUMS. Runs in CI (.github/workflows/vm-image.yml) on an x86_64 Ubuntu runner, with
 # docker and sudo: the image's files must be owned by root inside it, which takes root to lay out. A node never runs
 # this; it downloads the release.
-#   virtiofsd  static (musl), built from its pinned commit in an Alpine container
+#   virtiofsd  built from its pinned commit against Debian 11's glibc, its two libraries linked in
 #   passt      static, built from its pinned commit (`make static`)
 #   root       the Dockerfile's image, flattened into a read-only ext4 with init.sh as /sbin/fleetd-init, shrunk to fit
 #              and compressed with zstd
@@ -16,17 +16,19 @@ trap 'sudo rm -rf "$work"' EXIT
 recipe=$(bun "$here/recipe.ts")
 pin() { jq -r "$1" <<<"$recipe"; }
 
-# virtiofsd: a static musl build, so it runs on any distro.
+# virtiofsd: against an old glibc (Debian 11's 2.31, so it runs on any distro since), with libseccomp and libcap-ng
+# linked in, so it needs nothing but glibc. A static musl build crashes entering its namespace sandbox.
 src=$work/virtiofsd
 git clone -q "$(pin .sources.virtiofsd.repo)" "$src"
 git -C "$src" checkout -q --detach "$(pin .sources.virtiofsd.commit)"
 docker run --rm -v "$src:/src" -w /src \
-  alpine@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f sh -euc '
-    apk add -q cargo rust musl-dev libcap-ng-dev libcap-ng-static libseccomp-dev libseccomp-static
-    # With --target, RUSTFLAGS reach only the binary: proc-macros stay dynamic, as they must.
-    RUSTFLAGS="-C target-feature=+crt-static" cargo build -q --release --locked --target x86_64-alpine-linux-musl
+  rust@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9 sh -euc '
+    apt-get -qq update && apt-get -qq install -y libseccomp-dev libcap-ng-dev >/dev/null
+    LIBSECCOMP_LINK_TYPE=static LIBCAPNG_LINK_TYPE=static LIBSECCOMP_LIB_PATH=/usr/lib/x86_64-linux-gnu \
+      LIBCAPNG_LIB_PATH=/usr/lib/x86_64-linux-gnu cargo build -q --release --locked
     chown -R '"$(id -u):$(id -g)"' target'
-install -m 0755 "$src/target/x86_64-alpine-linux-musl/release/virtiofsd" "$out/$(pin .assets.virtiofsd)"
+install -m 0755 "$src/target/release/virtiofsd" "$out/$(pin .assets.virtiofsd)"
+ldd "$out/$(pin .assets.virtiofsd)"
 
 # passt: its own static target.
 src=$work/passt
