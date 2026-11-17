@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { runConfined } from "../cmd/index.ts";
+import type { Place } from "../place/index.ts";
 import { tailUtf16, type Env } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
 
@@ -80,8 +80,10 @@ export function record(cwd: string, d: string | undefined): void {
   }
 }
 
-/** Runs the commands in order in `cwd`, stopping at the first that fails; `signal` kills the one running. */
+/** Runs the commands in order in `cwd`, where the agent runs (`place`), stopping at the first that fails; `signal`
+ * kills the one running. */
 export async function run(
+  place: Place,
   setup: Plan,
   cwd: string,
   env: Env,
@@ -98,7 +100,7 @@ export async function run(
     if (signal?.aborted) break;
     started(i);
     const at = Date.now();
-    const outcome = await runConfined({ cwd, argv: ["sh", "-c", command], timeoutSec: timeoutOf(setup), env, scrub, ...(signal ? { signal } : {}) }, [cwd]);
+    const outcome = await place.run({ cwd, argv: ["sh", "-c", command], timeoutSec: timeoutOf(setup), env, scrub, ...(signal ? { signal } : {}) });
     const one: Ran = { command, exitCode: outcome.exitCode, outputTail: outcome.notRun ?? outcome.outputTail, timedOut: outcome.timedOut, tookMs: Date.now() - at };
     ended(i, one);
     ran.push(one);
