@@ -15,36 +15,36 @@
   color-scheme: light;
   --bg: #ffffff;
   /* One near-invisible tone step from --bg, so the sidebar needs no border. */
-  --sidebar: #f7f8f9;
+  --sidebar: #f6f7f8;
   --raised: #ffffff;
-  --hover: #0e14200a;
-  --selected: #0e142012;
-  --hairline: #e6e8eb;
+  --hover: #0f17200a;
+  --selected: #0f172010;
+  --hairline: #e7e9ec;
   /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
-  --side-edge: #e6e6e2;
-  --border: #d5d9de;
+  --side-edge: #e7e9ec;
+  --border: #d6dade;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
-  --bubble: #f0f2f4;
+  --bubble: #f3f4f6;
   /* A Settings group: one soft fill under a section's rows, no lines between them (DESIGN.md). Controls on it are
      --raised. */
   --group: #ffffff;
   /* ...and its one hairline edge, which draws it on a page of the same white. */
-  --group-edge: #e6e8eb;
+  --group-edge: #e4e7ea;
   /* Danger's one pill (Delete project, Remove machine): white words on it. */
   --danger-fill: #c62f2a;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
-  --control-border: #7b818a;
-  --text: #0c0e11;
-  --quiet: #5b616b;
-  --faint: #9399a2;
-  --accent: #0c0e11;
-  --accent-fill: #0c0e11;
+  --control-border: #868c95;
+  --text: #0b0d10;
+  --quiet: #5d636c;
+  --faint: #959ba3;
+  --accent: #0b0d10;
+  --accent-fill: #0b0d10;
   --on-accent: #ffffff;
   /* The accent as a large fill under white: your chat bubbles. The same near-black here; a quiet grey in dark, where
      a near-white bubble would glare. */
-  --accent-deep: #0c0e11;
+  --accent-deep: #0b0d10;
   --on-accent-deep: #ffffff;
   --link: #1d5fd3;
   /* A switch that's on keeps the blue it had before the accent went neutral, under its white thumb. */
@@ -59,10 +59,10 @@
      capsule reads as material over the page and not as a white pill on it; the blur and saturation take the colour of
      what scrolls under it. Its edge is a hairline drawn inside, a brighter line along its top where light catches the
      rim, and a soft shadow that lifts it off the page. */
-  --glass: #ffffffc2;
-  --glass-edge: #0e14201c;
+  --glass: #ffffffcc;
+  --glass-edge: #0f17201a;
   --glass-rim: #ffffffe6;
-  --glass-lift: 0 1px 2px #0000000f, 0 6px 18px -6px #00000029;
+  --glass-lift: 0 1px 1px #0f17200a, 0 4px 14px -4px #0f17201f;
   --glass-pressed: #0e142012;
   /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
      shows, its edge firmer too. Laid over the glass, so the material stays. */
@@ -103,23 +103,23 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0d0e10;
-  --sidebar: #121316;
-  --raised: #18191c;
-  --hover: #e6ecf50d;
-  --selected: #e6ecf517;
-  --hairline: #24262a;
+  --bg: #0a0b0d;
+  --sidebar: #111215;
+  --raised: #17181b;
+  --hover: #ffffff0a;
+  --selected: #ffffff12;
+  --hairline: #212328;
   /* The sidebar's edge: in dark its tone sits too close to --bg's to part them on its own. */
-  --side-edge: #24262a;
-  --border: #33363c;
-  --bubble: #1c1e22;
-  --group: #121316;
-  --group-edge: #24262a;
+  --side-edge: #212328;
+  --border: #30333a;
+  --bubble: #141518;
+  --group: #0f1013;
+  --group-edge: #212328;
   --danger-fill: #b5332e;
   --control-border: #7f858e;
-  --text: #eceef1;
-  --quiet: #9ba1ab;
-  --faint: #61666e;
+  --text: #ecedf0;
+  --quiet: #9a9fa8;
+  --faint: #5f646c;
   --accent: #f3f4f6;
   --accent-fill: #f3f4f6;
   --on-accent: #0c0e11;
@@ -133,8 +133,8 @@
   --diff-add: #132a1c;
   --diff-del: #33191a;
   --shadow: #00000080;
-  --glass: #18191cb8;
-  --glass-edge: #ffffff1a;
+  --glass: #141518c7;
+  --glass-edge: #ffffff17;
   --glass-rim: #ffffff0f;
   --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
   --glass-pressed: #ffffff1a;
@@ -173,6 +173,8 @@
   --text-lg: 18px; /* an order's title when it has the board to itself */
   --text-xl: 20px; /* the one headline on connect and empty states */
   --text-display: 28px; /* the Status view's progress number */
+  --text-title: 24px; /* a Settings page's own title, in its column */
+  --leading-title: 32px;
   --leading-xs: 16px;
   --leading-sm: 18px;
   --leading-md: 20px;
@@ -183,6 +185,9 @@
      The one place the mono speaks for the app rather than for a machine: it marks structure, never content. */
   --label-font: var(--font-mono);
   --label-size: 10.5px;
+  /* Times and counts beside words: the machine voice, a step under the words. */
+  --meta-font: var(--font-mono);
+  --meta-size: 10.5px;
   --label-tracking: 0.07em;
   /* Two weights, and a medium between them for a name that stands alone under its picture (the sidebar's pins). */
   --weight-regular: 400;
@@ -195,8 +200,11 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
 
   /* Fixed heights keep rows and controls aligned across screens. */
   --row: 28px;
@@ -207,7 +215,7 @@
      lights in it (shared/frame.ts TOP_BAR). */
   --top-bar-height: 52px;
   /* How far a glass capsule (the chat's pill) sits in from the top row's top and bottom edges. */
-  --glass-inset: 8px;
+  --glass-inset: 10px;
   /* The glass's blur, the same in both themes. */
   --glass-blur: blur(24px) saturate(180%);
   /* The chat's composer floats as a glass island over the conversation: this far in from the window's bottom edge,
@@ -218,7 +226,7 @@
   --island-band-h: 36px;
   --island-capsule-h: 28px;
   --sidebar-w: 264px;
-  --measure: 880px;
+  --measure: 760px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;
   /* Room for the macOS traffic lights in the hiddenInset title bar; 0 elsewhere (<html data-platform>). */
@@ -228,9 +236,11 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   /* A Settings group's corners. */
-  --radius-group: 10px;
+  --radius-group: 12px;
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
+  /* What is selected (a sidebar row, a tab, a segment): a raised chip, its hairline edge and a breath of lift. */
+  --chip: 0 0 0 1px var(--hairline), 0 1px 2px var(--shadow);
   --float-shadow: 0 0 0 1px var(--hairline), 0 2px 4px -1px var(--shadow), 0 16px 36px -12px var(--shadow);
   /* What Show went to in a chat (what the lead waits on): a soft ring in the accent, fading out over --dur-shown. */
   --shown-ring: color-mix(in srgb, var(--accent) 45%, transparent);

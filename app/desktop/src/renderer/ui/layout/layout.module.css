@@ -50,8 +50,8 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--hairline);
-  background: var(--bg);
+  border-left: 1px solid var(--side-edge);
+  background: var(--sidebar);
 }
 /* Its column, in the panel's own tone from the frame that makes room for it, under the panel as it slides in. The
    translucent frame paints nothing there, so the window's lighter material would show until the panel had covered it:
@@ -59,7 +59,7 @@
 .withAside::before {
   content: "";
   grid-area: aside;
-  background: var(--bg);
+  background: var(--sidebar);
 }
 
 /* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat by its own cool tone and
@@ -280,7 +280,8 @@ button.frameTitle[data-glass]:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: var(--weight-strong);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.005em;
 }
 .pressChevron {
   flex: none;
@@ -368,10 +369,10 @@ button[aria-pressed="true"] > .pressChevron {
   gap: var(--space-2);
   width: 100%;
   min-width: 0;
-  min-height: var(--row);
+  min-height: 32px;
   padding: var(--space-1) var(--space-2);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -381,7 +382,8 @@ button[aria-pressed="true"] > .pressChevron {
 }
 .sidebarItem[aria-current="page"],
 .sidebarItem[data-selected] {
-  background: var(--selected);
+  background: var(--raised);
+  box-shadow: var(--chip);
 }
 .sidebarItem:disabled {
   color: var(--faint);
@@ -389,8 +391,8 @@ button[aria-pressed="true"] > .pressChevron {
 }
 .sidebarItem > svg {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--quiet);
 }
 .sidebarLabel {

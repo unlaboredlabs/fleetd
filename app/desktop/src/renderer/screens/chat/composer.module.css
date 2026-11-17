@@ -19,12 +19,13 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
-  column-gap: var(--space-1);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-2);
   /* A crisp rounded slab, not a capsule: its corners the bubbles' less nothing, so the island and the words over it
      share one corner. */
-  border-radius: 14px;
+  border-radius: 16px;
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
@@ -49,9 +50,22 @@
   z-index: -2;
   box-shadow: var(--glass-lift);
 }
-/* What goes with the words takes a row of its own over them; the clip, the words and the buttons share the last. */
+/* What goes with the words takes a row of its own over them; then the words, the pill's width; then one row of tools
+   under them, the clip at its start and Send at its end (placed in that order, whatever the markup's). */
 .box > :not(.lead, .input, .tools) {
   grid-column: 1 / -1;
+}
+.box > .input {
+  order: 1;
+  grid-column: 1 / -1;
+}
+.box > .lead {
+  order: 2;
+  grid-column: 1;
+}
+.box > .tools {
+  order: 2;
+  grid-column: 3;
 }
 /* Focused, its edge darkens a step towards a control's (the caret shows where typing goes): a dark ring around the
    whole pill would weigh more than the words in it, and it has the cursor most of the time. */
@@ -74,6 +88,27 @@
   align-items: center;
   gap: var(--space-1);
 }
+/* Send: one solid accent key, round, always there; with nothing to send it is the same key, faded, never an outline. */
+.tools > button {
+  width: 32px;
+  height: 32px;
+}
+.tools > button:disabled {
+  border-color: transparent;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  opacity: 0.28;
+  box-shadow: none;
+}
+.tools > button > svg,
+.lead > button > svg {
+  width: 16px;
+  height: 16px;
+}
+.lead > button {
+  width: 32px;
+  height: 32px;
+}
 
 .input {
   display: block;
@@ -81,15 +116,15 @@
   box-sizing: border-box;
   /* Grows with its text, up to a dozen lines, then scrolls; one line is as tall as the buttons beside it. */
   field-sizing: content;
-  min-height: var(--field);
-  max-height: calc(12 * var(--leading-md) + 8px);
-  padding: 4px var(--space-1);
+  min-height: var(--leading-md);
+  max-height: calc(12 * var(--leading-md));
+  padding: 0 var(--space-2);
   resize: none;
   border: none;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: var(--text-md);
+  font-size: 14px;
   line-height: var(--leading-md);
   overflow-wrap: anywhere;
 }

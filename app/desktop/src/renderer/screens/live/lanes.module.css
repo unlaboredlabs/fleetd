@@ -39,5 +39,5 @@
   overflow: hidden;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }

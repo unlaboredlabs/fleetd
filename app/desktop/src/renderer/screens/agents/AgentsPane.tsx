@@ -325,6 +325,7 @@ function AgentRow({ agent, ...rest }: { agent: LiveAgent } & ComponentProps<"a">
             {row.title}
           </Truncate>
         </span>
+        <span className={s.role}>{ROLE_WORD[row.role]}</span>
         <span className={s.doing}>
           <ActivityLine line={line} />
         </span>

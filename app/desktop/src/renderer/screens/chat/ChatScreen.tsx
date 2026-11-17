@@ -367,7 +367,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       <FrameTitle
         glass
         title={title || undefined}
-        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={24} own={bot} />}
+        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={20} own={bot} />}
         press={
           summary === undefined || data.missing || panel === null
             ? undefined

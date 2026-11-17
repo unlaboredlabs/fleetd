@@ -22,15 +22,36 @@
 .column {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  max-width: 760px;
-  padding: var(--space-4) var(--space-6) 56px;
+  gap: var(--space-10);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-8) var(--space-12);
+}
+/* The page's own title, at the head of its column: the one large line on the page; a control for the whole page (an
+   add) at its line's end. */
+.pageHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-bottom: calc(-1 * var(--space-4));
+  padding: 0 var(--space-1);
+}
+.pageTitle {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-title);
+  line-height: var(--leading-title);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.022em;
 }
 /* What was a page once, now a part of another (Frames.tsx): its sections keep the column's rhythm. */
 .part {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--space-10);
   min-width: 0;
   outline: none;
   scroll-margin-top: var(--space-4);
@@ -256,6 +277,25 @@
 /* ---- The settings sidebar ---- */
 .search {
   padding: var(--space-2) 0;
+}
+/* Lighter than a form's field: the page's white with a magnifier at its start, its edge the lightest grey that still
+   holds 3:1 on the sidebar (--control-border), corners a row's. */
+.search > input {
+  height: 32px;
+  padding-inline: 32px var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--raised) no-repeat 10px 50% / 14px 14px;
+  background-image: var(--search-glyph);
+}
+.search > input::placeholder {
+  color: var(--quiet);
+}
+:root,
+[data-theme="light"] {
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d636c' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] {
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239a9fa8' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
 }
 /* A set's pages (a project's, Every project's) as tabs over the page, in line with its column. */
 .pageTabs {

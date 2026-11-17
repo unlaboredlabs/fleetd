@@ -20,7 +20,7 @@
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
   min-width: 0;
-  padding: 0 var(--space-4) var(--space-2);
+  padding: 0 var(--space-1) var(--space-3);
 }
 .headText {
   display: flex;
@@ -31,11 +31,11 @@
 .label {
   align-self: flex-start;
   margin: 0;
-  font-family: var(--label-font);
-  font-size: var(--label-size);
-  font-weight: var(--weight-medium);
-  letter-spacing: var(--label-tracking);
-  text-transform: uppercase;
+  color: var(--text);
+  font-size: 15px;
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
 }
 /* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
 .title {
@@ -57,6 +57,28 @@
   border: 1px solid var(--group-edge);
   border-radius: var(--radius-group);
   background: var(--group);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow) 35%, transparent);
+}
+/* Rows in a group read as a table's: one hairline between two, inset from the group's edges, never across the page. */
+.group > .row + .row::before {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: 0 var(--space-4);
+  background: var(--hairline);
+}
+.list > .listRow + .listRow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 1px;
+  background: var(--hairline);
+}
+.list > .opens + .opens::before {
+  left: var(--space-3);
+  right: var(--space-3);
 }
 /* What a section holds that isn't rows: no fill, its words in line with the label. */
 .bare {
@@ -84,7 +106,7 @@
   align-items: center;
   column-gap: var(--space-6);
   min-width: 0;
-  min-height: 44px;
+  min-height: 52px;
   padding: var(--space-2) var(--space-4);
 }
 .rowText {
@@ -130,7 +152,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: var(--space-1) 0;
+  padding: 0;
 }
 .listRow {
   position: relative;
@@ -139,7 +161,8 @@
   align-items: center;
   column-gap: var(--space-3);
   min-width: 0;
-  padding: 10px var(--space-4);
+  min-height: 52px;
+  padding: var(--space-3) var(--space-4);
 }
 .listRow > .control {
   flex-wrap: nowrap;

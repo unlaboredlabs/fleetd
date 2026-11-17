@@ -112,7 +112,7 @@ export function You({ screen, factory, go }: YouProps) {
           <PopoverTrigger asChild>
             <button type="button" className={s.me} aria-label={said} data-opens="you" data-mark={mark?.tone}>
               <span className={s.meAvatar}>
-                <Avatar name={name} size={28} src={picture} />
+                <Avatar name={name} size={24} src={picture} />
                 {mark === null ? null : <span className={s.meMark} data-tone={mark.tone} aria-hidden />}
               </span>
               <span className={s.meText}>

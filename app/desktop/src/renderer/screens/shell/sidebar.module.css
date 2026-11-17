@@ -64,7 +64,7 @@
   background: var(--sidebar);
 }
 
-/* A chat's row: a 56 px rounded box, its 40 px picture 8 px in from its top, its bottom and its end; the far end's
+/* A chat's row: a 48 px rounded box, its 32 px picture 8 px in from its top, its bottom and its end; the far end's
    words stop a little short of its edge. */
 .row {
   display: flex;
@@ -72,7 +72,8 @@
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
-  padding: var(--space-2) 14px var(--space-2) var(--space-2);
+  min-height: 48px;
+  padding: 0 var(--space-3) 0 var(--space-2);
   border: none;
   border-radius: var(--row-round);
   background: transparent;
@@ -85,7 +86,8 @@
   background: var(--hover);
 }
 .row[aria-current="page"] {
-  background: var(--selected);
+  background: var(--raised);
+  box-shadow: var(--chip);
 }
 .row:focus-visible {
   outline: 2px solid var(--accent);
@@ -117,9 +119,10 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: var(--weight-strong);
-  line-height: var(--leading-md);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-sm);
+  letter-spacing: -0.005em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -127,8 +130,9 @@
 .when,
 .jump {
   flex: none;
-  color: var(--quiet);
-  font-size: var(--text-xs);
+  color: var(--faint);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -168,8 +172,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--quiet);
-  font-size: var(--text-md);
-  line-height: var(--leading-sm);
+  font-size: var(--text-sm);
+  line-height: var(--leading-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -178,6 +182,9 @@
 .row[data-unread] .line,
 .row[data-unread] .when {
   color: var(--text);
+}
+.row[data-unread] .name {
+  font-weight: var(--weight-strong);
 }
 
 .mark {
@@ -328,8 +335,8 @@
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 50%;
-  background: var(--hover);
+  border-radius: var(--radius-lg);
+  background: transparent;
   color: var(--text);
   transition:
     background-color var(--dur-quick) var(--ease-snap),
@@ -343,13 +350,12 @@
 }
 .new > svg,
 .round > svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 1.75;
+  width: 16px;
+  height: 16px;
 }
 .round {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   color: var(--quiet);
 }
 .new:focus-visible,
@@ -374,7 +380,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3) var(--space-3) var(--space-2);
 }
 
@@ -384,8 +390,8 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  min-height: 40px;
-  padding: var(--space-1-5);
+  min-height: 36px;
+  padding: var(--space-1);
   border: none;
   border-radius: var(--radius-lg);
   background: transparent;

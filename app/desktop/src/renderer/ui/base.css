@@ -268,3 +268,9 @@ ol {
 [data-reorder-row][data-lifted] * {
   cursor: grabbing;
 }
+
+/* One icon weight across the app: every Lucide glyph drawn at a fine 1.5 px line, whatever size it is set at (a CSS
+   stroke-width outranks the attribute Lucide writes). */
+svg.lucide {
+  stroke-width: 1.5px;
+}

@@ -57,12 +57,15 @@ export function PageHead(props: { title: string; lead?: ReactNode; children?: Re
   const frame = useContext(PageFrame);
   return (
     <>
-      <FrameTitle title={frame?.title ?? props.title} lead={frame?.lead ?? props.lead} />
-      {props.children || props.aside ? (
+      <FrameTitle lead={frame?.lead ?? props.lead} />
+      {/* The page's title heads its column, the control for the whole page at the same line's right end. */}
+      <div className={s.pageHead}>
+        <h1 className={s.pageTitle}>{frame?.title ?? props.title}</h1>
+        {props.aside}
+      </div>
+      {props.children ? (
         <div className={s.pageIntro}>
-          {/* With no words, the control still sits at the row's right end. */}
-          {props.children ? <Text tone="quiet">{props.children}</Text> : <span />}
-          {props.aside}
+          <Text tone="quiet">{props.children}</Text>
         </div>
       ) : null}
     </>

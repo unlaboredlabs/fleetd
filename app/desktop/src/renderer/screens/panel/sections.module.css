@@ -15,14 +15,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
-  height: 26px;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-lg);
+  color: var(--quiet);
+  font-size: var(--text-md);
   line-height: var(--leading-xs);
-  font-weight: 400;
+  font-weight: var(--weight-medium);
   transition:
     background-color var(--dur-quick) var(--ease-snap),
     color var(--dur-quick) var(--ease-snap);
@@ -32,9 +33,9 @@
 }
 /* aria-selected, not data-state: the tooltip around each tab sets data-state to its own. */
 .bar .section[aria-selected="true"] {
-  background: var(--selected);
+  background: var(--raised);
   color: var(--text);
-  font-weight: 500;
+  box-shadow: var(--chip);
 }
 .bar .section::after {
   display: none;
@@ -54,7 +55,7 @@
 .words {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 0;
 }
 /* As wide as its word at the open tab's weight, so opening a tab moves none of them. */
@@ -76,7 +77,8 @@
 .count {
   flex: none;
   color: var(--faint);
-  font-size: var(--text-xs);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
