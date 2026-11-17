@@ -279,7 +279,8 @@ export class MicroVm {
     const endpoint = claudeEndpoint(l);
     let args: string[];
     try {
-      const r = reachOf(endpoint.url);
+      // The guest is root: the relay takes the endpoint's own port, and claude calls the URL as set.
+      const r = reachOf(endpoint.url, { lowPorts: true });
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
       writeFileSync(boxFile(l.dir), JSON.stringify(held.record));

@@ -49,7 +49,7 @@ test("the endpoint is the one claude picks: its environment, then each settings 
   expect(claudeEndpoint(l)).toEqual({ url: "https://inline:4", source: "--settings" });
 });
 
-test("every kind of endpoint gets a relay through the node, its name or IP kept and never a port under 1024 in the box", () => {
+test("every kind of endpoint gets a relay through the node, its name or IP kept, and a port under 1024 only where the box can take one", () => {
   // This machine's loopback: the box's own loopback at the same port, nothing pinned.
   expect(reachOf("http://localhost:8317")).toEqual({ relay: { port: 8317, to: { host: "localhost", port: 8317 } }, url: "http://localhost:8317", boxUrl: "http://localhost:8317", label: "localhost:8317" });
   expect(reachOf("http://127.0.0.1:8317/v1").relay).toEqual({ port: 8317, to: { host: "127.0.0.1", port: 8317 } });
@@ -69,6 +69,17 @@ test("every kind of endpoint gets a relay through the node, its name or IP kept 
   expect(reachOf("http://devbox/claude/").boxUrl).toBe("http://devbox:40080/claude/");
   expect(reachOf("http://devbox:8317")).toMatchObject({ relay: { port: 8317, to: { host: "devbox", port: 8317 } }, pin: { name: "devbox" }, boxUrl: "http://devbox:8317" });
   expect(reachOf(ANTHROPIC_API)).toMatchObject({ relay: { port: 40443, to: { host: "api.anthropic.com", port: 443 } }, pin: { name: "api.anthropic.com" } });
+  // A local VM's root guest takes the endpoint's own port: claude calls Anthropic's API exactly as set, which it
+  // counts as first-party only with no port in the URL.
+  expect(reachOf(ANTHROPIC_API, { lowPorts: true })).toEqual({
+    relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } },
+    pin: { name: "api.anthropic.com" },
+    url: ANTHROPIC_API,
+    boxUrl: ANTHROPIC_API,
+    label: "api.anthropic.com:443",
+  });
+  expect(reachOf("https://gateway.tail1234.ts.net", { lowPorts: true }).boxUrl).toBe("https://gateway.tail1234.ts.net");
+  expect(boxArgs(["-p"], reachOf(ANTHROPIC_API, { lowPorts: true }))).toEqual(["-p"]);
   // On a hosted box's own network: no relay, no pin, the URL as set.
   expect(reachOf(ANTHROPIC_API, { direct: true })).toEqual({ url: ANTHROPIC_API, boxUrl: ANTHROPIC_API, label: "api.anthropic.com:443" });
   expect(() => reachOf("not a url")).toThrow("isn't a URL");

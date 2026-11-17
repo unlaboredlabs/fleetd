@@ -6,9 +6,11 @@
 // - A relay (../sandbox/box.ts Relay) carries it through the node, over the box's link: a VM's network can't reach
 //   this machine (net.ts), a hosted box's can't reach a tailnet, and a box's DNS needn't know tailnet names. The URL
 //   keeps its name, so TLS still checks the endpoint's own certificate: a name is pinned to the box's loopback in its
-//   /etc/hosts, an IP is added to its loopback, and the guest listens there on the endpoint's port, or on RELAY_BASE
-//   plus it for a port under 1024, which a box's user may not take; the box's claude is then pointed at that port
-//   (`boxArgs`). The node dials the endpoint as this machine reaches it.
+//   /etc/hosts, an IP is added to its loopback, and the guest listens there on the endpoint's port. A local VM's guest
+//   is root and takes any port, so its claude calls the URL exactly as set (claude counts only api.anthropic.com with
+//   no port as Anthropic's own API). A hosted box's user may not take a port under 1024: there the relay listens on
+//   RELAY_BASE plus it, and the box's claude is pointed at that port (`boxArgs`). The node dials the endpoint as this
+//   machine reaches it.
 // - A hosted box reaches a public endpoint (Anthropic's API) itself, as it reaches the internet: no relay (`direct`).
 // - Before the agent starts there, the box calls the endpoint once (any HTTP answer will do, no key is sent):
 //   `reach` throws, in plain words, when it can't.
@@ -93,11 +95,12 @@ function parse(url: string): { u: URL; host: string; port: number; label: string
   return { u, host, port, label: `${isIP(host) === 6 ? `[${host}]` : host}:${port}` };
 }
 
-/** How a box reaches `url`: through a relay, or (`direct`) on its own network. */
-export function reachOf(url: string, o: { direct?: boolean } = {}): Reach {
+/** How a box reaches `url`: through a relay, or (`direct`) on its own network. `lowPorts`: the box's guest may take a
+ * port under 1024 (a local VM's root), so the relay keeps the endpoint's port and the URL stays as set. */
+export function reachOf(url: string, o: { direct?: boolean; lowPorts?: boolean } = {}): Reach {
   const { u, host, port, label } = parse(url);
   if (o.direct) return { url, boxUrl: url, label };
-  const inBox = port < 1024 ? RELAY_BASE + port : port;
+  const inBox = port < 1024 && !o.lowPorts ? RELAY_BASE + port : port;
   const boxed = new URL(u.href);
   boxed.port = String(inBox);
   // The URL as written when the port stays, so a trailing slash or path reads as the person wrote it.

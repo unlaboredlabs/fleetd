@@ -26,6 +26,7 @@ import type { NodeFrame } from "../../src/node/wire.ts";
 import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { imageEnv } from "../../src/node/sandbox/guest.ts";
 import { shows } from "../../src/node/place/view.ts";
+import type { Reach } from "../../src/node/place/endpoint.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-vm-"));
@@ -557,4 +558,16 @@ test.skipIf(process.platform !== "linux")("an endpoint only a project's own sett
   expect(existsSync(boxFile(dir))).toBe(false);
   expect(n.vm.status().kind).toBe("microvm");
   await processPlace.stop(dir);
+}, 30_000);
+
+test("a VM agent on Anthropic's own API calls it exactly as set: the relay takes port 443 in the box", async () => {
+  const seen: Reach[] = [];
+  const n = node({ reach: async (_box, r) => void seen.push(r) });
+  const dir = join(n.home, "hosts", "s-api");
+  const l = launch(n.home, "s-api", n.cwd, program("claude-api", ECHO_CLAUDE));
+  const args = ["-p", "--model", "m"];
+  const link = await n.vm.bound({ sessionId: "s-api", dir, role: "worker" }).start({ ...l, args, env: { ...l.env, CLAUDE_CONFIG_DIR: join(root, "cfg-none") } });
+  expect(await inits(link, 1)).toEqual(["m0"]);
+  expect(seen).toMatchObject([{ url: "https://api.anthropic.com", boxUrl: "https://api.anthropic.com", relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } } }]);
+  await n.vm.bound({ sessionId: "s-api", dir, role: "worker" }).stop(dir);
 }, 30_000);
