@@ -379,3 +379,40 @@ test("a guest that goes away ends the box, its session host's lines and its chan
   while ((event = await within(link.next(), 5_000, "the lines' end")) !== undefined) link.applied++;
   await expect(box.dialHost({ data() {}, drain() {}, close() {}, error() {} })).rejects.toThrow("the box is gone");
 }, 30_000);
+
+test.skipIf(process.platform !== "linux")("a relay reaches a host elsewhere through the node, at an address of the box's own, across a dropped link", async () => {
+  // "Another tailnet host": an address no box listens on and the node reaches on its own (127.0.0.5 on Linux).
+  const gateway = createServer((s) => s.end("from the gateway"));
+  servers.push(gateway);
+  await new Promise<void>((r) => gateway.listen(0, "127.0.0.5", r));
+  const to = { host: "127.0.0.5", port: (gateway.address() as { port: number }).port };
+  // A port free at the box's pinned address (127.0.0.3, as `ip addr add` puts a tailnet IP on a VM's loopback).
+  const spare = createServer();
+  await new Promise<void>((r) => spare.listen(0, "127.0.0.3", r));
+  const port = (spare.address() as { port: number }).port;
+  await new Promise((r) => spare.close(r));
+  const b = await standIn();
+  const box = await Box.open({ session: "s-relay", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks() });
+  await box.relay({ port, addr: "127.0.0.3", to });
+  expect(box.relays).toEqual([{ port, addr: "127.0.0.3", to }]);
+  const read = (host: string) =>
+    new Promise<string>((resolve) => {
+      const s = connect({ host, port });
+      let got = "";
+      s.on("data", (c: Buffer) => (got += c.toString()));
+      s.on("close", () => resolve(got));
+      s.on("error", () => resolve(`refused`));
+    });
+  expect(await within(read("127.0.0.3"), 5_000, "the relay")).toBe("from the gateway");
+  // The link drops and comes back: the guest listens for the relay again.
+  b.drop()();
+  for (let i = 0; b.links.length < 2; i++) {
+    if (i > 500) throw new Error("no new link");
+    await Bun.sleep(10);
+  }
+  expect(await within(read("127.0.0.3"), 5_000, "the relay after a drop")).toBe("from the gateway");
+  // One the guest can't listen for (an address that isn't the box's own) is refused, and kept for no later link.
+  await expect(box.relay({ port, addr: "192.0.2.1", to })).rejects.toThrow();
+  expect(box.relays).toEqual([{ port, addr: "127.0.0.3", to }]);
+  box.close();
+}, 30_000);

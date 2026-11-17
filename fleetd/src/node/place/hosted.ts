@@ -25,12 +25,16 @@ import { boxes, type BoxRecord, EXTEND_MS } from "../sandbox/remote/boxes.ts";
 import { fetchBack, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
 import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
+import { boxArgs, claudeEndpoint, publicEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
 import type { Place } from "./index.ts";
 
 /** What a hosted agent can't do, in plain words: its files are in its box, not on this machine. */
 export const HOSTED_NO_DESKTOP_LAUNCH =
   "This agent runs in a hosted sandbox, so its files aren't on this machine and the Linux desktop can't launch them. Open what it serves in a browser session instead, or say in your result that the desktop check was skipped.";
 export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents' Mac can't build from its files, and iOS simulators aren't available to it.";
+
+/** How a box is pointed at Claude and checked (./endpoint.ts reach); tests set a stand-in. */
+export const hostedReach: { reach?: (box: Box, r: Reach) => Promise<void> } = {};
 
 /** The Claude Code every hosted template installs, at the version fleetd was tested with (sandbox/providers/recipe.ts):
  * its own install, not /usr/local/bin's, which a provider's image may hold another of (boat's did). Tests set a
@@ -110,17 +114,14 @@ export function nobodyPid(session: string): number {
   return 0x40000000 + (h & 0xfffff);
 }
 
-/** The ports of this machine a session's tools reach at the same numbers: the browser proxy's, adb's, and a Claude
- * gateway's on loopback. */
+/** The ports of this machine a session's tools reach at the same numbers: the browser proxy's and adb's. Claude,
+ * wherever it is, is the box's relay (./endpoint.ts). */
 export function forwardedPorts(env: Record<string, string | undefined>): number[] {
   const out: number[] = [];
   const cdp = env.AGENT_BROWSER_CDP ? /:\/\/127\.0\.0\.1:(\d+)/.exec(env.AGENT_BROWSER_CDP)?.[1] : undefined;
   if (cdp) out.push(Number(cdp));
   const adb = Number(env.ANDROID_ADB_SERVER_PORT);
   if (adb > 0) out.push(adb);
-  // A Claude gateway on this machine's loopback (ANTHROPIC_BASE_URL=http://localhost:8317, say) is reached the same way.
-  const gateway = env.ANTHROPIC_BASE_URL ? /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):(\d+)/.exec(env.ANTHROPIC_BASE_URL)?.[1] : undefined;
-  if (gateway) out.push(Number(gateway));
   return [...new Set(out.filter((p) => p > 0 && p < 65536))];
 }
 
@@ -312,7 +313,21 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
         l.record.transcript = transcript;
         if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
       }
-      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
+      // Claude: a public endpoint (Anthropic's API) on the box's own network, any other (a gateway on this machine or
+      // its tailnet, which a hosted box can't reach) through the node; checked from inside the box before the agent
+      // starts there.
+      const endpoint = claudeEndpoint(launch);
+      let args: string[];
+      try {
+        const r = reachOf(endpoint.url, { direct: await publicEndpoint(endpoint.url) });
+        await (hostedReach.reach ?? reach)(box, r);
+        args = boxArgs(launch.args, r);
+      } catch (error) {
+        throw new LaunchError(`${(error as Error).message} (the endpoint from ${endpoint.source})`);
+      }
+      l.record.relays = box.relays;
+      save(dir, l.record);
+      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args, cwd: launch.cwd, env: boxEnv });
       const pid = nobodyPid(session);
       const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
       if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);

@@ -6,6 +6,8 @@
 // - each connection to the box's node.sock, answered as a node.sock call of the box's session (../lead/index.ts
 //   leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
 // - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1;
+// - each connection to one of its relays (a guest address and port the node named), piped to the host and port the
+//   relay names, as this machine reaches it (a Claude gateway on its tailnet, say);
 // - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
 //   (../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
 // A channel to anywhere else is refused.
@@ -33,6 +35,8 @@ export type BoxOptions = {
   nodeSock: string;
   /** This machine's ports the box reaches at the same numbers (the browser proxy's, adb's). */
   tcp: number[];
+  /** Where the box reaches what this machine reaches, through the node. */
+  relays?: Relay[];
   /** How node.sock calls are answered (the node's serveLeadSocket hooks). */
   lead: LeadSocketHooks;
   /** Where the guest listens for its builds' slots, and the node home whose slots they take. */
@@ -41,9 +45,16 @@ export type BoxOptions = {
   goneMs?: number;
 };
 
+/** A port in the box (on its loopback, or on `addr`, an address of the guest's own) whose connections the node pipes
+ * to `to`, as this machine reaches it. */
+export type Relay = { port: number; addr?: string; to: { host: string; port: number } };
+
+const relayKey = (port: number, addr?: string) => `${addr ?? ""}|${port}`;
+
 export class Box {
   #mux: Mux | undefined;
   #tcp: Set<number>;
+  #relays = new Map<string, Relay>();
   #hostRuns = false;
   /** How many of the node's lines the session host took, as the guest last said. */
   #hostLines = 0;
@@ -59,6 +70,7 @@ export class Box {
 
   private constructor(readonly o: BoxOptions) {
     this.#tcp = new Set(o.tcp);
+    for (const r of o.relays ?? []) this.#relays.set(relayKey(r.port, r.addr), r);
   }
 
   /** Dials the box's guest and sets up its forwards. */
@@ -110,6 +122,24 @@ export class Box {
   async forward(port: number): Promise<void> {
     this.#tcp.add(port);
     if (this.#mux) await this.#request({ op: "listen", tcp: port });
+  }
+
+  /** Pipes the box's `r.port` (on `r.addr`) to `r.to`, as this machine reaches it. */
+  async relay(r: Relay): Promise<void> {
+    const key = relayKey(r.port, r.addr);
+    this.#relays.set(key, r);
+    try {
+      await this.#request(listenOf(r));
+    } catch (error) {
+      // One the guest can't listen for would fail every later dial too.
+      this.#relays.delete(key);
+      throw error;
+    }
+  }
+
+  /** The box's relays, for its record. */
+  get relays(): Relay[] {
+    return [...this.#relays.values()];
   }
 
   /** Writes `bytes` to `path` in the box, in pieces a frame takes. */
@@ -190,6 +220,7 @@ export class Box {
       await this.#request({ op: "listen", unix: this.o.nodeSock });
       if (this.o.slots) await this.#request({ op: "listen", unix: this.o.slots.sock });
       for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
+      for (const r of this.#relays.values()) await this.#request(listenOf(r));
     } catch (error) {
       if (this.#mux === mux) this.#mux = undefined;
       mux.close((error as Error).message);
@@ -207,7 +238,10 @@ export class Box {
     // The target alone says what a channel is; nothing in it names a session.
     if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
     if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return slotChannel(this.o.slots.home);
-    if ("tcp" in target && this.#tcp.has(target.tcp)) return connect({ host: "127.0.0.1", port: target.tcp });
+    if (!("tcp" in target)) return undefined;
+    const relay = this.#relays.get(relayKey(target.tcp, target.addr));
+    if (relay) return connect({ host: relay.to.host, port: relay.to.port });
+    if (target.addr === undefined && this.#tcp.has(target.tcp)) return connect({ host: "127.0.0.1", port: target.tcp });
     return undefined;
   }
 
@@ -275,6 +309,8 @@ export class Box {
     this.#goneResolve(why);
   }
 }
+
+const listenOf = (r: Relay) => ({ op: "listen", tcp: r.port, ...(r.addr ? { addr: r.addr } : {}) });
 
 /** The node's end of the session host's lines, across links. What comes in is handed on in whole lines only, so a link
  * that drops mid-line leaves no half of it (the host resends it whole). What HostLink writes is kept, line by line,

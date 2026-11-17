@@ -28,7 +28,9 @@ const MAX_FRAME = 1 << 20;
 export const CONTROL = 0;
 export const HOST = 1;
 
-export type Target = { unix: string } | { tcp: number } | { host: true };
+/** A channel's far end: a unix socket, a TCP port (on the guest's loopback, or on `addr` in the guest), or the session
+ * host. */
+export type Target = { unix: string } | { tcp: number; addr?: string } | { host: true };
 
 export function frame(type: number, channel: number, payload: Uint8Array = new Uint8Array(0)): Buffer {
   const out = Buffer.allocUnsafe(HEADER + payload.length);
