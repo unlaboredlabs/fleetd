@@ -16,8 +16,10 @@ import { addMachine, addProject, agent, callLead, testHub } from "./screens_help
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { Masker } from "../src/node/mask.ts";
 import { type TestNode, testNode } from "./node_helpers.ts";
-import { tempHome } from "./helpers.ts";
+import { noSharedPlaywright, tempHome } from "./helpers.ts";
 import { Desktops, start as startDesktop } from "../src/node/desktop/index.ts";
+
+noSharedPlaywright();
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
