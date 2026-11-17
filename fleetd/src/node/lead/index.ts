@@ -4,11 +4,12 @@
 // hub's answer under the caller's id. A call from a session leaves the machine with its secrets masked (../mask.ts).
 import { chmodSync, existsSync, lstatSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { Duplex } from "node:stream";
 import { mkdirPrivate } from "../config.ts";
 import type { Masker } from "../mask.ts";
 import type { NodeFrame } from "../wire.ts";
 import { headUtf16 } from "../util.ts";
-import { peerPid, type PeerSession } from "./peer.ts";
+import { type Caller, identify, peerPid, type PeerSession } from "./peer.ts";
 
 export const leadSocketPath = (home: string) => join(home, "node.sock");
 export const HUB_UNREACHABLE = "fleetd hub is restarting; try again shortly";
@@ -145,8 +146,8 @@ export type LeadSocketHooks = {
   mac?: (session: string, frame: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 
-/** Answers one line from the socket. */
-export async function answerLine(line: string, pid: number | undefined, hooks: LeadSocketHooks): Promise<Record<string, unknown>> {
+/** Answers one line from the socket, or from a box's channel (`caller` a box: leadChannel). */
+export async function answerLine(line: string, caller: Caller, hooks: LeadSocketHooks): Promise<Record<string, unknown>> {
   const bad = (message: string) => ({ t: "lead_result", ...errorFrame("invalid", { code: "invalid", message: headUtf16(message, 500) }) });
   let frame: Record<string, unknown>;
   try {
@@ -154,7 +155,7 @@ export async function answerLine(line: string, pid: number | undefined, hooks: L
   } catch (error) {
     return bad(`not a lead_call frame: ${(error as Error).message}`);
   }
-  const peer = () => (pid === undefined ? undefined : hooks.identify(pid));
+  const peer = () => identify(caller, hooks.identify);
   if (frame.t === "hold") {
     const who = peer();
     if (who?.kind !== "outside") return bad("only a person's shell holds the node's agents, never a session");
@@ -230,6 +231,48 @@ export async function answerLine(line: string, pid: number | undefined, hooks: L
     );
   }
   return reply(await hooks.relay.call({ ...attributed, call: masker.value(attributed.call) }));
+}
+
+/** One connection to a box's node.sock forward (../sandbox/box.ts), as one to the socket: a line in, one line out,
+ * then the end. Its session is `box`'s, whatever the line claims. */
+export function leadChannel(box: string, hooks: LeadSocketHooks): Duplex {
+  let buf = "";
+  let done = false;
+  const decoder = new TextDecoder();
+  const answer = (frame: unknown) => {
+    channel.push(`${JSON.stringify(frame)}\n`);
+    channel.push(null);
+  };
+  const respond = (line: string) => {
+    done = true;
+    answerLine(line, { box }, hooks).then(answer, () => channel.push(null));
+  };
+  const channel = new Duplex({
+    read() {},
+    write(chunk: Uint8Array, _encoding, callback) {
+      if (!done) {
+        buf += decoder.decode(chunk, { stream: true });
+        const nl = buf.indexOf("\n");
+        if (nl >= 0) respond(buf.slice(0, nl));
+        else if (buf.length > MAX_BROWSER_FRAME_BYTES) {
+          done = true;
+          answer({ t: "lead_result", id: "invalid", error: { code: "invalid", message: `frame is larger than ${MAX_BROWSER_FRAME_BYTES} bytes` } });
+        }
+      }
+      callback();
+    },
+    // Half-open: a caller that ends its side after writing still gets the answer.
+    final(callback) {
+      buf += decoder.decode();
+      if (!done && buf.trim()) respond(buf);
+      else if (!done) {
+        done = true;
+        channel.push(null);
+      }
+      callback();
+    },
+  });
+  return channel;
 }
 
 /** Serves the lead socket (mode 0600, in the node's 0700 home) until the returned function stops it. */
