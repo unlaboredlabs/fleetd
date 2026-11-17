@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { boatStandIn, daytonaStandIn, e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
-import { Boxes, DOWN_MS, MACHINE_LABEL, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
+import { Boxes, DOWN_MS, hostable, MACHINE_LABEL, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { type Box } from "../../src/node/sandbox/box.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -103,6 +103,11 @@ test("the reaper deletes this machine's boxes no session holds, and no one else'
   const other = await client.create({ template: "t", key: "k-other", labels: { [MACHINE_LABEL]: "laptop", [SESSION_LABEL]: "x" }, lifetimeMs: 60_000 });
   expect(await boxes.reap(() => new Set([kept.id]))).toBe(1);
   expect([...s.boxes.keys()].sort()).toEqual([kept.id, other.id].sort());
+});
+
+test("only an x86_64 node makes hosted boxes: an arm64 one says so", () => {
+  expect(hostable("x64")).toBe(true);
+  expect(hostable("arm64")).toBe(false);
 });
 
 test("keys: a provider not sent again is forgotten, on disk too; a key that doesn't open is ignored", async () => {

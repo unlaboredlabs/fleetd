@@ -25,9 +25,10 @@ import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 /** Labels on every box: the machine that made it, and the session it runs. */
 export const MACHINE_LABEL = "fleetd-machine";
 export const SESSION_LABEL = "fleetd-session";
-/** How long a box lives unless extended; a live box is extended every EXTEND_MS. */
-export const LIFETIME_MS = 6 * 3600_000;
-export const EXTEND_MS = 3600_000;
+/** How long a box lives unless extended; a live box is extended every EXTEND_MS. An hour fits every plan (E2B's
+ * Hobby takes no more), and a box its node lost goes within it. */
+export const LIFETIME_MS = 3600_000;
+export const EXTEND_MS = 20 * 60_000;
 /** How long a provider that failed to make a box is left out of placement. */
 export const DOWN_MS = 10 * 60_000;
 /** How long a box's bootstrap or guest may take to answer its first dial. */
@@ -162,6 +163,7 @@ export class Boxes {
   /** Where this node's fleetd comes from for a box: its own binary, and its release asset where it has one. */
   source(): Source {
     if (this.o.source) return this.o.source();
+    if (!hostable()) throw new Error(NOT_X64);
     const argv = selfArgv();
     if (argv.length !== 1) throw new ProviderError("failed", "Hosted sandboxes take fleetd's built binary, and this machine runs fleetd from its source.");
     const exe = argv[0]!;
@@ -293,6 +295,10 @@ export class Boxes {
     if (this.#reaper) clearInterval(this.#reaper);
   }
 }
+
+/** Hosted boxes are x86_64 Linux, and each runs the node's own fleetd: only an x86_64 node can make them. */
+export const hostable = (arch: string = process.arch) => arch === "x64";
+export const NOT_X64 = `Hosted sandboxes run x86_64 Linux, and this machine's fleetd is built for ${process.arch}: run hosted agents from an x86_64 machine.`;
 
 /** A label's value: lowercase letters, digits and hyphens, at most 63, as every provider takes. */
 export const label = (v: string) =>

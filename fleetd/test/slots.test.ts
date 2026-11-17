@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
-import { Board, type Claim, GRANTED, LOCAL, type Machine, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
+import { Board, type Claim, GRANTED, LOCAL, type Machine, PLACES_FRESH_MS, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
 import { capSet, machineLine, pausedLine, raisedLine } from "../src/hub/slots/cap.ts";
 import { Slots, slots, state } from "../src/hub/slots/index.ts";
 import { start } from "../src/hub/slots/loops.ts";
@@ -330,15 +330,16 @@ describe("board", () => {
     k.release("T3");
     expect(k.board.placeOf("T7")).toBe("e2b");
     expect(k.board.placeOf("T8")).toBeUndefined();
-    // The cap a machine shows is its own and the limits it can use; the total counts each limit once.
-    expect(k.board.state().perMachine.map((m) => [m.cap, m.why])).toEqual([
-      [5, "memory 18 GB, and 3 in hosted sandboxes"],
-      [3, "memory 18 GB, and 2 in hosted sandboxes"],
+    // A machine shows its own slots and what runs in them; the hosted limits are the team's, named, never added to
+    // each machine's cap. The total counts each once.
+    expect(k.board.state().perMachine.map((m) => [m.cap, m.running, m.why])).toEqual([
+      [2, 2, "memory 18 GB; then the team's hosted sandboxes (E2B 2, boat.dev 1)"],
+      [1, 1, "memory 18 GB; then the team's hosted sandboxes (E2B 2)"],
     ]);
     expect(k.board.total()).toBe(6);
     // A person's number for a machine counts its own slots.
     k.board.setMachine("air", 1);
-    expect(k.board.state().perMachine[0]!.cap).toBe(4);
+    expect(k.board.state().perMachine[0]!.cap).toBe(1);
   });
 
   test("hosted: an agent on the machine's own login stays on its slots, and says why", () => {
@@ -396,6 +397,22 @@ describe("board", () => {
     expect(k.board.observeMachine("air", "air-box", auto, undefined, ["e2b"], {})).toBe(true);
     k.board.evaluate();
     expect(k.board.placeOf("T4")).toBe("e2b");
+  });
+
+  test("hosted: a machine that stops reporting stops holding its boxes' room once they can't be alive", () => {
+    const big = project_("pb", "big");
+    const k = Kit.on(undefined, [{ ...machine("air", 0), sandboxes: ["e2b"] }, { ...machine("big", 0), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 1 }]);
+    k.board.tick(1_000);
+    // air reports a live E2B box, then goes offline.
+    k.board.observeMachine("air", "air-box", { cap: 0, why: "memory 18 GB" }, undefined, ["e2b"], { th9: "e2b" });
+    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: E2B 1 of 1"));
+    // Within the box's last hour it still counts; past it, its room is free.
+    k.board.tick(1_000 + PLACES_FRESH_MS);
+    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: E2B 1 of 1"));
+    k.board.tick(1_000 + PLACES_FRESH_MS + 1);
+    k.board.evaluate();
+    expect(k.board.placeOf("T1")).toBe("e2b");
   });
 
   test("hosted: a run whose claude still lives on its machine stays there, and waits for a slot of its own", () => {
