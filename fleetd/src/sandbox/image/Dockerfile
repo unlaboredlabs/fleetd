@@ -42,7 +42,7 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
  && mkdir -p /tmp/node /tmp/pw && tar -xJf /tmp/node.txz -C /tmp/node --strip-components=1 \
  && cd /tmp/pw && PATH=/tmp/node/bin:$PATH npx --yes playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
  && chmod -R a+rX /opt/ms-playwright \
- && rm -rf /tmp/pw /tmp/node /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
+ && cd / && rm -rf /tmp/pw /tmp/node /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
  && mkdir -p /etc/fleetd \
  && printf 'PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\n' > /etc/fleetd/guest.env \
  && printf 'fleetd-box\n' > /etc/hostname \
