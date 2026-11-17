@@ -173,6 +173,36 @@ button.press:hover::before {
   font-size: var(--text-xs);
   animation: cardIn var(--dur-base) var(--ease-out);
 }
+/* The agents' DMs alone: a capsule like the island (its height, glass and words), centred over it, the gap between them
+   the island's over the composer. */
+.card[data-only] {
+  flex-direction: row;
+  width: fit-content;
+  max-width: 100%;
+  height: var(--island-capsule-h);
+  margin: 0 auto;
+  padding: 0;
+  border-radius: calc(var(--island-capsule-h) / 2);
+  background: var(--glass);
+}
+.card[data-only]:hover {
+  background: color-mix(in srgb, var(--glass) 100%, var(--glass-hover));
+}
+.card[data-only] .dms {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border-radius: inherit;
+  white-space: nowrap;
+}
+.card[data-only] .dms:hover {
+  text-decoration: none;
+}
+.card[data-only] .dms:focus-visible {
+  outline-offset: -2px;
+}
 @keyframes cardIn {
   from {
     opacity: 0;
@@ -190,9 +220,10 @@ button.press:hover::before {
 .reason > .red {
   transform: translateY(-1px);
 }
+/* Under the agents, on their rows' inset (live.module.css .lanesHead, .lane). */
 .dms {
   align-self: flex-start;
-  margin: var(--space-1) var(--space-4) var(--space-2);
+  margin: var(--space-1) var(--space-3) var(--space-2);
   color: var(--quiet);
   text-decoration: none;
   border-radius: var(--radius-sm);

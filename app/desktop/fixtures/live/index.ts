@@ -19,7 +19,7 @@ const ACTIVITIES: readonly JsonObject[] = [
   { kind: "tool", name: "WebFetch", detail: "developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/NumberFormat" },
 ];
 
-const fromBase = (base: Fixture, agents: number): Fixture => {
+const fromBase = (base: Fixture, agents: number, dms = agents > 3 ? 1284 : agents === 1 ? 132 : 0): Fixture => {
   const f = Fixture.from(base, `live-${agents}`, `The lead's live strip with ${agents} agents at work on one order.`);
   const now = Date.parse(f.now);
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -27,7 +27,6 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   const first = Array.isArray(projects) ? (projects[0] as JsonObject | undefined) : undefined;
   const text = (v: JsonValue | undefined, fallback: string) => (typeof v === "string" ? v : fallback);
   const projectRef = { machineId: text(first?.["machineId"], "devbox"), projectId: text(first?.["projectId"], "storefront") };
-  const dms = agents > 3 ? 1284 : agents === 1 ? 132 : 0;
   if (dms > 0) {
     if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "agent_messages"] };
     f.answer("agent_messages", { projectRef, limit: 1 }, { messages: [], more: true, total: dms });
@@ -171,6 +170,11 @@ const withLead = (f: Fixture): Fixture => {
   const lanes = led.live[0]?.["lanes"];
   const activity = { kind: "read", path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" };
   led.live = [{ ...led.live[0], lanes: [...(Array.isArray(lanes) ? lanes : []), { laneId: `lead:${machineId}/${projectId}`, status: "working", activity: { activity, since: at(-3_000) } }] }];
+  // The chat says so too, with no agent at work as well.
+  for (const a of led.answers("chat_history")) {
+    const state = (a.output as JsonObject)["state"];
+    if (typeof state === "object" && state !== null && !Array.isArray(state)) state["leadWorking"] = true;
+  }
   const seq = Math.max(Number(led.snapshot?.["cursor"] ?? 0), ...led.events.map((e) => Number(e["seq"] ?? 0)));
   led.events.push({
     seq: seq + 1,
@@ -251,7 +255,8 @@ const withTurns = (f: Fixture): Fixture => {
 /**
  * live-band-quiet, live-band-crowded, live-band-long (W651, the island over the composer): the lead writing with two
  * agents at work (the island says only the agents); the lead reading with twenty agents while main is red with a long
- * reason; and the same reading a file whose name is too long for any band, cut in the middle.
+ * reason; and the same reading a file whose name is too long for any band, cut in the middle. live-band-dms (W685): the
+ * lead writing with no agent at work and the agents' DMs counted, so the island's card holds the DMs alone.
  */
 const LONG_RED = "`staple`, `rust (darwin)` are red on main, fix in progress for `staple` in acme/storefront#231, `rust (darwin)` re-running once";
 const forBand = (f: Fixture, name: string, warning: string | undefined, activity: JsonObject): Fixture => {
@@ -288,6 +293,7 @@ export default defineGroup({
     withQuestion(fromBase(base("typical"), 1)),
     withTurns(fromBase(base("typical"), 3)),
     forBand(withLead(fromBase(base("typical"), 2)), "live-band-quiet", undefined, { kind: "writing" }),
+    forBand(withLead(fromBase(base("typical"), 0, 1071)), "live-band-dms", undefined, { kind: "writing" }),
     forBand(withLead(fromBase(base("typical"), 20)), "live-band-crowded", LONG_RED, { kind: "read", path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }),
     forBand(withLead(fromBase(base("typical"), 20)), "live-band-long", LONG_RED, {
       kind: "read",

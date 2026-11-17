@@ -175,10 +175,14 @@ function Fleet({ strip }: { strip: Strip }) {
   );
 }
 
-/** Opened above the island: main's reason in full, the agents a row each, and the agents' DMs. */
+/**
+ * Opened above the island: main's reason in full, the agents a row each, and the agents' DMs. With the DMs alone, a
+ * capsule like the island, centred over it, not a card as wide as the composer around one line.
+ */
 function Card({ id, project, strip, warning, dms, onClose }: { id: string; project: ProjectRef; strip: Strip | undefined; warning: string | undefined; dms: string | undefined; onClose: () => void }) {
+  const only = strip === undefined && warning === undefined;
   return (
-    <div id={id} className={s.card} data-island-card="">
+    <div id={id} className={s.card} data-island-card="" data-only={only ? "" : undefined}>
       {warning === undefined ? null : (
         <p className={s.reason}>
           <span className={s.red} aria-hidden />

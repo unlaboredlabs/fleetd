@@ -100,6 +100,8 @@ export const fixtures = [
   "live-band-quiet",
   "live-band-crowded",
   "live-band-long",
+  // W685: no agent at work, the lead writing, and the agents' DMs: the island's card holds the DMs alone.
+  "live-band-dms",
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
@@ -644,7 +646,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-crowded", "live-band-long"],
+    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-crowded", "live-band-long", "live-band-dms"],
     sizes: [...defaultSizes, "narrow"],
     variant: "island",
     check: islandHolds,
@@ -707,6 +709,43 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator("[data-island] > button").click();
       await expect(page.getByRole("list", { name: "Agents at work" })).toBeVisible();
+    },
+  },
+  // W685: ...and with no agent and no red main, the DMs alone: a capsule like the island, centred over it, as far above
+  // it as it is above the composer, not a card as wide as the composer around one line.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-band-dms"],
+    sizes: [...defaultSizes, "narrow"],
+    variant: "island-dms",
+    open: async (page) => {
+      await page.locator("[data-island] > button").click();
+      await expect(page.getByRole("link", { name: "1,071 DMs between agents" })).toBeVisible();
+    },
+    check: async (page) => {
+      const seen = await page.locator("[data-band]").evaluate((band) => {
+        const box = (e: Element | Range | null) => {
+          const r = e?.getBoundingClientRect();
+          return r === undefined ? undefined : { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height };
+        };
+        const words = document.createRange();
+        words.selectNodeContents(band.querySelector("[data-island-card] a") ?? band);
+        return {
+          words: box(words),
+          card: box(band.querySelector("[data-island-card]")),
+          island: box(band.querySelector("[data-island] > :first-child")),
+          pill: box(document.querySelector("[data-composer] > div")),
+          capsuleH: parseFloat(getComputedStyle(band).getPropertyValue("--island-capsule-h")),
+        };
+      });
+      const said = JSON.stringify(seen, null, 1);
+      const { card, island, pill, words } = seen;
+      if (card === undefined || island === undefined || pill === undefined || words === undefined) throw new Error(`no DMs capsule over the island: ${said}`);
+      expect(card.height, `as tall as the island: ${said}`).toBe(seen.capsuleH);
+      expect(Math.abs(words.top - card.top - (card.bottom - words.bottom)), `its words in its middle: ${said}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(card.left - pill.left - (pill.right - card.right)), `centred over the pill: ${said}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(island.top - card.bottom - (pill.top - island.bottom)), `the island's gap over the composer: ${said}`).toBeLessThanOrEqual(0.5);
     },
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
