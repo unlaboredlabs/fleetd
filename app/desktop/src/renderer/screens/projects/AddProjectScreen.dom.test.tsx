@@ -7,7 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddProjectScreen } from "./AddProjectScreen";
-import { closeAddProject, openAddProject, pickMachine, useAddUi } from "./store";
+import { addUi, closeAddProject, openAddProject, pickMachine, useAddUi } from "./store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -36,6 +36,8 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 /** project_discover's machine: with a projects root, or from a node too old to make a folder. */
 let projectsRoot: string | undefined;
+/** Set, project_add answers only once it is called: a create still running. */
+let held: (() => void) | undefined;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -43,6 +45,7 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   projectsRoot = ROOT;
+  held = undefined;
   window.location.hash = "#/projects/add";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -76,11 +79,19 @@ const render = async () => {
         return Promise.resolve({ ok: true, output: { machines: [machine, other], github: { owners: [], repos: [] }, best: "devbox" } });
       }
       if (tool === "project_add") {
-        const { path } = input as { path: string };
-        if (path === `${ROOT}/old-notes`) {
-          return Promise.resolve({ ok: false, error: { code: "invalid", message: `${path} on devbox is already the project Old notes`, fix: "Open that project, or pick another folder for the new one" } });
+        const { title, path } = input as { title: string; path?: string };
+        if (title === "Old notes") {
+          return Promise.resolve({ ok: false, error: { code: "invalid", message: `${ROOT}/old-notes on devbox already holds files`, fix: "Give the bot another name" } });
         }
-        return Promise.resolve({ ok: true, output: { machineId: "devbox", path, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } });
+        const at = path ?? `${ROOT}/${title.toLowerCase().replace(/ /gu, "-")}`;
+        const answer = { ok: true as const, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } };
+        if (held !== undefined) return new Promise((resolve) => (held = () => resolve(answer)));
+        return Promise.resolve({ ok: true, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } });
+      }
+      if (tool === "project_repo_add") {
+        const { url } = input as { url?: string };
+        if (url === "acme/broken") return Promise.resolve({ ok: false, error: { code: "not_found", message: "gh on the hub can't see acme/broken", fix: "Run gh auth login with an account that can read it" } });
+        return Promise.resolve({ ok: true, output: { path: `/home/w/src/${url?.split("/")[1] ?? "x"}`, addId: "a1" } });
       }
       return Promise.resolve({ ok: true, output: {} });
     },
@@ -123,106 +134,178 @@ const type = async (el: HTMLInputElement, text: string) => {
   });
 };
 const button = (text: string): HTMLButtonElement | undefined => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-/** A checkbox by its label. */
-const check = (label: string) => [...document.querySelectorAll("label")].find((l) => l.textContent.trim() === label)?.querySelector<HTMLButtonElement>('[role="checkbox"]') ?? null;
+const press = async (el: Element | undefined | null) => {
+  if (el === undefined || el === null) throw new Error("nothing to press");
+  await act(async () => {
+    (el as HTMLElement).click();
+    await Promise.resolve();
+  });
+  await settle();
+};
+const key = async (el: HTMLElement, k: string) => {
+  await act(async () => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    await Promise.resolve();
+  });
+  await settle();
+};
+/** + then a repo typed into its field and added with Enter. */
+const addRepo = async (text: string) => {
+  await press(document.querySelector('button[aria-label="Add a repo"]'));
+  await type(field("Repo to add"), text);
+  await key(field("Repo to add"), "Enter");
+};
+const listed = () => [...document.querySelectorAll('ul[aria-labelledby="new-bot-repos"] li')].map((li) => li.textContent);
 const options = () => [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
-const summary = () => document.querySelector('[data-screen="projects.add.new"]')?.firstElementChild?.textContent ?? "";
-const NAME = "New project name, GitHub URL, folder path, or filter";
+const madeWith = () => calls.filter((c) => c.tool === "project_add" || c.tool === "project_repo_add").map((c) => [c.tool, c.input]);
 
-describe("Add project's new project", () => {
-  it("is offered once a name is typed, and says in one line where its folder goes, editable", async () => {
+describe("New bot", () => {
+  it("makes a bot with no repo from just a name, in a folder the hub makes", async () => {
     await render();
-    expect(document.activeElement).toBe(field(NAME));
-    expect(options()).toEqual([expect.stringContaining("notes-cli")]);
-    await type(field(NAME), "Field notes");
-    expect(options()).toEqual([expect.stringContaining("New project “Field notes”")]);
-    expect(field("Folder").value).toBe(`${ROOT}/field-notes`);
-    expect(summary()).toContain("Creates an empty folder");
-    expect(button("Create")?.disabled).toBe(false);
-    // Edited, it stays as typed; a path that isn't full can't be created, and the line says why.
-    await type(field("Folder"), "notes");
-    expect(button("Create")?.disabled).toBe(true);
-    expect(summary()).toContain("Type the folder's full path, starting with /");
-    await type(field("Folder"), "/home/w/notes");
-    expect(button("Create")?.disabled).toBe(false);
+    expect(document.body.textContent).toContain("None. It works in a folder of its own.");
+    await type(field("Name"), "Field notes");
+    await key(field("Name"), "Enter");
+    expect(madeWith()).toEqual([["project_add", { machineId: "devbox", create: true, title: "Field notes" }]]);
   });
 
-  it("closes on Esc and on Cancel, and opens afresh", async () => {
+  it("asks for a name only when there is none and no repo to take one from", async () => {
     await render();
-    await type(field(NAME), "Field notes");
+    await press(button("Create"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Name it, or add a repo.");
+    expect(madeWith()).toEqual([]);
+  });
+
+  it("lists several repos, each removable before creating, and adds them to the bot once made", async () => {
+    const hub = await render();
+    await addRepo("https://github.com/acme/shop");
+    await addRepo("/home/w/src/docs");
+    await addRepo("acme/api");
+    expect(listed()).toEqual(["acme/shop", "~/src/docs", "acme/api"]);
+    await press(document.querySelector('button[aria-label="Remove acme/api"]'));
+    expect(listed()).toEqual(["acme/shop", "~/src/docs"]);
+    // No name: the first repo's, shown as the field's placeholder.
+    expect(field("Name").placeholder).toBe("shop");
+    await press(button("Create"));
+    expect(madeWith()).toEqual([
+      ["project_add", { machineId: "devbox", path: "/home/w/src/docs", title: "shop" }],
+      ["project_repo_add", { machineId: "devbox", projectId: "p9", url: "acme/shop" }],
+    ]);
+    expect(document.querySelector('[data-screen="projects.add.cloning"]')).not.toBeNull();
+    expect(button("Hide")).toBeDefined();
+    // The clone ends: every repo is in, and Done closes it.
     await act(async () => {
-      field(NAME).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      hub({ t: "event", event: { seq: 2, at: AT, type: "project.added", machineId: "devbox", projectId: "p9", summary: "", data: { addId: "a1", created: true, path: "/home/w/src/shop", title: "shop", inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "", notes: [] } } } });
       await Promise.resolve();
     });
+    await settle();
+    expect(document.querySelector("h2")?.textContent).toBe("shop is ready");
+    await press(button("Done"));
     expect(document.querySelector('[data-screen="projects.add"]')).toBeNull();
-    act(() => openAddProject());
-    await settle();
-    expect(field(NAME).value).toBe("");
-    await act(async () => {
-      button("Cancel")?.click();
-      await Promise.resolve();
-    });
-    expect(document.querySelector('[data-screen="projects.add"]')).toBeNull();
-    expect(calls.some((c) => c.tool === "project_add")).toBe(false);
   });
 
-  it("creates it where the folder says, git init only when ticked, and opens it once the hub lists it", async () => {
-    const send = await render();
-    await type(field(NAME), "Field notes");
+  it("adds a repo typed but not yet added when Create is pressed, and refuses one that isn't a repo yet", async () => {
+    const hub = await render();
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    await type(field("Repo to add"), "che");
+    await press(button("Create"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('"che" isn\'t a repo yet: pick one from the list, or clear the field.');
+    expect(madeWith()).toEqual([]);
+    await type(field("Repo to add"), "acme/shop");
+    await press(button("Create"));
+    expect(madeWith()).toEqual([
+      ["project_add", { machineId: "devbox", create: true, title: "shop" }],
+      ["project_repo_add", { machineId: "devbox", projectId: "p9", url: "acme/shop" }],
+    ]);
     await act(async () => {
-      check("Start a git repo")?.click();
-      await Promise.resolve();
-    });
-    await act(async () => {
-      button("Create")?.click();
+      hub({ t: "event", event: { seq: 2, at: AT, type: "project.added", machineId: "devbox", projectId: "p9", summary: "", data: { addId: "a1", created: true, path: "/home/w/src/shop", title: "shop", inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "", notes: [] } } } });
       await Promise.resolve();
     });
     await settle();
-    const add = calls.find((c) => c.tool === "project_add");
-    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true, onlyMe: false });
-    // Not before the hub's snapshot has it, so its chat never shows as missing.
-    expect(window.location.hash).toBe("#/projects/add");
-    const made = { machineId: "devbox", projectId: "p9", title: "Field notes", workspaceRoot: `${ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };
-    await act(async () => {
-      send({ t: "snapshot", snapshot: { ...snapshot.snapshot, cursor: 2, projects: [made] } });
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(window.location.hash).toBe("#/project/devbox/p9");
+    await press(button("Done"));
   });
 
-  it("resets an edited folder to the next machine's default, unless it is outside any home folder", async () => {
+  it("offers what the hub found on the bot's machine as you type, and Esc closes only the field", async () => {
     await render();
-    await type(field(NAME), "Field notes");
-    await type(field("Folder"), "/home/w/notes");
-    act(() => pickMachine("buildbox"));
-    expect(field("Folder").value).toBe("/home/b/fleetd/projects/field-notes");
-    await type(field("Folder"), "/srv/notes");
-    act(() => pickMachine("devbox"));
-    expect(field("Folder").value).toBe("/srv/notes");
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    await type(field("Repo to add"), "notes");
+    expect(options()).toEqual(["notes-cli~/code/notes-cli"]);
+    await key(field("Repo to add"), "Escape");
+    expect(document.querySelector('input[aria-label="Repo to add"]')).toBeNull();
+    expect(document.querySelector('[data-screen="projects.add"]')).not.toBeNull();
   });
 
-  it("offers to open the project an empty folder already is, never a second one", async () => {
+  it("won't take a folder that is a bot already, and says which", async () => {
     await render();
-    await type(field(NAME), "Old notes");
-    await act(async () => {
-      button("Create")?.click();
-      await Promise.resolve();
-    });
-    await settle();
-    expect(document.body.textContent).toContain(`${ROOT}/old-notes on devbox is already the project Old notes`);
-    await act(async () => {
-      button("Open project")?.click();
-      await Promise.resolve();
-    });
-    expect(window.location.hash).toBe("#/project/devbox/p3");
+    await addRepo(`${ROOT}/old-notes`);
+    expect(listed()).toEqual([]);
+    expect(document.body.textContent).toContain("is already the bot Old notes");
   });
 
-  it("says to update a node too old to make the folder, and creates nothing", async () => {
+  it("shows a repo that fails plainly, with Retry, while the bot is made", async () => {
+    await render();
+    await type(field("Name"), "Shop");
+    await addRepo("acme/broken");
+    await press(button("Create"));
+    const row = document.querySelector('[data-state="failed"]');
+    expect(row?.textContent).toContain("gh on the hub can't see acme/broken. Run gh auth login with an account that can read it.");
+    expect(button("Retry")).toBeDefined();
+    expect(button("Done")).toBeDefined();
+  });
+
+  it("says why a bot wasn't made, and Back keeps the form as it was", async () => {
+    await render();
+    await type(field("Name"), "Old notes");
+    await key(field("Name"), "Enter");
+    expect(document.querySelector('[data-screen="projects.add.error"]')?.textContent).toContain("already holds files.");
+    await press(button("Back"));
+    expect(field("Name").value).toBe("Old notes");
+  });
+
+  it("on a machine too old to make a bot's folder, says to update it", async () => {
     projectsRoot = undefined;
     await render();
-    await type(field(NAME), "Field notes");
-    expect(summary()).toContain("Update fleetd on devbox to create a project there, or pick another machine");
-    expect(document.querySelector('input[aria-label="Folder"]')).toBeNull();
-    expect(button("Create")?.disabled).toBe(true);
+    expect(document.body.textContent).toContain("Update fleetd on devbox to make a bot there, or add a folder that's already on it.");
+  });
+
+  it("hidden while the bot is made, says so once, and the next New bot is a fresh form", async () => {
+    held = () => undefined;
+    await render();
+    await type(field("Name"), "Field notes");
+    await key(field("Name"), "Enter");
+    expect(document.querySelector("h2")?.textContent).toBe("Creating Field notes");
+    act(() => closeAddProject());
+    expect(addUi().open).toBe(false);
+    await act(async () => {
+      held?.();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+    const toasts = [...document.querySelectorAll("ol > li")].map((t) => t.textContent);
+    expect(toasts.filter((t) => t.includes("Field notes"))).toEqual(["Field notes is ready"]);
+    act(() => openAddProject());
+    await settle();
+    expect(document.querySelector("h2")?.textContent).toBe("New bot");
+    expect(field("Name").value).toBe("");
+  });
+
+  it("takes out the folders listed for one machine when another is picked, and says which", async () => {
+    await render();
+    await addRepo("/home/w/src/docs");
+    await addRepo("acme/shop");
+    act(() => pickMachine("buildbox", "devbox"));
+    await settle();
+    expect(listed()).toEqual(["acme/shop"]);
+    expect(document.body.textContent).toContain("Took out ~/src/docs: a folder on devbox, not buildbox.");
+    // The same machine again takes nothing out.
+    await addRepo("/home/b/src/ci");
+    act(() => pickMachine("buildbox", "buildbox"));
+    expect(listed()).toEqual(["acme/shop", "~/src/ci"]);
+  });
+
+  it("takes a dropped folder as a repo", async () => {
+    await render();
+    act(() => openAddProject({ text: "/home/w/src/shop" }));
+    await settle();
+    expect(listed()).toEqual(["~/src/shop"]);
   });
 });

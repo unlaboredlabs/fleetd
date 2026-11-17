@@ -55,7 +55,7 @@ async function open(target: RemoveTarget) {
 const dialog = () => document.querySelector("[role='dialog']");
 const button = (label: string) => [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === label);
 
-it("a project on a removed machine is only forgotten in fleetd", async () => {
+it("a bot on a removed machine is only forgotten in fleetd", async () => {
   await open({
     machineId: "worker",
     projectId: "fleetd",
@@ -68,16 +68,16 @@ it("a project on a removed machine is only forgotten in fleetd", async () => {
   expect(dialog()?.textContent).not.toContain("uncommitted");
   expect(dialog()?.querySelector("input")).toBeNull();
   await act(async () => {
-    button("Forget project")?.click();
+    button("Forget bot")?.click();
     await new Promise((done) => setTimeout(done, 0));
   });
   expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "worker", projectId: "fleetd" }]);
 });
 
-it("a project on a machine the hub has is deleted, saying everything that goes and asking for its name", async () => {
+it("a bot on a machine the hub has is deleted, saying everything that goes and asking for its name", async () => {
   await open({ machineId: "devbox", projectId: "storefront", title: "storefront", path: "/srv/storefront" });
   expect(dialog()?.textContent).toContain("Delete storefront?");
   expect(dialog()?.textContent).toContain("its chat, memory, skills, approvals, purchases, automations and sign-ins");
   expect(dialog()?.textContent).toContain("Type storefront to confirm");
-  expect(button("Delete project")?.disabled).toBe(true);
+  expect(button("Delete bot")?.disabled).toBe(true);
 });

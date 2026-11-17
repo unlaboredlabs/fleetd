@@ -98,7 +98,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },
   { key: "projects.skills", label: "Project skills", tab: "projects", keywords: ["skill", "skills", "learned", "history", "versions", "revert"] },
   { key: "projects.archive", label: "Archive project", tab: "projects", keywords: ["archive", "bring back", "unarchive", "hide", "restore"] },
-  { key: "projects.delete", label: "Delete project", tab: "projects", keywords: ["remove", "delete", "forget"] },
+  { key: "projects.delete", label: "Delete bot", tab: "projects", keywords: ["remove", "delete", "forget", "project"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },
   { key: "agents.profiles", label: "Allowed profiles", tab: "agents", keywords: ["task profiles", "profile", "allowed", "model", "effort"] },

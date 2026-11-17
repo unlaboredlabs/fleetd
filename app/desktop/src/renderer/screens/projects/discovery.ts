@@ -1,7 +1,7 @@
-// The hub's answers turned into what the Add project screen lists and says. Pure, so its behaviour is pinned by tests.
+// The hub's answers turned into what New bot lists and says. Pure, so its behaviour is pinned by tests.
 
-import type { CloneProgressData, CloneTarget, ProjectDiscoverOutput, ProjectInspect, ProjectProblem } from "./contracts";
-import { addSource, baseName, folderName, otherHost, tilde } from "./source";
+import type { CloneProgressData, ProjectDiscoverOutput, ProjectProblem } from "./contracts";
+import { addSource, tilde } from "./source";
 
 export interface ProjectKey {
   readonly machineId: string;
@@ -106,20 +106,6 @@ export const target = (d: Discovery | null, picked: string | null): Worker | nul
   return chosen ?? d.workers.find((w) => w.online) ?? null;
 };
 
-export const clonePath = (w: Worker | undefined, repo: string): string | null =>
-  w?.cloneRoot ? `${w.cloneRoot.replace(/\/+$/u, "")}/${baseName(repo)}` : null;
-
-/** A new project's folder on `w`: `<projectsRoot>/<name as a folder>`, as the hub makes it by default. */
-export const newPath = (w: Worker | undefined, name: string): string | null =>
-  w?.projectsRoot ? `${w.projectsRoot.replace(/\/+$/u, "")}/${folderName(name)}` : null;
-
-export type Row =
-  | { readonly kind: "clone"; readonly repo: string }
-  | { readonly kind: "folder"; readonly path: string }
-  | { readonly kind: "found"; readonly index: number }
-  /** A new, empty project named `name`. */
-  | { readonly kind: "new"; readonly name: string };
-
 /** How well `query` matches `text`: a substring early in it beats one late, beats the letters in order. */
 export const score = (query: string, text: string): number | null => {
   const q = query.toLowerCase().replace(/\s+/gu, "");
@@ -132,168 +118,34 @@ export const score = (query: string, text: string): number | null => {
   return i === q.length ? 100 - (t.length - q.length) / 10 : null;
 };
 
+/** A repo New bot can add: a GitHub repo to clone onto the bot's machine, or a folder already on it. */
+export type RepoPick = ({ readonly kind: "clone"; readonly repo: string } | { readonly kind: "folder"; readonly path: string }) & { readonly detail?: string };
+
+const pickKey = (r: RepoPick): string => (r.kind === "clone" ? `gh:${r.repo.toLowerCase()}` : `dir:${r.path.replace(/(.)\/+$/u, "$1")}`);
+
 /**
- * The rows for what is typed, and the one to start on. Nothing typed: what can be added, repos already a project left
- * out. A name: a new project of that name first unless a repo's name holds it, then what it matches, then any project
- * it matches (picking one opens it), last.
+ * What New bot offers for what is typed, at most `max`: what the text itself reads as first (a pasted repo or URL, a
+ * path), then what the hub found that matches it, best first. Only checkouts on the bot's machine (`machineId`), and
+ * nothing that is a bot already or listed already (`taken`, by create.ts repoKey).
  */
-export const rows = (text: string, found: ReadonlyArray<Found>): { rows: ReadonlyArray<Row>; selected: number } => {
+export const repoSuggestions = (text: string, d: Discovery | null, machineId: string | undefined, taken: ReadonlyArray<string>, max: number): ReadonlyArray<RepoPick> => {
   const t = text.trim();
+  const out: Array<RepoPick> = [];
   const src = addSource(t);
-  const out: Array<Row> = [];
-  const added = (index: number) => found[index]?.project !== undefined;
-  if (src?.kind === "github") {
-    const same = (f: Found) => f.name.toLowerCase() === src.repo.toLowerCase() || f.detail.toLowerCase() === src.repo.toLowerCase();
-    out.push({ kind: "clone", repo: src.repo });
-    found.forEach((f, index) => {
-      if (same(f)) out.push({ kind: "found", index });
-    });
-  } else if (src?.kind === "path") {
-    out.push({ kind: "folder", path: src.path });
-  } else if (t === "") {
-    found.forEach((_, index) => {
-      if (!added(index)) out.push({ kind: "found", index });
-    });
-  } else {
-    const scored: Array<[number, number]> = [];
-    found.forEach((f, index) => {
-      const byName = score(t, f.name);
-      const byDetail = score(t, f.detail);
-      const best = Math.max(byName ?? -Infinity, byDetail === null ? -Infinity : byDetail / 2);
-      if (best > -Infinity) scored.push([best, index]);
-    });
-    // A substring of a name (not just its letters in order) is most likely that repo.
-    const named = found.some((f, index) => !added(index) && (score(t, f.name) ?? 0) >= 900);
-    scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
-    const fresh = scored.filter(([, index]) => !added(index)).map(([, index]): Row => ({ kind: "found", index }));
-    const projects = scored.filter(([, index]) => added(index)).map(([, index]): Row => ({ kind: "found", index }));
-    // A name to start a new project with (a URL fleetd can't clone is never one).
-    const create: Array<Row> = otherHost(t) === null ? [{ kind: "new", name: t }] : [];
-    out.push(...(named ? [...fresh, ...create] : [...create, ...fresh]), ...projects);
-  }
-  const isProject = (r: Row) => r.kind === "found" && added(r.index);
-  // A pasted repo that is already a project starts on that project (Enter opens it, not a second clone); otherwise
-  // start on something that adds.
-  const pasted = out[0]?.kind === "clone" ? out.findIndex((r) => isProject(r) && r.kind === "found" && found[r.index]?.source.kind === "github") : -1;
-  const adds = out.findIndex((r) => !isProject(r));
-  return { rows: out, selected: pasted >= 0 ? pasted : Math.max(adds, 0) };
-};
-
-/** An add. */
-export type Request =
-  | { readonly kind: "clone"; readonly repo: string; readonly machineId: string; readonly useExisting: boolean }
-  | { readonly kind: "folder"; readonly machineId: string; readonly path: string }
-  /** The hub makes the folder at `path` and adds it: a plain folder, or a git repo with no remote when `gitInit`. */
-  | { readonly kind: "new"; readonly machineId: string; readonly name: string; readonly path: string; readonly gitInit: boolean };
-
-/** What Enter or the primary button does for the selected row. */
-export type Plan =
-  | { readonly kind: "clone"; readonly repo: string }
-  | { readonly kind: "folder"; readonly machineId: string; readonly path: string; readonly fixed: boolean }
-  /** `machineId` absent: no machine is online. */
-  | { readonly kind: "new"; readonly name: string; readonly machineId?: string }
-  | { readonly kind: "open"; readonly project: ProjectKey }
-  | { readonly kind: "nothing" };
-
-/** `picked`: the machine chosen for a typed path. It is kept even when offline (the hub then says so), never swapped. */
-export const plan = (row: Row | undefined, d: Discovery | null, to: Worker | null, picked?: string): Plan => {
-  if (row === undefined) return { kind: "nothing" };
-  switch (row.kind) {
-    case "clone":
-      return { kind: "clone", repo: row.repo };
-    case "folder": {
-      const machineId = picked ?? to?.machineId;
-      return machineId === undefined ? { kind: "nothing" } : { kind: "folder", machineId, path: row.path, fixed: false };
-    }
-    case "new": {
-      const machineId = picked ?? to?.machineId;
-      return machineId === undefined ? { kind: "new", name: row.name } : { kind: "new", name: row.name, machineId };
-    }
-    case "found": {
-      const f = d?.found[row.index];
-      if (!f) return { kind: "nothing" };
-      if (f.project) return { kind: "open", project: f.project };
-      if (f.source.kind === "checkout") return { kind: "folder", machineId: f.source.machineId, path: f.source.path, fixed: true };
-      return { kind: "clone", repo: f.name };
+  if (src?.kind === "github") out.push({ kind: "clone", repo: src.repo, detail: "from GitHub" });
+  else if (src?.kind === "path") out.push({ kind: "folder", path: src.path });
+  if (src?.kind !== "path") {
+    const found = (d?.found ?? []).filter((f) => f.project === undefined && (f.source.kind === "github" || f.source.machineId === machineId));
+    const scored = found
+      .map((f) => [t === "" ? 0 : Math.max(score(t, f.name) ?? -Infinity, (score(t, f.detail) ?? -Infinity) / 2), f] as const)
+      .filter(([n]) => n > -Infinity)
+      .sort((a, b) => b[0] - a[0]);
+    for (const [, f] of scored) {
+      const r: RepoPick = f.source.kind === "checkout" ? { kind: "folder", path: f.source.path, detail: tilde(f.source.path) } : { kind: "clone", repo: f.name, ...(f.detail === "" ? {} : { detail: f.detail }) };
+      if (!out.some((x) => pickKey(x) === pickKey(r))) out.push(r);
     }
   }
-};
-
-export interface Ready {
-  readonly project: ProjectKey;
-  readonly title: string;
-  readonly machine: string;
-  readonly path: string;
-  readonly facts: ReadonlyArray<readonly [string, string]>;
-  /** The hub's one line on what the lead will need. */
-  readonly leadLine: string;
-  /** The repo has CI the merge train can wait on; false shows the line as a warning. */
-  readonly leadOk: boolean;
-  readonly notes: ReadonlyArray<string>;
-}
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-/** The ready state's facts and lead line, from what the hub inspected. */
-export const ready = (project: ProjectKey, title: string, machine: string, path: string, inspect: ProjectInspect): Ready => {
-  const list = (v: ReadonlyArray<string>) => v.join(", ");
-  const { workflows, requiredChecks } = inspect.ci;
-  const ci =
-    workflows.length === 0
-      ? requiredChecks.length === 0
-        ? "none found"
-        : `required checks ${list(requiredChecks)}, no workflows`
-      : requiredChecks.length === 0
-        ? `${plural(workflows.length, "workflow")} (${list(workflows)}), no required checks`
-        : `${plural(workflows.length, "workflow")} (${list(workflows)}); requires ${list(requiredChecks)}`;
-  const m = inspect.merge;
-  const merge: Array<string> = [];
-  merge.push(!m.protected ? "no branch protection or ruleset" : m.rulesets.length === 0 ? "branch protection" : `ruleset ${list(m.rulesets)}`);
-  if (m.requiredReviews !== undefined && m.requiredReviews > 0) merge.push(`${plural(m.requiredReviews, "review")} required`);
-  if (m.strict === true) merge.push("up to date before merging");
-  merge.push(m.squashAllowed === undefined ? "merge settings unreadable" : m.squashAllowed ? "squash allowed" : "squash not allowed");
-  // A plain folder has no repo: no branch, CI or merge rules to show, and its lead line is no warning.
-  const plain = inspect.repo === undefined && inspect.defaultBranch === undefined;
-  const facts: Array<readonly [string, string]> = plain
-    ? []
-    : [
-        ["Default branch", inspect.defaultBranch ?? "unknown"],
-        ["CI", ci],
-        ["Merge rules", merge.join(", ")],
-      ];
-  if (inspect.repo) facts.unshift(["Repo", inspect.repo]);
-  const line = inspect.leadNeeds.trim();
-  const capital = line.charAt(0).toUpperCase() + line.slice(1);
-  return {
-    project,
-    title,
-    machine,
-    path,
-    facts,
-    leadLine: capital.endsWith(".") ? capital : `${capital}.`,
-    leadOk: plain || workflows.length > 0 || requiredChecks.length > 0,
-    notes: inspect.notes,
-  };
-};
-
-type FailAction =
-  /** The clone's folder already holds this repo (a dry-run project_add said so): add it as it is. */
-  | { readonly kind: "use_existing"; readonly request: Request }
-  /** The folder is already this project. */
-  | { readonly kind: "open"; readonly project: ProjectKey };
-
-export interface Failure {
-  readonly message: string;
-  readonly fix?: string;
-  readonly action?: FailAction;
-}
-
-/** What to offer when a clone's folder already exists: add it only when it is the same repo, open it when it is the project. */
-export const existingFolderAction = (t: CloneTarget, request: Request | undefined): FailAction | undefined => {
-  if (!t.exists) return undefined;
-  if (t.projectId) return { kind: "open", project: { machineId: t.machineId, projectId: t.projectId } };
-  if (request?.kind === "clone" && t.sameRemote) return { kind: "use_existing", request: { ...request, useExisting: true } };
-  return undefined;
+  return out.filter((r) => !taken.includes(pickKey(r))).slice(0, max);
 };
 
 export type Step = "clone" | "inspect" | "register";

@@ -1,221 +1,255 @@
-// New Project, a sheet from the Chats list's +, as the desktop's New project: what to call it, and optionally a GitHub
-// repo to clone (owner/repo or its URL) or a folder already on a machine; with none, the hub makes a new folder of its
-// own. Then which machine. Under it all, what the hub found (project_discover: checkouts on the machines, the person's
-// GitHub repos), filtered as you type; one already a project opens its chat. The add runs the desktop's own flow
-// (flow.ts) over project_add and the clone's events: its progress, what the hub read of the repo once added, or why it
-// failed, with adding the folder that's already there when that is the same repo. A new folder opens its chat at once.
+// New Bot, a sheet from the Chats list's +, as the desktop's New bot: what to call it, and its repos, none, one or
+// several: Add Repo opens a field (owner/repo, a GitHub URL, or a folder already on the machine) with what the hub
+// found under it (project_discover: checkouts on the bot's machine, the person's GitHub repos); a repo comes out with
+// its ✕ before creating. Then which machine, when there are several. Create runs the desktop's own flow (create.ts):
+// the bot first, then each repo, a clone's progress, ✓, or why it failed with Retry. A bot with no repo opens its chat
+// at once.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
-import { addSource, addStep, baseName, initialAdd, NAME_MAX, nameProblem, newPath, otherHost, projectHome, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, otherHost, ownRepo, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
 import { Button } from "../../ui/Button";
 import { haptics } from "../../ui/haptics";
+import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
-import { addCall, discover } from "./api";
+import { createCall, discover } from "./api";
 import { closeThenOpen } from "./arrival";
-import { machineName, suggestions } from "./model";
+import { createRefusal, machineName, NOT_CONNECTED } from "./model";
 import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, Symbol, useRead } from "./parts";
 
 type Props = NativeStackScreenProps<RootParams, "NewProject">;
+
+/** How many of what the hub found show under the add field. */
+const SUGGESTIONS_SHOWN = 8;
 
 export function NewProject({ navigation, route }: Props) {
   const t = useTheme();
   const { state, session } = useHub();
   const names = useCallback((id: string) => machineName(state.machines, id), [state.machines]);
-  // The agents' Mac is no project's home: neither offered nor searched.
+  // The agents' Mac is no bot's home: neither offered nor searched.
   const home = useCallback((id: string) => projectHome(state.machines.find((m) => m.machineId === id)), [state.machines]);
   const found = useRead(() => discover(session, names, home), [session]);
   const d = found.value?.ok === true ? found.value.value : null;
-  const [text, setText] = useState("");
-  // A checkout picked from the list is on its own machine.
-  const [fixed, setFixed] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [repos, setRepos] = useState<readonly RepoDraft[]>([]);
+  // The add field's text; null while it is closed.
+  const [adding, setAdding] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [refused, setRefused] = useState<string>();
 
-  // The add, as the desktop runs it: messages in, its project_add calls out.
-  const flow = useRef<AddState>({ ...initialAdd, live: state.hub.phase === "live" });
-  const [phase, setPhase] = useState(flow.current.phase);
-  const title = useRef("");
-  // A new folder of its own, which opens its chat once made: the flow forgets its request by then.
-  const startedNew = useRef(false);
+  // The bot and its repos, as the desktop makes them: messages in, its calls out.
+  const flow = useRef<CreateState>({ ...initialCreate, live: state.hub.phase === "live" });
+  const [s, setS] = useState(flow.current);
   const send = useCallback(
-    (msg: AddMsg) => {
-      const [next, calls] = addStep(flow.current, msg, names);
+    (msg: CreateMsg) => {
+      const [next, calls] = createStep(flow.current, msg);
       flow.current = next;
-      setPhase(next.phase);
-      for (const call of calls) void addCall(session, call, title.current).then((outcome) => send({ t: "answer", call, outcome }));
+      setS(next);
+      for (const call of calls) void createCall(session, call).then((outcome) => send({ t: "answer", call, outcome }));
     },
-    [session, names],
+    [session],
   );
   useEffect(() => session.onEvent((event) => send({ t: "event", event })), [session, send]);
   const live = state.hub.phase === "live";
   useEffect(() => send({ t: "live", live }), [live, send]);
-  // After a drop, the next snapshot says whether it was added meanwhile.
+  // After a drop, the next snapshot says which repos came in meanwhile.
   useEffect(() => {
-    if (state.projects !== undefined && flow.current.lost) send({ t: "snapshot", projects: Object.values(state.projects) });
+    if (state.projects !== undefined) send({ t: "snapshot", projects: Object.values(state.projects) });
   }, [state.projects, send]);
 
   const workers = (d?.workers ?? state.machines.filter(projectHome).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }))).filter((w) => w.online);
   const to = target(d, picked) ?? workers[0] ?? null;
-  const machineId = fixed ?? picked ?? to?.machineId;
-  const source = addSource(text);
-  // No repo or folder typed: a new folder of its own, where its machine makes new projects' folders.
-  const fresh = text.trim() === "";
-  const freshPath = newPath(d?.workers.find((w) => w.machineId === machineId), name.trim());
-  const request: Request | null =
-    machineId === undefined
-      ? null
-      : fresh
-        ? name.trim() === "" || freshPath === null
-          ? null
-          : { kind: "new", machineId, name: name.trim(), path: freshPath, gitInit: false }
-        : source === null
-          ? null
-          : source.kind === "github"
-            ? { kind: "clone", repo: source.repo, machineId, useExisting: false }
-            : { kind: "folder", machineId, path: source.path };
   const nameIssue = nameProblem(name);
-  const ready = request !== null && nameIssue === undefined && live;
-  const start = (r: Request) => {
-    title.current = name.trim();
-    startedNew.current = r.kind === "new";
+  const named = botName(name, repos);
+  // With no folder of its own listed, its machine makes one, which a node from before W123 can't.
+  const block =
+    to === null
+      ? "No machine is online to make it on: start fleetd on one of your machines."
+      : ownRepo(repos) === undefined && d !== null && d.workers.some((w) => w.machineId === to.machineId && w.projectsRoot === undefined)
+        ? `Update fleetd on ${to.name} to make a bot there, or add a folder that's already on it.`
+        : undefined;
+  const create = () => {
+    if (nameIssue !== undefined) return;
+    // A repo typed but not yet added goes in with the rest, or Create says why it can't.
+    const typed = adding === null ? null : typedRepo(adding);
+    const typedBot = typed !== null && "repo" in typed && typed.repo.kind === "folder" ? botAtFolder(state.projects ?? {}, to?.machineId, typed.repo.path) : undefined;
+    const all = typed !== null && "repo" in typed && !repos.some((x) => repoKey(x) === repoKey(typed.repo)) ? [...repos, typed.repo] : repos;
+    const why = createRefusal({ live, typed, typedBot, block, named: botName(name, all) });
+    if (live && typed !== null && "repo" in typed && typedBot === undefined) {
+      setRepos(all);
+      setAdding(null);
+    }
+    if (why !== undefined || to === null) {
+      haptics.warning();
+      setRefused(why);
+      return;
+    }
     haptics.tap();
-    send({ t: "start", request: r, path: r.kind === "clone" ? "" : r.path });
+    send({ t: "start", draft: { name: botName(name, all), machineId: to.machineId, repos: all } });
   };
+  // The bar's ✓ is set once per phase, so it calls Create as it is now: with the field's text, the repos and the name typed since.
+  const createNow = useRef(create);
+  createNow.current = create;
   // Made from Import Memory: back there, where the paste waits. Else its chat.
   const openChat = (key: string) => (route.params?.back === true ? navigation.goBack() : closeThenOpen(navigation, key));
-  // A new folder has nothing to show once made: its chat opens at once.
-  const made = phase.kind === "ready" && startedNew.current ? keyOf(phase.ready.project) : undefined;
+  const phase = s.phase;
+  // Made with nothing to add, or all of it added at once: its chat opens.
+  const done = phase.kind === "made" && s.jobs.every((j) => j.state.t === "added") ? keyOf(phase.bot.project) : undefined;
   useEffect(() => {
-    if (made === undefined) return;
+    if (done === undefined) return;
     haptics.success();
-    openChat(made);
+    openChat(done);
     // Once, as it is made.
-  }, [made]);
+  }, [done]);
 
   useLayoutEffect(() => {
-    const k = phase.kind;
     navigation.setOptions({
-      title: k === "ready" ? "Added" : "New Project",
+      title: phase.kind === "made" ? phase.bot.title : "New Bot",
       ...sheetOptions(
         t,
         () => navigation.goBack(),
-        // Always the one ✓, only its job changing: Create, then Open Chat once added.
-        k === "ready"
-          ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.ready.project)) }
-          : { label: "Create", enabled: k === "pick" && ready, busy: k === "working", onPress: () => request !== null && start(request) },
+        // Always the one ✓, only its job changing: Create, then Open Chat once the bot is made.
+        phase.kind === "made"
+          ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.bot.project)) }
+          : // Never grey while the link is down: pressed, it says why (createRefusal), as the line under the form does.
+            { label: "Create", enabled: phase.kind === "form", busy: phase.kind === "creating", onPress: () => createNow.current() },
       ),
     });
-    // `start` and `openChat` read what these are.
-  }, [navigation, t, phase, ready, request?.kind, text, name, machineId]);
+    // `openChat` reads what these are; Create reads the newest `create` through its ref.
+  }, [navigation, t, phase]);
 
-  const list = useMemo(() => suggestions(text, d), [text, d]);
+  const list = useMemo(() => (adding === null ? [] : repoSuggestions(adding, d, to?.machineId, repos.map(repoKey), SUGGESTIONS_SHOWN)), [adding, d, to?.machineId, repos]);
 
-  if (phase.kind === "working") {
-    const job = phase.job;
+  if (phase.kind === "creating") {
     return (
       <View style={[styles.center, { backgroundColor: t.grouped }]}>
         <ActivityIndicator size="large" color={t.secondary} />
-        <Text style={[type.title3, styles.text, { color: t.label }]}>{job.clone ? `Cloning ${job.what}` : job.create === true ? `Making ${job.what}` : `Adding ${job.what}`}</Text>
-        <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{job.detail}</Text>
-        {job.fraction === undefined ? null : (
-          <View style={[styles.track, { backgroundColor: t.fill }]}>
-            <View style={[styles.bar, { backgroundColor: t.accentFill, width: `${String(Math.round(job.fraction * 100))}%` }]} />
-          </View>
-        )}
-        <Text style={[type.footnote, styles.text, { color: t.tertiary }]}>{`On ${names(job.machineId)}. It carries on if you close this, and shows in Chats once added.`}</Text>
+        <Text style={[type.title3, styles.text, { color: t.label }]}>{`Making ${phase.title}`}</Text>
       </View>
     );
   }
-  if (phase.kind === "ready" && made !== undefined) return <View style={[styles.center, { backgroundColor: t.grouped }]} />;
-  if (phase.kind === "ready") return <Added ready={phase.ready} name={title.current} onOpen={() => openChat(keyOf(phase.ready.project))} />;
-  if (phase.kind === "failed" || phase.kind === "unlisted") {
-    const failure = phase.kind === "failed" ? phase.failure : { message: `${phase.what} isn't listed yet.`, fix: "A clone may still be running: it shows in Chats once added. If it doesn't, try again." };
-    const action = phase.kind === "failed" ? phase.failure.action : undefined;
+  if (phase.kind === "failed") {
     return (
       <View style={[styles.center, { backgroundColor: t.grouped }]}>
         <Symbol ios="exclamationmark.triangle.fill" android="warning" size={44} color={t.warning} />
-        <Text style={[type.title3, styles.text, { color: t.label }]}>{phase.kind === "failed" ? `Couldn't add ${phase.what}` : "Not added yet"}</Text>
-        <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{errorWords(failure)}</Text>
+        <Text style={[type.title3, styles.text, { color: t.label }]}>{`Couldn't create ${phase.title}`}</Text>
+        <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{errorWords(phase)}</Text>
         <View style={styles.actions}>
-          {action?.kind === "use_existing" ? <Button label="Add the Folder That's There" onPress={() => start(action.request)} /> : null}
-          {action?.kind === "open" ? <Button label="Open Its Chat" onPress={() => openChat(keyOf(action.project))} /> : null}
-          <Button label="Back" kind={action === undefined ? "filled" : "plain"} onPress={() => send({ t: "back" })} />
+          <Button label="Back" onPress={() => send({ t: "back" })} />
         </View>
       </View>
     );
   }
+  if (phase.kind === "made") {
+    if (done !== undefined) return <View style={[styles.center, { backgroundColor: t.grouped }]} />;
+    return (
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
+        <ListSection header="Repos" {...(createBusy(s) ? { footer: "It carries on if you close this." } : {})}>
+          {s.jobs.map((j) => (
+            <JobRow key={j.key} job={j} bot={phase.bot.project} projects={state.projects ?? {}} onRetry={(useExisting) => send({ t: "retry", key: j.key, useExisting })} />
+          ))}
+        </ListSection>
+      </ScrollView>
+    );
+  }
 
-  const pick = (f: Found) => {
+  const add = (r: RepoPick | undefined) => {
+    if (r === undefined) return;
+    if (r.kind === "folder" && !r.path.startsWith("/")) return setRefused("Type the folder's full path, starting with /.");
+    // A folder that is a bot already would take that bot's place: not added.
+    const bot = r.kind === "folder" ? botAtFolder(state.projects ?? {}, to?.machineId, r.path) : undefined;
+    if (r.kind === "folder" && bot !== undefined) return setRefused(`${tilde(r.path)} is already the bot ${bot.title}: open it from Chats.`);
     haptics.select();
-    if (f.project !== undefined) return openChat(keyOf(f.project));
-    if (f.source.kind === "checkout") {
-      setText(f.source.path);
-      setFixed(f.source.machineId);
-    } else {
-      setText(f.name);
-      setFixed(null);
-    }
+    setRefused(undefined);
+    setRepos((now) => (now.some((x) => repoKey(x) === repoKey(r)) ? now : [...now, r.kind === "clone" ? { kind: "clone", repo: r.repo } : { kind: "folder", path: r.path }]));
+    setAdding(null);
   };
-  const other = otherHost(text);
-  const placeholderName = request?.kind === "clone" ? baseName(request.repo) : request?.kind === "folder" ? baseName(request.path) : "Name";
-  const where = machineId === undefined ? "its machine" : names(machineId);
-  const named = name.trim() !== "";
+  const other = adding === null ? null : otherHost(adding);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
       <ListSection header="Name">
         <FieldRow
           value={name}
-          onChangeText={setName}
-          placeholder={placeholderName}
+          onChangeText={(v) => {
+            setName(v);
+            setRefused(undefined);
+          }}
+          placeholder={named === "" ? "Name" : named}
           autoFocus
           maxLength={NAME_MAX + 1}
           autoCapitalize="words"
-          returnKeyType="next"
+          returnKeyType="done"
+          onSubmitEditing={create}
           accessibilityLabel="Name"
           invalid={nameIssue !== undefined}
         />
       </ListSection>
       <Problem text={nameIssue} />
-      <ListSection header="Repo or folder">
-        <FieldRow
-          value={text}
-          onChangeText={(v) => {
-            setText(v);
-            setFixed(null);
-          }}
-          placeholder="Optional: owner/repo, a URL or ~/folder"
-          autoCapitalize="none"
-          keyboardType="url"
-          returnKeyType="done"
-          accessibilityLabel="Repo or folder, optional"
-        />
+      <ListSection header="Repos" {...(repos.length === 0 && adding === null ? { footer: "None: it works in a folder of its own." } : {})}>
+        {[
+          ...repos.map((r) => (
+            <ListRow
+              key={repoKey(r)}
+              icon={r.kind === "clone" ? "link" : "folder"}
+              tint={r.kind === "clone" ? t.tints[6] : t.tints[2]}
+              title={r.kind === "clone" ? r.repo : tilde(r.path)}
+              chevron={false}
+              accessory={
+                <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${r.kind === "clone" ? r.repo : tilde(r.path)}`} hitSlop={12} onPress={() => setRepos((now) => now.filter((x) => repoKey(x) !== repoKey(r)))}>
+                  <Icon name="close" size={16} color={t.secondary} />
+                </Pressable>
+              }
+            />
+          )),
+          adding === null ? (
+            <ListRow key="add" icon="plus" tint={t.accentDeep} title="Add Repo" chevron={false} onPress={() => setAdding("")} />
+          ) : (
+            <FieldRow
+              key="field"
+              value={adding}
+              onChangeText={setAdding}
+              placeholder="owner/repo, a URL or a folder's path"
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              returnKeyType="done"
+              onSubmitEditing={() => add(list[0])}
+              accessibilityLabel="Repo to add"
+            />
+          ),
+        ]}
       </ListSection>
-      {other === null ? (
-        <Note>
-          {request?.kind === "clone"
-            ? `Clones ${request.repo} onto ${names(request.machineId)}.`
-            : request?.kind === "folder"
-              ? `Adds the folder ${tilde(request.path)} that's already on ${names(request.machineId)}.`
-              : fresh && named && freshPath !== null
-                ? `Makes the folder ${tilde(freshPath)} on ${where}. Add repos to it any time.`
-                : fresh && named && d !== null
-                  ? `${where} can't make a new folder. Give it a repo or a folder that's there, or pick another machine.`
-                  : "Empty, it gets a new folder of its own. A GitHub repo is cloned onto the machine; a folder must already be on it."}
-        </Note>
-      ) : (
-        <Problem text={other} />
-      )}
-      {workers.length > 1 && fixed === null ? (
+      {other !== null ? <Problem text={other} /> : null}
+      {list.length > 0 ? (
+        <ListSection header="Found">
+          {list.map((r) => (
+            <ListRow
+              key={repoKey(r)}
+              icon={r.kind === "folder" ? "folder" : "link"}
+              tint={r.kind === "folder" ? t.tints[2] : t.tints[6]}
+              title={r.kind === "clone" ? r.repo : (r.path.split("/").pop() ?? r.path)}
+              detail={r.detail}
+              chevron={false}
+              onPress={() => add(r)}
+            />
+          ))}
+        </ListSection>
+      ) : adding !== null && found.reading ? (
+        <View style={styles.reading}>
+          <ActivityIndicator color={t.secondary} />
+        </View>
+      ) : null}
+      {workers.length > 1 ? (
         <ListSection header="Machine">
           {workers.map((w) => (
             <CheckRow
               key={w.machineId}
               title={w.name}
-              checked={w.machineId === machineId}
+              checked={w.machineId === to?.machineId}
               onPress={() => {
                 haptics.select();
                 setPicked(w.machineId);
@@ -224,64 +258,56 @@ export function NewProject({ navigation, route }: Props) {
           ))}
         </ListSection>
       ) : null}
-      {list.length > 0 ? (
-        <ListSection header={text.trim() === "" ? "Found" : "Matches"}>
-          {list.map((f) => (
-            <ListRow
-              key={`${f.source.kind === "checkout" ? `${f.source.machineId}:${f.source.path}` : f.name}`}
-              icon={f.source.kind === "checkout" ? "folder" : f.private ? "lock" : "link"}
-              tint={f.source.kind === "checkout" ? t.tints[2] : t.tints[6]}
-              title={f.name}
-              detail={f.project !== undefined ? "Already a project: opens its chat" : f.source.kind === "checkout" ? `${tilde(f.source.path)} on ${names(f.source.machineId)}` : f.detail === "" ? "GitHub" : f.detail}
-              onPress={() => pick(f)}
-            />
-          ))}
-        </ListSection>
-      ) : found.reading ? (
-        <View style={styles.reading}>
-          <ActivityIndicator color={t.secondary} />
-        </View>
-      ) : null}
-      {found.value?.ok === false ? <Problem text={`Nothing found to suggest: ${errorWords(found.value.error)}`} /> : null}
-      {d !== null && d.problems.length > 0 && list.length === 0 && text.trim() === "" ? <Note>{d.problems.map((p) => errorWords(p)).join(" ")}</Note> : null}
+      <Problem text={refused ?? (live ? block : NOT_CONNECTED)} />
+      {found.value?.ok === false && adding !== null ? <Problem text={`Nothing found to suggest: ${errorWords(found.value.error)}`} /> : null}
+      {d !== null && d.problems.length > 0 && adding !== null && list.length === 0 ? <Note>{d.problems.map((p) => errorWords(p)).join(" ")}</Note> : null}
     </ScrollView>
   );
 }
 
-/** Added: what the hub read of it, and the one line on what its lead will need. */
-function Added({ ready, name, onOpen }: { ready: Ready; name: string; onOpen: () => void }) {
+/**
+ * A repo coming in: its progress, ✓, or why it failed with Retry (or the checkout already there). That checkout may be
+ * a bot of its own, which adding it here archives: the row names that bot before, and after.
+ */
+function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef; projects: Readonly<Record<string, ProjectSummary>>; onRetry: (useExisting: boolean) => void }) {
   const t = useTheme();
-  const shown = name === "" ? ready.title : name;
+  const st = job.state;
+  const title = job.draft.kind === "clone" ? job.draft.repo : tilde(job.draft.path);
+  const holder = st.t === "failed" && st.existing === true && job.draft.kind === "clone" ? botHolding(projects, bot.machineId, job.draft.repo, st.at, bot.projectId) : undefined;
+  const archived = st.t === "added" && st.archived !== undefined ? (projects[keyOf(st.archived)]?.title ?? st.archived.projectId) : undefined;
+  const detail =
+    st.t === "adding"
+      ? st.detail
+      : st.t === "failed"
+        ? `${errorWords(st)}${holder === undefined ? "" : ` It is the bot ${holder.title}: using it here archives ${holder.title}, whose chat stays but whose lead stops.`}`
+        : st.t === "waiting"
+          ? "Waiting for the bot"
+          : archived === undefined
+            ? undefined
+            : `${archived} archived: its chat stays`;
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
-      <View style={styles.hero}>
-        <Symbol ios="checkmark.circle.fill" android="check_circle" size={56} color={t.success} />
-        <Text style={[type.title2, styles.text, { color: t.label }]}>{shown}</Text>
-        <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{`${tilde(ready.path)} on ${ready.machine}`}</Text>
-      </View>
-      {ready.facts.length === 0 ? null : (
-        <ListSection footer={ready.leadLine}>
-          {ready.facts.map(([k, v]) => (
-            <ListRow key={k} title={k} detail={v} />
-          ))}
-        </ListSection>
-      )}
-      {ready.facts.length === 0 ? <Note>{ready.leadLine}</Note> : null}
-      {ready.notes.length === 0 ? null : <Note>{ready.notes.join(" ")}</Note>}
-      <View style={styles.open}>
-        <Button label="Open Chat" size="large" onPress={onOpen} />
-      </View>
-    </ScrollView>
+    <ListRow
+      icon={job.draft.kind === "clone" ? "link" : "folder"}
+      tint={job.draft.kind === "clone" ? t.tints[6] : t.tints[2]}
+      title={title}
+      detail={detail}
+      chevron={false}
+      accessory={
+        st.t === "added" ? (
+          <Symbol ios="checkmark.circle.fill" android="check_circle" size={20} color={t.success} />
+        ) : st.t === "failed" ? (
+          <Button label={st.existing === true ? (holder === undefined ? "Use Checkout" : "Use and Archive") : "Retry"} kind="tinted" size="small" onPress={() => onRetry(st.existing === true)} />
+        ) : (
+          <ActivityIndicator color={t.secondary} />
+        )
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.md, paddingHorizontal: space.xxl },
   text: { textAlign: "center" },
-  track: { alignSelf: "stretch", height: 6, borderRadius: 3, overflow: "hidden" },
-  bar: { height: 6, borderRadius: 3 },
   actions: { alignSelf: "stretch", gap: space.sm, marginTop: space.md },
   reading: { paddingVertical: space.xl },
-  hero: { alignItems: "center", gap: space.sm, paddingTop: space.xl, paddingHorizontal: space.xl },
-  open: { marginHorizontal: space.lg, marginTop: space.xl },
 });

@@ -1,4 +1,4 @@
-// Making and managing projects from the phone: their screens in the root stack (New Project as a sheet; New Screen, a
+// Making and managing bots from the phone: their screens in the root stack (New Bot as a sheet; New Screen, a
 // screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs,
 // Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, its Vault (screens/vault), pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
@@ -66,7 +66,7 @@ export const pushed = (t: Palette, title: string): NativeStackNavigationOptions 
 /** The root stack's screens for these. */
 export const manageScreens = (Stack: RootStack, t: Palette) => (
   <Stack.Group>
-    <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Project")} />
+    <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Bot")} />
     <Stack.Screen name="NewScreen" component={NewScreen} options={sheet(t, "New Screen")} />
     <Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />
     <Stack.Screen name="Icon" component={IconPicker} options={sheet(t, "Icon")} />
@@ -74,26 +74,26 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
   </Stack.Group>
 );
 
-/** The Chats list's + on iOS: New Project, a round glass button in the bar. */
+/** The Chats list's + on iOS: New Bot, a round glass button in the bar. */
 export const newChatItem = (open: () => void): NativeStackHeaderItemButton => ({
   type: "button",
-  label: "New Project",
+  label: "New Bot",
   icon: { type: "sfSymbol", name: "plus" },
-  accessibilityLabel: "New Project",
+  accessibilityLabel: "New Bot",
   onPress: () => {
     haptics.tap();
     open();
   },
 });
 
-/** The Chats list's + elsewhere: New Project. */
+/** The Chats list's + elsewhere: New Bot. */
 export const newChatOptions = (t: Palette, open: () => void): NativeStackNavigationOptions => {
   if (Platform.OS === "ios") return { unstable_headerRightItems: () => [newChatItem(open)] };
   return {
     headerRight: () => (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="New Project"
+        accessibilityLabel="New Bot"
         hitSlop={12}
         onPress={() => {
           haptics.tap();

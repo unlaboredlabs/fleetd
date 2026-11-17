@@ -489,7 +489,7 @@ it("lists the projects left from a removed machine, and Remove only forgets one 
   ]);
   await click(rowButton("fleetd", "Remove"));
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("Forget fleetd?");
-  await click(button("Forget project"));
+  await click(button("Forget bot"));
   expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "worker", projectId: "fleetd" }]);
 });
 

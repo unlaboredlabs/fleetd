@@ -1,4 +1,4 @@
-// F8: Add project and Machines. The shared fixtures get acme-only discovery (checkouts on the snapshot's machines,
+// F8: New bot and Machines. The shared fixtures get acme-only discovery (checkouts on the snapshot's machines,
 // the snapshot's projects marked as added), the add/inspect/remove answers the sheet's states need, and the hub's own
 // problem wording; the group adds a fixture per sheet state and one for the machine states.
 
@@ -130,18 +130,30 @@ const addAnswers = (f: Fixture) => {
     created: true,
     inspect: inspect("acme/ledger-ui", true),
   });
-  // A new project: made under the projects root, or refused because that folder holds files.
-  f.answer("project_add", { create: true, path: `${PROJECTS_ROOT}/field-notes` }, {
-    machineId: "devbox",
-    path: `${PROJECTS_ROOT}/field-notes`,
-    projectId: "field-notes",
-    created: true,
-    inspect: folderInspect,
-  });
-  f.fail("project_add", { create: true, path: `${PROJECTS_ROOT}/old-notes` }, {
+  // A new bot: made in a folder the machine makes for it, or refused because that folder holds files.
+  const made = (id: string): JsonObject => ({ machineId: "devbox", path: `${PROJECTS_ROOT}/${id}`, projectId: id, created: true, inspect: folderInspect });
+  f.answer("project_add", { create: true, title: "Field notes" }, made("field-notes"));
+  f.answer("project_add", { create: true, title: "Checkout" }, made("checkout-bot"));
+  f.fail("project_add", { create: true, title: "Old notes" }, {
     code: "invalid",
     message: `${PROJECTS_ROOT}/old-notes on devbox already holds files`,
-    fix: "Pick another folder for the new project, or add that one as it is by typing its path",
+    fix: "Give the bot another name, or add that folder to it as a repo",
+  });
+  // Its repos: a clone that starts, one whose folder already holds that repo, a folder that isn't a git checkout.
+  f.answer("project_repo_add", { url: "acme/checkout-v2" }, { path: "/home/dev/src/checkout-v2", addId: "add-1" });
+  f.fail("project_repo_add", { url: "acme/ledger-ui" }, {
+    code: "invalid",
+    message: "devbox already has a checkout of acme/ledger-ui at /home/dev/src/ledger-ui",
+    fix: "Add that checkout instead (useExisting), or clone into another folder (dest)",
+  });
+  f.answer("project_repo_add", { url: "acme/ledger-ui", useExisting: true }, {
+    path: "/home/dev/src/ledger-ui",
+    repo: { name: "ledger-ui", path: "/home/dev/src/ledger-ui", repoId: "R9", checkout: { machineId: "devbox", projectId: "ledger-ui" }, repoKey: "github.com/acme/ledger-ui" },
+  });
+  f.fail("project_repo_add", { path: "/home/dev/code/notes-cli" }, {
+    code: "invalid",
+    message: "/home/dev/code/notes-cli on devbox is not a git repository",
+    fix: "Give the repository's root directory, or run `git init` there first",
   });
   f.answer("project_remove", undefined, { ok: true });
 };
@@ -168,14 +180,14 @@ const typical = (f: Fixture) => {
 /** One failing input per ProjectProblemCode, worded as the hub words it (hub/projects). */
 const problems: ReadonlyArray<readonly [JsonObject, string, string, string]> = [
   [{ url: "acme/payments" }, "machine_offline", "buildbox is offline", "Start the node on buildbox (fleetd node run) or check its network, then retry"],
-  [{ url: "acme/no-worker" }, "no_worker", "no machine is online to add the project on", "Start a node (fleetd node run on the machine) or pass a machine id"],
+  [{ url: "acme/no-worker" }, "no_worker", "no machine is online to add the bot on", "Start a node (fleetd node run on the machine) or pass a machine id"],
   [{ url: "acme/gh-missing" }, "gh_unavailable", "gh isn't logged in on the hub or any worker", "Run gh auth login on the hub, then add it again"],
   [{ url: "acme/secret" }, "gh_no_access", "gh on the hub can't see acme/secret: it is private to another account, renamed, or misspelled", "On devbox, run `gh auth login` with an account that can read acme/secret, then add it again"],
   [{ path: "/home/dev/src/missing" }, "path_missing", "/home/dev/src/missing does not exist on devbox", "Check the path, or clone the repo there first"],
   [{ path: "/home/dev/code/notes-cli" }, "not_a_git_repo", "/home/dev/code/notes-cli on devbox is not a git checkout", "Run git init there, or pick the repo's folder"],
   [{ url: "acme/ledger-ui" }, "dest_exists", "/home/dev/src/ledger-ui already exists on devbox", "Add the existing checkout at /home/dev/src/ledger-ui on devbox instead, or clone into another folder"],
   [{ url: "acme/huge-monorepo" }, "clone_failed", "fatal: write error: No space left on device", "Free disk space on devbox, then add it again"],
-  [{ url: "acme/old-node" }, "node_too_old", "devbox's node did not answer: it may predate adding projects", "Run fleetd update on devbox"],
+  [{ url: "acme/old-node" }, "node_too_old", "devbox's node did not answer: it may predate adding bots", "Run fleetd update on devbox"],
   [{ url: "acme/weird" }, "other", "the node on devbox answered with an error", "fleetd doctor shows what is wrong on devbox"],
 ];
 const ERROR_CODE: Readonly<Record<string, string>> = {
@@ -201,7 +213,7 @@ export default defineGroup({
       f.drop("project_discover");
       f.answer("project_discover", undefined, {
         machines: machinesOf(f).map((m) => ({ machineId: asText(m["machineId"]), online: true, cloneRoot: "/home/dev/src", repos: [] })),
-        github: { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh isn't logged in on the hub or any worker", fix: "Run gh auth login on the hub, then reopen Add project" } },
+        github: { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh isn't logged in on the hub or any worker", fix: "Run gh auth login on the hub, then reopen New bot" } },
         ...(machinesOf(f)[0] ? { best: asText(machinesOf(f)[0]?.["machineId"]) } : {}),
       });
     },
@@ -225,7 +237,7 @@ export default defineGroup({
   fixtures: (base) => [
     (() => {
       // Each ProjectProblemCode fails one input to project_add.
-      const f = Fixture.from(base("typical"), "projects-errors", "Add project: every problem the hub can report, one input each");
+      const f = Fixture.from(base("typical"), "projects-errors", "New bot: every problem the hub can report, one input each");
       for (const [input, code, message, fix] of problems) {
         f.fail("project_add", input, { code: ERROR_CODE[code] ?? "failed", message, fix });
       }
@@ -241,10 +253,10 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      // A clone part way through. Calls are static, so its progress comes as timed events from launch. They must land
-      // after the QA step has typed acme/checkout-v2 and pressed Enter, so the harness doesn't wait for them before
-      // the step (settle 0); the step itself waits for the bar at 42%.
-      const f = Fixture.from(base("typical"), "projects-cloning", "Add project: a clone receiving objects, 42% in");
+      // A new bot's clone part way through, beside a repo whose folder already holds it. Calls are static, so the
+      // clone's progress comes as timed events from launch. They must land after the QA step has made the bot, so the
+      // harness doesn't wait for them before the step (settle 0); the step itself waits for the bar at 42%.
+      const f = Fixture.from(base("typical"), "projects-cloning", "New bot: a clone receiving objects, 42% in");
       // Past every event the fixture already plays: the store drops an event older than the last it applied.
       const seqs = [f.snapshot?.["cursor"], ...f.events.map((e) => e["seq"])].filter((n): n is number => typeof n === "number");
       const cursor = Math.max(0, ...seqs, ...f.timeline.map((t) => (typeof t.payload["seq"] === "number" ? t.payload["seq"] : 0)));
@@ -270,10 +282,9 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      // The link drops before project_add answers, then comes back with a snapshot that doesn't list the project yet.
-      // Timed past the QA step's Enter, as projects-cloning's progress is.
-      const f = Fixture.from(base("typical"), "projects-dropped", "Add project: the link drops mid-add and the hub doesn't list it yet");
-      f.fail("project_add", { url: "acme/checkout-v2" }, { code: "disconnected", message: "The connection to the hub closed." });
+      // The link drops before project_add answers, then comes back with a snapshot that doesn't list the bot yet.
+      const f = Fixture.from(base("typical"), "projects-dropped", "New bot: the link drops before the hub answers");
+      f.fail("project_add", { create: true, title: "Checkout" }, { code: "disconnected", message: "The connection to the hub closed." });
       f.later(6_000, "state", { phase: "connecting", hub: HUB, attempt: 1 });
       f.later(6_300, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
       if (f.snapshot !== undefined) f.later(6_600, "snapshot", f.snapshot);
@@ -281,9 +292,9 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      // A new project made from the sheet: the hub's next snapshot lists it, a plain folder with no repo, and Settings
-      // says so. Timed past the QA step's Enter, as projects-cloning's progress is.
-      const f = Fixture.from(base("typical"), "projects-new", "Add project: a new, empty project made in a folder the hub makes, then opened");
+      // A new bot with no repo: the hub's next snapshot lists it, a plain folder, and Settings says so. Timed past the
+      // QA step's Create, as projects-cloning's progress is.
+      const f = Fixture.from(base("typical"), "projects-new", "New bot: one with no repo, made in a folder the hub makes, then opened");
       const made: JsonObject = { machineId: "devbox", projectId: "field-notes", title: "Field notes", workspaceRoot: `${PROJECTS_ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: f.now, repos: [] };
       if (f.snapshot !== undefined) f.later(6_000, "snapshot", { ...f.snapshot, projects: [...projectsOf(f), made] });
       f.answer("project_settings_get", { machineId: "devbox", projectId: "field-notes" }, {

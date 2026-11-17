@@ -365,21 +365,21 @@ describe("Settings → Projects", () => {
     repos = [web];
     await render();
     expect(document.body.textContent).toContain("Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way.");
-    await click(button("Delete project…"));
+    await click(button("Delete bot…"));
     expect(dialog().textContent).toContain("fleetd/T1-cart");
     expect(dialog().textContent).not.toContain("fleetd/T2-tax");
     expect(dialog().textContent).toContain("storefront stops now, and everything fleetd keeps for it is erased from fleetd and devbox");
     expect(dialog().textContent).toContain("its branches and pull requests stay.");
     expect(dialog().textContent).toContain("Also delete its folder, ~/src/storefront");
-    const confirm = button("Delete project");
+    const confirm = button("Delete bot");
     expect(confirm.disabled).toBe(true);
     const field = dialog().querySelector("input");
     if (field === null) throw new Error("no confirm field");
     await type(field, "storefron");
-    expect(button("Delete project").disabled).toBe(true);
+    expect(button("Delete bot").disabled).toBe(true);
     await type(field, "storefront");
-    expect(button("Delete project").disabled).toBe(false);
-    await click(button("Delete project"));
+    expect(button("Delete bot").disabled).toBe(false);
+    await click(button("Delete bot"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
@@ -390,7 +390,7 @@ describe("Settings → Projects", () => {
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
     expect(document.body.textContent).toContain("Its folder stays unless you tick it when you delete.");
-    await click(button("Delete project…"));
+    await click(button("Delete bot…"));
     const text = dialog().textContent;
     expect(text).toContain("Delete Adri?");
     expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased");
@@ -398,7 +398,7 @@ describe("Settings → Projects", () => {
     const field = dialog().querySelector("input");
     if (field === null) throw new Error("no confirm field");
     await type(field, "Adri");
-    await click(button("Delete project"));
+    await click(button("Delete bot"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
@@ -407,7 +407,7 @@ describe("Settings → Projects", () => {
     const folder = "/home/w/.fleetd/node/projects/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
-    await click(button("Delete project…"));
+    await click(button("Delete bot…"));
     const text = dialog().textContent;
     expect(text).toContain("Delete Adri?");
     expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased from fleetd and devbox: its chat, memory, skills, approvals, purchases, automations and sign-ins");
@@ -419,7 +419,7 @@ describe("Settings → Projects", () => {
     if (tick === null) throw new Error("no folder tickbox");
     expect(tick.getAttribute("aria-checked")).toBe("false");
     await click(tick);
-    await click(button("Delete project"));
+    await click(button("Delete bot"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true, removeFolder: true });
   });
@@ -517,7 +517,7 @@ describe("Settings → Projects", () => {
     const { worktrees: _, ...offline } = settings;
     answers = [{ ...offline, worktreesUnknown: "devbox is offline." }];
     await render();
-    expect(button("Delete project…").disabled).toBe(true);
+    expect(button("Delete bot…").disabled).toBe(true);
     expect(document.body.textContent).toContain("devbox is offline.");
     act(() => root.unmount());
     root = createRoot(host);
@@ -525,7 +525,7 @@ describe("Settings → Projects", () => {
     // Listed when the page loaded, gone by the time Delete is clicked: no dialog, and why.
     answers = [settings, { ...offline, worktreesUnknown: "devbox's node did not answer." }];
     await render();
-    await click(button("Delete project…"));
+    await click(button("Delete bot…"));
     await settle();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("devbox's node did not answer.");
@@ -542,13 +542,13 @@ describe("Settings → Projects", () => {
       if (left.t === "snapshot") send({ ...left, snapshot: { ...left.snapshot, cursor: 2, machines: [] } });
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(button("Delete project…").disabled).toBe(false);
+    expect(button("Delete bot…").disabled).toBe(false);
     expect(document.body.textContent).toContain("devbox was removed from this hub, so no machine holds its files");
     expect(document.body.textContent).not.toContain("offline");
-    await click(button("Delete project…"));
+    await click(button("Delete bot…"));
     await settle();
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Forget storefront?");
-    await click(button("Forget project"));
+    await click(button("Forget bot"));
     await settle();
     expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "p1" }]);
   });

@@ -647,6 +647,14 @@ const filterIsOneLine = async (page: Page) => {
 };
 
 /** An entry's name in test titles, shot files and the contact sheet. */
+/** New bot's +: a repo typed into its field and added with Enter. */
+const addRepo = async (page: Page, text: string) => {
+  await page.getByRole("button", { name: "Add a repo" }).click();
+  await page.getByRole("combobox", { name: "Repo to add" }).fill(text);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("combobox", { name: "Repo to add" })).toHaveCount(0);
+};
+
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
 export const screens: readonly Screen[] = [
@@ -1542,7 +1550,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("option", { name: /Checklist/u }).first()).toBeVisible();
     },
   },
-  // Settings › Projects for a project with no repo: Archive and Delete at the end.
+  // A bot's settings: Archive and Delete at the very bottom, the only place Delete is.
   {
     id: "settings.projects",
     variant: "archive",
@@ -1550,7 +1558,17 @@ export const screens: readonly Screen[] = [
     fixtures: ["no-repo-links"],
     open: async (page) => {
       await page.getByRole("region", { name: "Archive", exact: true }).scrollIntoViewIfNeeded();
-      await page.getByRole("region", { name: "Delete project" }).waitFor();
+      await page.getByRole("region", { name: "Delete bot" }).waitFor();
+    },
+  },
+  // Settings › Bots: Taxes archived, in its own group under the others, with Bring back.
+  {
+    id: "settings.projects",
+    variant: "archived",
+    route: "#/settings/projects",
+    fixtures: ["no-repo-chats"],
+    open: async (page) => {
+      await page.getByRole("list", { name: "Archived" }).getByRole("button", { name: "Bring back" }).waitFor();
     },
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.
@@ -1944,6 +1962,19 @@ export const screens: readonly Screen[] = [
       await expect(groups.nth(0).locator("> [data-reorder-row]")).toHaveText([/^recipes/u, "Home", /^garden-sensors/u]);
       await expect(groups.nth(1).locator("> [data-reorder-row]")).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/blog/u, /storefront/u, /billing/u]);
+    },
+  },
+  // A bot's own menu (right-click its row): Open, pins and sections, Rename, its settings, Copy path, then Archive,
+  // which shows an Undo; Delete is only in its settings.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "bot-menu",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      await nav.locator('[class*="rows"] > [data-reorder-row]').filter({ hasText: "inventory" }).getByRole("button").click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Archive" }).waitFor();
     },
   },
   // ...a chat's Move to section: your sections with a tick on its own, No section, New section….
@@ -3022,70 +3053,53 @@ export const screens: readonly Screen[] = [
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
   { id: "setup", route: "#/setup/mac", fixtures: ["setup-fresh"], variant: "mac" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
-  // F8: New project, a modal over the chat (the pick list, its empty and loading states, gh and machine problems).
+  // F8: New bot, a dialog over the chat: a name and no repo yet; a hub with nothing found, a machine whose node is too
+  // old to make a bot's folder (it says to update it, or add a folder that's there), and no hub.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
-  // The modal's later states, reached by adding from the pick list (fixtures/projects answers project_add).
+  // Its repos: one cloned from GitHub and a folder on the machine, then + again with what the hub found for "che".
   {
-    id: "projects.add.cloning",
-    route: "#/projects/add",
-    fixtures: ["projects-cloning"],
-    open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
-      await page.keyboard.press("Enter");
-      // The fixture's progress events are timed; shoot once the bar shows git's 42%.
-      await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
-    },
-  },
-  // The link drops before project_add answers and the resync doesn't list the project: not on the hub yet, never
-  // "failed", since a clone may still be running.
-  {
-    id: "projects.add.unlisted",
-    route: "#/projects/add",
-    fixtures: ["projects-dropped"],
-    open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
-      await page.keyboard.press("Enter");
-      await page.locator('[data-screen="projects.add.unlisted"]').waitFor();
-    },
-  },
-  {
-    id: "projects.add.ready",
+    id: "projects.add.pick",
     route: "#/projects/add",
     fixtures: ["typical", "long-text"],
     open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
-      await page.keyboard.press("Enter");
+      await page.getByRole("textbox", { name: "Name" }).fill("Checkout");
+      await addRepo(page, "acme/checkout-v2");
+      await addRepo(page, "/home/dev/src/pricing");
+      await page.getByRole("button", { name: "Add a repo" }).click();
+      await page.getByRole("combobox", { name: "Repo to add" }).fill("che");
+      await expect(page.getByRole("listbox", { name: "Found" }).getByRole("option").first()).toBeVisible();
     },
   },
-  // W123: a new, empty project. A name offers it; the footer's one line names the folder the hub will make, editable,
-  // and the machine; a machine whose node is too old says to update it.
+  // On a machine whose node is too old to make a bot's folder: Create says why and the fix.
   {
-    id: "projects.add.new",
-    route: "#/projects/add",
-    fixtures: ["typical", "long-text"],
-    open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
-      await page.getByRole("textbox", { name: "Folder", exact: true }).waitFor();
-    },
-  },
-  {
-    id: "projects.add.new",
+    id: "projects.add",
     route: "#/projects/add",
     fixtures: ["node-too-old"],
     variant: "too-old",
     open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "Name" }).fill("Field notes");
       await page.getByRole("combobox", { name: "Machine" }).click();
       await page.getByRole("option", { name: "buildbox", exact: true }).click();
       await page.getByText(/Update fleetd on buildbox/u).waitFor();
     },
   },
-  // The folder the hub would make already holds files: refused, nothing added.
+  // Made: the bot's chat opens behind, and the dialog shows each repo coming in: a clone at git's 42%, and one whose
+  // folder already holds that repo, offering to use that checkout.
+  {
+    id: "projects.add.cloning",
+    route: "#/projects/add",
+    fixtures: ["projects-cloning"],
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("Checkout");
+      await addRepo(page, "acme/checkout-v2");
+      await addRepo(page, "acme/ledger-ui");
+      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await page.getByRole("button", { name: "Use the checkout there" }).waitFor();
+      // The fixture's progress events are timed; shoot once the bar shows git's 42%.
+      await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
+    },
+  },
+  // The bot wasn't made: its folder holds files, or the link dropped before the hub answered. Back keeps the form.
   {
     id: "projects.add.error",
     route: "#/projects/add",
@@ -3093,22 +3107,43 @@ export const screens: readonly Screen[] = [
     variant: "new",
     expect: "error",
     open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Old notes");
+      await page.getByRole("textbox", { name: "Name" }).fill("Old notes");
       await page.keyboard.press("Enter");
     },
   },
-  // Made: the project opens at once, and a toast says where a repo goes later; Settings › Projects says it has none.
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["projects-dropped"],
+    variant: "dropped",
+    expect: "error",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("Checkout");
+      await page.keyboard.press("Enter");
+      await page.getByText("Lost the connection to the hub before it answered.").waitFor();
+    },
+  },
+  // A folder that isn't on the machine: the hub refuses the bot, and says so.
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["projects-errors"],
+    expect: "error",
+    open: async (page) => {
+      await addRepo(page, "/home/dev/src/missing");
+      await page.getByRole("button", { name: "Create", exact: true }).click();
+    },
+  },
+  // Made with no repo: the bot opens at once, and a toast says so; Settings › Bots says it has none.
   {
     id: "chat",
     variant: "new-project",
     route: "#/projects/add",
     fixtures: ["projects-new"],
     open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "Name" }).fill("Field notes");
       await page.keyboard.press("Enter");
-      await page.getByText("Field notes is ready on devbox").first().waitFor();
+      await page.getByText("Field notes is ready").first().waitFor();
     },
   },
   {
@@ -3117,23 +3152,11 @@ export const screens: readonly Screen[] = [
     route: "#/projects/add",
     fixtures: ["projects-new"],
     open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "Name" }).fill("Field notes");
       await page.keyboard.press("Enter");
-      await page.getByRole("button", { name: "Add a repo" }).click();
+      await page.getByText("Field notes is ready").first().waitFor();
+      await page.evaluate(() => (window.location.hash = "#/settings/projects?for=devbox/field-notes"));
       await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
-    },
-  },
-  {
-    id: "projects.add.error",
-    route: "#/projects/add",
-    fixtures: ["typical", "projects-errors"],
-    // The error state is the point: a clone refused because its folder exists, offering to add that folder.
-    expect: "error",
-    open: async (page) => {
-      await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
-      await page.keyboard.press("Enter");
     },
   },
   // UX-1 A2: the project's agents in the panel, those waiting on you first (none, many, long titles and commands, the

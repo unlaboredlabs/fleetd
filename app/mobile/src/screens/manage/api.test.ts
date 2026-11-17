@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
+import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -187,7 +187,7 @@ describe("Forget sign-ins and Delete", () => {
   });
 });
 
-describe("New Project", () => {
+describe("New Bot", () => {
   it("lists what the hub found, machine ids as names", async () => {
     const { hub, session } = setup();
     const found = discover(session, (id) => (id === "devbox" ? "Dev Box" : id));
@@ -201,77 +201,37 @@ describe("New Project", () => {
     expect(r.ok && r.value.found.map((f) => f.name)).toEqual(["api", "acme/web"]);
   });
 
-  it("clones with the name typed, then follows the clone's events to ready", async () => {
+  it("makes the bot, then clones its repo into it, following the clone's events to added", async () => {
     const { hub, session, calls } = setup();
-    let s: AddState = { ...initialAdd, live: true };
-    const send = (msg: AddMsg) => {
-      const [next, out] = addStep(s, msg, (id) => id);
+    let s: CreateState = { ...initialCreate, live: true };
+    const send = (msg: CreateMsg) => {
+      const [next, out] = createStep(s, msg);
       s = next;
-      for (const call of out) void addCall(session, call, "Web").then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of out) void createCall(session, call).then((outcome) => send({ t: "answer", call, outcome }));
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
-    send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web", onlyMe: false });
-    hub.answer("project_add", { addId: "a1", created: false, machineId: "devbox", path: "/home/ada/src/web" });
+    send({ t: "start", draft: { name: "Web", machineId: "devbox", repos: [{ kind: "clone", repo: "acme/web" }] } });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", create: true, title: "Web" });
+    hub.answer("project_add", { created: true, machineId: "devbox", path: "/home/ada/fleetd/projects/web", projectId: "web", inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "", notes: [] } });
+    await flush();
+    expect(calls("project_repo_add").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "web", url: "acme/web" });
+    hub.answer("project_repo_add", { path: "/home/ada/src/web", addId: "a1" });
     await flush();
     hub.link.frame({ t: "event", seq: 2, type: "project.clone_progress", at: AT, data: { addId: "a1", phase: "receiving", percent: 40 } });
-    expect(s.phase).toMatchObject({ kind: "working", job: { detail: "Receiving objects 40%", fraction: 0.4 } });
-    hub.link.frame({
-      t: "event",
-      seq: 3,
-      type: "project.added",
-      at: AT,
-      machineId: "devbox",
-      projectId: "web",
-      data: {
-        addId: "a1",
-        title: "Web",
-        path: "/home/ada/src/web",
-        inspect: { repo: "acme/web", defaultBranch: "main", ci: { workflows: ["ci"], requiredChecks: [] }, merge: { protected: false, rulesets: [], squashAllowed: true }, leadNeeds: "required checks", notes: [] },
-      },
-    });
-    expect(s.phase).toMatchObject({ kind: "ready", ready: { title: "Web", project: { machineId: "devbox", projectId: "web" } } });
+    expect(s.jobs[0]?.state).toEqual({ t: "adding", detail: "Receiving objects 40%", fraction: 0.4 });
+    hub.link.frame({ t: "event", seq: 3, type: "project.added", at: AT, machineId: "devbox", projectId: "web", data: { addId: "a1", title: "Web", path: "/home/ada/src/web", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "", notes: [] } } });
+    expect(s.jobs[0]?.state).toEqual({ t: "added", path: "/home/ada/src/web" });
+    expect(s.phase).toMatchObject({ kind: "made", bot: { title: "Web", project: { machineId: "devbox", projectId: "web" } } });
     off();
   });
 
-  it("adds a folder as it is, unnamed when no name is typed", () => {
-    const { session, calls } = setup();
-    void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "");
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api" });
-    // A dry run that inspects a clone's folder is never named.
-    void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web");
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", dryRun: true });
-  });
-
-  it("makes a new folder of its own", async () => {
-    const { hub, session, calls } = setup();
-    let s: AddState = { ...initialAdd, live: true };
-    const send = (msg: AddMsg) => {
-      const [next, out] = addStep(s, msg, (id) => id);
-      s = next;
-      for (const call of out) void addCall(session, call, "Ada").then((outcome) => send({ t: "answer", call, outcome }));
-    };
-    const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
-    send({ t: "start", request: { kind: "new", machineId: "devbox", name: "Ada", path: "/home/ada/projects/ada", gitInit: false }, path: "/home/ada/projects/ada" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true, onlyMe: false });
-    hub.answer("project_add", { addId: "a2", created: true, machineId: "devbox", path: "/home/ada/projects/ada" });
-    await flush();
-    hub.link.frame({
-      t: "event",
-      seq: 2,
-      type: "project.added",
-      at: AT,
-      machineId: "devbox",
-      projectId: "ada2",
-      data: {
-        addId: "a2",
-        title: "Ada",
-        path: "/home/ada/projects/ada",
-        inspect: { defaultBranch: "main", ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [], squashAllowed: false }, leadNeeds: "", notes: [] },
-      },
-    });
-    expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "ada2" } } });
-    off();
+  it("makes a bot with no repo in a folder of its own, waiting as long as gh may take", () => {
+    const { session } = setup();
+    const call = vi.spyOn(session, "call");
+    void createCall(session, { kind: "create", gen: 1, input: { machineId: "devbox", create: true, title: "Ada" } });
+    expect(call).toHaveBeenLastCalledWith("project_add", { machineId: "devbox", create: true, title: "Ada" }, 120_000);
+    void createCall(session, { kind: "repo", gen: 1, key: "dir:/x", input: { machineId: "devbox", projectId: "p", path: "/x" } });
+    expect(call).toHaveBeenLastCalledWith("project_repo_add", { machineId: "devbox", projectId: "p", path: "/x" }, 120_000);
   });
 });
 

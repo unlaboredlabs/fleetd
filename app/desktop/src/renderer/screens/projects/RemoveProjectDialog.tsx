@@ -1,9 +1,9 @@
-// Deleting a project: project_remove stops its claude processes and erases it. Settings → Projects opens it, one rule
-// for every project (D287): the name typed to confirm, everything
+// Deleting a bot: project_remove stops its claude processes and erases it. Only the bot's own settings open it, at
+// their bottom, one rule for every bot (D287): the name typed to confirm, everything
 // fleetd keeps for it erased with its fleetd worktrees (`removeWorktrees`), and a tickbox, off by default, naming its
 // folder that deletes the folder too (`removeFolder`). Its branches and pull requests stay either way. The phone's
 // sheet says the same words (projects/model.ts `deleteWords`).
-// A project whose machine the hub no longer has (a fresh snapshot lacks it) has no files on any machine to keep or
+// A bot whose machine the hub no longer has (a fresh snapshot lacks it) has no files on any machine to keep or
 // remove: its dialog only forgets it in fleetd, which the hub does without a node.
 
 import { useState } from "react";
@@ -84,7 +84,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       toast({ title: `${p.title} deleted`, description: `Its folder is gone from ${machine} too.` });
       return;
     }
-    // Its folder is still there, so a new project can start in it again: as a new one, with nothing it had.
+    // Its folder is still there, so a new bot can start in it again: as a new one, with nothing it had.
     toast({
       title: `${p.title} deleted`,
       description: p.deleting?.plain === false ? `Its checkout and branches stay on ${machine}.` : `Its folder stays on ${machine}.`,
@@ -102,7 +102,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       title={project ? (gone ? `Forget ${project.title}?` : `Delete ${project.title}?`) : ""}
       description={
         gone
-          ? `${machine} is no longer in this hub, so no machine holds its files. This only forgets the project, its chat and its settings in fleetd.`
+          ? `${machine} is no longer in this hub, so no machine holds its files. This only forgets the bot, its chat and its settings in fleetd.`
           : deleting && project
             ? `${deleteWords(project.title, machine, tilde(project.path)).message}${deleting.plain === false ? " The worktrees its agents worked in are removed; its branches and pull requests stay." : ""}`
             : ""
@@ -113,7 +113,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
             Cancel
           </Button>
           <Button variant="danger" disabled={busy || !ready} onClick={() => project && void remove(project)}>
-            {busy ? (gone ? "Forgetting…" : "Deleting…") : gone ? "Forget project" : "Delete project"}
+            {busy ? (gone ? "Forgetting…" : "Deleting…") : gone ? "Forget bot" : "Delete bot"}
           </Button>
         </>
       }

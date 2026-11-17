@@ -1,6 +1,6 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, foundRows, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { deleteWords as eraseWords, tilde, type AgentRow, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** A machine's name, else its id. */
@@ -168,7 +168,7 @@ export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machin
   const path = tilde(settings.workspaceRoot);
   const words = eraseWords(p.title, machine, path);
   const label = words.folder.endsWith(`, ${path}`) ? words.folder.slice(0, -(path.length + 2)) : words.folder;
-  return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Project", unsaved, folder: { label, path, note: words.folderNote } };
+  return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Bot", unsaved, folder: { label, path, note: words.folderNote } };
 };
 
 /** A delete is confirmed by typing its name, as on the desktop: exactly, around spaces. */
@@ -178,18 +178,23 @@ export const deleteConfirmed = (typed: string, title: string): boolean => typed.
 export const deleteBlocked = (settings: ProjectSettings): string | undefined =>
   settings.worktrees === undefined ? `Its worktrees can't be listed now: ${settings.worktreesUnknown ?? "its machine hasn't listed them."} Delete once they can.` : undefined;
 
-/** How many suggestions New Project lists under the field. */
-const SUGGESTIONS_SHOWN = 12;
+/** New Bot's line while the hub link is down: Create stays pressable and says this rather than going grey. */
+export const NOT_CONNECTED = "Not connected to the hub. Create works once it's back.";
 
-/** What New Project suggests for what is typed: checkouts on the machines and the person's GitHub repos, best first. */
-export const suggestions = (text: string, d: Discovery | null): Found[] => {
-  if (d === null) return [];
-  const out: Found[] = [];
-  for (const row of foundRows(text, d.found).rows) {
-    if (row.kind !== "found") continue;
-    const f = d.found[row.index];
-    if (f !== undefined) out.push(f);
-    if (out.length === SUGGESTIONS_SHOWN) break;
-  }
-  return out;
+/**
+ * Why New Bot's Create can't go now, first reason first; undefined when it can. `typed` is the add field's text as
+ * typedRepo reads it, `typedBot` the bot a typed folder already is, `block` why its machine can't take it, `named` the
+ * name it would get.
+ */
+export const createRefusal = (o: {
+  live: boolean;
+  typed: { readonly why: string } | { readonly repo: unknown } | null;
+  typedBot: { readonly title: string; readonly workspaceRoot: string } | undefined;
+  block: string | undefined;
+  named: string;
+}): string | undefined => {
+  if (!o.live) return NOT_CONNECTED;
+  if (o.typed !== null && "why" in o.typed) return o.typed.why;
+  if (o.typedBot !== undefined) return `${tilde(o.typedBot.workspaceRoot)} is already the bot ${o.typedBot.title}: open it from Chats.`;
+  return o.block ?? (o.named === "" ? "Name it, or add a repo." : undefined);
 };

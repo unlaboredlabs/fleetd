@@ -30,6 +30,7 @@ import { sectionLines, type SectionLine } from "../sections";
 import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
+import { archiveWords, UNDO_MS } from "../archive";
 import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
@@ -48,6 +49,8 @@ import { unreachable } from "../link";
 import { ConnectComputer } from "./Cloud";
 import { useHubWord, useLinkDown } from "./linkHeader";
 import { newChatItem } from "./manage";
+import { setArchived } from "./manage/api";
+import { errorWords } from "./manage/parts";
 import { PinnedGrid } from "./Pinned";
 import { SectionLabel, useSectionMenus } from "./Sections";
 import { useRefreshing } from "./refresh";
@@ -188,7 +191,29 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   };
   const sectionMenus = useSectionMenus(session, sections);
   const sectionsShown = lines.flatMap((l) => (l.t === "section" ? [l.section.id] : []));
-  const holdActions = (row: ChatRow): readonly MenuItem[] => [...rowActions(row, pin), sectionMenus.moveItem(row)];
+  // Archived at once, with a quiet line over the list that takes it back.
+  const [archivedLine, setArchivedLine] = useState<{ readonly row: ChatRow; readonly text: string }>();
+  const archive = (row: ChatRow, undo = false) => {
+    // Undo takes back the archive just made, which the row held from before it doesn't know of.
+    const archivedNow = row.archived !== undo;
+    const words = archiveWords(row.project.title, archivedNow);
+    void setArchived(session, row.project, !archivedNow).then((r) => {
+      if (!r.ok) {
+        haptics.warning();
+        return Alert.alert(words.failed, errorWords(r.error));
+      }
+      haptics.success();
+      setArchivedLine(archivedNow ? undefined : { row, text: words.done });
+    });
+  };
+  useEffect(() => {
+    if (archivedLine === undefined) return;
+    const gone = setTimeout(() => setArchivedLine(undefined), UNDO_MS);
+    return () => clearTimeout(gone);
+  }, [archivedLine]);
+  useAnnounce(archivedLine?.text);
+  const archiveItem = (row: ChatRow): MenuItem => ({ label: archiveWords(row.project.title, row.archived).label, icon: "archive", onPress: () => archive(row) });
+  const holdActions = (row: ChatRow): readonly MenuItem[] => [...rowActions(row, pin), sectionMenus.moveItem(row), archiveItem(row)];
   // A change to the sections the hub refused is taken back: a quiet line over the list says why, for a while.
   const [refused, setRefused] = useState<string>();
   useEffect(
@@ -266,7 +291,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     ) : filter === "pinned" ? (
       <EmptyState icon="pin" title="No Pinned Chats" body="Swipe a chat right, or hold it, and pin it to keep it on top." />
     ) : filter === "archived" ? (
-      <EmptyState icon="archive" title="Nothing Archived" body="Archive a project from its info page to set it aside here, with everything kept." />
+      <EmptyState icon="archive" title="Nothing Archived" body="Hold a bot in Chats and pick Archive to set it aside here, with everything kept." />
     ) : needsComputer(paired, state) ? (
       <ConnectComputer />
     ) : (
@@ -300,6 +325,16 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
                 {hubSays.line.text}
               </Text>
             )}
+            {archivedLine === undefined ? null : (
+              <View style={styles.undoLine}>
+                <Text style={[type.footnote, { color: t.secondary }]} accessibilityLiveRegion="polite">
+                  {archivedLine.text}
+                </Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Undo" hitSlop={12} onPress={() => archive(archivedLine.row, true)}>
+                  <Text style={[type.footnote, { color: t.link }]}>Undo</Text>
+                </Pressable>
+              </View>
+            )}
             {refused === undefined ? null : (
               <Text style={[type.footnote, styles.slow, { color: t.secondary }]} accessibilityLiveRegion="polite">
                 {refused}
@@ -325,7 +360,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} more={sectionMenus.moveItem(line.row)} />
+                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} more={[sectionMenus.moveItem(line.row), archiveItem(line.row)]} />
               )}
             </Animated.View>
           );
@@ -444,9 +479,9 @@ const FILLED: Partial<Record<IconName, IconName>> = { read: "readFill", unread: 
 
 /**
  * A chat row that swipes, as in Messages: right for read (blue, a full swipe's) and pin (orange), left for mute
- * (indigo, a full swipe's too). `more`: what its hold menu offers after those (Move to Section…).
+ * (indigo, a full swipe's too). `more`: what its hold menu offers after those (Move to Section…, Archive).
  */
-function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: MenuItem }) {
+function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: readonly MenuItem[] }) {
   const t = useTheme();
   const acts = rowActions(row, onPin);
   const [read, pin, mute] = acts;
@@ -455,7 +490,7 @@ function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; s
     <SwipeRow id={row.key} leading={[swipe(read, t.blue), swipe(pin, t.orange)]} trailing={[swipe(mute, t.indigo)]}>
       {(tap, lifted) => (
         <HoldMenu
-          items={[...acts, more]}
+          items={[...acts, ...more]}
           radius={ROW_RADIUS}
           color={t.bg}
           onPress={tap(onPress)}
@@ -574,6 +609,7 @@ const ROW_RADIUS = 16;
 
 const styles = StyleSheet.create({
   word: { fontSize: type.subhead.fontSize, fontWeight: "600" },
+  undoLine: { flexDirection: "row", justifyContent: "center", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm },
   slow: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, textAlign: "center" },
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },
   filters: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.md },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, subtitle, suggestions } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -129,7 +129,7 @@ describe("Delete", () => {
       const root = p.workspaceRoot;
       const w = deleteWords(p, settings({ workspaceRoot: root }), "devbox");
       expect(w.title).toBe(`Delete ${p.title}?`);
-      expect(w.button).toBe("Delete Project");
+      expect(w.button).toBe("Delete Bot");
       const desktop = desktopDeleteWords(p.title, "devbox", root.replace("/home/ada", "~"));
       expect(w.message).toBe(desktop.message);
       expect(`${w.folder.label}, ${w.folder.path}`).toBe(desktop.folder);
@@ -165,24 +165,19 @@ describe("Delete", () => {
   });
 });
 
-describe("New Project", () => {
-  const d = {
-    workers: [{ machineId: "devbox", name: "devbox", online: true }],
-    found: [
-      { name: "api", source: { kind: "checkout" as const, machineId: "devbox", path: "/home/ada/src/api" }, detail: "acme/api", private: false },
-      { name: "acme/web", source: { kind: "github" as const }, detail: "", private: true },
-      { name: "acme/shop", source: { kind: "github" as const }, detail: "", private: false, project: { machineId: "devbox", projectId: "shop" } },
-    ],
-    problems: [],
-  };
+describe("New Bot's Create", () => {
+  const ok = { live: true, typed: null, typedBot: undefined, block: undefined, named: "Shop" };
 
-  it("suggests what the hub found, filtered as you type, never a new empty project", () => {
-    // A repo already a project only once what is typed matches it (picking it opens its chat).
-    expect(suggestions("", d).map((f) => f.name)).toEqual(["api", "acme/web"]);
-    expect(suggestions("shop", d).map((f) => f.name)).toEqual(["acme/shop"]);
-    expect(suggestions("web", d).map((f) => f.name)).toEqual(["acme/web"]);
-    expect(suggestions("acme/web", d).map((f) => f.name)).toEqual(["acme/web"]);
-    expect(suggestions("zzz", d)).toEqual([]);
-    expect(suggestions("api", null)).toEqual([]);
+  it("goes when the hub is there and it has a name or a repo to take one from", () => {
+    expect(createRefusal(ok)).toBeUndefined();
+    expect(createRefusal({ ...ok, typed: { repo: { kind: "clone", repo: "acme/shop" } } })).toBeUndefined();
+  });
+
+  it("is never grey without why: offline first, then what's typed, then the machine, then a name", () => {
+    expect(createRefusal({ ...ok, live: false, named: "" })).toBe(NOT_CONNECTED);
+    expect(createRefusal({ ...ok, typed: { why: "Type the folder's full path, starting with /." } })).toBe("Type the folder's full path, starting with /.");
+    expect(createRefusal({ ...ok, typedBot: { title: "Notes", workspaceRoot: "/home/ada/notes" } })).toBe("~/notes is already the bot Notes: open it from Chats.");
+    expect(createRefusal({ ...ok, block: "Update fleetd on devbox to make a bot there, or add a folder that's already on it." })).toContain("Update fleetd on devbox");
+    expect(createRefusal({ ...ok, named: "" })).toBe("Name it, or add a repo.");
   });
 });
