@@ -17,7 +17,7 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { createCall, discover } from "./api";
 import { closeThenOpen } from "./arrival";
-import { machineName } from "./model";
+import { createRefusal, machineName, NOT_CONNECTED } from "./model";
 import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, Symbol, useRead } from "./parts";
 
 type Props = NativeStackScreenProps<RootParams, "NewProject">;
@@ -77,13 +77,8 @@ export function NewProject({ navigation, route }: Props) {
     const typed = adding === null ? null : typedRepo(adding);
     const typedBot = typed !== null && "repo" in typed && typed.repo.kind === "folder" ? botAtFolder(state.projects ?? {}, to?.machineId, typed.repo.path) : undefined;
     const all = typed !== null && "repo" in typed && !repos.some((x) => repoKey(x) === repoKey(typed.repo)) ? [...repos, typed.repo] : repos;
-    const why =
-      typed !== null && "why" in typed
-        ? typed.why
-        : typedBot !== undefined
-          ? `${tilde(typedBot.workspaceRoot)} is already the bot ${typedBot.title}: open it from Chats.`
-          : (block ?? (botName(name, all) === "" ? "Name it, or add a repo." : undefined));
-    if (typed !== null && "repo" in typed && typedBot === undefined) {
+    const why = createRefusal({ live, typed, typedBot, block, named: botName(name, all) });
+    if (live && typed !== null && "repo" in typed && typedBot === undefined) {
       setRepos(all);
       setAdding(null);
     }
@@ -116,7 +111,8 @@ export function NewProject({ navigation, route }: Props) {
         // Always the one ✓, only its job changing: Create, then Open Chat once the bot is made.
         phase.kind === "made"
           ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.bot.project)) }
-          : { label: "Create", enabled: phase.kind === "form" && live, busy: phase.kind === "creating", onPress: create },
+          : // Never grey while the link is down: pressed, it says why (createRefusal), as the line under the form does.
+            { label: "Create", enabled: phase.kind === "form", busy: phase.kind === "creating", onPress: create },
       ),
     });
     // `create` and `openChat` read what these are.
@@ -259,7 +255,7 @@ export function NewProject({ navigation, route }: Props) {
           ))}
         </ListSection>
       ) : null}
-      <Problem text={refused ?? block} />
+      <Problem text={refused ?? (live ? block : NOT_CONNECTED)} />
       {found.value?.ok === false && adding !== null ? <Problem text={`Nothing found to suggest: ${errorWords(found.value.error)}`} /> : null}
       {d !== null && d.problems.length > 0 && adding !== null && list.length === 0 ? <Note>{d.problems.map((p) => errorWords(p)).join(" ")}</Note> : null}
     </ScrollView>

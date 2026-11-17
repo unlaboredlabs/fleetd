@@ -234,7 +234,7 @@ function Form({ ui, field }: { ui: AddUi; field: RefObject<HTMLInputElement | nu
               <Text size="sm" tone="quiet">
                 On
               </Text>
-              <Select aria-label="Machine" className={s.inlineSelect} value={to.machineId} options={online.map((w) => ({ value: w.machineId, label: w.name }))} onValueChange={pickMachine} />
+              <Select aria-label="Machine" className={s.inlineSelect} value={to.machineId} options={online.map((w) => ({ value: w.machineId, label: w.name }))} onValueChange={(m) => pickMachine(m, to.machineId)} />
             </>
           ) : to !== null ? (
             <Text size="sm" tone="quiet">{`On ${to.name}`}</Text>
@@ -316,7 +316,7 @@ function AddRepo({ text, d, machineId, taken, botAt }: { text: string; d: Discov
           onChange={(e) => setAdding(e.target.value)}
           onKeyDown={onKey}
         />
-        {localMachine() ? <BrowseButton /> : null}
+        {localMachine() ? <BrowseButton machineId={machineId} /> : null}
       </div>
       {other !== null ? (
         <Text as="p" size="sm" tone="warning" className={cx(s.none)}>
@@ -364,7 +364,8 @@ function AddRepo({ text, d, machineId, taken, botAt }: { text: string; d: Discov
   );
 }
 
-function BrowseButton() {
+/** A folder on this computer: the bot goes to this computer, and folders listed for another machine come out. */
+function BrowseButton({ machineId }: { machineId: string | undefined }) {
   return (
     <Button
       variant="ghost"
@@ -373,7 +374,7 @@ function BrowseButton() {
         void window.fleetd.projects.pickFolder().then((path) => {
           if (path === null) return;
           const local = localMachine();
-          if (local) pickMachine(local.machineId);
+          if (local) pickMachine(local.machineId, machineId);
           addRepo({ kind: "folder", path });
         });
       }}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, subtitle } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -162,5 +162,22 @@ describe("Delete", () => {
     expect(deleteBlocked(settings())).toBeUndefined();
     const { worktrees: _w, ...unlisted } = settings();
     expect(deleteBlocked({ ...unlisted, worktreesUnknown: "devbox is offline." })).toBe("Its worktrees can't be listed now: devbox is offline. Delete once they can.");
+  });
+});
+
+describe("New Bot's Create", () => {
+  const ok = { live: true, typed: null, typedBot: undefined, block: undefined, named: "Shop" };
+
+  it("goes when the hub is there and it has a name or a repo to take one from", () => {
+    expect(createRefusal(ok)).toBeUndefined();
+    expect(createRefusal({ ...ok, typed: { repo: { kind: "clone", repo: "acme/shop" } } })).toBeUndefined();
+  });
+
+  it("is never grey without why: offline first, then what's typed, then the machine, then a name", () => {
+    expect(createRefusal({ ...ok, live: false, named: "" })).toBe(NOT_CONNECTED);
+    expect(createRefusal({ ...ok, typed: { why: "Type the folder's full path, starting with /." } })).toBe("Type the folder's full path, starting with /.");
+    expect(createRefusal({ ...ok, typedBot: { title: "Notes", workspaceRoot: "/home/ada/notes" } })).toBe("~/notes is already the bot Notes: open it from Chats.");
+    expect(createRefusal({ ...ok, block: "Update fleetd on devbox to make a bot there, or add a folder that's already on it." })).toContain("Update fleetd on devbox");
+    expect(createRefusal({ ...ok, named: "" })).toBe("Name it, or add a repo.");
   });
 });

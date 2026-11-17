@@ -10,7 +10,7 @@ import { toast } from "../../ui";
 import type { Machine } from "./contracts";
 import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CreateState, type HubView, type RepoDraft } from "./create";
 import { toHash } from "../shell/routes";
-import { addSource, machineIdFromHost, omit } from "./source";
+import { addSource, machineIdFromHost, omit, tilde } from "./source";
 
 export interface Note {
   readonly text: string;
@@ -63,22 +63,27 @@ const openWhenListed = () => {
   window.location.hash = toHash({ id: "project", project: next, message: null });
 };
 
+/** A fresh, closed dialog: what the next New bot opens on. */
+const fresh = (): AddUi => ({ add: createStep(ui.add, { t: "reset" })[0], name: "", repos: [], adding: null, open: false, ...(ui.hostName === undefined ? {} : { hostName: ui.hostName }) });
+
 const dispatch = (msg: CreateMsg) => {
   const before = ui.add;
   const [next, calls] = createStep(ui.add, msg);
   set({ ...ui, add: next });
+  for (const c of calls) run(c);
   if (before.phase.kind === "creating" && next.phase.kind === "made") {
     // Made: its chat opens behind the dialog at once, which stays to show its repos coming in, if it has any.
     toOpen = next.phase.bot.project;
     openWhenListed();
     if (next.jobs.every((j) => j.state.t === "added")) {
+      // Nothing more to show, open or hidden: one toast, and the next New bot starts fresh.
       const done = next.phase.bot.title;
-      closeAddProject();
+      set(fresh());
       toast({ title: `${done} is ready`, tone: "success" });
+      return;
     }
   }
   if (!ui.open) announce(before);
-  for (const c of calls) run(c);
 };
 
 /** Each call goes through the data layer, whose `call` is the one way to the hub. */
@@ -89,17 +94,19 @@ const run = (c: Call) => {
   void out.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
-/** The dialog is hidden while the repos finish: say how they ended, in a toast that brings it back. */
+/** The dialog is hidden while the repos finish: say how they ended, in a toast that brings back what failed. */
 const announce = (before: CreateState) => {
   if (outcomeLine(before) !== null) return;
   const line = outcomeLine(ui.add);
   if (line !== null) {
-    toast({ title: line.title, tone: line.problem ? "danger" : "success", ...(line.problem ? { action: { label: "Show", onClick: () => openAddProject() } } : {}) });
+    toast({ title: line.title, tone: line.problem ? "danger" : "success", ...(line.problem ? { action: { label: "Show", onClick: showAddProject } } : {}) });
+    // All in: nothing is left to show, so the next New bot starts fresh.
+    if (!line.problem) set(fresh());
     return;
   }
   const p = ui.add.phase;
   if (before.phase.kind === "creating" && p.kind === "failed") {
-    toast({ title: `Couldn't create ${p.title}`, description: p.message, tone: "danger", action: { label: "Show", onClick: () => openAddProject() } });
+    toast({ title: `Couldn't create ${p.title}`, description: p.message, tone: "danger", action: { label: "Show", onClick: showAddProject } });
   }
 };
 
@@ -151,6 +158,8 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
  * pasted or dropped URL or path) goes in its repos unless something is being made.
  */
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
+  // A bot made or refused while the dialog was hidden is done with: a new one starts on a fresh form.
+  if (!busy(ui.add) && ui.add.phase.kind !== "form") set(fresh());
   if (prefill && !busy(ui.add)) {
     const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
     const src = addSource(prefill.text);
@@ -167,6 +176,11 @@ export const openAddProject = (prefill?: { text: string; note?: Note; machine?: 
   } else if (!ui.open) set({ ...ui, open: true });
 };
 
+/** A toast's Show: the dialog as it was left, its failed repos or refusal still there. */
+export const showAddProject = (): void => {
+  if (!ui.open) set({ ...ui, open: true });
+};
+
 /** Esc, Cancel, Done, or a bot opened from it: the screen behind is as it was. */
 export const closeAddProject = (): void => {
   if (!ui.open) return;
@@ -175,7 +189,7 @@ export const closeAddProject = (): void => {
     set({ ...ui, open: false });
     return;
   }
-  set({ add: createStep(ui.add, { t: "reset" })[0], name: "", repos: [], adding: null, open: false, ...(ui.hostName === undefined ? {} : { hostName: ui.hostName }) });
+  set(fresh());
 };
 
 const withRepo = (repos: ReadonlyArray<RepoDraft>, r: RepoDraft): ReadonlyArray<RepoDraft> => (repos.some((x) => repoKey(x) === repoKey(r)) ? repos : [...repos, r]);
@@ -190,7 +204,20 @@ export const addRepo = (r: RepoDraft): void => set({ ...omit(ui, "note", "refuse
 
 export const removeRepo = (key: string): void => set({ ...omit(ui, "note"), repos: ui.repos.filter((r) => repoKey(r) !== key) });
 
-export const pickMachine = (machine: string): void => set({ ...omit(ui, "refused"), machine });
+/**
+ * Another machine for the bot. The folders listed are on the one it was on (`from`), so they come out, and a line
+ * says which; a GitHub repo clones onto whichever machine it is.
+ */
+export const pickMachine = (machine: string, from?: string): void => {
+  const moved = from !== undefined && from !== machine ? ui.repos.filter((r) => r.kind === "folder") : [];
+  if (moved.length === 0) {
+    set({ ...omit(ui, "refused"), machine });
+    return;
+  }
+  const paths = moved.map((r) => (r.kind === "folder" ? tilde(r.path) : "")).join(", ");
+  const note = { text: `Took out ${paths}: ${moved.length === 1 ? "a folder" : "folders"} on ${machineName(from ?? "")}, not ${machineName(machine)}.`, problem: true };
+  set({ ...omit(ui, "refused"), machine, repos: ui.repos.filter((r) => r.kind !== "folder"), note });
+};
 
 export const setNote = (note: Note | undefined): void => set(note === undefined ? omit(ui, "note") : { ...ui, note });
 

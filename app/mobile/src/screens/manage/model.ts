@@ -178,3 +178,23 @@ export const deleteConfirmed = (typed: string, title: string): boolean => typed.
 export const deleteBlocked = (settings: ProjectSettings): string | undefined =>
   settings.worktrees === undefined ? `Its worktrees can't be listed now: ${settings.worktreesUnknown ?? "its machine hasn't listed them."} Delete once they can.` : undefined;
 
+/** New Bot's line while the hub link is down: Create stays pressable and says this rather than going grey. */
+export const NOT_CONNECTED = "Not connected to the hub. Create works once it's back.";
+
+/**
+ * Why New Bot's Create can't go now, first reason first; undefined when it can. `typed` is the add field's text as
+ * typedRepo reads it, `typedBot` the bot a typed folder already is, `block` why its machine can't take it, `named` the
+ * name it would get.
+ */
+export const createRefusal = (o: {
+  live: boolean;
+  typed: { readonly why: string } | { readonly repo: unknown } | null;
+  typedBot: { readonly title: string; readonly workspaceRoot: string } | undefined;
+  block: string | undefined;
+  named: string;
+}): string | undefined => {
+  if (!o.live) return NOT_CONNECTED;
+  if (o.typed !== null && "why" in o.typed) return o.typed.why;
+  if (o.typedBot !== undefined) return `${tilde(o.typedBot.workspaceRoot)} is already the bot ${o.typedBot.title}: open it from Chats.`;
+  return o.block ?? (o.named === "" ? "Name it, or add a repo." : undefined);
+};

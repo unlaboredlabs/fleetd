@@ -7,7 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddProjectScreen } from "./AddProjectScreen";
-import { closeAddProject, openAddProject, useAddUi } from "./store";
+import { addUi, closeAddProject, openAddProject, pickMachine, useAddUi } from "./store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -36,6 +36,8 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 /** project_discover's machine: with a projects root, or from a node too old to make a folder. */
 let projectsRoot: string | undefined;
+/** Set, project_add answers only once it is called: a create still running. */
+let held: (() => void) | undefined;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -43,6 +45,7 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   projectsRoot = ROOT;
+  held = undefined;
   window.location.hash = "#/projects/add";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -80,7 +83,9 @@ const render = async () => {
         if (title === "Old notes") {
           return Promise.resolve({ ok: false, error: { code: "invalid", message: `${ROOT}/old-notes on devbox already holds files`, fix: "Give the bot another name" } });
         }
-        const at = path ?? `${ROOT}/${title.toLowerCase()}`;
+        const at = path ?? `${ROOT}/${title.toLowerCase().replace(/ /gu, "-")}`;
+        const answer = { ok: true as const, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } };
+        if (held !== undefined) return new Promise((resolve) => (held = () => resolve(answer)));
         return Promise.resolve({ ok: true, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } });
       }
       if (tool === "project_repo_add") {
@@ -260,6 +265,41 @@ describe("New bot", () => {
     projectsRoot = undefined;
     await render();
     expect(document.body.textContent).toContain("Update fleetd on devbox to make a bot there, or add a folder that's already on it.");
+  });
+
+  it("hidden while the bot is made, says so once, and the next New bot is a fresh form", async () => {
+    held = () => undefined;
+    await render();
+    await type(field("Name"), "Field notes");
+    await key(field("Name"), "Enter");
+    expect(document.querySelector("h2")?.textContent).toBe("Creating Field notes");
+    act(() => closeAddProject());
+    expect(addUi().open).toBe(false);
+    await act(async () => {
+      held?.();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+    const toasts = [...document.querySelectorAll("ol > li")].map((t) => t.textContent);
+    expect(toasts.filter((t) => t.includes("Field notes"))).toEqual(["Field notes is ready"]);
+    act(() => openAddProject());
+    await settle();
+    expect(document.querySelector("h2")?.textContent).toBe("New bot");
+    expect(field("Name").value).toBe("");
+  });
+
+  it("takes out the folders listed for one machine when another is picked, and says which", async () => {
+    await render();
+    await addRepo("/home/w/src/docs");
+    await addRepo("acme/shop");
+    act(() => pickMachine("buildbox", "devbox"));
+    await settle();
+    expect(listed()).toEqual(["acme/shop"]);
+    expect(document.body.textContent).toContain("Took out ~/src/docs: a folder on devbox, not buildbox.");
+    // The same machine again takes nothing out.
+    await addRepo("/home/b/src/ci");
+    act(() => pickMachine("buildbox", "buildbox"));
+    expect(listed()).toEqual(["acme/shop", "~/src/ci"]);
   });
 
   it("takes a dropped folder as a repo", async () => {
