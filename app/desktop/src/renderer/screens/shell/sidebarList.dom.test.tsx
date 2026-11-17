@@ -274,7 +274,7 @@ describe("one list", () => {
   it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {
     mount([ADA, HOME, STOREFRONT]);
     rightClick(button("storefront"));
-    expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+    expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive"]);
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });

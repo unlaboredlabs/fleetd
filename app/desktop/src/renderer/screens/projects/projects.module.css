@@ -1,6 +1,5 @@
-/* Add project. Tokens only; the design system owns controls and text. */
+/* New bot. Tokens only; the design system owns controls and text. */
 
-/* The modal: centred over the window at one height, so filtering never moves it; the screen behind dims. */
 .backdrop {
   -webkit-app-region: no-drag;
   position: fixed;
@@ -9,32 +8,28 @@
   background: color-mix(in srgb, black 28%, transparent);
   animation: fade var(--dur-base) var(--ease-out);
 }
-/* Black over a dark window barely shows: a deeper dim, so the modal still reads as in front. */
+/* Black over a dark window barely shows: a deeper dim, so the dialog still reads as in front. */
 :global([data-theme="dark"]) .backdrop {
   background: color-mix(in srgb, black 48%, transparent);
 }
+/* The dialog: its top fixed a little above the middle, so a repo added grows it downward, never moves it. */
 .modal {
   -webkit-app-region: no-drag;
   position: fixed;
   z-index: 41;
-  top: 50%;
+  top: max(var(--top-bar-height), 18vh);
   left: 50%;
-  translate: -50% -50%;
+  translate: -50% 0;
   display: flex;
   flex-direction: column;
-  width: min(600px, calc(100vw - 4 * var(--edge-inset)));
-  height: min(520px, calc(100vh - 2 * var(--top-bar-height)));
+  width: min(520px, calc(100vw - 4 * var(--edge-inset)));
+  max-height: calc(100vh - max(var(--top-bar-height), 18vh) - var(--top-bar-height));
   border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text);
   box-shadow: var(--float-shadow);
   overflow: hidden;
   animation: rise var(--dur-base) var(--ease-out);
-}
-/* Progress, ready and errors: as tall as what they say. */
-.fit {
-  height: auto;
-  max-height: calc(100vh - 2 * var(--top-bar-height));
 }
 .modal:focus-visible {
   outline: none;
@@ -74,7 +69,7 @@
   font-weight: var(--weight-strong);
   overflow-wrap: anywhere;
 }
-/* With several hubs: which one the project goes to, beside the title. */
+/* With several hubs: which one the bot goes to, beside the title. */
 .hubPick {
   flex: none;
   display: flex;
@@ -82,13 +77,12 @@
   gap: var(--space-2);
 }
 
-/* The one field, as the palette's: large, frameless, a hairline under it. */
+/* The name: large and frameless, as the palette's field. */
 .field {
   flex: none;
   display: flex;
   align-items: center;
   padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--hairline);
 }
 .input {
   flex: 1;
@@ -110,43 +104,124 @@
 .noteLine {
   flex: none;
   margin: 0;
-  padding: var(--space-2) var(--space-4) 0;
+  padding: 0 var(--space-4);
 }
 
-/* The list: rows grouped by where each repo is, under quiet labels. */
-.list {
+.body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-1) var(--space-2);
+  /* Rows pad themselves, so their text lines up with the title and the name. */
+  padding: var(--space-2) var(--space-2) var(--space-3);
 }
-.quietLine {
-  margin: 0;
-  padding: var(--space-3) var(--space-2);
-}
-.group {
-  padding: var(--space-3) var(--space-2) var(--space-1);
-}
-.row {
+
+/* Repos, with its plain + at the right. */
+.section {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  min-height: var(--row);
+  padding-left: var(--space-2);
+}
+.sectionTitle {
+  flex: 1;
+  margin: 0;
+}
+.plus svg {
+  width: 16px;
+  height: 16px;
+}
+.repos {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.repo {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
   min-height: var(--row);
-  padding: var(--space-1-5) var(--space-2);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-md);
+}
+.repo:hover {
+  background: var(--hover);
+}
+.remove svg {
+  width: 14px;
+  height: 14px;
+}
+/* × shows on the row under the pointer or in focus, so a list at rest is only names. */
+.repos .remove {
+  opacity: 0;
+}
+.repo:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+.none {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Adding a repo: its field, then what the hub found that fits. */
+.adding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+}
+.addField {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: calc(var(--field) + 4px);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.addField:focus-within {
+  border-color: var(--accent);
+}
+.addInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.addInput:focus-visible {
+  box-shadow: none;
+}
+.addInput::placeholder {
+  color: var(--faint);
+}
+.found {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-md);
   cursor: default;
-}
-.row:hover {
-  background: var(--hover);
 }
 .row[aria-selected="true"] {
   background: var(--selected);
 }
 .rowIcon {
   flex: none;
-  align-self: center;
   width: 14px;
   height: 14px;
   color: var(--quiet);
@@ -161,74 +236,17 @@
   flex: 1 1 0;
   min-width: 6em;
 }
-/* A repo that is already a project: quieter, and picking it opens its chat. */
-.added .name {
-  color: var(--quiet);
-}
 
-.problems {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-}
-.problem {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-  padding: var(--space-3) var(--space-2);
-}
-
-.body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-3) var(--space-4);
-}
-
-/* The footer: one plain sentence on what the button does, then the buttons. */
+/* The foot: why Create can't go yet (only then), the machine, and the buttons. */
 .foot {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4) var(--space-4);
-  border-top: 1px solid var(--hairline);
 }
-.summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 0.3em;
-  row-gap: var(--space-1);
-  min-height: var(--field);
-  min-width: 0;
-}
-.path {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-/* A new project's folder, editable where the sentence names it. */
-.folder {
-  min-width: 0;
-  max-width: 100%;
-  height: calc(var(--field) - 4px);
-  padding: 0 var(--space-1-5);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
+.refused {
+  margin: 0;
 }
 .inlineSelect {
   width: auto;
@@ -244,25 +262,41 @@
   flex: 1;
 }
 
-/* Working: the three steps and the clone's bar. */
-.steps {
+.where {
+  padding: 0 var(--space-2) var(--space-1);
+}
+.failLine {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+/* Made: each repo coming in, its clone's bar under it, a failure's why and fix under that. */
+.job {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
 }
-.step {
-  display: grid;
-  grid-template-columns: 12px 72px minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: var(--space-2);
+.glyph {
+  flex: none;
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
 }
-.stepBar {
-  grid-column: 3;
+.jobActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.job .remove {
+  opacity: 1;
+}
+.why {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1) calc(var(--space-2) * 2 + 14px);
 }
 .bar {
-  height: 4px;
-  margin-top: var(--space-1-5);
+  height: 3px;
+  margin: 0 var(--space-2) var(--space-1) calc(var(--space-2) * 2 + 14px);
   border-radius: 2px;
   background: var(--hairline);
   overflow: hidden;
@@ -273,45 +307,6 @@
   background: var(--accent-fill);
   transform-origin: left;
   transition: transform var(--dur-base) var(--ease-out);
-}
-.ring {
-  width: 6px;
-  height: 6px;
-  border: 1px solid var(--quiet);
-  border-radius: 50%;
-}
-
-/* Ready. */
-.facts {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: var(--space-1-5) var(--space-3);
-  padding: var(--space-3) 0;
-}
-.dd {
-  margin: 0;
-}
-.lead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--selected);
-}
-
-.error {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-}
-.errorHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
 }
 
 /* The window while something is dragged over it. */

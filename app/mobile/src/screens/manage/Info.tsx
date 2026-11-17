@@ -282,7 +282,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
 
       <ListSection footer={archived ? "Archived: its lead doesn't start until you bring it back. Its chat, memory and folder are kept." : "Keeps its chat, memory and folder, and moves it to Archived. Its lead doesn't start until you bring it back."}>
         <ListRow
-          title={archived ? "Unarchive Project" : "Archive Project"}
+          title={archived ? "Unarchive Bot" : "Archive Bot"}
           chevron={false}
           {...(busy === null && live ? { onPress: archive } : {})}
           {...(busy === "archive" ? { accessory: spinner } : {})}
@@ -290,7 +290,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       </ListSection>
 
       <ListSection footer="Erases it and everything fleetd keeps for it. Its folder stays unless you tick it.">
-        <ListRow title="Delete Project" destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
+        <ListRow title="Delete Bot" destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
       </ListSection>
       <TypedDelete words={typing} name={p.title} onCancel={() => setTyping(null)} onDelete={doDelete} />
     </ScrollView>

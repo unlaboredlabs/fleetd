@@ -56,24 +56,31 @@ one for taxes. Every project has the same abilities: memory, [automations](/docs
 fleetd reads GitHub through `gh` on the hub machine, as the hub's [GitHub App](/docs/github/) where it is installed. A private repo clones on any worker where `gh auth login` was run.
 When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.
 
-### Start a new project {#start-a-new-project}
+### Start a new bot {#start-a-new-project}
 
-A project can start as a plain folder, with no repo. In the app, click **+** at the top of the sidebar
-(**New project**) and type its name: the same box takes a GitHub URL to clone or a folder's path. The line above the
-button names the folder and the machine (pick another there when you have several); check it and click **Create**. From a terminal:
+In the app, click **+** at the top of the sidebar (**New bot**). Give it a name, then its **Repos**: none, one or
+several. Each **+** adds one: a GitHub URL or `owner/repo`, cloned onto the bot's machine, or the path of a folder
+already on it (**Browse…** picks one on this computer). What the hub found on that machine and on GitHub shows as you
+type. **×** takes a repo out before you create. With several machines, pick the bot's at the bottom. Click **Create**.
+
+- With no repo, the bot gets a folder of its own, `~/fleetd/projects/<name>` on its machine. A folder there that
+  holds files is refused, and nothing is made.
+- With a folder in the list, the first one is the bot's own folder; every other repo is added to it.
+- With no name, the bot takes its first repo's.
+- A folder that is already a bot isn't added: open that bot instead.
+
+The bot's chat opens at once, and its lead starts with your first message. The dialog stays while its repos come in:
+each clone's progress, a check once added, or why it failed with **Retry** (and **Use the checkout there** when the
+clone's folder already holds that repo). Closing it doesn't stop a clone; a notice says how it ended. With no repo,
+the lead does the work itself: it chats, remembers, writes drafts and notes, reads the web and uses screens in the
+folder. Agents that change code need a repo. Add one later in **Settings → Bots → Repos**, or with
+`fleetd project repo add`. On the phone, **New Bot** from the Chats list's **+** has the same name, repos and machine.
+
+From a terminal:
 
 ```sh
 fleetd project add --new "Field notes" --machine devbox
 ```
-
-- The folder is `~/fleetd/projects/<name>` on that machine unless you change it.
-- An empty folder that is already there is used as it is. A folder that holds files is refused, and nothing is added.
-- It has no git unless you tick **Start a git repo in it** (`--git-init`).
-
-The project opens at once and its lead starts with your first message. With no repo, the lead does the work
-itself: it chats, remembers, writes drafts and notes, reads the web and uses screens in the folder. Agents that
-change code need a repo. Add one when you need it in **Settings → Projects → Repos**, or with
-`fleetd project repo add`.
 
 ### List and remove projects
 
@@ -135,7 +142,7 @@ right-click menu. Its **Project** page has these, in order:
 | Skills | **Open its skills** goes to the list on its Agents page. See [Skills](#skills). |
 | Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
 | Archive | See [Archive](#archive). |
-| Delete project | See [Delete a project](#delete). |
+| Delete bot | Last, and only here. See [Delete a bot](#delete). |
 
 Its other pages: **Agents** has its [max agents](#max-agents), the [task profiles](#models) it allows and its
 [skills](#skills). **Instructions & memory** has its instructions, what its lead remembers, and **Refresh memory every
@@ -280,30 +287,33 @@ goes back and a notice says why.
 
 ### Archive {#archive}
 
-**Archive**, in a project's right-click menu or at the end of its settings, takes it out of the sidebar and stops its
-lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. An archived project is still in
-Settings › Projects, last and marked *Archived*, and its **Archive** setting says **Bring back**; it comes back as it
-was, and its lead starts with your next message. A message to an archived project waits until you bring it back.
+**Archive**, in a bot's right-click menu in the sidebar (hold it in Chats on the phone) or at the end of its settings,
+takes it out of the sidebar and stops its lead at once, with **Undo** in the notice. Its chat, memory, folder and
+settings stay. Archived bots are under **Archived** in Settings › Bots (and the Archived filter in the phone's Chats),
+each with **Bring back**: it comes back as it was, and its lead starts with your next message. A message to an
+archived bot waits until you bring it back. Archive is in no confirm: Undo or Bring back takes it back.
 
 ```sh
 fleetd project archive devbox/taxes
 fleetd project unarchive devbox/taxes
 ```
 
-### Delete a project {#delete}
+### Delete a bot {#delete}
 
-**Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
-for every project (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and
-decisions, orders and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings go, and so do its links to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd there.
-**Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a home
-folder, its own directory, or a folder holding another project. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
-those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project's
-machine is offline or can't list them.
+Delete is in no menu: it is the last setting of a bot's own settings (on the phone, the last row of its info).
+**Delete bot…** stops the bot's agents, removes the worktrees they worked in, and erases the bot: one rule for every
+bot (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and decisions, orders
+and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings go, and so do its links
+to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd
+there. **Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a
+home folder, its own directory, or a folder holding another bot. Type the bot's name to confirm. If any of its
+worktrees has uncommitted changes, the dialog names them: those changes are lost. The app lists the worktrees again
+when you click it, so Delete waits while the bot's machine is offline or can't list them, and says so.
 
-What stays, unless you delete its folder: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
-repo, and its pull requests on GitHub. Add the folder again any time, as a new project with nothing it had; the toast
-after a delete has **Add the folder again**. A project whose machine was removed from the hub has no worktrees to
-list: its delete only forgets it in fleetd.
+What stays, unless you delete its folder: the checkout itself, untouched, every branch (so every commit stays
+reachable), your own worktrees of the repo, and its pull requests on GitHub. Add the folder again any time, as a new
+bot with nothing it had; the notice after a delete has **Add the folder again**. A bot whose machine was removed from
+the hub has no worktrees to list: its delete only forgets it in fleetd.
 
 ### Nightly worktree cleanup {#cleanup}
 

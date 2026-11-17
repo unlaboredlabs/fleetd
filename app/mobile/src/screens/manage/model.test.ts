@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, subtitle, suggestions } from "./model";
+import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -129,7 +129,7 @@ describe("Delete", () => {
       const root = p.workspaceRoot;
       const w = deleteWords(p, settings({ workspaceRoot: root }), "devbox");
       expect(w.title).toBe(`Delete ${p.title}?`);
-      expect(w.button).toBe("Delete Project");
+      expect(w.button).toBe("Delete Bot");
       const desktop = desktopDeleteWords(p.title, "devbox", root.replace("/home/ada", "~"));
       expect(w.message).toBe(desktop.message);
       expect(`${w.folder.label}, ${w.folder.path}`).toBe(desktop.folder);
@@ -162,27 +162,5 @@ describe("Delete", () => {
     expect(deleteBlocked(settings())).toBeUndefined();
     const { worktrees: _w, ...unlisted } = settings();
     expect(deleteBlocked({ ...unlisted, worktreesUnknown: "devbox is offline." })).toBe("Its worktrees can't be listed now: devbox is offline. Delete once they can.");
-  });
-});
-
-describe("New Project", () => {
-  const d = {
-    workers: [{ machineId: "devbox", name: "devbox", online: true }],
-    found: [
-      { name: "api", source: { kind: "checkout" as const, machineId: "devbox", path: "/home/ada/src/api" }, detail: "acme/api", private: false },
-      { name: "acme/web", source: { kind: "github" as const }, detail: "", private: true },
-      { name: "acme/shop", source: { kind: "github" as const }, detail: "", private: false, project: { machineId: "devbox", projectId: "shop" } },
-    ],
-    problems: [],
-  };
-
-  it("suggests what the hub found, filtered as you type, never a new empty project", () => {
-    // A repo already a project only once what is typed matches it (picking it opens its chat).
-    expect(suggestions("", d).map((f) => f.name)).toEqual(["api", "acme/web"]);
-    expect(suggestions("shop", d).map((f) => f.name)).toEqual(["acme/shop"]);
-    expect(suggestions("web", d).map((f) => f.name)).toEqual(["acme/web"]);
-    expect(suggestions("acme/web", d).map((f) => f.name)).toEqual(["acme/web"]);
-    expect(suggestions("zzz", d)).toEqual([]);
-    expect(suggestions("api", null)).toEqual([]);
   });
 });

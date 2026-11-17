@@ -30,7 +30,6 @@ import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../proj
 import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, isCut, observeSize, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
-import { revealNext } from "../settings/reveal";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
@@ -457,17 +456,8 @@ function ProjectGroup(props: {
         <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
         <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
         <ContextMenuSeparator />
+        {/* Archive keeps everything and shows an Undo; Delete is only in the bot's settings, at the bottom. */}
         <ContextMenuItem onSelect={() => void archiveProject(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
-        {/* Delete erases everything fleetd keeps for it: its settings' Delete lists its worktrees and asks for its name. */}
-        <ContextMenuItem
-          danger
-          onSelect={() => {
-            revealNext("projects.delete");
-            go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at });
-          }}
-        >
-          Delete project…
-        </ContextMenuItem>
       </>
     );
   };

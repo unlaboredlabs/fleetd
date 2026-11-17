@@ -152,7 +152,7 @@ it("has You and Projects for a member as one flat list, Projects listing the pro
   await click(button("Projects", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/projects");
   expect(screen()).toBe("settings.projects.list");
-  const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Projects']");
+  const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Bots']");
   expect([...(list?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["docs", "storefront"]);
 
   await click(button("docs", list ?? document));
@@ -179,7 +179,7 @@ it("has You and Projects for a member as one flat list, Projects listing the pro
 it("says Projects isn't connected while the hub isn't live, rather than loading for good", async () => {
   await render("#/settings/projects", false, false);
   expect(screen()).toBe("settings.projects.list");
-  expect(host.textContent).toContain("Not connected. Connect to a hub to change its projects' settings.");
+  expect(host.textContent).toContain("Not connected. Connect to a hub to change its bots' settings.");
   expect(host.textContent).not.toContain("Loading…");
 });
 

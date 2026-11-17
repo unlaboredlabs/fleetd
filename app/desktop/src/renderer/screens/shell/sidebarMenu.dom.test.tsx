@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-// A sidebar project's right-click menu: open it or its settings, copy its path, or remove it after the dialog asks.
+// A sidebar bot's right-click menu: open it or its settings, copy its path, or archive it with an Undo. Delete isn't
+// in it: it is only in the bot's settings.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
+import { Toaster } from "../../ui/primitives/Toast";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
@@ -47,14 +49,14 @@ const PROJECT: SidebarProject = {
 let host: HTMLDivElement;
 let root: Root;
 let went: Screen[];
-let calls: string[];
+let calls: Array<{ tool: string; input: unknown }>;
 
 beforeEach(() => {
   copy.mockClear();
   went = [];
   calls = [];
   const hub: HubApi = {
-    call: (tool) => (calls.push(tool), Promise.resolve({ ok: true, output: {} })),
+    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: {} })),
     subscribe: () => () => undefined,
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -67,6 +69,7 @@ beforeEach(() => {
     root.render(
       <DataProvider layer={createDataLayer(hub)}>
         <TooltipProvider>
+          <Toaster>
           <Sidebar
             projects={[{ ...PROJECT, hub: "hub" }]}
             screen={{ id: "home", at: "hub" }}
@@ -78,6 +81,7 @@ beforeEach(() => {
             factory={false}
             go={(s) => went.push(s)}
           />
+          </Toaster>
         </TooltipProvider>
       </DataProvider>,
     ),
@@ -106,9 +110,9 @@ const rightClick = () => {
   });
 };
 
-it("opens the project or its settings, and copies its path", async () => {
+it("opens the bot or its settings, and copies its path", async () => {
   rightClick();
-  expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+  expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive"]);
   await choose("Open");
   rightClick();
   await choose("Open settings");
@@ -121,13 +125,21 @@ it("opens the project or its settings, and copies its path", async () => {
   expect(copy).toHaveBeenCalledWith("/home/dev/src/storefront");
 });
 
-it("Delete project… opens its settings at Delete, which asks first, and erases nothing from the menu", async () => {
+it("Archive archives it at once, and the toast's Undo brings it back", async () => {
   row().focus();
   act(() => {
     row().dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
   });
-  await choose("Delete project…");
-  expect(went).toEqual([{ id: "settings", tab: "projects", for: "devbox/storefront" }]);
-  expect(document.querySelector("[role='dialog']")).toBeNull();
-  expect(calls).not.toContain("project_remove");
+  await choose("Archive");
+  const ref = { machineId: "devbox", projectId: "storefront" };
+  expect(calls).toEqual([{ tool: "project_archive", input: { ...ref, archived: true } }]);
+  const undo = [...document.querySelectorAll<HTMLElement>("ol > li button")].find((b) => b.textContent === "Undo");
+  expect(undo).toBeDefined();
+  await act(async () => {
+    undo?.click();
+    await Promise.resolve();
+  });
+  expect(calls.at(-1)).toEqual({ tool: "project_archive", input: { ...ref, archived: false } });
+  expect(calls.map((c) => c.tool)).not.toContain("project_remove");
+  expect(went).toEqual([]);
 });

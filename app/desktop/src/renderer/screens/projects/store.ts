@@ -1,6 +1,6 @@
-// The one add in flight and the modal's own state, kept outside the modal so a clone carries on (and still reports
-// its end) while it is hidden. Every entry point opens it with openAddProject(); `#/projects/add` does too, over the
-// screen it was opened from (ProjectsHost), which stays as it was.
+// New bot's state, kept outside the dialog so a clone carries on (and still reports its end) while it is hidden.
+// Every entry point opens it with openAddProject(); `#/projects/add` does too, over the screen it was opened from
+// (ProjectsHost), which stays as it was. The calls go through the data layer; the flow itself is create.ts.
 
 import { useEffect, useSyncExternalStore } from "react";
 import type { DataLayer } from "../../src/data/queries";
@@ -8,10 +8,9 @@ import { useDataLayer } from "../../src/data/react";
 import { projectKey, type DataState } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Machine } from "./contracts";
-import type { Ready, Request } from "./discovery";
+import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CreateState, type HubView, type RepoDraft } from "./create";
 import { toHash } from "../shell/routes";
-import { hubMessages, initialAdd, offerOpen, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
-import { machineIdFromHost, omit, tilde } from "./source";
+import { addSource, machineIdFromHost, omit } from "./source";
 
 export interface Note {
   readonly text: string;
@@ -19,23 +18,24 @@ export interface Note {
 }
 
 export interface AddUi {
-  readonly add: AddState;
-  /** What is typed in the field. */
-  readonly text: string;
+  readonly add: CreateState;
+  readonly name: string;
+  readonly repos: ReadonlyArray<RepoDraft>;
+  /** The add-a-repo field's text; null while it is closed. */
+  readonly adding: string | null;
+  /** A line under the repos: where a dropped folder came from, or why it can't be added. */
   readonly note?: Note;
-  /** The machine picked for a clone, a typed path or a new project; absent: the hub's suggestion. */
+  /** Why Create didn't go: no name, no machine. Cleared by the next edit. */
+  readonly refused?: string;
+  /** The machine picked; absent: the hub's suggestion. */
   readonly machine?: string;
-  /** A new project's folder as the person edited it; absent: `<projectsRoot>/<name>` on the machine. */
-  readonly folder?: string;
-  /** Run git init in a new project's folder. */
-  readonly gitInit?: boolean;
-  /** The modal is on screen. */
+  /** The dialog is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
   readonly hostName?: string;
 }
 
-let ui: AddUi = { add: initialAdd, text: "", open: false };
+let ui: AddUi = { add: initialCreate, name: "", repos: [], adding: null, open: false };
 const listeners = new Set<() => void>();
 
 const set = (next: AddUi) => {
@@ -43,78 +43,69 @@ const set = (next: AddUi) => {
   for (const l of listeners) l();
 };
 
-/** project_add may take a while, its dry run too: both run gh on the hub. */
+/** project_add and project_repo_add may take a while: both can run gh on the hub. */
 const CALL_MS = 120_000;
 
-// The data layer (E1) is the one source of hub data; the add flow reads its store and never subscribes to main.
+// The data layer (E1) is the one source of hub data; the flow reads its store and never subscribes to main.
 let layer: DataLayer | undefined;
 const hubState = (): DataState | undefined => layer?.store.getState();
 
 /** A machine's name from the store, else its id. */
 export const machineName = (id: string): string => hubState()?.machines[id]?.name ?? id;
 
-const dispatch = (msg: AddMsg) => {
-  const before = ui.add.phase.kind;
-  const request = ui.add.request;
-  const [stepped, calls] = step(ui.add, msg, machineName);
-  const next = offerOpen(stepped, request, hubState()?.projects ?? {});
+/** The bot just made, to open once the hub's snapshot lists it, so its chat never shows as missing first. */
+let toOpen: { machineId: string; projectId: string } | undefined;
+
+const openWhenListed = () => {
+  const next = toOpen;
+  if (next === undefined || hubState()?.projects[projectKey(next)] === undefined) return;
+  toOpen = undefined;
+  window.location.hash = toHash({ id: "project", project: next, message: null });
+};
+
+const dispatch = (msg: CreateMsg) => {
+  const before = ui.add;
+  const [next, calls] = createStep(ui.add, msg);
   set({ ...ui, add: next });
-  if (before === "working" && next.phase.kind === "ready" && request?.kind === "new") {
-    toOpen = { ready: next.phase.ready, gitInit: request.gitInit };
+  if (before.phase.kind === "creating" && next.phase.kind === "made") {
+    // Made: its chat opens behind the dialog at once, which stays to show its repos coming in, if it has any.
+    toOpen = next.phase.bot.project;
     openWhenListed();
+    if (next.jobs.every((j) => j.state.t === "added")) {
+      const done = next.phase.bot.title;
+      closeAddProject();
+      toast({ title: `${done} is ready`, tone: "success" });
+    }
   }
-  else if (!ui.open && before === "working") announce();
+  if (!ui.open) announce(before);
   for (const c of calls) run(c);
 };
 
-/** A new project the hub made, to open once the hub's snapshot lists it (its project.added asks for one). */
-let toOpen: { ready: Ready; gitInit: boolean } | undefined;
-
-/** Opens the new project once the store has it, so its chat never shows as missing first. */
-const openWhenListed = () => {
-  const next = toOpen;
-  if (next === undefined) return;
-  if (hubState()?.projects[projectKey(next.ready.project)] === undefined) return;
-  toOpen = undefined;
-  opened(next.ready, next.gitInit);
-};
-
-/** A new project opens as soon as the hub lists it; the toast says where a repo goes, for when it needs one. */
-const opened = (r: Ready, gitInit: boolean) => {
-  const { machineId, projectId } = r.project;
-  openProject(machineId, projectId);
-  toast({
-    title: `${r.title} is ready on ${r.machine}`,
-    description: gitInit
-      ? "A git repo with no remote yet. Add more repos any time in Settings → Projects → Repos."
-      : "A plain folder, no repo. Add one any time in Settings → Projects → Repos.",
-    tone: "success",
-    action: { label: "Add a repo", onClick: () => (window.location.hash = toHash({ id: "settings", tab: "projects", for: `${machineId}/${projectId}` })) },
-  });
-};
-
-/** Each step's call goes through the data layer, whose `call` is the one way to the hub. */
+/** Each call goes through the data layer, whose `call` is the one way to the hub. */
 const run = (c: Call) => {
   const data = layer;
   if (data === undefined) return;
-  void data.call("project_add", c.input, { timeoutMs: CALL_MS }).then((outcome) => dispatch({ t: "answer", call: c, outcome }));
+  const out = c.kind === "create" ? data.call("project_add", c.input, { timeoutMs: CALL_MS }) : data.call("project_repo_add", c.input, { timeoutMs: CALL_MS });
+  void out.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
-/** The modal is hidden while an add ends: say so in a toast that brings it back. */
-const announce = () => {
+/** The dialog is hidden while the repos finish: say how they ended, in a toast that brings it back. */
+const announce = (before: CreateState) => {
+  if (outcomeLine(before) !== null) return;
+  const line = outcomeLine(ui.add);
+  if (line !== null) {
+    toast({ title: line.title, tone: line.problem ? "danger" : "success", ...(line.problem ? { action: { label: "Show", onClick: () => openAddProject() } } : {}) });
+    return;
+  }
   const p = ui.add.phase;
-  if (p.kind === "ready") {
-    toast({ title: `${p.ready.title} is ready on ${p.ready.machine}`, tone: "success", action: { label: "Show", onClick: () => openAddProject() } });
-  } else if (p.kind === "unlisted") {
-    toast({ title: `${p.what} isn't on the hub yet`, description: "If the clone was still running, it appears when it finishes; Machines shows any error.", action: { label: "Show", onClick: () => openAddProject() } });
-  } else if (p.kind === "failed") {
-    toast({ title: `Couldn't add ${p.what}`, description: p.failure.message, tone: "danger", action: { label: "Show", onClick: () => openAddProject() } });
+  if (before.phase.kind === "creating" && p.kind === "failed") {
+    toast({ title: `Couldn't create ${p.title}`, description: p.message, tone: "danger", action: { label: "Show", onClick: () => openAddProject() } });
   }
 };
 
 const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, projects: d.projects, events: d.events });
 
-/** Starts feeding the add flow from the layer's store; once per layer. */
+/** Starts feeding the flow from the layer's store; once per layer. */
 const connect = (next: DataLayer): void => {
   if (layer === next) return;
   layer = next;
@@ -148,74 +139,77 @@ export const useAddUi = (): AddUi => {
   return useSyncExternalStore(subscribe, addUi);
 };
 
-/** The modal's state as it is now. */
+/** The dialog's state as it is now. */
 export const addUi = (): AddUi => ui;
 
-/**
- * Opens New project from anywhere: the sidebar's + New, the palette, the File menu, a drop on the window. A
- * `prefill` (a pasted or dropped URL or path) replaces what is typed unless an add is running.
- */
-/** The machine a prefill goes to: the one it names (a removed project's), else this computer for a path. */
+/** The machine a prefill goes to: the one it names (a removed bot's), else this computer for a path. */
 export const prefillMachine = (text: string, given: string | undefined, local: string | undefined): string | undefined =>
   given ?? (/^[/~.]/u.test(text.trim()) ? local : undefined);
 
+/**
+ * Opens New bot from anywhere: the sidebar's +, the palette, the File menu, a drop on the window. A `prefill` (a
+ * pasted or dropped URL or path) goes in its repos unless something is being made.
+ */
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
-  const working = ui.add.phase.kind === "working";
-  if (prefill && !working) {
+  if (prefill && !busy(ui.add)) {
     const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
-    const rest = omit(ui, "note", "machine");
+    const src = addSource(prefill.text);
+    const repo: RepoDraft | null = src === null ? null : src.kind === "github" ? { kind: "clone", repo: src.repo } : { kind: "folder", path: src.path };
+    const fresh = ui.add.phase.kind === "form" ? ui : { ...ui, add: createStep(ui.add, { t: "reset" })[0] };
+    const rest = omit(fresh, "note", "machine", "refused");
     set({
       ...rest,
       open: true,
-      text: prefill.text,
+      repos: repo === null ? fresh.repos : withRepo(fresh.repos, repo),
       ...(prefill.note ? { note: prefill.note } : {}),
       ...(machine === undefined ? {} : { machine }),
-      add: ui.add.phase.kind === "pick" ? ui.add : { ...ui.add, phase: { kind: "pick" } },
     });
   } else if (!ui.open) set({ ...ui, open: true });
 };
 
-/** Esc, Cancel, Hide, Done, or a project opened from it: the screen behind is as it was. */
+/** Esc, Cancel, Done, or a bot opened from it: the screen behind is as it was. */
 export const closeAddProject = (): void => {
   if (!ui.open) return;
-  // A finished or untouched modal starts fresh next time; one still adding keeps going out of sight.
-  const fresh = ui.add.phase.kind !== "working";
-  const rest = omit(ui, "note", "machine", "folder", "gitInit");
-  set(fresh ? { ...rest, open: false, text: "", add: step(ui.add, { t: "reset" }, machineName)[0] } : { ...ui, open: false });
-  if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "New project… shows its progress." });
+  // A finished or untouched dialog starts fresh next time; one still adding keeps going out of sight.
+  if (busy(ui.add)) {
+    set({ ...ui, open: false });
+    return;
+  }
+  set({ add: createStep(ui.add, { t: "reset" })[0], name: "", repos: [], adding: null, open: false, ...(ui.hostName === undefined ? {} : { hostName: ui.hostName }) });
 };
 
-export const setText = (text: string): void => {
-  // A new project's folder follows its name until the person edits it.
-  const rest = omit(ui, "note", "folder");
-  set({ ...rest, text });
+const withRepo = (repos: ReadonlyArray<RepoDraft>, r: RepoDraft): ReadonlyArray<RepoDraft> => (repos.some((x) => repoKey(x) === repoKey(r)) ? repos : [...repos, r]);
+
+export const setName = (name: string): void => set({ ...omit(ui, "refused"), name });
+
+/** The add field opened (""), typed in, or closed (null). */
+export const setAdding = (adding: string | null): void => set({ ...omit(ui, "note"), adding });
+
+/** A repo into the list, the add field closed. */
+export const addRepo = (r: RepoDraft): void => set({ ...omit(ui, "note", "refused"), repos: withRepo(ui.repos, r), adding: null });
+
+export const removeRepo = (key: string): void => set({ ...omit(ui, "note"), repos: ui.repos.filter((r) => repoKey(r) !== key) });
+
+export const pickMachine = (machine: string): void => set({ ...omit(ui, "refused"), machine });
+
+export const setNote = (note: Note | undefined): void => set(note === undefined ? omit(ui, "note") : { ...ui, note });
+
+/** Create: the bot and its repos, or why not yet. */
+export const create = (machineId: string | undefined, why?: string): void => {
+  const name = botName(ui.name, ui.repos);
+  const refused = why ?? (machineId === undefined ? "No machine is online: start fleetd on one of your machines." : name === "" ? "Name it, or add a repo." : undefined);
+  if (refused !== undefined || machineId === undefined) {
+    set({ ...ui, refused: refused ?? "" });
+    return;
+  }
+  dispatch({ t: "start", draft: { name, machineId, repos: ui.repos } });
 };
 
-/**
- * A folder edited for one machine follows the next machine's default once another is picked, since a home folder
- * differs per machine; a full path outside any home folder (/srv/notes) is kept.
- */
-export const pickMachine = (machine: string): void => {
-  const keep = machine === ui.machine || (ui.folder !== undefined && keepsFolder(ui.folder));
-  set({ ...(keep ? ui : omit(ui, "folder")), machine });
-};
+export const retryRepo = (key: string, useExisting = false): void => dispatch({ t: "retry", key, useExisting });
 
-/** A folder that means the same on every machine: a full path not under /home or /Users. */
-export const keepsFolder = (folder: string): boolean => folder.trim().startsWith("/") && tilde(folder.trim()) === folder.trim();
-
-export const setFolder = (folder: string): void => set({ ...ui, folder });
-
-export const setGitInit = (gitInit: boolean): void => set({ ...ui, gitInit });
-
-export const startAdd = (request: Request, path: string): void => dispatch({ t: "start", request, path });
+export const dismissRepo = (key: string): void => dispatch({ t: "dismiss", key });
 
 export const back = (): void => dispatch({ t: "back" });
-
-export const addAnother = (): void => {
-  const rest = omit(ui, "note", "folder", "gitInit");
-  set({ ...rest, text: "" });
-  dispatch({ t: "reset" });
-};
 
 /** This computer, when it is one of the hub's machines (by name, or the id fleetd init derives from its host name). */
 export const localMachine = (): Machine | undefined => {
@@ -225,7 +219,7 @@ export const localMachine = (): Machine | undefined => {
   return Object.values(hubState()?.machines ?? {}).find((m) => m.name.toLowerCase() === host.toLowerCase() || m.machineId === id);
 };
 
-/** A project opens as its lead chat, the modal closed. */
+/** A bot opens as its lead chat, the dialog closed. */
 export const openProject = (machineId: string, projectId: string): void => {
   closeAddProject();
   window.location.hash = toHash({ id: "project", project: { machineId, projectId }, message: null });

@@ -89,12 +89,14 @@ it, the list goes back and a line over it says why.
 
 ## Projects {#manage}
 
-Tap **+** at the top of Chats for **New Project**: a name, and optionally a GitHub repo to clone (`owner/repo` or its
-URL) or the path of a folder already on a machine; with neither, the machine makes a new folder for it. Then the
-machine. A new folder's chat opens at once. Under the field, the app lists the checkouts it found on your machines and your
-  GitHub repos, filtered as you type; one that's already a project opens its chat. A clone shows its progress, then
-  what the hub read of the repo: its default branch, CI and merge rules. When the clone's folder already holds the
-  same repo, **Add the Folder That's There** adds it as it is.
+Tap **+** at the top of Chats for **New Bot**: a name, then its repos, none, one or several. **Add Repo** takes a
+GitHub repo to clone (`owner/repo` or its URL) or the path of a folder already on the machine, with what the hub found
+listed under it as you type; **✕** takes one out. Then the machine, when you have several. With no repo, the bot gets
+a folder of its own and its chat opens at once; with repos, each shows its clone's progress, a check, or why it
+failed with **Retry**.
+
+Hold a chat in Chats for **Archive**: it goes under the **Archived** filter at once, with **Undo** over the list for a
+few seconds. Hold an archived one for **Unarchive**.
 
 The **ⓘ** at the top of a chat opens its project's page:
 
@@ -116,10 +118,10 @@ The **ⓘ** at the top of a chat opens its project's page:
 - **Artifacts**: the chat's [artifacts](#artifacts). Linking a hub is done in the desktop
   app.
 - **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
-- **Archive Project** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
-  again while an approval of its waits); **Unarchive Project** brings it back.
-- **Delete Project**: erases everything fleetd keeps for it, as in the desktop app ([Delete a
-  project](/docs/projects#delete)), with a tickbox for its folder, once you type its name. When worktrees hold
+- **Archive Bot** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
+  again while an approval of its waits); **Unarchive Bot** brings it back.
+- **Delete Bot**, last and only here: erases everything fleetd keeps for it, as in the desktop app ([Delete a
+  bot](/docs/projects#delete)), with a tickbox for its folder, once you type its name. When worktrees hold
   uncommitted changes, which the delete loses, the confirm names them. Delete waits until the machine can list them.
 
 A member does everything here on the machines they operate, and what you may not do isn't offered. The hub checks

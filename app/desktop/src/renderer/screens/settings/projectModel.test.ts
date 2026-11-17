@@ -123,6 +123,6 @@ describe("Settings → Projects", () => {
     expect(parseRoute("#/settings/projects?for=devbox/p1")).toMatchObject({ tab: "projects", for: "devbox/p1" });
     expect(searchSettings("env")[0]?.key).toBe("projects.env");
     expect(searchSettings("secrets").map((o) => o.key)).toContain("projects.env");
-    expect(searchSettings("delete project")[0]?.key).toBe("projects.delete");
+    expect(searchSettings("delete bot")[0]?.key).toBe("projects.delete");
   });
 });

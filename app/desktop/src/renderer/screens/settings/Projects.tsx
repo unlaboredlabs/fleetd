@@ -163,11 +163,14 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <SkillsSetting projectRef={ref} />
         <PaymentsSetting projectRef={ref} />
       </SettingsSection>
+      <SettingsSection title="Trial">
+        <ChatTagsSetting projectRef={ref} on={summary?.chatTags === true} />
+      </SettingsSection>
       <SettingsSection title="Archive or delete">
         <ArchiveSetting projectRef={ref} title={settings.title} archivedAt={summary?.archivedAt} />
         <SettingsRow
           reveal="projects.delete"
-          title="Delete project"
+          title="Delete bot"
           hint={
             gone
               ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
@@ -176,15 +179,12 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           line={unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
           control={
             <DangerButton disabled={unknown !== null || checking} onClick={() => void open()}>
-              {checking ? "Checking its worktrees…" : "Delete project…"}
+              {checking ? "Checking its worktrees…" : "Delete bot…"}
             </DangerButton>
           }
         >
           <Problem text={blocked} />
         </SettingsRow>
-      </SettingsSection>
-      <SettingsSection title="Trial">
-        <ChatTagsSetting projectRef={ref} on={summary?.chatTags === true} />
       </SettingsSection>
       <RemoveProjectDialog project={deleting} onClose={() => setDeleting(null)} onRemoved={onDeleted} />
     </>

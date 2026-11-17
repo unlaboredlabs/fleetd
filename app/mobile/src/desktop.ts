@@ -94,18 +94,22 @@ export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../
 export * from "../../desktop/src/renderer/src/data/chat";
 export { deleteWords, isArchived, NAME_MAX, nameProblem, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
+export { discovery, projectHome, repoSuggestions, target, type Discovery, type Found, type RepoPick } from "../../desktop/src/renderer/screens/projects/discovery";
 export {
-  discovery,
-  newPath,
-  projectHome,
-  rows as foundRows,
-  target,
-  type Discovery,
-  type Found,
-  type Ready,
-  type Request,
-} from "../../desktop/src/renderer/screens/projects/discovery";
-export { initialAdd, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
+  botName,
+  busy as createBusy,
+  createStep,
+  initialCreate,
+  outcomeLine,
+  ownRepo,
+  repoKey,
+  repoLabel,
+  type Call as CreateCall,
+  type CreateMsg,
+  type CreateState,
+  type RepoDraft,
+  type RepoJob,
+} from "../../desktop/src/renderer/screens/projects/create";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";

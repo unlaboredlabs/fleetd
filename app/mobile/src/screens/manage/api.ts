@@ -1,11 +1,11 @@
-// The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
-// desktop's add flow over project_add, a new folder or a repo), its screen's reads (agents_list, orders_board,
+// The hub calls behind a bot's screens, each as the desktop makes it: New Bot (project_discover, then the desktop's
+// create flow: project_add for the bot, project_repo_add for each of its repos), its screen's reads (agents_list, orders_board,
 // checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title),
 // Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, Linked hubs (hub_links_get,
 // hub_link_remove), Forget Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -32,11 +32,12 @@ export const discover = async (hub: Hub, name: (machineId: string) => string, ho
   return r.ok ? { ok: true, value: discovery(r.output, name, home) } : r;
 };
 
-/** One of the add flow's project_add calls, the add itself named as the person typed (a clone's too). A dry run only inspects, so it isn't named. */
-export const addCall = async (hub: Hub, call: AddCall, title: string): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
-  if (call.purpose !== "add") return hub.call("project_add", call.input);
-  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }) });
-};
+/** project_add and project_repo_add may each run gh on the hub. */
+const CREATE_MS = 120_000;
+
+/** One of New Bot's calls (the desktop's create.ts): the bot itself, or one of its repos. */
+export const createCall = async (hub: Hub, call: CreateCall): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> =>
+  call.kind === "create" ? hub.call("project_add", call.input, CREATE_MS) : hub.call("project_repo_add", call.input, CREATE_MS);
 
 /** Its settings' title. Its folder keeps its name. */
 export const rename = async (hub: Hub, p: ProjectRef, name: string): Promise<Result<null>> => {

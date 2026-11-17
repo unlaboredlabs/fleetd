@@ -1,6 +1,6 @@
-// What a person does to a project from the sidebar's menu and its settings: archive it (with Undo, since it keeps its
+// What a person does to a bot from the sidebar's menu and its settings: archive it (with Undo, since it keeps its
 // chat, memory and folder) or bring it back, and rename it in a small dialog. Each is one hub call (project_archive,
-// project_settings_set); the hub's project.settings event updates the sidebar.
+// project_settings_set); the hub's project.settings event updates the sidebar. Deleting is only in its settings.
 import { useState } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
@@ -14,7 +14,7 @@ export interface ProjectTarget {
   readonly title: string;
 }
 
-/** Archives `project` (or, `archived: false`, brings it back), saying so with the way back. */
+/** Archives the bot `project` (or, `archived: false`, brings it back), saying so with the way back. */
 export async function archiveProject(layer: DataLayer, project: ProjectTarget, archived = true): Promise<boolean> {
   const out = await layer.call(PROJECT_TOOLS.archive, { machineId: project.machineId, projectId: project.projectId, archived });
   if (!out.ok) {
@@ -24,7 +24,7 @@ export async function archiveProject(layer: DataLayer, project: ProjectTarget, a
   toast({
     key: `project-archive:${project.machineId}/${project.projectId}`,
     title: archived ? `${project.title} archived` : `${project.title} is back`,
-    description: archived ? "Its chat, memory and folder stay. Bring it back from Settings › Projects any time." : undefined,
+    description: archived ? "Its chat, memory and folder stay. Settings › Bots › Archived brings it back." : undefined,
     ...(archived ? { action: { label: "Undo", onClick: () => void archiveProject(layer, project, false) } } : {}),
   });
   return true;
