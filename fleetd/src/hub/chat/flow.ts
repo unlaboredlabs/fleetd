@@ -45,7 +45,7 @@ import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { leadMessages, leadSource, order, question, QUIET, said, steer } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
-import { humanAbout, refold, settleEnded, tagsOn } from "./tags.ts";
+import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
@@ -772,8 +772,6 @@ const FOLLOWED: HubEventType[] = [
   "request.opened",
   "request.updated",
   "agents.cap",
-  "workstream.done",
-  "workstream.state",
 ];
 
 /** The events that end a lead's run. */
@@ -793,15 +791,6 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
     }
     case "write.expired":
       return expired(hub, event.data);
-    case "workstream.done":
-    case "workstream.state": {
-      // A closed order's messages fold into the last one about it.
-      const id = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
-      if (typeof id === "string" && event.machineId !== undefined && event.projectId !== undefined) {
-        refold(hub, { machineId: event.machineId, projectId: event.projectId }, id);
-      }
-      return;
-    }
     case "machine.online": {
       const machine = event.machineId;
       if (machine === undefined) return;

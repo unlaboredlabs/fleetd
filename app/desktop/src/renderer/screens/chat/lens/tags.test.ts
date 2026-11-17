@@ -1,5 +1,5 @@
-// The tagged chat's rows: tags over runs only while two or more orders are open, a closed order folded into its
-// landing line (open items and your unanswered message kept out), the lens, and nothing of it with the trial off.
+// The tagged chat's rows: tags over runs only while two or more orders are open, a closed order's messages kept as
+// bubbles, the lens, and nothing of it with the trial off.
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../../src/data/chat";
 import type { ChatMessage } from "../../../src/data/chat-contract";
@@ -24,10 +24,9 @@ const msg = (author: "human" | "lead", over: Partial<ChatMessage> = {}, kind: Ch
 
 const rows = (items: ChatItem[], tags: Tags | undefined) => chatRows({ items, hasOlder: false, loadingOlder: false, nowMs: NOW, timeZone: "UTC", me: ME.personId, tags });
 
-/** Each row as a word: a message's id with its line over it (`who · order`), a fold's line. */
+/** Each row as a word: a message's id with its line over it (`who · order`). */
 const shown = (r: readonly Row[]): string[] =>
   r.flatMap((x) => {
-    if (x.kind === "fold") return [`fold:${x.fold.title}${x.open ? " (open)" : ""}`];
     if (x.kind === "inline") return [`card:${x.item.id}`];
     if (x.kind !== "message") return [];
     const line = [x.tag?.to === undefined ? undefined : `to ${x.tag.to}`, x.tag?.order?.title].filter((w) => w !== undefined).join(" · ");
@@ -44,7 +43,8 @@ const busy = () => {
     msg("lead", { for: ME, about: PAY }),
     msg("human", { person: DANA, about: SEARCH }),
     msg("lead", { for: DANA, about: SEARCH }),
-    msg("lead", { for: DANA, about: VAT, fold: { ...VAT, state: "done", count: 4 } }),
+    // The landing of VAT, closed since.
+    msg("lead", { for: DANA, about: VAT }),
     msg("lead", { for: ME }),
   ];
 };
@@ -53,53 +53,27 @@ describe("the tagged chat", () => {
   it("is today's chat with the trial off, whatever the messages carry", () => {
     const items = busy();
     const off = rows(items, undefined);
-    expect(off.some((r) => r.kind === "fold" || (r.kind === "message" && r.tag !== undefined))).toBe(false);
+    expect(off.some((r) => (r.kind === "message" && r.tag !== undefined))).toBe(false);
     expect(shown(off)).toEqual(["m1", "m2", "card:m3", "m4", "m5", "m6", "m7", "m8", "m9"]);
   });
 
-  it("names each run's order and whom the lead writes to, never you, and folds the closed order where it landed", () => {
-    expect(shown(rows(busy(), { named: true, openItems: new Set() }))).toEqual([
+  it("names each run's order and whom the lead writes to, never you, and keeps a closed order's messages as bubbles", () => {
+    expect(shown(rows(busy(), { named: true }))).toEqual([
+      "m1 [Receipts show the VAT number]",
+      "m2 [to Dana · Receipts show the VAT number]",
+      "card:m3",
       "m4 [Apple Pay]",
       // To you: only the order.
       "m5 [Apple Pay]",
       "m6 [Search speed]",
       "m7 [to Dana · Search speed]",
-      // Where m8, its landing, was.
-      "fold:Receipts show the VAT number",
+      "m8 [to Dana · Receipts show the VAT number]",
       "m9",
     ]);
   });
 
-  it("keeps an approval still open, and your message the lead hasn't answered, out of the fold", () => {
-    const items = busy();
-    items.push(msg("human", { person: ME, about: VAT }));
-    const r = shown(rows(items, { named: true, openItems: new Set(["m3"]) }));
-    expect(r).toContain("card:m3");
-    expect(r.at(-1)).toBe("m10 [Receipts show the VAT number]");
-    expect(r.indexOf("card:m3")).toBeLessThan(r.indexOf("fold:Receipts show the VAT number"));
-  });
-
-  it("keeps a question of the lead's still unanswered out of the fold, and folds one a person answered", () => {
-    seq = 0;
-    const items = [
-      msg("human", { person: DANA, about: VAT }),
-      msg("lead", { for: DANA, about: VAT, text: "Backfill the old receipts too?" }),
-      msg("lead", { for: DANA, about: VAT, text: "Should the PDF show it as well?" }),
-      msg("human", { person: DANA, about: VAT, text: "yes" }),
-      msg("lead", { for: DANA, about: VAT, text: "It’s live. Want it on the emails too?", fold: { ...VAT, state: "done", count: 5 } }),
-      msg("lead", { for: ME }),
-    ];
-    // m2 and m3 were answered by Dana's m4; the landing m5 still asks.
-    expect(shown(rows(items, { named: true }))).toEqual(["fold:Receipts show the VAT number", "m5 [to Dana · Receipts show the VAT number]", "m6"]);
-  });
-
-  it("opens a fold under its line, oldest first, without naming the order it already names", () => {
-    const r = shown(rows(busy(), { named: true, opened: new Set(["W1"]) }));
-    expect(r.slice(r.indexOf("fold:Receipts show the VAT number (open)"))).toEqual(["fold:Receipts show the VAT number (open)", "m1", "m2 [to Dana]", "card:m3", "m8 [to Dana]", "m9"]);
-  });
-
   it("names no order while fewer than two are open, nor whom the lead writes to", () => {
-    expect(shown(rows(busy(), { named: false }))).toEqual(["m4", "m5", "m6", "m7", "fold:Receipts show the VAT number", "m9"]);
+    expect(shown(rows(busy(), { named: false }))).toEqual(["m1", "m2", "card:m3", "m4", "m5", "m6", "m7", "m8", "m9"]);
   });
 
   it("shows one order in a lens, its name off the tags, and of a message about two orders only its bubble", () => {
@@ -117,7 +91,7 @@ describe("the tagged chat", () => {
     // Whom the lead writes to, once while it stays the same.
     expect(shown(r)).toEqual(["m6", "m7 [to Dana]", "m10"]);
     expect(r.find((x) => x.kind === "message" && x.item.id === "m10")).toMatchObject({ parts: ["1"] });
-    // No fold in a lens: a closed order's messages all show.
+    // A lens on the closed order: its messages, all of them.
     expect(shown(rows(busy(), { named: true, lens: "W1" }))).toEqual(["m1", "m2 [to Dana]", "card:m3", "m8"]);
   });
 

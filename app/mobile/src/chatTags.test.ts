@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { aboutChoices, foldCount, isFold, openOrdersOf, ordersOf, reveal, sendAbout, tagOf, taggedItems, type FoldLine, type TagView } from "./chatTags";
+import { aboutChoices, lensHides, openOrdersOf, ordersOf, sendAbout, tagOf, taggedItems, type TagView } from "./chatTags";
 import { sameRow, threadRows, type ThreadRow } from "./chatView";
 import { chatItems, emptyChat, type ChatItem, type ChatMessage, type OrderCard } from "./desktop";
 import { fakeHub } from "./hub/fake";
@@ -50,9 +50,9 @@ const card = (workstreamId: string, title: string, extra: Partial<OrderCard> = {
 
 const view = (extra: Partial<TagView> = {}): TagView => ({ show: true, me: ME, lens: undefined, ...extra });
 
-const ids = (out: readonly (ChatItem | FoldLine)[]): string[] => out.map((x) => (isFold(x) ? `${x.id}${x.open ? "+" : ""}` : x.id));
+const ids = (out: readonly ChatItem[]): string[] => out.map((x) => x.id);
 
-const none = { lens: undefined, opened: new Set<string>(), me: ME, sendAbout: new Map<string, string>() };
+const none = { lens: undefined, sendAbout: new Map<string, string>() };
 
 describe("openOrdersOf", () => {
   it("is the project's open orders, oldest first, with their phase line", () => {
@@ -147,69 +147,33 @@ describe("taggedItems: the lens", () => {
   });
 });
 
-describe("taggedItems: folds", () => {
-  const fold = { ...VAT, state: "done" as const, count: 3 };
-  const thread = [message(1, { author: "human", person: DANA, about: VAT }), message(2, { about: APPLE }), message(3, { about: VAT }), message(4, { about: VAT, fold }), message(5, { about: APPLE })];
+describe("taggedItems: a closed order", () => {
+  const thread = [message(1, { author: "human", person: DANA, about: VAT }), message(2, { about: APPLE }), message(3, { about: VAT }), message(4, { about: VAT }), message(5, { about: APPLE })];
 
-  it("leaves a chat with no closed order as it is", () => {
-    const list = items([message(1, { about: APPLE })]);
+  it("leaves the chat as it is with no lens: a closed order's messages stay where they were", () => {
+    const list = items(thread);
     expect(taggedItems(list, none)).toBe(list);
+    expect(ids(taggedItems(list, none))).toEqual(["m1", "m2", "m3", "m4", "m5"]);
   });
 
-  it("folds a closed order's messages into one line where it landed", () => {
-    expect(ids(taggedItems(items(thread), none))).toEqual(["m2", "fold:W3", "m5"]);
-  });
-
-  it("opens them together under the line, in order, once tapped", () => {
-    expect(ids(taggedItems(items(thread), { ...none, opened: new Set(["W3"]) }))).toEqual(["m2", "fold:W3+", "m1", "m3", "m4", "m5"]);
-  });
-
-  it("never folds a card still waiting, nor your own message the lead hasn't answered", () => {
-    const card = message(2, { about: VAT, item: { kind: "command_approval", requestId: "r1", state: "open" } as never });
-    const mine = message(6, { author: "human", person: SAM, about: VAT, fold });
-    const list = items([message(1, { about: VAT }), card, message(3, { about: VAT }), message(5, { about: APPLE }), mine]);
-    expect(ids(taggedItems(list, none))).toEqual(["m2", "m5", "fold:W3", "m6"]);
-  });
-
-  it("folds your own message once the lead wrote after it", () => {
-    const list = items([message(1, { author: "human", person: SAM, about: VAT }), message(2, { about: VAT, fold })]);
-    expect(ids(taggedItems(list, none))).toEqual(["fold:W3"]);
-  });
-
-  it("keeps whole, in its place, a message also about an open order", () => {
-    const parts = [
-      { start: 0, end: 3, about: VAT },
-      { start: 4, end: 9, about: APPLE },
-    ];
-    const list = items([message(1, { about: VAT }), message(2, { text: "Both of them", parts, fold })]);
-    expect(ids(taggedItems(list, none))).toEqual(["fold:W3", "m2"]);
-  });
-
-  it("shows everything of the lens's order, folding nothing", () => {
+  it("shows everything of the lens's order", () => {
     expect(ids(taggedItems(items(thread), { ...none, lens: "W3" }))).toEqual(["m1", "m3", "m4"]);
   });
 });
 
-describe("reveal", () => {
-  const fold = { ...VAT, state: "done" as const, count: 2 };
-  const thread = items([message(1, { about: VAT }), message(2, { about: VAT, fold }), message(3, { about: APPLE }), message(4)]);
+describe("lensHides", () => {
+  const thread = items([message(1, { about: VAT }), message(2, { about: VAT }), message(3, { about: APPLE }), message(4)]);
 
-  it("leaves a message that shows, or isn't there, as it is", () => {
-    expect(reveal(thread, "m3", none)).toBeUndefined();
-    expect(reveal(thread, "m9", none)).toBeUndefined();
-    expect(reveal(thread, "m3", { ...none, lens: "W1" })).toBeUndefined();
+  it("is false for a message that shows, or isn't there, and with no lens", () => {
+    expect(lensHides(thread, "m3", none)).toBe(false);
+    expect(lensHides(thread, "m9", none)).toBe(false);
+    expect(lensHides(thread, "m1", none)).toBe(false);
+    expect(lensHides(thread, "m3", { ...none, lens: "W1" })).toBe(false);
   });
 
-  it("opens the fold a message is in", () => {
-    const r = reveal(thread, "m1", none);
-    expect(r?.lens).toBeUndefined();
-    expect([...(r?.opened ?? [])]).toEqual(["W3"]);
-    expect(ids(taggedItems(thread, { ...none, opened: r!.opened }))).toContain("m1");
-  });
-
-  it("closes a lens the message isn't in, opening its fold too when it is folded", () => {
-    expect(reveal(thread, "m4", { ...none, lens: "W1" })).toEqual({ lens: undefined, opened: none.opened });
-    expect([...(reveal(thread, "m2", { ...none, lens: "W1" })?.opened ?? [])]).toEqual(["W3"]);
+  it("is true for a message outside the lens", () => {
+    expect(lensHides(thread, "m4", { ...none, lens: "W1" })).toBe(true);
+    expect(lensHides(thread, "m2", { ...none, lens: "W1" })).toBe(true);
   });
 });
 
@@ -239,33 +203,21 @@ describe("threadRows in a tagged chat", () => {
     expect(tagged(threadRows(list, undefined, undefined, { timeZone: "UTC" }))).toEqual(["day", "m1:first:", "m2:-:"]);
   });
 
-  it("draws a fold line as its own row, the bubbles after it a new run", () => {
-    const fold = { ...VAT, state: "done" as const, count: 2 };
-    const list = taggedItems(items([message(1, { about: APPLE }), message(2, { about: VAT }), message(3, { about: VAT, fold }), message(4, { about: APPLE })]), none);
+  it("draws a closed order's messages as bubbles with their tags", () => {
+    const list = taggedItems(items([message(1, { about: APPLE }), message(2, { about: VAT }), message(3, { about: VAT }), message(4, { about: APPLE })]), none);
     const rows = threadRows(list, undefined, undefined, { timeZone: "UTC" }, tags);
-    expect(tagged(rows)).toEqual(["day", "m1:first:Apple Pay", "fold", "m4:first:Apple Pay"]);
-    const line = rows.find((r) => r.t === "fold");
-    expect(line).toMatchObject({ t: "fold", id: "fold:W3", line: { fold, open: false } });
+    expect(tagged(rows)).toEqual(["day", "m1:first:Apple Pay", "m2:first:Receipts show the VAT number", "m3:-:", "m4:first:Apple Pay"]);
   });
 
-  it("draws a row again when its tag or its fold changes", () => {
+  it("draws a row again when its tag changes", () => {
     const [a] = items([message(1, { about: APPLE })]);
     const row = (tag: ReturnType<typeof tagOf>): ThreadRow => ({ t: "item", id: "m1", item: a!, side: "them", first: true, ...(tag === undefined ? {} : { tag }) });
     expect(sameRow(row(tagOf(a!, view())), row(tagOf(a!, view())))).toBe(true);
     expect(sameRow(row(tagOf(a!, view())), row(undefined))).toBe(false);
-    const line = (open: boolean, count: number): ThreadRow => ({ t: "fold", id: "fold:W3", line: { t: "fold", id: "fold:W3", at: AT, fold: { ...VAT, state: "done", count }, open } });
-    expect(sameRow(line(false, 2), line(false, 2))).toBe(true);
-    expect(sameRow(line(false, 2), line(true, 2))).toBe(false);
-    expect(sameRow(line(false, 2), line(false, 3))).toBe(false);
   });
 });
 
 describe("words", () => {
-  it("counts a fold's messages", () => {
-    expect(foldCount(1)).toBe("1 message");
-    expect(foldCount(6)).toBe("6 messages");
-  });
-
   it("lists the open orders for About…, the current ticked, then Nothing", () => {
     const open = [
       { workstreamId: "W1", title: "Apple Pay", phaseDetail: undefined },

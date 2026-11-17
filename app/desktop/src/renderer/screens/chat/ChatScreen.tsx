@@ -12,7 +12,6 @@ import { BubbleActionsContext, type BubbleActions, type ReplyTarget, type TagAct
 import { Button, FrameTitle, IdChip, StatusChip, Text, toast } from "../../ui";
 import type { ChatAbout } from "../../../shared/contracts";
 import { LensCapsule } from "./lens/Lens";
-import { foldOrder } from "./lens/tags";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -77,7 +76,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Whose messages are yours: in a chat the team shares, someone else's show their name.
   const me = useHubRole().me?.personId;
   const names = usePersonNames();
-  // The tagged chat (the project's trial): tags name its open orders, closed ones fold, a lens shows one order.
+  // The tagged chat (the project's trial): tags name its open orders, a lens shows one order.
   const tagsOn = useData((d) => d.projects[key]?.chatTags === true);
   const board = useData((d) => d.orders);
   const orders = useMemo(
@@ -94,15 +93,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const [looking, setLooking] = useState<{ about: ChatAbout; from: string }>();
   const lens = tagsOn ? looking?.about : undefined;
   const phase = useData((d) => (lens === undefined ? undefined : d.orders?.[lens.workstreamId]?.phaseDetail));
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const openItems = useData((d) => d.chatStates[key]?.openItems);
-  const tags = useMemo(
-    () =>
-      tagsOn
-        ? { named: orders.length >= 2, lens: lens?.workstreamId, opened: unfolded, openItems: new Set(openItems?.map((o) => o.messageId)) }
-        : undefined,
-    [tagsOn, orders, lens, unfolded, openItems],
-  );
+  const tags = useMemo(() => (tagsOn ? { named: orders.length >= 2, lens: lens?.workstreamId } : undefined), [tagsOn, orders, lens]);
   if (view !== undefined && (arrived?.items !== view.items || arrived.live !== live)) {
     // Stamped as it comes in: a row mounted much later shows still.
     // eslint-disable-next-line react-hooks/purity
@@ -159,20 +151,15 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const target = shown?.id ?? (sent === 0 ? message : undefined);
   const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
-  // A jump to a message the tagged chat hides (a notification's, Show, a quote, a link to a card): out of a lens on
-  // another order, or into the fold it is in, so the message has a row to open at. Once per jump: a fold you close
-  // again, or a lens you open later, stays as you left it.
+  // A jump to a message a lens on another order hides (a notification's, Show, a quote, a link to a card): out of the
+  // lens, so the message has a row to open at. Once per jump: a lens you open later stays as you left it.
   const [jumped, setJumped] = useState<string>();
   const jump = target === undefined ? undefined : `${target} ${String(shown?.n ?? 0)}`;
   if (tags !== undefined && rows !== undefined && target !== undefined && jump !== jumped) {
-    const item = rowIndexOf(rows, target) !== undefined ? undefined : items?.find((i) => i.id === target);
-    const order = item === undefined ? undefined : foldOrder(item);
     if (rowIndexOf(rows, target) !== undefined) setJumped(jump);
-    // Out of the lens first; the whole chat then shows whether it is folded too.
-    else if (item !== undefined && looking !== undefined) setLooking(undefined);
-    else if (item !== undefined) {
-      setJumped(jump);
-      if (order !== undefined && !unfolded.has(order)) setUnfolded(new Set(unfolded).add(order));
+    else if (items?.some((i) => i.id === target) === true) {
+      if (looking !== undefined) setLooking(undefined);
+      else setJumped(jump);
     }
   }
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
@@ -309,12 +296,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                 if (error !== undefined) toast({ title: "Couldn’t move the message", description: error.message, key: `retag:${messageId}` });
               });
             },
-            toggleFold: (id) =>
-              setUnfolded((was) => {
-                const next = new Set(was);
-                if (!next.delete(id)) next.add(id);
-                return next;
-              }),
           }
         : undefined,
     [tagsOn, orders, lens, layer, key],

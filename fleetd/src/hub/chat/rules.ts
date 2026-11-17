@@ -120,7 +120,6 @@ export function serialize(m: ChatMessage): string {
     "vaultImport",
     "nudge",
     "about",
-    "fold",
   ];
   for (const k of rest) if (m[k] !== undefined && m[k] !== null) o[k] = m[k];
   return JSON.stringify(o);

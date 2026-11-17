@@ -2,7 +2,7 @@
 // are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
-import { isFold, type FoldLine, type Tag } from "./chatTags";
+import type { Tag } from "./chatTags";
 import { workedFor, type ChatItem } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
@@ -232,8 +232,6 @@ export type ThreadRow =
    * `tag`: the tagged chat's line over a run of bubbles (chatTags.ts), on its first.
    */
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string; readonly tag?: Tag }
-  /** A closed order's messages as one line, where it landed (chatTags.ts). */
-  | { readonly t: "fold"; readonly id: string; readonly line: FoldLine }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
@@ -245,7 +243,6 @@ export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
   if (a === b) return true;
   if (a.t !== b.t || a.id !== b.id) return false;
   if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.worked === b.worked && a.tag?.key === b.tag?.key && a.tag?.order?.title === b.tag?.order?.title && sameItem(a.item, b.item);
-  if (a.t === "fold" && b.t === "fold") return a.line.open === b.line.open && a.line.fold.count === b.line.fold.count && a.line.fold.title === b.line.fold.title && a.line.fold.state === b.line.fold.state && a.line.at === b.line.at;
   if (a.t === "day" && b.t === "day") return a.at === b.at;
   return true;
 };
@@ -281,7 +278,7 @@ const REPLY_SLACK_MS = 2_000;
  * apps' date chips.
  */
 export const threadRows = (
-  items: readonly (ChatItem | FoldLine)[],
+  items: readonly ChatItem[],
   worked?: { readonly since: number; readonly until: number },
   readSeq?: number,
   clock: Pick<Clock, "timeZone"> = {},
@@ -291,25 +288,19 @@ export const threadRows = (
   const reply =
     worked === undefined
       ? -1
-      : items.findLastIndex((i) => !isFold(i) && i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
+      : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
   const stamp = worked === undefined ? undefined : workedFor(worked.until - worked.since);
   let prev: ChatItem | undefined;
   let prevTag: Tag | undefined;
   let prevDay = 0;
   let any = false;
-  const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => !isFold(i) && i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
+  const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
   for (const [i, item] of items.entries()) {
     if (i === firstUnread) rows.push({ t: "unread", id: "unread" });
     const day = dayAt(item.at, clock);
     if (!any || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
     any = true;
     prevDay = day;
-    if (isFold(item)) {
-      rows.push({ t: "fold", id: item.id, line: item });
-      // What follows it starts a burst of its own.
-      prev = undefined;
-      continue;
-    }
     const side = sideOf(item);
     const tag = tagOf?.(item);
     // A new tag starts a run of its own, its line over its first bubble.

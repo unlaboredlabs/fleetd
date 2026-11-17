@@ -31,7 +31,7 @@ export interface BubbleActions {
   readonly lookAt?: ReadonlySet<string> | undefined;
   /** One of them has been seen (looked.ts). */
   readonly seen?: ((id: string) => void) | undefined;
-  /** The project's chat is tagged (its trial is on): its tags, folds and lens (lens/tags.ts). */
+  /** The project's chat is tagged (its trial is on): its tags and lens (lens/tags.ts). */
   readonly tags?: TagActions | undefined;
 }
 
@@ -46,8 +46,6 @@ export interface TagActions {
   readonly look: (about: ChatAbout, from: string) => void;
   /** Moves a message to an open order, or to none (About…). */
   readonly retag: (messageId: string, workstreamId: string | undefined) => void;
-  /** Opens or closes a closed order's fold. */
-  readonly toggleFold: (workstreamId: string) => void;
 }
 
 export const BubbleActionsContext = createContext<BubbleActions | undefined>(undefined);

@@ -26,7 +26,7 @@ import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { show } from "../intake/attachments.ts";
 import { parts as partsOf } from "./parts.ts";
-import { refold, tagLead } from "./tags.ts";
+import { tagLead } from "./tags.ts";
 import { messageFor } from "./whom.ts";
 import {
   AGENT_PER_MINUTE,
@@ -238,7 +238,6 @@ export class Chat {
     if (created) {
       this.landed(n.source, n.nudge, message);
       this.announce(message);
-      this.folds(message);
     }
     return { message, created };
   }
@@ -515,14 +514,7 @@ export class Chat {
       out = message;
     }
     this.announce(out);
-    this.folds(out);
     return out;
-  }
-
-  /** A message about a closed order: its fold moves to it. */
-  private folds(message: ChatMessage): void {
-    const orders = new Set([message.about, ...(message.parts ?? []).map((p) => p.about)].flatMap((a) => (a ? [a.workstreamId] : [])));
-    for (const id of orders) refold(this.hub, message.projectRef, id);
   }
 
   /** The project's title, as everything a person reads names it; never its id. */

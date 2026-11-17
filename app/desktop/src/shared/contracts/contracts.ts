@@ -1427,17 +1427,6 @@ export type ChatAbout = {
   workstreamId: WorkstreamId;
 };
 
-/**
- * A closed order's fold, on the one message of the chat where its bubbles collapse: the last message about it. Every
- * other message whose `about` (or a bubble's) is this order folds into it, except an inline item still open.
- */
-export type ChatFold = {
-  count: number;
-  state: WorkstreamState;
-  title: string;
-  workstreamId: WorkstreamId;
-};
-
 export type KnownChatAuthor = "human" | "lead" | "agent" | "system";
 /** KnownChatAuthor, or a value from a newer hub. */
 export type ChatAuthor = KnownChatAuthor | (string & {});
@@ -1587,8 +1576,6 @@ export type ChatMessage = {
    */
   memoryRefreshed?: MemoryRefreshed;
   messageId: ChatMessageId;
-  /** The order it is about is closed, and its bubbles fold here. */
-  fold?: ChatFold;
   /** The lead flagged it for the person's look (`nudge`). */
   nudge?: ChatNudge;
   /**

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The tagged chat on screen (a project's trial): with it off, the chat is today's whatever the messages carry; on,
 // a tag opens a lens on its order (Esc and × close it), what you send there is about it, About… moves a bubble, and a
-// closed order's fold opens under its line.
+// closed order's messages stay as bubbles.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -70,7 +70,7 @@ const MESSAGES = [
   msg(4, { for: SAM, about: PAY, text: "On it: one writer at checkout." }),
   msg(5, { author: "human", person: DANA, about: SEARCH, text: "Search feels slow on my phone." }),
   msg(6, { for: DANA, about: SEARCH, text: "Looking: an agent is timing search." }),
-  msg(7, { for: DANA, about: VAT, fold: { ...VAT, state: "done", count: 3 }, text: "Receipts show the VAT number now." }),
+  msg(7, { for: DANA, about: VAT, text: "Receipts show the VAT number now." }),
 ];
 
 const card = (o: typeof PAY): OrderCard => ({
@@ -183,7 +183,6 @@ const menuItems = () => [...document.querySelectorAll("[role='menu'] [role='menu
 it("is today's chat with the trial off, whatever the messages carry", async () => {
   await mount(false);
   expect(host.querySelector("[data-tag]")).toBeNull();
-  expect(host.querySelector('[data-entry="fold"]')).toBeNull();
   expect(shown()).toHaveLength(7);
   const bubble = [...host.querySelectorAll("[data-bubble]")].find((b) => b.textContent === "Looking: an agent is timing search.");
   if (bubble === undefined) throw new Error("no bubble");
@@ -191,20 +190,17 @@ it("is today's chat with the trial off, whatever the messages carry", async () =
   expect(menuItems()).not.toContain("About…");
 });
 
-it("tags each run, folds the closed order, and opens the fold under its line", async () => {
+it("tags each run, and keeps the closed order's messages as bubbles where they were", async () => {
   await mount(true);
   expect(shown()).toEqual([
+    "[Dana Park·Receipts show the VAT number] Receipts should show the VAT number.",
+    "[to Dana·Receipts show the VAT number] Small fix, one writer on it.",
     "[Apple Pay] Can we add Apple Pay?",
     "[Apple Pay] On it: one writer at checkout.",
     "[Dana Park·Search speed] Search feels slow on my phone.",
     "[to Dana·Search speed] Looking: an agent is timing search.",
+    "[to Dana·Receipts show the VAT number] Receipts show the VAT number now.",
   ]);
-  const fold = host.querySelector<HTMLButtonElement>('[data-entry="fold"] button');
-  expect(fold?.textContent).toBe("Receipts show the VAT number3 messages");
-  act(() => fold?.click());
-  await settle();
-  expect(fold?.getAttribute("aria-expanded")).toBe("true");
-  expect(shown().slice(4)).toEqual(["[Dana Park] Receipts should show the VAT number.", "[to Dana] Small fix, one writer on it.", "Receipts show the VAT number now."]);
 });
 
 it("opens a lens from a tag: only its order, sent about it, and Esc goes back to the whole chat", async () => {
@@ -230,7 +226,9 @@ it("opens a lens from a tag: only its order, sent about it, and Esc goes back to
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   });
   await settle();
-  expect(shown()[0]).toBe("[Apple Pay] Can we add Apple Pay?");
+  // The whole chat again, with what was sent from the lens.
+  expect(shown()).toHaveLength(8);
+  expect(shown()[0]).toBe("[Dana Park·Receipts show the VAT number] Receipts should show the VAT number.");
 });
 
 it("moves a bubble to another open order from its menu's About…", async () => {
@@ -252,17 +250,6 @@ it("moves a bubble to another open order from its menu's About…", async () => 
   await settle();
   expect(calls.find((c) => c.tool === "chat_about_set")?.input).toEqual({ projectRef: project, messageId: "m6", workstreamId: "W2" });
   await vi.waitFor(() => expect(shown()).toContain("[to Dana·Apple Pay] Looking: an agent is timing search."));
-});
-
-it("opens the fold a notification's message is in, once: folded again, it stays folded", async () => {
-  await mount(true, "m2");
-  await vi.waitFor(() => expect(shown()).toContain("[to Dana] Small fix, one writer on it."));
-  const fold = host.querySelector<HTMLButtonElement>('[data-entry="fold"] button');
-  expect(fold?.getAttribute("aria-expanded")).toBe("true");
-  act(() => fold?.click());
-  await settle();
-  expect(fold?.getAttribute("aria-expanded")).toBe("false");
-  expect(shown()).not.toContain("[to Dana] Small fix, one writer on it.");
 });
 
 it("leaves a lens for a message about another order, as a notification opens it", async () => {
