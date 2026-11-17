@@ -2,8 +2,8 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its approvals', payments' and linked hubs' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the lead's turn line's words, the New screen picker's machines, and fleetd cloud's accounts
-// call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
+// state glyph's frames, the lead's turn line's words, the New screen picker's machines, the named MCP servers (Paper),
+// and fleetd cloud's accounts call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
   AgentKeyInfo,
@@ -58,6 +58,8 @@ export type {
   SkillSummary,
   Activity,
   LiveFrame,
+  McpServer,
+  McpTestResult,
   BrowserFrame,
   BrowserInput,
   BrowserSession,
@@ -105,6 +107,7 @@ export {
 } from "../../desktop/src/renderer/screens/projects/discovery";
 export { initialAdd, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
+export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
