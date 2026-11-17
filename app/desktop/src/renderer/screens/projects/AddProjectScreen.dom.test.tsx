@@ -198,6 +198,27 @@ describe("New bot", () => {
     expect(document.querySelector('[data-screen="projects.add"]')).toBeNull();
   });
 
+  it("adds a repo typed but not yet added when Create is pressed, and refuses one that isn't a repo yet", async () => {
+    const hub = await render();
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    await type(field("Repo to add"), "che");
+    await press(button("Create"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('"che" isn\'t a repo yet: pick one from the list, or clear the field.');
+    expect(madeWith()).toEqual([]);
+    await type(field("Repo to add"), "acme/shop");
+    await press(button("Create"));
+    expect(madeWith()).toEqual([
+      ["project_add", { machineId: "devbox", create: true, title: "shop" }],
+      ["project_repo_add", { machineId: "devbox", projectId: "p9", url: "acme/shop" }],
+    ]);
+    await act(async () => {
+      hub({ t: "event", event: { seq: 2, at: AT, type: "project.added", machineId: "devbox", projectId: "p9", summary: "", data: { addId: "a1", created: true, path: "/home/w/src/shop", title: "shop", inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "", notes: [] } } } });
+      await Promise.resolve();
+    });
+    await settle();
+    await press(button("Done"));
+  });
+
   it("offers what the hub found on the bot's machine as you type, and Esc closes only the field", async () => {
     await render();
     await press(document.querySelector('button[aria-label="Add a repo"]'));

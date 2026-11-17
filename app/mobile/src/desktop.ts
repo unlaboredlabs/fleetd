@@ -96,6 +96,8 @@ export { deleteWords, isArchived, NAME_MAX, nameProblem, PROJECT_TOOLS } from ".
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
 export { discovery, projectHome, repoSuggestions, target, type Discovery, type Found, type RepoPick } from "../../desktop/src/renderer/screens/projects/discovery";
 export {
+  botAtFolder,
+  botHolding,
   botName,
   busy as createBusy,
   createStep,
@@ -104,6 +106,7 @@ export {
   ownRepo,
   repoKey,
   repoLabel,
+  typedRepo,
   type Call as CreateCall,
   type CreateMsg,
   type CreateState,

@@ -11,9 +11,10 @@ import { CloudDownload, Folder, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Button, Select, StateGlyph, Text, Truncate, cx, type GlyphState } from "../../ui";
 import { discovery as discoveryOf, orList, projectHome, repoSuggestions, target, type Discovery, type Worker } from "./discovery";
-import { botName, busy, ownRepo, repoKey, type RepoDraft, type RepoJob } from "./create";
+import { botAtFolder, botHolding, botName, busy, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
 import { navigate } from "../shell/navigation";
 import { HubText } from "./HubText";
 import { NAME_MAX, nameProblem } from "./model";
@@ -26,6 +27,7 @@ import {
   dismissRepo,
   localMachine,
   pickMachine,
+  refuseCreate,
   removeRepo,
   retryRepo,
   setAdding,
@@ -154,13 +156,17 @@ function Form({ ui, field }: { ui: AddUi; field: RefObject<HTMLInputElement | nu
   const problem = nameProblem(ui.name);
   const named = botName(ui.name, ui.repos);
   const block = blocker(to, d, ui.repos);
+  /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
+  const botAt = (path: string): string | undefined => botAtFolder(projects, to?.machineId, path)?.title;
   const go = () => {
     if (problem !== undefined) return;
-    create(to?.machineId, block ?? undefined);
+    // A repo typed but not yet added goes in with the rest, or Create says why it can't.
+    const typed = ui.adding === null ? null : typedRepo(ui.adding);
+    if (typed !== null && "why" in typed) return refuseCreate(typed.why);
+    const bot = typed?.repo.kind === "folder" ? botAt(typed.repo.path) : undefined;
+    if (typed?.repo.kind === "folder" && bot !== undefined) return refuseCreate(`${tilde(typed.repo.path)} is already the bot ${bot}: open it from the sidebar.`);
+    create(to?.machineId, block ?? undefined, typed?.repo);
   };
-  /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
-  const botAt = (path: string): string | undefined =>
-    Object.values(projects).find((p) => p.machineId === to?.machineId && p.workspaceRoot.replace(/\/+$/u, "") === path.replace(/(.)\/+$/u, "$1"))?.title;
   return (
     <>
       <div className={s.field}>
@@ -415,7 +421,7 @@ function Progress({ ui }: { ui: AddUi }) {
         ) : null}
         <ul className={s.repos} aria-label="Repos">
           {ui.add.jobs.map((j) => (
-            <JobRow key={j.key} job={j} />
+            <JobRow key={j.key} job={j} bot={ui.add.phase.kind === "made" ? ui.add.phase.bot : undefined} />
           ))}
         </ul>
       </div>
@@ -439,9 +445,16 @@ function Progress({ ui }: { ui: AddUi }) {
 const GLYPH: Record<RepoJob["state"]["t"], GlyphState> = { waiting: "queued", adding: "working", added: "done", failed: "failed" };
 const GLYPH_WORD: Record<RepoJob["state"]["t"], string> = { waiting: "Waiting", adding: "Adding", added: "Added", failed: "Failed" };
 
-function JobRow({ job }: { job: RepoJob }) {
+function JobRow({ job, bot }: { job: RepoJob; bot: Bot | undefined }) {
   const label = job.draft.kind === "clone" ? job.draft.repo : tilde(job.draft.path);
   const st = job.state;
+  const projects = useData((d) => d.projects);
+  // The checkout in a clone's way may be a bot of its own, which adding it here archives: said before, and after.
+  const holder =
+    st.t === "failed" && st.existing === true && job.draft.kind === "clone" && bot !== undefined
+      ? botHolding(projects, bot.project.machineId, job.draft.repo, st.at, bot.project.projectId)
+      : undefined;
+  const archived = st.t === "added" && st.archived !== undefined ? (projects[projectKey(st.archived)]?.title ?? st.archived.projectId) : undefined;
   return (
     <li className={s.job} data-state={st.t}>
       <div className={s.repo}>
@@ -451,9 +464,9 @@ function JobRow({ job }: { job: RepoJob }) {
         <Truncate expand="none" as="samp" className={cx(s.name)}>
           {label}
         </Truncate>
-        {st.t === "adding" || st.t === "waiting" ? (
+        {st.t === "adding" || st.t === "waiting" || archived !== undefined ? (
           <Truncate expand="none" size="sm" tone="quiet" className={cx(s.detail)}>
-            {st.t === "adding" ? st.detail : "Waiting for the bot"}
+            {st.t === "adding" ? st.detail : st.t === "waiting" ? "Waiting for the bot" : `${archived ?? ""} archived: its chat stays`}
           </Truncate>
         ) : (
           <span className={s.spacer} />
@@ -462,7 +475,7 @@ function JobRow({ job }: { job: RepoJob }) {
           <span className={s.jobActions}>
             {st.existing ? (
               <Button size="sm" onClick={() => retryRepo(job.key, true)}>
-                Use the checkout there
+                {holder === undefined ? "Use the checkout there" : `Use it, archiving ${holder.title}`}
               </Button>
             ) : (
               <Button size="sm" onClick={() => retryRepo(job.key)}>
@@ -483,6 +496,7 @@ function JobRow({ job }: { job: RepoJob }) {
       {st.t === "failed" ? (
         <Text as="p" size="sm" tone="quiet" className={cx(s.why)}>
           <HubText>{st.fix ? `${st.message} ${st.fix}` : st.message}</HubText>
+          {holder === undefined ? null : ` It is the bot ${holder.title}: using it here archives ${holder.title}, whose chat stays but whose lead stops.`}
         </Text>
       ) : null}
     </li>

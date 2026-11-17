@@ -9,7 +9,7 @@ import type { ToolInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { ADD_EVENTS, type CloneProgressData, type HubEvent, type ProjectAddFailedData, type ProjectAddOutput, type ProjectAddedData, type ProjectSummary } from "./contracts";
 import { progress, type ProjectKey } from "./discovery";
-import { baseName } from "./source";
+import { addSource, baseName, otherHost } from "./source";
 
 /** One repo in the list: a GitHub repo to clone onto the bot's machine, or a folder already on it. */
 export type RepoDraft = { readonly kind: "clone"; readonly repo: string } | { readonly kind: "folder"; readonly path: string };
@@ -34,6 +34,44 @@ export const botName = (name: string, repos: ReadonlyArray<RepoDraft>): string =
   return first === undefined ? "" : baseName(repoLabel(first));
 };
 
+const trimmed = (path: string): string => path.replace(/(.)\/+$/u, "$1");
+
+/**
+ * What the add field's text adds as it stands, for a Create pressed before it was added: the repo, or why it can't
+ * be added yet. Null when the field is empty, so there is nothing to add.
+ */
+export const typedRepo = (text: string): { readonly repo: RepoDraft } | { readonly why: string } | null => {
+  const t = text.trim();
+  if (t === "") return null;
+  const other = otherHost(t);
+  if (other !== null) return { why: other };
+  const src = addSource(t);
+  if (src === null) return { why: `"${t}" isn't a repo yet: pick one from the list, or clear the field.` };
+  if (src.kind === "github") return { repo: { kind: "clone", repo: src.repo } };
+  if (!src.path.startsWith("/")) return { why: "Type the folder's full path, starting with /." };
+  return { repo: { kind: "folder", path: trimmed(src.path) } };
+};
+
+type Listed = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "workspaceRoot" | "repos">;
+
+/** The bot whose own folder is `path` on `machineId`: adding it would take that bot's place, so it isn't added. */
+export const botAtFolder = (projects: Readonly<Record<string, Listed>>, machineId: string | undefined, path: string): Listed | undefined =>
+  Object.values(projects).find((p) => p.machineId === machineId && trimmed(p.workspaceRoot) === trimmed(path));
+
+/**
+ * The bot that is the checkout a failed clone found in its way (`at`, the hub's path, or the GitHub repo its own
+ * checkout tracks): adding that checkout to another bot archives it read-only (hub/projects/repos.ts attachCheckout).
+ */
+export const botHolding = (projects: Readonly<Record<string, Listed>>, machineId: string, repo: string, at: string | undefined, self: string): Listed | undefined => {
+  const key = `github.com/${repo}`.toLowerCase();
+  return Object.values(projects).find(
+    (p) =>
+      p.machineId === machineId &&
+      p.projectId !== self &&
+      ((at !== undefined && trimmed(p.workspaceRoot) === trimmed(at)) || (p.repos ?? []).some((r) => r.checkout.projectId === p.projectId && r.repoKey?.toLowerCase() === key)),
+  );
+};
+
 /** The repo whose folder becomes the bot's own: the first folder listed. None: the hub makes a folder for it. */
 export const ownRepo = (repos: ReadonlyArray<RepoDraft>): RepoDraft | undefined => repos.find((r) => r.kind === "folder");
 
@@ -41,9 +79,10 @@ export type RepoState =
   /** Waits for the bot to be made. */
   | { readonly t: "waiting" }
   | { readonly t: "adding"; readonly detail: string; readonly fraction?: number }
-  | { readonly t: "added"; readonly path: string }
-  /** `existing`: the clone's folder already holds this repo, which can be added as it is. */
-  | { readonly t: "failed"; readonly message: string; readonly fix?: string; readonly existing?: boolean };
+  /** `archived`: the bot that checkout was until now, archived read-only by the add. */
+  | { readonly t: "added"; readonly path: string; readonly archived?: ProjectKey }
+  /** `existing`: the clone's folder (`at`, as the hub says it) already holds this repo, which can be added as it is. */
+  | { readonly t: "failed"; readonly message: string; readonly fix?: string; readonly existing?: boolean; readonly at?: string };
 
 export interface RepoJob {
   readonly key: string;
@@ -117,9 +156,15 @@ const str = (data: unknown, key: string): string | undefined => {
 
 const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
+/** The folder in the hub's "<machine> already has a checkout of <repo> at <path>" (hub/projects/add.ts destTaken). */
+const atPath = (message: string): string | undefined => / at (\/\S+?)\.?$/u.exec(message.trim())?.[1];
+
 const failed = (message: string, fix: string | undefined, existing = false): RepoState => {
   // The hub names its own field in the fix ("Add that checkout instead (useExisting)"): the row's button says it.
-  if (existing) return { t: "failed", message: sentence(message), existing: true };
+  if (existing) {
+    const at = atPath(message);
+    return { t: "failed", message: sentence(message), existing: true, ...(at === undefined ? {} : { at }) };
+  }
   return fix?.trim() ? { t: "failed", message: sentence(message), fix: sentence(fix) } : { t: "failed", message: sentence(message) };
 };
 
@@ -201,9 +246,10 @@ const answer = (s: CreateState, c: Call, outcome: Outcome): Step_ => {
     const state: RepoState = lost ? { t: "adding", detail: LOST_REPO } : failed(outcome.error.message, outcome.error.fix, sameRepoThere(outcome.error.fix));
     return [trimEarly(withJob(s, c.key, (j) => ({ key: j.key, draft: j.draft, state }))), []];
   }
-  const out = outcome.output as { path: string; addId?: string; repo?: { path?: string } };
+  const out = outcome.output as { path: string; addId?: string; repo?: { path?: string }; archived?: ProjectKey };
   if (out.addId === undefined) {
-    return [withJob(s, c.key, (j) => ({ key: j.key, draft: j.draft, state: { t: "added", path: out.repo?.path ?? out.path } })), []];
+    const archived = out.archived === undefined ? {} : { archived: { machineId: out.archived.machineId, projectId: out.archived.projectId } };
+    return [withJob(s, c.key, (j) => ({ key: j.key, draft: j.draft, state: { t: "added", path: out.repo?.path ?? out.path, ...archived } })), []];
   }
   const addId = out.addId;
   // Events that came before this answer: the ones naming its addId are its own.

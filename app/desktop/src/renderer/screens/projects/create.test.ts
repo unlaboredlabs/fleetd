@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent } from "./contracts";
-import { botName, busy, createStep, initialCreate, outcomeLine, type Call, type CreateState, type Draft, type Outcome } from "./create";
+import { botHolding, botName, busy, createStep, initialCreate, outcomeLine, typedRepo, type Call, type CreateState, type Draft, type Outcome } from "./create";
 
 const live: CreateState = { ...initialCreate, live: true };
 const inspect = { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder", notes: [] };
@@ -100,9 +100,26 @@ describe("its repos", () => {
     const { m, api } = cloning();
     const fix = "Add that checkout instead (useExisting), or clone into another folder (dest)";
     const s = createStep(m, { t: "answer", call: api, outcome: { ok: false, error: { code: "invalid", message: "devbox already has a checkout of acme/api at /home/w/src/api", fix } } })[0];
-    expect(s.jobs[0]?.state).toEqual({ t: "failed", message: "devbox already has a checkout of acme/api at /home/w/src/api.", existing: true });
-    const [, calls] = createStep(s, { t: "retry", key: "gh:acme/api", useExisting: true });
+    expect(s.jobs[0]?.state).toEqual({ t: "failed", message: "devbox already has a checkout of acme/api at /home/w/src/api.", existing: true, at: "/home/w/src/api" });
+    const [again, calls] = createStep(s, { t: "retry", key: "gh:acme/api", useExisting: true });
     expect(calls[0]?.input).toEqual({ machineId: "devbox", projectId: "p1", url: "acme/api", useExisting: true });
+    // That checkout was a bot of its own: the hub archived it, and the row keeps which.
+    const [added] = createStep(again, { t: "answer", call: calls[0] as Call, outcome: { ok: true, output: { path: "/home/w/src/api", repo: { path: "/home/w/src/api" }, archived: { machineId: "devbox", projectId: "api-bot" } } } });
+    expect(added.jobs[0]?.state).toEqual({ t: "added", path: "/home/w/src/api", archived: { machineId: "devbox", projectId: "api-bot" } });
+  });
+
+  it("name the bot a checkout in the way is, by its folder or its own repo, never the new bot itself", () => {
+    const threads = { running: 0, waiting: 0, idle: 0, failed: 0 };
+    const own = (projectId: string, repoKey: string) => [{ name: "x", repoId: "R", checkout: { machineId: "devbox", projectId }, repoKey }];
+    const projects = {
+      "devbox/api-bot": { machineId: "devbox", projectId: "api-bot", title: "API", workspaceRoot: "/home/w/src/api/", threads, lastActivityAt: "" },
+      "devbox/web-bot": { machineId: "devbox", projectId: "web-bot", title: "Web", workspaceRoot: "/srv/web", threads, lastActivityAt: "", repos: own("web-bot", "github.com/Acme/Web") },
+      "devbox/p1": { machineId: "devbox", projectId: "p1", title: "Shop", workspaceRoot: "/home/w/src/shop", threads, lastActivityAt: "" },
+    };
+    expect(botHolding(projects, "devbox", "acme/api", "/home/w/src/api", "p1")?.title).toBe("API");
+    expect(botHolding(projects, "devbox", "acme/web", undefined, "p1")?.title).toBe("Web");
+    expect(botHolding(projects, "devbox", "acme/shop", "/home/w/src/shop", "p1")).toBeUndefined();
+    expect(botHolding(projects, "buildbox", "acme/web", undefined, "p1")).toBeUndefined();
   });
 
   it("left out after failing are dropped from the list, and the outcome line says how it ended", () => {
@@ -122,5 +139,17 @@ describe("its repos", () => {
       projects: [{ machineId: "devbox", projectId: "p1", title: "Shop", workspaceRoot: "/w", threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: "", repos: [{ name: "api", path: "/home/w/src/api", repoId: "R1", checkout: { machineId: "devbox", projectId: "c1" } }] }],
     })[0];
     expect(s.jobs.map((j) => j.state.t)).toEqual(["added", "adding"]);
+  });
+});
+
+describe("a repo left in the add field", () => {
+  it("is added as it stands when it reads as a repo or a full path, and otherwise says why", () => {
+    expect(typedRepo("  ")).toBeNull();
+    expect(typedRepo("https://github.com/acme/shop")).toEqual({ repo: { kind: "clone", repo: "acme/shop" } });
+    expect(typedRepo("/home/w/src/docs/")).toEqual({ repo: { kind: "folder", path: "/home/w/src/docs" } });
+    expect(typedRepo("che")).toEqual({ why: '"che" isn\'t a repo yet: pick one from the list, or clear the field.' });
+    expect(typedRepo("~/src/x")).toEqual({ why: "Type the folder's full path, starting with /." });
+    const other = typedRepo("https://gitlab.com/a/b");
+    expect(other !== null && "why" in other && other.why.includes("gitlab.com")).toBe(true);
   });
 });

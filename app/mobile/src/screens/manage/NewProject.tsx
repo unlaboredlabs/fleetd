@@ -7,7 +7,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { botName, createBusy, createStep, initialCreate, NAME_MAX, nameProblem, otherHost, ownRepo, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
+import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, otherHost, ownRepo, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
@@ -73,14 +73,27 @@ export function NewProject({ navigation, route }: Props) {
         : undefined;
   const create = () => {
     if (nameIssue !== undefined) return;
-    const why = block ?? (named === "" ? "Name it, or add a repo." : undefined);
+    // A repo typed but not yet added goes in with the rest, or Create says why it can't.
+    const typed = adding === null ? null : typedRepo(adding);
+    const typedBot = typed !== null && "repo" in typed && typed.repo.kind === "folder" ? botAtFolder(state.projects ?? {}, to?.machineId, typed.repo.path) : undefined;
+    const all = typed !== null && "repo" in typed && !repos.some((x) => repoKey(x) === repoKey(typed.repo)) ? [...repos, typed.repo] : repos;
+    const why =
+      typed !== null && "why" in typed
+        ? typed.why
+        : typedBot !== undefined
+          ? `${tilde(typedBot.workspaceRoot)} is already the bot ${typedBot.title}: open it from Chats.`
+          : (block ?? (botName(name, all) === "" ? "Name it, or add a repo." : undefined));
+    if (typed !== null && "repo" in typed && typedBot === undefined) {
+      setRepos(all);
+      setAdding(null);
+    }
     if (why !== undefined || to === null) {
       haptics.warning();
       setRefused(why);
       return;
     }
     haptics.tap();
-    send({ t: "start", draft: { name: named, machineId: to.machineId, repos } });
+    send({ t: "start", draft: { name: botName(name, all), machineId: to.machineId, repos: all } });
   };
   // Made from Import Memory: back there, where the paste waits. Else its chat.
   const openChat = (key: string) => (route.params?.back === true ? navigation.goBack() : closeThenOpen(navigation, key));
@@ -137,7 +150,7 @@ export function NewProject({ navigation, route }: Props) {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
         <ListSection header="Repos" {...(createBusy(s) ? { footer: "It carries on if you close this." } : {})}>
           {s.jobs.map((j) => (
-            <JobRow key={j.key} job={j} onRetry={(useExisting) => send({ t: "retry", key: j.key, useExisting })} />
+            <JobRow key={j.key} job={j} bot={phase.bot.project} projects={state.projects ?? {}} onRetry={(useExisting) => send({ t: "retry", key: j.key, useExisting })} />
           ))}
         </ListSection>
       </ScrollView>
@@ -148,11 +161,8 @@ export function NewProject({ navigation, route }: Props) {
     if (r === undefined) return;
     if (r.kind === "folder" && !r.path.startsWith("/")) return setRefused("Type the folder's full path, starting with /.");
     // A folder that is a bot already would take that bot's place: not added.
-    if (r.kind === "folder") {
-      const path = r.path.replace(/(.)\/+$/u, "$1");
-      const bot = Object.values(state.projects ?? {}).find((p) => p.machineId === to?.machineId && p.workspaceRoot === path);
-      if (bot !== undefined) return setRefused(`${tilde(path)} is already the bot ${bot.title}: open it from Chats.`);
-    }
+    const bot = r.kind === "folder" ? botAtFolder(state.projects ?? {}, to?.machineId, r.path) : undefined;
+    if (r.kind === "folder" && bot !== undefined) return setRefused(`${tilde(r.path)} is already the bot ${bot.title}: open it from Chats.`);
     haptics.select();
     setRefused(undefined);
     setRepos((now) => (now.some((x) => repoKey(x) === repoKey(r)) ? now : [...now, r.kind === "clone" ? { kind: "clone", repo: r.repo } : { kind: "folder", path: r.path }]));
@@ -256,12 +266,26 @@ export function NewProject({ navigation, route }: Props) {
   );
 }
 
-/** A repo coming in: its progress, ✓, or why it failed with Retry (or the checkout already there). */
-function JobRow({ job, onRetry }: { job: RepoJob; onRetry: (useExisting: boolean) => void }) {
+/**
+ * A repo coming in: its progress, ✓, or why it failed with Retry (or the checkout already there). That checkout may be
+ * a bot of its own, which adding it here archives: the row names that bot before, and after.
+ */
+function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef; projects: Readonly<Record<string, ProjectSummary>>; onRetry: (useExisting: boolean) => void }) {
   const t = useTheme();
   const st = job.state;
   const title = job.draft.kind === "clone" ? job.draft.repo : tilde(job.draft.path);
-  const detail = st.t === "adding" ? st.detail : st.t === "failed" ? errorWords(st) : st.t === "waiting" ? "Waiting for the bot" : undefined;
+  const holder = st.t === "failed" && st.existing === true && job.draft.kind === "clone" ? botHolding(projects, bot.machineId, job.draft.repo, st.at, bot.projectId) : undefined;
+  const archived = st.t === "added" && st.archived !== undefined ? (projects[keyOf(st.archived)]?.title ?? st.archived.projectId) : undefined;
+  const detail =
+    st.t === "adding"
+      ? st.detail
+      : st.t === "failed"
+        ? `${errorWords(st)}${holder === undefined ? "" : ` It is the bot ${holder.title}: using it here archives ${holder.title}, whose chat stays but whose lead stops.`}`
+        : st.t === "waiting"
+          ? "Waiting for the bot"
+          : archived === undefined
+            ? undefined
+            : `${archived} archived: its chat stays`;
   return (
     <ListRow
       icon={job.draft.kind === "clone" ? "link" : "folder"}
@@ -273,7 +297,7 @@ function JobRow({ job, onRetry }: { job: RepoJob; onRetry: (useExisting: boolean
         st.t === "added" ? (
           <Symbol ios="checkmark.circle.fill" android="check_circle" size={20} color={t.success} />
         ) : st.t === "failed" ? (
-          <Button label={st.existing === true ? "Use Checkout" : "Retry"} kind="tinted" size="small" onPress={() => onRetry(st.existing === true)} />
+          <Button label={st.existing === true ? (holder === undefined ? "Use Checkout" : "Use and Archive") : "Retry"} kind="tinted" size="small" onPress={() => onRetry(st.existing === true)} />
         ) : (
           <ActivityIndicator color={t.secondary} />
         )

@@ -194,16 +194,22 @@ export const pickMachine = (machine: string): void => set({ ...omit(ui, "refused
 
 export const setNote = (note: Note | undefined): void => set(note === undefined ? omit(ui, "note") : { ...ui, note });
 
-/** Create: the bot and its repos, or why not yet. */
-export const create = (machineId: string | undefined, why?: string): void => {
-  const name = botName(ui.name, ui.repos);
+/** Create: the bot and its repos, or why not yet. `typed`: a repo left in the add field, which goes in the list first. */
+export const create = (machineId: string | undefined, why?: string, typed?: RepoDraft): void => {
+  const repos = typed === undefined ? ui.repos : withRepo(ui.repos, typed);
+  const shown = typed === undefined ? ui : { ...omit(ui, "note"), repos, adding: null };
+  const name = botName(ui.name, repos);
   const refused = why ?? (machineId === undefined ? "No machine is online: start fleetd on one of your machines." : name === "" ? "Name it, or add a repo." : undefined);
   if (refused !== undefined || machineId === undefined) {
-    set({ ...ui, refused: refused ?? "" });
+    set({ ...shown, refused: refused ?? "" });
     return;
   }
-  dispatch({ t: "start", draft: { name, machineId, repos: ui.repos } });
+  set(shown);
+  dispatch({ t: "start", draft: { name, machineId, repos } });
 };
+
+/** Why Create didn't go, said over its button until the next edit. */
+export const refuseCreate = (why: string): void => set({ ...ui, refused: why });
 
 export const retryRepo = (key: string, useExisting = false): void => dispatch({ t: "retry", key, useExisting });
 
