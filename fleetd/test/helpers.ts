@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { afterAll, beforeAll } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
@@ -7,6 +8,21 @@ import { Deflater } from "../src/hub/link/deflate.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { migrate } from "../src/hub/store/migrations.ts";
 import type { Grant } from "../src/shared/contracts.ts";
+
+/**
+ * Leaves PLAYWRIGHT_BROWSERS_PATH unset while a file's tests run, as on a machine with no shared Playwright install.
+ * A sandbox box names its own (/opt/ms-playwright, Chrome and ffmpeg in it), which tests of a node's own install and
+ * of "no ffmpeg here" mustn't find. Call it at the top of the file.
+ */
+export function noSharedPlaywright(): void {
+  const was = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  beforeAll(() => {
+    delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+  });
+  afterAll(() => {
+    if (was !== undefined) process.env.PLAYWRIGHT_BROWSERS_PATH = was;
+  });
+}
 
 /** A fresh directory under $TMPDIR, removed by the returned function. Never the live hub's home. */
 export function tempHome(): { dir: string; done: () => void } {

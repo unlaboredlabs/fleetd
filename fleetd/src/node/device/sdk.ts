@@ -191,7 +191,7 @@ export type KvmCheck = () => { ok: Kvm } | { err: KvmRefusal };
 
 let sgOpened = false;
 /** Whether `sg kvm` gives a command read-write /dev/kvm. Once it does, it always will: the answer is kept. */
-function sgOpens(dev: string): boolean {
+export function sgOpens(dev: string): boolean {
   if (sgOpened) return true;
   const q = quoted(dev);
   const ran = Bun.spawnSync(["sg", "kvm", "-c", `test -r ${q} && test -w ${q}`], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
@@ -208,7 +208,8 @@ export const kvm: KvmCheck = () => {
 /** A word for `sh -c`, single-quoted. */
 export const quoted = (word: string) => `'${word.replaceAll("'", "'\\''")}'`;
 
-export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => boolean): { ok: Kvm } | { err: KvmRefusal } {
+/** `what` is the program that needs KVM, as the refusals name it. */
+export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => boolean, what = "the emulator"): { ok: Kvm } | { err: KvmRefusal } {
   if (!existsSync(dev)) {
     return {
       err: {
@@ -216,7 +217,7 @@ export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => b
       },
     };
   }
-  // Open it as the emulator will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
+  // Open it as the program will will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
   try {
     closeSync(openSync(dev, "r+"));
     return { ok: "direct" };
@@ -245,7 +246,7 @@ export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => b
   }
   return {
     err: {
-      why: `${user} can't open /dev/kvm read-write: the command adds them to group kvm. The node then starts the emulator with that group through \`sg kvm\`, within minutes, with no restart.`,
+      why: `${user} can't open /dev/kvm read-write: the command adds them to group kvm. The node then starts ${what} with that group through \`sg kvm\`, within minutes, with no restart.`,
       fix: `sudo usermod -aG kvm ${user}`,
     },
   };

@@ -15,3 +15,9 @@ declare module "*.sh" {
   const text: string;
   export default text;
 }
+
+// `import recipe from "x/Dockerfile" with { type: "text" }`: an image recipe the node hashes into its pin.
+declare module "*/Dockerfile" {
+  const text: string;
+  export default text;
+}

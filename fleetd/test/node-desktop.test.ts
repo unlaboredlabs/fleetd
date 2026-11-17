@@ -26,8 +26,10 @@ import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
 import { router } from "../src/node/device/router.ts";
 import { start as startRoute } from "../src/node/session_route/index.ts";
 import { cookieOf, FakeX } from "./fake_x.ts";
-import { tempHome } from "./helpers.ts";
+import { noSharedPlaywright, tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
+
+noSharedPlaywright();
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {

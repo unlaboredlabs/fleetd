@@ -8,8 +8,10 @@ import { installCommand, installTmp, Kept, keptDir, type KeptLease, Pool, readyK
 import { Broker, screenHooks } from "../src/node/browser/index.ts";
 import { oldProfilesDir } from "../src/node/own_homes.ts";
 import { chrome, driver, rig, THREAD } from "./browser_rig.ts";
-import { tempHome } from "./helpers.ts";
+import { noSharedPlaywright, tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
+
+noSharedPlaywright();
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {

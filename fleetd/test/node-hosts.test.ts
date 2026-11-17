@@ -6,8 +6,10 @@ import { join } from "node:path";
 import type { HostCheck } from "../src/shared/contracts.ts";
 import { deviceDir, type KvmCheck } from "../src/node/device/sdk.ts";
 import { android, browser, forget, gate, lines, listed, macScreen, start } from "../src/node/hosts/index.ts";
-import { tempHome } from "./helpers.ts";
+import { noSharedPlaywright, tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
+
+noSharedPlaywright();
 
 const kvmOk: KvmCheck = () => ({ ok: {} as never });
 const kvmNo: KvmCheck = () => ({ err: { why: "no /dev/kvm" } as never });
