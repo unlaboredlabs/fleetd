@@ -92,7 +92,7 @@ export class HostLink {
   applied = 0;
   /** The node let go of the host (its shutdown): the events end without an exit, and the session goes on. */
   detached = false;
-  #socket: Bun.Socket<undefined> | undefined;
+  #socket: HostSocket | undefined;
   /** What the socket hasn't taken yet: Bun's sockets don't buffer, so a write past what the kernel takes at once goes
    * when it drains (a long message, a pasted image, went cut otherwise). */
   #out: Uint8Array | undefined;
@@ -112,16 +112,17 @@ export class HostLink {
     this.#closed = new Promise((r) => (this.#closedResolve = r));
   }
 
-  /** Connects to the host in `dir`: its events start with every one it kept. Refused for another PROTOCOL. */
-  static async connect(dir: string): Promise<HostLink> {
-    const registration = readRegistration(dir);
+  /** Connects to the host in `dir`: its events start with every one it kept. Refused for another PROTOCOL. A host in a
+   * box comes with its own `dial` (../sandbox/box.ts dialHost) and `registration`. */
+  static async connect(dir: string, o: { dial?: HostDial; registration?: Registration } = {}): Promise<HostLink> {
+    const registration = o.registration ?? readRegistration(dir);
     if (!registration) throw new Error("no registration");
     if (registration.protocol !== PROTOCOL) throw new Error(`it speaks protocol ${registration.protocol}, this node ${PROTOCOL}`);
     if (registration.refused) throw new Error(registration.refused.message);
     const link = new HostLink(registration);
     // One decoder for the connection, streaming: a character split across two reads comes out whole.
     const decoder = new TextDecoder();
-    link.#socket = await dialSocket(dir, {
+    link.#socket = await (o.dial ?? ((h) => dialSocket(dir, h)))({
       data: (_s, chunk) => link.#data(decoder.decode(chunk, { stream: true })),
       drain: () => link.#flush(),
       close: () => link.#gone(),
@@ -223,6 +224,11 @@ export class HostLink {
     this.#gone();
   }
 }
+
+/** What a link writes to: a host's socket, or a box's channel to one. */
+export type HostSocket = { write(data: Uint8Array): number; end(): void };
+export type HostHandlers = { data(socket: unknown, chunk: Uint8Array): void; drain(): void; close(): void; error(): void };
+type HostDial = (handlers: HostHandlers) => Promise<HostSocket>;
 
 const socketPath = (dir: string) => join(dir, "sock");
 

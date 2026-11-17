@@ -1,0 +1,266 @@
+// The node's side of one box: its one link to the box's guest helper (./guest.ts), dialled with whatever stream the
+// box kind gives (`dial`), and dialled again when it drops until the guest is gone for `goneMs`. Over it (./mux.ts):
+// - the session host's lines (`start`, then `dialHost`, which HostLink.connect takes as its dial): the host side of
+//   them stays open across drops, and the session host inside resends what the node didn't acknowledge;
+// - each connection to the box's node.sock, answered as a node.sock call of the box's session (../lead/index.ts
+//   leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
+// - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1. A channel to
+//   anywhere else is refused.
+import { connect } from "node:net";
+import { Duplex } from "node:stream";
+import type { HostHandlers, HostSocket } from "../runner/host.ts";
+import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
+import { GUEST_PROTOCOL, type HostInfo } from "./guest.ts";
+import { HOST, Mux, type Target } from "./mux.ts";
+
+const HELLO_MS = 5_000;
+const ANSWER_MS = 15_000;
+const GONE_MS = 30_000;
+const REDIAL_MIN_MS = 50;
+const REDIAL_MAX_MS = 1_000;
+
+export type BoxOptions = {
+  /** The session the box runs: every call from it acts as this session. */
+  session: string;
+  /** A new stream to the guest helper: vsock through the VMM's socket, or a unix socket to a stand-in. */
+  dial: () => Promise<Duplex>;
+  /** The node's socket, at whose path the guest listens (FLEETD_NODE_SOCK). */
+  nodeSock: string;
+  /** This machine's ports the box reaches at the same numbers (the browser proxy's, adb's). */
+  tcp: number[];
+  /** How node.sock calls are answered (the node's serveLeadSocket hooks). */
+  lead: LeadSocketHooks;
+  /** How long a dropped link is dialled again before the guest counts as gone. */
+  goneMs?: number;
+};
+
+
+export class Box {
+  #mux: Mux | undefined;
+  #tcp: Set<number>;
+  #hostRuns = false;
+  #bridge: HostBridge | undefined;
+  #requests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  #nextId = 0;
+  #over = false;
+  #connecting = false;
+  #goneResolve!: (why: string) => void;
+  /** Why the link ended for good: the guest went away, or the node let go (`close`). */
+  readonly gone: Promise<string> = new Promise((r) => (this.#goneResolve = r));
+
+  private constructor(readonly o: BoxOptions) {
+    this.#tcp = new Set(o.tcp);
+  }
+
+  /** Dials the box's guest and sets up its forwards. */
+  static async open(o: BoxOptions): Promise<Box> {
+    const box = new Box(o);
+    await box.#connect();
+    return box;
+  }
+
+  /** Starts the session's host in the box. What the guest says of it: the session host's protocol, or why it refused
+   * (its program missing, say). Its pids are the guest's and mean nothing here. */
+  async start(l: { sessionId: string; program: string; args: string[]; cwd: string; env: Record<string, string | undefined> }): Promise<HostInfo> {
+    const info = (await this.#request({ op: "start", ...l })) as HostInfo;
+    this.#hostRuns = !info.refused;
+    return info;
+  }
+
+  /** The session host's lines, for HostLink.connect: open until the session host or the guest is gone. */
+  async dialHost(h: HostHandlers): Promise<HostSocket> {
+    if (this.#over) throw new Error("the box is gone");
+    if (!this.#hostRuns) throw new Error("no session host runs in the box");
+    this.#bridge?.lost();
+    const bridge = new HostBridge(h);
+    this.#bridge = bridge;
+    // While a link is being set up, its setup opens the channel.
+    if (this.#mux && !this.#connecting) this.#mux.open(HOST, { host: true }, bridge.attach());
+    return bridge.socket;
+  }
+
+  /** Reaches this machine's `port` from the box, at the same number. */
+  async forward(port: number): Promise<void> {
+    this.#tcp.add(port);
+    if (this.#mux) await this.#request({ op: "listen", tcp: port });
+  }
+
+  /** Lets go of the link (the node's shutdown): the guest and its session go on, for the next node to dial. */
+  close(): void {
+    this.#end("the node let go of the box");
+  }
+
+  /** Dials once; the link's drops dial again only once this returned. */
+  async #connect(): Promise<void> {
+    this.#connecting = true;
+    try {
+      await this.#dial();
+    } finally {
+      this.#connecting = false;
+    }
+  }
+
+  async #dial(): Promise<void> {
+    const link = await this.o.dial();
+    let hello!: (m: Record<string, unknown>) => void;
+    const said = new Promise<Record<string, unknown>>((r) => (hello = r));
+    const mux: Mux = new Mux(link, {
+      control: (m) => (m.op === "hello" ? hello(m) : this.#answer(m)),
+      open: (channel, target) => this.#open(channel, target),
+      closed: (why) => this.#dropped(mux, why),
+    });
+    this.#mux = mux;
+    try {
+      const m = await Promise.race([said, Bun.sleep(HELLO_MS).then(() => undefined)]);
+      if (!m || m.protocol !== GUEST_PROTOCOL)
+        throw new Error(m ? `the guest speaks protocol ${String(m.protocol)}, this node ${GUEST_PROTOCOL}` : "the guest didn't say hello");
+      this.#hostRuns = m.host !== null && typeof m.host === "object";
+      await this.#request({ op: "listen", unix: this.o.nodeSock });
+      for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
+    } catch (error) {
+      if (this.#mux === mux) this.#mux = undefined;
+      mux.close((error as Error).message);
+      throw error;
+    }
+    const bridge = this.#bridge;
+    if (bridge && !bridge.closed) {
+      if (this.#hostRuns) mux.open(HOST, { host: true }, bridge.attach());
+      else bridge.lost();
+    }
+  }
+
+  #open(channel: number, target: Target): Duplex | undefined {
+    if (channel <= HOST) return undefined;
+    // The target alone says what a channel is; nothing in it names a session.
+    if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
+    if ("tcp" in target && this.#tcp.has(target.tcp)) return connect({ host: "127.0.0.1", port: target.tcp });
+    return undefined;
+  }
+
+  #request(m: Record<string, unknown>): Promise<unknown> {
+    const mux = this.#mux;
+    if (!mux || mux.closed) return Promise.reject(new Error("the box's link is down"));
+    const id = ++this.#nextId;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#requests.delete(id);
+        reject(new Error(`the box's guest didn't answer ${String(m.op)} within ${ANSWER_MS / 1000} s`));
+      }, ANSWER_MS);
+      this.#requests.set(id, {
+        resolve: (v) => (clearTimeout(timer), resolve(v)),
+        reject: (e) => (clearTimeout(timer), reject(e)),
+      });
+      mux.control({ id, ...m });
+    });
+  }
+
+  #answer(m: Record<string, unknown>): void {
+    const pending = typeof m.id === "number" ? this.#requests.get(m.id) : undefined;
+    if (!pending) return;
+    this.#requests.delete(m.id as number);
+    if (typeof m.error === "string") pending.reject(new Error(m.error));
+    else pending.resolve(m.ok);
+  }
+
+  #dropped(mux: Mux, why: string): void {
+    if (this.#mux !== mux) return;
+    this.#mux = undefined;
+    for (const r of this.#requests.values()) r.reject(new Error(`the box's link dropped: ${why}`));
+    this.#requests.clear();
+    if (!this.#over && !this.#connecting) void this.#redial(why);
+  }
+
+  async #redial(why: string): Promise<void> {
+    const deadline = Date.now() + (this.o.goneMs ?? GONE_MS);
+    for (let wait = REDIAL_MIN_MS; !this.#over; wait = Math.min(wait * 2, REDIAL_MAX_MS)) {
+      if (Date.now() >= deadline) {
+        this.#end(`the box's guest is gone: ${why}`);
+        return;
+      }
+      await Bun.sleep(wait);
+      if (this.#over || this.#mux) return;
+      try {
+        await this.#connect();
+        return;
+      } catch (error) {
+        why = (error as Error).message;
+      }
+    }
+  }
+
+  #end(why: string): void {
+    if (this.#over) return;
+    this.#over = true;
+    this.#bridge?.lost();
+    this.#mux?.close(why);
+    this.#goneResolve(why);
+  }
+}
+
+/** The node's end of the session host's lines, across links: what HostLink writes waits for a link, and what comes in
+ * is handed on in whole lines only, so a link that drops mid-line leaves no half of it (the host resends it whole). */
+class HostBridge {
+  #pending: Buffer[] = [];
+  #end: Duplex | undefined;
+  #ended = false;
+  closed = false;
+  readonly socket: HostSocket = {
+    write: (data) => this.#write(data),
+    end: () => this.#endIt(),
+  };
+
+  constructor(readonly h: HostHandlers) {}
+
+  /** This link's end of channel 1. */
+  attach(): Duplex {
+    let tail: Buffer = Buffer.alloc(0);
+    const end: Duplex = new Duplex({
+      read() {},
+      write: (chunk: Buffer, _encoding, callback) => {
+        const all = tail.length ? Buffer.concat([tail, chunk]) : chunk;
+        const nl = all.lastIndexOf(10);
+        if (nl < 0) tail = all;
+        else {
+          tail = Buffer.from(all.subarray(nl + 1));
+          if (!this.closed) this.h.data(undefined, all.subarray(0, nl + 1));
+        }
+        callback();
+      },
+      // The guest ended channel 1: the session host is gone.
+      final: (callback) => {
+        callback();
+        this.lost();
+      },
+    });
+    end.on("close", () => {
+      if (this.#end === end) this.#end = undefined;
+    });
+    this.#end = end;
+    for (const b of this.#pending.splice(0)) end.push(b);
+    if (this.#ended) end.push(null);
+    return end;
+  }
+
+  #write(data: Uint8Array): number {
+    if (this.closed || this.#ended) return -1;
+    const copy = Buffer.from(data);
+    if (this.#end) this.#end.push(copy);
+    else this.#pending.push(copy);
+    return data.length;
+  }
+
+  #endIt(): void {
+    if (this.#ended) return;
+    this.#ended = true;
+    if (this.#end) this.#end.push(null);
+    else queueMicrotask(() => this.lost());
+  }
+
+  /** The session host is gone, or the node let go of it. */
+  lost(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.#end?.destroy();
+    this.h.close();
+  }
+}

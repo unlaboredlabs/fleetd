@@ -1,0 +1,222 @@
+// The one link between the node and a box's guest helper (`fleetd sandbox-guest`, ./guest.ts): any duplex byte stream
+// (a unix socket now, vsock or a provider's port later), carrying numbered channels in frames of one shape:
+//
+//   type u8 | channel u32 BE | length u32 BE | payload
+//
+// - OPEN: a channel starts; its payload is the JSON target. Only the guest opens channels (2 and up), for a connection
+//   to a node.sock forward (`{"unix":path}`) or a TCP forward (`{"tcp":port}`); the node opens only channel 1, the
+//   session host's lines (`{"host":true}`).
+// - DATA: bytes of a channel, at most CHUNK of them a frame.
+// - END: the sender sends nothing more on the channel (a half-close). A channel is done once both sides ended it.
+// - CREDIT: a u32: the receiver handed that many more of the channel's bytes on. A sender keeps at most WINDOW bytes
+//   of a channel unacknowledged, and stops reading the channel's end until credit comes back, so one slow reader holds
+//   back only its own channel.
+// - Channel 0 carries the control messages, one JSON object a DATA frame, outside the windows.
+//
+// A link that drops ends every channel on it; the node dials again (./box.ts) and the session host's own seq/ack
+// resend (../runner/host.ts) carries its lines across.
+import type { Duplex } from "node:stream";
+
+export const FRAME = { OPEN: 1, DATA: 2, END: 3, CREDIT: 4 } as const;
+const HEADER = 9;
+/** The most bytes of a channel in one DATA frame. */
+export const CHUNK = 64 * 1024;
+/** The most bytes of a channel in flight unacknowledged, each way. */
+export const WINDOW = 256 * 1024;
+/** A longer frame ends the link: the other side doesn't speak this protocol. */
+const MAX_FRAME = 1 << 20;
+export const CONTROL = 0;
+export const HOST = 1;
+
+export type Target = { unix: string } | { tcp: number } | { host: true };
+
+export function frame(type: number, channel: number, payload: Uint8Array = new Uint8Array(0)): Buffer {
+  const out = Buffer.allocUnsafe(HEADER + payload.length);
+  out.writeUInt8(type, 0);
+  out.writeUInt32BE(channel, 1);
+  out.writeUInt32BE(payload.length, 5);
+  out.set(payload, HEADER);
+  return out;
+}
+
+/** Splits a byte stream into frames; throws on one this protocol doesn't have. */
+export class Frames {
+  #buf = Buffer.alloc(0);
+  push(chunk: Uint8Array): { type: number; channel: number; payload: Buffer }[] {
+    this.#buf = this.#buf.length ? Buffer.concat([this.#buf, chunk]) : Buffer.from(chunk);
+    const out: { type: number; channel: number; payload: Buffer }[] = [];
+    while (this.#buf.length >= HEADER) {
+      const type = this.#buf.readUInt8(0);
+      const length = this.#buf.readUInt32BE(5);
+      if (type < FRAME.OPEN || type > FRAME.CREDIT) throw new Error(`a frame of unknown type ${type}`);
+      if (length > MAX_FRAME) throw new Error(`a frame of ${length} bytes`);
+      if (this.#buf.length < HEADER + length) break;
+      out.push({ type, channel: this.#buf.readUInt32BE(1), payload: this.#buf.subarray(HEADER, HEADER + length) });
+      this.#buf = this.#buf.subarray(HEADER + length);
+    }
+    return out;
+  }
+}
+
+type Channel = { local: Duplex; credit: number; sentEnd: boolean; gotEnd: boolean };
+
+/** What one side of a link does with what the other sends. */
+export type MuxHooks = {
+  /** A control message. */
+  control: (message: Record<string, unknown>) => void;
+  /** The other side opened `channel` to `target`: its local end, or undefined to refuse it (it is ended at once). */
+  open: (channel: number, target: Target) => Duplex | undefined;
+  /** The link is gone, with every channel on it. */
+  closed: (why: string) => void;
+};
+
+/** One side of a link: channels between local duplex ends and the other side's. */
+export class Mux {
+  #channels = new Map<number, Channel>();
+  #frames = new Frames();
+  #closed = false;
+
+  constructor(
+    readonly link: Duplex,
+    readonly hooks: MuxHooks,
+  ) {
+    link.on("data", (chunk: Buffer) => this.#data(chunk));
+    link.on("error", (e) => this.close(`the link failed: ${e.message}`));
+    link.on("close", () => this.close("the link closed"));
+    link.on("end", () => this.close("the other side closed the link"));
+    // A link slower than its channels holds them all back, whatever credit the other side grants.
+    link.on("drain", () => {
+      for (const c of this.#channels.values()) if (c.credit > 0 && !c.sentEnd) c.local.resume();
+    });
+  }
+
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  control(message: Record<string, unknown>): void {
+    this.#send(frame(FRAME.DATA, CONTROL, Buffer.from(JSON.stringify(message))));
+  }
+
+  /** Opens `channel` to `target` on the other side, `local` its end here. */
+  open(channel: number, target: Target, local: Duplex): void {
+    if (this.#closed) {
+      local.destroy();
+      return;
+    }
+    this.#send(frame(FRAME.OPEN, channel, Buffer.from(JSON.stringify(target))));
+    this.#attach(channel, local);
+  }
+
+  /** Ends the link and every channel on it. */
+  close(why: string): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    for (const c of this.#channels.values()) c.local.destroy();
+    this.#channels.clear();
+    this.link.destroy();
+    this.hooks.closed(why);
+  }
+
+  #send(bytes: Buffer): void {
+    // What the link hasn't taken yet waits in its stream: the windows, and the pause while it drains, bound it.
+    if (!this.#closed) this.link.write(bytes);
+  }
+
+  #attach(id: number, local: Duplex): void {
+    const c: Channel = { local, credit: WINDOW, sentEnd: false, gotEnd: false };
+    this.#channels.set(id, c);
+    const end = () => {
+      if (c.sentEnd || this.#closed) return;
+      c.sentEnd = true;
+      this.#send(frame(FRAME.END, id));
+      this.#done(id, c);
+    };
+    local.on("data", (chunk: Buffer) => {
+      if (c.sentEnd) return;
+      for (let at = 0; at < chunk.length; at += CHUNK) this.#send(frame(FRAME.DATA, id, chunk.subarray(at, at + CHUNK)));
+      c.credit -= chunk.length;
+      if (c.credit <= 0 || this.link.writableNeedDrain) local.pause();
+    });
+    local.on("end", end);
+    local.on("close", end);
+    local.on("error", () => local.destroy());
+  }
+
+  #done(id: number, c: Channel): void {
+    if (c.sentEnd && c.gotEnd && this.#channels.get(id) === c) this.#channels.delete(id);
+  }
+
+  #data(chunk: Buffer): void {
+    if (this.#closed) return;
+    let frames;
+    try {
+      frames = this.#frames.push(chunk);
+    } catch (error) {
+      this.close(`the other side sent ${(error as Error).message}`);
+      return;
+    }
+    for (const f of frames) {
+      if (this.#closed) return;
+      if (f.channel === CONTROL) {
+        if (f.type !== FRAME.DATA) continue;
+        let message: unknown;
+        try {
+          message = JSON.parse(f.payload.toString("utf8"));
+        } catch {
+          this.close("the other side sent a control message that isn't JSON");
+          return;
+        }
+        if (message !== null && typeof message === "object") this.hooks.control(message as Record<string, unknown>);
+        continue;
+      }
+      const c = this.#channels.get(f.channel);
+      switch (f.type) {
+        case FRAME.OPEN: {
+          if (c) {
+            this.close(`the other side opened channel ${f.channel} twice`);
+            return;
+          }
+          let target: Target;
+          try {
+            target = JSON.parse(f.payload.toString("utf8")) as Target;
+          } catch {
+            this.close("the other side opened a channel to no target");
+            return;
+          }
+          const local = this.hooks.open(f.channel, target);
+          if (local) this.#attach(f.channel, local);
+          else this.#send(frame(FRAME.END, f.channel));
+          break;
+        }
+        case FRAME.DATA: {
+          if (!c || c.gotEnd) break;
+          const n = f.payload.length;
+          // Credit once the bytes left this process: a reader that doesn't read holds back its own channel only.
+          const copy = Buffer.from(f.payload);
+          if (c.local.destroyed || c.local.writableEnded) this.#credit(f.channel, c, n);
+          else c.local.write(copy, () => this.#credit(f.channel, c, n));
+          break;
+        }
+        case FRAME.END:
+          if (!c) break;
+          c.gotEnd = true;
+          if (!c.local.destroyed) c.local.end();
+          this.#done(f.channel, c);
+          break;
+        case FRAME.CREDIT:
+          if (!c || f.payload.length !== 4) break;
+          c.credit = Math.min(WINDOW, c.credit + f.payload.readUInt32BE(0));
+          if (c.credit > 0 && !c.sentEnd && !this.link.writableNeedDrain) c.local.resume();
+          break;
+      }
+    }
+  }
+
+  #credit(id: number, c: Channel, n: number): void {
+    if (this.#closed || c.sentEnd && c.gotEnd) return;
+    const payload = Buffer.allocUnsafe(4);
+    payload.writeUInt32BE(n, 0);
+    this.#send(frame(FRAME.CREDIT, id, payload));
+  }
+}

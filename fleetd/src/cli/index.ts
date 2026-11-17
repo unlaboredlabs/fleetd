@@ -144,6 +144,7 @@ export async function main(argv: string[]): Promise<number> {
     if (command === "revyl") return await (await import("./revyl.ts")).run(rest);
     if (command === "build-slot") return await (await import("../node/build_slots.ts")).main(rest);
     if (command === "session-host") return (await import("./session_host.ts")).run(rest);
+    if (command === "sandbox-guest") return (await import("../node/sandbox/guest.ts")).main(rest);
     initFromArgv(argv);
     const help = helpFor(argv);
     if (help !== undefined) {
