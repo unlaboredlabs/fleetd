@@ -32,8 +32,10 @@ export const HOSTED_NO_DESKTOP_LAUNCH =
   "This agent runs in a hosted sandbox, so its files aren't on this machine and the Linux desktop can't launch them. Open what it serves in a browser session instead, or say in your result that the desktop check was skipped.";
 export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents' Mac can't build from its files, and iOS simulators aren't available to it.";
 
-/** Where claude is in every hosted template (sandbox/providers/recipe.ts); tests set a stand-in. */
-export const BOX_CLAUDE = { path: "/usr/local/bin/claude" };
+/** The Claude Code every hosted template installs, at the version fleetd was tested with (sandbox/providers/recipe.ts):
+ * its own install, not /usr/local/bin's, which a provider's image may hold another of (boat's did). Tests set a
+ * stand-in. */
+export const BOX_CLAUDE = { path: "/opt/claude/.local/bin/claude" };
 /** Dirs every box has, after the machine's own PATH. */
 const BOX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const TRANSCRIPT_MAX = 512 * 1024 ** 2;
@@ -283,7 +285,8 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
       }
       if (ports.length) save(dir, l.record);
       const PATH = boxPath(env.PATH, home);
-      const boxEnv = { ...env, PATH };
+      // A box's user may be root (Daytona's is), where claude skips its prompts only in a sandbox it is told of.
+      const boxEnv = { ...env, PATH, IS_SANDBOX: "1" };
       // What the launch names under the node's home, but for what has its own way in (the worktree, the scratch dir,
       // the hosts' dirs) or stays off inside boxes (the build slots).
       const skip = [join(home, "hosts"), join(home, "tmp"), join(home, "worktrees"), join(home, "build-slots"), launch.cwd];

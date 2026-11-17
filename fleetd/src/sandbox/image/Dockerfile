@@ -21,7 +21,7 @@ RUN curl -fsSL -o /tmp/bun.zip https://github.com/oven-sh/bun/releases/download/
  && echo "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18  /tmp/bun.zip" | sha256sum -c - \
  && unzip -q /tmp/bun.zip -d /tmp/bun \
  && install -m 0755 /tmp/bun/bun-linux-x64/bun /usr/local/bin/bun \
- && ln -s bun /usr/local/bin/bunx && ln -s bun /usr/local/bin/node \
+ && ln -sf bun /usr/local/bin/bunx && ln -sf bun /usr/local/bin/node \
  && rm -rf /tmp/bun /tmp/bun.zip
 
 # GitHub's CLI 2.104.0, pinned and checked.

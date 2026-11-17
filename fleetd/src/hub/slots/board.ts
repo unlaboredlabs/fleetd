@@ -37,7 +37,14 @@ export type Machine = {
   /** Where each of its live sessions runs now (thread → LOCAL or a provider), as its last heartbeat said: a hosted
    * box from its making until it is destroyed, a claude on the machine while it lives. */
   places?: Record<string, string>;
+  /** When `places` came (the board's clock). */
+  placesAt?: number;
 };
+
+/** How long a machine's last word on its live sessions counts after it stops reporting (offline, removed): a hosted box
+ * lives an hour past its node's last renewal (node/sandbox/remote/boxes.ts LIFETIME_MS), so no box of it is left by
+ * then and its provider's room is free again. */
+export const PLACES_FRESH_MS = 65 * 60_000;
 
 /** A machine's own slots: a person's number, else what it fits. */
 const machineCapOf = (m: Machine) => m.maxAgents ?? m.auto.cap;
@@ -242,7 +249,14 @@ export class Board {
 
   /** Where the node says the claim's thread runs now, if its claude or box lives. */
   private liveAt(c: Pick<Claim, "threadId" | "projectRef">): string | undefined {
-    return c.threadId === undefined ? undefined : this.machine(claimMachine(c as Claim))?.places?.[c.threadId];
+    return c.threadId === undefined ? undefined : this.places(claimMachine(c as Claim))[c.threadId];
+  }
+
+  /** Where machine `m`'s live sessions run, as it last said, while that still holds (PLACES_FRESH_MS). */
+  private places(m: MachineId): Record<string, string> {
+    const machine = this.machine(m);
+    if (!machine?.places || machine.placesAt === undefined || this.nowMs - machine.placesAt > PLACES_FRESH_MS) return {};
+    return machine.places;
   }
 
   /** Held claims on `m`'s own slots: where its node says their claude runs, else where the board placed them. */
@@ -254,7 +268,7 @@ export class Board {
    * claim placed there whose box no report shows yet. */
   private hostedUse(provider: string): number {
     let n = 0;
-    for (const m of this.machines) for (const at of Object.values(m.places ?? {})) if (at === provider) n++;
+    for (const m of this.machines) for (const at of Object.values(this.places(m.machineId))) if (at === provider) n++;
     return n + this.claims_.filter((c) => c.state === "held" && c.place === provider && this.liveAt(c) === undefined).length;
   }
 
@@ -264,7 +278,7 @@ export class Board {
   private freePlace(c: Pick<Claim, "place" | "hostable" | "threadId" | "projectRef">, m: MachineId): string | undefined {
     if (!this.runsAgents(m)) return undefined;
     const localFree = this.localHeld(m) < this.ownCap(m);
-    const live = c.threadId === undefined ? undefined : this.machine(m)?.places?.[c.threadId];
+    const live = c.threadId === undefined ? undefined : this.places(m)[c.threadId];
     if (live !== undefined && live !== LOCAL) return live;
     if (live === LOCAL) return localFree ? LOCAL : undefined;
     const hostedFree = (p: string) => c.hostable === true && this.canHost(m, p) && this.hostedUse(p) < (this.hosted_.find((l) => l.provider === p)?.max ?? 0);
@@ -325,6 +339,7 @@ export class Board {
       if (diskRoom !== undefined) machine.diskRoom = diskRoom;
       if (sandboxes.length) machine.sandboxes = [...sandboxes];
       if (Object.keys(places).length) machine.places = { ...places };
+      machine.placesAt = this.nowMs;
       this.machines.push(machine);
       this.ops.push({ op: "machine", machineId, name, auto: { ...auto } });
     } else {
@@ -337,6 +352,7 @@ export class Board {
       freed = Object.entries(was).some(([thread, at]) => places[thread] !== at);
       if (Object.keys(places).length) m.places = { ...places };
       else delete m.places;
+      m.placesAt = this.nowMs;
       if (m.auto.cap !== auto.cap || m.auto.why !== auto.why || m.name !== name) {
         m.auto = { ...auto };
         m.name = name;
@@ -439,7 +455,7 @@ export class Board {
         const own = `machine cap: ${this.localHeld(m)} of ${this.ownCap(m)} running on ${name} (${why})`;
         const usable = this.hosted_.filter((l) => this.canHost(m, l.provider));
         if (usable.length === 0) return own;
-        if (c.threadId !== undefined && machine?.places?.[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
+        if (c.threadId !== undefined && this.places(m)[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
         if (c.hostable !== true) return `${own}; hosted sandboxes take only agents on a Claude account, not this machine's own login`;
         return `${own}, and hosted sandboxes are full: ${usable.map((l) => `${NAMES[l.provider]} ${this.hostedUse(l.provider)} of ${l.max}`).join(", ")}`;
       }
@@ -671,13 +687,16 @@ export class Board {
     rows.sort((a, b) => b.running - a.running);
     const count = (s: ClaimState) => this.claims_.filter((c) => c.state === s).length;
     const perMachine = this.machines.slice(0, 50).map((m) => {
-      const hosted = this.hostedCap(m.machineId);
+      // Its own slots and what runs in them; the hosted limits are the team's, shared by every machine, so they are
+      // named beside it, never added to it (the fleet's total counts each once).
+      const usable = this.hosted_.filter((l) => l.max > 0 && this.canHost(m.machineId, l.provider));
+      const shared = usable.length ? `; then the team's hosted sandboxes (${usable.map((l) => `${NAMES[l.provider]} ${l.max}`).join(", ")})` : "";
       const row: MachineRow = {
         machineId: m.machineId,
-        cap: machineCapOf(m) + hosted,
+        cap: machineCapOf(m),
         auto: m.auto.cap,
-        why: hosted ? `${m.auto.why}, and ${hosted} in hosted sandboxes` : m.auto.why,
-        running: this.claims_.filter((c) => c.state === "held" && claimMachine(c) === m.machineId).length,
+        why: `${m.auto.why}${shared}`,
+        running: this.localHeld(m.machineId),
       };
       if (m.maxAgents !== undefined) row.maxAgents = m.maxAgents;
       const disk = this.diskRoom(m.machineId);

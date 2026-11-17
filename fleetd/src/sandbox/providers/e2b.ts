@@ -193,7 +193,7 @@ const seconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
 /** E2B's own words for a refusal that its status alone doesn't say. */
 function refine(a: Answer, words: string): { reason: "billing" | "limit" | "failed"; message: string } | undefined {
   if (a.status === 403 && /banned|blocked/i.test(words)) return { reason: "billing", message: `E2B has blocked this team's account (${words}).` };
-  if (a.status === 400 && /lifetime limit|exceeds/i.test(words)) return { reason: "limit", message: `E2B's plan caps a sandbox's life below that (${words}).` };
+  if (a.status === 400 && /lifetime limit|exceeds|cannot be greater than/i.test(words)) return { reason: "limit", message: `E2B's plan caps a sandbox's life below that (${words}).` };
   if (a.status === 429) return { reason: "limit", message: `E2B's limit for this team is reached: too many sandboxes at once or created too fast (${words}).` };
   if (a.status === 404 && /template/i.test(words)) return { reason: "failed", message: `E2B has no such template (${words}): build it first.` };
   return undefined;

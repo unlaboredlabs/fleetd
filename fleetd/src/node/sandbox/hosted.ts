@@ -8,7 +8,7 @@ import { CAP_SANDBOX, CHECK_WAIT, isProvider, type Limit, NAMES, ORDER, reasonOf
 import type { Node } from "../api.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
-import { Boxes, boxes as currentBoxes, knownBoxes, setBoxes } from "./remote/boxes.ts";
+import { Boxes, boxes as currentBoxes, hostable, knownBoxes, setBoxes } from "./remote/boxes.ts";
 import { join } from "node:path";
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
@@ -33,6 +33,8 @@ export class Sandboxes {
 
   /** The connected providers this node can make boxes in: it holds their keys. */
   placeable(): KnownSandboxProvider[] {
+    // An arm64 machine's fleetd can't run in a box (x86_64): it offers none, and Test still checks the key.
+    if (!hostable()) return [];
     const held = this.boxes?.usable() ?? [];
     return this.#limits.map((l) => l.provider).filter((p) => held.includes(p));
   }

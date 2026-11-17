@@ -156,7 +156,7 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
         const build = s.calls.find((c) => c.path === "/v2/templates/tpl1/builds/b1")!;
         expect(build.body.fromImage).toBe(`ubuntu@sha256:${"a".repeat(64)}`);
         expect(build.body.steps).toEqual([
-          { type: "RUN", args: ["apt-get update \n && apt-get install -y git curl", "root"] },
+          { type: "RUN", args: ["apt-get update  && apt-get install -y git curl", "root"] },
           { type: "ENV", args: ["BUN_INSTALL", "/opt/bun", "PATH", "/opt/bun/bin:/usr/bin"] },
           { type: "WORKDIR", args: ["/work"] },
           { type: "RUN", args: ["echo hi", "root"] },
@@ -203,6 +203,8 @@ describe("refusals in plain words", () => {
     ["e2b", 429, { code: 429, message: "Rate limit exceeded" }, "limit", /E2B's limit/],
     ["e2b", 403, { code: 403, message: "team is blocked" }, "billing", /blocked this team's account/],
     ["e2b", 400, { code: 400, message: "The requested timeout exceeds the sandbox lifetime limit" }, "limit", /caps a sandbox's life/],
+    // E2B's own words on a Hobby account, seen live.
+    ["e2b", 400, { code: 400, message: "Timeout cannot be greater than 1 hours" }, "limit", /caps a sandbox's life/],
     ["e2b", 503, { code: 503, error_code: "sandbox_capacity_unavailable", message: "not enough capacity" }, "failed", /try again in a minute/],
     ["boat", 402, { ok: false, code: "billing_required", message: "Add a card", error: { code: "billing_required", message: "Add a card", status: 402 } }, "billing", /billing is sorted out/],
     ["boat", 429, { ok: false, code: "limit_reached", message: "100 at once" }, "limit", /sandboxes at once/],
@@ -304,6 +306,9 @@ describe("the recipe", () => {
     const r = parse(DOCKERFILE);
     expect(r.from).toBe(`ubuntu@sha256:${"a".repeat(64)}`);
     expect(r.steps.map((s) => s.op)).toEqual(["RUN", "ENV", "WORKDIR", "RUN"]);
+    // A RUN continued over lines is one shell line, as Docker joins it: E2B ran each line as a command of its own.
+    expect(r.steps[0]!.args[0]).toBe("apt-get update  && apt-get install -y git curl");
+    expect(parse("FROM x\nRUN a \\\n  b \\\n  && c\n").steps[0]!.args).toEqual(["a   b   && c"]);
     expect(() => parse("FROM x\nCOPY a b\n")).toThrow("COPY");
     expect(() => parse("FROM x\nRUN cat <<EOF > f\nhi\nEOF\n")).toThrow("heredoc");
     expect(() => parse("FROM x\nRUN cat <<<hi\n")).not.toThrow();

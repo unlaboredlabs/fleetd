@@ -19,8 +19,10 @@ export function parse(dockerfile: string): Recipe {
     const line = raw.replace(/\r$/, "");
     if (cur === "" && (/^\s*#/.test(line) || line.trim() === "")) continue;
     if (/^\s*#/.test(line)) continue; // a comment inside a continued instruction
+    // As Docker reads it: a backslash at a line's end joins the next line onto it, so a RUN split over lines is one
+    // shell line (kept with its newline, sh would run each line as a command of its own).
     if (line.endsWith("\\")) {
-      cur += `${line.slice(0, -1)}\n`;
+      cur += line.slice(0, -1);
       continue;
     }
     lines.push((cur + line).trim());
@@ -99,9 +101,10 @@ export function hosted(base: string, pins: HostedPins): string {
     : "";
   return `${base.trimEnd()}
 
-# Hosted boxes only: Claude Code${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts).
+# Hosted boxes only: Claude Code${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts). boat runs these steps with sudo, where
+# the installer wants to be told that a system-wide install is meant.
 RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \\
- && HOME=/opt/claude bash /tmp/claude-install.sh ${pins.claude} \\
+ && HOME=/opt/claude CLAUDE_INSTALL_ALLOW_SUDO=1 bash /tmp/claude-install.sh ${pins.claude} \\
  && ln -sf "$(readlink -f /opt/claude/.local/bin/claude)" /usr/local/bin/claude \\
  && chmod -R a+rX /opt/claude && rm -f /tmp/claude-install.sh \\
  && claude --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '

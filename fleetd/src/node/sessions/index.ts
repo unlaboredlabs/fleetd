@@ -1169,14 +1169,24 @@ export class SessionService {
       this.#setUpThenSend(id, runId, text, mode, due);
       return recorded.queued;
     }
-    try {
-      await this.#dispatch(id, { Send: { run_id: runId, text, mode } });
-    } catch (error) {
-      const message = error instanceof Refusal ? error.message : (error as Error).message;
-      this.#failRun(id, runId, "other", message);
-      this.#steers.failed(runId, message);
-      throw error;
+    const send = async () => {
+      try {
+        await this.#dispatch(id, { Send: { run_id: runId, text, mode } });
+      } catch (error) {
+        const message = error instanceof Refusal ? error.message : (error as Error).message;
+        this.#failRun(id, runId, "other", message);
+        this.#steers.failed(runId, message);
+        throw error;
+      }
+    };
+    // A hosted session with no claude running makes its box first (a template's first build takes minutes): the
+    // launch or send answers now, and the run fails with the provider's words if no box comes up.
+    const row = this.store.session(id);
+    if (!this.#live.has(id) && row && hostedOf(row.local.hosted) !== undefined && !hasBox(id)) {
+      void send().catch(() => {});
+      return recorded.queued;
     }
+    await send();
     return recorded.queued;
   }
 

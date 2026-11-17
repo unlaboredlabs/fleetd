@@ -400,14 +400,15 @@ so: sandboxes are made there, never on a Mac.
 (0 to 500; 5 until set; 0 keeps the key and sends none). It is the team's total for that provider, across all its
 machines; keep it at or under the provider's own (E2B Hobby runs 10 at once and an hour each; Pro 100 and 24 hours).
 
-**How placement picks.** By count alone, when an agent's run starts: its machine's own slots first; once those are
-full, the connected providers in the order listed (E2B, boat.dev, Daytona), each up to its limit; then the agent waits
-in line, and the line says why, e.g. "machine cap: 10 of 10 running on devbox (memory 60 GB), and hosted sandboxes
-are full: E2B 5 of 5". A sandbox counts against its provider's limit for as long as it runs, the idle minutes
-between an agent's turns included, so the team never has more running than the limit. A run that comes back to an
-agent whose sandbox (or Claude on its machine) still runs goes back to it. Only an agent on a Claude account goes to a sandbox: one on its machine's own Claude login stays on its
-machine's slots (that login never leaves the machine). A machine's max agents shows its own slots and the limits it
-can use. Where an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B · receipt-dates".
+**How placement picks.** By count alone, when an agent's run starts: its machine's own slots first; once those are full,
+the connected providers in the order listed (E2B, boat.dev, Daytona), each up to its limit; then the agent waits in
+line, and the line says why, e.g. "machine cap: 10 of 10 running on devbox (memory 60 GB), and hosted sandboxes are
+full: E2B 5 of 5". A sandbox counts against its provider's limit for as long as it runs, the idle minutes between an
+agent's turns included, so the team never has more running than the limit. A run that comes back to an agent whose
+sandbox (or Claude on its machine) still runs goes back to it. Only an agent on a Claude account goes to a sandbox: one
+on its machine's own Claude login stays on its machine's slots (that login never leaves the machine). A machine's max
+agents shows its own slots, and names the team's hosted limits beside them: they are shared, not each machine's. Where
+an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B · receipt-dates".
 
 **What differs from an agent on its machine.**
 - *Files.* The sandbox starts from the agent's worktree on its machine: the repo cloned from its origin with the
@@ -426,6 +427,8 @@ can use. Where an agent runs shows in its row's hover in the agents list, e.g. "
   a Claude gateway on the machine's loopback.
 - *Refused, in plain words:* a Linux desktop's `launch` (the agent's files aren't on the machine), the agents' Mac and
   iOS simulators, and an agent on the machine's own Claude login.
+- *Machines.* Only an x86_64 Linux machine makes sandboxes (each runs the machine's own fleetd); an arm64 one keeps
+  its agents on its own slots.
 - *Failures.* A key the provider refuses, its plan's limit, billing or an outage fail that run with the provider's
   words on the agent; the machine leaves that provider out for 10 minutes, and fleetd's recovery starts the run again on
   the machine's own slots or puts it in line.
