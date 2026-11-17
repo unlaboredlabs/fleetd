@@ -11,7 +11,8 @@ import { e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, hostedPlace, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, hostedPlace, hostedReach, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { reach } from "../../src/node/place/endpoint.ts";
 import { placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
@@ -46,19 +47,23 @@ function sh(cwd: string, cmd: string): string {
 }
 
 async function setup() {
-  const home = join(tmp, "node");
-  const HOME = join(tmp, "home");
+  // Each test its own node, home and repo.
+  const base = mkdtempSync(join(tmp, "t-"));
+  const home = join(base, "node");
+  const HOME = join(base, "home");
   mkdirSync(home, { recursive: true });
   mkdirSync(HOME, { recursive: true });
-  const claude = join(tmp, "claude");
+  const claude = join(base, "claude");
   writeFileSync(claude, CLAUDE);
   chmodSync(claude, 0o755);
   BOX_CLAUDE.path = claude;
-  const repo = join(tmp, "repo");
-  sh(tmp, `git init -q -b main ${repo} && cd ${repo} && echo a > a.txt && git add -A && git commit -qm one && git config extensions.worktreeConfig true`);
+  // A stand-in box can't be pointed at Claude (endpoint.ts pinScript runs only in a real box).
+  hostedReach.reach = async () => {};
+  const repo = join(base, "repo");
+  sh(base, `git init -q -b main ${repo} && cd ${repo} && echo a > a.txt && git add -A && git commit -qm one && git config extensions.worktreeConfig true`);
   const cwd = join(home, "worktrees", "T1");
   sh(repo, `git worktree add -q -b fleetd/T1 ${cwd}`);
-  const local = localRunner(join(tmp, "boxes"), BOX_DIR);
+  const local = localRunner(join(base, "boxes"), BOX_DIR);
   cleanup = local.cleanup;
   const s = e2bStandIn(local.runner);
   server = s;
@@ -132,4 +137,50 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   expect(existsSync(dir)).toBe(false);
   // The node's sweep finds nothing of it left.
   await stopHost(dir);
+}, 60_000);
+
+test("a Claude endpoint on another tailnet host, which no hosted box's network reaches, is relayed through the node and checked first", async () => {
+  const { home, cwd, env } = await setup();
+  // The gateway, as this machine reaches it (127.0.0.5 here), and a config naming it by its tailnet name.
+  const gw = Bun.serve({ hostname: "127.0.0.5", port: 0, fetch: () => new Response("no", { status: 404 }) });
+  const port = gw.port!;
+  const cfg = join(tmp, "cfg-tailnet");
+  mkdirSync(cfg, { recursive: true });
+  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: `https://gateway.tail1234.ts.net:${port}` } }));
+  const asked: { url: string; to: unknown }[] = [];
+  // In a real box the name is pinned to its loopback; the stand-in's own address for it is 127.0.0.3, and the node's
+  // name for the gateway is 127.0.0.5. The check goes through the relay.
+  // Each box beside this node takes an address of its own (a real one has its own loopback).
+  let addr = "127.0.0.3";
+  hostedReach.reach = async (box, r) => {
+    asked.push({ url: r.url, to: r.relay.to });
+    await reach(box, { label: r.label, relay: { port: r.relay.port, addr, to: { host: "127.0.0.5", port } }, url: `http://${addr}:${port}` });
+  };
+  const start = (id: string) =>
+    hostedPlace("e2b", id, join(home, "hosts", id)).start({
+      fleetd: [],
+      dir: join(home, "hosts", id),
+      sessionId: id,
+      program: "claude",
+      args: [],
+      cwd,
+      env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
+    });
+  const link = await start("s-tail");
+  expect(asked).toEqual([{ url: `https://gateway.tail1234.ts.net:${port}`, to: { host: "gateway.tail1234.ts.net", port } }]);
+  expect(readRecord(join(home, "hosts", "s-tail"))!.relays).toEqual([{ port, addr: "127.0.0.3", to: { host: "127.0.0.5", port } }]);
+  expect(JSON.stringify(await next(link))).toContain("m1");
+  await placeAt(join(home, "hosts", "s-tail")).stop(join(home, "hosts", "s-tail"));
+  // The gateway down: the start refuses in plain words, naming the endpoint and where it was set, before claude runs.
+  gw.stop(true);
+  // A box beside its node shares its paths: the last one's node.sock is this machine's file.
+  rmSync(join(home, "node.sock"), { force: true });
+  addr = "127.0.0.4";
+  const refused = await start("s-down").then(
+    () => "started",
+    (e: Error) => e.message,
+  );
+  expect(refused).toContain(`the box can't reach Claude at gateway.tail1234.ts.net:${port}`);
+  expect(refused).toContain(`(the endpoint from ${join(cfg, "settings.json")})`);
+  await placeAt(join(home, "hosts", "s-down")).stop(join(home, "hosts", "s-down"));
 }, 60_000);

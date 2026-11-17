@@ -7,11 +7,14 @@
 //   still found at the node's next start;
 // - in the guest, `fleetd sandbox-guest` (the node's own binary over the share), reached through the VMM's hybrid vsock
 //   socket (`CONNECT <port>`), over which the node holds one link (../sandbox/box.ts) for the session host's lines, the
-//   session's node.sock calls and its TCP forwards.
+//   session's node.sock calls, its TCP forwards and its relay to Claude (./endpoint.ts), which is checked from inside the
+//   box before the agent starts there.
 // A box boots for a session's setup commands (`run`) or its start, whichever comes first, and its start reuses it when
 // it shows every path the session needs. It goes with its session host (the guest powers off once it ended,
 // `fleetd.once`), at `stop` and `end`, and by the session row's recorded pid, which is the launcher's. A session that
-// can't have a box (`status`) runs as a plain process, for the reason the heartbeat reports.
+// can't have a box (`status`) runs as a plain process, for the reason the heartbeat reports, and so does every new
+// session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
+// a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
@@ -36,6 +39,7 @@ import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
+import { claudeEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
@@ -54,6 +58,8 @@ const DIAL_EVERY_MS = 100;
 const CHECK_EVERY_MS = 60_000;
 /** How often the node looks at this machine's addresses while boxes run, to keep each box off new ones. */
 export const ADDRS_EVERY_MS = 2_000;
+/** How long after a box that failed new sessions run as plain processes. */
+export const FAILED_MS = 10 * 60_000;
 
 export type PlaceFor = { sessionId: string; dir: string; role: SessionRole };
 
@@ -96,6 +102,8 @@ export type MicroVmOptions = {
   /** This machine's addresses, and how a box's routes are set to keep them out. */
   addrs?: () => string[];
   setBlocks?: (holder: number, want: string[]) => void;
+  /** How a box is pointed at Claude and checked (endpoint.ts reach). */
+  reach?: (box: Box, r: Reach) => Promise<void>;
   /** fleetd's folders hidden from a box: the fleetd dir, `~/.fleetd` and the node's home by default. */
   hidden?: string[];
   /** The person's home, shared whole. */
@@ -113,6 +121,7 @@ export class MicroVm {
   #net: NetTools | undefined;
   #watch: ReturnType<typeof setInterval>;
   #warned = new Set<string>();
+  #failed: { until: number; why: string } | undefined;
 
   constructor(readonly o: MicroVmOptions) {
     this.#watch = setInterval(() => void this.keepOff(), ADDRS_EVERY_MS);
@@ -158,17 +167,21 @@ export class MicroVm {
    * time, while agents run as plain processes. */
   status(now = Date.now()): VmStatus {
     if (this.#checked && now - this.#checked.at < CHECK_EVERY_MS) return this.#checked.status;
-    const status = this.#status();
+    const status = this.#status(now);
     this.#checked = { at: now, status };
     return status;
   }
 
-  #status(): VmStatus {
+  #status(now: number): VmStatus {
     let off: unknown;
     try {
       off = readConfig(this.o.home)?.sandbox;
     } catch {}
     if (off === "process") return { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true };
+    if (this.#failed && now < this.#failed.until) {
+      const at = new Date(this.#failed.until).toISOString().slice(11, 16);
+      return { kind: "process", why: `the last VM didn't start: ${this.#failed.why}; the node tries VMs again after ${at} UTC` };
+    }
     if (this.o.fleetd.length !== 1) return { kind: "process", why: "this node runs fleetd from source, and a VM runs only its built binary", expected: true };
     if (/\s/u.test(this.o.fleetd[0]!)) return { kind: "process", why: `the fleetd binary's path has a space in it (${this.o.fleetd[0]})` };
     const check = (this.o.check ?? (() => canRunVms(this.o.home)))();
@@ -178,6 +191,12 @@ export class MicroVm {
       return { kind: "process", why: "fetching the VM files (Cloud Hypervisor, the guest kernel and root image) for the first time", expected: true };
     }
     return { kind: "microvm" };
+  }
+
+  /** A box couldn't boot or reach Claude: new sessions run as plain processes for FAILED_MS, and say why. */
+  failed(why: string, now = Date.now()): void {
+    this.#failed = { until: now + FAILED_MS, why };
+    this.#checked = undefined;
   }
 
   #tools(): VmTools | undefined {
@@ -251,6 +270,23 @@ export class MicroVm {
       held = await this.#box(s, need, l.scope);
     } catch (error) {
       console.warn(`${nowIso()} WARN no VM for the session: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
+      this.failed((error as Error).message);
+      await this.#drop(l.dir);
+      return processPlace.start(l);
+    }
+    // Claude, whatever its endpoint, through the node, checked from inside the box: a box that can't reach it runs
+    // nothing, and the agent runs as a plain process instead of stalling on every call.
+    const endpoint = claudeEndpoint(l);
+    try {
+      const r = reachOf(endpoint.url);
+      await (this.o.reach ?? reach)(held.box, r);
+      held.record.relays = held.box.relays;
+      writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
+      this.#failed = undefined;
+    } catch (error) {
+      const why = `${(error as Error).message} (the endpoint from ${endpoint.source})`;
+      console.warn(`${nowIso()} WARN a VM couldn't reach Claude: the session runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify(why)}}`);
+      this.failed(why);
       await this.#drop(l.dir);
       return processPlace.start(l);
     }
@@ -329,6 +365,7 @@ export class MicroVm {
           nodeSock: leadSocketPath(this.o.home),
           slots: { sock: slotSock(this.o.home), home: this.o.home },
           tcp: record.tcp,
+          ...(record.relays ? { relays: record.relays } : {}),
           lead: lazyHooks(lead),
           ...(this.o.goneMs !== undefined ? { goneMs: this.o.goneMs } : {}),
         });
@@ -438,14 +475,12 @@ function loopbackPort(url: string | undefined): number | undefined {
 }
 
 /** The node's ports a session's environment names on this machine's loopback, which its box reaches at the same
- * numbers: the browser's CDP proxy, adb, and a Claude gateway on this machine (claude.env's or an account's
- * ANTHROPIC_BASE_URL). Only these: any other port of this machine (the hub's) stays out of a box's reach. */
+ * numbers: the browser's CDP proxy and adb. Only these: any other port of this machine (the hub's) stays out of a box's
+ * reach. Claude, wherever it is, is the box's relay (./endpoint.ts). */
 export function forwards(env: Record<string, string | undefined>): number[] {
   const ports = new Set<number>();
-  for (const url of [env.AGENT_BROWSER_CDP, env.ANTHROPIC_BASE_URL]) {
-    const port = loopbackPort(url);
-    if (port !== undefined) ports.add(port);
-  }
+  const cdp = loopbackPort(env.AGENT_BROWSER_CDP);
+  if (cdp !== undefined) ports.add(cdp);
   const adb = Number(env.ANDROID_ADB_SERVER_PORT);
   if (Number.isInteger(adb) && adb > 0 && adb < 65536) ports.add(adb);
   return [...ports];

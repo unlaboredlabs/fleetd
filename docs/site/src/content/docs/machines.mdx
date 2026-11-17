@@ -349,7 +349,8 @@ every agent on a Mac.
 | What | How |
 |---|---|
 | Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only. `/tmp` is the VM's own and goes with it. |
-| Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). The internet and DNS work as before. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's, Android's adb, and a Claude gateway on this machine (`ANTHROPIC_BASE_URL` on `localhost`), at the same `127.0.0.1` ports as before. |
+| Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). The internet and DNS work as before. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's and Android's adb, at the same `127.0.0.1` ports as before. |
+| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the project's, `--settings`, managed settings), the last one setting it winning. In the VM the URL is unchanged: its name is pointed at the VM's loopback (its IP added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
 | Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
@@ -372,6 +373,7 @@ A machine that can't run VMs never refuses agents: they run as plain processes, 
 | A VM's network needs the `ip` command, `nsenter` or `/dev/net/tun` | Install iproute2 or util-linux with the system's package manager; for `/dev/net/tun`, the line gives the command that loads the tun module. |
 | fetching the VM files for the first time | Wait: agents run in VMs once they're there. A fetch that fails is tried again an hour later. |
 | this node runs fleetd from source | Run an installed fleetd. |
+| the last VM didn't start: … (the box can't reach Claude at host:port, say) | The node tries VMs again 10 minutes later; until then every new agent runs as a plain process. The reason names the endpoint and the file that set it: check that this machine reaches it. |
 
 **What stays shared on purpose.** A VM is a wall around the machine's processes, network and fleetd's own folders,
 not around your files:
@@ -393,8 +395,8 @@ written. It finds them only by that marker under its own home, never by a proces
 same machine (a second `FLEETD_HOME`) are never touched. `fleetd machine remove` ends them too.
 
 **Turn it off on a machine.** Add `"sandbox": "process"` to its [`node.json`](/docs/config-and-files#node-json). New
-agents run as plain processes within a minute; agents in VMs keep running there until they end. Remove the key to
-turn VMs back on.
+agents run as plain processes within a minute; an agent in a VM finishes the turn it is in there, and its next turn
+starts as a plain process. Remove the key to turn VMs back on.
 
 ## Hosted sandboxes {#sandboxes}
 
@@ -447,7 +449,9 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B �
   GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
 - *The same as on the machine:* chat, PRs and pushes (the pre-push gate included), `fleetd` tools, Monitors,
   `chat_file`, artifacts, resume, browser screens and Android emulators (their ports are carried to the sandbox), and
-  a Claude gateway on the machine's loopback.
+  Claude through the machine, wherever its endpoint is (a gateway on the machine or on its tailnet, which a sandbox
+  can't reach itself), as a local VM's: checked from inside the sandbox before the agent starts, and refused in plain
+  words when it can't be reached.
 - *Refused, in plain words:* a Linux desktop's `launch` (the agent's files aren't on the machine), the agents' Mac and
   iOS simulators, and an agent on the machine's own Claude login.
 - *Machines.* Only an x86_64 Linux machine makes sandboxes (each runs the machine's own fleetd); an arm64 one keeps

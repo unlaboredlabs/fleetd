@@ -73,5 +73,10 @@ export const placeAt = (dir: string): Place => {
   return vm.bound({ sessionId: dir.split("/").at(-1)!, dir, role: "worker" });
 };
 
+/** Whether the session whose host dir is `dir` runs in a VM on a machine whose next start of it wouldn't (VMs turned
+ * off, or its last VM failed): its claude goes before its next turn, which starts where `pick` says. */
+export const leavesBox = (dir: string): boolean =>
+  placeAt(dir).kind === "microvm" && pick({ sessionId: dir.split("/").at(-1)!, dir, role: "worker" }).kind !== "microvm";
+
 /** Stops every session's host in `hosts` but those of `keep`, and removes their dirs. How many were still running. */
 export const sweep = (hosts: string, keep: Set<string>): Promise<number> => sweepHosts(hosts, keep);

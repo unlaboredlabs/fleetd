@@ -21,7 +21,8 @@
 // ended, or when it ran neither a host nor a command for IDLE_MS: its init then powers the VM off, so a box goes with
 // its session, with the node or without it.
 //
-// Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port`,
+// Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port` (with `"addr":ip`, one of the
+// guest's own addresses, to listen there instead of its loopback),
 // `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`, `{"id":n,"op":"run","run","argv","cwd","env",
 // "timeoutSec","scrub"}` and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
 // `{"id":n,"op":"write","path","data":base64,"append"?,"mode"?}` and `{"id":n,"op":"read","path","offset","max"}`
@@ -31,7 +32,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
-import { createServer, connect, type Server, type Socket } from "node:net";
+import { createServer, connect, isIP, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { Duplex } from "node:stream";
 import { runConfined, type RunOutcome } from "../cmd/index.ts";
@@ -211,8 +212,10 @@ export class Guest {
 
   /** Listens where the node asks, once: a node that dials again asks again. */
   async #listen(m: Record<string, unknown>): Promise<Target> {
+    const port = Number.isInteger(m.tcp) && (m.tcp as number) > 0 && (m.tcp as number) < 65536 ? (m.tcp as number) : undefined;
+    if (m.addr !== undefined && (typeof m.addr !== "string" || !isIP(m.addr))) throw new Error("listen's addr is an IP address");
     const target: Target | undefined =
-      typeof m.unix === "string" ? { unix: m.unix } : Number.isInteger(m.tcp) && (m.tcp as number) > 0 && (m.tcp as number) < 65536 ? { tcp: m.tcp as number } : undefined;
+      typeof m.unix === "string" ? { unix: m.unix } : port !== undefined ? { tcp: port, ...(m.addr ? { addr: m.addr as string } : {}) } : undefined;
     if (!target) throw new Error("listen needs a unix path or a tcp port");
     const key = JSON.stringify(target);
     if (this.#listeners.has(key)) return target;
@@ -230,7 +233,7 @@ export class Guest {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       if ("unix" in target) server.listen(target.unix, () => resolve());
-      else server.listen(target.tcp, this.o.loopback, () => resolve());
+      else server.listen(target.tcp, target.addr ?? this.o.loopback, () => resolve());
     });
     this.#listeners.set(key, server);
     return target;

@@ -19,7 +19,7 @@ import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
-import { Box } from "../box.ts";
+import { Box, type Relay } from "../box.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
 /** Labels on every box: the machine that made it, and the session it runs. */
@@ -40,7 +40,8 @@ type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 export type Wiring = { lead: LeadSocketHooks };
 
 /** A box as the node keeps it: in `<hostDir>/place.json` (the hosted place). */
-export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[] };
+/** `relays`: where the box reaches what this machine reaches (its Claude endpoint), through the node. */
+export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[]; relays?: Relay[] };
 
 export class Boxes {
   #auth = new Map<ProviderId, ProviderAuth>();
@@ -247,7 +248,7 @@ export class Boxes {
         return hooks[k as keyof LeadSocketHooks];
       },
     });
-    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, lead, goneMs: 120_000 });
+    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, ...(b.relays ? { relays: b.relays } : {}), lead, goneMs: 120_000 });
   }
 
   /** Deletes the box; one already gone is no error. */

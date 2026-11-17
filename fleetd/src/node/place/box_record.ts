@@ -9,6 +9,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "../runner/procs.ts";
+import type { Relay } from "../sandbox/box.ts";
 import type { View } from "./view.ts";
 
 /** One process of a box. */
@@ -28,6 +29,8 @@ export type BoxRecord = {
   blocked?: string[];
   /** This machine's TCP ports the box reaches at the same numbers (the browser proxy's, adb's). */
   tcp: number[];
+  /** Where the box reaches what this machine reaches (its Claude endpoint), through the node. */
+  relays?: Relay[];
   /** The vsock port the guest helper listens on, behind the VMM's hybrid vsock socket (`vsock.sock`). */
   port: number;
   /** What the box shows of this machine, as it booted: a next node that adopts it starts from this, never from less. */

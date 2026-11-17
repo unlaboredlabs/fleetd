@@ -15,8 +15,8 @@ import { LeadRelay, leadSocketPath, type LeadSocketHooks } from "../../src/node/
 import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
-import { pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, SOCKS, vsockDial, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
+import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
+import { FAILED_MS, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -79,7 +79,10 @@ function leadHooks(): LeadSocketHooks {
 }
 
 let made = 0;
-function node(o: { check?: VmCheck; tools?: VmTools | undefined; fleetd?: string[]; fetch?: () => Promise<unknown>; config?: Record<string, unknown> } = {}) {
+/** A stand-in box can't be pointed at Claude (endpoint.ts pinScript runs only in a real box): most tests skip it. */
+const noReach = async () => {};
+
+function node(o: { check?: VmCheck; tools?: VmTools | undefined; fleetd?: string[]; fetch?: () => Promise<unknown>; config?: Record<string, unknown>; reach?: MicroVmOptions["reach"] | "real" } = {}) {
   const home = join(root, `n${++made}`);
   mkdirSync(join(home, "hosts"), { recursive: true });
   if (o.config) writeFileSync(join(home, "node.json"), JSON.stringify({ hub: "http://hub", machineId: "m", name: "m", enrolled: true, ...o.config }));
@@ -94,6 +97,7 @@ function node(o: { check?: VmCheck; tools?: VmTools | undefined; fleetd?: string
       ...(o.fetch ? { fetch: o.fetch } : {}),
       boot: standInBoot,
       dial: unixDial,
+      ...(o.reach === "real" ? {} : { reach: o.reach ?? noReach }),
       hidden: [home],
       userHome: root,
       goneMs: 1_000,
@@ -165,9 +169,13 @@ test("a task's agent gets a box where the machine can run one; a lead, and every
     mkdirSync(dir, { recursive: true });
     writeFileSync(boxFile(dir), JSON.stringify({ kind: "microvm", leader: { pid: 1, start: 1 }, helpers: [], tcp: [], port: 5000 }));
     expect(placeAt(dir).kind).toBe("microvm");
+    expect(leavesBox(dir)).toBe(false);
     const off = node({ config: { sandbox: "process" } });
     useVm(off.vm);
     expect(pick({ sessionId: "s", dir, role: "worker" })).toBe(processPlace);
+    // A session still in its VM once VMs are off leaves it before its next turn, which runs as a plain process.
+    expect(leavesBox(dir)).toBe(true);
+    expect(leavesBox(join(n.home, "hosts", "plain"))).toBe(false);
   } finally {
     useVm(undefined);
   }
@@ -303,7 +311,7 @@ test("stop-all and the start-up sweep destroy boxes; a refused box falls back to
 
   // A machine whose check fails between setup and start: the start runs as a plain process, its box gone.
   let check: VmCheck = OK;
-  const flaky = new MicroVm({ home: n.home, fleetd: ["/opt/fleetd"], lead: () => undefined, check: () => check, tools: () => TOOLS, boot: standInBoot, dial: unixDial, hidden: [n.home], userHome: root });
+  const flaky = new MicroVm({ home: n.home, fleetd: ["/opt/fleetd"], lead: () => undefined, check: () => check, tools: () => TOOLS, boot: standInBoot, dial: unixDial, reach: noReach, hidden: [n.home], userHome: root });
   const d2 = join(n.home, "hosts", "s-fallback");
   const p2 = flaky.bound({ sessionId: "s-fallback", dir: d2, role: "worker" });
   await p2.run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5 });
@@ -338,9 +346,8 @@ test("a box's launcher, kernel line and forwards", () => {
   expect(inNs.indexOf("-batch")).toBeLessThan(inNs.indexOf("'--vhost-user'"));
   expect(forwards({ AGENT_BROWSER_CDP: "ws://127.0.0.1:41234/devtools/browser/t", ANDROID_ADB_SERVER_PORT: "15037" })).toEqual([41234, 15037]);
   expect(forwards({ AGENT_BROWSER_CDP: "ws://hub.example:9222/x" })).toEqual([]);
-  // A Claude gateway on this machine is reached at its port; one elsewhere needs nothing.
-  expect(forwards({ ANTHROPIC_BASE_URL: "http://localhost:8317" })).toEqual([8317]);
-  expect(forwards({ ANTHROPIC_BASE_URL: "https://api.anthropic.com" })).toEqual([]);
+  // Claude, wherever it is, is the box's relay, never a forward.
+  expect(forwards({ ANTHROPIC_BASE_URL: "http://localhost:8317" })).toEqual([]);
 });
 
 test("git in a box asks the box's own gh for GitHub, after whatever config the command already has", () => {
@@ -467,3 +474,66 @@ test.skipIf(process.platform !== "linux")("a box under a deep node home keeps ev
     vmm.close();
   }
 });
+
+/** A stand-in Claude gateway on this machine's loopback: any request gets a 404, as a gateway's root does. */
+async function gateway(): Promise<{ port: number; hits: () => number; close: () => void }> {
+  let hits = 0;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => (hits++, new Response("no", { status: 404 })) });
+  return { port: server.port!, hits: () => hits, close: () => server.stop(true) };
+}
+
+/** A Claude config dir whose settings.json names `url`, as the devbox's ~/.claude/settings.json does. */
+function settingsWith(name: string, url: string): string {
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: url, ANTHROPIC_AUTH_TOKEN: "not-a-key" } }));
+  return dir;
+}
+
+test.skipIf(process.platform !== "linux")("a Claude gateway only claude's own settings name is relayed into the box and checked from inside before the agent starts", async () => {
+  const gw = await gateway();
+  const n = node({ reach: "real" });
+  const dir = join(n.home, "hosts", "s-gateway");
+  const l = launch(n.home, "s-gateway", n.cwd, program("claude-gw", ECHO_CLAUDE));
+  // Not in the node's environment, claude.env or an account: only in claude's settings, which the box shares.
+  const link = await n.vm.bound({ sessionId: "s-gateway", dir, role: "worker" }).start({ ...l, env: { ...l.env, CLAUDE_CONFIG_DIR: settingsWith("cfg-gw", `http://localhost:${gw.port}`) } });
+  expect(await inits(link, 1)).toEqual(["m0"]);
+  const box = readBox(dir)!;
+  expect(box.relays).toEqual([{ port: gw.port, to: { host: "localhost", port: gw.port } }]);
+  expect(n.vm.status().kind).toBe("microvm");
+  // The box's own loopback (127.0.0.2 for a stand-in) at the gateway's port reaches the gateway, through the node.
+  const before = gw.hits();
+  const res = await fetch(`http://127.0.0.2:${gw.port}/v1/messages`);
+  expect(res.status).toBe(404);
+  expect(gw.hits()).toBe(before + 1);
+  await n.vm.bound({ sessionId: "s-gateway", dir, role: "worker" }).stop(dir);
+  gw.close();
+}, 30_000);
+
+test.skipIf(process.platform !== "linux")("a box that can't reach Claude runs nothing: the agent and the machine's next ones run as plain processes, saying why", async () => {
+  const gw = await gateway();
+  const closed = gw.port;
+  gw.close();
+  const n = node({ reach: "real" });
+  const dir = join(n.home, "hosts", "s-noclaude");
+  const l = launch(n.home, "s-noclaude", n.cwd, program("claude-noclaude", ECHO_CLAUDE));
+  const at = Date.now();
+  const link = await n.vm.bound({ sessionId: "s-noclaude", dir, role: "worker" }).start({ ...l, env: { ...l.env, CLAUDE_CONFIG_DIR: settingsWith("cfg-closed", `http://localhost:${closed}`) } });
+  // Fast and plain: no stall, a plain process, the box gone.
+  expect(Date.now() - at).toBeLessThan(20_000);
+  expect(existsSync(boxFile(dir))).toBe(false);
+  expect(await inits(link, 1)).toEqual(["m0"]);
+  const status = n.vm.status();
+  expect(status.kind).toBe("process");
+  expect(status.kind === "process" && status.why).toContain(`the last VM didn't start: the box can't reach Claude at localhost:${closed}`);
+  expect(status.kind === "process" && status.why).toContain("cfg-closed/settings.json");
+  useVm(n.vm);
+  try {
+    expect(pick({ sessionId: "s-next", dir: join(n.home, "hosts", "s-next"), role: "worker" }).kind).toBe("process");
+  } finally {
+    useVm(undefined);
+  }
+  // Until FAILED_MS has passed.
+  expect(n.vm.status(Date.now() + FAILED_MS + 61_000).kind).toBe("microvm");
+  await processPlace.stop(dir);
+}, 30_000);

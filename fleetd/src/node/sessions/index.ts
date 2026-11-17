@@ -25,7 +25,7 @@ import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { reapLeaked } from "../place/box_record.ts";
-import { hostDir, pick, placeAt, sweep } from "../place/index.ts";
+import { hostDir, leavesBox, pick, placeAt, sweep } from "../place/index.ts";
 import { boxPlaces, hasBox } from "../place/hosted.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
@@ -1237,7 +1237,13 @@ export class SessionService {
 
   async #spawn(id: string, stages: Stages): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
-    if (current && !current.closing) return [current, undefined];
+    // A claude still in a VM on a machine that runs none now (turned off, or its last VM failed) goes first: the turn
+    // starts again as a plain process, from its transcript, instead of in the box it may be stuck in.
+    if (current && !current.closing && leavesBox(hostDir(this.home, id))) {
+      console.log(`${nowIso()} INFO moving a session out of its VM: this machine runs agents as plain processes now {"sessionId":"${id}"}`);
+      current.closing = true;
+      current.link.send(shutdown(REAP_GRACE_MS));
+    } else if (current && !current.closing) return [current, undefined];
     if (current) {
       await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
       stages.done("exit wait");
