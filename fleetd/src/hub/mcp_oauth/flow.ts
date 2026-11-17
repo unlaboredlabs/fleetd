@@ -351,7 +351,7 @@ export async function register(d: Discovered, redirect: string, net: Net): Promi
     // OAuth 2.1 and RFC 8252 let a service refuse a plain-http redirect anywhere but this machine, a tailnet's too.
     const hint =
       error === "invalid_redirect_uri" && plainHttpAway(redirect)
-        ? ": it takes only an https or loopback callback, so open fleetd at the hub's https address (Tailscale Serve gives one) and sign in again"
+        ? ": it takes only an https or loopback callback, so give the hub an https address (`tailscale serve --bg <port>` gives one) and sign in again"
         : "";
     throw new Error(`${host} wouldn't register fleetd as an app (${words})${hint}`);
   }
