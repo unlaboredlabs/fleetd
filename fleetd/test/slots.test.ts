@@ -4,9 +4,9 @@ import { describe, expect, test } from "bun:test";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
-import { Board, type Claim, GRANTED, LOCAL, type Machine, PLACES_FRESH_MS, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
+import { Board, type Claim, GRANTED, LOCAL, type Machine, PLACES_FRESH_MS, SANDBOX_WHY_MAX, type SlotPriority, SETTLE_MS, slotState, WHY_MAX } from "../src/hub/slots/board.ts";
 import { capSet, machineLine, pausedLine, raisedLine } from "../src/hub/slots/cap.ts";
-import { Slots, slots, state } from "../src/hub/slots/index.ts";
+import { Slots, slots, state, withSandbox } from "../src/hub/slots/index.ts";
 import { start } from "../src/hub/slots/loops.ts";
 import { autoCap, diskRoom, HARD_TOP, UNMEASURED, UNMEASURED_WHY } from "../src/hub/slots/sizing.ts";
 import { HubDb } from "../src/hub/store/db.ts";
@@ -648,5 +648,55 @@ describe("cap_set", () => {
     expect(await refused(key("operate"), "cap_set", { project: { projectRef: r, maxAgents: 5 } })).toBe("invalid");
     expect(await refused(key("admin"), "cap_set", { machine: { machineId: "nope", maxAgents: 2 } })).toBe("not_found");
     expect(await refused(key("admin"), "cap_set", {})).toBe("invalid");
+  });
+});
+
+describe("where a machine's agents run, on its cap line", () => {
+  // The longest real reason: a VM that started but couldn't reach Claude (T4071's), with a long error, and AppArmor's
+  // with its fix.
+  const unreachable =
+    "the last VM didn't start: the VM can't reach Claude at claude-gateway.tail1234ab.ts.net:8317: curl: (28) Failed to connect to claude-gateway.tail1234ab.ts.net port 8317 after 10002 ms: Timeout was reached; the node tries VMs again after 21:40 UTC";
+  const apparmor = {
+    why: "AppArmor keeps this user from making the user namespace virtiofsd shares files from. The command lets unprivileged users make them again, now and after a reboot.",
+    fix: "echo kernel.apparmor_restrict_unprivileged_userns=0 | sudo tee /etc/sysctl.d/60-fleetd-userns.conf && sudo sysctl --system",
+  };
+  const load = (sandbox: NodeLoad["sandbox"]): NodeLoad => ({ cpus: 32, memTotalBytes: 60e9, sandbox }) as unknown as NodeLoad;
+
+  test("a long VM refusal reaches the apps whole, on the line and as its own field with its fix, never as 'auto'", () => {
+    const k = Kit.on(undefined, []);
+    for (const [id, sandbox] of [
+      ["devbox", { kind: "process", why: unreachable }],
+      ["lab-b", { kind: "process", why: apparmor.why, fix: apparmor.fix }],
+    ] as const) {
+      k.board.observeMachine(id, id, withSandbox(autoCap(load(sandbox)), sandbox), undefined);
+    }
+    const rows = slotState(k.board.state()).perMachine!;
+    const devbox = rows.find((r) => r.machineId === "devbox")!;
+    expect(devbox.why).toContain(`; agents run as plain processes: ${unreachable}`);
+    expect(devbox.sandbox).toEqual({ kind: "process", why: unreachable });
+    const lab = rows.find((r) => r.machineId === "lab-b")!;
+    expect(lab.why.endsWith(`${apparmor.why} Fix: ${apparmor.fix}`)).toBe(true);
+    expect(lab.sandbox).toEqual({ kind: "process", ...apparmor });
+  });
+
+  test("a reason past every limit is cut with an ellipsis, not dropped; in VMs and off by choice say so too", () => {
+    const k = Kit.on(undefined, []);
+    const huge = `${unreachable} ${"x".repeat(2_000)}`;
+    k.board.observeMachine("devbox", "devbox", withSandbox(autoCap(load({ kind: "process", why: huge })), { kind: "process", why: huge }), undefined);
+    const off = { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true } as const;
+    k.board.observeMachine("lab-b", "lab-b", withSandbox(autoCap(load(off)), off), undefined);
+    k.board.observeMachine("lab-c", "lab-c", withSandbox(autoCap(load({ kind: "microvm" })), { kind: "microvm" }), undefined);
+    const rows = slotState(k.board.state()).perMachine!;
+    const devbox = rows.find((r) => r.machineId === "devbox")!;
+    expect([...devbox.why].length).toBeLessThanOrEqual(WHY_MAX);
+    expect(devbox.why.endsWith("…")).toBe(true);
+    expect(devbox.why).toContain(unreachable);
+    expect([...devbox.sandbox!.why!].length).toBe(SANDBOX_WHY_MAX);
+    expect(devbox.sandbox!.why!.startsWith(unreachable)).toBe(true);
+    expect(rows.find((r) => r.machineId === "lab-b")!.sandbox).toEqual(off);
+    expect(rows.find((r) => r.machineId === "lab-c")!.sandbox).toEqual({ kind: "microvm" });
+    // The next heartbeat's word replaces the last; a node that stops saying drops it.
+    k.board.observeMachine("lab-c", "lab-c", autoCap(load(undefined)), undefined);
+    expect(slotState(k.board.state()).perMachine!.find((r) => r.machineId === "lab-c")!.sandbox).toBeUndefined();
   });
 });
