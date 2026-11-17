@@ -269,6 +269,19 @@ describe("each provider's own settings", () => {
     expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("largest size");
   });
 
+  test("boat: a build after a failed one gets a fresh box, though boat keeps keys after their box is gone", async () => {
+    const { s, p } = make("boat");
+    s.fail({ path: /GET \/api\/v1\/saved-snapshots\//, status: 500, body: { ok: false, code: "http_500", message: "save broke" } });
+    const e = await p.build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
+    expect(e.message).toContain("save broke");
+    expect(s.boxes.size).toBe(0);
+    expect(await p.build(DOCKERFILE, { name: "fleetd-abc" })).toBe("fleetd-abc");
+    const keys = s.calls.filter((c) => c.path === "/api/v1/sandboxes" && c.method === "POST").map((c) => c.headers.get("idempotency-key"));
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys.every((k) => /^build-[0-9a-f]{8}-fleetd-abc$/.test(k!))).toBe(true);
+  });
+
   test("Daytona: ephemeral, no auto-stop, private, and a size past its cap refused", async () => {
     const { s, p } = make("daytona");
     await create(p);

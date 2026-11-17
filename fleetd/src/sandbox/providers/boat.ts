@@ -176,7 +176,9 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     async build(dockerfile: string, b: BuildOptions) {
       const r = parse(dockerfile);
       b.onLog?.(`boat builds no images: the recipe's steps run on boat's own Ubuntu 24.04 image, not ${r.from}`);
-      const key = `build-${b.name}`.slice(0, 63);
+      // One key per build: boat keeps a key 24 hours and answers its box again, so a key reused after a failed build
+      // would answer the box that build already deleted. Retries inside this call share it, and make no second box.
+      const key = `build-${crypto.randomUUID().slice(0, 8)}-${b.name}`.slice(0, 63).replace(/-+$/, "");
       const s = await create(
         { type: typeFor(b.size ?? DEFAULT_SIZE), ttlSeconds: 2 * 3600, labels: { [LABEL]: "1", "fleetd-build": b.name }, name: `fleetd build ${b.name}`, noEnv: true },
         key,
