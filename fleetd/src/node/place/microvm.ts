@@ -261,8 +261,13 @@ export class MicroVm {
     let off: unknown;
     try {
       off = readConfig(this.o.home)?.sandbox;
-    } catch {}
+    } catch (error) {
+      // Its off switch can't be read: off, rather than on against what it may say.
+      return { kind: "process", why: `node.json can't be read (${(error as Error).message}), so VMs are off until it can` };
+    }
     if (off === "process") return { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true };
+    if (off !== undefined && off !== "microvm")
+      return { kind: "process", why: `node.json "sandbox" is ${JSON.stringify(off)}: "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` };
     if (this.#failed && now < this.#failed.until) {
       const at = new Date(this.#failed.until).toISOString().slice(11, 16);
       return { kind: "process", why: `the last VM didn't start: ${this.#failed.why}; the node tries VMs again after ${at} UTC` };
@@ -313,11 +318,17 @@ export class MicroVm {
     };
   }
 
-  /** What every command of session `s` sees besides what it names: its session's files, the update hold, the binary. */
+  /** What every command of session `s` sees read-only besides what it names: its session's files, the binary. */
   #base(s: PlaceFor): string[] {
+    return [join(this.o.home, "sessions", s.sessionId), this.o.fleetd[0]!];
+  }
+
+  /** And writable: the update hold, whose waits mark their tool calls held there (`update/held/`, made and removed
+   * whole by the node), or the node's drain waits out its 10 minutes for an agent in a VM. */
+  #update(): string {
     const update = join(this.o.home, "update");
     mkdirSync(update, { recursive: true });
-    return [join(this.o.home, "sessions", s.sessionId), update, this.o.fleetd[0]!];
+    return update;
   }
 
   /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
@@ -337,7 +348,7 @@ export class MicroVm {
     if (this.status().kind !== "microvm") return processPlace.run(r);
     let held: Held;
     try {
-      held = await this.#box(s, needs({ cwd: r.cwd, env: r.env ?? {}, argv: r.argv, ro: this.#base(s) }));
+      held = await this.#box(s, needs({ cwd: r.cwd, env: r.env ?? {}, argv: r.argv, rw: [this.#update()], ro: this.#base(s) }), undefined, true);
     } catch (error) {
       console.warn(`${nowIso()} WARN no VM for a setup command: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
       this.failed((error as Error).message);
@@ -353,7 +364,7 @@ export class MicroVm {
       return processPlace.start(l);
     }
     const addDirs = l.args.flatMap((a, i) => (l.args[i - 1] === "--add-dir" ? [a] : []));
-    const need = needs({ cwd: l.cwd, env: l.env, argv: [l.program, ...l.args], rw: addDirs, ro: this.#base(s) });
+    const need = needs({ cwd: l.cwd, env: l.env, argv: [l.program, ...l.args], rw: [...addDirs, this.#update()], ro: this.#base(s) });
     let held: Held;
     try {
       held = await this.#box(s, need, l.scope);
@@ -405,12 +416,20 @@ export class MicroVm {
     }
   }
 
-  /** The session's box: the one booted for it when it shows `need` and runs no host yet, else a new one. */
-  #box(s: PlaceFor, need: Share[], scope?: Scope): Promise<Held> {
+  /** The session's box: the one booted for it when it shows `need` and runs no host yet, else a new one. A setup
+   * command (`run`) takes the box a live session host runs in as it is, even one that shows less than it needs: a new
+   * box would end that session. */
+  #box(s: PlaceFor, need: Share[], scope?: Scope, run = false): Promise<Held> {
     const going = this.#boxes.get(s.dir);
     const next = (async () => {
       const held = await going?.catch(() => undefined);
-      if (held?.view && covers(held.view, need) && boxAlive(held.record) && !readRegistration(s.dir)) return held;
+      const alive = held?.view !== undefined && boxAlive(held.record);
+      const hosting = !!readRegistration(s.dir);
+      if (alive && covers(held!.view!, need) && (run || !hosting)) return held!;
+      if (alive && run && hosting) {
+        console.warn(`${nowIso()} WARN a setup command runs in its session's VM, which doesn't show every path it names {"sessionId":"${s.sessionId}"}`);
+        return held!;
+      }
       // A new box shows what the last one did and what this needs; fleetd's own folders stay hidden either way.
       const view = viewOf(this.o.userHome ?? homeDir(), this.#hidden(), [...(held?.view?.shares ?? []), ...need]);
       held?.box.close();

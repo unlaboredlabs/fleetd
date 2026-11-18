@@ -110,9 +110,13 @@ test("a red batch sends each PR alone: the green one merges, the red one goes ba
   const k = kit();
   k.pr(13, "fleetd/T13-good", { "good.md": "g\n" });
   k.pr(14, "fleetd/T14-bad", { "bad.md": "b\n" });
-  // PR 14's own head passes; only the batch's tree fails.
+  // PR 14's own head passes; only the batch's tree fails. Each head is looked at once: the train asks for its runs
+  // thousands of times, and two git processes a time took the test past its limit where processes start slowly (a VM).
+  const failing = new Map<string, boolean>();
+  const has = (sha: string, path: string) => Bun.spawnSync(["git", "cat-file", "-e", `${sha}:${path}`], { cwd: k.origin }).exitCode === 0;
   k.gh.runs = (sha) => {
-    const fails = Bun.spawnSync(["git", "cat-file", "-e", `${sha}:bad.md`], { cwd: k.origin }).exitCode === 0 && Bun.spawnSync(["git", "cat-file", "-e", `${sha}:good.md`], { cwd: k.origin }).exitCode === 0;
+    let fails = failing.get(sha);
+    if (fails === undefined) failing.set(sha, (fails = has(sha, "bad.md") && has(sha, "good.md")));
     return [{ id: 1, name: "ci", status: "completed", conclusion: fails ? "failure" : "success", html_url: `https://github.com/${REPO}/actions/runs/1/job/2` }];
   };
   await k.enqueue(13);

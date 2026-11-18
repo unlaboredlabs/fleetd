@@ -189,6 +189,11 @@ test("a task's agent gets a box where the machine can run one; a lead, and every
 
 test("a machine that can't run VMs says why, in plain words, and fetches the VM files once while it waits", async () => {
   expect(node({ config: { sandbox: "process" } }).vm.status()).toEqual({ kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true });
+  // An off switch mistyped, or a node.json that doesn't decode: VMs off, and it says why, never on silently.
+  expect(node({ config: { sandbox: "proces" } }).vm.status()).toEqual({ kind: "process", why: `node.json "sandbox" is "proces": "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` });
+  const broken = node();
+  writeFileSync(join(broken.home, "node.json"), "{ not json");
+  expect(broken.vm.status().why).toStartWith("node.json can't be read (");
   expect(node({ fleetd: ["/usr/bin/bun", "/src/main.ts"] }).vm.status().kind).toBe("process");
   const noKvm = node({ check: { ok: false, why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" } });
   expect(noKvm.vm.status()).toEqual({ kind: "process", why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" });
@@ -238,6 +243,14 @@ test("setup boots the box and runs in it; the start reuses that box, and the ses
   expect(await inits(link, 1)).toEqual(["r1"]);
   // The session's node.sock calls, at the node's own path in the box, act as its session.
   expect(await sendToNode(leadSocketPath(n.home), { t: "lead_call", id: "c1", cwd: "/", call: { op: "whoami" } }, 5_000, 0)).toMatchObject({ result: { as: "s-setup" } });
+  // A setup command while its session host runs (its worktree came back, say), even one naming a path the box
+  // doesn't show, runs in that box: a new one would end the session.
+  const other = join(root, "setup-elsewhere");
+  mkdirSync(other, { recursive: true });
+  expect(await place.run({ cwd: n.cwd, argv: ["ls", other], timeoutSec: 10, env: envOf(n.home) })).toMatchObject({ exitCode: 0 });
+  expect(readBox(dir)!.leader).toEqual(box.leader);
+  link.send({ Send: { run_id: "r2", text: "still there?", mode: "plain" } });
+  expect(await inits(link, 1)).toEqual(["r2"]);
   await place.stop(dir);
   expect(await gone(box.leader.pid)).toBe(true);
   expect(existsSync(dir)).toBe(false);
@@ -843,4 +856,15 @@ test("an order's variables dir that isn't there yet is made before the box boots
   const shares = needs({ cwd: join(home, "wt"), env: { CLAUDE_ENV_FILE: envFile }, argv: [] });
   expect(existsSync(dir)).toBe(true);
   expect(shares).toContainEqual({ path: dir, rw: false });
+});
+
+test("a box can mark its tool calls held for an update (the update dir is writable), and nothing else of the node home", async () => {
+  const n = node();
+  const dir = join(n.home, "hosts", "s-held");
+  await n.vm.bound({ sessionId: "s-held", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+  const view = readBox(dir)!.view!;
+  expect(shows(view, { path: join(n.home, "update/held/tu_1"), rw: true })).toBe(true);
+  expect(shows(view, { path: join(n.home, "sessions/s-held"), rw: true })).toBe(false);
+  expect(shows(view, { path: join(n.home, "node.json"), rw: false })).toBe(false);
+  await n.vm.end(dir);
 });
