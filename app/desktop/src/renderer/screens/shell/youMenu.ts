@@ -6,7 +6,7 @@
 // the words Settings › Hub › Machines › Updates says. This app's own update is one app's and one restart's, so it is a
 // row of its own below the hubs (appLine), never one under each hub. The hub's address, Disconnect, versions and the setup steps themselves are
 // in Settings (You › Hubs & devices, Hub › Machines › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
-import type { MachineStatus } from "../../../shared/contracts";
+import type { DegradedCause, MachineStatus } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
 import type { UpdatesState } from "../../../shared/updates";
 import { appStatus, clockAt, type Act } from "../updates/model";
@@ -20,6 +20,7 @@ export type LineMark = "success" | "warning" | "danger" | "quiet" | "ring" | "up
 /** What a click on a line does. */
 export type LineDoes =
   | { readonly to: "hubs" }
+  | { readonly to: "accounts" }
   | { readonly to: "pair" }
   | { readonly to: "retry" }
   | { readonly to: "setup" }
@@ -46,7 +47,13 @@ export interface MenuMachine {
   readonly machineId: string;
   readonly name: string;
   readonly status: MachineStatus;
+  /** The hub's own runner for hosted sandboxes, named as a plural ("Hosted sandboxes"). */
+  readonly runner?: boolean | undefined;
+  readonly degradedCause?: DegradedCause | undefined;
 }
+
+/** What the hub's runner lacks, in a few words, and where it is fixed: a Claude account, in Your accounts. */
+const HOSTED_LOGIN = { text: "Hosted agents need a Claude account", action: "Connect", does: { to: "accounts" } } as const;
 
 export interface MenuInput {
   readonly hub: HubState;
@@ -133,7 +140,8 @@ export const appLine = (state: UpdatesState | null, whole = false): MenuLine | n
 };
 
 /**
- * Machines that need someone, for an admin: the one by name, opening its page, or how many. A member reads of them
+ * Machines that need someone, for an admin: the one by name, opening its page, or how many. The hub's runner with no
+ * Claude account says so and opens Your accounts, where one is connected. A member reads of them
  * only when none is online, since then nothing of theirs runs, in the Machines page's words: all offline, all degraded
  * (connected, but agents can't run there), or some of each.
  */
@@ -149,7 +157,9 @@ export const machinesLine = (machines: readonly MenuMachine[] | undefined, admin
   const offline = off.every((m) => m.status === "offline");
   const [one] = off;
   if (off.length === 1 && one !== undefined) {
-    return { ...line, text: `${one.name} ${offline ? "is offline" : "needs a look"}`, name: one.name, action: "Open", does: { to: "machines", machineId: one.machineId } };
+    if (one.runner === true && one.status === "degraded" && one.degradedCause === "claude_login") return { ...line, ...HOSTED_LOGIN };
+    const words = one.runner === true ? (offline ? "are offline" : "need a look") : offline ? "is offline" : "needs a look";
+    return { ...line, text: `${one.name} ${words}`, name: one.name, action: "Open", does: { to: "machines", machineId: one.machineId } };
   }
   return { ...line, text: `${String(off.length)} machines ${offline ? "offline" : "need a look"}`, action: "Open", does: { to: "machines" } };
 };

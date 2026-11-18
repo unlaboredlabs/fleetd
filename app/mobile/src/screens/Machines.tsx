@@ -105,6 +105,7 @@ export function Machines() {
       refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={t.secondary} />}
     >
       <ListSection header="Machines">
+        {state.machines.length === 0 ? <ListRow title="No machines yet" chevron={false} /> : null}
         {state.machines.map((m) => {
           const v = machineValue(m);
           return <ListRow key={m.machineId} title={m.name} value={v.text} {...(v.warn ? { valueDot: t.warning } : {})} chevron={false} />;

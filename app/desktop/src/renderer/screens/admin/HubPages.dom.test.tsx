@@ -218,11 +218,16 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   window.location.hash = "#/settings/hub/machines";
   await render(framed);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
-  // The page's plus is the way to add one; this hub has none yet, and the list says so.
-  expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
-  expect(host.textContent).toContain("No machines yet. Add one with the plus.");
-  // The plus is the page's, at its title's end: one way in, not one per group.
-  expect(host.querySelectorAll("button[aria-label='Add machine']")).toHaveLength(1);
+  // This hub has none yet: the empty list says so and holds Add machine itself, in words, and nothing points elsewhere.
+  const none = host.querySelector<HTMLElement>("[data-machines-none]");
+  expect(none?.textContent).toContain("No machines yet");
+  expect(host.textContent).not.toContain("with the plus");
+  // One way in, not one per place: the title's is back once there is a machine.
+  const adds = () => [...host.querySelectorAll("button")].filter((b) => b.textContent === "Add machine");
+  expect(adds()).toHaveLength(1);
+  expect(none?.contains(adds()[0] ?? null)).toBe(true);
+  await click(adds()[0] as HTMLElement);
+  expect(host.textContent).toContain("A machine the hub can reach");
   // Updates is a part of the page, after What runs where, which stands on a hub without any provider (every kind on
   // its machines); Providers stands back there, with nothing to list.
   expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();

@@ -12,7 +12,9 @@
 // off and why), `machines-revyl-on` connected (iOS simulators on Revyl only, Android ours first), and
 // `machines-revyl-failed` with a key Revyl refused. The team's own hosted sandbox accounts in Machines' Sandboxes
 // section (W688): `machines-sandboxes-off` with none connected, `machines-sandboxes-on` with E2B (self-hosted) and
-// Daytona connected, Daytona's key refused at its last test.
+// Daytona connected, Daytona's key refused at its last test. `machines-none` is a team with no machine of its own, its
+// agents only in E2B through the hub's runner, which has no Claude account yet (W721): the list's empty state with its
+// own Add machine, and the runner's one notice over the providers.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -337,6 +339,29 @@ function onePlace(from: Fixture): Fixture {
   return f;
 }
 
+/** No machine of the team's: E2B connected, the hub's runner for it with no Claude account to run its agents on. */
+function none(from: Fixture): Fixture {
+  const f = one(from, "machines-none", "No machine yet: Add machine in the empty list; E2B connected, its hosted agents with no Claude account");
+  const runner: JsonObject = {
+    machineId: "hosted",
+    name: "Hosted sandboxes",
+    runner: true,
+    status: "degraded",
+    lastSeenAt: f.now,
+    nodeVersion: "0.9.0",
+    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+    degradedCause: "claude_login",
+  };
+  f.snapshot = { ...f.snapshot, machines: [runner] };
+  for (const frame of f.live) {
+    if (Array.isArray(frame["machines"])) frame["machines"] = [];
+  }
+  f.update("machine_roles", (out) => (isObject(out) ? { ...out, machines: [] } : out));
+  f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true, providers: [{ provider: "e2b", connected: true, limit: 20, check: { ok: true, at: f.now } }, SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] });
+  f.answer("revyl_get", undefined, REVYL_OFF);
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
@@ -370,6 +395,7 @@ export default defineGroup({
       { kind: "process", why: APPARMOR, fix: APPARMOR_FIX },
     ),
     onePlace(base("empty")),
+    none(base("empty")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),
     ]),

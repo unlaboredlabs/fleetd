@@ -3,10 +3,12 @@
 // state is the dot before its name, as every place on the page has one, and the row's end says it in a few words: what
 // runs there now, or what is wrong (offline since when, claude logged out), in the dot's colour. A role other than the
 // usual both is a quiet word beside its name. A search for a machine's role, screens or max agents
-// lands on this list, since each is on a machine's own page.
+// lands on this list, since each is on a machine's own page. With none yet, the group holds Add machine itself.
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
-import { useState, type ReactNode, type RefCallback } from "react";
+import { Plus } from "lucide-react";
+import { useState, type RefCallback } from "react";
+import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectMachines, selectOrphanProjects } from "../../src/data/selectors";
 import { Button, Text, Truncate } from "../../ui";
@@ -27,18 +29,34 @@ const noInput = {};
 
 const allChecks = {};
 
-/** `add`: the group's plus, at its label's end as every section's is. */
-export function MachineList({ add }: { add?: ReactNode }) {
+/** The team's computers, in the list's order; undefined until known. The hub's runner for hosted sandboxes is none (its
+ * providers are listed with them). */
+export const useTeamMachines = (): Machine[] | undefined => {
   const views = useData(selectMachines);
+  const all = views?.map((v) => v.machine).filter((m) => m.runner !== true);
+  return all === undefined ? undefined : [...all].sort(machineOrder);
+};
+
+/** Add machine, in words beside its plus, as the page's other buttons (Connect) are. */
+export function AddMachineButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button icon={<Plus aria-hidden />} onClick={onClick}>
+      Add machine
+    </Button>
+  );
+}
+
+/** `onAdd`: opens Add machine, from the empty list's own button. */
+export function MachineList({ onAdd }: { onAdd?: () => void }) {
   // As the hub last checked them, and as a machine's page reads them: a check that failed is the row's dot.
   // fleetd cloud runs no doctor: no checks to read there.
   const checks = useToolQuery("doctor_list", allChecks, { enabled: useServes("doctor_list") }).data?.checks;
   const roles = useToolQuery("machine_roles", noInput).data?.machines;
   const slots = useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
   const nowMs = useNow(true, 60_000);
-  // The team's computers: the hub's runner for hosted sandboxes is none (its providers are listed with them).
-  const all = views?.map((v) => v.machine).filter((m) => m.runner !== true);
-  const machines = all === undefined ? undefined : [...all].sort(machineOrder);
+  const machines = useTeamMachines();
+  // With none yet, a search for "add machine" lands on the empty list's own button.
+  const noneRef = useReveal<HTMLDivElement>("hub.add-machine");
   const rolesRef = useReveal<HTMLElement>("hub.roles");
   const screensRef = useReveal<HTMLElement>("hub.screens");
   const capsRef = useReveal<HTMLElement>("hub.caps");
@@ -50,11 +68,14 @@ export function MachineList({ add }: { add?: ReactNode }) {
   return (
     <>
       <div ref={marked} tabIndex={-1} className={a.revealed}>
-        <SettingsSection title={add === undefined ? undefined : "Machines"} aside={add}>
+        <SettingsSection>
           {machines === undefined ? (
             <GroupNote>Loading…</GroupNote>
           ) : machines.length === 0 ? (
-            <GroupNote>No machines yet. Add one with the plus.</GroupNote>
+            <div ref={noneRef} className={a.none} data-machines-none="">
+              <Text tone="quiet">No machines yet</Text>
+              {onAdd === undefined ? null : <AddMachineButton onClick={onAdd} />}
+            </div>
           ) : (
             <SettingsList label="Machines">
               {machines.map((m) => {

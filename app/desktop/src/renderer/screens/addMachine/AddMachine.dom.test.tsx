@@ -407,7 +407,7 @@ it("opens on a run still going, step by step", async () => {
   expect(steps().map((x) => x.split(" ")[0])).toEqual(["done", "done", "running", "planned", "planned", "planned", "planned"]);
 });
 
-// Behind a page's plus (Machines), or a machine's Repair: nothing until there is something to follow.
+// Behind Add machine (Machines), or a machine's Repair: nothing until there is something to follow.
 it("shows nothing while closed", async () => {
   await render(undefined, { closed: true });
   expect(state()).toBeUndefined();

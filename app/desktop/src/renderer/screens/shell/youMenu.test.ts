@@ -130,6 +130,14 @@ describe("machines and setup", () => {
     expect(machinesLine([], true)).toBeNull();
   });
 
+  it("says what the hub's runner lacks in a few words and opens where it is fixed: a Claude account, in Your accounts", () => {
+    const hosted = { machineId: "hosted", name: "Hosted sandboxes", runner: true } as const;
+    expect(machinesLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], true)).toEqual({ key: "machines", mark: "warning", text: "Hosted agents need a Claude account", action: "Connect", does: { to: "accounts" } });
+    // Anything else wrong with it is its page's to say, in its plural name's grammar.
+    expect(machinesLine([machine("devbox"), { ...hosted, status: "degraded" }], true)).toMatchObject({ text: "Hosted sandboxes need a look", does: { to: "machines", machineId: "hosted" } });
+    expect(machinesLine([machine("devbox"), { ...hosted, status: "offline" }], true)).toMatchObject({ text: "Hosted sandboxes are offline" });
+  });
+
   it("tells a member only when no machine is online, and who to ask", () => {
     expect(machinesLine([machine("devbox"), machine("buildbox", "offline")], false)).toBeNull();
     expect(machinesLine([machine("devbox", "offline"), machine("buildbox", "offline")], false)).toEqual({ key: "machines", mark: "warning", text: "All machines offline", aside: "Ask an admin" });

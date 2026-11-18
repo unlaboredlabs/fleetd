@@ -4048,6 +4048,9 @@ export type MacTool = {
   ready: boolean;
 };
 
+/** Why a machine is degraded, where a client acts on it (Machine.degradedCause). */
+export type DegradedCause = "claude_login";
+
 export type Machine = {
   /**
    * The agents' Mac (D298): a tool every project's agents use, never a runner. No agent or lead runs there,
@@ -4059,6 +4062,11 @@ export type Machine = {
    * secrets.
    */
   boxPubKey?: BoxPublicKey;
+  /**
+   * Why it is degraded, where a client acts on it: "claude_login", no Claude login reaches its agents (on the hub's
+   * runner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded.
+   */
+  degradedCause?: DegradedCause;
   /** Plain language, set while status is "degraded". */
   degradedReason?: string;
   lastSeenAt: Timestamp;

@@ -142,6 +142,7 @@ export function HubLines() {
     if (does.to === "pair" && onWeb()) window.location.assign("/web/sign-in");
     else if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
     else if (does.to === "setup") navigate({ id: "settings", tab: "hub.setup", at: self.id });
+    else if (does.to === "accounts") navigate({ id: "settings", tab: "accounts", at: self.id });
     else if (does.to === "start") navigate(startScreen(self.id));
     else if (does.to === "updates") navigate({ id: "settings", tab: "hub.updates", at: self.id });
     else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });

@@ -374,6 +374,7 @@ export const fixtures = [
   // The menu under your name (W607): Sam's hub with one thing off in each (fixtures/menu).
   "menu-setup",
   "menu-machine-offline",
+  "menu-hosted-account",
   "menu-offline",
   "menu-refused",
   "menu-updating",
@@ -2480,7 +2481,7 @@ export const screens: readonly Screen[] = [
     variant: "updates",
   },
   // The hub switcher's menu, open (W607, W714): each hub, the one on show ticked, and under it what is off with it with
-  // the one thing to do: a setup step left, a machine offline, the hub out of reach, a second hub out of reach or
+  // the one thing to do: a setup step left, a machine offline, hosted agents with no Claude account, the hub out of reach, a second hub out of reach or
   // refusing this app's key, an update to take, going on, just in, or one that didn't go in (a member is told who to
   // ask, as when no machine is online or every one is degraded), everything at once, and hubs and a machine with
   // 40-character names, where only the name is cut short. One size: the menu is as wide in every window.
@@ -2492,6 +2493,7 @@ export const screens: readonly Screen[] = [
       "admin-member",
       "menu-setup",
       "menu-machine-offline",
+      "menu-hosted-account",
       "menu-offline",
       "menu-refused",
       "sidebar-hubs-offline",
@@ -3658,8 +3660,22 @@ export const screens: readonly Screen[] = [
   // by itself, one holding back with why, and the switch off.
   { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-current", "updates-auto-on", "updates-auto-held", "updates-hub-current"] },
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
-  // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the plus.
+  // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the button at the
+  // title's end.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },
+  // W721: no machine yet, the empty list holding Add machine itself (and no button at the title); E2B connected with
+  // no Claude account for its hosted agents, which the providers' notice says with Connect. Its button opens Add machine.
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-none"], variant: "none" },
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-none"],
+    variant: "none-add",
+    open: async (page) => {
+      await page.locator("[data-machines-none]").getByRole("button", { name: "Add machine" }).click();
+      await page.getByRole("button", { name: "Choose…" }).waitFor();
+    },
+  },
   // W693: the page as one model, every place agents and screens run a row with its state as a dot: three machines (one
   // busy, one logged out, one offline) with E2B, Daytona (refused) and Revyl connected; one machine and nothing
   // connected; and each machine's page with where its agents run, in VMs or as processes and why.

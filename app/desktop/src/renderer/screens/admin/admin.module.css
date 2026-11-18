@@ -185,3 +185,12 @@
   display: inline-block;
   width: var(--control);
 }
+
+/* Machines with none yet: the words, and Add machine under them, centred in the list's group. */
+.none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+}

@@ -30,7 +30,9 @@ breaks a rule changes this page in the same PR and says why.
     opens a page trails a chevron, and when all it has to say is that it needs someone, it says so with one dot at
     its end in the warning's colour, why in its tooltip (`needs`: a machine that is offline or wants a login), never
     a dot and a word;
-  - **add is a plus** (`AddButton`), at the end of its row or section label; **danger is one red pill**
+  - **add is a plus** (`AddButton`), at the end of its row or section label; a page whose list is the thing to add
+    to says it in words at its title (**Add machine**), and its empty list holds that button itself, never a line
+    pointing at a control elsewhere; **danger is one red pill**
     (`DangerButton`, `--danger-fill`), and what it does is confirmed in a dialog;
   - **Save shows once there is something to save**, and a control that can't be used says why in its row's line;
   - buttons and fields on a group are `--raised`; the column is 760 px, left-aligned under the page title.
