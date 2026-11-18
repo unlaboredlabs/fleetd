@@ -1897,7 +1897,7 @@ export class SessionService {
 
   /** Brings back a session's worktree that is gone, at the same path, so the session still resumes from what is left
    * of its branch; a reader's detached one at the same commit. Whether it did, and what the agent is told. A rebuilt
-   * worktree has none of what setup made: setup runs again before its agent goes on. */
+   * worktree has none of what setup made: setup runs again before its agent goes on. One that is there is locked. */
   async #restoreWorktree(id: string, row: SessionRow): Promise<[boolean, string | undefined]> {
     let recreated = false;
     let note: string | undefined;
@@ -1922,6 +1922,8 @@ export class SessionService {
       setup.record(row.local.cwd, undefined);
       if (row.local.setup) row.local.setupPending = true;
     }
+    // One made before worktrees were locked is locked now, for the rest of its session.
+    if (row.local.baseRef && existsSync(row.local.cwd)) await worktree.lock(row.local.workspaceRoot, row.local.cwd);
     return [recreated, note];
   }
 

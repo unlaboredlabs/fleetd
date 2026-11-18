@@ -65,7 +65,8 @@ test("a task whose worktree and branch were lost in a crash resumes from origin/
     await service.shutdown();
     process.kill(pid, "SIGKILL");
     rmSync(path, { recursive: true, force: true });
-    git(repo, "worktree", "prune");
+    // Its record goes too: locked for its session, it outlives a prune.
+    git(repo, "worktree", "remove", "--force", "--force", path);
     git(repo, "branch", "-D", "fleetd/T1-feature");
     git(repo, "update-ref", "-d", "refs/remotes/origin/fleetd/T1-feature");
     service = await SessionService.start(config);
