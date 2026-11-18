@@ -112,10 +112,22 @@ test("a logged-out runner leaves the machine degraded with its problem", async (
   // Its cause, which the apps word and send to the Claude account (the hub's runner: hosted agents need one).
   expect(store(hub).machineGet("worker-3")).toMatchObject({ status: "degraded", degradedReason: "claude is logged out", degradedCause: "claude_login" });
   expect(links.ready("worker-3")).toBe(false);
-  // The node pushes its runner when the login comes back.
-  node.send({ t: "machine_event", seq: 1, at: new Date().toISOString(), event: { type: "runner_info", runner: "claude", login: "logged_in" } });
-  await until(() => types().includes("machine.online worker-3"));
+  // The event carries them too, for a client that read the machine before the runner check answered.
+  const degraded = () =>
+    events(hub)
+      .page(0)
+      .events.filter((e) => e.type === "machine.degraded" && e.machineId === "worker-3")
+      .map((e) => e.data as { degradedReason?: string; degradedCause?: string });
+  expect(degraded().at(-1)).toMatchObject({ degradedReason: "claude is logged out", degradedCause: "claude_login" });
+  // Still degraded, for a cause of another kind: announced again, with no cause, so no client keeps the stale one.
+  node.send({ t: "machine_event", seq: 1, at: new Date().toISOString(), event: { type: "runner_info", runner: "claude", login: "unknown", problem: "claude --version failed" } });
+  await until(() => degraded().length === 2);
+  expect(degraded().at(-1)).toEqual(expect.objectContaining({ degradedReason: "claude --version failed" }));
+  expect(degraded().at(-1)?.degradedCause).toBeUndefined();
   expect(store(hub).machineGet("worker-3")?.degradedCause).toBeUndefined();
+  // The node pushes its runner when the login comes back.
+  node.send({ t: "machine_event", seq: 2, at: new Date().toISOString(), event: { type: "runner_info", runner: "claude", login: "logged_in" } });
+  await until(() => types().includes("machine.online worker-3"));
   node.close();
   await node.closed;
 });

@@ -389,8 +389,17 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   if (status !== undefined) {
     // Missed while the link was down: the snapshot before it says how the machine is now.
     if (replayed) return s;
-    const known = s.machines.some((m) => m.machineId === event.machineId && m.status !== status);
-    return known ? { ...s, machines: s.machines.map((m) => (m.machineId === event.machineId ? { ...m, status } : m)) } : s;
+    // Why it is degraded, as the event says it (a runner check that answered after the snapshot); none otherwise.
+    const data = (event.data ?? {}) as { degradedReason?: unknown; degradedCause?: unknown };
+    const patch = (m: Machine): Machine => {
+      const { degradedReason: _reason, degradedCause: _cause, ...rest } = m;
+      if (status !== "degraded") return { ...rest, status };
+      const reason = typeof data.degradedReason === "string" ? data.degradedReason : m.degradedReason;
+      return { ...rest, status, ...(reason === undefined ? {} : { degradedReason: reason }), ...(data.degradedCause === "claude_login" ? { degradedCause: "claude_login" } : {}) };
+    };
+    // A degraded one again: its cause may have changed.
+    const known = s.machines.some((m) => m.machineId === event.machineId && (m.status !== status || status === "degraded"));
+    return known ? { ...s, machines: s.machines.map((m) => (m.machineId === event.machineId ? patch(m) : m)) } : s;
   }
   // Missed while the link was down: the snapshot before it has the update as it is now.
   if (event.type === "hub.update") return replayed ? s : { ...s, hubUpdate: (event.data as HubUpdateData | undefined) ?? s.hubUpdate };

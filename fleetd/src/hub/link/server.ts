@@ -202,6 +202,8 @@ export class Link {
   private readonly readyBy = new Map<string, boolean>();
   /** The runner's verdict as its link's last check found it (undefined: usable); absent until that check answers. */
   private readonly runnerBy = new Map<string, RunnerVerdict | undefined>();
+  /** The cause the last machine.degraded carried, while one did. */
+  private readonly causes = new Map<string, DegradedCause>();
   /** Machines git can't reach GitHub from, as the landing scanner last found. */
   private readonly githubDown = new Set<string>();
   /** The socket handler `GET /node/link` upgrades to. */
@@ -894,17 +896,23 @@ export class Link {
     }
   }
 
-  /** Emits machine.online or machine.degraded when the machine's announced status changes. */
-  private announce(machineId: string, status: Announced, reason?: string): void {
-    if (this.announced.get(machineId) === status) return;
+  /**
+   * Emits machine.online or machine.degraded when the machine's announced status changes, or a degraded one's cause
+   * does: the event carries the reason and cause, so a client that read the machine before then words it right.
+   */
+  private announce(machineId: string, status: Announced, reason?: string, cause?: DegradedCause): void {
+    if (this.announced.get(machineId) === status && (status === "online" || this.causes.get(machineId) === cause)) return;
     this.announced.set(machineId, status);
+    if (cause === undefined) this.causes.delete(machineId);
+    else this.causes.set(machineId, cause);
     // A node back after its update links on a new build: a client that read the machine before then learns it here.
     const version = this.versions.get(machineId);
     const nodeVersion = version === undefined ? {} : { nodeVersion: version };
     if (status === "online") this.append("machine.online", machineId, `${machineId} is online`, nodeVersion);
     else {
       const why = reason ?? "";
-      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why, ...nodeVersion });
+      const said = cause === undefined ? {} : { degradedCause: cause };
+      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why, ...said, ...nodeVersion });
     }
   }
 
@@ -958,7 +966,7 @@ export class Link {
     if (runner !== undefined) {
       this.setReady(machineId, false);
       this.writeStatus(machineId, "degraded", runner.problem, runner.cause);
-      this.announce(machineId, "degraded", runner.problem);
+      this.announce(machineId, "degraded", runner.problem, runner.cause);
     } else if (network !== undefined) {
       this.writeStatus(machineId, "degraded", network);
       this.announce(machineId, "degraded", network);
@@ -977,6 +985,7 @@ export class Link {
     // A timer that fired as a newer link came in: that link has a timer of its own.
     if (live && live.id !== armedFor) return;
     this.announced.delete(machineId);
+    this.causes.delete(machineId);
     this.watchdogs.delete(machineId);
     this.loads.delete(machineId);
     this.busyBy.delete(machineId);

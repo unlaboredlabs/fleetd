@@ -13,6 +13,24 @@ const work = selectProjectWork("devbox/storefront");
 const withBoard = (s: DataState, cards = [card("W1")]): DataState =>
   ingest(s, { tool: "orders_board", input: {}, output: { at: "2026-10-19T10:00:00.000Z", orders: cards, trains: [] } });
 
+describe("a machine's events", () => {
+  it("say why it is degraded after the snapshot, and never keep a cause the newest event dropped", () => {
+    const devbox = (s: DataState) => s.machines["devbox"];
+    let s = run([live(), snapshot(10)]);
+    // The runner check answers after the snapshot: its reason and cause, which the menu words (W721).
+    s = run([event(11, "machine.degraded", { degradedReason: "no Claude account", degradedCause: "claude_login" })], s);
+    expect(devbox(s)).toMatchObject({ status: "degraded", degradedReason: "no Claude account", degradedCause: "claude_login" });
+    // Still degraded, for something else: the stale cause goes.
+    s = run([event(12, "machine.degraded", { degradedReason: "no IPv4" })], s);
+    expect(devbox(s)).toMatchObject({ status: "degraded", degradedReason: "no IPv4" });
+    expect(devbox(s)?.degradedCause).toBeUndefined();
+    s = run([event(13, "machine.degraded", { degradedReason: "no Claude account", degradedCause: "claude_login" }), event(14, "machine.online")], s);
+    expect(devbox(s)?.status).toBe("online");
+    expect(devbox(s)?.degradedReason).toBeUndefined();
+    expect(devbox(s)?.degradedCause).toBeUndefined();
+  });
+});
+
 describe("connection", () => {
   it("shows skeletons until a snapshot lands after every (re)connect, and drops the old connection's call data", () => {
     let s = run([live()]);
