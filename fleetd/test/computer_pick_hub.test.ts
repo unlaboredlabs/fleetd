@@ -6,6 +6,7 @@ import { ClaudeAccountStore } from "../src/hub/claude_accounts/index.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
 import { computers } from "../src/hub/project_lead/store.ts";
+import { computerChoices } from "../src/shared/sandbox.ts";
 import { slots } from "../src/hub/slots/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { key, kit, project } from "./work-kit.ts";
@@ -94,6 +95,8 @@ test("a pick is one of the choices exactly, kept, and the slot board places the 
   expect(slots(k.hub).placeOf("T1")).toBeUndefined();
   slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox: { kind: "microvm" }, sandboxes: ["e2b"] });
   expect([slots(k.hub).placeOf("T1"), slots(k.hub).sizeOf("T1")]).toEqual(["e2b", { cpu: 4, memGb: 8 }]);
+  // Kept with its slot: what it counts at, and starts at, after a hub restart too.
+  expect(k.hub.db.all<{ size: string }>("SELECT size FROM slot_claims WHERE holder = 'T1'")[0]?.size).toBe('{"cpu":4,"memGb":8}');
   // Back to the default: nothing kept, placed as before.
   const back = await k.ok(key("operate"), "project_settings_set", { ...r, computerDefault: true });
   expect(back.settings.computer).toBeUndefined();
@@ -141,4 +144,28 @@ test("a bot whose agents run on its machine's own Claude login: VMs that take on
   const choices = (await open.get()).computers as { kind: string; unavailable?: string }[];
   expect(choices.filter((c) => c.kind === "vm").every((c) => c.unavailable === undefined)).toBe(true);
   expect(choices.filter((c) => c.kind === "e2b").every((c) => c.unavailable === hostedWhy)).toBe(true);
+});
+
+test("a team whose people have their own Claude accounts, the hub none: hosted sandboxes and VMs on accounts stay the bot's to pick", async () => {
+  const { k, r, connect, get } = bot("login only", false);
+  new ClaudeAccountStore(k.hub.db).putSubscription("p_aaaaaaaa", { sealedOn: [{ machineId: "devbox", fingerprint: "ab12cd34" }], connectedAt: "x" } as never);
+  connect("e2b");
+  const choices = (await get()).computers as { kind: string; unavailable?: string }[];
+  expect(choices.length).toBe(7);
+  expect(choices.every((c) => c.unavailable === undefined)).toBe(true);
+  expect((await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 2, memGb: 4 } })).settings.computer).toEqual({ kind: "e2b", cpu: 2, memGb: 4 });
+});
+
+test("a Local VM size that takes more slots than its machine's limit is offered unavailable, saying how to fix it", () => {
+  const m = { name: "devbox", sandbox: { kind: "microvm" as const }, host: { cpus: 16, memGb: 64, vmGb: 4.1 }, cap: 2 };
+  const vms = computerChoices({ machine: m, providers: [], account: true });
+  expect(vms.map((c) => [c.label, c.unavailable])).toEqual([
+    ["Local VM · 2 vCPU / 4 GB", undefined],
+    ["Local VM · 4 vCPU / 4 GB", undefined],
+    ["Local VM · 4 vCPU / 8 GB", undefined],
+    [
+      "Local VM · 8 vCPU / 16 GB",
+      "devbox runs at most 2 agents at once, and a VM of 8 vCPU / 16 GB takes 4 of them (its memory's worth): raise devbox's max agents in Settings › Hub › Machines, or pick a smaller one",
+    ],
+  ]);
 });

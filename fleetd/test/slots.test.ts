@@ -413,6 +413,31 @@ describe("board", () => {
     expect(k.board.placeOf("T6")).toBe(LOCAL);
   });
 
+  test("a Local VM needing more slots than its machine's limit waits saying so; a running agent counts at the size it started", () => {
+    const vm = project_("pv", "air");
+    const host = { cpus: 32, memGb: 64, vmGb: 4.1 };
+    const k = Kit.on(undefined, [{ ...machine("air", 10), maxAgents: 2, auto: { cap: 10, why: "memory 64 GB", sandbox: { kind: "microvm" }, host } }]);
+    k.board.setComputer(vm, { kind: "vm", cpu: 8, memGb: 16 });
+    // 4 slots, a limit of 2: never "full", but never placed either, saying why and how to fix it.
+    expect(k.board.acquire("T1", vm, "work", true)).toEqual(
+      queued(
+        "its bot's computer is Local VM · 8 vCPU / 16 GB, but air-box runs at most 2 agents at once, and a VM of 8 vCPU / 16 GB takes 4 of them (its memory's worth): raise air-box's max agents in Settings › Hub › Machines, or pick a smaller one",
+      ),
+    );
+    k.board.setMachine("air", 10);
+    k.board.evaluate();
+    expect([k.board.placeOf("T1"), k.board.sizeOf("T1")]).toEqual([LOCAL, { cpu: 8, memGb: 16 }]);
+    // The pick changes while it runs: it keeps its 16 GB and its 4 slots until it ends; a new agent gets the new size.
+    k.board.setComputer(vm, { kind: "vm", cpu: 4, memGb: 4 });
+    expect(k.board.sizeOf("T1")).toEqual({ cpu: 8, memGb: 16 });
+    for (const h of ["T2", "T3", "T4", "T5", "T6", "T7"]) expect(k.board.acquire(h, vm, "work", true)).toEqual(GRANTED);
+    expect(k.board.sizeOf("T2")).toEqual({ cpu: 4, memGb: 4 });
+    // 4 + 6 = 10: full.
+    expect(k.board.acquire("T8", vm, "work", true)).toEqual(queued("its bot's computer is Local VM · 4 vCPU / 4 GB: 10 of 10 in use on air-box (set)"));
+    k.release("T1");
+    expect(k.board.placeOf("T8")).toBe(LOCAL);
+  });
+
   test("a machine whose VMs take only agents on a Claude account: a Local VM pick's agents on its own login wait, saying why", () => {
     const vm = project_("pv", "air");
     const sandbox = { kind: "microvm" as const, why: "this machine signs in to Claude with its own login", accountsOnly: true };

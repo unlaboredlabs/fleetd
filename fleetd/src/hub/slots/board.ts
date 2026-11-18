@@ -13,7 +13,7 @@
 // they wait, saying why, rather than run elsewhere or at another size.
 import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
-import { computerLabel, type Limit, NAMES, NO_ACCOUNT_HOSTED, RUNNER_ID, vmFits, vmTakes } from "../../shared/sandbox.ts";
+import { computerLabel, type Limit, NAMES, NO_ACCOUNT_HOSTED, overCap, RUNNER_ID, vmFits, vmSlots, vmTakes } from "../../shared/sandbox.ts";
 import type { Size } from "../../sandbox/providers/common.ts";
 import { type Auto, type Host, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
@@ -65,8 +65,6 @@ export type ComputerPick = { kind: string; cpu: number; memGb: number };
 /** Where a pick's agents are placed: LOCAL for a Local VM, else its provider. */
 export const pickPlace = (p: Pick<ComputerPick, "kind">): string => (p.kind === "vm" ? LOCAL : p.kind);
 
-/** What a VM takes of its machine's memory beside its guest's, GiB (node/place/microvm.ts memPerAgentBytes). */
-const VM_OVERHEAD_GB = 0.1;
 /** Why it fits that many, or "set" for a person's setting. */
 const machineWhy = (m: Machine) => (m.maxAgents !== undefined ? "set" : m.auto.why);
 
@@ -91,6 +89,9 @@ export type Claim = {
   place?: string;
   /** It runs on a Claude account, not its machine's own login: a hosted box may take it. */
   hostable?: boolean;
+  /** The size its computer was started at, its bot's pick where the board placed it; absent: the default there. Kept
+   * while it holds the slot, so a pick changed meanwhile counts it at what it runs. */
+  size?: Size;
 };
 
 /** The machine whose cap a claim counts against: where it runs. */
@@ -147,7 +148,7 @@ type Block = "fleet" | "no_agents" | "machine" | "disk" | "project";
 
 const same = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
-const cloneClaim = (c: Claim): Claim => ({ ...c, projectRef: { ...c.projectRef } });
+const cloneClaim = (c: Claim): Claim => ({ ...c, projectRef: { ...c.projectRef }, ...(c.size ? { size: { ...c.size } } : {}) });
 
 /** Every claim is a task's: a lead is not an agent and holds no slot. Claims and max agents keep insertion order. */
 export class Board {
@@ -274,14 +275,20 @@ export class Board {
   }
 
   private sizeAt(c: Claim): Size | undefined {
+    return c.size ? { ...c.size } : undefined;
+  }
+
+  /** Claim `c`, just placed: the size its computer starts at, its bot's pick where it is placed there. */
+  private stamp(c: Claim): void {
     const pick = this.computerOf(c.projectRef);
-    return pick && pickPlace(pick) === (c.place ?? LOCAL) ? { cpu: pick.cpu, memGb: pick.memGb } : undefined;
+    if (pick && pickPlace(pick) === (c.place ?? LOCAL)) c.size = { cpu: pick.cpu, memGb: pick.memGb };
+    else delete c.size;
   }
 
   /** Machine `m`'s name, where its agents run and its CPUs and memory, as its node last said; undefined: not seen. */
-  machineFacts(m: MachineId): { name: string; sandbox?: SlotSandbox; host?: Host } | undefined {
+  machineFacts(m: MachineId): { name: string; sandbox?: SlotSandbox; host?: Host; cap: number } | undefined {
     const x = this.machine(m);
-    return x && { name: x.name, ...(x.auto.sandbox ? { sandbox: { ...x.auto.sandbox } } : {}), ...(x.auto.host ? { host: { ...x.auto.host } } : {}) };
+    return x && { name: x.name, ...(x.auto.sandbox ? { sandbox: { ...x.auto.sandbox } } : {}), ...(x.auto.host ? { host: { ...x.auto.host } } : {}), cap: this.ownCap(m) };
   }
 
   /** Whether machine `m`'s node runs agents in VMs now, as its last heartbeat said. */
@@ -329,18 +336,17 @@ export class Board {
     return this.localClaims(m).length;
   }
 
-  /** The slots of `m`'s they take: each one, but a VM of its bot's own size its memory's worth (`slotsOf`). */
+  /** The slots of `m`'s they take: each one, but a VM of its bot's own size its memory's worth, at the size it was
+   * started at (`vmSlots`). */
   private localUsed(m: MachineId): number {
-    return this.localClaims(m).reduce((n, c) => n + this.slotsOf(c.projectRef, m), 0);
+    const vmGb = this.machine(m)?.auto.host?.vmGb;
+    return this.localClaims(m).reduce((n, c) => n + (c.size ? vmSlots(c.size, vmGb) : 1), 0);
   }
 
-  /** The slots an agent of bot `r` takes on `m`: one, but a Local VM its bot picked as many as its memory is of one of
-   * `m`'s default VMs (memPerAgentBytes, its overhead with it), rounded up, so a big pick never over-commits `m`'s memory. */
+  /** The slots a new agent of bot `r` takes on `m`: one, but a Local VM its bot picked its memory's worth (`vmSlots`). */
   private slotsOf(r: ProjectRef, m: MachineId): number {
     const pick = this.computerOf(r);
-    const vmGb = this.machine(m)?.auto.host?.vmGb;
-    if (!pick || pickPlace(pick) !== LOCAL || vmGb === undefined) return 1;
-    return Math.max(1, Math.ceil((pick.memGb + VM_OVERHEAD_GB) / vmGb - 1e-9));
+    return pick && pickPlace(pick) === LOCAL ? vmSlots(pick, this.machine(m)?.auto.host?.vmGb) : 1;
   }
 
   /** Whether an agent of bot `r` fits `m`'s own slots now. */
@@ -550,6 +556,8 @@ export class Board {
       if (m === RUNNER_ID) return `${picked}, and no computer of the team's runs this bot: connect one, ${other}`;
       if (!this.runsVms(m)) return `${picked}, and ${name} runs no VMs now${machine?.auto.sandbox?.why ? `: ${machine.auto.sandbox.why}` : ""}; ${other}`;
       if (!vmFits(pick, machine?.auto.host)) return `${picked}, and ${name} hasn't the CPUs or memory for it; ${other}`;
+      const over = overCap({ name, cap: this.ownCap(m), ...(machine?.auto.host ? { host: machine.auto.host } : {}) }, pick);
+      if (over) return `${picked}, but ${over}`;
       const not = machine ? vmTakes({ name, ...(machine.auto.sandbox ? { sandbox: machine.auto.sandbox } : {}) }, hostable) : undefined;
       if (not) return `${picked}, but ${not}, ${other}`;
       const slots = this.slotsOf(r, m);
@@ -661,6 +669,7 @@ export class Board {
     const c = this.claims_[i] as Claim;
     c.place = this.freePlace(c, claimMachine(c)) ?? LOCAL;
     c.state = "held";
+    this.stamp(c);
     if (c.threadId === undefined) this.starts.push([c.holder, claimMachine(c), this.nowMs]);
     this.save(i);
   }
@@ -734,7 +743,10 @@ export class Board {
     if (running) {
       // A thread that ran with no grant (a Monitor of its own woke it) runs where its claude lives, as its node says;
       // else where the board would place it now.
-      if (c.state !== "held") c.place = this.liveAt(c) ?? this.freePlace(c, machineId) ?? c.place ?? LOCAL;
+      if (c.state !== "held") {
+        c.place = this.liveAt(c) ?? this.freePlace(c, machineId) ?? c.place ?? LOCAL;
+        this.stamp(c);
+      }
       c.state = "held";
       this.save(i);
       return false;

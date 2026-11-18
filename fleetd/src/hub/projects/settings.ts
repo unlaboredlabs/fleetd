@@ -27,7 +27,6 @@ import type {
   ComputerChoice,
   ComputerImage,
   ComputerPick,
-  SlotSandbox,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_COMPUTER_IMAGE, CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
@@ -42,9 +41,9 @@ import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { chatTagsOn, computerOf, setAvatarColor, setChatTags, setComputer } from "../project_lead/store.ts";
 import { providerStates } from "../sandbox/index.ts";
-import { taskAccountKey } from "../claude_accounts/index.ts";
+import { anyTaskAccount } from "../claude_accounts/index.ts";
 import { slots } from "../slots/index.ts";
-import { computerChoices, computerLabel, RUNNER_ID } from "../../shared/sandbox.ts";
+import { computerChoices, computerLabel, type ComputerMachine, RUNNER_ID } from "../../shared/sandbox.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -313,16 +312,16 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
 
 /** What the bot may pick for its agents' computers now (shared/sandbox.ts computerChoices). */
 function choicesOf(hub: Hub, r: ProjectRef, pick: ComputerPick | undefined): ComputerChoice[] {
-  let machine: { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number } } | undefined;
+  let machine: ComputerMachine | undefined;
   if (r.machineId !== RUNNER_ID) {
     try {
       machine = slots(hub).machineFacts(r.machineId);
     } catch {}
     machine ??= { name: store(hub).machineGet(r.machineId)?.name ?? r.machineId };
   }
-  // Whether the bot's agents run on a Claude account (an order may name its own; the bot's is what its agents get by
-  // default): only those go into a machine's VMs that sign in with its own login, or to a hosted sandbox.
-  const account = taskAccountKey(hub.db, r, undefined, r.machineId) !== undefined;
+  // Whether the bot's agents may run on a Claude account (the hub's, or the person's who starts a task): only those go
+  // into a machine's VMs that sign in with its own login, or to a hosted sandbox.
+  const account = anyTaskAccount(hub.db, r, r.machineId);
   return computerChoices({ ...(machine ? { machine } : {}), providers: providerStates(hub), ...(pick ? { pick } : {}), account });
 }
 

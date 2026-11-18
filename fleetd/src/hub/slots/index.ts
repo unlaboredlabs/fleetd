@@ -78,11 +78,12 @@ export type SlotRequest = {
   hostable?: boolean;
 };
 
-const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable, size)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT (holder) DO UPDATE SET machine_id = excluded.machine_id, project_id = excluded.project_id,
     priority = excluded.priority, thread_id = excluded.thread_id,
-    state = excluded.state, order_n = excluded.order_n, place = excluded.place, hostable = excluded.hostable`;
+    state = excluded.state, order_n = excluded.order_n, place = excluded.place, hostable = excluded.hostable,
+    size = excluded.size`;
 
 function applyOp(conn: Database, op: Op): void {
   switch (op.op) {
@@ -100,6 +101,7 @@ function applyOp(conn: Database, op: Op): void {
           c.order,
           c.place ?? null,
           c.hostable ? 1 : 0,
+          c.size ? JSON.stringify({ cpu: c.size.cpu, memGb: c.size.memGb }) : null,
         );
       return;
     }
@@ -166,7 +168,20 @@ type ClaimRow = {
   order_n: number;
   place: string | null;
   hostable: number;
+  size: string | null;
 };
+
+/** A claim's kept size, `{"cpu","memGb"}`; undefined for none or one that doesn't read as one. */
+function parseSize(json: string | null): Size | undefined {
+  if (!json) return undefined;
+  try {
+    const v = JSON.parse(json) as Partial<Size>;
+    const whole = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n > 0;
+    return whole(v.cpu) && whole(v.memGb) ? { cpu: v.cpu, memGb: v.memGb } : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The persisted board: caps, max agents, machines and claims as the last hub left them. */
 function load(db: HubDb): Board {
@@ -188,7 +203,7 @@ function load(db: HubDb): Board {
     });
   const claims = db
     .all<ClaimRow>(
-      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable FROM slot_claims",
+      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable, size FROM slot_claims",
     )
     .map((r): Claim => {
       const c: Claim = {
@@ -201,6 +216,8 @@ function load(db: HubDb): Board {
       if (r.thread_id !== null) c.threadId = r.thread_id;
       if (r.place !== null) c.place = r.place;
       if (r.hostable) c.hostable = true;
+      const size = parseSize(r.size);
+      if (size) c.size = size;
       return c;
     });
   const sessionsOnly = db.all<{ machine_id: string }>("SELECT machine_id FROM machine_roles WHERE agents = 0");

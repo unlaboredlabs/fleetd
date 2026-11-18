@@ -209,6 +209,19 @@ export function taskAccountKey(db: HubDb, r: ProjectRef, order: string | undefin
   }
 }
 
+/**
+ * Whether some task of bot `r` may run on a Claude account on `machine`: the one a task nobody started gets, or any
+ * person's subscription there (a task a person starts runs on theirs). Its agents' computer choices that take only
+ * accounts are offered then; the slot board still holds an agent that has none, saying why.
+ */
+export function anyTaskAccount(db: HubDb, r: ProjectRef, machine: string): boolean {
+  if (taskAccountKey(db, r, undefined, machine) !== undefined) return true;
+  try {
+    for (const s of new ClaudeAccountStore(db).subscriptions().values()) if (s.sealedOn.some((x) => x.machineId === machine)) return true;
+  } catch {}
+  return false;
+}
+
 /** The key of the account the lead of project `r` runs on. */
 export function leadAccountKey(db: HubDb, r: ProjectRef): string | undefined {
   try {

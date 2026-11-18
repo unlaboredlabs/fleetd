@@ -96,8 +96,26 @@ export const vmTakes = (m: { name: string; sandbox?: SlotSandbox }, account: boo
     ? `${m.name}'s VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude`
     : undefined;
 
-/** The bot's machine as `computerChoices` reads it; undefined for a bot no machine runs (the hub's runner). */
-export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number } };
+/** What a VM takes of its machine's memory beside its guest's, GiB (node/place/microvm.ts memPerAgentBytes). */
+const VM_OVERHEAD_GB = 0.1;
+
+/** The slots of its machine a Local VM of `size` takes: as many as its memory is of one of the machine's default VMs
+ * (`vmGb`, its overhead with it), rounded up, at least one, so a big VM never over-commits the machine's memory; one
+ * while the machine hasn't said its default's. */
+export const vmSlots = (size: Size, vmGb: number | undefined): number =>
+  vmGb === undefined || vmGb <= 0 ? 1 : Math.max(1, Math.ceil((size.memGb + VM_OVERHEAD_GB) / vmGb - 1e-9));
+
+/** Why machine `m` can never run a Local VM of `size`: it takes more slots than the machine's own cap holds. */
+export const overCap = (m: { name: string; cap?: number; host?: { vmGb?: number } }, size: Size): string | undefined => {
+  const slots = vmSlots(size, m.host?.vmGb);
+  return m.cap !== undefined && slots > m.cap
+    ? `${m.name} runs at most ${m.cap} agents at once, and a VM of ${sizeText(size)} takes ${slots} of them (its memory's worth): raise ${m.name}'s max agents in Settings › Hub › Machines, or pick a smaller one`
+    : undefined;
+};
+
+/** The bot's machine as `computerChoices` reads it, `cap` its own slots; undefined for a bot no machine runs (the
+ * hub's runner). */
+export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number; vmGb?: number }; cap?: number };
 
 /**
  * What a bot may pick for its agents' computers, each a real machine at an exact size: its machine's Local VM in each
@@ -113,7 +131,7 @@ export function computerChoices(o: { machine?: ComputerMachine; providers: reado
   const sb = m?.sandbox;
   if (m && sb && (sb.kind === "microvm" || !sb.expected)) {
     const off = sb.kind !== "microvm" ? `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}` : vmTakes(m, o.account);
-    for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off);
+    for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off ?? overCap(m, size));
   }
   for (const p of ORDER) {
     const st = o.providers.find((x) => x.provider === p);

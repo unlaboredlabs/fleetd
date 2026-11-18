@@ -267,8 +267,11 @@ size or provider. The choices are:
 
 A hosted provider is listed only once the team [connected it](/docs/machines#sandboxes); one whose key failed its last
 test says so. Hosted sandboxes take only agents on a Claude account, and so do the VMs of a machine signed in to Claude
-with its own `claude login`: for a bot whose agents run on that login, those choices say so and can't be picked. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
-of that size (a few minutes, once); boat.dev sizes each sandbox as it starts.
+with its own `claude login`: on a machine where nobody's Claude account is (neither the hub's nor a person's), those
+choices say so and can't be picked. A Local VM size that takes more slots than its machine's max agents says so too,
+with the fix. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
+of that size (a few minutes, once); boat.dev sizes each sandbox as it starts. An agent keeps the size it started at
+until it ends, a pick changed meanwhile included.
 
 **Automatic**, the default, places agents as before: the machine's own slots (in a VM of 4 vCPUs and its
 `vmMemoryGiB`), then each connected provider in order at 2 vCPU / 4 GB ([How placement picks](/docs/machines#sandboxes)).
