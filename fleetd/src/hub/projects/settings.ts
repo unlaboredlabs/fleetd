@@ -24,7 +24,10 @@ import type {
   RepoId,
   RepoName,
   WorktreeSetup,
+  ComputerChoice,
   ComputerImage,
+  ComputerPick,
+  SlotSandbox,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_COMPUTER_IMAGE, CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
@@ -37,7 +40,10 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectImage, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { chatTagsOn, setAvatarColor, setChatTags } from "../project_lead/store.ts";
+import { chatTagsOn, computerOf, setAvatarColor, setChatTags, setComputer } from "../project_lead/store.ts";
+import { providerStates } from "../sandbox/index.ts";
+import { slots } from "../slots/index.ts";
+import { computerChoices, computerLabel, RUNNER_ID } from "../../shared/sandbox.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -284,6 +290,9 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
   const image = await imageOf(hub, r, repo, setup);
+  // The bot's computer is the bot's, not a repo's: read with `repo`, the settings leave it out.
+  const computer = repo ? undefined : computerOf(hub.db.conn, r);
+  const computers = repo ? undefined : choicesOf(hub, r, computer);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -296,7 +305,47 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
     ...(signinsKept !== undefined ? { signinsKept } : {}),
+    ...(computer ? { computer } : {}),
+    ...(computers ? { computers } : {}),
   } as ProjectSettings;
+}
+
+/** What the bot may pick for its agents' computers now (shared/sandbox.ts computerChoices). */
+function choicesOf(hub: Hub, r: ProjectRef, pick: ComputerPick | undefined): ComputerChoice[] {
+  let machine: { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number } } | undefined;
+  if (r.machineId !== RUNNER_ID) {
+    try {
+      machine = slots(hub).machineFacts(r.machineId);
+    } catch {}
+    machine ??= { name: store(hub).machineGet(r.machineId)?.name ?? r.machineId };
+  }
+  return computerChoices({ ...(machine ? { machine } : {}), providers: providerStates(hub), ...(pick ? { pick } : {}) });
+}
+
+/** Sets the bot's agents' computer to `pick`, one of its choices that can be used now, or drops it (undefined). Its
+ * queued agents go where it says at once; running ones keep their computer until their claude next starts. */
+export function setComputerOf(hub: Hub, project: ProjectSummary, pick: ComputerPick | undefined): void {
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  const now = computerOf(hub.db.conn, r);
+  const same = (a?: ComputerPick, b?: ComputerPick) => a?.kind === b?.kind && a?.cpu === b?.cpu && a?.memGb === b?.memGb;
+  if (same(now, pick)) return;
+  if (pick) {
+    const choices = choicesOf(hub, r, undefined);
+    const choice = choices.find((c) => same(c, pick));
+    if (!choice) {
+      const offered = choices.filter((c) => !c.unavailable).map((c) => c.label);
+      throw new ToolError(
+        "invalid",
+        `${computerLabel(pick)} isn't a computer this bot can have.`,
+        offered.length ? `Pick one of: ${offered.join("; ")}.` : "Connect a hosted sandbox provider in Settings › Hub › Machines, or run the bot on a computer that runs VMs.",
+      );
+    }
+    if (choice.unavailable) throw new ToolError("invalid", `${choice.label} can't be used now: ${choice.unavailable}.`, "Pick another, or fix that first.");
+  }
+  const kept = pick ? { kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb } : undefined;
+  setComputer(hub.db.conn, r, kept);
+  slots(hub).setComputer(r, kept);
+  announce(hub, r, kept ? `${project.title}'s agents run on ${computerLabel(kept)} now` : `${project.title}'s agents run where they fit again`, { computer: kept ?? null });
 }
 
 /**
@@ -351,9 +400,17 @@ export function register(tools: Registry): void {
       announce(hub, r, `${project.title}'s chat tags are ${input.chatTags ? "on" : "off"}`, { chatTags: input.chatTags });
     }
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
+    if (input.computer !== undefined && input.computerDefault === true)
+      throw new ToolError("invalid", "It names a computer and drops the pick at once.", "Send computer or computerDefault, not both.");
+    if (input.computer !== undefined) setComputerOf(hub, project, input.computer);
+    else if (input.computerDefault === true) setComputerOf(hub, project, undefined);
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the bot use these settings.";
-    if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
+    if (input.computer !== undefined && input.setup === undefined && input.title === undefined) {
+      next = `Its agents start on ${computerLabel(input.computer)} from now on; running ones keep theirs until they next start.`;
+    } else if (input.computerDefault === true && input.setup === undefined && input.title === undefined) {
+      next = "Its agents run where they fit again: its machine's own slots, then the team's hosted sandboxes.";
+    } else if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
       next = `Its bot is ${input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;

@@ -55,14 +55,18 @@ function checkOf(r: Row): SandboxCheck | undefined {
 }
 
 export function state(hub: Hub): SandboxState {
+  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers: providerStates(hub) };
+}
+
+/** Every provider as the hub keeps it, in ORDER: what a bot's computer choices list (projects/settings.ts). */
+export function providerStates(hub: Hub): SandboxProviderState[] {
   const all = rows(hub);
-  const providers = ORDER.map((p): SandboxProviderState => {
+  return ORDER.map((p): SandboxProviderState => {
     const r = all.find((x) => x.provider === p);
     if (!r) return { provider: p, connected: false, limit: 0 };
     const check = checkOf(r);
     return { provider: p, connected: true, limit: r.max_agents, ...(r.domain ? { domain: r.domain } : {}), ...(check ? { check } : {}) };
   });
-  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers };
 }
 
 /** The connected providers' limits, in the order agents go to them. */

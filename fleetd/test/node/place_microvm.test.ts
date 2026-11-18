@@ -479,6 +479,46 @@ test("a box's network follows this machine's addresses: new ones are set out of 
   vm.close();
 });
 
+test("a bot's Local VM pick boots at its size exactly; one that can't be had here is refused, never a process or the default", async () => {
+  const n = node();
+  const plans: BootPlan[] = [];
+  const vm = new MicroVm({ ...n.vm.o, boot: async (b) => (plans.push(b), await standInBoot(b)) });
+  useVm(vm);
+  try {
+    const dir = join(n.home, "hosts", "s-big");
+    const big = pick({ sessionId: "s-big", dir, role: "worker", size: { cpu: 8, memGb: 16 } });
+    expect(big.kind).toBe("microvm");
+    await big.run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    expect([plans[0]!.cpus, plans[0]!.memGiB]).toEqual([8, 16]);
+    // The Cloud Hypervisor line it boots with.
+    const script = launcherScript({ ...plans[0]!, tools: TOOLS }, 0);
+    expect(script).toContain("'boot=8'");
+    expect(script).toContain("'size=16384M,shared=on'");
+    expect(script).toContain("fleetd.mem=16");
+    await vm.end(dir);
+    // No pick: this machine's default, as before.
+    await vm.bound({ sessionId: "s-def", dir: join(n.home, "hosts", "s-def"), role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    expect([plans[1]!.cpus, plans[1]!.memGiB]).toEqual([undefined, 4]);
+    await vm.end(join(n.home, "hosts", "s-def"));
+    // A size a Local VM doesn't come in, and a machine whose VMs are off: refused, saying why.
+    const odd = pick({ sessionId: "s-odd", dir: join(n.home, "hosts", "s-odd"), role: "worker", size: { cpu: 3, memGb: 6 } });
+    await expect(odd.start(launch(n.home, "s-odd", n.cwd, "claude"))).rejects.toThrow("its bot's computer is a Local VM · 3 vCPU / 6 GB, which isn't a size a Local VM comes in");
+    const off = node({ config: { sandbox: "process" } });
+    useVm(off.vm);
+    const refused = pick({ sessionId: "s-off", dir: join(off.home, "hosts", "s-off"), role: "worker", size: { cpu: 2, memGb: 4 } });
+    expect(refused).not.toBe(processPlace);
+    await expect(refused.start(launch(off.home, "s-off", off.cwd, "claude"))).rejects.toThrow(
+      `its bot's computer is a Local VM · 2 vCPU / 4 GB, and this machine runs agents as plain processes now: turned off on this machine (node.json "sandbox": "process")`,
+    );
+    expect((await refused.run({ cwd: off.cwd, argv: ["true"], timeoutSec: 5 })).notRun).toContain("runs agents as plain processes now");
+    // A lead is never in a VM, whatever its bot picked.
+    expect(pick({ sessionId: "s-lead", dir: join(off.home, "hosts", "s-lead"), role: "lead", size: { cpu: 2, memGb: 4 } })).toBe(processPlace);
+  } finally {
+    useVm(undefined);
+    vm.close();
+  }
+});
+
 test("a box's builds take this machine's build slots, queued with every other agent's, and give them back however they end", async () => {
   const n = node({ config: { buildSlots: 1 } });
   const dir = join(n.home, "hosts", "s-build");

@@ -21,6 +21,50 @@ export const SECRET_HEADER = "x-fleetd-box-secret";
 export type Size = { cpu: number; memGb: number };
 export const DEFAULT_SIZE: Size = { cpu: 2, memGb: 4 };
 
+/** Where an agent's computer is: this machine's own VM (`vm`), or a box of a hosted provider. */
+export type ComputerKind = "vm" | ProviderId;
+
+/**
+ * The exact sizes each kind of computer comes in, smallest first: what a bot may pick for its agents, and the only
+ * sizes a computer is made at (never rounded to a nearest one). boat's are its machine types (docs.boat.dev/machines).
+ * E2B and Daytona fix a box's size in its template or snapshot, which fleetd builds once per size: E2B's within its
+ * plans' 8 vCPUs and 8 GiB (memory a whole, even number of GiB), Daytona's within its 4 vCPUs and 8 GB. A Local VM's
+ * are offered where its machine has the CPUs and twice the memory (the hub's `computerChoices`).
+ */
+export const SIZES: Readonly<Record<ComputerKind, readonly Size[]>> = {
+  vm: [
+    { cpu: 2, memGb: 4 },
+    { cpu: 4, memGb: 8 },
+    { cpu: 8, memGb: 16 },
+  ],
+  boat: [
+    { cpu: 2, memGb: 4 },
+    { cpu: 4, memGb: 8 },
+    { cpu: 8, memGb: 16 },
+    { cpu: 16, memGb: 32 },
+  ],
+  e2b: [
+    { cpu: 2, memGb: 4 },
+    { cpu: 4, memGb: 8 },
+    { cpu: 8, memGb: 8 },
+  ],
+  daytona: [
+    { cpu: 2, memGb: 4 },
+    { cpu: 4, memGb: 8 },
+  ],
+};
+
+export const sameSize = (a: Size, b: Size) => a.cpu === b.cpu && a.memGb === b.memGb;
+
+/** A size as a person reads it: "4 vCPU / 8 GB". */
+export const sizeText = (s: Size) => `${s.cpu} vCPU / ${s.memGb} GB`;
+
+/** Why `kind` can't make a computer of `size` exactly, or undefined when it can. */
+export function notOffered(kind: ComputerKind, size: Size, name: string = kind === "vm" ? "A Local VM" : kind): string | undefined {
+  if (SIZES[kind].some((s) => sameSize(s, size))) return undefined;
+  return `${name} comes in no ${sizeText(size)}: its sizes are ${SIZES[kind].map(sizeText).join(", ")}`;
+}
+
 export type Box = { id: string; labels: Record<string, string> };
 
 export type CreateOptions = {

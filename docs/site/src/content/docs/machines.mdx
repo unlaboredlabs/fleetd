@@ -376,7 +376,7 @@ every agent on a Mac.
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
 | Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it, unless it starts from its bot's computer image. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
-| Memory | Each VM has 4 GiB and 4 CPUs. The CPUs are shared with the machine's other work and cost no memory. The memory is taken as the VM uses it, but not given back until the VM ends, so the machine's [max agents](/docs/projects#max-agents) counts all of it plus 0.1 GiB an agent: a 64 GB machine runs 10 VMs at once (24 as plain processes), a 32 GB one 5. A machine whose agents build big things (a Rust crate's tests can take more than 4 GiB) sets its VMs' size in `~/.fleetd/node/node.json`, `"vmMemoryGiB"` (2 to 256): 6 GiB runs 7 on 64 GB and 3 on 32 GB, 8 GiB 5 and 2. A VM that runs out of its memory tells its agent at its next tool call what was killed and that `vmMemoryGiB` is the fix. A VM goes when its task ends. Machines, or [hosted sandboxes](#sandboxes), add more. |
+| Memory | Each VM has 4 GiB and 4 CPUs. The CPUs are shared with the machine's other work and cost no memory. The memory is taken as the VM uses it, but not given back until the VM ends, so the machine's [max agents](/docs/projects#max-agents) counts all of it plus 0.1 GiB an agent: a 64 GB machine runs 10 VMs at once (24 as plain processes), a 32 GB one 5. A bot can pick its agents' VM size instead ([Runs on](/docs/projects#runs-on): 2, 4 or 8 vCPUs with 4, 8 or 16 GB). A machine whose agents build big things (a Rust crate's tests can take more than 4 GiB) sets its VMs' size in `~/.fleetd/node/node.json`, `"vmMemoryGiB"` (2 to 256): 6 GiB runs 7 on 64 GB and 3 on 32 GB, 8 GiB 5 and 2. A VM that runs out of its memory tells its agent at its next tool call what was killed and that `vmMemoryGiB` is the fix. A VM goes when its task ends. Machines, or [hosted sandboxes](#sandboxes), add more. |
 | Speed | Builds over the shared files take about 16% longer and a third more CPU than a plain process. A test suite that starts many short processes takes longer: on the devbox fleetd's own took 234 s in a VM against 91–112 s as a plain process on 4 CPUs, and fleetd-cloud's with its Postgres 366 s against 206 s. Starting a process costs about 3× more in a VM, and git's many small writes on the shared files more still. |
 | What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user, mount and network namespaces, `ip` (iproute2), `nsenter` (util-linux) and `/dev/net/tun`, which most Linux machines have, and a DNS server the VM can reach, not on this machine itself. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
 
@@ -471,7 +471,8 @@ made from Linux on x86_64, never from a Mac: a hub on a Mac with no Linux comput
 (0 to 500; 5 until set; 0 keeps the key and sends none). It is the team's total for that provider, across all its
 machines; keep it at or under the provider's own (E2B Hobby runs 10 at once and an hour each; Pro 100 and 24 hours).
 
-**How placement picks.** By count alone, when an agent's run starts: its machine's own slots first; once those are full,
+**How placement picks.** A bot that picked its computer ([Runs on](/docs/projects#runs-on)) has its agents placed
+there alone, at that size. Otherwise by count alone, when an agent's run starts: its machine's own slots first; once those are full,
 the connected providers in the order listed (E2B, boat.dev, Daytona; **What runs where** says it), each up to its limit; then the agent waits in
 line, and the line says why, e.g. "machine cap: 10 of 10 running on devbox (memory 60 GB), and hosted sandboxes are
 full: E2B 5 of 5". A sandbox counts against its provider's limit for as long as it runs, the idle minutes between an
@@ -537,7 +538,8 @@ once per Claude Code version. Each sandbox gets the machine's own fleetd at its 
 fetched by the sandbox itself, else the machine sends it (about 57 MB). The machine labels each sandbox with its own
 id and deletes, every 10 minutes, any of its own that no agent holds any more.
 
-**Cost.** Providers bill by the second while a sandbox runs, idle or not. At the default size (2 vCPUs, 4 GiB),
+**Cost.** Providers bill by the second while a sandbox runs, idle or not; a bigger [Runs on](/docs/projects#runs-on)
+size costs more. At the default size (2 vCPUs, 4 GiB),
 from their published rates:
 
 | Provider | Per agent-hour | Besides |

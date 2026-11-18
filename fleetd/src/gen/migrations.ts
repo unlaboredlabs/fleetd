@@ -172,6 +172,7 @@ import m168 from "../hub/store/migrations/202611171800_chat_folds_gone.sql" with
 import m169 from "../hub/store/migrations/202611171814_sandbox_providers.sql" with { type: "text" };
 import m170 from "../hub/store/migrations/202611171930_slot_claim_place.sql" with { type: "text" };
 import m171 from "../hub/store/migrations/202611181400_chat_unsettled_held.sql" with { type: "text" };
+import m172 from "../hub/store/migrations/202611182200_project_computer.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -346,4 +347,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611171814_sandbox_providers", sql: m169 },
   { name: "202611171930_slot_claim_place", sql: m170 },
   { name: "202611181400_chat_unsettled_held", sql: m171 },
+  { name: "202611182200_project_computer", sql: m172 },
 ];

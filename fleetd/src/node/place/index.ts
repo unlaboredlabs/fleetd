@@ -12,7 +12,7 @@ import type { Image } from "../actions/image.ts";
 import { LaunchError, sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
 import { boxFile, destroyBox } from "./box_record.ts";
 import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
-import type { ProviderId } from "../../sandbox/providers/index.ts";
+import { notOffered, sizeText, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
 import type { Box } from "../sandbox/box.ts";
 import type { View } from "./view.ts";
@@ -82,21 +82,41 @@ export const runnerProvider = (): ProviderId | undefined => runner?.();
 export const RUNNER_NO_PROVIDER =
   "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects E2B, boat.dev or Daytona in Settings › Hub › Machines";
 
-/** The runner's place for a session no provider takes: it never starts there, and says why. */
-const noPlace: Place = {
+/** A place a session never starts in, saying why: the runner's for a session no provider takes, or a Local VM's
+ * picked size on a machine that can't boot one now. */
+const refused = (why: string): Place => ({
   ...processPlace,
   start: async () => {
-    throw new LaunchError(RUNNER_NO_PROVIDER);
+    throw new LaunchError(why);
   },
-  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: RUNNER_NO_PROVIDER }),
-};
+  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: why }),
+});
+const noPlace = refused(RUNNER_NO_PROVIDER);
+
+/** Why a task's agent whose bot picked a Local VM of `size` can't have one here now; undefined when it can. Never a
+ * plain process or another size instead: what the bot picked is what runs. */
+export function vmRefusal(s: PlaceFor & { size: Size }): string | undefined {
+  const picked = `its bot's computer is a Local VM · ${sizeText(s.size)}`;
+  const not = notOffered("vm", s.size);
+  if (not) return `${picked}, which isn't a size a Local VM comes in (${not}): pick another on the bot's Computer page`;
+  const st = vm?.status();
+  if (!vm || !st) return `${picked}, and this machine runs no VMs`;
+  if (st.kind !== "microvm") return `${picked}, and this machine runs agents as plain processes now: ${st.why}`;
+  if (!vm.wants(s)) return `${picked}, and ${st.why ?? "this machine's VMs take only agents on a Claude account of their bot's"}`;
+  return undefined;
+}
 
 /** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it
  * in, else a task's agent in a VM where the machine can run one, else a process. On the hub's runner, always a box. */
 export const pick = (s?: PlaceFor): Place => {
   const hosted = s?.hosted ?? runner?.();
-  if (s && hosted) return hostedPlace(hosted, s.sessionId, s.dir);
+  if (s && hosted) return hostedPlace(hosted, s.sessionId, s.dir, s.size);
   if (runner) return noPlace;
+  // A task's agent whose bot picked a Local VM's size: in one of exactly that, or not at all.
+  if (s?.size && s.role === "worker") {
+    const why = vmRefusal({ ...s, size: s.size });
+    return why ? refused(why) : vm!.bound(s);
+  }
   return s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace;
 };
 

@@ -9,7 +9,7 @@
 //   box's life) gives them again. They are kept in memory only.
 // - A detached command is envd's Process.Start (Connect protocol, server streaming) read until the process starts,
 //   then let go: the process outlives the call. Its environment is the call's own `envs`.
-import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, type ProviderAuth, SECRET_HEADER, type StartOptions } from "./common.ts";
+import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, notOffered, type Provider, type ProviderAuth, SECRET_HEADER, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
 import { dial } from "./stream.ts";
@@ -166,6 +166,8 @@ export function e2b(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     async build(dockerfile: string, b: BuildOptions) {
       const r = parse(dockerfile);
       const size = b.size ?? DEFAULT_SIZE;
+      const not = notOffered("e2b", size, NAME);
+      if (not) throw new ProviderError("failed", not);
       const made = await http.call("POST", "/v3/templates", { body: { name: b.name, cpuCount: size.cpu, memoryMB: size.memGb * 1024 }, signal: b.signal });
       const tid = String(made.body.templateID);
       const bid = String(made.body.buildID);

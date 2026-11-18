@@ -6405,6 +6405,13 @@ export type ProjectSetOutput = {
 };
 
 export type ProjectSettings = {
+  /** Its pick of its agents' computer, exactly what each of them gets; absent: none (the default placement and size). */
+  computer?: ComputerPick;
+  /**
+   * What it may pick, each a real machine: the Local VM where its machine runs VMs, and each connected provider's
+   * sizes; one that can't be used now says why, the pick among them. Absent with `repo`, and from older hubs.
+   */
+  computers?: ComputerChoice[];
   /** Its agents' variables, by name. A secret's value is never here. */
   env: ProjectEnvVar[];
   /**
@@ -6448,6 +6455,10 @@ export type ProjectSettingsSetInput = {
   avatarColor?: BotColor;
   /** Turns its chat's tags on or off (a trial; off by default). */
   chatTags?: boolean;
+  /** Its agents' computer from now on: one of `computers`, exactly. */
+  computer?: ComputerPick;
+  /** Drop its pick: its agents are placed and sized by default again. */
+  computerDefault?: boolean;
   machineId: MachineId;
   projectId: ProjectId;
   /**
@@ -7235,6 +7246,29 @@ export type SandboxDisconnectInput = {
 };
 
 export type SandboxGetInput = { [key: string]: unknown };
+
+/** Where an agent's computer is: its machine's own VM (`vm`), or a box of a hosted provider. */
+export type KnownComputerKind = "vm" | "e2b" | "boat" | "daytona";
+/** KnownComputerKind, or a value from a newer hub. */
+export type ComputerKind = KnownComputerKind | (string & {});
+
+/** A bot's agents' computer: where, and its exact size. */
+export type ComputerPick = {
+  cpu: number;
+  kind: ComputerKind;
+  memGb: number;
+};
+
+/** One computer a bot may pick. */
+export type ComputerChoice = {
+  cpu: number;
+  kind: ComputerKind;
+  /** As a person reads it: "E2B · 4 vCPU / 8 GB". */
+  label: string;
+  memGb: number;
+  /** Why it can't be used now; absent while it can. */
+  unavailable?: string;
+};
 
 /** A hosted sandbox provider a team connects with its own key. */
 export type KnownSandboxProvider = "e2b" | "boat" | "daytona";

@@ -42,6 +42,8 @@ export type LaunchOptions = {
   isolated?: boolean;
   /** Where the slot board placed it: its machine's own slots ("local"), or a hosted provider's box. */
   place?: string;
+  /** Its bot's pick of the computer there, exactly (SessionLaunch.size). */
+  size?: { cpu: number; memGb: number };
   /** This model and effort in place of the profile's. */
   model?: [string, Effort];
 };
@@ -103,6 +105,7 @@ export function launchCall(m: MachineId, input: LaunchInput, options: LaunchOpti
     ...(options.claudeAccount !== undefined ? { claudeAccount: options.claudeAccount } : {}),
     ...(options.onepassword !== undefined ? { onepassword: options.onepassword } : {}),
     ...(options.place !== undefined ? { place: options.place } : {}),
+    ...(options.size !== undefined ? { size: options.size } : {}),
     ...(options.isolated ? { isolated: true } : {}),
   };
   return call;

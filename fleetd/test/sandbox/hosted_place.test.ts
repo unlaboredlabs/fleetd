@@ -13,7 +13,7 @@ import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { BOX_CLAUDE, HostedDown, hostedPlace, hostedReach, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { reach } from "../../src/node/place/endpoint.ts";
-import { placeAt } from "../../src/node/place/index.ts";
+import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
 import { stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
@@ -138,6 +138,19 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   // The node's sweep finds nothing of it left.
   await stopHost(dir);
 }, 60_000);
+
+test("a session whose bot picked E2B · 4 vCPU / 8 GB gets a box of exactly that: its own template's size", async () => {
+  const { s, home, cwd, env } = await setup();
+  const dir = join(home, "hosts", "s-big");
+  const place = pick({ sessionId: "s-big", dir, role: "worker", account: true, hosted: "e2b", size: { cpu: 4, memGb: 8 } });
+  expect(place.kind).toBe("hosted");
+  expect(await place.run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] })).toMatchObject({ exitCode: 0 });
+  const built = s.calls.filter((c) => c.method === "POST" && c.path === "/v3/templates");
+  expect(built.map((c) => [c.body.cpuCount, c.body.memoryMB])).toEqual([[4, 8192]]);
+  expect(built[0]!.body.name).toMatch(/-4c8g$/);
+  await placeAt(dir).end(dir);
+  expect(s.boxes.size).toBe(0);
+});
 
 test("a Claude endpoint on another tailnet host, which no hosted box's network reaches, is relayed through the node and checked first", async () => {
   const { home, cwd, env } = await setup();

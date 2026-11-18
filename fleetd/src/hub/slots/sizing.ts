@@ -28,7 +28,11 @@ const DISK_PER_AGENT = 5_000_000_000;
 
 /** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs", and
  * where its agents run as its node last said (slots/index.ts withSandbox). */
-export type Auto = { cap: number; why: string; sandbox?: SlotSandbox };
+export type Auto = { cap: number; why: string; sandbox?: SlotSandbox; host?: Host };
+
+/** A machine's CPUs and memory (GB as sold), as its node last said: which Local VM sizes it runs (shared/sandbox.ts
+ * computerChoices). Not stored: it comes with every heartbeat. */
+export type Host = { cpus: number; memGb?: number };
 
 /** Total memory in GB as the machine is sold: the kernel reports a little less than is installed. */
 const soldGb = (bytes: number) => Math.floor((bytes + GIB - 1) / GIB);
@@ -67,6 +71,12 @@ export function autoCap(load: NodeLoad): Auto {
   if (cap > HARD_TOP) return { cap: HARD_TOP, why: `top of ${HARD_TOP}` };
   return { cap, why };
 }
+
+/** The machine's CPUs and memory as `Auto.host` keeps them (fleetd cloud's machines too). */
+export const hostOf = (load: NodeLoad): Host => ({
+  cpus: load.cpus,
+  ...(load.memTotalBytes !== undefined && load.memTotalBytes !== null ? { memGb: soldGb(load.memTotalBytes) } : {}),
+});
 
 /** New agents the machine's free disk takes above the floor; undefined while the node reports no disk. */
 export function diskRoom(load: NodeLoad): number | undefined {

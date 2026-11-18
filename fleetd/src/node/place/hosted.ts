@@ -17,7 +17,7 @@
 // - The machine's own Claude login never leaves the machine: a session without an account's variables is refused.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
+import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
 import { HostLink, LaunchError, PROTOCOL, type HostHandlers, type Launch, type Registration } from "../runner/host.ts";
@@ -144,7 +144,7 @@ export function boxPath(path: string | undefined, home: string): string {
 const homeOf = (dir: string) => dirname(dirname(dir));
 
 /** The box of `session`, made the first time it's needed: its worktree in it as here. */
-async function ensure(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>): Promise<Live> {
+async function ensure(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>, size?: Size): Promise<Live> {
   await ending.get(session);
   const have = live.get(session);
   if (have) return have;
@@ -169,13 +169,13 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     let setupAgain: string[] = [];
     let made: BoxRecord;
     try {
-      made = await b.create(provider, session, forwardedPorts(env), dirs, undefined, image ? { template: image.ref } : {});
+      made = await b.create(provider, session, forwardedPorts(env), dirs, size, image ? { template: image.ref } : {});
     } catch (error) {
       if (!image) throw error;
       console.warn(`${nowIso()} WARN a session's box couldn't start from its bot's computer image: it starts clean and runs setup {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
       dropChoice(home, session);
       setupAgain = image.worktree ? [] : (image.commands ?? []);
-      made = await b.create(provider, session, forwardedPorts(env), dirs);
+      made = await b.create(provider, session, forwardedPorts(env), dirs, size);
     }
     const record: HostedRecord = { ...made, session, cwd };
     record.env = { ...(HOME ? { HOME } : {}), PATH };
@@ -236,11 +236,11 @@ function failed(provider: ProviderId, error: unknown): HostedDown {
 }
 
 /** The session's box, made when it has none; a provider set aside isn't asked for another until its time is out. */
-async function boxFor(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>): Promise<Live> {
+async function boxFor(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>, size?: Size): Promise<Live> {
   const aside = live.has(session) ? undefined : boxes()?.aside(provider);
   if (aside) throw new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: it is left out for a few minutes after it failed (${aside})`);
   try {
-    return await ensure(provider, session, dir, cwd, env);
+    return await ensure(provider, session, dir, cwd, env, size);
   } catch (error) {
     throw failed(provider, error);
   }
@@ -303,8 +303,8 @@ function linkTo(l: Live, dir: string, registration: Registration): Promise<HostL
   }).then((made) => (link = made));
 }
 
-/** A hosted place bound to one session. */
-export function hostedPlace(provider: ProviderId, session: string, dir: string): Place {
+/** A hosted place bound to one session; `size`: its bot's pick, exactly (the provider's default when absent). */
+export function hostedPlace(provider: ProviderId, session: string, dir: string, size?: Size): Place {
   return {
     kind: "hosted",
 
@@ -312,7 +312,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
       const env = launch.env;
       if (!ACCOUNT_CLEARS.slice(0, 2).some((k) => env[k]) && !env.ANTHROPIC_AUTH_TOKEN)
         throw new LaunchError("this agent runs on the machine's own Claude login, which never leaves the machine: give its bot a Claude account to run it in a hosted sandbox");
-      const l = await boxFor(provider, session, dir, launch.cwd, env);
+      const l = await boxFor(provider, session, dir, launch.cwd, env, size);
       const home = homeOf(dir);
       const box = l.box;
       // Setup's commands may have made the box, with none of the session's ports: the browser's, adb's and a Claude
@@ -406,7 +406,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
     async run(r) {
       let l: Live;
       try {
-        l = await boxFor(provider, session, dir, r.cwd, r.env ?? {});
+        l = await boxFor(provider, session, dir, r.cwd, r.env ?? {}, size);
       } catch (error) {
         return { exitCode: null, outputTail: "", timedOut: false, notRun: (error as Error).message };
       }

@@ -11,7 +11,7 @@
 //   its own `envs` first writes them to a private file, which the detached command reads and removes (shell.ts).
 // - Toolbox calls carry the key too: Daytona's toolbox proxy takes the same bearer token.
 // - The guest's port is reached at its preview URL with the `x-daytona-preview-token` header, plus fleetd's secret.
-import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, KEY_LABEL, LABEL, labelsFor, type Provider, type ProviderAuth, SECRET_HEADER, type StartOptions } from "./common.ts";
+import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, KEY_LABEL, LABEL, labelsFor, notOffered, type Provider, type ProviderAuth, SECRET_HEADER, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
 import { envFile, envPath, launcher, shq } from "./shell.ts";
@@ -169,9 +169,8 @@ export function daytona(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     async build(dockerfile: string, b: BuildOptions) {
       parse(dockerfile);
       const size = b.size ?? DEFAULT_SIZE;
-      if (size.cpu > MAX.cpu || size.memGb > MAX.memGb) {
-        throw new ProviderError("failed", `Daytona's largest sandbox is ${MAX.cpu} vCPUs and ${MAX.memGb} GB, smaller than ${size.cpu} vCPUs and ${size.memGb} GB`);
-      }
+      const not = notOffered("daytona", size, NAME);
+      if (not) throw new ProviderError("failed", not);
       const made = await http.call("POST", "/snapshots", {
         body: { name: b.name, buildInfo: { dockerfileContent: dockerfile }, cpu: size.cpu, memory: size.memGb, disk: MAX.diskGb },
         signal: b.signal,

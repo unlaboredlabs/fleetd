@@ -259,8 +259,10 @@ async function sendWithin(
   const [skills, skillsNow] = changedSkills(hub, r);
   // Where the slot board placed a task's run: the node starts its claude there if none runs.
   let place: string | undefined;
+  let size: { cpu: number; memGb: number } | undefined;
   try {
     place = slots(hub).placeOfThread(r);
+    size = slots(hub).sizeOfThread(r);
   } catch {}
   // A busy node may take a while to take it: a patient send goes again until it answers (the node dedupes on runId).
   const ex = executors(hub);
@@ -277,6 +279,7 @@ async function sendWithin(
       ...(mcp ? { mcp } : {}),
       ...(skills ? { skills } : {}),
       ...(place !== undefined ? { place } : {}),
+      ...(size !== undefined ? { size } : {}),
     },
     READ_TIMEOUT_MS,
   );

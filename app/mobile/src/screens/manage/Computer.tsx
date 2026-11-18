@@ -1,4 +1,5 @@
-// A bot's Computer, pushed from its screen, as the desktop's Computer section: for its own directory and each other
+// A bot's Computer, pushed from its screen, as the desktop's Computer section: Runs on, where every agent of the bot
+// runs (Automatic, or one real machine, provider and exact size together, a tap picking it), then for its own directory and each other
 // repo, what its setup installs (its commands, read-only here; the desktop edits them), the image its agents' computers
 // start from (Ready, Building…, Failed with its log, Not built yet; when it was built and its size) and Rebuild
 // (project_image_rebuild). The hub's project.settings brings each change, a build's end too.
@@ -13,8 +14,9 @@ import { ListRow, ListSection } from "../../ui/List";
 import { PRESSED_OPACITY } from "../../ui/motion";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
-import { readComputer, rebuildImage } from "./api";
-import { canRebuild, commandsOf, imageRows, setupTargets, touchesComputer, type SetupTarget } from "./computerModel";
+import { pickComputer, readComputer, rebuildImage } from "./api";
+import { canRebuild, commandsOf, imageRows, runsOnRows, setupTargets, touchesComputer, type RunsOnRow, type SetupTarget } from "./computerModel";
+import { Icon } from "../../ui/Icon";
 import { errorWords, Problem, useRead } from "./parts";
 
 export function Computer({ navigation, route }: ChatInfoProps<"Computer">) {
@@ -45,10 +47,63 @@ export function Computer({ navigation, route }: ChatInfoProps<"Computer">) {
       contentContainerStyle={{ paddingBottom: space.xxl }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={again} tintColor={t.secondary} />}
     >
+      <RunsOn project={p} gen={gen} />
       {setupTargets(p).map((target) => (
         <Setup key={target.repo ?? ""} project={p} target={target} gen={gen} onLog={(log) => navigation.navigate("ComputerLog", { log })} />
       ))}
     </ScrollView>
+  );
+}
+
+/**
+ * Runs on: Automatic, then each real machine the bot may have, the pick checked. A tap picks one at once; one that
+ * can't be used now says why under it and takes no tap. No section when there is nothing to pick.
+ */
+function RunsOn({ project: p, gen }: { project: ProjectSummary; gen: number }) {
+  const t = useTheme();
+  const { state, session } = useHub();
+  const key = `${p.machineId}/${p.projectId}`;
+  const read = useRead(() => readComputer(session, refOf(key)), [session, key, gen]);
+  // The pick just made, checked at once until the next read brings the hub's.
+  const [mine, setMine] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState<string | undefined>(undefined);
+  const settings = read.value?.ok === true ? read.value.value : undefined;
+  useEffect(() => setMine(undefined), [settings]);
+  const rows = runsOnRows(settings);
+  if (rows.length === 0) return null;
+  const live = state.hub.phase === "live";
+  const checked = (row: RunsOnRow) => (mine === undefined ? row.selected : row.key === mine);
+  const choose = (row: RunsOnRow) => {
+    if (checked(row) || busy !== undefined) return;
+    haptics.tap();
+    setBusy(row.key);
+    void pickComputer(session, refOf(key), row.pick).then((r) => {
+      setBusy(undefined);
+      if (!r.ok) {
+        haptics.warning();
+        return Alert.alert("Couldn't change it", errorWords(r.error));
+      }
+      haptics.success();
+      setMine(row.key);
+    });
+  };
+  return (
+    <ListSection header="Runs on">
+      {rows.map((row) => (
+        <ListRow
+          key={row.key}
+          title={row.title}
+          {...(row.why === undefined ? {} : { detail: row.why })}
+          chevron={false}
+          {...(live && row.why === undefined ? { onPress: () => choose(row) } : {})}
+          {...(busy === row.key
+            ? { accessory: <ActivityIndicator color={t.secondary} /> }
+            : checked(row)
+              ? { accessory: <Icon name="done" size={17} color={t.accent} weight="semibold" /> }
+              : {})}
+        />
+      ))}
+    </ListSection>
   );
 }
 
