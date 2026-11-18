@@ -5,6 +5,7 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { AGENT_BROWSER_METHODS, BOXED_CHECKED, BOXED_PLAIN, boxedUrlRefusal, refusal } from "../../src/node/browser/guard.ts";
@@ -14,7 +15,7 @@ import type { LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Box } from "../../src/node/sandbox/box.ts";
 import { GUEST_PROTOCOL } from "../../src/node/sandbox/guest.ts";
 import { Mux, NODE_CHANNELS } from "../../src/node/sandbox/mux.ts";
-import type { View } from "../../src/node/place/view.ts";
+import { guestOwn, type View } from "../../src/node/place/view.ts";
 import { Cdp, type Transport } from "../../src/node/browser/cdp.ts";
 import { Broker, start } from "../../src/node/browser/index.ts";
 import { Router, start as startRoute } from "../../src/node/session_route/index.ts";
@@ -23,7 +24,9 @@ import { chrome } from "../browser_rig.ts";
 import { testNode } from "../node_helpers.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
-const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-boxed-"));
+const tmpBase = process.env.TMPDIR ?? "/tmp";
+// Not under the box's own dirs (/tmp on CI), which a boxed session's paths never are.
+const root = mkdtempSync(join(guestOwn(tmpBase) ? homedir() : tmpBase, "fleetd-boxed-"));
 const procs: Bun.Subprocess[] = [];
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
