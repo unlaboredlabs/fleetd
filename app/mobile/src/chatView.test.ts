@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { aimOf, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { aimOf, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, holdFrom, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -442,5 +442,17 @@ describe("olderOffset", () => {
   it("stops at the oldest end, and stays put in a thread shorter than the screen", () => {
     expect(olderOffset(4000, 5000, 600, 800)).toBe(4200);
     expect(olderOffset(0, 500, 600, 800)).toBe(0);
+  });
+});
+
+describe("holdFrom", () => {
+  it("holds every row once the reader has scrolled away from the newest end, however little", () => {
+    expect(holdFrom(true, false, undefined)).toBe(0);
+    expect(holdFrom(true, true, 0)).toBe(0);
+  });
+  it("rides with the newest end there, and holds a tall streaming reply under the bar", () => {
+    expect(holdFrom(false, false, undefined)).toBeUndefined();
+    expect(holdFrom(false, false, 0)).toBeUndefined();
+    expect(holdFrom(false, true, 0)).toBe(1);
   });
 });

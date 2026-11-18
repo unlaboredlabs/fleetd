@@ -19,6 +19,7 @@
 // strings and touches no DOM. Drawn as an SVG, each frame's new transform and paths left the renderer style and paint
 // garbage that only a major GC frees: three bots in live states held 60 MB more of it after 10 s idle (`pnpm perf`'s
 // idle memory went from 347 to 412 MB), and writing only what changed didn't lower that, only how soon it got there.
+import { covered } from "./covered";
 import { advanceRig, BODY, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, traceEyes, type BotState, type Pen, type Rig } from "../../../shared/bot";
 
 interface Member {
@@ -75,6 +76,8 @@ let holdUntil = 0;
 let held: number | undefined;
 let dark = false;
 let themes: MutationObserver | undefined;
+/** Watches for a modal covering the app or leaving it (inert). */
+let covers: MutationObserver | undefined;
 let pixels: MediaQueryList | undefined;
 let body: Path2D | undefined;
 /** The eye being traced, reused frame to frame. */
@@ -186,7 +189,9 @@ const onPixels = (): void => {
   redraw();
 };
 
-const shown = (m: Member): boolean => m.seen && m.canvas.isConnected;
+// One under a modal (inert: the app under Settings, blurred whole) isn't shown either: each frame of it redrew the
+// whole window's blur. The sheet closing wakes the clock (start's `covers`).
+const shown = (m: Member): boolean => m.seen && m.canvas.isConnected && !covered(m.canvas);
 
 /** `to` made the same as `from`, its arrays copied. */
 const copyRig = (to: Rig, from: Rig): void => {
@@ -365,6 +370,8 @@ const start = (): void => {
   dark = document.documentElement.dataset["theme"] === "dark";
   themes = new MutationObserver(redraw);
   themes.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  covers = new MutationObserver(() => wake());
+  covers.observe(document.body, { attributes: true, attributeFilter: ["inert"], subtree: true });
   watchPixels();
 };
 
@@ -377,8 +384,9 @@ const stop = (): void => {
   document.removeEventListener("keydown", onKey, { capture: true });
   reducedQuery?.removeEventListener("change", onMotion);
   themes?.disconnect();
+  covers?.disconnect();
   pixels?.removeEventListener("change", onPixels);
-  themes = pixels = undefined;
+  themes = covers = pixels = undefined;
 };
 
 export interface Living {

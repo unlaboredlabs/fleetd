@@ -31,7 +31,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { aimOf, attachmentBubbles, bubbleTime, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -253,6 +253,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const toNewest = () => list.current?.scrollToOffset({ offset: newestEnd(), animated: !reduce });
 
   // Scrolled away from the newest: the seq it was at, so the button down counts what came since.
+  // Scrolled away from the newest end at all: the rows hold still (holdFrom).
+  const [away, setAway] = useState(() => reopened !== undefined && reopened.offset > AT_NEWEST);
   const [awayFrom, setAwayFrom] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AWAY ? items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0) : null));
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
@@ -269,6 +271,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     session.scrolledTo(chatKey, { offset: y < AWAY / 3 ? 0 : Math.round(y) });
     if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
+    if (y > AT_NEWEST !== away) setAway(y > AT_NEWEST);
   };
   // The status bar's tap goes a screen older, as chat apps' does, never to the newest end.
   const olderByAScreen = () => {
@@ -408,8 +411,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   useEffect(() => {
     if (streamAt === undefined) setTall(false);
   }, [streamAt]);
-  const holdFrom = awayFrom !== null ? 0 : tall && streamAt !== undefined ? streamAt + 1 : undefined;
-  const hold = useMemo(() => (holdFrom === undefined ? undefined : { minIndexForVisible: holdFrom }), [holdFrom]);
+  const held = holdFrom(away || awayFrom !== null, tall, streamAt);
+  const hold = useMemo(() => (held === undefined ? undefined : { minIndexForVisible: held }), [held]);
   // At the newest end the rows make room for a new bubble, or the reply growing, on its spring, as it rides up with
   // them. Not while held still: the list keeps its place there, and a row moving to its new place would slide.
   const spring = glideOf(newestFirst);
@@ -422,6 +425,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     const out = outgoing(body, files.length, reply);
     if (out === null) return;
     setAwayFrom(null);
+    setAway(false);
     // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
     requestAnimationFrame(() => {
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });

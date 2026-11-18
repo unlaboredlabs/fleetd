@@ -7,6 +7,7 @@
 // them restyles a few cells, not all. Their frames are shared/glyph.ts, which the phone app draws too.
 import { useCallback, useRef } from "react";
 import { useBeat } from "../lib/beat";
+import { covered } from "../lib/covered";
 import { CELLS, litOn, type GlyphState } from "../../../shared/glyph";
 import s from "./StateGlyph.module.css";
 
@@ -39,7 +40,7 @@ export function StateGlyph({
   const step = useCallback(
     (beat: number) => {
       const cells = box.current?.children;
-      if (live === undefined || cells === undefined) return;
+      if (live === undefined || cells === undefined || covered(box.current)) return;
       for (const i of CELLS) {
         const cell = cells[i];
         const lit = litOn(live, turn, i, beat) ?? null;

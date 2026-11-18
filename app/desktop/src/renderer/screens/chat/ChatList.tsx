@@ -30,15 +30,20 @@ import { InlineText } from "./text";
 import s from "./view.module.css";
 
 function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
-  // Reaching the top of what is loaded asks for the page before it. The observer says so once the line is in view,
-  // measured after a page that just landed has kept the place: the line it pushed out of view asks for no more.
+  // Coming within a screen of the top of what is loaded asks for the page before it, so a reader scrolling up reads on
+  // into it rather than stopping at the top while it loads (a Mac's scroll bounces off it there). The observer says so
+  // once the line is that close, measured after a page that just landed has kept the place: the line it pushed farther
+  // away asks for no more.
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (state !== "more" || !el) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) onLoadOlder();
-    });
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onLoadOlder();
+      },
+      { root: el.closest("[role=list]"), rootMargin: "100% 0px 0px 0px" },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [state, onLoadOlder]);
@@ -359,7 +364,7 @@ export function ChatList(props: {
 
   // The composer's island growing or shrinking with its words changes the room at the end. At the end, the end stays in
   // view: the last row moves up with the island in the same frame, as the pill grows (glide.ts doesn't glide for room
-  // added after the rows). Scrolled up, nothing moves.
+  // added after the rows). Scrolled up, however little (VirtualList's readerLeft), nothing moves.
   const { inset } = props;
   const insetWas = useRef(inset);
   useLayoutEffect(() => {
@@ -368,7 +373,7 @@ export function ChatList(props: {
     const v = virtualizer.current;
     const el = v?.scrollElement;
     if (!v || !el || was === undefined || inset === undefined || was === inset) return;
-    if (el.scrollHeight - (inset - was) - el.scrollTop - el.clientHeight <= 24) v.scrollToOffset(el.scrollHeight - el.clientHeight);
+    if (el.scrollHeight - (inset - was) - el.scrollTop - el.clientHeight <= v.options.scrollEndThreshold) v.scrollToOffset(el.scrollHeight - el.clientHeight);
   }, [inset]);
 
   useEffect(() => {
