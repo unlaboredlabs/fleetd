@@ -10,7 +10,7 @@ import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectSummary } from "./contracts";
 import { useLive } from "./hub";
-import { EmptyState, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { EmptyState, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsSection, useProjects } from "./parts";
 import { formatRoute } from "./route";
 import s from "./settings.module.css";
 

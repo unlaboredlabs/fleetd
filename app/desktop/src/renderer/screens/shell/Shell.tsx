@@ -7,7 +7,7 @@
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
 // panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the chat's pill opens
 // the panel too. ⌘K, not a button, opens the palette.
-import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, TopBar } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
@@ -23,7 +23,7 @@ import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
 import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
-import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
+import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
@@ -144,9 +144,11 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
   // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
   // Settings is a sheet over the app: under it stays the screen it opened from (the home chat, on a link to it).
-  const away = useRef<Screen>(HOME);
+  // Where closing it returns is the last route before it, kept as the route changes.
   const sheet = route.id === "settings";
-  const base = sheet ? { ...away.current, at: route.at } : route;
+  const [away, setAway] = useState<Screen>(HOME);
+  if (!sheet && route.id !== "onboarding" && toHash(route) !== toHash(away)) setAway(route);
+  const base = sheet ? { ...away, at: route.at } : route;
   const homeRow = base.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
@@ -165,10 +167,6 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     if (home !== null && !sheet) navigate(home, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeRow?.key]);
-  // Where closing Settings returns: the last screen before it.
-  useEffect(() => {
-    if (!sheet && screen.id !== "onboarding") away.current = screen;
-  }, [screen, sheet]);
   const back = useSettingsBack(sheet);
   const administers = useAdministers();
 
@@ -353,7 +351,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             <SettingsSheet
               onClose={() => {
                 back();
-                go(away.current);
+                go(away);
               }}
             />
           </Suspense>

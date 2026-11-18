@@ -25,7 +25,7 @@
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   width: min(1100px, 100%);
-  height: min(860px, 100%);
+  height: min(920px, 100%);
   min-height: 0;
   overflow: hidden;
   border-radius: var(--radius-xl);
@@ -66,7 +66,7 @@
   min-height: 0;
 }
 
-/* ---- Layout "index": a short list of pages at the sheet's left ---- */
+/* ---- The index: a short list of pages at the sheet's left ---- */
 .index {
   display: flex;
   flex-direction: column;
@@ -218,82 +218,6 @@
   display: none;
 }
 
-/* ---- Layout "tabs": the groups as a switch at the head, a group's pages as tabs under it ---- */
-.sheet[data-layout="tabs"] {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-.scopes {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) var(--space-2);
-}
-.scopeRow {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  width: 100%;
-}
-.scopeSearch {
-  position: relative;
-  width: 220px;
-}
-.scopeSwitch {
-  grid-column: 2;
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--settings-field);
-}
-.scopeSwitch > button {
-  height: 28px;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--quiet);
-  font: inherit;
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
-}
-.scopeSwitch > button:hover {
-  color: var(--text);
-}
-.scopeSwitch > button[aria-pressed="true"] {
-  background: var(--sheet);
-  color: var(--text);
-  box-shadow: var(--settings-chip);
-}
-.scopeSearch {
-  grid-column: 1;
-  grid-row: 1;
-}
-.pageRow {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-1);
-}
-.pageRow > .item {
-  padding: 0 var(--space-3);
-}
-.popResults {
-  position: absolute;
-  top: 36px;
-  left: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  width: 320px;
-  padding: var(--space-1);
-  border-radius: var(--radius-lg);
-  background: var(--sheet);
-  box-shadow: var(--settings-lift);
-}
-
 /* ---- A narrow window: the sheet takes the window, the index a row of its own over the page ---- */
 @media (max-width: 900px) {
   .scrim {
@@ -371,33 +295,18 @@
   padding: 0 var(--space-3);
 }
 
-/* ---- Layout "frame": the window itself, as the app is: the index flush on the frame, the page a sheet set into it ---- */
-.scrim:has(> .sheet[data-layout="frame"]) {
-  padding: var(--frame-inset) var(--frame-inset) var(--frame-inset) 0;
-  background: var(--frame);
-  animation: none;
+/* A page's own search (the Vault's): the index's filled field, its magnifier at its start. */
+.page input[type="search"] {
+  height: 32px;
+  padding: 0 var(--space-3) 0 32px;
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  background: var(--settings-field) var(--search-glyph) no-repeat 10px 50% / 14px 14px;
 }
-.sheet[data-layout="frame"] {
-  grid-template-columns: 248px minmax(0, 1fr);
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  animation: none;
+.page input[type="search"]:focus {
+  border-color: var(--control-border);
+  background-color: var(--sheet);
 }
-.sheet[data-layout="frame"] .index {
-  background: transparent;
-}
-.sheet[data-layout="frame"] .page {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-sheet);
-  background: var(--sheet);
-  box-shadow: var(--sheet-lift);
-}
-.sheet[data-layout="frame"] .close {
-  top: calc(12px + var(--frame-inset));
-  right: calc(12px + var(--frame-inset));
+.page input[type="search"]::placeholder {
+  color: var(--quiet);
 }

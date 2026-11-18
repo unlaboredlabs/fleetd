@@ -38,20 +38,8 @@ const HUB_PAGES: ReadonlyArray<{ tab: HubTab; label: string }> = [
 
 const noInput = {};
 
-/** The index's layout, while two are compared (W694): an index beside the page, or groups and pages as tabs over it. */
-type Layout = "index" | "tabs" | "frame";
-const layoutNow = (): Layout => {
-  try {
-    const l = window.localStorage.getItem("fleetd.settingsLayout");
-    return l === "tabs" || l === "frame" ? l : "index";
-  } catch {
-    return "index";
-  }
-};
-
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const sheet = useRef<HTMLDivElement>(null);
-  const [layout] = useState(layoutNow);
   // Esc closes the sheet, unless something in it took the key first (a menu, a dialog, a search with words in it).
   useEffect(() => {
     const on = (e: globalThis.KeyboardEvent) => {
@@ -68,8 +56,8 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   }, []);
   return (
     <div className={n.scrim} data-screen="settings.sheet" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={sheet} className={n.sheet} role="dialog" aria-modal="true" aria-label="Settings" data-layout={layout} tabIndex={-1}>
-        {layout === "tabs" ? <ScopeTabs /> : <Index />}
+      <div ref={sheet} className={n.sheet} role="dialog" aria-modal="true" aria-label="Settings" tabIndex={-1}>
+        <Index />
         <div className={n.page}>
           <SettingsScreen />
         </div>
@@ -125,7 +113,7 @@ function Item({ entry }: { entry: Entry }) {
   );
 }
 
-/** Layout "index": the sheet's own short list of pages, beside the page, a search at its head. */
+/** The sheet's own short list of pages, beside the page, a search at its head. */
 function Index() {
   const { you, bots, bot, hub, administers, vault } = useEntries();
   const [query, setQuery] = useState("");
@@ -208,66 +196,5 @@ function SearchField({ query, setQuery, first }: { query: string; setQuery: (q: 
       <Search aria-hidden className={n.searchGlyph} />
       <input type="search" aria-label="Search settings" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} />
     </label>
-  );
-}
-
-/** Layout "tabs": the three groups as a switch at the sheet's head, the group's pages as tabs under it. */
-function ScopeTabs() {
-  const { you, bots, hub, administers, vault } = useEntries();
-  const scope = hub?.some((e) => e.current) ? "hub" : bots.current ? "bots" : "you";
-  const pages = scope === "hub" ? (hub ?? []) : scope === "you" ? you : [];
-  const [query, setQuery] = useState("");
-  const results = searchSettings(query, optionsFor(administers, vault));
-  return (
-    <nav className={n.scopes} aria-label="Settings">
-      <div className={n.scopeRow}>
-        <div className={n.scopeSwitch} role="group" aria-label="Group">
-          <button type="button" aria-pressed={scope === "you"} onClick={() => you[0]?.go()}>
-            You
-          </button>
-          <button type="button" aria-pressed={scope === "bots"} onClick={bots.go}>
-            Bots
-          </button>
-          {hub === null ? null : (
-            <button type="button" aria-pressed={scope === "hub"} onClick={() => hub[0]?.go()}>
-              Hub
-            </button>
-          )}
-        </div>
-        <div className={n.scopeSearch}>
-          <SearchField query={query} setQuery={setQuery} first={results[0]} />
-          {query.trim() === "" ? null : (
-            <div className={n.popResults} role="list" aria-label="Results">
-              {results.length === 0 ? (
-                <p className={n.none}>No setting is called that.</p>
-              ) : (
-                results.slice(0, 8).map((o) => (
-                  <button
-                    key={o.key}
-                    type="button"
-                    data-result
-                    className={cx(n.item, n.result)}
-                    onClick={() => {
-                      openOption(o);
-                      setQuery("");
-                    }}
-                  >
-                    <span className={n.itemLabel}>{o.label}</span>
-                    {o.key === o.tab ? null : <span className={n.where}>{pagePath(o.tab)}</span>}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      {pages.length === 0 ? null : (
-        <div className={n.pageRow}>
-          {pages.map((e) => (
-            <Item key={e.key} entry={e} />
-          ))}
-        </div>
-      )}
-    </nav>
   );
 }
