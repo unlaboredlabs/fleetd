@@ -72,6 +72,11 @@ export function Shell() {
   const hub = hubs.find((h) => h.id === at) ?? hubs[0];
   // The project on screen, the same object while it is the same project: each hub's watcher reads by it.
   const homeOpen = useMemo(() => (homeRow === null ? null : routeOf(homeRow)), [homeRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Where closing Settings returns: the last route before it, on its hub. Kept here, outside the hub's frame, so
+  // Settings opened on another hub (a bot's settings in List, a Hub page's hub) still returns to the chat it left.
+  const [away, setAway] = useState<Screen>(HOME);
+  const left: Screen = { ...route, at };
+  if (route.id !== "settings" && route.id !== "onboarding" && toHash(left) !== toHash(away)) setAway(left);
   if (hub === undefined) return null;
   const open = route.id === "project" || route.id === "session" ? route.project : homeRow?.hub === hub.id ? homeOpen : null;
   // Keyed by the hub: a query keeps the client it was made with, so what is on screen starts afresh on another hub
@@ -83,7 +88,7 @@ export function Shell() {
           <HubWatch open={h.id === hub.id ? open : null} />
         </HubScope>
       ))}
-      <Frame route={{ ...route, at: hub.id }} hubs={hubs} sidebar={sidebar} />
+      <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} />
     </HubScope>
   );
 }
@@ -123,7 +128,7 @@ const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> |
   }, [rows, hubs, on, held]);
 };
 
-function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
+function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
   const hub = useHubState();
   const features = useData((st) => st.features);
   // A restart's held view (data/store.ts RESTART_HOLD_MS): what shows is as it was, so it steps back a little.
@@ -147,13 +152,13 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
   // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
-  // Settings is a sheet over the app: under it stays the screen it opened from (the home chat, on a link to it).
-  // Where closing it returns is the last route before it, kept as the route changes.
+  // Settings is a sheet over the app: under it stays the screen it opened from (the home chat, on a link to it), when
+  // that is on this hub; opened on another hub, this hub's own home chat, never another hub's in this hub's frame.
+  // Where closing it returns is `away` (Shell), the last route before it.
   const sheet = route.id === "settings";
-  const [away, setAway] = useState<Screen>(HOME);
-  if (!sheet && route.id !== "onboarding" && toHash(route) !== toHash(away)) setAway(route);
-  const base = sheet ? { ...away, at: route.at } : route;
-  const homeRow = base.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
+  const beneath = away.at === undefined || away.at === route.at ? away : HOME;
+  const base = sheet ? { ...beneath, at: route.at } : route;
+  const homeRow = base.id === "home" && projects !== undefined ? homeProject(sheet ? projects.filter((p) => p.hub === route.at) : projects, readLast()) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
     () =>
@@ -193,14 +198,15 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast());
   const panelProject = open ?? (homeHere === null ? null : routeOf(homeHere));
   const panel = useProjectPanel(screen);
+  // What shows under the Settings sheet isn't a chat you opened: it never becomes the one `#/` opens.
   useEffect(() => {
-    if (openKey === null) return;
+    if (openKey === null || sheet) return;
     try {
       window.localStorage.setItem(LAST_PROJECT, openKey);
     } catch {
       // Without storage the app opens on the first project instead; nothing else depends on it.
     }
-  }, [openKey]);
+  }, [openKey, sheet]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself. With several hubs, only when none of them can be used: one with a
@@ -355,7 +361,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             <SettingsSheet
               onClose={() => {
                 back();
-                go(away);
+                // Back to the chat it left; from a link straight to Settings, to the chat `#/` opens, by its own URL.
+                go(away.id === "home" && beneath === away && home !== null ? home : away);
               }}
             />
           </Suspense>

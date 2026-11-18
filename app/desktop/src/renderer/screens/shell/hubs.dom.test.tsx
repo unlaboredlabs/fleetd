@@ -485,3 +485,42 @@ it("redraws the sidebar in the layout picked under your name at once, closes the
   await settle();
   expect(layout()).toBe("hubs");
 });
+
+it("opens Settings on another hub over the chat you were in, never that chat in the other hub's frame, and closes back to it", async () => {
+  list();
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
+  });
+  act(() => {
+    window.location.hash = "#/project/devbox/storefront?at=hub";
+  });
+  await settle();
+  await settle();
+  const last = window.localStorage.getItem("fleetd.lastProject");
+  expect(last).not.toBeNull();
+  // A bot of Acme's settings, from List, where every hub's bots are.
+  act(() => {
+    window.location.hash = "#/settings/general?at=a1b2";
+  });
+  await settle();
+  // The sheet is Settings' own chunk: it shows once that has loaded.
+  await vi.waitFor(async () => {
+    await settle();
+    expect(document.querySelector("[aria-label='Close settings']")).not.toBeNull();
+  });
+  // Under the sheet: Acme's own chat, streamed by Acme; Personal's storefront is never asked of Acme, and stays the
+  // one `#/` opens.
+  expect(fake.chats.filter(([id, p]) => id === "a1b2" && (p as { projectId?: string } | null)?.projectId === "storefront")).toEqual([]);
+  expect(window.localStorage.getItem("fleetd.lastProject")).toBe(last);
+  act(() => document.querySelector<HTMLButtonElement>("[aria-label='Close settings']")?.click());
+  await settle();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  expect(window.localStorage.getItem("fleetd.lastProject")).toBe(last);
+});
