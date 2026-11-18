@@ -36,7 +36,7 @@ export type Kind =
   | "ContextFull"
   /** The node would not resume its thread. */
   | "Refused"
-  /** Its hosted sandbox didn't come up, so its claude never started: its node set that provider aside. */
+  /** Its hosted sandbox didn't come up, so its run never reached claude: its node set that provider aside. */
   | "NoSandbox"
   /** Stopped for a steer that then never ran: it goes on at once, using none of the budget. */
   | "Cut"
@@ -193,9 +193,7 @@ export function decide(d: Death, prior: TaskRecovery | undefined, stopped: boole
   const streak = prior?.signature !== undefined && prior.signature === d.signature ? prior.streak + 1 : 1;
   // A full context is compacted first; full again since (no fresh thread in between), it starts over in a new one.
   const compacted = prior !== undefined && prior.lastCause === "context_full" && modeOf(prior) !== "fresh";
-  // A thread whose claude never started has nothing to resume (its brief never reached claude): a new one takes over.
-  const mode: RecoveryMode =
-    d.kind === "ContextFull" && !compacted ? "compact" : d.kind === "ContextFull" || d.kind === "Refused" || d.kind === "NoSandbox" ? "fresh" : "resume";
+  const mode: RecoveryMode = d.kind === "ContextFull" && !compacted ? "compact" : d.kind === "ContextFull" || d.kind === "Refused" ? "fresh" : "resume";
   let delay: number;
   switch (d.kind) {
     case "NodeLost":
@@ -209,8 +207,9 @@ export function decide(d: Death, prior: TaskRecovery | undefined, stopped: boole
       if (streak !== 1) return { kind: "escalate", why: `${d.text}, again in a fresh thread` };
       delay = 0;
       break;
-    // After the node's next heartbeat, which leaves the provider out, so the slot board places it anew: this machine's
-    // slots, another provider, or the line.
+    // In its own thread, after the node's next heartbeat, which leaves the provider out, so the slot board places it
+    // anew: this machine's slots, another provider, or the line. The node sends claude what the run never got (the
+    // brief, or a lead's message) ahead of the note.
     case "NoSandbox":
       if (streak !== 1) return { kind: "escalate", why: `${d.text}, and again after a retry` };
       delay = MINUTE_MS;

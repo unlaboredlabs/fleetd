@@ -639,6 +639,8 @@ export class Tasks {
     let next: StoredTask = { ...stored, task: { ...task } };
     const grant: Grant = slots(this.hub).acquire(request);
     if (!grant.granted) return { now: this.queue(next, "slot", grant.reason) };
+    // A claim taken again for a thread that goes on follows it now, so the send carries where the board placed it.
+    if (continuing && task.threadRef) slots(this.hub).bind(task.taskId, task.threadRef);
     // A paused agent's thread is still pushing its work: it continues once that turn ended.
     if ((continuing || fresh) && this.asking.has(task.taskId)) return { now: next.task };
     if ((continuing || fresh) && task.threadRef && store(this.hub).threadGet(task.threadRef)?.thread.status === "running") {

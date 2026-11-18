@@ -62,6 +62,9 @@ export type SessionLocal = {
   hosted?: string;
   setup?: Plan;
   setupPending?: boolean;
+  /** The messages of runs whose claude never started because their hosted box didn't come up (the brief, a lead's
+   * message): they go to claude ahead of the next message it gets. */
+  unsent?: string[];
   profile?: string;
   fast?: boolean;
   helperModel?: string;

@@ -92,12 +92,13 @@ describe("recovery", () => {
     expect(decide(r, fresh, false, NOW, 0, 3).kind).toBe("escalate");
   });
 
-  test("a hosted sandbox that didn't come up restarts fresh after a minute; twice in a row escalates", () => {
+  test("a hosted sandbox that didn't come up resumes in its thread after a minute; twice in a row escalates", () => {
     const d = failed({ endCause: "failed", error: { class: "sandbox", message: "could not start claude: no hosted sandbox came up at boat.dev: cloning the repo failed in the box" } });
     expect([d.kind, d.cause, d.signature]).toEqual(["NoSandbox", "failed", "NoSandbox"]);
     // Past the node's next heartbeat, which leaves the provider out: the slot board places it anew.
     const r = resume(decide(d, undefined, false, NOW, 0.5, 3));
-    expect([r.mode, dueIn(r), r.count]).toEqual(["fresh", 60_000, 1]);
+    // In its own thread: the node sends claude what the run never got, the brief or a lead's message.
+    expect([r.mode, dueIn(r), r.count]).toEqual(["resume", 60_000, 1]);
     const again = failed({ endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at E2B: E2B's limit for this team is reached" } });
     expect(decide(again, r, false, NOW, 0.5, 3)).toEqual({ kind: "escalate", why: `${again.text}, and again after a retry` });
   });

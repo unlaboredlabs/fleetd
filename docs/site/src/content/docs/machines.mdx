@@ -483,9 +483,9 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer Â· E2B Â
   its agents on its own slots.
 - *Failures.* A sandbox that doesn't come up (a key the provider refuses, its plan's limit, billing, an outage, or the
   repo not cloning in it) fails that run with the provider's or the sandbox's words on the agent. The machine leaves
-  that provider out for 10 minutes, and a minute later fleetd's recovery starts the agent again in a fresh thread, with
-  its brief and its worktree: on the machine's own slots, another provider with room, or in line. Twice in a row, and
-  the task fails for its lead to decide.
+  that provider out for 10 minutes, and a minute later fleetd's recovery starts the agent again in its own thread, with
+  the message that run never got (its brief, or its lead's message): on the machine's own slots, another provider with
+  room, or in line. Twice in a row, and the task fails for its lead to decide.
 
 **What the machine does.** The first agent to need a provider builds fleetd's template in the team's account (the
 same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with); it takes a few minutes,

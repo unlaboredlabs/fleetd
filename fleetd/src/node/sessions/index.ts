@@ -1198,8 +1198,10 @@ export class SessionService {
     return recorded.queued;
   }
 
-  #failRun(id: string, runId: string, cls: FailureClass, message: string): void {
+  /** `unsent`: what a `sandbox` failure kept for claude's next start, else the run's own message. */
+  #failRun(id: string, runId: string, cls: FailureClass, message: string, unsent?: string): void {
     try {
+      const text = cls === "sandbox" ? (unsent ?? this.store.message(id, runId)?.text) : undefined;
       this.update(id, (c) => {
         const run = c.runs.find((r) => r.id === runId && isActive(r.status));
         if (!run) return;
@@ -1207,6 +1209,11 @@ export class SessionService {
         run.endedAt = c.at;
         run.failure = { class: cls, message: headUtf16(message, 4000) || "failed", retries: 0 };
         run.end = state.failureEnd(run.failure);
+        // Its hosted box didn't come up, so claude never got the message: the recovery's resume, wherever it runs,
+        // brings it along; and setup, which ran in no box, is due again.
+        if (cls !== "sandbox") return;
+        if (text) c.row.local.unsent = [...(c.row.local.unsent ?? []), text];
+        if (c.row.local.setup) c.row.local.setupPending = true;
       });
     } catch {}
   }
@@ -1215,8 +1222,12 @@ export class SessionService {
     const [live, note] = await this.#ensureLive(id);
     live.lastActive = Date.now();
     if (alias) live.aliases.set(alias[0], alias[1]);
-    // A claude without the system prompt file gets the rules with the message its start sends.
-    const sent = note && typeof command === "object" && "Send" in command ? { Send: { ...command.Send, text: `${note}\n\n${command.Send.text}` } } : command;
+    // A claude without the system prompt file gets the rules with the message its start sends; what runs whose box
+    // didn't come up never sent goes before this one.
+    const unsent = typeof command === "object" && "Send" in command ? (this.store.session(id)?.local.unsent ?? []) : [];
+    if (unsent.length) this.update(id, (c) => void delete c.row.local.unsent);
+    const ahead = [note, ...unsent].filter((t): t is string => !!t);
+    const sent = ahead.length && typeof command === "object" && "Send" in command ? { Send: { ...command.Send, text: [...ahead, command.Send.text].join("\n\n") } } : command;
     if (!live.link.send(sent)) throw new Refusal("internal", "the session's claude process ended");
   }
 
@@ -1949,7 +1960,8 @@ export class SessionService {
       await this.#dispatch(id, { Send: { run_id: runId, text: message, mode } });
       return true;
     } catch (error) {
-      this.#failRun(id, runId, failureOf(error), (error as Error).message);
+      // Setup's note says only that its box didn't come up: the next start's setup says what it did.
+      this.#failRun(id, runId, failureOf(error), (error as Error).message, rebuilt ? `${rebuilt}\n\n${text}` : text);
       return false;
     }
   }
