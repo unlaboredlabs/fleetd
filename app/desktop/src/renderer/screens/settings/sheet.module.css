@@ -1,0 +1,373 @@
+/*
+ * Settings as one sheet over the app (SettingsSheet.tsx): the app stays under a light scrim, the sheet floats on it,
+ * its index of pages and the page side by side on the same white, nothing ruled between them.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 40px 48px;
+  background: var(--settings-scrim);
+  backdrop-filter: blur(2px);
+  animation: scrimIn 160ms var(--ease-out) both;
+}
+@keyframes scrimIn {
+  from {
+    background: transparent;
+  }
+}
+
+.sheet {
+  position: relative;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  /* One row, the sheet's height: a long page scrolls inside its column, never the sheet. */
+  grid-template-rows: minmax(0, 1fr);
+  width: min(1100px, 100%);
+  height: min(920px, 100%);
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--sheet);
+  box-shadow: var(--settings-lift);
+  animation: sheetIn 240ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* The page's header zone: its head (title, the page's own control, a set's tabs) in the column's measure, on the
+   index title's line, the × at the sheet's end of that line; the page scrolls under it. */
+.head {
+  position: relative;
+  flex: none;
+  padding: 20px 0 20px;
+  /* The page's scroll keeps a gutter for its bar: the head keeps the same, so title and column share one edge. */
+  overflow: hidden;
+  scrollbar-gutter: stable both-edges;
+}
+.headSlot {
+  max-width: 704px;
+  margin: 0 auto;
+  padding: 0 var(--space-10);
+}
+.close {
+  position: absolute;
+  top: 22px;
+  right: 16px;
+  color: var(--quiet);
+  border-radius: var(--radius-md);
+}
+.close > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- The index: the sheet's pages on a quiet surface of its own ---- */
+.index {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 20px);
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px var(--space-3) var(--space-6);
+  background: var(--settings-index);
+  scrollbar-width: none;
+}
+.sheet:focus {
+  outline: none;
+}
+.indexHead {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  margin-bottom: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+}
+.indexTitle {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.groupLabel {
+  padding: 0 var(--space-2) var(--space-1);
+  color: var(--quiet);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: start;
+  cursor: default;
+  transition: background-color var(--dur-quick);
+}
+.item:hover {
+  background: var(--hover);
+}
+/* The page on show: a white chip lifted off the index's surface, its words medium. */
+.item[aria-current="page"] {
+  background: var(--settings-current);
+  box-shadow: var(--settings-chip);
+  font-weight: var(--weight-medium);
+}
+.item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.itemIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--quiet);
+}
+.itemIcon > svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+.item[aria-current="page"] .itemIcon {
+  color: var(--text);
+}
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge {
+  flex: none;
+  color: var(--warning);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.result {
+  height: auto;
+  min-height: 30px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding-block: var(--space-1);
+}
+.result .itemLabel {
+  flex: none;
+  width: 100%;
+}
+.where {
+  color: var(--quiet);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.none {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--quiet);
+  font-size: var(--text-md);
+}
+
+/* The search: a filled field with its magnifier, no frame, the shade of a row's hover deepened. */
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.searchGlyph {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+  pointer-events: none;
+}
+.search > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2) 0 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--settings-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  outline: none;
+  transition:
+    background-color var(--dur-quick),
+    border-color var(--dur-quick);
+}
+.search > input::placeholder {
+  color: var(--quiet);
+}
+.search > input:focus {
+  background: var(--sheet);
+  box-shadow: var(--settings-ring);
+}
+.search > input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* ---- A narrow window: the sheet takes the window, the index a row of its own over the page ---- */
+@media (max-width: 900px) {
+  .scrim {
+    padding: var(--space-2);
+  }
+  /* The column fills the pane: the head keeps clear of the ×. */
+  .headSlot {
+    padding-right: 56px;
+  }
+  .sheet {
+    grid-template-columns: 200px minmax(0, 1fr);
+    height: 100%;
+  }
+}
+@media (max-width: 640px) {
+  .sheet {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .index {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+  .indexHead,
+  .groupLabel {
+    display: none;
+  }
+  .item {
+    width: auto;
+  }
+}
+
+/* ---- The controls, as Settings sets them: filled, no dark outline, one height, one focus ring ---- */
+.sheet [role="group"]:has(> button[aria-pressed]) {
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--settings-fill);
+  box-shadow: none;
+}
+.sheet [role="group"] > button[aria-pressed] {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  line-height: 28px;
+}
+.sheet [role="group"] > button[aria-pressed="true"] {
+  background: var(--sheet);
+  box-shadow: var(--settings-chip);
+}
+.sheet button[role="switch"] {
+  width: 34px;
+  height: 20px;
+  margin-top: 0;
+  box-shadow: none;
+}
+.sheet button[role="switch"] > span {
+  width: 16px;
+  height: 16px;
+  box-shadow:
+    0 1px 2px #0000002e,
+    0 0 0 0.5px #00000014;
+}
+.sheet button[role="switch"][data-state="checked"] > span {
+  transform: translateX(16px);
+}
+/* A field is filled, with a hairline rim and one firmer bottom edge (3:1 on the card) that says "type here" without
+   a dark outline all round; focus is the one blue ring. Selects alike; a search the same with its magnifier. */
+.page button[role="combobox"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.page textarea {
+  /* No border: the rim and the bottom edge are the field's outermost pixels, so the edge stands on the card itself. */
+  border: 0;
+  border-radius: var(--radius-md);
+  background-color: var(--settings-fill);
+  box-shadow: var(--settings-field-edge);
+  transition:
+    background-color var(--dur-quick),
+    box-shadow var(--dur-quick);
+}
+.page button[role="combobox"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]) {
+  height: 32px;
+  padding: 0 var(--space-3);
+}
+.page button[role="combobox"] {
+  padding-right: var(--space-2);
+}
+.page textarea {
+  padding: 6px var(--space-3);
+}
+.page button[role="combobox"]:hover:not(:disabled),
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover:not(:disabled):not(:focus),
+.page textarea:hover:not(:disabled):not(:focus) {
+  background-color: var(--settings-fill-hover);
+}
+.page button[role="combobox"]:focus-visible,
+.page button[role="combobox"][data-state="open"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.page textarea:focus {
+  outline: none;
+  background-color: var(--sheet);
+  box-shadow: var(--settings-ring);
+}
+.page input::placeholder,
+.page textarea::placeholder {
+  color: var(--quiet);
+}
+.page input[aria-invalid="true"],
+.page textarea[aria-invalid="true"] {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+/* A search (the Vault's, Memory's): its magnifier at its start, its words clear of it. */
+.page input[type="search"]:not([type="checkbox"]) {
+  height: 32px;
+  padding: 0 var(--space-3) 0 32px;
+  background-image: var(--search-glyph);
+  background-repeat: no-repeat;
+  background-position: 10px 50%;
+  background-size: 14px 14px;
+}

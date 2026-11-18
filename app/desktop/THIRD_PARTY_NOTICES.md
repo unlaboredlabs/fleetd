@@ -35,5 +35,5 @@ SOFTWARE.
 
 ## Fonts, SIL Open Font License 1.1
 
-IBM Plex Sans (Copyright 2017 IBM Corp.) and Lilex (Copyright 2019 The Lilex Project Authors) are bundled in
-`src/renderer/ui/fonts/`, each with its licence text beside it.
+Geist and Geist Mono (Copyright 2023 Vercel, in collaboration with basement.studio) are bundled in `src/renderer/ui/fonts/`, with their
+licence text beside them (OFL-Geist.txt).

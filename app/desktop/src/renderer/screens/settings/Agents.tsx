@@ -381,14 +381,8 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
           <>
             <SettingsSection reveal="agents.project">
               {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <GroupNote>Loading…</GroupNote>}
-              <SettingsRow
-                reveal="agents.profiles"
-                title="Allowed profiles"
-                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every bot › Agents."
-              >
-                <AllowedProfiles projectRef={ref} />
-              </SettingsRow>
             </SettingsSection>
+            <AllowedProfiles projectRef={ref} />
             <SettingsSection>
               <ProjectSkills scope={scope} />
             </SettingsSection>

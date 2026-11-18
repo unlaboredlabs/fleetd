@@ -7,7 +7,7 @@
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
 // panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the chat's pill opens
 // the panel too. ⌘K, not a button, opens the palette.
-import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, TopBar } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
@@ -23,14 +23,15 @@ import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
 import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
-import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
+import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
-import { NewButton, Sidebar } from "./Sidebar";
-import { shownRows, useCollapsedHubs, useFoldedSections, useHeldRows, useSidebar } from "./sidebarState";
+import { Sidebar, SidebarTop } from "./Sidebar";
+import { useHeldRows, useSidebar } from "./sidebarState";
+import { showHub, shownRows, useSidebarView, viewedHub } from "./sidebarLayout";
 import { useSidebarWidth } from "./sidebarWidth";
 import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
@@ -40,8 +41,8 @@ import { onWeb } from "../../src/web";
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
-// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
-const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
+// Settings opens as a sheet over the app; it ships in Settings' chunk.
+const SettingsSheet = lazy(() => import("../settings/SettingsSheet").then((m) => ({ default: m.SettingsSheet })));
 // The empty home: setup's welcome for an admin while a required step is left, else Get started.
 const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: m.FirstRun })));
 
@@ -71,6 +72,11 @@ export function Shell() {
   const hub = hubs.find((h) => h.id === at) ?? hubs[0];
   // The project on screen, the same object while it is the same project: each hub's watcher reads by it.
   const homeOpen = useMemo(() => (homeRow === null ? null : routeOf(homeRow)), [homeRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Where closing Settings returns: the last route before it, on its hub. Kept here, outside the hub's frame, so
+  // Settings opened on another hub (a bot's settings in List, a Hub page's hub) still returns to the chat it left.
+  const [away, setAway] = useState<Screen>(HOME);
+  const left: Screen = { ...route, at };
+  if (route.id !== "settings" && route.id !== "onboarding" && toHash(left) !== toHash(away)) setAway(left);
   if (hub === undefined) return null;
   const open = route.id === "project" || route.id === "session" ? route.project : homeRow?.hub === hub.id ? homeOpen : null;
   // Keyed by the hub: a query keeps the client it was made with, so what is on screen starts afresh on another hub
@@ -82,7 +88,7 @@ export function Shell() {
           <HubWatch open={h.id === hub.id ? open : null} />
         </HubScope>
       ))}
-      <Frame route={{ ...route, at: hub.id }} hubs={hubs} sidebar={sidebar} />
+      <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} />
     </HubScope>
   );
 }
@@ -122,17 +128,20 @@ const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> |
   }, [rows, hubs, on, held]);
 };
 
-function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
+function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
   const hub = useHubState();
   const features = useData((st) => st.features);
   // A restart's held view (data/store.ts RESTART_HOLD_MS): what shows is as it was, so it steps back a little.
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's and a folded section's left out.
-  const [collapsed, toggleHub] = useCollapsedHubs();
-  const [folded, toggleSection] = useFoldedSections();
-  const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1, folded);
+  // ⌘1–9 open the rows the sidebar numbers: those on show in its layout (sidebarLayout.ts), in its order.
+  const view = useSidebarView();
+  const viewHub = viewedHub(view, hubs, route.at);
+  const heldKeys = useHeldRows();
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, heldKeys)), [projects, view, viewHub, heldKeys]);
+  // A bot opened on another hub (the palette, a notification, ⌘1–9 in List) brings its hub on show.
+  useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();
   const [sidebarPx, setSidebarPx] = useSidebarWidth();
 
@@ -143,30 +152,31 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
   // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
-  const homeRow = route.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
+  // Settings is a sheet over the app: under it stays the screen it opened from (the home chat, on a link to it), when
+  // that is on this hub; opened on another hub, this hub's own home chat, never another hub's in this hub's frame.
+  // Where closing it returns is `away` (Shell), the last route before it.
+  const sheet = route.id === "settings";
+  const beneath = away.at === undefined || away.at === route.at ? away : HOME;
+  const base = sheet ? { ...beneath, at: route.at } : route;
+  const homeRow = base.id === "home" && projects !== undefined ? homeProject(sheet ? projects.filter((p) => p.hub === route.at) : projects, readLast()) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
     () =>
       home !== null
         ? home
         : // A session's own window's route, here: its project, with the session in the panel.
-          route.id === "session"
-          ? { id: "project", project: route.project, message: null, panel: { tab: "sessions", session: route.session }, at: route.at }
-          : route,
+          base.id === "session"
+          ? { id: "project", project: base.project, message: null, panel: { tab: "sessions", session: base.session }, at: route.at }
+          : base,
     // `home` is rebuilt each render; its row's key says when it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [route, homeRow?.key],
   );
   useEffect(() => {
-    if (home !== null) navigate(home, { replace: true });
+    if (home !== null && !sheet) navigate(home, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeRow?.key]);
-  // Where Settings' Back returns: the last screen before it.
-  const away = useRef<Screen>(HOME);
-  useEffect(() => {
-    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
-  }, [screen]);
-  const back = useSettingsBack(screen.id === "settings");
+  const back = useSettingsBack(sheet);
   const administers = useAdministers();
 
   const open = screen.id === "project" ? screen.project : null;
@@ -188,14 +198,15 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast());
   const panelProject = open ?? (homeHere === null ? null : routeOf(homeHere));
   const panel = useProjectPanel(screen);
+  // What shows under the Settings sheet isn't a chat you opened: it never becomes the one `#/` opens.
   useEffect(() => {
-    if (openKey === null) return;
+    if (openKey === null || sheet) return;
     try {
       window.localStorage.setItem(LAST_PROJECT, openKey);
     } catch {
       // Without storage the app opens on the first project instead; nothing else depends on it.
     }
-  }, [openKey]);
+  }, [openKey, sheet]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself. With several hubs, only when none of them can be used: one with a
@@ -288,9 +299,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     [],
   );
 
-  // Settings' pages are in its sidebar, so it shows whatever the toggle says.
-  const settings = shown.id === "settings";
-  const showSidebar = chrome && (settings || !sidebar.hidden);
+  const showSidebar = chrome && !sidebar.hidden;
   // Its width is the frame's variable: a drag moves it on the root alone, and only its end renders the frame again.
   const root = useRef<HTMLDivElement>(null);
 
@@ -307,24 +316,13 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         translucent
         topBar={top}
         under={under}
-        sidebarTop={settings ? undefined : <NewButton go={go} />}
+        sidebarTop={<SidebarTop go={go} view={view} hub={viewHub} projects={projects} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
-          !chrome ? undefined : settings ? (
-            <Boundary key={shown.id} part="the sidebar">
-              <Suspense fallback={null}>
-                <SettingsSidebar
-                  onBack={() => {
-                    back();
-                    go(away.current);
-                  }}
-                />
-              </Suspense>
-            </Boundary>
-          ) : showSidebar ? (
+          !chrome ? undefined : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} folded={folded} onToggleSection={toggleSection} factory={factory} go={go} />
+              <Sidebar projects={projects} shown={onShow} screen={{ ...screen, at: route.at }} jumpHints={modHeld} view={view} hub={viewHub} factory={factory} go={go} />
             </Boundary>
           ) : undefined
         }
@@ -357,6 +355,19 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         </div>
       </AppFrame>
       </PanelHandleProvider>
+      {chrome && sheet ? (
+        <Boundary key="settings" part="Settings">
+          <Suspense fallback={null}>
+            <SettingsSheet
+              onClose={() => {
+                back();
+                // Back to the chat it left; from a link straight to Settings, to the chat `#/` opens, by its own URL.
+                go(away.id === "home" && beneath === away && home !== null ? home : away);
+              }}
+            />
+          </Suspense>
+        </Boundary>
+      ) : null}
       <PaletteHost />
       <ProjectsHost />
       <UpdatesOf hubs={hubs} on={route.at} />

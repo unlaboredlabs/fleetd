@@ -5,31 +5,36 @@
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: color-mix(in srgb, black 28%, transparent);
+  /* Settings' scrim (screens/settings/sheet.module.css): a light dim and a 2 px blur, so the two floating sheets match. */
+  background: #0b0d1026;
+  backdrop-filter: blur(2px);
   animation: fade var(--dur-base) var(--ease-out);
 }
 /* Black over a dark window barely shows: a deeper dim, so the dialog still reads as in front. */
 :global([data-theme="dark"]) .backdrop {
-  background: color-mix(in srgb, black 48%, transparent);
+  background: #0000008c;
 }
 /* The dialog: its top fixed a little above the middle, so a repo added grows it downward, never moves it. */
 .modal {
   -webkit-app-region: no-drag;
   position: fixed;
   z-index: 41;
-  top: max(var(--top-bar-height), 18vh);
+  top: max(var(--top-bar-height), 20vh);
   left: 50%;
   translate: -50% 0;
   display: flex;
   flex-direction: column;
-  width: min(520px, calc(100vw - 4 * var(--edge-inset)));
-  max-height: calc(100vh - max(var(--top-bar-height), 18vh) - var(--top-bar-height));
+  width: min(480px, calc(100vw - 4 * var(--edge-inset)));
+  max-height: calc(100vh - max(var(--top-bar-height), 20vh) - var(--top-bar-height));
   border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text);
-  box-shadow: var(--float-shadow);
+  box-shadow:
+    0 0 0 1px var(--sheet-edge),
+    0 2px 4px var(--shadow),
+    0 24px 64px -12px color-mix(in srgb, var(--shadow) 200%, transparent);
   overflow: hidden;
-  animation: rise var(--dur-base) var(--ease-out);
+  animation: rise var(--dur-panel-in) var(--ease-panel);
 }
 .modal:focus-visible {
   outline: none;
@@ -42,7 +47,8 @@
 @keyframes rise {
   from {
     opacity: 0;
-    scale: 0.98;
+    scale: 0.96;
+    translate: -50% 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -57,16 +63,19 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: calc(var(--bar) - 4px);
-  padding: var(--space-3) var(--space-4) 0;
+  min-height: var(--bar);
+  padding: var(--space-6) var(--space-6) 0;
 }
+/* The dialog's title, as a Settings page's: a headline, tight. */
 .title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
+  color: var(--text);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
   font-weight: var(--weight-strong);
+  letter-spacing: -0.015em;
   overflow-wrap: anywhere;
 }
 /* With several hubs: which one the bot goes to, beside the title. */
@@ -82,21 +91,30 @@
   flex: none;
   display: flex;
   align-items: center;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-6);
 }
+/* The name: a filled field, as Settings' are (no outline; the sheet's white and the blue ring while you type in it). */
 .input {
   flex: 1;
   min-width: 0;
-  height: calc(var(--bar) + 4px);
+  height: 40px;
+  margin-top: var(--space-4);
+  padding: 0 var(--space-3);
   border: 0;
+  border-radius: var(--radius-md);
   outline: 0;
-  background: transparent;
+  background: var(--fill);
   color: var(--text);
   font: inherit;
-  font-size: var(--text-lg);
+  font-size: 15px;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.input:hover {
+  background: var(--fill-hover);
 }
 .input:focus-visible {
-  box-shadow: none;
+  background: var(--sheet);
+  box-shadow: 0 0 0 1px var(--focus), 0 0 0 4px color-mix(in srgb, var(--focus) 18%, transparent);
 }
 .input::placeholder {
   color: var(--faint);
@@ -104,7 +122,7 @@
 .noteLine {
   flex: none;
   margin: 0;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-6);
 }
 
 .body {
@@ -113,7 +131,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Rows pad themselves, so their text lines up with the title and the name. */
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-2);
 }
 
 /* Repos, with its plain + at the right. */
@@ -126,6 +144,9 @@
 .sectionTitle {
   flex: 1;
   margin: 0;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
 }
 .plus svg {
   width: 16px;
@@ -178,14 +199,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  height: calc(var(--field) + 4px);
-  padding: 0 var(--space-1) 0 var(--space-2);
-  border: 1px solid var(--control-border);
+  height: 36px;
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border: 0;
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: var(--fill);
 }
 .addField:focus-within {
-  border-color: var(--accent);
+  background: var(--sheet);
+  box-shadow: 0 0 0 1px var(--focus), 0 0 0 4px color-mix(in srgb, var(--focus) 18%, transparent);
 }
 .addInput {
   flex: 1;
@@ -243,14 +265,19 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  padding: var(--space-3) var(--space-6) var(--space-6);
 }
 .refused {
   margin: 0;
 }
 .inlineSelect {
   width: auto;
-  height: calc(var(--field) - 4px);
+  height: 32px;
+  border-color: transparent;
+  background: var(--fill);
+}
+.inlineSelect:hover {
+  background: var(--fill-hover);
 }
 .actions {
   display: flex;
@@ -318,7 +345,7 @@
   align-items: center;
   justify-content: center;
   border: 2px dashed var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   pointer-events: none;
 }

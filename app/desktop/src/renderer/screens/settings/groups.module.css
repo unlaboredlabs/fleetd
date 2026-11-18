@@ -20,7 +20,7 @@
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
   min-width: 0;
-  padding: 0 var(--space-4) var(--space-2);
+  padding: 0 0 var(--space-3);
 }
 .headText {
   display: flex;
@@ -31,6 +31,11 @@
 .label {
   align-self: flex-start;
   margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
 }
 /* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
 .title {
@@ -49,8 +54,30 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  border: 1px solid var(--group-edge);
   border-radius: var(--radius-group);
   background: var(--group);
+}
+/* Rows in a group read as a table's: one hairline between two, inset from the group's edges, never across the page. */
+.group > .row + .row::before {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: 0 var(--space-4);
+  background: var(--hairline);
+}
+.list > .listRow + .listRow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 1px;
+  background: var(--hairline);
+}
+.list > .opens + .opens::before {
+  left: var(--space-3);
+  right: var(--space-3);
 }
 /* What a section holds that isn't rows: no fill, its words in line with the label. */
 .bare {
@@ -78,8 +105,8 @@
   align-items: center;
   column-gap: var(--space-6);
   min-width: 0;
-  min-height: 48px;
-  padding: var(--space-3) var(--space-4);
+  min-height: 52px;
+  padding: 10px var(--space-4);
 }
 .rowText {
   display: flex;
@@ -124,7 +151,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: var(--space-1) 0;
+  padding: 0;
 }
 .listRow {
   position: relative;
@@ -133,26 +160,49 @@
   align-items: center;
   column-gap: var(--space-3);
   min-width: 0;
+  min-height: 52px;
   padding: 10px var(--space-4);
 }
 .listRow > .control {
   flex-wrap: nowrap;
 }
 .withIcon {
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
 }
-/* On the name's line, however many lines follow it. */
+/* A row's glyph in a small rounded tile of its own (a person's picture fills it): every name in a list starts in one
+   line, and the glyphs read as one set. On the name's line, however many lines follow it. */
 .icon {
   align-self: start;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  color: var(--quiet);
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border-radius: var(--radius-md);
+  background: var(--settings-field);
+  color: var(--text);
+}
+.icon:has(> [data-avatar]) {
+  border-radius: 50%;
+  background: none;
 }
 .icon > svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+/* In a list's row, a choice and an action are quiet until pointed at: a choice its words and a chevron, an action its
+   words, each lighting as a rounded box under the pointer. */
+.listRow .control button[role="combobox"] {
+  width: auto;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  gap: var(--space-1);
+}
+.listRow .control button[role="combobox"]:hover:not(:disabled),
+.listRow .control button[role="combobox"][data-state="open"] {
+  background: var(--hover);
 }
 .name {
   display: flex;
@@ -184,7 +234,7 @@
 .opens {
   margin-inline: var(--space-1);
   padding-inline: var(--space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   transition: background-color var(--dur-quick);
 }
 .opens:has(.opener:hover) {
@@ -256,15 +306,17 @@
   height: 16px;
 }
 
-/* Danger: one red pill, white words. */
-.danger {
-  padding-inline: 14px;
-  border-radius: 999px;
-  background: var(--danger-fill);
-  color: #fff;
+/* Danger in a page: its red words, no fill, a faint red box under the pointer. What it does is confirmed in a dialog,
+   whose own button is the filled one. */
+.danger.danger {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--danger);
+  font-weight: var(--weight-medium);
 }
-.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger-fill) 88%, black);
+.danger.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
 /* A block, so its padding holds its room wherever it stands, not only as a flex group's child. */
@@ -319,7 +371,6 @@
 }
 .withMark {
   grid-template-columns: 8px minmax(0, 1fr) auto;
-  padding-block: 14px;
 }
 /* What a place's state is in words, at its row's end: quiet while all is well, the dot's colour when not. */
 .state {
@@ -330,4 +381,128 @@
 /* What a marked row holds under its title (a key's field) starts where its title does, past the dot's room. */
 .row:has(.marked) > .below {
   padding-inline-start: calc(var(--space-4) + 8px + var(--space-3));
+}
+
+/* Loading: two rows' shapes that breathe, in the group's rhythm. */
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 18px var(--space-4);
+}
+.ghostRow {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--settings-field);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.ghostRow:first-of-type {
+  width: 42%;
+}
+.ghostRow:last-of-type {
+  width: 64%;
+  animation-delay: 0.2s;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghostRow {
+    animation: none;
+  }
+}
+
+/* Nothing yet: centred in its group, a glyph, one line and the one action. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 440px;
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-1);
+}
+
+/* A notice: what went wrong or needs a look, compact under its row's title. A tint of its tone, its mark in the tone,
+   the words in the text's colour, its one action at the end. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.notice[data-tone="danger"] {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.noticeMark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--warning);
+}
+.notice[data-tone="danger"] .noticeMark {
+  color: var(--danger);
+}
+.noticeText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.noticeAction {
+  flex: none;
+  align-self: center;
+}
+
+/* A row with a notice under its title keeps its control on the title's line. */
+.rowHead:has(.notice) > .control,
+.listRow:has(.notice) > .control {
+  align-self: start;
+}
+
+/* A list's row with a dot and one line: the dot on the name's line, centred with it. */
+.withMark > .mark {
+  align-self: center;
+  margin-top: 0;
+}
+.withMark:has(> .rowText > :nth-child(2)) > .mark {
+  align-self: start;
+  margin-top: 6px;
+}
+
+/* A checklist row's check in place of a glyph's tile: done in the text's colour, to do faint, a look in warning. */
+.icon:has(> [data-step-glyph]) {
+  background: none;
+}
+.icon > [data-step-glyph] {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.6;
+}
+.icon > [data-step-glyph="todo"] {
+  color: var(--faint);
+}
+.icon > [data-step-glyph="look"] {
+  color: var(--warning);
+}
+
+/* A head whose line under the label is a file's usage (Memory): that line and the tools beside it on one centre. */
+.head:has([data-cap-meter]) {
+  align-items: center;
 }

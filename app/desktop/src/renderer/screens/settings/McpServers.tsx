@@ -11,7 +11,7 @@ import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { draftOf, emptyDraft, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
-import { AddButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SwitchRow } from "./parts";
+import { AddButton, GroupNote, RowMenu, SettingsList, SettingsListRow, SettingsRow, SwitchRow } from "./parts";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
 
@@ -176,15 +176,17 @@ function ServerRow(props: { server: McpServer; missing: string[]; onEdit: () => 
       meta={server.enabled ? rolesText(server.roles) : "Off"}
       controls={
         <>
-          <Button size="sm" variant="ghost" disabled={testing} onClick={test}>
-            {testing ? "Testing…" : "Test connection"}
-          </Button>
           <Button size="sm" variant="ghost" onClick={props.onEdit}>
             Edit
           </Button>
-          <Button size="sm" variant="ghost" onClick={props.onRemove}>
-            Remove
-          </Button>
+          <RowMenu
+            label={server.name}
+            disabled={testing}
+            items={[
+              { label: testing ? "Testing…" : "Test connection", onSelect: test },
+              { label: "Remove", onSelect: props.onRemove, danger: true },
+            ]}
+          />
         </>
       }
     >

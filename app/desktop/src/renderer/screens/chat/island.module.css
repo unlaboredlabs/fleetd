@@ -70,7 +70,7 @@ button.press:hover::before {
 }
 /* `all: unset` drops the app's focus outline too (base.css :focus-visible). */
 .press:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -162,7 +162,7 @@ button.press:hover::before {
   flex-direction: column;
   max-height: min(420px, 50vh);
   padding: var(--space-1) 0;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--glass) 70%, var(--raised));
   backdrop-filter: var(--glass-blur);
   box-shadow:
@@ -176,6 +176,8 @@ button.press:hover::before {
 /* The agents' DMs alone: a capsule like the island (its height, glass and words), centred over it, the gap between them
    the island's over the composer. */
 .card[data-only] {
+  /* The band's own gap over the composer (chat/view.module.css .band), so the three stand evenly. */
+  bottom: calc(100% + var(--space-2));
   flex-direction: row;
   width: fit-content;
   max-width: 100%;
@@ -233,7 +235,7 @@ button.press:hover::before {
   text-decoration: underline;
 }
 .dms:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {

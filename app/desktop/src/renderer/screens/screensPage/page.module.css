@@ -42,7 +42,7 @@ section + section > .heading {
   aspect-ratio: 16 / 10;
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: var(--sidebar);
+  background: var(--inset);
   box-shadow: 0 0 0 1px var(--hairline);
 }
 .thumb img {
@@ -57,8 +57,8 @@ section + section > .heading {
   width: auto;
   height: calc(100% - 16px);
   margin: 8px auto 0;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 3px var(--sidebar), 0 0 0 4px var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 3px var(--inset), 0 0 0 4px var(--border);
 }
 .thumbEnded img {
   opacity: 0.72;
@@ -101,7 +101,7 @@ section + section > .heading {
 .small.phoneThumb img {
   height: calc(100% - 6px);
   margin-top: 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   box-shadow: 0 0 0 1px var(--border);
 }
 .small .noThumb > :not(svg) {
@@ -298,7 +298,7 @@ section + section > .heading {
   margin: var(--space-2) 0 var(--space-1);
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   max-width: 920px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--raised);
   box-shadow: var(--float-shadow);
   animation: lineIn var(--dur-row-in) var(--ease-snap) backwards;

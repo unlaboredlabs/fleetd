@@ -13,6 +13,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { ClaudeSettings } from "./Claude";
 import { CONNECT } from "./claudeModel";
+import { chooseFromRow } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -154,6 +155,7 @@ it("asks someone with nothing to run on to connect, seals the pasted token throu
   expect(host.querySelector("[role='radio']")).toBeNull();
   expect(host.querySelector("[data-reveal='claude.choice'], section[aria-label='Runs on']")).toBeNull();
   expect(host.textContent).not.toContain("Runs on");
+  await click(button("Connect subscription"));
   expect(host.textContent).toContain("claude setup-token");
   await type("Token", TOKEN);
   await click(button("Connect and test"));
@@ -169,19 +171,21 @@ it("asks someone with nothing to run on to connect, seals the pasted token throu
 it("switches between the subscription and the hub's key, and says what a failed Test said", async () => {
   await render(answer(connected));
   expect(host.textContent).toContain("Your subscription.");
-  const radios = [...host.querySelectorAll<HTMLElement>("[role='radio']")];
-  expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false"]);
-  await click(radios[1] as HTMLElement);
+  const segments = [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Runs on'] button")];
+  expect(segments.map((r) => r.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+  await click(segments[1] as HTMLElement);
   expect(sent("claude_choice_set")).toEqual([{ choice: "hub_api" }]);
   testAnswer = { test: { at: AT, machineId: "devbox", ok: false, error: "OAuth token has expired." } };
-  await click(button("Test"));
+  await chooseFromRow("Claude", "Test");
+  await settle();
   expect(host.querySelector("[role='alert']")?.textContent).toContain("Failed on devbox");
   expect(host.querySelector("[role='alert']")?.textContent).toContain("OAuth token has expired.");
 });
 
 it("disconnects the subscription once confirmed", async () => {
   await render(answer(connected));
-  await click(button("Disconnect"));
+  await chooseFromRow("Claude", "Disconnect");
+  await settle();
   expect(document.body.textContent).toContain("Each machine forgets the token.");
   const confirm = [...document.querySelectorAll("[role='dialog'] button")].find((b) => b.textContent.trim() === "Disconnect");
   if (!(confirm instanceof HTMLElement)) throw new Error("no confirm");

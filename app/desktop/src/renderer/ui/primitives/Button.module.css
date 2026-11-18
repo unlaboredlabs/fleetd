@@ -2,12 +2,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   flex: none;
   min-width: 0;
   max-width: 100%;
   height: var(--control);
-  padding: 0 var(--space-2);
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -17,8 +17,9 @@
   white-space: nowrap;
   cursor: default;
   transition:
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
+    background-color var(--dur-quick) var(--ease-snap),
+    border-color var(--dur-quick) var(--ease-snap),
+    transform var(--dur-quick) var(--ease-snap);
 }
 .button > svg {
   flex: none;
@@ -33,7 +34,7 @@
 
 .md {
   height: var(--field);
-  padding: 0 var(--space-3);
+  padding: 0 14px;
 }
 .sm {
   height: var(--control);
@@ -52,15 +53,18 @@
 .primary {
   background: var(--accent-fill);
   color: var(--on-accent);
-  font-weight: var(--weight-strong);
+  font-weight: var(--weight-medium);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--on-accent) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--shadow) 60%, transparent);
 }
 .primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent-fill) 88%, black);
 }
 .secondary {
-  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--text) 13%, transparent);
   color: var(--text);
   background: var(--raised);
+  font-weight: var(--weight-medium);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--shadow) 45%, transparent);
 }
 .secondary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--raised) 100%, transparent);
@@ -108,6 +112,12 @@
 
 .button:active:not(:disabled) {
   box-shadow: inset 0 0 0 100px var(--selected);
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .button:active:not(:disabled) {
+    transform: none;
+  }
 }
 .button:disabled {
   color: var(--faint);
@@ -126,7 +136,7 @@
   align-items: center;
   height: 16px;
   padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   border: 1px solid var(--hairline);
   font-family: var(--font-sans);
   font-size: var(--text-xs);

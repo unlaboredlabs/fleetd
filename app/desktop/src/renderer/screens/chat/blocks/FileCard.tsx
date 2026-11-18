@@ -38,7 +38,7 @@ export function FileCard({ project, file, caption }: { project: ProjectRef | und
     if (!out.ok) toast({ tone: "danger", title: what === "open" ? `Couldn’t open ${file.name}` : `Couldn’t save ${file.name}`, description: out.message });
   };
   return (
-    <div className={b.file} data-block="file">
+    <div className={b.fileCard} data-block="file">
       <div className={b.fileRow} onDoubleClick={() => void act("open")}>
         <span className={b.fileGlyph} data-glyph={glyph} aria-hidden>
           <Glyph />

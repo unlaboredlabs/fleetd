@@ -13,7 +13,9 @@ import { UiProvider } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { parseHash } from "../shell/routes";
 import { Sidebar } from "../shell/Sidebar";
-import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
+import { SettingsScreen } from "../settings/SettingsScreen";
+import { SettingsSheet } from "../settings/SettingsSheet";
+import { chooseFromRow } from "../settings/rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -59,6 +61,8 @@ beforeEach(() => {
     fixture: null,
     copy: (text: string) => (copied.push(text), Promise.resolve()),
     updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
+    // The sheet opens on General, whose presence switch main keeps.
+    app: { presence: () => Promise.resolve(false) },
   });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -77,7 +81,7 @@ const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 function Entry() {
   return (
     <TooltipProvider>
-      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={() => undefined} />
+      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={() => undefined} />
     </TooltipProvider>
   );
 }
@@ -135,7 +139,7 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
             <Entry />
           ) : (
             <TooltipProvider>
-              <SettingsSidebar onBack={() => undefined} />
+              <SettingsSheet onClose={() => undefined} />
             </TooltipProvider>
           )}
         </DataProvider>
@@ -174,7 +178,8 @@ const row = (name: string) => {
 };
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 
-const hubGroup = () => host.querySelector("nav[aria-label='Settings'] section[aria-label='Hub']");
+const hubGroup = () =>
+  [...host.querySelectorAll("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Hub") ?? null;
 
 it("shows Settings' Hub group to an owner or admin, and to nobody else; the main sidebar has no Administration row", async () => {
   for (const [info, shown] of [
@@ -188,7 +193,7 @@ it("shows Settings' Hub group to an owner or admin, and to nobody else; the main
     await render(info, "settings");
     expect(hubGroup() !== null, JSON.stringify(info)).toBe(shown);
     // You and Projects are everyone's.
-    expect(host.querySelector("nav[aria-label='Settings']")?.textContent).toContain("Your accounts");
+    expect(host.querySelector("nav[aria-label='Settings']")?.textContent).toContain("Accounts");
     act(() => root.unmount());
     root = createRoot(host);
     await render(info, "sidebar");
@@ -218,7 +223,7 @@ it("marks an admin's name while required setup steps are left, and opens Hub ›
   function Opener() {
       return (
       <TooltipProvider>
-        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={go} />
+        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={go} />
       </TooltipProvider>
     );
   }
@@ -292,8 +297,10 @@ it("lists the people with their roles and devices, and changes a role", async ()
   window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
   expect(row("Sam Rivera").textContent).toContain("you");
-  expect(row("Sam Rivera").textContent).toContain("1 device: MacBook");
-  expect(row("Alice Chen").textContent).toContain("1 device: ThinkPad");
+  // The count shows; which devices is the row's hint.
+  expect(row("Sam Rivera").textContent).toContain("1 device");
+  expect(row("Sam Rivera").querySelector("[data-hint]")?.textContent).toContain("MacBook");
+  expect(row("Alice Chen").querySelector("[data-hint]")?.textContent).toContain("ThinkPad");
   const trigger = row("Bob Okafor").querySelector<HTMLElement>("[role='combobox']");
   if (trigger === null) throw new Error("no role picker");
   expect(trigger.getAttribute("aria-label")).toBe("Bob Okafor's role");
@@ -311,8 +318,9 @@ it("lists the people with their roles and devices, and changes a role", async ()
 it("removes a person once confirmed", async () => {
   window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
-  expect(() => button("Remove", row("Sam Rivera"))).toThrow();
-  await click(button("Remove", row("Bob Okafor")));
+  expect(row("Sam Rivera").querySelector("button[aria-label$=': more']")).toBeNull();
+  await chooseFromRow("Bob Okafor", "Remove from hub");
+  await settle();
   expect(document.body.textContent).toContain("Their 1 device is signed out at once.");
   await click(button("Remove Bob Okafor"));
   expect(sent("person_remove")).toEqual([{ personId: "p_cccccccc" }]);
@@ -323,8 +331,8 @@ it("never offers an admin a change to the owner", async () => {
   await render({ me: alice, admin: true });
   const owner = row("Sam Rivera");
   expect(owner.querySelector("[role='combobox']")).toBeNull();
-  expect(owner.textContent).toContain("Only an owner changes an owner.");
-  expect(() => button("Remove", owner)).toThrow();
+  expect(owner.querySelector("[title='Only an owner changes an owner.']")).not.toBeNull();
+  expect(owner.querySelector("button[aria-label$=': more']")).toBeNull();
 });
 
 it("creates an invite on People with a name and role, copies its link, and revokes an open one", async () => {

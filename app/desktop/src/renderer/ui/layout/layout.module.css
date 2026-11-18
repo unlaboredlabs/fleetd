@@ -11,7 +11,7 @@
   min-height: 0;
   /* A side sliding in or out passes the window's edge: no scrollbar for it. */
   overflow: clip;
-  background: var(--bg);
+  background: var(--frame);
 }
 .noSidebar {
   grid-template-columns: minmax(0, 1fr);
@@ -34,6 +34,8 @@
   position: relative;
   z-index: 2;
 }
+/* The main area: flush to the window's edges and the sidebar's, no card and no corners; where it meets the sidebar
+   one hairline inside its own edge, so nothing takes width. What scrolls in it is clipped to it. */
 .main {
   grid-area: main;
   min-width: 0;
@@ -42,16 +44,22 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+.noSidebar > .main {
+  box-shadow: none;
 }
 
-/* Opaque, on the translucent frame too: nothing composites over live content. */
+/* The panel: flush down the window's right edge, its own receding tone, one hairline inside its left edge. Opaque, on
+   the translucent frame too: nothing composites over live content. */
 .aside {
   grid-area: aside;
   display: flex;
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--hairline);
-  background: var(--bg);
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: inset 1px 0 0 var(--hairline);
 }
 /* Its column, in the panel's own tone from the frame that makes room for it, under the panel as it slides in. The
    translucent frame paints nothing there, so the window's lighter material would show until the panel had covered it:
@@ -59,11 +67,11 @@
 .withAside::before {
   content: "";
   grid-area: aside;
-  background: var(--bg);
+  background: var(--frame);
 }
 
-/* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat only by its own soft tone,
-   as a macOS Notes or Messages sidebar is (in dark, where the tones sit close, a faint line along its edge too). Its
+/* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat by its own cool tone and
+   one hairline drawn inside its edge, so it stays flush and the line takes no width. Its
    first row is the top row's full height, so the traffic lights, New and the chat's pill share one centre line. */
 .side {
   grid-area: side;
@@ -72,9 +80,6 @@
   min-width: 0;
   min-height: 0;
   background: var(--sidebar);
-}
-:global(html[data-theme="dark"]) .side {
-  box-shadow: inset -1px 0 0 var(--side-edge);
 }
 /* The sidebar's right edge, a line with no width of its own: what it holds (a resize edge) sits over it. */
 .sideEdge {
@@ -93,7 +98,7 @@
   justify-content: flex-end;
   gap: var(--space-1);
   height: var(--top-bar-height);
-  padding-inline: max(var(--space-4), var(--traffic-lights-inset)) var(--space-3);
+  padding-inline: max(var(--space-2), var(--traffic-lights-inset)) var(--space-2);
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -104,6 +109,7 @@
 :root[data-vibrancy] .translucent {
   background: transparent;
 }
+:root[data-vibrancy] .translucent::before,
 :root[data-vibrancy] .translucent > .side:not([data-motion="out"]) {
   background: transparent;
 }
@@ -167,10 +173,15 @@
   content: "";
   position: absolute;
   z-index: -1;
-  inset: 0 0 calc(-1 * var(--space-4));
-  background: linear-gradient(to bottom, var(--bg) 45%, color-mix(in srgb, var(--bg) 85%, transparent) 70%, transparent);
-  backdrop-filter: blur(4px);
-  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  /* Clear of the main area's hairline along the sidebar. */
+  inset: 0 0 calc(-1 * var(--space-6)) 1px;
+  /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 72 px), so nothing reads under
+     or just below it; then 12 px where what scrolls up blurs and dissolves into it. Without a GPU (QA, software
+     compositing) the gradient alone hides it. */
+  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 83%, color-mix(in srgb, var(--bg) 60%, transparent) 92%, transparent);
+  /* The blur holds almost to the end, so what passes the last 24 px is a soft smear going to white, never words. */
+  backdrop-filter: blur(12px);
+  mask-image: linear-gradient(to bottom, #000 88%, transparent);
   pointer-events: none;
 }
 /* Without a GPU to blur on (tokens.css), its fade alone. */
@@ -202,6 +213,13 @@
   margin: 0;
   font-size: var(--text-md);
 }
+/* A page's own title (Settings', not the chat's glass pill): a step up and tight, its left edge on the page column's
+   (the frame row is in 12 px, the column 24). */
+.frameTitle:not([data-glass]) > .frameHeading {
+  padding-left: var(--space-3);
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
 .frameDetail {
   flex: 0 1000 auto;
   min-width: 0;
@@ -218,7 +236,7 @@
   flex: none;
   min-width: 0;
   height: calc(var(--top-bar-height) - 2 * var(--glass-inset));
-  padding: 0 var(--space-1-5);
+  padding: 0 var(--space-2);
   border-radius: 999px;
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
@@ -234,7 +252,7 @@
   flex: 0 1 auto;
   gap: var(--space-2);
   margin-inline-end: auto;
-  padding-inline: var(--space-1-5) var(--space-4);
+  padding-inline: var(--space-2) var(--space-4);
 }
 /* The pill as a button (FrameTitle's press): its edge and a chevron towards the panel say it opens something; it
    brightens under the pointer, gives a little as it is pressed, and while the panel shows it stays a clear step
@@ -268,14 +286,15 @@ button.frameTitle[data-glass][aria-pressed="true"] {
     var(--glass-lift);
 }
 button.frameTitle[data-glass]:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .pressName {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: var(--weight-strong);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.005em;
 }
 .pressChevron {
   flex: none;
@@ -297,8 +316,8 @@ button[aria-pressed="true"] > .pressChevron {
 
 /* A capsule's buttons are round at its ends, and quiet until pointed at. */
 .capsule > button {
-  height: calc(var(--top-bar-height) - 2 * var(--glass-inset) - 2 * var(--space-1-5));
-  min-width: calc(var(--top-bar-height) - 2 * var(--glass-inset) - 2 * var(--space-1-5));
+  height: calc(var(--top-bar-height) - 2 * var(--glass-inset) - 2 * var(--space-2));
+  min-width: calc(var(--top-bar-height) - 2 * var(--glass-inset) - 2 * var(--space-2));
   border-radius: 999px;
   color: var(--text);
 }
@@ -349,6 +368,13 @@ button[aria-pressed="true"] > .pressChevron {
 .sidebarSectionTitle {
   flex: 1;
   min-width: 0;
+  font-family: var(--label-font);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+.sidebarSectionTitle > * {
+  font-size: var(--label-size);
 }
 .sidebarItem {
   display: flex;
@@ -356,7 +382,7 @@ button[aria-pressed="true"] > .pressChevron {
   gap: var(--space-2);
   width: 100%;
   min-width: 0;
-  min-height: var(--row);
+  min-height: 32px;
   padding: var(--space-1) var(--space-2);
   border: none;
   border-radius: var(--radius-sm);
@@ -369,7 +395,8 @@ button[aria-pressed="true"] > .pressChevron {
 }
 .sidebarItem[aria-current="page"],
 .sidebarItem[data-selected] {
-  background: var(--selected);
+  background: var(--raised);
+  box-shadow: var(--chip);
 }
 .sidebarItem:disabled {
   color: var(--faint);
@@ -377,8 +404,8 @@ button[aria-pressed="true"] > .pressChevron {
 }
 .sidebarItem > svg {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--quiet);
 }
 .sidebarLabel {
@@ -389,7 +416,7 @@ button[aria-pressed="true"] > .pressChevron {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   color: var(--quiet);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -400,8 +427,8 @@ button[aria-pressed="true"] > .pressChevron {
 /* A chat's row: as tall as its avatar (36 px, Sidebar.tsx) and its padding make it, the label further off it. */
 .tall {
   gap: var(--space-3);
-  padding: var(--space-1-5) var(--space-2);
-  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .empty {

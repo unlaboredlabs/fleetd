@@ -115,7 +115,7 @@
 .hubChoice {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   height: 22px;
   padding: 0 10px;
   border: none;
@@ -138,7 +138,7 @@
   font-weight: 500;
 }
 .hubChoice:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 .hubMark {
@@ -165,4 +165,15 @@
 .state > [data-mark] {
   align-self: center;
   margin-top: 0;
+}
+
+/* A role with no choice (your own): its word at the choice's place, why on hover. */
+.roleWord {
+  display: inline-flex;
+  padding: 0 var(--space-2);
+}
+/* The "…"'s room in a row without one, so every role ends on one edge. */
+.menuRoom {
+  display: inline-block;
+  width: var(--control);
 }

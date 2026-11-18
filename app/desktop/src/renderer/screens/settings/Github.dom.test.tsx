@@ -8,6 +8,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { GithubSettings } from "./Github";
+import { chooseFromRow } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -139,7 +140,7 @@ describe("Settings › Your accounts › GitHub", () => {
     expect(document.body.textContent).toContain("Not connected: work that opens a pull request can't start.");
     await click(button("Connect GitHub"));
     expect(connects).toBe(1);
-    expect(document.body.textContent).toContain("Connected as sam-rivera");
+    expect(document.body.textContent).toContain("sam-rivera · since");
   });
 
   it("says what went wrong, but not a cancel", async () => {
@@ -154,8 +155,9 @@ describe("Settings › Your accounts › GitHub", () => {
     await render();
     expect(document.body.textContent).toContain("GitHub no longer takes your connection as sam-rivera");
     await click(button("Connect again"));
-    expect(document.body.textContent).toContain("Connected as sam-rivera");
-    await click(button("Disconnect"));
+    expect(document.body.textContent).toContain("sam-rivera · since");
+    await chooseFromRow("GitHub", "Disconnect");
+    await settle();
     const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent.trim() === "Disconnect");
     if (confirm === undefined) throw new Error("no confirm");
     await click(confirm);

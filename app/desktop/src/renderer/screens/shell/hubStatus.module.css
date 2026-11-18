@@ -68,7 +68,7 @@ button.row:hover {
 .action,
 .aside {
   flex: none;
-  margin-left: var(--space-1-5);
+  margin-left: var(--space-2);
 }
 .action {
   color: var(--link);

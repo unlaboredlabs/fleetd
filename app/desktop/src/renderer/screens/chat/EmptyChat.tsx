@@ -1,6 +1,7 @@
 // A chat with no messages yet: what to ask the lead, just above the box, and a few starters that fill the box (never
 // send) so the first message is yours to edit.
-import { Button, Text } from "../../ui";
+import { Text } from "../../ui";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { projectKey } from "../../src/data/store";
 import { runCommand } from "../palette";
 import { useDraft } from "./drafts";
@@ -13,27 +14,28 @@ export const STARTERS = [
   "Explain how this bot's code is put together.",
 ] as const;
 
-export function EmptyChat({ project, title }: { project: ProjectRef; title: string }) {
+export function EmptyChat({ project, title, pictured }: { project: ProjectRef; title: string; pictured?: Parameters<typeof ProjectAvatar>[0]["project"] | undefined }) {
   const [, setDraft] = useDraft(projectKey(project));
   return (
     <div className={s.empty} data-entry="empty">
       <div className={s.emptyBody}>
-        <Text as="h2" size="lg" strong>
+        {pictured === undefined ? null : <ProjectAvatar project={pictured} size={64} className={s.emptyBot} />}
+        <Text as="h2" className={s.emptyTitle}>
           {title === "" ? "What should the lead do?" : `What should the lead do in ${title}?`}
         </Text>
         <div className={s.starters}>
           {STARTERS.map((text) => (
-            <Button
+            <button
               key={text}
-              variant="secondary"
-              title={text}
+              type="button"
+              className={s.starter}
               onClick={() => {
                 setDraft((d) => ({ ...d, text }));
                 runCommand("composer.focus");
               }}
             >
               {text}
-            </Button>
+            </button>
           ))}
         </div>
       </div>

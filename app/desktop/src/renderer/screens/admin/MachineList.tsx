@@ -50,7 +50,7 @@ export function MachineList({ add }: { add?: ReactNode }) {
   return (
     <>
       <div ref={marked} tabIndex={-1} className={a.revealed}>
-        <SettingsSection title="Machines" aside={add}>
+        <SettingsSection title={add === undefined ? undefined : "Machines"} aside={add}>
           {machines === undefined ? (
             <GroupNote>Loading…</GroupNote>
           ) : machines.length === 0 ? (

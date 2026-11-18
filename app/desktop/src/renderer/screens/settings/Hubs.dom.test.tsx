@@ -13,6 +13,7 @@ import { UiProvider } from "../../ui";
 import { HubsSettings } from "./Hubs";
 import { RESTART_WAIT_MS } from "./hubRestart";
 import { resetServes } from "../admin/role";
+import { chooseFromRow, menuItems, openRowMenu } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -100,7 +101,22 @@ const must = <T,>(found: T | null | undefined, what: string): T => {
   if (found === null || found === undefined) throw new Error(`no ${what}`);
   return found;
 };
-const row = () => must(host.querySelector<HTMLElement>("section[aria-label='Hub']"), "hub row");
+// The hub's row: the one with the hub's "…" menu (Name and colour, Restart hub, Disconnect).
+const trigger = () => must(host.querySelector<HTMLButtonElement>("section button[aria-label$=': more']"), "hub menu");
+const row = () => must(trigger().closest<HTMLElement>("section"), "hub row");
+/** What the hub's "…" menu offers, closed again after. */
+const offered = () => {
+  openRowMenu(trigger().getAttribute("aria-label")?.replace(/: more$/u, "") ?? "");
+  const items = menuItems();
+  act(() => {
+    document.querySelector("[role='menu']")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  return items;
+};
+const choose = async (item: string) => {
+  await chooseFromRow(trigger().getAttribute("aria-label")?.replace(/: more$/u, "") ?? "", item);
+  await settle();
+};
 const dialog = () => must(document.body.querySelector<HTMLElement>("[role='dialog'], [role='alertdialog']"), "dialog");
 const alert = () => must(row().querySelector("[role='alert']"), "alert");
 const state = async (frame: HubFrame) => {
@@ -114,58 +130,58 @@ const restarts = () => calls.filter((c) => c === "hub_restart").length;
 
 it("shows Restart hub to an admin of the hub, and nothing of it to a member", async () => {
   await render(false);
-  expect(row().textContent).toContain("Connected.");
-  expect(find("Restart hub…")).toBeUndefined();
-  expect(button("Disconnect and forget key")).toBeDefined();
+  expect(row().textContent).toContain("Connected ·");
+  expect(offered()).not.toContain("Restart hub…");
+  expect(offered()).toContain("Disconnect and forget key…");
   act(() => root.unmount());
   root = createRoot(host);
   await render(true);
-  expect(button("Restart hub…", row())).toBeDefined();
+  expect(offered()).toContain("Restart hub…");
 });
 
 it("shows an admin of fleetd cloud, which leaves hub_restart out, no Restart hub: the row keeps the rest", async () => {
   await render(true, ["hub_update", "hub_restart"]);
-  expect(row().textContent).toContain("Connected.");
-  expect(find("Restart hub…")).toBeUndefined();
-  expect(button("Disconnect and forget key")).toBeDefined();
+  expect(row().textContent).toContain("Connected ·");
+  expect(offered()).not.toContain("Restart hub…");
+  expect(offered()).toContain("Disconnect and forget key…");
   // A hub that leaves out something else keeps it.
   act(() => root.unmount());
   root = createRoot(host);
   await render(true, ["machine_hosts"]);
-  expect(button("Restart hub…", row())).toBeDefined();
+  expect(offered()).toContain("Restart hub…");
 });
 
 it("asks first, then restarts: the row says so until the hub has been away and is back", async () => {
   await render(true);
-  await click(button("Restart hub…"));
+  await choose("Restart hub…");
   const asked = dialog();
   expect(asked.textContent).toContain("Restart the hub?");
   expect(asked.textContent).toContain("It is back in about a second, and running agents carry on.");
   expect(asked.textContent).toContain("A lead whose profile changed since it started comes back on the current one");
   await click(button("Cancel", asked));
   expect(restarts()).toBe(0);
-  expect(row().textContent).toContain("Connected.");
+  expect(row().textContent).toContain("Connected ·");
 
   restart = () => Promise.resolve({ ok: true, output: { leads: 2 } });
-  await click(button("Restart hub…"));
+  await choose("Restart hub…");
   await click(button("Restart", dialog()));
   expect(restarts()).toBe(1);
   expect(row().textContent).toContain("Restarting the hub…");
   // No second restart while one goes.
-  expect(button("Restart hub…").disabled).toBe(true);
+  expect(trigger().disabled).toBe(true);
 
   await state({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 1, restarting: Date.now() } });
   expect(row().textContent).toContain("Restarting the hub…");
   await state(LIVE);
-  expect(row().textContent).toContain("Restarted. Connected. 2 leads start again on the current lead profile, each once it is idle.");
-  expect(button("Restart hub…").disabled).toBe(false);
+  expect(row().textContent).toContain("Restarted. Connected. 2 leads start again on the current lead profile, each once it is idle");
+  expect(trigger().disabled).toBe(false);
 });
 
 it("counts a call the restart itself cut off as taken", async () => {
   await render(true);
   let answer: (out: CallOutcome) => void = () => undefined;
   restart = () => new Promise((done) => (answer = done));
-  await click(button("Restart hub…"));
+  await choose("Restart hub…");
   await click(button("Restart", dialog()));
   expect(row().textContent).toContain("Restarting the hub…");
   // Away and back before the call's own end was read.
@@ -176,7 +192,7 @@ it("counts a call the restart itself cut off as taken", async () => {
     await Promise.resolve();
   });
   await settle();
-  expect(row().textContent).toContain("Restarted. Connected.");
+  expect(row().textContent).toContain("Restarted. Connected ·");
   expect(row().querySelector("[role='alert']")).toBeNull();
 });
 
@@ -187,15 +203,15 @@ it("shows a refusal with its fix, and a hub older than the button", async () => 
       ok: false,
       error: { code: "failed", message: "The hub doesn't run as the service `fleetd init` sets up, so it can't restart itself.", fix: "Restart it on its machine: stop `fleetd hub start` there and start it again." },
     });
-  await click(button("Restart hub…"));
+  await choose("Restart hub…");
   await click(button("Restart", dialog()));
   expect(alert().textContent).toBe("The hub doesn't run as the service fleetd init sets up, so it can't restart itself. Restart it on its machine: stop fleetd hub start there and start it again.");
   // The connection's own line stays, and it can be tried again.
-  expect(row().textContent).toContain("Connected.");
-  expect(button("Restart hub…").disabled).toBe(false);
+  expect(row().textContent).toContain("Connected ·");
+  expect(trigger().disabled).toBe(false);
 
   restart = () => Promise.resolve({ ok: false, error: { code: "not_found", message: "No tool hub_restart." } });
-  await click(button("Restart hub…"));
+  await choose("Restart hub…");
   await click(button("Restart", dialog()));
   expect(alert().textContent).toBe("This hub runs a fleetd from before Restart hub. Update fleetd on it first.");
 });
@@ -203,10 +219,7 @@ it("shows a refusal with its fix, and a hub older than the button", async () => 
 it("says so when the hub took the restart but never went away", async () => {
   await render(true);
   vi.useFakeTimers();
-  await act(async () => {
-    button("Restart hub…").click();
-    await Promise.resolve();
-  });
+  await chooseFromRow(trigger().getAttribute("aria-label")?.replace(/: more$/u, "") ?? "", "Restart hub…");
   await act(async () => {
     button("Restart", dialog()).click();
     await vi.advanceTimersByTimeAsync(10);

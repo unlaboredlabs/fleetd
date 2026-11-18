@@ -7,10 +7,10 @@ afterEach(() => window.localStorage.clear());
 
 describe("the sidebar's width", () => {
   it("defaults as the fixed width did, at most 420 px or 40% of the window, never under 200 px", () => {
-    expect(SIDEBAR_DEFAULT_PX).toBe(264);
-    expect(sidebarBounds(1400)).toEqual({ min: 200, max: 420, initial: 264 });
+    expect(SIDEBAR_DEFAULT_PX).toBe(280);
+    expect(sidebarBounds(1400)).toEqual({ min: 200, max: 420, initial: 280 });
     // The app's smallest window: 40% is the smaller.
-    expect(sidebarBounds(900)).toEqual({ min: 200, max: 360, initial: 264 });
+    expect(sidebarBounds(900)).toEqual({ min: 200, max: 360, initial: 280 });
     expect(sidebarBounds(1049).max).toBe(419);
     expect(sidebarBounds(1050).max).toBe(SIDEBAR_MAX_PX);
     // Too small a window for the default: it takes it in; for the min too, the min still holds.
@@ -19,7 +19,7 @@ describe("the sidebar's width", () => {
   });
 
   it("shows what you set, clamped to the window it is in, else the default", () => {
-    expect(sidebarWidth(null, 1400)).toBe(264);
+    expect(sidebarWidth(null, 1400)).toBe(280);
     expect(sidebarWidth(320, 1400)).toBe(320);
     expect(sidebarWidth(120, 1400)).toBe(200);
     expect(sidebarWidth(900, 1400)).toBe(420);

@@ -208,6 +208,12 @@ const page = (
 const settings = () => document.querySelector("[data-screen='settings.hub.setup']");
 const rows = (label: string) => [...document.querySelectorAll(`[role='list'][aria-label='${label}'] [data-step]`)].map((r) => `${r.getAttribute("data-step") ?? ""}:${r.textContent}`);
 const pane = () => document.querySelector("article[data-step]");
+/** A step page's way back to the list, in the window's top row. */
+const back = () => {
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Setup" && x.closest("nav") === null);
+  if (b === undefined) throw new Error("no way back");
+  return b;
+};
 const rail = (id: string) => document.querySelector(`nav [data-step="${id}"]`)?.textContent ?? "";
 
 describe("setup", () => {
@@ -311,8 +317,8 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     calls = [];
     await render(page);
-    expect(rows("Accounts")).toEqual(["claude:Claude", "github:GitHub"]);
-    expect(settings()?.textContent).toBe("AccountsClaudeGitHub");
+    expect(rows("Steps")).toEqual(["claude:Claude", "github:GitHub"]);
+    expect(settings()?.textContent).toBe("SetupClaudeGitHub");
     expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
     // The first run goes on to Get started, with no welcome to steps it has none of.
     await render(<FirstRun onAddProject={() => undefined} />);
@@ -323,48 +329,46 @@ describe("Settings › Hub › Setup", () => {
 
   it("lists the hub's accounts, every one a row saying where it stands, then the other steps left, and the done ones as one line", async () => {
     await render(page);
-    // Claude is done and stays listed, saying what it uses; the others say when they are needed.
-    expect(rows("Accounts")).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubBefore the first PR", "onepassword:1PasswordBefore the first login"]);
-    expect(rows("Steps left")).toEqual(["people:Invite peopleOptional", "mac:A Mac for agentsOptional"]);
-    expect(rows("Steps done")).toEqual([]);
+    // One checklist: the accounts first, Claude done and saying what it uses, the others when they are needed; then
+    // the other steps left; then the done ones, each still a row to change a value or test one.
+    expect(rows("Steps")).toEqual([
+      "claude:ClaudeUses the hub's API key",
+      "github:GitHubBefore the first PR",
+      "onepassword:1PasswordBefore the first login",
+      "people:Invite peopleOptional",
+      "mac:A Mac for agentsOptional",
+      "address:Where the hub listensDone",
+      "machines:Where agents runUses a computer",
+    ]);
     // Nothing required is left: no line says so. Titles and rows only: no rail, no guide, no control of an account.
-    expect(settings()?.textContent).toBe(
-      "AccountsClaudeUses the hub's API keyGitHubBefore the first PR1PasswordBefore the first loginThis hubInvite peopleOptionalA Mac for agentsOptional2 done.Show steps",
-    );
+    expect(settings()?.textContent).not.toContain("required");
+    expect(settings()?.textContent).toContain("3 of 7 done");
     expect(document.querySelector("nav [data-step]")).toBeNull();
     expect(pane()).toBeNull();
     expect(settings()?.querySelector("input, [role='switch']")).toBeNull();
-
-    // The done steps are still there to change a value or test one.
-    await click(button("Show steps"));
-    expect(rows("Steps done")).toEqual(["address:Where the hub listens", "machines:Where agents run"]);
-    await click(button("Hide steps"));
-    expect(rows("Steps done")).toEqual([]);
   });
 
   it("says how many required steps are left, and puts the account that needs a look first", async () => {
     scenario = scenarios["setup-fresh"] as Scenario;
     await render(page);
     expect(settings()?.textContent).toContain("1 required before agents can run.");
-    expect(rows("Accounts")).toEqual(["claude:ClaudeNeeds a look", "github:GitHubBefore the first PR", "onepassword:1PasswordBefore the first login"]);
-    expect(settings()?.textContent).toContain("2 done.");
+    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeNeeds a look", "github:GitHubBefore the first PR", "onepassword:1PasswordBefore the first login"]);
   });
 
   it("puts another step that needs someone before the accounts, when no account does", async () => {
     const done = scenarios["setup-done"] as Scenario;
     scenario = { ...done, requiredLeft: 1, list: { ...done.list, machines: { status: "look", failing: true, said: "devbox is offline." } } };
     await render(page);
-    expect([...(settings()?.querySelectorAll("[role='list']") ?? [])].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps left", "Accounts"]);
-    expect(rows("Steps left")[0]).toBe("machines:Where agents runNeeds a look");
+    expect(rows("Steps")[0]).toBe("machines:Where agents runNeeds a look");
   });
 
   it("keeps every account a row once every step is done, and the rest one quiet line", async () => {
     scenario = scenarios["setup-all"] as Scenario;
     await render(page);
-    expect(settings()?.textContent).toBe("AccountsClaudeUses the hub's API keyGitHubUses the hub's GitHub App1PasswordDoneEverything is set up.Show steps");
-    expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Accounts"]);
-    await click(button("Show steps"));
-    expect(rows("Steps done").map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
+    expect(settings()?.textContent).toContain("All set up");
+    expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps"]);
+    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordDone"]);
+    expect(rows("Steps").slice(3).map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
   });
 
   it("opens an account in place: its controls, then its guide with its paste values and Test, and the way back", async () => {
@@ -386,16 +390,16 @@ describe("Settings › Hub › Setup", () => {
     expect(pane()?.textContent).toContain("fleetd github-app create");
     expect(button("Hide the guide")).not.toBeNull();
     // Back: GitHub is done, and still a row, in its place.
-    await click(button("‹ Setup"));
-    expect(rows("Accounts")).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordBefore the first login"]);
-    expect(settings()?.textContent).toContain("2 done.");
+    await click(back());
+    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordBefore the first login"]);
+    expect(settings()?.textContent).toContain("4 of 7 done");
   });
 
   it("keeps GitHub's row, its step and the App's controls saying the same after the App's Test, the step's Test, Remove and Create", async () => {
     const card = () => pane()?.querySelector("[data-part='admin.github']");
     const tests = () => [...(pane()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent.trim() === "Test");
     const asked = (tool: string) => calls.filter((c) => c.tool === tool).length;
-    const github = () => rows("Accounts").find((r) => r.startsWith("github:"));
+    const github = () => rows("Steps").find((r) => r.startsWith("github:"));
     // An App made and installed nowhere: the step is still to do.
     app = made;
     await render(page);
@@ -411,7 +415,7 @@ describe("Settings › Hub › Setup", () => {
     expect(card()?.textContent).toContain("acme: acme/web and acme/api");
     // Done now: only a done account's guide can be hidden.
     expect(button("Hide the guide")).not.toBeNull();
-    await click(button("‹ Setup"));
+    await click(back());
     expect(github()).toBe("github:GitHubUses the hub's GitHub App");
     // Remove: the row stops saying the hub uses it.
     await click(button("GitHub"));
@@ -423,7 +427,7 @@ describe("Settings › Hub › Setup", () => {
     expect(asked("github_app_remove")).toBe(1);
     expect(asked("setup_list")).toBe(lists + 1);
     expect(card()?.textContent).toContain("No App yet");
-    await click(button("‹ Setup"));
+    await click(back());
     expect(github()).toBe("github:GitHubBefore the first PR");
     // Create: the step is read again with the App made.
     await click(button("GitHub"));

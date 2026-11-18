@@ -245,7 +245,8 @@ it("shows where the key is, the members switch and the owner's subscription; eac
     await Promise.resolve();
   });
   for (let i = 0; i < 4; i++) await settle();
-  const line = (name: string) => host.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}'] [data-accounts]`)?.parentElement?.textContent ?? "";
+  // A person's accounts are their row's hint (a tooltip, and words for assistive tech); a pause is a line of its own.
+  const line = (name: string) => host.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}']`)?.textContent ?? "";
   expect(line("Sam Rivera")).toContain("Claude: Own subscription · GitHub: sam-rivera");
   expect(line("Sam Rivera")).not.toContain("Paused");
   expect(line("Alice Chen")).toContain("Claude: Hub API key · GitHub: not connected");

@@ -373,9 +373,9 @@ extension View {
 /// The app's accent (src/theme.ts), a neutral one: near-black in light and near-white in dark, as text and icons and as
 /// a fill under onAccent, which flips to near-black in dark so it stays readable.
 extension Color {
-  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF5F5F7) : UIColor(hex: 0x1D1D1F) })
-  static let accentFill = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF5F5F7) : UIColor(hex: 0x1D1D1F) })
-  static let onAccent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x1D1D1F) : .white })
+  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF3F4F6) : UIColor(hex: 0x0B0D10) })
+  static let accentFill = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF3F4F6) : UIColor(hex: 0x0B0D10) })
+  static let onAccent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x0C0E11) : .white })
 }
 
 private extension UIColor {

@@ -9,35 +9,28 @@ import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { Button, Field, InlineCode, Input, Radio, RadioGroup, Text } from "../../ui";
+import { Button, Field, InlineCode, Input, Segmented, Text } from "../../ui";
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
-import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
+import { ConfirmRemove, MissingOn, Problem, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { Notice, RowMenu, SettingsRow } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
 
+const HINT = "What the agents of the orders you start run on from their next start. Nobody else's work uses it.";
+
+/** Claude, as one row of Your accounts: its state as a dot and one line, its actions behind its "…". */
 export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
-  return (
-    <SettingsSection title="Claude" reveal="claude" hint="What the agents of the orders you start run on from their next start. Nobody else's work uses it.">
-      {!live ? (
-        <GroupNote>Not connected. Connect to a hub to choose your Claude account.</GroupNote>
-      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <GroupNote>This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to choose your own account.</GroupNote>
-      ) : read.isLoadingError ? (
-        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
-      ) : read.data === undefined ? (
-        <GroupNote>Loading…</GroupNote>
-      ) : read.data.me === undefined ? (
-        <GroupNote>This device&apos;s key belongs to no person, so it has no Claude account of its own. Pair the app as yourself to choose one.</GroupNote>
-      ) : (
-        <Mine data={read.data} me={read.data.me} />
-      )}
-    </SettingsSection>
-  );
+  const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="claude" mark="off" title="Claude" hint={HINT} line={line} lineTone={tone} />;
+  if (!live) return note("Not connected. Connect to a hub to choose your Claude account.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub runs every agent on each machine's own Claude login. Update fleetd on the hub to choose your own account.");
+  if (read.isLoadingError) return note(errorText(read.error), "danger");
+  if (read.data === undefined) return note("Loading…");
+  if (read.data.me === undefined) return note("This device's key belongs to no person. Pair the app as yourself to choose one.");
+  return <Mine data={read.data} me={read.data.me} />;
 }
 
 /**
@@ -45,44 +38,128 @@ export function ClaudeSettings() {
  * admin turned it off stays shown, so they see why it no longer runs.
  */
 function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude }) {
-  const people = [me.person];
+  const machines = useMachines();
+  const save = useSave();
+  const test = useTest();
+  const hubCall = useHubCall();
+  const [token, setToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [tried, setTried] = useState<Tried>();
+  const [removing, setRemoving] = useState(false);
+  const nowMs = useNow(true, 60_000);
+  const sub = me.subscription;
   const refused = me.runsOn.kind === "refused" ? me.runsOn : null;
-  // Runs on shows only when there is a choice; without one, In use says why the hub's key isn't offered.
+  // Runs on shows only when there is a choice; without one, the hint says why the hub's key isn't offered.
   const offer = me.mayUseHubApi || me.choice === "hub_api";
+  const connect = () => {
+    setBusy(true);
+    setProblem(null);
+    void save({ account: "mine", token, boxes: machines.boxes }).then((out) => {
+      setBusy(false);
+      if (!out.ok) {
+        setProblem(out.problem);
+        return;
+      }
+      setToken("");
+      setConnecting(false);
+      if (out.tried !== null) setTried(out.tried);
+    });
+  };
+  const runTest = () => {
+    setTesting(true);
+    void test("mine").then((t) => {
+      setTesting(false);
+      setTried(t);
+    });
+  };
+  // At rest only a failed last test shows; a test just run says how it went either way.
+  const lastFailed = sub?.lastTest !== undefined && !sub.lastTest.ok ? { test: sub.lastTest } : undefined;
+  const form = (
+    <div className={s.connectForm}>
+      <ol className={s.steps}>
+        <li>
+          <Text size="sm">
+            On any computer with Claude Code, run <InlineCode>{SETUP_TOKEN}</InlineCode> and sign in with the Claude account you want your work to use.
+          </Text>
+        </li>
+        <li>
+          <Text size="sm">Paste the token it prints below.</Text>
+        </li>
+      </ol>
+      <Field label="Token">
+        <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
+      </Field>
+      <div className={s.inline}>
+        <Button variant="primary" disabled={busy || token.trim() === ""} onClick={connect}>
+          {busy ? "Connecting…" : "Connect and test"}
+        </Button>
+        <Button variant="ghost" disabled={busy} onClick={() => (setConnecting(false), setToken(""), setProblem(null))}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+  const hint = [HINT, !offer && data.hubApi !== undefined ? "The hub's API key is kept for leads and unrequested work." : null, sub === undefined ? null : `${sealedLine(sub.sealedOn)}.`]
+    .filter((x) => x !== null)
+    .join(" ");
   return (
-    <>
-      {refused === null ? (
-        <SettingsRow
-          title="In use"
-          hint={!offer && data.hubApi !== undefined ? "The hub's API key is kept for leads and unrequested work." : undefined}
-          line={<HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>}
-        />
-      ) : (
-        <SettingsRow
-          title="In use"
-          lineTone="warning"
-          line={
-            <span role="status">
-              {`${CONNECT}. `}
-              <HubText>{refused.fix}</HubText>
-            </span>
-          }
-        />
-      )}
+    <SettingsRow
+      reveal="claude"
+      mark={refused !== null ? "needs" : "ready"}
+      markLabel={refused !== null ? CONNECT : "Claude: in use"}
+      title="Claude"
+      hint={hint}
+      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
+      lineTone={refused === null ? "quiet" : "warning"}
+      control={
+        sub === undefined ? (
+          connecting ? undefined : (
+            <Button size="sm" onClick={() => setConnecting(true)}>
+              Connect subscription
+            </Button>
+          )
+        ) : (
+          <RowMenu
+            label="Claude"
+            disabled={testing}
+            items={[
+              { label: testing ? "Testing…" : "Test", onSelect: runTest },
+              { label: "Replace token", onSelect: () => setConnecting(true) },
+              { label: "Disconnect", onSelect: () => setRemoving(true), danger: true },
+            ]}
+          />
+        )
+      }
+    >
       {offer ? <Choice me={me} /> : null}
-      <Subscription me={me} />
-    </>
+      {sub === undefined ? null : <MissingOn sealedOn={sub.sealedOn} machines={machines.ids} />}
+      <TestResult tried={tried ?? lastFailed} nowMs={nowMs} />
+      {connecting ? form : null}
+      <Problem text={problem} />
+      {removing ? (
+        <ConfirmRemove
+          title="Disconnect your subscription?"
+          description="Each machine forgets the token. Agents started from then on run on the hub's API key if you may use it; otherwise you connect again before your next order."
+          action="Disconnect"
+          onRemove={() => hubCall("claude_subscription_remove", {})}
+          onClose={() => setRemoving(false)}
+        />
+      ) : null}
+    </SettingsRow>
   );
 }
 
+/** Runs on, as a line of its own under Claude's title: the two accounts as one switch. */
 function Choice({ me }: { me: PersonClaude }) {
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const shown = shownChoice(me);
-  const pick = (v: string) => {
-    const choice: ClaudeChoice = v === "hub_api" ? "hub_api" : "subscription";
+  const pick = (choice: ClaudeChoice) => {
     setBusy(true);
     setProblem(null);
     hubCall("claude_choice_set", { choice }).then(
@@ -97,131 +174,35 @@ function Choice({ me }: { me: PersonClaude }) {
     );
   };
   return (
-    <SettingsRow
-      title="Runs on"
-      hint="Your subscription: your plan's limits, and only your work runs on it. The hub's API key: billed to the hub's Claude account. Agents started after a switch use the new one; a running one keeps its account."
-    >
-      <RadioGroup className={s.radios} value={shown ?? ""} onValueChange={pick} disabled={busy} aria-label="Runs on">
-        <Radio value="subscription" label="My own Claude subscription" description={me.subscription === undefined ? "Connect it below first." : undefined} />
-        <Radio
-          value="hub_api"
-          label="The hub's API key"
-          disabled={!me.mayUseHubApi}
-          description={me.mayUseHubApi ? undefined : "The hub's admins turned this off for members."}
-        />
-      </RadioGroup>
-      <Problem text={problem} />
-    </SettingsRow>
-  );
-}
-
-function Subscription({ me }: { me: PersonClaude }) {
-  const machines = useMachines();
-  const save = useSave();
-  const test = useTest();
-  const hubCall = useHubCall();
-  const [token, setToken] = useState("");
-  const [replacing, setReplacing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [tried, setTried] = useState<Tried>();
-  const [removing, setRemoving] = useState(false);
-  const sub = me.subscription;
-  const nowMs = useNow(true, 60_000);
-  const connect = () => {
-    setBusy(true);
-    setProblem(null);
-    void save({ account: "mine", token, boxes: machines.boxes }).then((out) => {
-      setBusy(false);
-      if (!out.ok) {
-        setProblem(out.problem);
-        return;
-      }
-      setToken("");
-      setReplacing(false);
-      if (out.tried !== null) setTried(out.tried);
-    });
-  };
-  const runTest = () => {
-    setTesting(true);
-    void test("mine").then((t) => {
-      setTesting(false);
-      setTried(t);
-    });
-  };
-  const form = (
     <>
-      <ol className={s.steps}>
-        <li>
-          <Text size="sm">
-            On any computer with Claude Code, run <InlineCode>{SETUP_TOKEN}</InlineCode> and sign in with the Claude account you want your work to use.
-          </Text>
-        </li>
-        <li>
-          <Text size="sm">Paste the token it prints below.</Text>
-        </li>
-      </ol>
-      <Field label="Token">
-        <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
-      </Field>
-      {/* Connect shows once there is a token to connect. */}
-      {token.trim() === "" && !busy && !replacing ? null : (
-        <div className={s.inline}>
-          {token.trim() === "" && !busy ? null : (
-            <Button variant="primary" disabled={busy} onClick={connect}>
-              {busy ? "Connecting…" : "Connect and test"}
-            </Button>
-          )}
-          {replacing ? (
-            <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setToken(""), setProblem(null))}>
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-      )}
-    </>
-  );
-  return (
-    <SettingsRow
-      title="Your subscription"
-      hint="The token is kept encrypted on the hub's machines and never shown again. It is valid for a year."
-      line={sub === undefined ? null : sealedLine(sub.sealedOn)}
-      control={
-        sub === undefined ? undefined : (
-          <>
-            <TestButton testing={testing} onTest={runTest} />
-            {replacing ? null : (
-              <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
-                Replace
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
-              Disconnect
-            </Button>
-          </>
-        )
-      }
-    >
-      {sub === undefined ? (
-        form
-      ) : (
-        <>
-          <MissingOn sealedOn={sub.sealedOn} machines={machines.ids} />
-          <TestResult tried={tried ?? (sub.lastTest === undefined ? undefined : { test: sub.lastTest })} nowMs={nowMs} />
-          {replacing ? form : null}
-        </>
-      )}
-      <Problem text={problem} />
-      {removing ? (
-        <ConfirmRemove
-          title="Disconnect your subscription?"
-          description="Each machine forgets the token. Agents started from then on run on the hub's API key if you may use it; otherwise you connect again before your next order."
-          action="Disconnect"
-          onRemove={() => hubCall("claude_subscription_remove", {})}
-          onClose={() => setRemoving(false)}
+      <div className={s.subRow} title="Your subscription: your plan's limits, and only your work runs on it. The hub's API key: billed to the hub's Claude account. Agents started after a switch use the new one.">
+        <Text size="sm" tone="quiet">
+          Runs on
+        </Text>
+        <Segmented<ClaudeChoice>
+          label="Runs on"
+          value={shown ?? "subscription"}
+          disabled={busy}
+          onChange={pick}
+          options={[
+            { value: "subscription", label: "My subscription" },
+            ...(me.mayUseHubApi || shown === "hub_api" ? [{ value: "hub_api" as const, label: "Hub's API key" }] : []),
+          ]}
         />
+      </div>
+      {!me.mayUseHubApi && shown === "hub_api" ? (
+        <Notice
+          tone="warning"
+          action={
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => pick("subscription")}>
+              Use my subscription
+            </Button>
+          }
+        >
+          The hub&apos;s admins turned their API key off for members.
+        </Notice>
       ) : null}
-    </SettingsRow>
+      <Problem text={problem} />
+    </>
   );
 }

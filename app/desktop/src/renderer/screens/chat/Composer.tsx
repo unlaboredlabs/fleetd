@@ -220,7 +220,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   const attachTool = useMemo(
     () => (
       <Tooltip content="Attach a file">
-        <Button variant="quiet" size="md" iconOnly round aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
+        <Button variant="quiet" size="md" iconOnly aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
           <Paperclip />
         </Button>
       </Tooltip>
@@ -242,7 +242,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     () => (
       // While the lead works, how to have it read this now: the pill has no room beside its words for a line of hints.
       <Tooltip content={working === true ? `Send · ${nowKeys()} stops its step and sends now` : "Send"}>
-        <Button variant="primary" size="md" iconOnly round aria-label="Send" disabled={!sendable} onClick={() => latest.current.send()}>
+        <Button variant="primary" size="md" iconOnly aria-label="Send" disabled={!sendable} onClick={() => latest.current.send()}>
           <ArrowUp />
         </Button>
       </Tooltip>

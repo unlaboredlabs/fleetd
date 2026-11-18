@@ -95,7 +95,7 @@
   background: none;
 }
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* The question, and when it was settled at the line's end. */

@@ -14,6 +14,7 @@ import { PROJECT_TOOLS } from "../projects/model";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
+import { resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -79,10 +80,6 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
             projects={projects.map((p) => ({ ...p, hub: "hub" }))}
             screen={{ id: "home", at: "hub" }}
             jumpHints={jumpHints}
-            collapsed={new Set()}
-            onToggleHub={() => undefined}
-            folded={new Set()}
-            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />
@@ -93,6 +90,9 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
 };
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   went = [];
   calls = [];
   host = document.createElement("div");
@@ -251,7 +251,7 @@ describe("one list", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(quiet)}>
-            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={() => undefined} />
+            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={() => undefined} />
           </DataProvider>
         </UiProvider>,
       ),
@@ -327,10 +327,6 @@ describe("each row's avatar", () => {
               projects={[ADA, pictured, STOREFRONT].map((p) => ({ ...p, hub: "hub" }))}
               screen={{ id: "home", at: "hub" }}
               jumpHints={false}
-              collapsed={new Set()}
-              onToggleHub={() => undefined}
-              folded={new Set()}
-              onToggleSection={() => undefined}
               factory={false}
               go={(s) => went.push(s)}
             />

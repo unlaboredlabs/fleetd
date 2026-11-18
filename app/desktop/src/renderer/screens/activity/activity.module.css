@@ -21,7 +21,7 @@
 .decisions {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   margin-left: calc(-1 * var(--space-2));
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
@@ -35,7 +35,7 @@
   background: var(--hover);
 }
 .decisions:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .decisions > svg {
@@ -116,7 +116,7 @@
 }
 .link:focus-visible,
 .run:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* A run's lines, opened under it. */

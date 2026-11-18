@@ -7,8 +7,8 @@
 .sidebar {
   /* A row's rounding, a box's corners as your own row's at the foot are, in every state of it (under the pointer,
      open, focused, lifted, gliding). A pin's, lifted or focused, and the pins' own when a chat is dragged over them. */
-  --row-round: var(--radius-lg);
-  --pin-round: 24px;
+  --row-round: var(--radius-sm);
+  --pin-round: var(--radius-pill, 999px);
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -27,7 +27,7 @@
      true. */
   overflow-anchor: none;
   /* The first chat a clear step below the top row, not tucked under it. */
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
 }
 
 /* Nothing in a group counts past the list's own edges (a bot's picture is drawn on a canvas wider than itself, and in
@@ -64,15 +64,16 @@
   background: var(--sidebar);
 }
 
-/* A chat's row: a 56 px rounded box, its 40 px picture 8 px in from its top, its bottom and its end; the far end's
-   words stop a little short of its edge. */
+/* A chat's row: a 56 px rounded box, its 36 px picture 10 px in from its top, its bottom and its start; the far end's
+   words stop 12 px short of its edge. */
 .row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
-  padding: var(--space-2) 14px var(--space-2) var(--space-2);
+  min-height: 52px;
+  padding: 0 10px 0 var(--space-2);
   border: none;
   border-radius: var(--row-round);
   background: transparent;
@@ -84,11 +85,15 @@
 .row:hover {
   background: var(--hover);
 }
-.row[aria-current="page"] {
+.row:active {
   background: var(--selected);
 }
+.row[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+}
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -100,7 +105,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -119,7 +124,8 @@
   overflow: hidden;
   font-size: 14px;
   font-weight: var(--weight-strong);
-  line-height: var(--leading-md);
+  line-height: var(--leading-sm);
+  letter-spacing: -0.012em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -128,6 +134,7 @@
 .jump {
   flex: none;
   color: var(--quiet);
+  font-family: var(--meta-font);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
@@ -180,14 +187,20 @@
   color: var(--text);
 }
 
+
+/* Every row's mark sits in one column at the row's far end, on the line's centre, 18 px tall: a dot alone, or a small
+   badge with its word or figure. One language for all of them. */
 .mark {
   display: inline-flex;
   flex: none;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-1);
+  min-width: 18px;
+  height: 18px;
   color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: 11px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -202,14 +215,24 @@
   line-height: var(--leading-xs);
 }
 
-.red {
-  color: var(--warning);
-}
-
+.red,
 .work {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill, 999px);
+  font-weight: var(--weight-medium);
+}
+.red {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.work {
+  padding-left: 4px;
+  background: var(--hover);
+  color: var(--quiet);
 }
 
 .dot {
@@ -221,50 +244,6 @@
 /* It waits on you: the warning's colour, the only thing that tells it from a new message. */
 .dot[data-want] {
   background: var(--warning);
-}
-
-/* With several hubs: a hub's group heading, its name in the text's own colour and weight, small; a click collapses it.
-   A colour, when the hub has one, is a short bar before the name: it says which group, never a state. */
-.groupHead {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  width: 100%;
-  min-width: 0;
-  min-height: var(--control);
-  margin-bottom: var(--space-1);
-  padding: 0 var(--space-2);
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-strong);
-  line-height: var(--leading-xs);
-  text-align: left;
-  cursor: pointer;
-}
-.groupHead > svg {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  color: var(--quiet);
-  transition: color var(--dur-quick) var(--ease-snap);
-}
-.groupHead:hover > svg {
-  color: var(--text);
-}
-.groupMark {
-  flex: none;
-  width: 3px;
-  height: 10px;
-  border-radius: 1px;
-}
-.groupAside {
-  flex: none;
-  color: var(--quiet);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-regular);
 }
 
 /* Loading: the rows' own shapes, still (no shimmer, so nothing repaints). */
@@ -324,16 +303,17 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: 50%;
-  background: var(--hover);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text);
   transition:
     background-color var(--dur-quick) var(--ease-snap),
-    color var(--dur-quick) var(--ease-snap);
+    color var(--dur-quick) var(--ease-snap),
+    transform var(--dur-quick) var(--ease-snap);
 }
 .new:hover,
 .round:hover,
@@ -343,21 +323,119 @@
 }
 .new > svg,
 .round > svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 1.75;
+  width: 16px;
+  height: 16px;
 }
 .round {
-  width: 32px;
-  height: 32px;
   color: var(--quiet);
+}
+.new:active,
+.round:active {
+  transform: scale(0.94);
 }
 .new:focus-visible,
 .round:focus-visible,
 .me:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+/* Search, as a field in the window's top row, beside New: it opens the palette. As tall as the chat's pill. */
+.search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--quiet);
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: text;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.search:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+.search > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.searchWord {
+  flex: 1;
+  min-width: 0;
+}
+.searchKey {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-xs, 4px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--quiet);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* The places under search (You.tsx Places): a row each, its icon and word; open, the sidebar's open material. */
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+.place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.place:hover {
+  background: var(--hover);
+}
+.place[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+}
+.place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.place > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--quiet);
+}
+.placeLabel {
+  flex: 1;
+  min-width: 0;
+}
+.placeAside {
+  flex: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A screen needs you: one small mark, the words in the tooltip. */
 .roundMark {
   position: absolute;
@@ -369,25 +447,25 @@
   background: var(--warning);
 }
 
-/* The foot: you, and the two round buttons. No rule over it: the space says it. */
+/* The foot: you, and in List the two round buttons. No rule over it: the space says it. */
 .foot {
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--space-1-5);
-  padding: var(--space-2) var(--space-3) var(--space-3) var(--space-2);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-3);
 }
 
 .me {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
   min-width: 0;
-  min-height: 40px;
-  padding: var(--space-1-5);
+  min-height: 52px;
+  padding: var(--space-2);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -430,8 +508,23 @@
   font-size: var(--text-md);
   font-weight: var(--weight-strong);
   line-height: var(--leading-sm);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.meRole {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.meChevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--quiet);
 }
 .meWord {
   display: flex;
@@ -448,7 +541,7 @@
 .tools {
   display: flex;
   flex: none;
-  gap: var(--space-1-5);
+  gap: 2px;
 }
 
 /*
@@ -464,13 +557,13 @@
   width: max-content;
   min-width: 272px;
   max-width: min(320px, calc(100vw - 16px));
-  padding: var(--space-1-5);
+  padding: var(--space-2);
 }
 .youHead {
   display: flex;
   align-items: center;
   gap: var(--you-gap);
-  padding: var(--space-1-5) var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2);
 }
 .youWho {
   display: flex;
@@ -501,36 +594,28 @@
   white-space: nowrap;
 }
 
-/* The pinned chats, after the phone's (mobile screens/Pinned.tsx, after Messages): large round pictures, two to a row
-   however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture in a small capsule; a breath below
-   them, no line, and the list goes on. Their places are a fixed width and touch, so two 72 px pictures stand 16 px
-   apart, a pair; the group is centred in the sidebar, and a wide one leaves room either side rather than between
-   them. The narrowest sidebar, once its list scrolls, is a hair short of two places: there each place gives up its
-   share of the hair and its pin, kept to the place's outer side, twice that, so the pictures still stand 16 px apart
-   and nothing reaches into the list's own padding. */
+/* Hubs' pinned chats, after the phone's (mobile screens/Pinned.tsx): round 40 px pictures, a step over a row's, up to
+   three to a row (Sidebar.tsx pinColumns), each name under its picture in a small capsule; a breath below them, no
+   line, and the list goes on. Each place is a share of the row and they touch, so the group is centred in the
+   sidebar at any width. */
 .pins {
-  --pin-w: 88px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
+  --pin-cols: 3;
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: var(--space-1) 0;
+  gap: 2px 0;
   margin-bottom: var(--space-3);
-  border-radius: var(--pin-round);
+  border-radius: var(--radius-md);
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
-/* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin fills it. */
+/* A pin's place: a share of the row (Sidebar.tsx pinColumns: three across, two for four), so the group is a
+   deliberate block at any width and a short last row centres under the full one. */
 .pinSlot {
   display: flex;
-  min-width: 0;
-}
-.pinSlot:nth-child(even) {
-  justify-content: flex-end;
-}
-/* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, still a place wide; a
-   second one brings the two columns back. */
-.pinSlot:only-child {
-  grid-column: 1 / -1;
+  flex: 0 0 calc(100% / var(--pin-cols));
   justify-content: center;
+  min-width: 0;
+  padding: 0 1px;
 }
 .pins > [data-reorder-row][data-lifted] {
   background: transparent;
@@ -563,10 +648,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   height: 40px;
   margin-bottom: var(--space-2);
-  border-radius: 20px;
+  border-radius: var(--radius-pill, 999px);
   background: var(--hover);
   color: var(--quiet);
   font-size: var(--text-xs);
@@ -592,13 +677,11 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  /* A whole place wide; in a place a hair short (see .pins), short by twice that. */
-  width: calc(200% - var(--pin-w));
+  width: 100%;
   min-width: 0;
-  max-width: var(--pin-w);
-  padding: var(--space-1) 0;
+  padding: var(--space-2) 2px 6px;
   border: none;
-  border-radius: var(--pin-round);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -607,7 +690,7 @@
     box-shadow var(--dur-quick) var(--ease-snap);
 }
 .pinCell:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .pinName {
@@ -617,16 +700,20 @@
   gap: var(--space-1);
   max-width: 100%;
   min-width: 0;
-  min-height: 24px;
-  padding: 0 var(--space-2);
-  border-radius: 12px;
-  transition: background-color var(--dur-quick) var(--ease-snap);
+  min-height: 18px;
+  padding: 0 var(--space-1);
 }
-.pinCell:hover .pinName {
-  background: var(--hover);
+/* One treatment: no box at rest or under the pointer (the picture lifts a hair), the open one the list rows' open
+   material, every place the same size. */
+.pinCell > :first-child {
+  transition: transform var(--dur-quick) var(--ease-snap);
 }
-.pinCell[aria-current="page"] .pinName {
-  background: var(--selected);
+.pinCell:hover > :first-child {
+  transform: translateY(-2px);
+}
+.pinCell[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
 }
 .pinName > .dot {
   flex: none;
@@ -636,8 +723,9 @@
 .pinTitle {
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.005em;
   line-height: var(--leading-sm);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -646,9 +734,8 @@
   font-weight: var(--weight-strong);
 }
 
-/* One of your sections: a quiet label over its chats, its words in line with their pictures, 12 px under the row above
-   and 2 px over its first chat. No line, no count: a click folds it to one line, which then says how many chats it
-   holds, with a dot at the rows' own far end while one of them waits on you or has a new message. */
+/* One of your sections (Hubs): a quiet label over its chats, its words in line with their pictures, 12 px under the
+   row above and 2 px over its first chat. No line, no count, no fold. */
 .sectionSlot {
   margin-top: 10px;
 }
@@ -664,54 +751,408 @@
   height: 24px;
   padding: 0 14px 0 var(--space-2);
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--quiet);
   font: inherit;
   font-size: var(--text-sm);
   line-height: var(--leading-xs);
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   transition:
     color var(--dur-quick) var(--ease-snap),
     background-color var(--dur-quick) var(--ease-snap);
 }
-.sectionHead:hover {
-  color: var(--text);
-}
 .sectionHead:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* 12/16, whatever the text's own size brings. */
 .sectionHead > .sectionName {
   line-height: var(--leading-xs);
 }
-/* The chevron shows on a folded label, and under the pointer or the keyboard on an open one. */
-.sectionHead > svg {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  opacity: 0;
-  transition: opacity var(--dur-quick) var(--ease-snap);
-}
-.sectionHead:hover > svg,
-.sectionHead:focus-visible > svg,
-.sectionHead[aria-expanded="false"] > svg {
-  opacity: 1;
-}
-.sectionCount {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-.sectionHead > .dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin-left: auto;
-}
 /* A chat held over the section would join it: the label takes the rows' shade. */
 .sectionHead[data-taking] {
   background: var(--hover);
   color: var(--text);
+}
+
+/* ---- The layouts (sidebarLayout.ts) ---- */
+
+.you {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.youCompact {
+  flex: none;
+}
+.meCompact {
+  flex: none;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+/* The menu's layout row: the word, and the three layouts as pressed buttons. */
+.layoutRow {
+  min-height: 36px;
+}
+
+/* A hub's mark: its first letter on its colour, a small square with the rows' rounding; a bot's picture is round. */
+.hubMark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  border-radius: var(--radius-sm);
+  background: var(--hub);
+  color: var(--bg);
+  font-size: calc(var(--size) * 0.5);
+  font-weight: var(--weight-strong);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* List: where a bot lives, at the start of its line: its section's or hub's name in the line's own grey, a step
+   stronger, and a dot apart from the line. No colour: the names lead. */
+.where {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 45%;
+  min-width: 0;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-xs);
+}
+.where::after {
+  /* Read once, by its word: the dot is for the eye. */
+  content: "·" / "";
+  flex: none;
+  padding-left: 4px;
+  font-weight: var(--weight-regular);
+}
+.bottom > .where {
+  margin-right: -4px;
+}
+.whereWord {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+[data-layout="list"] .row {
+  min-height: 48px;
+}
+[data-layout="list"] .line {
+  font-size: var(--text-xs);
+}
+
+/* List's pins: capsules side by side, wrapping, close together as one group; each its picture and its name, strong. */
+.capsules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 var(--space-3);
+}
+.capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px 0 4px;
+  border: none;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--hover);
+  color: var(--text);
+  font: inherit;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.capsule:hover {
+  background: var(--selected);
+}
+.capsule[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+}
+.capsule:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.capsuleName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.capsule > .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+}
+
+/* Hubs' top: the hub on show as a button (its mark, its name strong, a chevron), the rest of the row's width. */
+.switcher {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-2) 0 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.switcher:hover,
+.switcher[data-state="open"] {
+  background: var(--hover);
+}
+.switcher:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+.switcherName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.switcherChevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.switcher > .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+}
+.hubCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: var(--space-1);
+}
+.hubItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+}
+.hubItem:hover {
+  background: var(--hover);
+}
+.hubItem:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.hubItemName {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-medium);
+}
+.hubItemCheck {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.hubItem > .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+}
+
+/* Hubs: Screens and the Factory low, over you, as quiet rows. */
+.bottomPlaces {
+  flex: none;
+  padding: var(--space-2) var(--space-2) 0;
+}
+.bottomPlaces > .places {
+  margin-bottom: 0;
+}
+[data-layout="hubs"] .place {
+  font-weight: var(--weight-regular);
+  color: var(--quiet);
+}
+[data-layout="hubs"] .place:hover,
+[data-layout="hubs"] .place[aria-current="page"] {
+  color: var(--text);
+}
+
+/* Rail: the hubs down the left edge, Screens, the Factory and you at its foot; the list beside it. */
+.railed {
+  flex-direction: row;
+}
+.rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 52px;
+  padding: var(--space-1) 0 var(--space-3) var(--space-2);
+}
+.railHubs,
+.railFoot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+.railHub {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.railHub:hover {
+  background: var(--hover);
+}
+.railHub[aria-current="true"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+}
+.railHub:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+/* A hub that isn't on show sits back a step; the one on show is in full colour. */
+.railHub:not([aria-current="true"]) > .hubMark {
+  opacity: 0.72;
+}
+.railHub:hover > .hubMark {
+  opacity: 1;
+}
+.railDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+.toolsVertical {
+  flex-direction: column;
+  align-items: center;
+}
+.railed > .list {
+  padding-left: var(--space-1);
+}
+.railHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) 0 var(--space-3);
+}
+.railTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+.railTitleName {
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.015em;
+  line-height: 20px;
+}
+.groupAside {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+}
+/* Rail's sections: words as tabs, the one on show in the open rows' material; they wrap rather than scroll. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.tab {
+  height: 26px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
+}
+.tab:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tab[aria-selected="true"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+  color: var(--text);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* Rail's rows: one line, 32 px, the picture, the name and the mark; its unread name in full weight, the rest a step
+   quieter, so what is new reads first. */
+.dense {
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 var(--space-2) 0 6px;
+}
+.dense > .name {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+.dense[data-unread] > .name,
+.dense[aria-current="page"] > .name {
+  font-weight: var(--weight-strong);
+}
+
+/* Rail's pins: its one-line rows, close together, names strong, their shade a capsule (a pin's alone is). */
+.pinRows {
+  gap: 2px;
+}
+.pinRows > .pinSlot {
+  padding: 0;
+}
+.pinRows .dense {
+  border-radius: var(--radius-pill, 999px);
+}
+.pinRows .dense > .name {
+  font-weight: var(--weight-strong);
 }

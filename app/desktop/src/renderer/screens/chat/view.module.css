@@ -97,7 +97,7 @@
  * (ChatScreen measures it into --island-inset), so the last message scrolls clear of it.
  */
 .stage {
-  --island-h: 44px;
+  --island-h: 88px;
   --island-inset: calc(var(--island-gap) + var(--island-h) + var(--island-band-h) + var(--space-2));
   position: relative;
   flex: 1;
@@ -130,10 +130,11 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   box-sizing: border-box;
   min-height: var(--island-band-h);
-  padding-bottom: 6px;
+  /* The capsules float a clear 8 px over the composer, never on its edge. */
+  padding-bottom: var(--space-2);
   container-type: inline-size;
   pointer-events: none;
 }
@@ -172,7 +173,7 @@
   min-width: 0;
 }
 .messageHead {
-  padding-top: 14px;
+  padding-top: var(--space-4);
 }
 /* Yours, on the right. */
 .mine {
@@ -186,9 +187,9 @@
 .line {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-1);
-  max-width: 76%;
+  max-width: 80%;
   min-width: 0;
 }
 .mine .line {
@@ -211,10 +212,29 @@
     opacity: 0;
   }
 }
-/* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
+/* In a narrow chat (beside the panel, a side window) a bubble's actions and time float over its top corner while it
+   is hovered, a small raised strip: beside it they'd squeeze it to a word, and under it they'd hold an empty line
+   under every bubble at rest. */
 @container (max-width: 480px) {
-  .line {
-    flex-wrap: wrap;
+  .aside {
+    position: absolute;
+    z-index: 2;
+    top: -14px;
+    /* From the bubble's outer edge into the column, so a short bubble's strip never passes the column's edge. */
+    left: var(--space-2);
+    padding: 1px 2px;
+    border-radius: var(--radius-sm);
+    background: var(--raised);
+    box-shadow: var(--float-shadow);
+    pointer-events: none;
+  }
+  .mine .aside {
+    left: auto;
+    right: var(--space-2);
+  }
+  .line:hover > .aside,
+  .line:focus-within > .aside {
+    pointer-events: auto;
   }
 }
 .wide {
@@ -222,12 +242,12 @@
   max-width: 100%;
 }
 /*
- * Bubble type is a step above the app's body, 15 on 22, in the same face: a one-line bubble is a capsule (radius
- * half its height), and a code card's radius is the bubble's less its padding, so their corners run parallel.
+ * Bubble type is a step above the app's body, 14 on 22, in the same face: a bubble keeps its soft corners
+ * (--radius-bubble, the scale's one exception), so a one-line bubble is near a capsule; a code card's are a card's.
  */
 .bubble {
   --tight: 6px;
-  --prose-size: 15px;
+  --prose-size: 14px;
   --prose-leading: 22px;
   --prose-gap: 10px;
   --prose-head-gap: 16px;
@@ -237,14 +257,14 @@
   --code-leading: 20px;
   --code-pad-y: 9px;
   --code-pad-x: 13px;
-  --code-radius: 10px;
+  --code-radius: var(--radius-md);
   --code-inline-size: 0.87em;
   --code-inline-pad: 1px 4px;
   position: relative;
   min-width: 0;
   max-width: 100%;
-  padding: 7px 13px 8px;
-  border-radius: 19px;
+  padding: 9px 14px;
+  border-radius: var(--radius-bubble);
   background: var(--bubble);
 }
 .bubble.wide {
@@ -285,6 +305,7 @@
   --shiki-token-punctuation: var(--on-accent-deep);
   background: var(--accent-deep);
   color: var(--on-accent-deep);
+  box-shadow: none;
 }
 /*
  * What Show went to: a ring in the accent, held a moment and faded (--dur-shown); with motion it opens out first,
@@ -332,7 +353,7 @@
 }
 /* The ring follows what it rings: a block's card, emoji without a bubble, an approval's card. */
 .blockBubble.waited {
-  border-radius: 14px;
+  border-radius: var(--radius-md);
 }
 .jumbo.waited,
 .waitedBox {
@@ -349,6 +370,8 @@
   flex: none;
   align-items: center;
   gap: 2px;
+  /* On the bubble's last line, its foot: beside a tall card too, the time and actions sit at its bottom edge. */
+  padding-bottom: 6px;
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
@@ -358,7 +381,8 @@
 }
 .time {
   padding: 0 var(--space-1);
-  font-size: var(--text-xs);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
   line-height: var(--leading-xs);
   color: var(--quiet);
   font-variant-numeric: tabular-nums;
@@ -380,7 +404,7 @@
 .worked {
   position: absolute;
   bottom: 9px;
-  left: var(--space-1-5);
+  left: var(--space-2);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   color: var(--faint);
@@ -420,8 +444,18 @@
   gap: var(--space-2);
 }
 .quietRow {
-  padding-top: var(--space-2);
+  padding-top: var(--space-3);
   min-width: 0;
+}
+/* A system line ("PR #10 is in review…", "Memory tidied…"): one quiet centred style, whatever draws its words: 12/18
+   in --quiet, its time last on the same baseline a gap after them, its links and buttons at the same size. */
+.event.event,
+.event.event * {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.event.event {
+  color: var(--quiet);
 }
 .event {
   display: flex;
@@ -432,8 +466,9 @@
 }
 .eventTime {
   flex: none;
-  font-size: var(--text-xs);
-  color: var(--quiet);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
+  color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
 /* A memory refresh's changes, opened under its line: one row each, left-aligned. */
@@ -520,7 +555,16 @@ span.changeUndo {
   display: flex;
   justify-content: center;
   padding-top: var(--space-6);
-  padding-bottom: var(--space-1);
+  padding-bottom: var(--space-2);
+  color: var(--quiet);
+  font-weight: var(--weight-medium);
+}
+.day > * {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  line-height: var(--leading-xs);
+  letter-spacing: 0.01em;
+  color: var(--quiet);
 }
 .clock {
   display: flex;
@@ -576,7 +620,7 @@ span.changeUndo {
   gap: 1px;
   padding: 1px 5px;
   border: 2px solid var(--bg);
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   background: var(--bubble);
   font-size: 12px;
   line-height: 18px;
@@ -672,7 +716,7 @@ span.changeUndo {
 .attachment {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   max-width: 280px;
   min-width: 0;
   padding: 2px var(--space-2);
@@ -750,7 +794,7 @@ span.changeUndo {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  padding: var(--space-4) 0 var(--space-1-5);
+  padding: var(--space-4) 0 var(--space-2);
   min-width: 0;
 }
 .sectionLabel {
@@ -835,7 +879,7 @@ span.changeUndo {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding-bottom: var(--island-inset);
@@ -843,17 +887,61 @@ span.changeUndo {
 .emptyBody {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
-  max-width: calc(var(--measure) + 2 * var(--pad));
+  max-width: calc(480px + 2 * var(--pad));
   margin: 0 auto;
-  padding: 0 var(--pad);
+  padding: var(--space-12) var(--pad) 0;
+  text-align: center;
+}
+/* The bot, large and alive, then the question under it, and the starters a clear step below: one centred stack. */
+.emptyBot {
+  margin-bottom: var(--space-5);
+}
+.emptyTitle {
+  font-size: 20px;
+  font-weight: var(--weight-strong);
+  line-height: var(--leading-xl);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 .starters {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-self: stretch;
   gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+/* A starter: a quiet box on the sheet, its words left, filling the composer when pressed. */
+.starter {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
+}
+.starter:hover {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.starter:active {
+  background: var(--selected);
+}
+.starter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* A PR link in a one-line event, drawn as the messages' links are (ui/markdown Markdown.module.css). */

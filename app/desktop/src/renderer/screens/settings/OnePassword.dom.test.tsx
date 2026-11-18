@@ -12,6 +12,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { OnePasswordSettings, SERVICE_ACCOUNTS } from "./OnePassword";
+import { chooseFromRow } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -127,10 +128,13 @@ const type = async (label: string, value: string) => {
     await Promise.resolve();
   });
 };
+// A row's warning line (parts.tsx Notice): what wants a look, such as a failed Test.
+const warning = () => [...host.querySelectorAll("[data-tone='warning']")].map((n) => n.textContent).join(" ");
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 
 it("guides a person to a service account, seals the pasted token through main, lists its vaults, and never shows it again", async () => {
   await render({});
+  await click(button("Set up"));
   expect(host.textContent).toContain("Make a service account that reads only that vault");
   await click(button("1Password › Service accounts"));
   expect(opened).toEqual([SERVICE_ACCOUNTS]);
@@ -140,9 +144,8 @@ it("guides a person to a service account, seals the pasted token through main, l
   expect(sent("onepassword_test")).toEqual([{}]);
   for (let i = 0; i < 2; i++) await settle();
   expect(host.textContent).toContain("Sealed on devbox.");
-  expect(host.textContent).toContain("Reads Agents and Shared (on devbox");
   // Two vaults want a look: one kept for fleetd is what to make.
-  expect(host.querySelector("[role='alert']")?.textContent).toContain("reads only fleetd's vault");
+  expect(warning()).toContain("Reads Agents and Shared: it should read only fleetd's vault");
   // oldbox has no box key, so it doesn't hold it.
   expect(host.textContent).toContain("Not on oldbox: agents there fill no logins with it.");
   expect(host.textContent).not.toContain(TOKEN);
@@ -152,31 +155,35 @@ it("guides a person to a service account, seals the pasted token through main, l
 it("asks for a vault of fleetd's own in three steps, and is quiet when the token reads one vault", async () => {
   await render({ token: saved });
   expect(host.textContent).not.toContain("Make a vault");
-  await click(button("Replace"));
+  await chooseFromRow("1Password", "Replace token");
+  await settle();
   expect(host.textContent).toContain("Make a vault for fleetd with only the logins and card your agents may use.");
   expect(host.querySelectorAll("ol > li")).toHaveLength(3);
   // The card advice is on the project's Payments.
   expect(host.textContent).not.toContain("virtual card");
   testAnswer = { test: { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] } };
-  await click(button("Test"));
-  expect(host.querySelector("[role='alert']")).toBeNull();
-  expect(host.textContent).toContain("Reads fleetd (on devbox");
+  await chooseFromRow("1Password", "Test");
+  for (let i = 0; i < 2; i++) await settle();
+  expect(host.textContent).not.toContain("should read only fleetd's vault");
+  expect(host.textContent).toContain("Reads fleetd");
 });
 
 it("says what 1Password said when a Test fails, and removes the token once confirmed", async () => {
   await render({ token: saved });
   testAnswer = { test: { at: AT, machineId: "devbox", ok: false, error: "1Password: invalid service account token ***OP_SERVICE_ACCOUNT_TOKEN***" } };
-  await click(button("Test"));
-  expect(host.querySelector("[role='alert']")?.textContent).toContain("Failed on devbox");
-  expect(host.querySelector("[role='alert']")?.textContent).toContain("invalid service account token");
-  await click(button("Remove", host));
+  await chooseFromRow("1Password", "Test");
+  for (let i = 0; i < 2; i++) await settle();
+  expect(warning()).toContain("Failed on devbox");
+  expect(warning()).toContain("invalid service account token");
+  await chooseFromRow("1Password", "Remove");
+  await settle();
   expect(document.body.textContent).toContain("Each machine forgets it.");
   const dialog = document.querySelector("[role='dialog']");
   if (dialog === null) throw new Error("no dialog");
   await click(button("Remove", dialog));
   expect(sent("onepassword_remove")).toEqual([{}]);
   for (let i = 0; i < 2; i++) await settle();
-  expect(host.querySelector("input[aria-label='Token']")).not.toBeNull();
+  expect(button("Set up")).toBeDefined();
 });
 
 it("says a device key with no person has no 1Password of its own", async () => {

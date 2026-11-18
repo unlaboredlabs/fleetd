@@ -1,11 +1,10 @@
-// What the sidebar draws of your sections (sections.ts): a section's quiet label over its chats, which a click folds to
-// one line (its name, how many chats, a chevron, and a dot while one of them waits on you or has a new message); a
-// row's Move to section, with a tick on its own; and the small dialog that names a new section or renames one.
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+// What the sidebar draws of your sections (sections.ts): a section's quiet label over its chats; a row's Move to
+// section, with a tick on its own; and the small dialog that names a new section or renames one.
+import { Plus } from "lucide-react";
 import { useState, type ComponentProps } from "react";
 import type { ChatSection, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator, ContextMenuSub, Dialog, Field, Input, toast, Truncate } from "../../ui";
-import { foldedWords, roomForSection, sectionNameProblem, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
+import { roomForSection, sectionNameProblem, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
 import { projectId } from "./model";
 import s from "./sidebar.module.css";
 
@@ -15,29 +14,14 @@ interface LabelProps extends Omit<ComponentProps<"button">, "children"> {
   readonly taking: boolean;
 }
 
-/** A section's label, a button that folds it. The menu's trigger props go on it. */
+/** A section's label: its name, quiet, over its chats; never folds (W694). The menu's trigger props go on it. */
 export function SectionLabel({ line, taking, ...rest }: LabelProps) {
-  const { section, folded, count, dot } = line;
+  const { section } = line;
   return (
-    <button
-      type="button"
-      className={s.sectionHead}
-      aria-expanded={!folded}
-      aria-description={folded ? foldedWords(count, dot) : undefined}
-      data-section-label={section.id}
-      data-taking={taking || undefined}
-      {...rest}
-    >
+    <button type="button" className={s.sectionHead} data-section-label={section.id} data-taking={taking || undefined} {...rest}>
       <Truncate size="sm" tone="inherit" expand="none" className={s.sectionName}>
         {section.name}
       </Truncate>
-      {folded ? (
-        <span className={s.sectionCount} aria-hidden>
-          {count}
-        </span>
-      ) : null}
-      {folded ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
-      {folded && dot !== undefined ? <span className={s.dot} data-want={dot === "you" ? "you" : undefined} aria-hidden /> : null}
     </button>
   );
 }

@@ -20,10 +20,12 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
   column-gap: var(--space-1);
+  row-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2);
-  /* Half its one-line height (8 + 28 + 8): round ends, which stay round as it grows. */
-  border-radius: 22px;
+  padding: 6px;
+  /* One line by default, the clip and Send inline with the words; it floats, so it takes a floating thing's corners
+     (--radius-lg), the same as it grows, and its keys a control's a gap inside them. */
+  border-radius: var(--radius-lg);
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
@@ -48,15 +50,28 @@
   z-index: -2;
   box-shadow: var(--glass-lift);
 }
-/* What goes with the words takes a row of its own over them; the clip, the words and the buttons share the last. */
+/* What goes with the words takes a row of its own over them; then one row: the clip, the words, Send (placed in that
+   order, whatever the markup's), the buttons staying on the last line as the words wrap. */
 .box > :not(.lead, .input, .tools) {
   grid-column: 1 / -1;
+}
+.box > .input {
+  order: 1;
+  grid-column: 2;
+}
+.box > .lead {
+  order: 1;
+  grid-column: 1;
+}
+.box > .tools {
+  order: 1;
+  grid-column: 3;
 }
 /* Focused, its edge darkens a step towards a control's (the caret shows where typing goes): a dark ring around the
    whole pill would weigh more than the words in it, and it has the cursor most of the time. */
 .box:has(> .input:focus-visible)::before {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--control-border) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent),
     inset 0 1px 0 var(--glass-rim);
 }
 /* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
@@ -73,6 +88,32 @@
   align-items: center;
   gap: var(--space-1);
 }
+/* Send: one solid accent key, round, always there; with nothing to send it is the same key, faded, never an outline. */
+.tools > button {
+  width: 32px;
+  height: 32px;
+}
+.tools > button:disabled {
+  border-color: transparent;
+  background: var(--selected);
+  color: var(--faint);
+  opacity: 1;
+  box-shadow: none;
+}
+.tools > button > svg,
+.lead > button > svg {
+  width: 16px;
+  height: 16px;
+}
+.lead > button {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--quiet);
+}
+.lead > button:hover {
+  color: var(--text);
+}
 
 .input {
   display: block;
@@ -80,15 +121,15 @@
   box-sizing: border-box;
   /* Grows with its text, up to a dozen lines, then scrolls; one line is as tall as the buttons beside it. */
   field-sizing: content;
-  min-height: var(--field);
-  max-height: calc(12 * var(--leading-md) + 8px);
-  padding: 4px var(--space-1);
+  min-height: var(--leading-md);
+  max-height: calc(12 * var(--leading-md));
+  padding: 6px var(--space-1);
   resize: none;
   border: none;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   line-height: var(--leading-md);
   overflow-wrap: anywhere;
 }
@@ -103,9 +144,9 @@
 .replying {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
-  margin: 0 var(--space-2) var(--space-1-5);
+  margin: 0 var(--space-2) var(--space-2);
   padding: 2px var(--space-1) 2px var(--space-2);
   border-left: 2px solid var(--hairline);
 }
@@ -123,8 +164,8 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1-5);
-  padding: 0 var(--space-1) var(--space-1-5);
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2);
 }
 .chip {
   display: inline-flex;
@@ -164,7 +205,7 @@
 /* Why the last message, file or stop didn't go, over the words: only when there is something to say. */
 .note {
   min-width: 0;
-  padding: 2px var(--space-2) var(--space-1-5);
+  padding: 2px var(--space-2) var(--space-2);
 }
 .note:empty {
   display: none;

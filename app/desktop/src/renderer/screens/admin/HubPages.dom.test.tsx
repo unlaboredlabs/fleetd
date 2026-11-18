@@ -15,7 +15,7 @@ import { DataProvider } from "../../src/data/react";
 import { AppFrame, TopBar, UiProvider } from "../../ui";
 import { Instructions } from "../settings/Instructions";
 import { Prompts } from "../settings/Prompts";
-import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
+import { SettingsSheet } from "../settings/SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -149,19 +149,18 @@ const render = async (node: React.ReactNode) => {
 };
 
 const admin = (
-  <>
-    <SettingsSidebar onBack={() => undefined} />
-    <SettingsScreen />
-  </>
+  <SettingsSheet onClose={() => undefined} />
 );
 /** Settings in the window's frame, whose top row holds a page's name and its way back. */
 const framed = (
-  <AppFrame topBar={<TopBar />} sidebar={<SettingsSidebar onBack={() => undefined} />}>
-    <SettingsScreen />
+  <AppFrame topBar={<TopBar />}>
+    <SettingsSheet onClose={() => undefined} />
   </AppFrame>
 );
 
-const nav = () => host.querySelector<HTMLElement>("nav[aria-label='Settings'] section[aria-label='Hub']");
+// The Settings index's Hub group, by its label.
+const nav = () =>
+  [...host.querySelectorAll<HTMLElement>("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Hub") ?? null;
 const button = (text: string, within: ParentNode = document) => {
   const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.textContent.trim().startsWith(`${text} `));
   if (b === undefined) throw new Error(`no button ${text}`);
@@ -201,7 +200,7 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
   expect(rows).toEqual(["People", "Machines", "Every bot", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
-  expect(host.querySelector("nav[aria-label='Settings'] [role='group']")).toBeNull();
+  expect(nav()?.querySelector("[role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
 
   await click(button("Every bot", nav() ?? document));
@@ -222,8 +221,8 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   // The page's plus is the way to add one; this hub has none yet, and the list says so.
   expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
   expect(host.textContent).toContain("No machines yet. Add one with the plus.");
-  // The plus is the Machines group's, at its label's end, as every group on the page has one.
-  expect(host.querySelector("section[aria-label='Machines'] button[aria-label='Add machine']")).not.toBeNull();
+  // The plus is the page's, at its title's end: one way in, not one per group.
+  expect(host.querySelectorAll("button[aria-label='Add machine']")).toHaveLength(1);
   // Updates is a part of the page, after What runs where, which stands on a hub without any provider (every kind on
   // its machines); Providers stands back there, with nothing to list.
   expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();
@@ -240,7 +239,10 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   expect(host.querySelector("[data-screen='settings.hub.setup.step']")).not.toBeNull();
   expect(parts()).toEqual(["admin.claude"]);
   expect(setup().getAttribute("aria-current")).toBe("page");
-  await click(button("‹ Setup"));
+  // The way back is the page's own, in the sheet's top row: not the index's Setup.
+  const back = [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "Setup" && b.closest("nav") === null);
+  if (back === undefined) throw new Error("no way back");
+  await click(back);
   await click(button("GitHub", accounts() ?? document));
   expect(parts()).toEqual(["admin.github"]);
   // Hub accounts' old link opens Setup, at its accounts, whatever was open on it.
@@ -324,7 +326,8 @@ it("opens an old link to a hub-wide prompt, and resets its edit to the built-in"
   expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.value).toBe("The lead.start text, edited.");
   await click(button("Reset to the built-in"));
-  await click(button("Reset", document.querySelector("[role='dialog'], [role='alertdialog']") ?? document));
+  // The newest dialog: Settings is a dialog of its own under it.
+  await click(button("Reset", [...document.querySelectorAll("[role='dialog'], [role='alertdialog']")].at(-1) ?? document));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "lead.start", scope: "global", reset: true })]);
 });
 

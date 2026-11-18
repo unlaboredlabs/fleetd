@@ -16,7 +16,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { HubVault } from "./Vault";
 import { PaymentsSetting } from "./Payments";
-import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
+import { SettingsSheet } from "./SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -124,10 +124,7 @@ const render = async (hash: string, features: string[] = TEAM, page?: ReactNode,
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
           {page ?? (
-            <>
-              <SettingsSidebar onBack={() => undefined} />
-              <SettingsScreen />
-            </>
+            <SettingsSheet onClose={() => undefined} />
           )}
         </DataProvider>
       </UiProvider>,
@@ -322,8 +319,9 @@ it("shows the items set aside for the person under the list, each to move or del
   expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }]);
   // A variable goes to a project, picked first: Add stays off until one is.
   await click(button("Add to a bot…", aside));
-  const dialog = document.querySelector<HTMLElement>("[role='dialog']");
-  if (dialog === null) throw new Error("no dialog");
+  // The newest dialog: Settings is a dialog of its own under it.
+  const dialog = [...document.querySelectorAll<HTMLElement>("[role='dialog']")].at(-1);
+  if (dialog === undefined) throw new Error("no dialog");
   expect(button("Add", dialog).disabled).toBe(true);
   const picker = dialog.querySelector<HTMLElement>("[role='combobox']");
   if (picker === null) throw new Error("no bot picker");
@@ -335,7 +333,7 @@ it("shows the items set aside for the person under the list, each to move or del
   const shop = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Shop");
   if (shop === undefined) throw new Error("no Shop");
   await click(shop);
-  await click(button("Add", document.querySelector<HTMLElement>("[role='dialog']") ?? document.body));
+  await click(button("Add", [...document.querySelectorAll<HTMLElement>("[role='dialog']")].at(-1) ?? document.body));
   expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }, { itemId: oldEnv.itemId, machineId: "devbox", projectId: "shop" }]);
 });
 

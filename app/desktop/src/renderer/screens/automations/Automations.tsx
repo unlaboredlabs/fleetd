@@ -9,7 +9,7 @@ import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyT
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { AddButton, DangerButton, GroupNote, PageHead, scopeName, SettingsRow, SettingsSection, useProjects } from "../settings/parts";
+import { AddButton, GroupNote, PageHead, RowMenu, scopeName, SettingsRow, SettingsSection, useProjects } from "../settings/parts";
 import { replaceRoute, type SettingsRoute } from "../settings/route";
 import settings from "../settings/settings.module.css";
 import { describeCron } from "./cron";
@@ -196,7 +196,6 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
     >
       <div className={settings.actions}>
         <Button
-          variant="primary"
           disabled={busy}
           onClick={() =>
             act(async () => {
@@ -207,40 +206,38 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
         >
           Run now
         </Button>
-        <Button
-          disabled={busy}
-          onClick={() =>
-            act(async () => {
-              await hubCall("automation_pause", { automationId: a.automationId, paused: !a.paused });
-              return null;
-            })
-          }
-        >
-          {a.paused ? "Resume" : "Pause"}
-        </Button>
-        <Button disabled={busy} onClick={props.onEdit}>
-          Edit
-        </Button>
-        {a.webhook ? (
-          <Button
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                const out = await hubCall("automation_rotate", { automationId: a.automationId });
-                props.onUrl({ name: a.name, url: out.webhookUrl });
-                return null;
-              })
-            }
-          >
-            Rotate webhook URL
-          </Button>
-        ) : null}
         <Button variant="ghost" aria-expanded={history} onClick={() => setHistory(!history)}>
           {history ? "Hide runs" : "Runs"}
         </Button>
-        <DangerButton disabled={busy} onClick={() => setDeleting(true)}>
-          Delete
-        </DangerButton>
+        <RowMenu
+          label={a.name}
+          disabled={busy}
+          items={[
+            {
+              label: a.paused ? "Resume" : "Pause",
+              onSelect: () =>
+                act(async () => {
+                  await hubCall("automation_pause", { automationId: a.automationId, paused: !a.paused });
+                  return null;
+                }),
+            },
+            { label: "Edit", onSelect: props.onEdit },
+            ...(a.webhook
+              ? [
+                  {
+                    label: "Rotate webhook URL",
+                    onSelect: () =>
+                      act(async () => {
+                        const out = await hubCall("automation_rotate", { automationId: a.automationId });
+                        props.onUrl({ name: a.name, url: out.webhookUrl });
+                        return null;
+                      }),
+                  },
+                ]
+              : []),
+            { label: "Delete", onSelect: () => setDeleting(true), danger: true },
+          ]}
+        />
       </div>
       <div role="status">
         {echo ? (

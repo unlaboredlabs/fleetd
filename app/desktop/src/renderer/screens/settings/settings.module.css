@@ -14,23 +14,84 @@
 
 /* ---- Every page: one readable column of sections (layout A, groups.module.css) ---- */
 .scroll {
+  /* What is placed inside the page (its screen-reader words) scrolls and clips with it, never the sheet around it. */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Its bar's room on both sides, so the column is centred whether it scrolls or not. */
+  scrollbar-gutter: stable both-edges;
+}
+/* The bar: thin, flush to the edge, no arrows, its thumb seen only while the page scrolls or the pointer is on it. */
+.scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll::-webkit-scrollbar-button {
+  display: none;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent padding-box;
+}
+.scroll[data-scrolling]::-webkit-scrollbar-thumb,
+.scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border);
 }
 .column {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  max-width: 760px;
-  padding: var(--space-4) var(--space-6) 56px;
+  gap: var(--space-10);
+  max-width: 704px;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-10) 96px;
+}
+/* The page's head, in the sheet's header zone (SettingsSheet.tsx) or at the column's head: the way back (a built-in
+   prompt's) small over the title, the title the one large line on the page with the set's picture before it, a
+   control for the whole page at its line's end, and a set's pages as tabs under it. */
+.pageHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.pageLead {
+  display: flex;
+  align-items: center;
+  margin-bottom: calc(-1 * var(--space-2));
+}
+.pageTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: 32px;
+}
+.pageTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-title);
+  line-height: var(--leading-title);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.025em;
+}
+.pageIcon {
+  flex: none;
+  display: grid;
 }
 /* What was a page once, now a part of another (Frames.tsx): its sections keep the column's rhythm. */
 .part {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--space-10);
   min-width: 0;
   outline: none;
   scroll-margin-top: var(--space-4);
@@ -68,7 +129,7 @@
 .addRepo {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 /* A field for a few digits. */
@@ -129,13 +190,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-1) var(--space-1-5);
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
 }
 .chipButton {
   flex: none;
   max-width: 100%;
-  padding: 0 var(--space-1-5);
+  padding: 0 var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--selected);
@@ -257,12 +318,60 @@
 .search {
   padding: var(--space-2) 0;
 }
-/* A set's pages (a project's, Every project's) as tabs over the page, in line with its column. */
+/* Lighter than a form's field: the page's white with a magnifier at its start, its edge the lightest grey that still
+   holds 3:1 on the sidebar (--control-border), corners a row's. */
+.search > input {
+  height: 32px;
+  padding-inline: 32px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--raised) no-repeat 10px 50% / 14px 14px;
+  background-image: var(--search-glyph);
+}
+.search > input::placeholder {
+  color: var(--quiet);
+}
+:root,
+[data-theme="light"] {
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d636c' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] {
+  --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239a9fa8' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+}
+/* A set's pages (a bot's, Every bot's) as tabs under the page's title: words in a row, the open one in a rounded box
+   whose edge is the title's, no line under them. */
 .pageTabs {
   flex: none;
+  min-width: 0;
 }
-.pageTabList {
-  padding: 0 var(--space-6);
+.pageTabList.pageTabList {
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.pageTabList .pageTab {
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--quiet);
+  font-size: var(--text-md);
+  font-weight: var(--weight-regular);
+}
+.pageTabList .pageTab::after,
+.pageTabList .pageTab::before {
+  display: none;
+}
+.pageTabList .pageTab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.pageTabList .pageTab[data-state="active"] {
+  background: var(--settings-current);
+  box-shadow: var(--settings-chip);
+  color: var(--text);
+  font-weight: var(--weight-medium);
 }
 
 .sidebarNote {
@@ -274,7 +383,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 /* A secret's value, typed or pasted over any number of lines, shows as dots (Chromium's text-security). */
@@ -339,7 +448,7 @@
 .steps {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   margin: 0;
   padding-left: 1.4em;
 }
@@ -409,4 +518,53 @@
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: var(--space-2);
+}
+
+/* A line of its own under a row's title (Claude's Runs on): its quiet name, then its control. */
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+/* A connect form, opened in its row: its steps, its field, its buttons. */
+.connectForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--settings-index);
+}
+
+/* The way back to the page that opened this one (a step's Setup): small, quiet, its chevron before it. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  margin-left: -6px;
+  padding: 0 var(--space-2) 0 2px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-md);
+}
+.back > svg {
+  width: 16px;
+  height: 16px;
+}
+.back:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* A hub's address beside its state, in machine type. */
+.addressPart {
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }

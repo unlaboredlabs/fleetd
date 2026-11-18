@@ -1,6 +1,7 @@
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, CircleAlert, Ellipsis, Plus, TriangleAlert } from "lucide-react";
 import { createContext, useContext, useId, type ReactElement, type ReactNode } from "react";
-import { Button, cx, Dialog, Dot, FrameTitle, Text, Toggle, Tooltip, type ButtonProps, type TextTone } from "../../ui";
+import { createPortal } from "react-dom";
+import { Button, cx, Dialog, Dot, Menu, MenuContent, MenuItem, MenuTrigger, Text, Toggle, Tooltip, type ButtonProps, type TextTone } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
@@ -44,7 +45,10 @@ export function ConfirmDiscard(props: { open: boolean; what: string; why: string
  * The pages a set of tabs gathers (a project's, Every project's): the set's name and way back stand in the window's top
  * row for each page's own title, which its tab already says.
  */
-export const PageFrame = createContext<{ title: string; lead?: ReactNode } | null>(null);
+export const PageFrame = createContext<{ title: string; lead?: ReactNode; tabs?: ReactNode; icon?: ReactNode } | null>(null);
+
+/** The sheet's header zone (SettingsSheet.tsx), where a page's head goes, so the page scrolls under it. */
+export const HeadSlot = createContext<HTMLElement | null>(null);
 
 /**
  * Every Settings page's title, in the window's top row like every page's. A page has no line of description: its
@@ -55,14 +59,30 @@ export const PageFrame = createContext<{ title: string; lead?: ReactNode } | nul
  */
 export function PageHead(props: { title: string; lead?: ReactNode; children?: ReactNode; aside?: ReactNode }) {
   const frame = useContext(PageFrame);
+  const slot = useContext(HeadSlot);
+  const lead = frame?.lead ?? props.lead;
+  // The page's head: the way back to what opened it over its title (a built-in prompt's Instructions), the set's
+  // picture beside the title (a bot's), the control for the whole page at the title's line's end, and a set's pages as
+  // tabs under it. In the sheet it stands in the header zone, over the page that scrolls.
+  const head = (
+    <header className={s.pageHead}>
+      {lead === undefined || lead === null ? null : <div className={s.pageLead}>{lead}</div>}
+      <div className={s.pageTitleRow}>
+        <h1 className={s.pageTitle}>
+          {frame?.icon === undefined ? null : <span className={s.pageIcon}>{frame.icon}</span>}
+          {frame?.title ?? props.title}
+        </h1>
+        {props.aside}
+      </div>
+      {frame?.tabs}
+    </header>
+  );
   return (
     <>
-      <FrameTitle title={frame?.title ?? props.title} lead={frame?.lead ?? props.lead} />
-      {props.children || props.aside ? (
+      {slot === null ? head : createPortal(head, slot)}
+      {props.children ? (
         <div className={s.pageIntro}>
-          {/* With no words, the control still sits at the row's right end. */}
-          {props.children ? <Text tone="quiet">{props.children}</Text> : <span />}
-          {props.aside}
+          <Text tone="quiet">{props.children}</Text>
         </div>
       ) : null}
     </>
@@ -241,7 +261,9 @@ export function SettingsRow(props: {
               {props.title}
             </Text>
             <HintWords id={hintId} hint={props.hint} />
-            {props.line === undefined || props.line === null || props.line === false ? null : (
+            {props.line === undefined || props.line === null || props.line === false ? null : props.lineTone === "danger" || props.lineTone === "warning" ? (
+              <Notice tone={props.lineTone}>{props.line}</Notice>
+            ) : (
               <Text size="sm" tone={props.lineTone ?? "quiet"}>
                 {props.line}
               </Text>
@@ -421,6 +443,16 @@ export function DangerButton({ className, ...rest }: Omit<ButtonProps, "variant"
 
 /** Words a group holds that aren't a row, and only state: Loading…, an empty list, an error. Never an explanation. */
 export function GroupNote(props: { tone?: TextTone | undefined; children: ReactNode }) {
+  // Loading is the shape of what comes: two quiet rows that breathe, the words for assistive tech.
+  if (props.children === "Loading…") {
+    return (
+      <div className={g.loading} role="status">
+        <span className={s.srOnly}>Loading…</span>
+        <span className={g.ghostRow} aria-hidden />
+        <span className={g.ghostRow} aria-hidden />
+      </div>
+    );
+  }
   return (
     <Text className={g.note} tone={props.tone ?? "quiet"}>
       {props.children}
@@ -428,3 +460,53 @@ export function GroupNote(props: { tone?: TextTone | undefined; children: ReactN
   );
 }
 
+
+/**
+ * What a page or list holds when it has nothing yet: its glyph, one line saying so, and the one thing that makes the
+ * first (New bot), centred in its group.
+ */
+export function EmptyState(props: { icon: ReactNode; title: string; action?: ReactNode }) {
+  return (
+    <div className={g.empty}>
+      <span className={g.emptyIcon} aria-hidden>
+        {props.icon}
+      </span>
+      <Text strong>{props.title}</Text>
+      {props.action}
+    </div>
+  );
+}
+
+/**
+ * What went wrong or needs a look, as one compact notice: a tinted box, its mark, the words in the text's own colour
+ * (never a wall of red), and the one action that fixes it.
+ */
+export function Notice(props: { tone: "warning" | "danger"; children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className={g.notice} data-tone={props.tone} role={props.tone === "danger" ? "alert" : "status"}>
+      {props.tone === "danger" ? <CircleAlert className={g.noticeMark} aria-hidden /> : <TriangleAlert className={g.noticeMark} aria-hidden />}
+      <span className={g.noticeText}>{props.children}</span>
+      {props.action === undefined ? null : <span className={g.noticeAction}>{props.action}</span>}
+    </div>
+  );
+}
+
+/** A row's actions past its first, behind one quiet "…": Test, Replace, Disconnect. The last may be a danger. */
+export function RowMenu(props: { label: string; disabled?: boolean | undefined; items: ReadonlyArray<{ label: string; onSelect: () => void; danger?: boolean }> }) {
+  return (
+    <Menu>
+      <MenuTrigger asChild disabled={props.disabled}>
+        <Button size="sm" variant="ghost" iconOnly aria-label={`${props.label}: more`} title="More">
+          <Ellipsis size={16} aria-hidden />
+        </Button>
+      </MenuTrigger>
+      <MenuContent align="end">
+        {props.items.map((i) => (
+          <MenuItem key={i.label} danger={i.danger === true} onSelect={i.onSelect}>
+            {i.label}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+}

@@ -18,8 +18,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1-5);
-  padding: var(--space-1-5) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--hairline);
 }
 .chip {
@@ -104,7 +104,7 @@
   min-width: 0;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  background: var(--sidebar);
+  background: var(--inset);
 }
 .tileValue {
   display: flex;
@@ -136,7 +136,7 @@
 }
 .sparkNow {
   fill: var(--accent);
-  stroke: var(--sidebar);
+  stroke: var(--inset);
   stroke-width: 2;
 }
 .linkish {
@@ -176,7 +176,7 @@
 .key {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .swatch {
@@ -208,7 +208,7 @@
   overflow: visible;
 }
 .plot svg:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -314,7 +314,7 @@
 .cardRow {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .lineKey {
@@ -389,7 +389,7 @@
 .routeCell {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .routeCell > .swatch {

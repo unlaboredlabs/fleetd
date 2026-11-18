@@ -75,7 +75,7 @@ function NameField({ title, reveal, saved }: { title: string; reveal: string | u
       reveal={reveal}
       title={title}
       hint="What your teammates and the leads call you."
-      line={error === null ? null : <span role="alert">{error}</span>}
+      line={error}
       lineTone="danger"
       data={{ "data-your-name": "" }}
       control={

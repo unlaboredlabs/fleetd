@@ -26,31 +26,36 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 0 var(--space-2);
+  /* In line with the tabs over it: a row's hover box starts where the first tab's does. */
+  padding: 0 var(--space-3);
 }
 
-/* One agent: its glyph in a gutter and its title; under it what it is doing now. Its role and where its work is are
-   in its hover. Rows stand a step apart; one that has ended (done, failed, paused) steps back a shade so the live
-   ones lead. */
+/* One agent, as a line of a dense list, not a card: its glyph in a gutter, its title and its role on one line, what
+   it is doing now under them in the quiet size. Nothing at rest but the words; under the pointer a soft box. One that
+   has ended (done, failed, paused) steps back a shade so the live ones lead. */
 .row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   column-gap: 10px;
-  row-gap: 3px;
+  row-gap: 0;
   align-items: center;
   min-width: 0;
-  margin-bottom: 2px;
-  padding: var(--space-2) 10px;
-  border-radius: var(--radius-md);
+  margin-bottom: 0;
+  min-height: 44px;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
   color: inherit;
   text-decoration: none;
-  transition: background var(--dur-fast) var(--ease-out);
+  transition: background-color var(--dur-quick) var(--ease-snap);
 }
 .row:hover {
   background: var(--hover);
 }
+.row:active {
+  background: var(--selected);
+}
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* Waiting on you: no wash and no edge (DESIGN.md); the glyph's solid block and the words "needs you" in the warning
@@ -70,22 +75,39 @@
   min-width: 0;
 }
 .doing {
-  grid-column: 2;
+  grid-column: 2 / -1;
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
   min-width: 0;
+  color: var(--quiet);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
 }
+/* What it is doing now reads as a sentence: commands and paths in it take the words' face, not the mono. */
+.doing :is(code, samp, kbd, [data-text="code"]) {
+  padding: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: inherit;
+}
 
-/* The state glyph's cell (StateGlyph, ui/primitives): in the row's gutter. */
+/* The state glyph itself, a size up (4 px cells, 14 px across) in its state's colour, on the sheet's white: at work
+   green and stepping on the beat, waiting on you a solid amber block, failed a red cross, done and queued grey. It
+   spans both lines, centred on the title. */
 .state {
   grid-column: 1;
   grid-row: 1;
+  align-self: center;
   justify-self: center;
   display: inline-grid;
   place-items: center;
+  width: 16px;
+  height: 18px;
+}
+.state > [data-state] {
+  --cell: 4px;
+  --gap: 1px;
 }
 
 /* The role's word on a faint wash of its tint. */
@@ -94,7 +116,7 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 var(--space-1-5);
+  padding: 0 var(--space-2);
   border-radius: 999px;
   background: color-mix(in srgb, currentColor 10%, transparent);
   font-size: var(--text-xs);
@@ -153,7 +175,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .skeletonLines > span {
   height: var(--space-2);
@@ -172,7 +194,7 @@
 .workHead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
   flex: none;
@@ -207,7 +229,7 @@
   gap: var(--space-2);
   min-width: 0;
   margin-top: var(--space-1);
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--hover);
   font-size: var(--text-xs);
@@ -302,4 +324,22 @@
 .otherMark {
   width: 7px;
   height: 7px;
+}
+
+/* The agent's title at the body's size: the list is read by it. */
+.row .task > * {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-sm);
+}
+/* Its role at the title line's end, as a quiet word. */
+.role {
+  grid-row: 1;
+  grid-column: 3;
+  align-self: center;
+  color: var(--faint);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
+  line-height: var(--leading-sm);
+  white-space: nowrap;
 }

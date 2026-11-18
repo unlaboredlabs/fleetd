@@ -108,7 +108,8 @@ function EmailInviteForm() {
       <SettingsRow
         title={<label htmlFor={emailId}>Email</label>}
         label="Email"
-        line={line === null ? undefined : <span role={line.refused ? "alert" : "status"}>{line.text}</span>}
+        // A refusal's line is a danger notice, which is the alert itself; a sent invite says so as a status.
+        line={line === null ? undefined : line.refused ? line.text : <span role="status">{line.text}</span>}
         lineTone={line?.refused === true ? "danger" : "quiet"}
         control={
           <span className={a.emailInvite}>

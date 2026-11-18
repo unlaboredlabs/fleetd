@@ -8,6 +8,7 @@ import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { Automations } from "./Automations";
+import { chooseFromRow } from "../settings/rowMenu.testing";
 
 const NOW = Date.parse("2026-10-17T10:00:00.000Z");
 const AT = new Date(NOW).toISOString();
@@ -201,23 +202,27 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs with
   expect(after.querySelector("ul[aria-label='Runs']")?.textContent).toContain("Run now");
 
   // Pause and resume.
-  await click(button("Pause", after));
+  await chooseFromRow("Dependency check", "Pause");
+  await flush();
   expect(hub.calls.filter((x) => x.tool === "automation_pause").map((x) => x.input)).toEqual([{ automationId: "au_test001", paused: true }]);
   expect((card("Dependency check") as HTMLElement).textContent).toContain("Paused");
-  await click(button("Resume", card("Dependency check") as HTMLElement));
+  await chooseFromRow("Dependency check", "Resume");
+  await flush();
   expect(hub.automations[0]?.paused).toBe(false);
 
   // Edit sends only what changed.
-  await click(button("Edit", card("Dependency check") as HTMLElement));
+  await chooseFromRow("Dependency check", "Edit");
+  await flush();
   fill(editor().querySelector("input") as HTMLInputElement, "Weekday dependency check");
   await click(button("Save", editor()));
   expect(hub.calls.find((x) => x.tool === "automation_update")?.input).toEqual({ automationId: "au_test001", name: "Weekday dependency check" });
   expect(card("Weekday dependency check")).not.toBeNull();
 
   // Delete asks first.
-  await click(button("Delete", card("Weekday dependency check") as HTMLElement));
+  await chooseFromRow("Weekday dependency check", "Delete");
+  await flush();
   expect(document.body.textContent).toContain("Orders its runs opened stay.");
-  await click(button("Delete", document.querySelector("[role='dialog']") as HTMLElement));
+  await click(button("Delete", [...document.querySelectorAll<HTMLElement>("[role='dialog']")].at(-1) ?? document.body));
   expect(hub.automations).toEqual([]);
   expect(host.textContent).toContain("storefront has no automations yet.");
 });

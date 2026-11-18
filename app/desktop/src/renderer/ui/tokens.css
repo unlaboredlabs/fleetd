@@ -13,58 +13,80 @@
 :root,
 [data-theme="light"] {
   color-scheme: light;
+  /* The window is flush, three columns and no cards: the sidebar in a cool mineral tone, the chat on white, the panel
+     a breath off white; hairlines where they meet (layout.module.css). --frame is what shows before any of them
+     paints. --sheet is a floating sheet's own white (Settings, New bot). */
+  --frame: #f4f5f7;
   --bg: #ffffff;
-  /* One near-invisible tone step from --bg, so the sidebar needs no border. */
-  --sidebar: #f5f5f3;
+  --sheet: #ffffff;
+  --sheet-edge: #0f17201a;
+  --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #0f17200d, 0 12px 32px -16px #0f172024;
+  --sidebar: #f4f5f7;
   --raised: #ffffff;
-  --hover: #0000000a;
-  --selected: #00000012;
-  --hairline: #e6e6e2;
-  --border: #cfcfca;
+  --hover: #0f172009;
+  --selected: #0f172011;
+  --hairline: #eaecef;
+  /* One focus ring everywhere (base.css): a crisp blue, the links' family, so it reads on the neutral accent. */
+  --focus: #2b6be4;
+  /* What is open in the sidebar (a chat's row, a pin, a place): cut from the sheet's own white and lifted a breath, so
+     the row and the chat it opens read as one material. */
+  --row-on: #ffffff;
+  --row-on-lift: 0 0 0 1px #0f17200f, 0 1px 2px #0f172012, 0 2px 6px -2px #0f172010;
+  /* The panel recedes: a breath off the chat's white, past a hairline. */
+  --panel: #fbfbfc;
+  /* An inset band on a sheet: code, a diff's file head, a track under segments. A step off the sheet, the frame's tone
+     in light; in dark a step lighter than the sheet, never the frame's near-black. */
+  --inset: #f2f3f5;
+  /* A filled field or select (New bot; Settings' fields are the same fill): no outline, the sheet's white on focus. */
+  --fill: #eff1f3;
+  --fill-hover: #e9ebee;
+  --border: #d6dade;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
-  --bubble: #ececea;
+  --bubble: #edeff2;
   /* A Settings group: one soft fill under a section's rows, no lines between them (DESIGN.md). Controls on it are
      --raised. */
-  --group: #f4f4f2;
+  --group: #ffffff;
+  /* ...and its one hairline edge, which draws it on a page of the same white. */
+  --group-edge: #e4e7ea;
   /* Danger's one pill (Delete project, Remove machine): white words on it. */
-  --danger-fill: #c4302b;
+  --danger-fill: #c62f2a;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
-  --control-border: #7a7a75;
-  --text: #1c1c1a;
-  --quiet: #63635d;
-  --faint: #96968f;
-  --accent: #1d1d1f;
-  --accent-fill: #1d1d1f;
+  --control-border: #757b84;
+  --text: #0b0d10;
+  --quiet: #5c626b;
+  --faint: #9298a1;
+  --accent: #0b0d10;
+  --accent-fill: #0b0d10;
   --on-accent: #ffffff;
   /* The accent as a large fill under white: your chat bubbles. The same near-black here; a quiet grey in dark, where
      a near-white bubble would glare. */
-  --accent-deep: #1d1d1f;
+  --accent-deep: #0b0d10;
   --on-accent-deep: #ffffff;
-  --link: #2360c4;
+  --link: #1d5fd3;
   /* A switch that's on keeps the blue it had before the accent went neutral, under its white thumb. */
   --switch-on: #2360c4;
-  --success: #287142;
-  --warning: #8c5a00;
-  --danger: #b63531;
-  --diff-add: #e7f4ea;
-  --diff-del: #fbebea;
-  --shadow: #0000001f;
+  --success: #1a6c3c;
+  --warning: #8a5800;
+  --danger: #b8322d;
+  --diff-add: #e8f5ec;
+  --diff-del: #fcecec;
+  --shadow: #0e14201f;
   /* Glass (the chat's floating capsules, ui/layout Capsule): a grey tint a step under --bg rather than white, so a
      capsule reads as material over the page and not as a white pill on it; the blur and saturation take the colour of
      what scrolls under it. Its edge is a hairline drawn inside, a brighter line along its top where light catches the
      rim, and a soft shadow that lifts it off the page. */
-  --glass: #f1f1efb8;
-  --glass-edge: #0000001a;
-  --glass-rim: #ffffffd9;
-  --glass-lift: 0 1px 2px #0000000f, 0 6px 18px -6px #00000029;
-  --glass-pressed: #00000012;
+  --glass: #ffffffb8;
+  --glass-edge: #0f172012;
+  --glass-rim: #ffffff;
+  --glass-lift: 0 1px 2px #0f17200a, 0 12px 32px -12px #0f172029;
+  --glass-pressed: #0e142012;
   /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
      shows, its edge firmer too. Laid over the glass, so the material stays. */
-  --glass-hover: #0000000a;
-  --glass-open: #0000001f;
-  --glass-edge-open: #0000002e;
+  --glass-hover: #0e14200a;
+  --glass-open: #0e14201c;
+  --glass-edge-open: #0e14202e;
   /* One restrained tint per agent role (live/chips.rs role_tint), clear of the accent and the status colours. */
   --role-implementer: #126c64;
   --role-reviewer: #6244bd;
@@ -99,42 +121,54 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1c1c1b;
-  --sidebar: #232322;
-  --raised: #2a2a29;
-  --hover: #ffffff0d;
-  --selected: #ffffff17;
-  --hairline: #323230;
-  /* The sidebar's edge: in dark its tone sits too close to --bg's to part them on its own. */
-  --side-edge: #00000059;
-  --border: #4a4a46;
-  --bubble: #30302e;
-  --group: #262625;
-  --danger-fill: #b23a35;
-  --control-border: #8a8a85;
-  --text: #ededea;
-  --quiet: #ababa5;
-  --faint: #74746e;
-  --accent: #f5f5f7;
-  --accent-fill: #f5f5f7;
-  --on-accent: #1d1d1f;
-  --accent-deep: #4c4c49;
-  --on-accent-deep: #ffffff;
-  --link: #79abf5;
+  --frame: #0c0d0f;
+  --bg: #121316;
+  --sheet: #121316;
+  --sheet-edge: #ffffff12;
+  --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #00000066, 0 8px 24px -8px #00000099;
+  --sidebar: #0c0d0f;
+  --raised: #1a1b1f;
+  --hover: #ffffff0b;
+  --selected: #ffffff14;
+  --hairline: #24262b;
+  --focus: #5b91f5;
+  --row-on: #1d1e22;
+  --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
+  --panel: #101114;
+  --inset: #1a1b1f;
+  --fill: #1d1f23;
+  --fill-hover: #23252a;
+  --border: #33363d;
+  --bubble: #1d1e22;
+  --group: #0f1013;
+  --group-edge: #212328;
+  --danger-fill: #b5332e;
+  --control-border: #7f858e;
+  --text: #ecedf0;
+  --quiet: #9a9fa8;
+  --faint: #5f646c;
+  --accent: #f3f4f6;
+  --accent-fill: #f3f4f6;
+  --on-accent: #0c0e11;
+  /* Yours, in dark: the light ink, so sent and received part at a glance in both themes (black on white, white on
+     black), a step under white so it doesn't glare. */
+  --accent-deep: #e3e5e8;
+  --on-accent-deep: #0b0d10;
+  --link: #74a6ff;
   --switch-on: #2e69cc;
-  --success: #6cc28a;
-  --warning: #e3aa4a;
-  --danger: #f38c88;
-  --diff-add: #1f3326;
-  --diff-del: #3b2422;
-  --shadow: #00000066;
-  --glass: #2f2f2ea6;
-  --glass-edge: #ffffff17;
+  --success: #5fc487;
+  --warning: #e2a945;
+  --danger: #f2847f;
+  --diff-add: #132a1c;
+  --diff-del: #33191a;
+  --shadow: #00000080;
+  --glass: #1a1b1fb8;
+  --glass-edge: #ffffff14;
   --glass-rim: #ffffff12;
   --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
   --glass-pressed: #ffffff1a;
   --glass-hover: #ffffff0f;
-  --glass-open: #ffffff24;
+  --glass-open: #ffffff21;
   --glass-edge-open: #ffffff2e;
   --role-implementer: #6ccbc0;
   --role-reviewer: #bba8f5;
@@ -158,22 +192,34 @@
 
 :root {
   /* Two voices with strict roles: the human voice and the machine voice. */
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Lilex", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Type scale (px). Most text is md; titles are md semibold (hierarchy from weight, not size). */
-  --text-xs: 11px; /* metadata: counts, timestamps, field labels */
+  --text-xs: 12px; /* metadata: counts, timestamps, field labels */
   --text-sm: 12px; /* mono: commands, logs, diffs, ids */
-  --text-md: 13px; /* body, controls, titles */
+  --text-md: 13px; /* controls, lists, titles */
+  --text-body: 14px; /* reading text: the chat's words, long prose */
+  --leading-body: 22px;
   --text-lg: 18px; /* an order's title when it has the board to itself */
   --text-xl: 20px; /* the one headline on connect and empty states */
   --text-display: 28px; /* the Status view's progress number */
+  --text-title: 24px; /* a Settings page's own title, in its column */
+  --leading-title: 32px;
   --leading-xs: 16px;
   --leading-sm: 18px;
   --leading-md: 20px;
   --leading-lg: 24px;
   --leading-xl: 28px;
   --leading-display: 34px;
+  /* A section's label (Settings' sections, the sidebars' groups): the machine voice, small capitals spaced out, quiet.
+     The one place the mono speaks for the app rather than for a machine: it marks structure, never content. */
+  --label-font: var(--font-sans);
+  --label-size: 12px;
+  /* Times and counts beside words: a step under the words, in their own voice with tabular figures. */
+  --meta-font: var(--font-sans);
+  --meta-size: 12px;
+  --label-tracking: 0;
   /* Two weights, and a medium between them for a name that stands alone under its picture (the sidebar's pins). */
   --weight-regular: 400;
   --weight-medium: 500;
@@ -181,21 +227,23 @@
 
   /* The 4 px grid; use these steps only. */
   --space-1: 4px;
-  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
 
   /* Fixed heights keep rows and controls aligned across screens. */
-  --row: 28px;
-  --control: 24px;
-  --field: 28px;
+  --row: 32px;
+  --control: 28px;
+  --field: 32px;
   --bar: 40px;
   /* The window's top row, which floats over the screen (no bar of its own); the main process centres the macOS traffic
      lights in it (shared/frame.ts TOP_BAR). */
-  --top-bar-height: 52px;
+  --top-bar-height: 48px;
   /* How far a glass capsule (the chat's pill) sits in from the top row's top and bottom edges. */
   --glass-inset: 8px;
   /* The glass's blur, the same in both themes. */
@@ -204,24 +252,34 @@
      with a band above it as tall as a capsule and its gap, where the live strip floats (the conversation keeps clear
      of both, screens/chat ChatList). Every capsule in the band (the strip, what needs you, Latest) is this tall, its
      ends round: one row. */
-  --island-gap: 18px;
+  --island-gap: 16px;
   --island-band-h: 36px;
   --island-capsule-h: 28px;
-  --sidebar-w: 264px;
-  --measure: 880px;
+  --sidebar-w: 280px;
+  --measure: 720px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;
   /* Room for the macOS traffic lights in the hiddenInset title bar; 0 elsewhere (<html data-platform>). */
   --traffic-lights-inset: 0px;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  /* A Settings group's corners. */
-  --radius-group: 12px;
+  /* Corners: four steps by what a thing is, never by taste per screen, and nothing rounder than a dialog. A thing set
+     inside another is never rounder than it (inner = outer − the gap between). Pills only for what is a pill by
+     nature: a capsule, a pin, an avatar, a dot, a count. */
+  --radius-xs: 4px; /* marks inside text: a badge, a count chip, kbd, inline code, a checkbox */
+  --radius-sm: 6px; /* what you press or type in: buttons, fields, a row's hover and selected box, tabs, menu items */
+  --radius-md: 8px; /* what holds things: cards and blocks in the chat, a Settings group, menus, popovers, the composer */
+  --radius-lg: 10px; /* what floats over the app: dialogs, the Settings sheet, the palette */
+  --radius-pill: 999px;
+  /* A chat bubble, the one exception to the scale (the human's call): main's soft 19 px, so a one-line bubble is near
+     a capsule and reads as speech, a block as a thing. */
+  --radius-bubble: 19px;
+  /* Old names, kept to their new step. */
+  --radius-group: var(--radius-md);
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
-  --float-shadow: 0 8px 28px var(--shadow), 0 0 0 1px var(--hairline);
+  /* What is selected (a sidebar row, a tab, a segment): a raised chip, its hairline edge and a breath of lift. */
+  --chip: 0 0 0 1px var(--hairline), 0 1px 2px #0f17200d;
+  --float-shadow: 0 0 0 1px var(--hairline), 0 2px 4px -1px var(--shadow), 0 16px 36px -12px var(--shadow);
   /* What Show went to in a chat (what the lead waits on): a soft ring in the accent, fading out over --dur-shown. */
   --shown-ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --shown-ring-width: 4px;
@@ -234,7 +292,7 @@
   /* The motion language: ui/DESIGN.md. Short and crisp: things arrive fast and stop dead, loops step rather than
      glide, and only what is live moves. */
   --ease-snap: cubic-bezier(0.2, 0, 0, 1);
-  --dur-quick: 140ms;
+  --dur-quick: 120ms;
   /* Arriving: a chat bubble rides up with the rows above it on a spring (screens/chat/glide.ts) and fades in over
      its first 100 ms, never scaled; a reply's bubbles a beat apart. A list row rises a few pixels. */
   --dur-enter: 100ms;
@@ -286,4 +344,35 @@
     --dur-panel-in: 0ms;
     --dur-panel-out: 0ms;
   }
+}
+
+/* Settings (screens/settings, the sheet over the app): its own few, on top of the shared ones. */
+:root,
+[data-theme="light"] {
+  --settings-scrim: #0b0d1026;
+  --settings-lift: 0 0 0 1px #0f17201a, 0 2px 4px #0f17200a, 0 24px 64px -12px #0f172040;
+  --settings-index: var(--panel);
+  --settings-current: var(--row-on);
+  --settings-field: #0f17200a;
+  --settings-fill: #eff1f3;
+  --settings-fill-hover: #e9ebee;
+  /* A hairline rim, and a bottom edge of 3.2:1 on the white card. */
+  --settings-field-edge: inset 0 0 0 1px #0f172012, inset 0 -1px 0 #8a9099;
+  --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #2b6be42e;
+  --settings-chip: var(--row-on-lift);
+  --settings-control-edge: var(--control-border);
+}
+[data-theme="dark"] {
+  --settings-scrim: #0000008c;
+  --settings-lift: 0 0 0 1px #ffffff17, 0 2px 4px #00000066, 0 24px 64px -12px #000000b3;
+  --settings-index: var(--panel);
+  --settings-current: var(--row-on);
+  --settings-field: #ffffff0d;
+  --settings-fill: #1d1f23;
+  --settings-fill-hover: #23252a;
+  /* A hairline rim, and a bottom edge of 3.9:1 on the dark card. */
+  --settings-field-edge: inset 0 0 0 1px #ffffff0f, inset 0 -1px 0 #6b717a;
+  --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #5b91f53d;
+  --settings-chip: var(--row-on-lift);
+  --settings-control-edge: var(--control-border);
 }

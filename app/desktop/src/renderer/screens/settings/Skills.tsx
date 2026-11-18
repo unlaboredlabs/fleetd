@@ -10,7 +10,7 @@ import { Button, Dialog, Field, IdChip, Input, Text, Textarea } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { HUB, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { AddButton, DangerButton, GroupNote, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { AddButton, DangerButton, GroupNote, Notice, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useAdministers, useHubRole } from "../admin/role";
 import { metaLine } from "../skills/skillsModel";
 import { panelRoute, toHash } from "../shell/routes";
@@ -142,21 +142,10 @@ function SkillList(props: { scope: Scope; where: string; dialog: Dialogs; onDial
               label={row.name}
               meta={ref ? ORIGIN_LABEL[row.origin] : undefined}
               open={{ onClick: () => setSelected(rowKey(row) === selected ? null : rowKey(row)) }}
+              hint={[row.description || "No description.", installLine(row), ref ? metaLine(row, now, me) : null].filter((x) => x !== null && x !== "").join(" · ")}
             >
-              <Text size="sm" tone="quiet" className={k.description}>
-                {row.description || "No description."}
-              </Text>
-              {shadowLine(row) ?? installLine(row) ? (
-                <Text size="sm" tone={row.shadowedBy ? "warning" : "faint"}>
-                  {shadowLine(row) ?? installLine(row)}
-                </Text>
-              ) : null}
-              {/* A project's: off or not, who changed it last and when, and its last use (the panel shows one skill). */}
-              {ref ? (
-                <Text size="sm" tone="faint">
-                  {metaLine(row, now, me)}
-                </Text>
-              ) : null}
+              {/* At rest a skill is its name and where it comes from; what it does and its use are its hover. A clash stays. */}
+              {shadowLine(row) === null ? null : <Notice tone="warning">{shadowLine(row)}</Notice>}
             </SettingsListRow>
           ))}
         </SettingsList>

@@ -1,6 +1,7 @@
 /*
- * Blocks in the lead's bubbles: each a card on the raised surface with a hairline edge, the bubble's corners, and
- * its own quiet header. Words keep the text colours; only marks carry the series colours.
+ * Blocks in the lead's bubbles: each a card on the raised surface with a hairline edge, a card's corners (a step
+ * squarer than a bubble's, so a block reads as a thing and a bubble as speech), and its own quiet header. Words keep
+ * the text colours; only marks carry the series colours.
  */
 .card {
   display: flex;
@@ -11,7 +12,7 @@
   min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--raised);
   color: var(--text);
 }
@@ -26,6 +27,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 /* Charts. */
@@ -37,7 +39,7 @@
 .key {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .swatch {
   flex: none;
@@ -81,7 +83,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 120px;
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-md);
   background: var(--raised);
   box-shadow: var(--float-shadow);
@@ -124,18 +126,17 @@
   white-space: nowrap;
 }
 
-/* Diffs: the PR view's lines, in the card's edge to edge. */
+/* Diffs: the PR view's lines in a card of their own inside the card, the inner radius a step under the outer one
+   (12, 8), the card's padding all round, so no square band meets a round edge. */
 .files {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
   overflow: hidden;
-  border-radius: 0 0 13px 13px;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
-.files:first-child {
-  margin-top: calc(-1 * var(--space-3));
-  border-radius: 13px;
+.files > .file + .file {
+  border-top: 1px solid var(--hairline);
 }
 .file {
   min-width: 0;
@@ -149,8 +150,21 @@
 .prTop {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
+}
+/* The kind's mark on a small tile, the card's one ornament. */
+.tile {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+}
+.tile > .icon {
+  color: var(--text);
 }
 .prTitle {
   display: flex;
@@ -168,11 +182,29 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1-5) var(--space-3);
+  gap: var(--space-2) var(--space-3);
+}
+.factLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-variant-numeric: tabular-nums;
+}
+.fact + .fact::before {
+  content: "·";
+  margin: 0 6px;
+  color: var(--faint);
+}
+.fact[data-failed] {
+  color: var(--danger);
 }
 .stat {
   display: inline-flex;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   font-size: var(--text-xs);
 }
 .add {
@@ -221,7 +253,7 @@
   display: block;
   max-width: 100%;
   max-height: 320px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   object-fit: contain;
 }
 /* An image you can open large: the image itself is the button. */
@@ -230,7 +262,7 @@
   max-width: 100%;
   padding: 0;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: none;
   cursor: zoom-in;
 }
@@ -239,12 +271,13 @@
   place-items: center;
   width: 240px;
   height: 140px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bubble);
 }
 
-/* A file: its kind's glyph on a tinted tile, its name over its kind and size, Open and Save at the end. */
-.file {
+/* A file: its kind's glyph on a tinted tile, its name over its kind and size, Open and Save at the end. Its own name,
+   not the diff's .file, which it once shared: every diff in a card was cut to a file card's 340 px. */
+.fileCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -257,7 +290,7 @@
   min-width: 0;
   padding: var(--space-2);
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--raised);
 }
 .fileGlyph {
@@ -266,7 +299,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--glyph-tint) 14%, transparent);
   color: var(--glyph-tint);
   --glyph-tint: var(--quiet);

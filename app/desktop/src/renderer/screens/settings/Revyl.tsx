@@ -100,7 +100,6 @@ export function RouteRow({ kind, label, state }: { kind: RevylKind; label: strin
   const line = problem !== null ? <span role="alert">{problem}</span> : admin ? null : off;
   return (
     <SettingsRow
-      mark="none"
       title={label}
       line={line}
       lineTone={problem === null ? "quiet" : "danger"}

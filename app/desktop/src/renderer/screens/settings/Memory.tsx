@@ -5,7 +5,7 @@
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set, a human key's write.
-import { Pencil, Trash2 } from "lucide-react";
+import { MessageSquareText, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
@@ -166,9 +166,22 @@ function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; 
 
 const projectTarget = (projectRef: ProjectRef, f: MemoryFile): Target => ({ scope: "project", projectRef, ...(f.topic ? { topic: f.topic } : {}) });
 
-/** A file's length against its cap, as a bar and in words. */
-function CapMeter({ state, label, changed, inGroup }: { state: CapState; label: string; changed?: string | undefined; inGroup?: boolean }) {
+/** A file's length against its cap, as a bar and in words; `compact`, a small bar at its section's line, the words on hover. */
+function CapMeter({ state, label, changed, inGroup, compact }: { state: CapState; label: string; changed?: string | undefined; inGroup?: boolean; compact?: boolean }) {
   const fill = state.cap > 0 ? Math.min(100, (state.chars / state.cap) * 100) : 0;
+  if (compact === true) {
+    // At the head of its file's group: a short bar, then its words; when it changed is the hover.
+    return (
+      <span className={m.meterCompact} data-cap-meter="" title={changed ? `Changed ${when(changed)}` : undefined}>
+        <span className={m.track} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={state.cap} aria-valuenow={state.chars} aria-valuetext={state.line}>
+          <span className={m.fill} data-over={state.over || undefined} style={{ width: `${String(Math.max(fill, 2))}%` }} />
+        </span>
+        <Text size="xs" tone={state.over ? "danger" : "quiet"}>
+          {state.line}
+        </Text>
+      </span>
+    );
+  }
   return (
     <div className={inGroup === true ? `${m.meter} ${m.inGroup}` : m.meter}>
       <div className={m.track} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={state.cap} aria-valuenow={state.chars} aria-valuetext={state.line}>
@@ -256,6 +269,7 @@ function MemoryGroup(props: {
     <SettingsSection
       title={props.bare === true ? undefined : props.label}
       part={props.part}
+      intro={file && !asText ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} compact /> : undefined}
       hint={
         props.bare === true ? undefined : (
           <>
@@ -285,7 +299,6 @@ function MemoryGroup(props: {
         />
       ) : (
         <>
-          {file ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} inGroup /> : null}
           {file === undefined ? (
             <GroupNote>Loading…</GroupNote>
           ) : lines.length === 0 ? (
@@ -379,6 +392,7 @@ function EntryCard(props: {
             <div className={m.cardBody}>
               <Text className={m.entryText}>{line.text}</Text>
               <div className={m.cardActions}>
+                {line.note ? <Source note={line.note} /> : null}
                 <Tooltip content="Edit">
                   <Button variant="quiet" size="sm" iconOnly aria-label={`Edit “${line.text}”`} disabled={busy !== null} onClick={() => setDraft(line.text)}>
                     <Pencil aria-hidden />
@@ -392,7 +406,6 @@ function EntryCard(props: {
               </div>
             </div>
           </ContextMenu>
-          {line.note ? <Source note={line.note} /> : null}
         </>
       ) : (
         <div className={s.stack}>
@@ -454,13 +467,13 @@ function EntryCard(props: {
 /** Where an entry came from: the lead's "Remembered: …" line in a project's chat, and when. */
 function Source({ note }: { note: MemoryNote }) {
   const projects = useProjects();
+  const words = `Remembered by the lead · ${when(note.at)} in ${scopeName({ kind: "project", ref: note.projectRef }, projects)}`;
   return (
-    <Text size="xs" tone="quiet">
-      Remembered by the lead ·{" "}
-      <a href={noteHref(note)}>
-        {when(note.at)} in {scopeName({ kind: "project", ref: note.projectRef }, projects)}
+    <Tooltip content={words}>
+      <a className={m.source} href={noteHref(note)} aria-label={words}>
+        <MessageSquareText aria-hidden />
       </a>
-    </Text>
+    </Tooltip>
   );
 }
 

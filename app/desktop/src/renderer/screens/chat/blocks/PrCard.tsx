@@ -4,7 +4,7 @@
 import { GitPullRequest } from "lucide-react";
 import type { PrBlock } from "../../../../shared/contracts";
 import { useToolQuery } from "../../../src/data/react";
-import { Button, StatusChip, Text, Truncate } from "../../../ui";
+import { Button, Text, Truncate } from "../../../ui";
 import { openExternal } from "../../prs/PrDetail";
 import { checksWord, reviewsWord, stat, stateLine } from "../../prs/words";
 import { navigate } from "../../shell/navigation";
@@ -25,7 +25,9 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
   return (
     <div className={b.card} data-block="pr">
       <div className={b.prTop}>
-        <GitPullRequest className={b.icon} aria-hidden />
+        <span className={b.tile} aria-hidden>
+          <GitPullRequest className={b.icon} />
+        </span>
         <span className={b.prTitle}>
           <Truncate size="md" strong>
             {title}
@@ -34,7 +36,6 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
             {`${pr.repo} #${String(pr.number)}`}
           </Text>
         </span>
-        {state !== undefined ? <StatusChip tone={state.tone}>{state.word}</StatusChip> : null}
       </div>
       <div className={b.facts}>
         {got.isError && row === undefined ? (
@@ -46,26 +47,31 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
             Reading the PR…
           </Text>
         ) : (
-          <>
-            {checks !== undefined ? <StatusChip tone={checks.tone}>{checks.text}</StatusChip> : null}
-            {review !== undefined ? <StatusChip tone={review.tone}>{review.text}</StatusChip> : null}
+          // One quiet line: where it is, its checks, its review, its size, a dot between each. Only a failure takes a colour.
+          <span className={b.factLine}>
+            {[state === undefined ? null : { text: state.word, tone: state.tone }, checks ?? null, review ?? null]
+              .filter((f) => f !== null)
+              .map((f, i) => (
+                <span key={i} className={b.fact} data-failed={f.tone === "failed" || undefined}>
+                  {f.text}
+                </span>
+              ))}
             {size !== undefined ? (
-              <span className={b.stat}>
-                <span className={b.add}>+{stat(size.additions ?? 0)}</span>
-                <span className={b.del}>−{stat(size.deletions ?? 0)}</span>
+              <span className={b.fact}>
+                <span className={b.add}>+{stat(size.additions ?? 0)}</span> <span className={b.del}>−{stat(size.deletions ?? 0)}</span>
               </span>
             ) : null}
-          </>
+          </span>
         )}
       </div>
       <div className={b.actions}>
         {project !== undefined ? (
-          <Button variant="secondary" onClick={() => navigate(panelRoute(project, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
+          <Button variant="primary" onClick={() => navigate(panelRoute(project, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
             {changes ? "Open changes" : "Open"}
           </Button>
         ) : null}
         {row !== undefined ? (
-          <Button variant="ghost" onClick={() => openExternal(row.url)}>
+          <Button variant="quiet" onClick={() => openExternal(row.url)}>
             GitHub
           </Button>
         ) : null}

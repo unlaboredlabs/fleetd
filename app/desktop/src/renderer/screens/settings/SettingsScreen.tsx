@@ -6,8 +6,7 @@
 // (Frames.tsx), and its built-in prompts from the foot of its Instructions. Hub, for the hub's owners and admins only
 // (admin/HubPages.tsx): what reaches every teammate's work. The route picks the page (#/settings/<tab>,
 // #/settings/hub/<page>), and a tab that was a page once opens the page that holds it now, at its part (route.ts,
-// which also has the links into one prompt). The shell shows SettingsSidebar in the sidebar's place while Settings is
-// open.
+// which also has the links into one prompt). It shows in the sheet over the app (SettingsSheet.tsx), beside its index.
 import { useEffect } from "react";
 import { Automations } from "../automations";
 import { HubPage } from "../admin/HubPages";
@@ -23,7 +22,7 @@ import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
 import { OnePasswordSettings } from "./OnePassword";
 import { Part, ProjectFrame } from "./Frames";
-import { PageHead, useProjects } from "./parts";
+import { PageHead, SettingsSection, useProjects } from "./parts";
 import { ProjectList } from "./ProjectList";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
@@ -31,8 +30,6 @@ import { ProjectVault, TeamVault } from "./Vault";
 import { revealNext } from "./reveal";
 import { isHubTab, isProjectTab, pageOf, projectFor, useSettingsRoute } from "./route";
 import s from "./settings.module.css";
-
-export { SettingsSidebar } from "./SettingsSidebar";
 
 export function SettingsScreen() {
   const route = useSettingsRoute();
@@ -97,10 +94,12 @@ function YourAccounts() {
   return (
     <div className={s.scroll} data-screen="settings.accounts">
       <div className={s.column}>
-        <PageHead title="Your accounts" />
-        <ClaudeSettings />
-        <GithubSettings />
-        <OnePasswordSettings />
+        <PageHead title="Accounts" />
+        <SettingsSection>
+          <ClaudeSettings />
+          <GithubSettings />
+          <OnePasswordSettings />
+        </SettingsSection>
       </div>
     </div>
   );
@@ -111,7 +110,7 @@ function YourMemoryPage() {
   return (
     <div className={s.scroll} data-screen="settings.your-memory">
       <div className={s.column}>
-        <PageHead title="Your memory" />
+        <PageHead title="Memory" />
         <YourMemory />
         <ImportMemory />
       </div>

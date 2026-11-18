@@ -3,9 +3,10 @@
 // back to it in the window's top row, and Hub › Every project's three, named as a project's are (Agents, Instructions,
 // Vault). And Part, for what was a page once and is now a part of another.
 import type { ReactNode } from "react";
-import { Button, Tab, TabList, Tabs } from "../../ui";
+import { Tab, TabList, Tabs } from "../../ui";
 import { useData, useHub } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { PageFrame, scopeName, useProjects } from "./parts";
 import { parseScope } from "./editor";
 import { EVERY_PROJECT, formatRoute, pageOf, PROJECT_TABS, type Tab as SettingsTab } from "./route";
@@ -19,7 +20,7 @@ function PageTabs({ label, tabs, current, onOpen }: { label: string; tabs: Reado
     <Tabs value={current} activationMode="manual" onValueChange={(v) => onOpen(tabs.find((t) => t === v) ?? current)} className={s.pageTabs}>
       <TabList aria-label={label} className={s.pageTabList}>
         {tabs.map((t) => (
-          <Tab key={t} value={t}>
+          <Tab key={t} value={t} className={s.pageTab}>
             {PAGE_LABEL[t]}
           </Tab>
         ))}
@@ -34,14 +35,16 @@ export function ProjectFrame({ project, tab, children }: { project: string; tab:
   // Vault, only on a hub that serves it.
   const vault = useData((st) => vaultServed(st.features));
   const tabs = vault ? PROJECT_TABS : PROJECT_TABS.filter((t) => t !== "project-vault");
-  const lead = (
-    <Button variant="ghost" size="sm" onClick={() => navigate({ id: "settings", tab: "projects" })}>
-      ‹ Bots
-    </Button>
-  );
+  const [machineId = "", projectId = ""] = project.split("/");
+  const summary = projects?.find((p) => p.machineId === machineId && p.projectId === projectId);
   return (
-    <PageFrame.Provider value={{ title: scopeName(parseScope(project), projects), lead }}>
-      <PageTabs label="Bot" tabs={tabs} current={tab} onOpen={(t) => (window.location.hash = formatRoute({ tab: t, for: project }))} />
+    <PageFrame.Provider
+      value={{
+        title: scopeName(parseScope(project), projects),
+        ...(summary === undefined ? {} : { icon: <ProjectAvatar project={summary} size={28} /> }),
+        tabs: <PageTabs label="Bot" tabs={tabs} current={tab} onOpen={(t) => (window.location.hash = formatRoute({ tab: t, for: project }))} />,
+      }}
+    >
       {children}
     </PageFrame.Provider>
   );
@@ -54,8 +57,7 @@ export function EveryProjectFrame({ tab, children }: { tab: SettingsTab; childre
   const vault = useData((st) => vaultServed(st.features));
   const tabs = vault ? EVERY_PROJECT : EVERY_PROJECT.filter((t) => t !== "hub.vault");
   return (
-    <PageFrame.Provider value={{ title: "Every bot" }}>
-      <PageTabs label="Every bot" tabs={tabs} current={pageOf(tab)} onOpen={(t) => navigate({ id: "settings", tab: t, at: id })} />
+    <PageFrame.Provider value={{ title: "Every bot", tabs: <PageTabs label="Every bot" tabs={tabs} current={pageOf(tab)} onOpen={(t) => navigate({ id: "settings", tab: t, at: id })} /> }}>
       {children}
     </PageFrame.Provider>
   );

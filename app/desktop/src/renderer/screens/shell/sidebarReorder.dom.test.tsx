@@ -15,6 +15,7 @@ import { DWELL_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { pinPlace, Sidebar, SPRING } from "./Sidebar";
+import { resetSidebarView } from "./sidebarLayout";
 
 const SETTLE_MS = SPRING.ms;
 
@@ -78,10 +79,6 @@ const mount = (rows: SidebarProject[] = ROWS) => {
             projects={rows.map((p) => ({ ...p, hub: "hub" }))}
             screen={{ id: "home", at: "hub" }}
             jumpHints={false}
-            collapsed={new Set()}
-            onToggleHub={() => undefined}
-            folded={new Set()}
-            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />
@@ -107,6 +104,9 @@ let drawn: Map<HTMLElement, number>;
 let cutThen: Map<HTMLElement, readonly [string, string]>;
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   went = [];
   calls = [];
   layer = createDataLayer({
@@ -562,13 +562,13 @@ describe("the keyboard", () => {
     expect(announced("Bots")).toBe("docs moved to 3 of 3");
   });
 
-  it("moves it a row with Alt+↑ and Alt+↓", async () => {
+  it("moves it a row (three across for five pins) with Alt+↑ and Alt+↓", async () => {
     mount([...ROWS, row("ada"), row("box")]);
     act(() => button("api").focus());
     key("ArrowDown");
     await settle();
-    expect(titles("Bots")).toEqual(["docs", "web", "api", "ada", "box"]);
-    expect(announced("Bots")).toBe("api moved to 3 of 5");
+    expect(titles("Bots")).toEqual(["docs", "web", "ada", "api", "box"]);
+    expect(announced("Bots")).toBe("api moved to 4 of 5");
     key("ArrowUp");
     await settle();
     expect(titles("Bots")).toEqual(["api", "docs", "web", "ada", "box"]);
@@ -779,26 +779,6 @@ describe("pinning and unpinning by drag", () => {
     mount([row("docs")]);
     await carry("docs", 400);
     expect(saved()).toEqual([[]]);
-  });
-
-  it("keeps a drop out of another hub's group: let go over one, above or below, it goes back", async () => {
-    mount([row("api"), unpinned("web"), unpinned("misc")]);
-    // Another hub's group either side of this one's.
-    const own = section("Bots");
-    const other = () => Object.assign(document.createElement("section"), { ariaLabel: "Other" });
-    own.before(other());
-    own.after(other());
-    await carry("misc", -40, { hold: true });
-    expect(grid()?.hasAttribute("data-pinning")).toBe(false);
-    pointer(window, "pointerup", -40);
-    await settle(SETTLE_MS + 20);
-    await carry("api", GAP + 3 * ROW + 40);
-    expect(saved()).toEqual([]);
-    expect(titles("Bots")).toEqual(["api", "web", "misc"]);
-    // Inside it, the same drags pin and unpin: api leaves the hub's list, where misc is by now.
-    await carry("misc", 10);
-    await carry("api", GAP + 2 * ROW);
-    expect(saved()).toEqual([["misc", "api"], ["misc"]]);
   });
 
   it("pins no tenth chat: it goes back, and says why", async () => {

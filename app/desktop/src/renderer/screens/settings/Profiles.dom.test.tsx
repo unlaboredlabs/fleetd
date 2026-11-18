@@ -161,14 +161,26 @@ const toggle = (role: "checkbox" | "switch", label: string) => {
   if (el === undefined) throw new Error(`no ${role} ${label}`);
   return el;
 };
-const rows = () => [...host.querySelectorAll("[data-profile]")].map((r) => r.textContent);
+/** Each profile row's words as shown: its hint (a tooltip, words only for assistive tech) left out. */
+const rows = () =>
+  [...host.querySelectorAll("[data-profile]")].map((r) => {
+    const shown = r.cloneNode(true) as HTMLElement;
+    shown.querySelectorAll("[data-hint]").forEach((h) => h.remove());
+    return shown.textContent;
+  });
+/** A profile's editor opens from its name. */
+const edit = (name: string) => {
+  const b = host.querySelector<HTMLButtonElement>(`[data-profile='${name}'] button`);
+  if (b === null) throw new Error(`no row ${name}`);
+  return b;
+};
 
 it("lists the hub's profiles, the default marked, and creates one in fast mode", async () => {
   await render("editor");
   expect(rows()).toEqual([
-    expect.stringMatching(/^highdefault · leadClaude Opus 5.5 · high effortThe default\.Edit$/u),
-    expect.stringMatching(/^mediumClaude Opus 5.5 · medium effortOnly for mechanical work\.Edit$/u),
-    expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effortEdit$/u),
+    expect.stringMatching(/^highdefault · leadClaude Opus 5.5 · high effort$/u),
+    expect.stringMatching(/^mediumClaude Opus 5.5 · medium effort$/u),
+    expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effort$/u),
   ]);
   expect(host.textContent).toContain("Models from fleetd's own list");
   await click(button("New profile"));
@@ -195,19 +207,19 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
 
 it("renames a profile, sends only what changed, and deletes it after a confirm", async () => {
   await render("editor");
-  await click(button("Edit medium"));
+  await click(edit("medium"));
   expect(button("Save").disabled).toBe(true);
   type(field("Name"), "chores");
   await click(toggle("checkbox", "The default"));
   await click(button("Save"));
   expect(calls).toEqual([{ tool: "profile_update", input: { id: 2, name: "chores", default: true } }]);
   expect(rows()[1]).toMatch(/^choresdefault · lead/u);
-  await click(button("Edit chores"));
+  await click(edit("chores"));
   // The default can be neither unmarked nor deleted, only replaced.
   expect(toggle("checkbox", "The default").disabled).toBe(true);
   expect(() => button("Delete…")).toThrow();
   await click(button("Cancel"));
-  await click(button("Edit high"));
+  await click(edit("high"));
   await click(button("Delete…"));
   expect(host.textContent).toContain("Delete high? No bot allows it after.");
   await click(button("Delete"));
@@ -243,7 +255,7 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   expect(leadPicker().textContent).toContain("wide");
   expect(rows().map((r) => r.split("Claude")[0])).toEqual(["highdefault", "medium", "widelead"]);
   // Deleting it says leads go back to the default, and they do.
-  await click(button("Edit wide"));
+  await click(edit("wide"));
   await click(button("Delete…"));
   expect(host.textContent).toContain("Delete wide? No bot allows it after, and leads go back to high at their next start.");
   await click(button("Delete"));
@@ -255,17 +267,21 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
 it("tells a bot which profile leads run on: an admin the way to change it, a member who to ask", async () => {
   profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every bot › Agents");
+  // An admin's profile name is the way to change it: Hub › Profiles.
+  const lead = host.querySelector("[data-lead-profile]");
+  expect(lead?.querySelector("button")?.textContent).toBe("medium");
   act(() => root.unmount());
   root = createRoot(host);
   me = { name: "Sam", role: "member" };
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium. Ask Ada to change it.");
+  expect(host.querySelector("[data-lead-profile] button")).toBeNull();
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toContain("medium");
+  expect(host.querySelector("[data-lead-profile] [data-hint]")?.textContent).toBe("Ask Ada to change it.");
 });
 
 it("offers fast mode only on a model that has it", async () => {
   await render("editor");
-  await click(button("Edit wide"));
+  await click(edit("wide"));
   const fast = toggle("switch", "Fast mode");
   expect(fast.disabled).toBe(true);
   expect(fast.closest("label")?.textContent).toContain("This model has no fast mode.");
@@ -273,14 +289,19 @@ it("offers fast mode only on a model that has it", async () => {
 
 it("allows a bot the default for good and another with project_set", async () => {
   await render("project");
-  const high = toggle("checkbox", "high");
-  expect([high.getAttribute("aria-checked"), high.disabled]).toEqual(["true", true]);
-  expect(high.closest("label")?.textContent).toContain("Always allowed. The default.");
-  expect(toggle("checkbox", "medium").getAttribute("aria-checked")).toBe("true");
-  expect(toggle("checkbox", "wide").getAttribute("aria-checked")).toBe("false");
-  await click(toggle("checkbox", "wide"));
+  // The default has no switch: it is always allowed, and its hint says why.
+  expect(host.querySelector("[aria-label='Allow high']")).toBeNull();
+  expect(host.querySelector("section[aria-label='high']")?.textContent).toContain("Always allowed: the hub's default.");
+  const allow = (name: string) => {
+    const el = host.querySelector<HTMLButtonElement>(`[aria-label='Allow ${name}']`);
+    if (el === null) throw new Error(`no switch for ${name}`);
+    return el;
+  };
+  expect(allow("medium").getAttribute("aria-checked")).toBe("true");
+  expect(allow("wide").getAttribute("aria-checked")).toBe("false");
+  await click(allow("wide"));
   expect(calls).toEqual([{ tool: "project_set", input: { ...storefront, profiles: ["medium", "wide"] } }]);
-  expect(toggle("checkbox", "wide").getAttribute("aria-checked")).toBe("true");
-  await click(toggle("checkbox", "medium"));
+  expect(allow("wide").getAttribute("aria-checked")).toBe("true");
+  await click(allow("medium"));
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, profiles: ["wide"] } });
 });

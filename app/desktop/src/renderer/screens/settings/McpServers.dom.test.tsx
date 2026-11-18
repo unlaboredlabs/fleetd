@@ -9,6 +9,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { HubMcpServers } from "./McpServers";
+import { chooseFromRow } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -155,13 +156,15 @@ describe("Settings → MCP servers", () => {
 
   it("tests a server: its tools, or the node's error", async () => {
     await render(<HubMcpServers />);
-    await click(button("Test connection"));
+    await chooseFromRow("github", "Test connection");
+    await settle();
     expect(calls.find((c) => c.tool === "mcp_server_test")?.input).toEqual({ scope: { kind: "global" }, name: "github" });
     expect(document.body.textContent).toContain("Connected on devbox to github-mcp 1.2.0: 2 tools.");
     expect(document.body.textContent).toContain("search_issues, create_pr");
 
     tested = { machineId: "devbox", result: { error: "db-mcp was not found on this machine's PATH" } };
-    await click(button("Test connection"));
+    await chooseFromRow("github", "Test connection");
+    await settle();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Failed on devbox: db-mcp was not found on this machine's PATH");
   });
 

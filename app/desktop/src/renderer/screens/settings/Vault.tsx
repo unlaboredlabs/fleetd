@@ -14,7 +14,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import { useHubCall, useLive, useRefetch } from "./hub";
-import { AddButton, DangerButton, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { AddButton, GroupNote, Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useReveal } from "./reveal";
 import { DeleteDialog, VaultItemPanel } from "./VaultItem";
 import { KIND_ICON, useMoveSetAside, VAULT_READS, vaultError } from "./vaultParts";
@@ -213,7 +213,7 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
     );
   };
   return (
-    <SettingsSection title="Set aside" intro="Yours from before the team vault. Nothing uses them until you move them." data={{ "data-vault-set-aside": "" }}>
+    <SettingsSection title="Set aside" hint="Yours from before the team vault. Nothing uses them until you move them." data={{ "data-vault-set-aside": "" }}>
       <SettingsList label="Set aside">
         {shownItems(items, "all", "").map((item) => (
           <SettingsListRow
@@ -233,9 +233,7 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
                     Move to team vault
                   </Button>
                 )}
-                <DangerButton size="sm" onClick={() => setDeleting(item)}>
-                  Delete
-                </DangerButton>
+                <RowMenu label={titleOf(item)} items={[{ label: "Delete", onSelect: () => setDeleting(item), danger: true }]} />
               </>
             }
           >
@@ -245,11 +243,7 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
           </SettingsListRow>
         ))}
       </SettingsList>
-      {problem === null ? null : (
-        <div role="alert">
-          <GroupNote tone="danger">{problem}</GroupNote>
-        </div>
-      )}
+      {problem === null ? null : <Notice tone="danger">{problem}</Notice>}
       {picking === null ? null : <ToProjectDialog item={picking} onClose={() => setPicking(null)} />}
       {deleting === null ? null : <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}
     </SettingsSection>

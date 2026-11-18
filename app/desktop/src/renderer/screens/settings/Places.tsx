@@ -75,7 +75,6 @@ export function WhatRunsWhere() {
 function Plain(props: { kind: Capability; label: string; value: string; hint?: string | undefined; line?: ReactNode }) {
   return (
     <SettingsRow
-      mark="none"
       title={props.label}
       hint={props.hint}
       line={props.line}

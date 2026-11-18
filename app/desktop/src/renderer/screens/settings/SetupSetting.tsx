@@ -89,7 +89,7 @@ export function Setup({ settings, title, repo, reveal }: { settings: Settings; t
         <SettingsRow
           title="Unsaved changes"
           hint="New worktrees run the saved setup until you save."
-          line={next.ok ? null : <span role="alert">{next.problem}</span>}
+          line={next.ok ? null : next.problem}
           lineTone={next.ok ? "quiet" : "danger"}
           control={
             <>
