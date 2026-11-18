@@ -431,9 +431,11 @@ export class SessionService {
       }
       if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, INTERRUPT_GRACE_MS);
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
-      // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it.
-      const armed = (row.local.monitors ?? []).filter((m) => m.untilMs > Date.now());
-      if (row.local.monitors?.length) service.update(id, (c) => void delete c.row.local.monitors);
+      // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it. One kept on the
+      // row never told the agent it ended (its notice drops it, a turn after its time ran out too), so its deadline
+      // passing while the node was away doesn't matter: the agent still waits for it.
+      const armed = row.local.monitors ?? [];
+      if (armed.length) service.update(id, (c) => void delete c.row.local.monitors);
       if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
     }
     const stopped = await sweep(hosts, adopted);
@@ -623,8 +625,13 @@ export class SessionService {
     const out = f(c);
     // The hub reads the session's armed Monitors off its summary: an order with a finished agent one may wake stays open.
     const until = Math.max(...(c.row.local.monitors ?? []).map((m) => m.untilMs));
-    if (Number.isFinite(until)) c.row.summary.watchingUntil = new Date(until).toISOString();
-    else delete c.row.summary.watchingUntil;
+    if (Number.isFinite(until)) {
+      c.row.summary.watchingUntil = new Date(until).toISOString();
+      c.row.summary.watching = (c.row.local.monitors ?? []).map((m) => m.description ?? "a Monitor");
+    } else {
+      delete c.row.summary.watchingUntil;
+      delete c.row.summary.watching;
+    }
     state.settle(c.row.summary, c.runs, c.at);
     if (!c.row.summary.pendingPermission) delete c.row.local.queuedPrompts;
     const changed = c.runs.filter((r, i) => before.runs[i] !== JSON.stringify(r));
@@ -1532,6 +1539,7 @@ export class SessionService {
                 run.status = "running";
                 run.startedAt ??= c.at;
               }
+              this.#dropRunOut(c, live);
             });
             break;
           }
@@ -1743,6 +1751,8 @@ export class SessionService {
         if (endedBy && end === "requested") run.endedBy = endedBy;
         else delete run.endedBy;
       }
+      // A turn that went through to its end took in the notice of a Monitor whose time ran out during it.
+      if (typeof outcome === "object" && "Completed" in outcome) this.#dropRunOut(c, live);
       if (!c.runs.some((r) => isActive(r.status))) this.#cancelPending(c);
     });
   }
@@ -1760,12 +1770,13 @@ export class SessionService {
     let lost: { id: string; description?: string; untilMs: number }[] = [];
     try {
       this.update(id, (c) => {
-        // The node stopping keeps them for the next node, which wakes the session if one could still fire then.
+        // The node stopping keeps them for the next node, which wakes the session for them. Any other exit nobody asked
+        // for wakes it now: each one kept never told the agent it ended, whether it could still fire or its time ran
+        // out with no notice (the reaper closes an idle claude only once every deadline has passed).
         if (cause.kind !== "node_stopping") {
           const armed = c.row.local.monitors ?? [];
           delete c.row.local.monitors;
-          if (cause.kind === "exited" && !c.runs.some((r) => isActive(r.status)))
-            lost = armed.filter((m) => (live.watching.get(m.id) ?? 0) > Date.now());
+          if (cause.kind === "exited" && !c.runs.some((r) => isActive(r.status))) lost = armed;
         }
         const retried = c.runs.some((r) => isActive(r.status) && this.#retries.has(r.id));
         if (requested || !retried) closed = state.closeOut(c.runs, cause, c.at).map((i) => c.runs[i]!.id);
@@ -1778,7 +1789,10 @@ export class SessionService {
     } catch {}
     for (const run of closed) this.#retries.delete(run);
     live.markExited();
-    if (cause.kind === "exited" && lost.length) this.#wakeLost(id, lost, exitWords(cause.exit));
+    if (cause.kind === "exited" && lost.length) {
+      const reaped = live.closing && !live.ending;
+      this.#wakeLost(id, lost, reaped ? "it ran out its time and no notice of it reached you" : exitWords(cause.exit));
+    }
   }
 
   /** Keeps Live.tools as the session's tool calls start and end. */
@@ -1794,12 +1808,25 @@ export class SessionService {
     if (item.kind.type !== "tool" || item.kind.toolName !== "Monitor" || item.status !== "completed") return;
     const input = (item.kind.input ?? {}) as { timeout_ms?: unknown; description?: unknown };
     const ms = typeof input.timeout_ms === "number" && Number.isFinite(input.timeout_ms) && input.timeout_ms >= 0 ? Math.round(input.timeout_ms) : MONITOR_DEFAULT_MS;
-    const untilMs = Date.now() + Math.min(ms, MONITOR_MAX_MS) + MONITOR_GRACE_MS;
+    // From the call's start, before claude starts its clock: a turn past `untilMs - MONITOR_GRACE_MS` is past its time.
+    const started = Date.parse(item.startedAt ?? "");
+    const untilMs = Math.min(Date.now(), Number.isFinite(started) ? started : Date.now()) + Math.min(ms, MONITOR_MAX_MS) + MONITOR_GRACE_MS;
     live.watching.set(item.id, untilMs);
     const armed = { id: item.id, ...(typeof input.description === "string" ? { description: input.description } : {}), untilMs };
     this.update(id, (c) => {
       c.row.local.monitors = [...(c.row.local.monitors ?? []).filter((m) => m.id !== armed.id), armed];
     });
+  }
+
+  /** A turn starting, or completing, once a Monitor's time has run out carries claude's notice that it did (claude
+   * gives a notice not yet given in the turn under way or the next one), so the agent has been told: that Monitor goes
+   * from the row and wakes nobody later. */
+  #dropRunOut(c: Change, live: Live): void {
+    const now = Date.now();
+    const kept = (c.row.local.monitors ?? []).filter((m) => m.untilMs - MONITOR_GRACE_MS > now);
+    for (const m of c.row.local.monitors ?? []) if (!kept.includes(m)) live.watching.delete(m.id);
+    if (kept.length) c.row.local.monitors = kept;
+    else delete c.row.local.monitors;
   }
 
   /** Wakes a session whose Monitors were lost with its claude, once, with a message as a lead's goes. */

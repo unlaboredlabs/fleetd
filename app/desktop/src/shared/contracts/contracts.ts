@@ -8584,6 +8584,8 @@ export type ThreadSummary = {
   usageLimitResetAt?: Timestamp;
   /** Until when a Monitor its agent armed may still wake it after its turn ends; absent when none is armed, and from older nodes. */
   watchingUntil?: Timestamp;
+  /** What those Monitors watch: each one's description; absent with watchingUntil, and from older nodes. */
+  watching?: string[];
 };
 
 export type ThreadTailInput = {

@@ -127,11 +127,20 @@ and every failure. Each line the Monitor prints starts a new turn for the agent.
 its lead gets the result when that turn ends, as after a message.
 
 A Monitor stops at its timeout (30 minutes at most) and sends one last notice. Until then, the node keeps the idle
-agent's claude running instead of closing it after 10 idle minutes, so the notice still has an agent to wake. If that
-claude dies first, or the node restarts without it, the Monitor goes with it. The node then wakes the agent once with a
-message: "Your Monitor "…" was lost when … Check what you were waiting for again." A Monitor that already fired or
-timed out wakes nobody. A review
-ends with its turn, so a reviewer waits for its builds and tests to finish before it reports.
+agent's claude running instead of closing it after 10 idle minutes, so the notice still has an agent to wake. The node
+keeps each Monitor until the agent has been told it ended: its end's notice, or a turn after its timeout (which carries
+claude's last notice). If the agent's claude goes while one is still kept, the node wakes the agent once with a message:
+"Your Monitor "…" was lost when … Check what you were waiting for again." This holds whether the Monitor could still
+fire or its time ran out unseen: claude was killed (the OOM killer), the node restarted without it (even an hour later),
+or the idle claude was closed after the deadline with no notice. A Monitor that fired, or whose timeout notice the
+agent has seen, wakes nobody. A review ends with its turn, so a reviewer waits for its builds and tests to finish
+before it reports.
+
+The lead sees these waits in its wake's Agents section. A done agent waiting on CI is listed as long as its wait is open.
+One waiting on a Monitor of its own is listed once it has waited 10 minutes, with what the Monitor watches, how long it
+has waited and the latest time it can fire, for example: `- T12 done: Redesign; waits on its Monitor "QA run finishes"
+(14 min so far): it wakes by itself when that ends or is lost, by 13:22 UTC at the latest`. A CI wait that long says
+how long too. The lead needn't nudge either: it wakes by itself.
 
 ### Agents hear when GitHub is unreachable {#github-unreachable}
 

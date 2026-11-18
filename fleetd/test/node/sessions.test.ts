@@ -282,6 +282,7 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
   // The hub reads its deadline off the summary: an order whose finished agent it may still wake stays open.
   const armedUntil = service.store.session("s1")!.local.monitors![0]!.untilMs;
   expect(summary("s1")?.watchingUntil).toBe(new Date(armedUntil).toISOString());
+  expect(summary("s1")?.watching).toEqual(["ci"]);
   await until("the run", () => summary("s1")?.latestRun?.id === "r9" && summary("s1")?.latestRun?.status === "completed");
   // Its claude dies while it waits.
   process.kill(service.store.session("s1")!.local.pid!, "SIGKILL");
@@ -291,6 +292,26 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
   );
   expect(service.store.session("s1")?.local.monitors).toBeUndefined();
   expect(summary("s1")?.watchingUntil).toBeUndefined();
+});
+
+test("a turn after a Monitor's time ran out has told the agent: the claude's later death wakes nobody for it", async () => {
+  const lostRuns = () => service.store.runs("s1").filter((r) => r.id.includes("-monitor-lost-")).length;
+  const before = lostRuns();
+  // A Monitor of 2 s: kept past the turn that armed it, its time has run out by the next turn, which carries claude's
+  // notice that it did.
+  await ok("send", { sessionId: "s1", runId: "r9b", text: "monitor-ms=2000: wait for ci" });
+  await until("the run", () => summary("s1")?.latestRun?.id === "r9b" && summary("s1")?.latestRun?.status === "completed");
+  expect(service.store.session("s1")?.local.monitors?.length).toBe(1);
+  await Bun.sleep(2_100);
+  await ok("send", { sessionId: "s1", runId: "r9c", text: "next" });
+  await until("the next run", () => summary("s1")?.latestRun?.id === "r9c" && summary("s1")?.latestRun?.status === "completed");
+  expect(service.store.session("s1")?.local.monitors).toBeUndefined();
+  expect(summary("s1")?.watchingUntil).toBeUndefined();
+  const pid = service.store.session("s1")!.local.pid!;
+  process.kill(pid, "SIGKILL");
+  await until("the exit", () => service.store.session("s1")?.local.pid === undefined || undefined);
+  await Bun.sleep(200);
+  expect(lostRuns()).toBe(before);
 });
 
 test("a session whose host ran on through a node restart is re-adopted and keeps going", async () => {
