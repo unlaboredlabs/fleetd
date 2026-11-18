@@ -8,7 +8,9 @@
 //   only those it didn't;
 // - listens where the node asks, at the node.sock path the agent's FLEETD_NODE_SOCK names and on 127.0.0.1 at the node's
 //   forwarded TCP ports, and opens a channel for each connection there. The node decides what a channel is and whose
-//   session it acts as; nothing here names one.
+//   session it acts as; nothing here names one;
+// - connects from inside the box where the node opens a dial channel (`{"dial":{"host","port"}}`, its browser's),
+//   answering `{"op":"dial","channel":n}`, or with `"error"`, once it connected or failed.
 //
 // A hosted box has no unix socket the node reaches: there the guest listens on `--port` for one WebSocket at a time,
 // through the provider's private port, and takes it only with fleetd's own per-box secret in SECRET_HEADER (the
@@ -30,7 +32,7 @@
 // caches, and the share's server the fd it keeps for each), `{"id":n,"op":"ping"}` (any answer: it still answers) and
 // `{"id":n,"op":"clock","ms"}` (a local VM's clock set to the node's); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
-// and `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines.
+// `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines, and `{"op":"dial","channel"[,"error"]}`.
 import { type ChildProcess, spawn } from "node:child_process";
 import { chownSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
@@ -42,7 +44,7 @@ import { timingSafeEqual } from "node:crypto";
 import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
-import { HOST, Mux, type Target } from "./mux.ts";
+import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
 import { layHostSystem, setClock, watchOom } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
@@ -181,7 +183,10 @@ export class Guest {
     this.#mux?.close("the node dialled again");
     const mux: Mux = new Mux(socket, {
       control: (m) => void this.#control(mux, m),
-      open: (channel, target) => (channel === HOST && "host" in target ? this.#live()?.pipe.attach() : undefined),
+      open: (channel, target) => {
+        if (channel === HOST && "host" in target) return this.#live()?.pipe.attach();
+        return channel >= NODE_CHANNELS && "dial" in target ? dial(mux, channel, target.dial) : undefined;
+      },
       closed: () => {
         if (this.#mux === mux) this.#mux = undefined;
       },
@@ -499,6 +504,36 @@ async function read(m: Record<string, unknown>): Promise<{ data: string; size: n
   } finally {
     await f.close();
   }
+}
+
+/** How long a dial from inside the box may take to connect. */
+const DIAL_MS = 10_000;
+
+/** The node's dial (its browser's connection, ../browser/egress.ts): made from inside the box, so it reaches what the
+ * box reaches and no more, its name looked up by the box's own DNS. The node hears how it went before any byte. */
+function dial(mux: Mux, channel: number, to: { host?: unknown; port?: unknown } | undefined): Duplex | undefined {
+  const host = to?.host;
+  const port = to?.port;
+  if (typeof host !== "string" || !host || !Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535) {
+    mux.control({ op: "dial", channel, error: "a dial needs a host and a port" });
+    return undefined;
+  }
+  const socket = connect({ host, port: port as number, allowHalfOpen: true });
+  let said = false;
+  const say = (error?: string) => {
+    if (said) return;
+    said = true;
+    clearTimeout(timer);
+    mux.control({ op: "dial", channel, ...(error ? { error } : {}) });
+  };
+  const timer = setTimeout(() => {
+    say(`no answer from ${host}:${port} within ${DIAL_MS / 1000} s`);
+    socket.destroy();
+  }, DIAL_MS);
+  socket.once("connect", () => say());
+  // Before the mux's own handler, which ends the channel: the node hears why first.
+  socket.once("error", (e: NodeJS.ErrnoException) => say(e.code ?? e.message));
+  return socket;
 }
 
 /** A connection to the session host in `dir`, through an open fd of the dir when its own path is too long for a socket

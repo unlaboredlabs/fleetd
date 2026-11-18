@@ -17,7 +17,7 @@ import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig 
 import { GatedRuns } from "./gated/index.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
-import { useVm } from "./place/index.ts";
+import { boxOf, inBox, useVm } from "./place/index.ts";
 import { MicroVm, reportVm } from "./place/microvm.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
 import { hasBox, HOSTED_NO_MAC } from "./place/hosted.ts";
@@ -402,6 +402,12 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
   // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
   if (config.browser?.enabled !== false && !isAgentsMac(config)) broker(node).prepare();
+  // A boxed agent's browser sees its box's network and files, not this machine's (browser/egress.ts).
+  broker(node).boxed = (thread) => {
+    const b = boxOf(thread);
+    if (b) return { dial: (host, port) => b.box.dial(host, port), ...(b.view ? { view: b.view } : {}) };
+    return inBox(thread) ? "starting" : undefined;
+  };
   // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.
   const mac = isAgentsMac(config) ? agentsMac(node) : undefined;
   relay.toolOnly = isAgentsMac(config);

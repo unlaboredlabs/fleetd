@@ -10,6 +10,8 @@
 //   relay names, as this machine reaches it (a Claude gateway on its tailnet, say);
 // - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
 //   (../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
+// - each dial the node opens (`dial`): a connection the guest makes from inside the box, the browser's way out
+//   (../browser/egress.ts), so the agent's browser reaches what the box reaches and no more.
 // A channel to anywhere else is refused.
 import { connect } from "node:net";
 import { Duplex } from "node:stream";
@@ -18,10 +20,12 @@ import type { HostHandlers, HostSocket } from "../runner/host.ts";
 import { slotChannel } from "../build_slots.ts";
 import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
 import { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./guest.ts";
-import { HOST, Mux, type Target } from "./mux.ts";
+import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
 
 const HELLO_MS = 5_000;
 const ANSWER_MS = 15_000;
+/** How long a dial from inside the box may take, the guest's own wait (guest.ts DIAL_MS) and its answer. */
+const DIAL_WAIT_MS = 15_000;
 const GONE_MS = 30_000;
 const REDIAL_MIN_MS = 50;
 const REDIAL_MAX_MS = 1_000;
@@ -77,6 +81,9 @@ export class Box {
   #requests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   #nextId = 0;
   #runs = 0;
+  #nextDial = NODE_CHANNELS;
+  /** The dials the guest hasn't answered yet, by channel: undefined once it connected, else why not. */
+  #dials = new Map<number, (why: string | undefined) => void>();
   #over = false;
   #connecting = false;
   #goneResolve!: (why: string) => void;
@@ -140,6 +147,37 @@ export class Box {
     // While a link is being set up, its setup opens the channel.
     if (this.#mux && !this.#connecting) this.#mux.open(HOST, { host: true }, bridge.attach(this.#hostLines));
     return bridge.socket;
+  }
+
+  /** A connection the guest makes from inside the box to `host`:`port` (a browser's: ../browser/egress.ts), so it
+   * reaches what the box reaches and no more: its stream here once the guest connected. Throws why not, in the guest's
+   * words (ECONNREFUSED, ENOTFOUND), or that its guest predates dials. */
+  async dial(host: string, port: number): Promise<Duplex> {
+    const mux = this.#mux;
+    if (this.#over || !mux || mux.closed || this.#connecting) throw new Error("the box's link is down");
+    const channel = this.#nextDial;
+    this.#nextDial = channel >= 0xffff_ffff ? NODE_CHANNELS : channel + 1;
+    const [here, there] = pair();
+    let settle!: (why: string | undefined) => void;
+    const said = new Promise<string | undefined>((resolve) => (settle = resolve));
+    this.#dials.set(channel, settle);
+    // Ended or dropped before a word: a guest that doesn't dial (an older one) ends the channel at once.
+    const closed = () => settle("the box's guest ended the connection before it connected (a guest from before dials: a new task's VM has one)");
+    there.once("finish", closed);
+    there.once("close", closed);
+    const timer = setTimeout(() => settle(`the box's guest didn't answer the dial within ${DIAL_WAIT_MS / 1000} s`), DIAL_WAIT_MS);
+    mux.open(channel, { dial: { host, port } }, there);
+    const why = await said;
+    clearTimeout(timer);
+    this.#dials.delete(channel);
+    there.off("finish", closed);
+    there.off("close", closed);
+    if (why !== undefined) {
+      here.destroy();
+      there.destroy();
+      throw new Error(why);
+    }
+    return here;
   }
 
   /** Reaches this machine's `port` from the box, at the same number. */
@@ -231,7 +269,8 @@ export class Box {
         else if (m.op === "hostLines" && Number.isInteger(m.n)) {
           this.#hostLines = m.n as number;
           this.#bridge?.confirm(this.#hostLines);
-        } else this.#answer(m);
+        } else if (m.op === "dial" && typeof m.channel === "number") this.#dials.get(m.channel)?.(typeof m.error === "string" ? m.error : undefined);
+        else this.#answer(m);
       },
       open: (channel, target) => this.#open(channel, target),
       closed: (why) => {
@@ -265,7 +304,7 @@ export class Box {
   }
 
   #open(channel: number, target: Target): Duplex | undefined {
-    if (channel <= HOST) return undefined;
+    if (channel <= HOST || channel >= NODE_CHANNELS) return undefined;
     // The target alone says what a channel is; nothing in it names a session.
     if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
     if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return slotChannel(this.o.slots.home);
@@ -378,6 +417,38 @@ export class Box {
     this.#mux?.close(why);
     this.#goneResolve(why);
   }
+}
+
+/** One end of an in-memory stream (`pair`): what it writes, the other end reads, its write done once that end read it. */
+class End extends Duplex {
+  other!: End;
+  #waiting: (() => void) | undefined;
+  override _read(): void {
+    const go = this.other.#waiting;
+    this.other.#waiting = undefined;
+    go?.();
+  }
+  override _write(chunk: Buffer, _encoding: BufferEncoding, done: (error?: Error | null) => void): void {
+    if (this.other.push(chunk)) done();
+    else this.#waiting = () => done();
+  }
+  override _final(done: (error?: Error | null) => void): void {
+    this.other.push(null);
+    done();
+  }
+  override _destroy(error: Error | null, done: (error?: Error | null) => void): void {
+    this.other.destroy();
+    done(error);
+  }
+}
+
+/** Two ends of one stream: a dial's, its channel on one and its user on the other. */
+function pair(): [Duplex, Duplex] {
+  const a = new End();
+  const b = new End();
+  a.other = b;
+  b.other = a;
+  return [a, b];
 }
 
 const listenOf = (r: Relay) => ({ op: "listen", tcp: r.port, ...(r.addr ? { addr: r.addr } : {}) });

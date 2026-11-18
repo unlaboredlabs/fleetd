@@ -5,7 +5,7 @@
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
 import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
-import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
+import { type BoxedPaths, boxedUrlRefusal, refusal as guardRefusal, type GuardSession } from "./guard.ts";
 import { RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { hostOf } from "./onepassword.ts";
 import { appendAction, appendLine, Scrub, type Steps, type VideoSink } from "./record.ts";
@@ -27,6 +27,10 @@ export const PAUSED =
 
 /** Where a watched session's frames go, and the budget the hub last named for it. */
 export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined };
+
+/** The schemes of this machine's own files and browser pages, which a boxed session's page is closed on: a backstop only,
+ * as Chrome's error page (chrome-error:) and an empty URL are left alone. */
+const LOCAL_SCHEME = /^(file|chrome|chrome-untrusted|devtools|view-source|filesystem|chrome-extension|chrome-search):/iu;
 
 export class Session implements GuardSession {
   private controlNow: BrowserControl = "agent";
@@ -158,6 +162,21 @@ export class Session implements GuardSession {
   }
   /** credentials.ts `outgoing`, set by the broker: kept out of this module so the guard stays one place. */
   outgoingHook: ((session: Session, message: Record<string, unknown>) => Record<string, unknown>) | undefined;
+  /** Its agent runs in a box (set by the broker, egress.ts `boxPaths`): how its paths are checked. */
+  boxedPaths: BoxedPaths | undefined;
+
+  boxed(): BoxedPaths | undefined {
+    return this.boxedPaths;
+  }
+
+  /** A boxed session's page that reached a local scheme all the same (none should: guard.ts refuses each way there it
+   * knows, and Chrome keeps web pages off them) is closed at once. */
+  private keepOffLocal(target: string, url: string): boolean {
+    if (!this.boxedPaths || !LOCAL_SCHEME.test(url.trim()) || !boxedUrlRefusal(url)) return false;
+    this.cdp.post(undefined, "Target.closeTarget", { targetId: target });
+    console.warn(`${new Date().toISOString()} WARN a boxed session's page reached a local URL and was closed {"sessionId":${JSON.stringify(this.id)},"scheme":${JSON.stringify(url.split(":")[0])}}`);
+    return true;
+  }
 
   /** Milliseconds since the session started: the recording's clock. */
   offsetMs(): number {
@@ -382,6 +401,7 @@ export class Session implements GuardSession {
       case "Target.targetInfoChanged": {
         const info = e.params.targetInfo as { targetId?: string; url?: string };
         if (info.targetId && info.url !== undefined) {
+          if (this.keepOffLocal(info.targetId, info.url)) return;
           this.targetMoved(info.targetId, info.url);
           this.urls.set(info.targetId, info.url);
         }
@@ -390,6 +410,7 @@ export class Session implements GuardSession {
       case "Target.targetCreated": {
         const info = e.params.targetInfo as { targetId: string; type: string; url?: string };
         if (info.type !== "page") return;
+        if (info.url !== undefined && this.keepOffLocal(info.targetId, info.url)) return;
         if (info.url !== undefined) this.urls.set(info.targetId, info.url);
         // Pages the driver opens show here too: follow each once, by the broker's own session.
         if (this.pages.some(([t]) => t === info.targetId)) return;

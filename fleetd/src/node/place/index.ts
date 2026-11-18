@@ -13,7 +13,9 @@ import { sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.
 import { boxFile, destroyBox } from "./box_record.ts";
 import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
 import type { ProviderId } from "../../sandbox/providers/index.ts";
-import { hasBox, hostedPlace, readRecord } from "./hosted.ts";
+import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
+import type { Box } from "../sandbox/box.ts";
+import type { View } from "./view.ts";
 import { processPlace } from "./process.ts";
 
 export type PlaceKind = "process" | "microvm" | "hosted";
@@ -52,6 +54,13 @@ export const currentVm = () => vm;
 /** Whether session `session` runs in a box, hosted or this node's VM: what runs on this machine for it (a program the
  * Linux desktop launches) would run outside that box. */
 export const inBox = (session: string): boolean => hasBox(session) || (vm?.holds(session) ?? false);
+
+/** Session `session`'s box once it is up, and what of this machine's files it shows (none for a hosted box, which
+ * shares none): where its browser's connections go out, and what its paths are checked against (../browser/egress.ts). */
+export const boxOf = (session: string): { box: Box; view?: View } | undefined => {
+  const hosted = hostedBox(session);
+  return hosted ? { box: hosted } : vm?.boxOf(session);
+};
 
 /** What the Linux desktop says to a VM's agent asking it to launch a program. */
 export const VM_NO_DESKTOP_LAUNCH =
