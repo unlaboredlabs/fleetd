@@ -411,6 +411,9 @@ not around your files:
   its registry cache broken: `cargo clean`ing it is the fix), uv's cache (`~/.cache/uv`, two VMs building the same
   wheel both build it), and any SQLite database in your home that two agents write. bun, npm, gh, git and claude take
   none.
+- **A VM agent's browser session runs on this machine**, outside the VM: its Chrome reaches what this machine
+  reaches (its own `localhost` ports, its files by `file://`), not the agent's own servers in the VM. The Linux
+  desktop refuses to launch programs for a VM agent, since they'd run outside its VM.
 - **Other machines on your network and tailnet** are reached as from a plain process: only this machine's own
   addresses are kept out.
 - **The machine's `/usr`, `/etc` and `/opt` are readable** in the VM as they are by you, read-only: what you can't read
