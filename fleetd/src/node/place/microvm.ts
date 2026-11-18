@@ -204,6 +204,8 @@ export class MicroVm {
   #shareWatch: ReturnType<typeof setInterval>;
   #shares = new Map<string, ShareWatch>();
   #counting = false;
+  /** The host dirs of the image builds under way: the node's shutdown ends them (`close`). */
+  #building = new Set<string>();
   /** Each box's copies of its order's variables, made again when the node renews them. */
   #refresh = new Map<string, () => void>();
 
@@ -470,9 +472,13 @@ export class MicroVm {
     rmSync(part, { force: true });
     newDisk(part);
     const session = `image-${j.project}`;
-    const s: PlaceFor = { sessionId: session, dir: join(imagesDir(this.o.home), "build", j.project, "host"), role: "worker", disk: part };
+    // Under the node's hosts dir, as a session's box: no session records it, so a node that stops mid-build has its
+    // next one end it at its start (runner/host.ts sweep, ./box_record.ts reapLeaked), and a node's shutdown ends it.
+    const s: PlaceFor = { sessionId: session, dir: join(this.o.home, "hosts", session), role: "worker", disk: part };
     mkdirSync(s.dir, { recursive: true, mode: 0o700 });
+    this.#building.add(s.dir);
     let worktree = false;
+    let built = false;
     try {
       const p = provision({ node: this.o.home, session, cwd: j.cwd, env: j.env });
       const need = needs({ cwd: j.cwd, env: p.env, argv: ["sh"], node: this.o.home, session, rw: p.rw, ro: [this.o.fleetd[0]!, ...p.ro] });
@@ -492,10 +498,14 @@ export class MicroVm {
       const sealed = await (this.o.seal ?? ((box, script, scrub) => box.run({ root: true, cwd: "/", argv: ["/bin/bash", "-c", script], timeoutSec: SETUP_TIMEOUT_SEC, scrub, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", FLEETD_SECRETS: scrub.join("\n") } })))(held.box, sealScript(BOX_HOME), j.secrets.filter((v) => v.length >= 8));
       if (sealed.exitCode === 3) throw new Error(`setup wrote the value of one of the bot's secret variables into ${sealed.outputTail.trim().split("\n").join(", ")}: an image never holds one, so write it where the session starts instead (an environment variable)`);
       if (sealed.notRun || sealed.exitCode !== 0) throw new Error(`the image's disk couldn't be sealed: ${sealed.notRun ?? sealed.outputTail.trim().slice(-500)}`);
+      built = true;
     } finally {
       await this.#drop(s.dir);
+      this.#building.delete(s.dir);
       unprovision(this.o.home, session);
       rmSync(s.dir, { recursive: true, force: true });
+      // A failed build's disk holds what its setup installed: it goes with it.
+      if (!built) rmSync(part, { force: true });
     }
     renameSync(part, file);
     chmodSync(file, 0o444);
@@ -746,10 +756,13 @@ export class MicroVm {
     return ended;
   }
 
-  /** Lets go of every box's link (the node's shutdown): the boxes and their sessions go on for the next node. */
+  /** Lets go of every box's link (the node's shutdown): the boxes and their sessions go on for the next node. An image
+   * build's box ends: nothing would come back for it. */
   close(): void {
     clearInterval(this.#watch);
     clearInterval(this.#shareWatch);
+    for (const dir of this.#building) void destroyBox(dir);
+    this.#building.clear();
     for (const held of this.#boxes.values()) void held.then((h) => h.box.close(), () => {});
     this.#boxes.clear();
   }

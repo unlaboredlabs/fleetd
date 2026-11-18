@@ -473,6 +473,9 @@ export async function buildSnapshot(home: string, provider: ProviderId, j: Job, 
   const git = await gitRoot(j.cwd);
   const dirs = [HOME, dirname(j.cwd), ...(git ? [dirname(git)] : [])];
   const record = await b.create(provider, session, [], dirs, undefined, { keep: true });
+  // No session's record holds it: the sweep leaves it alone until the build ends. A node that stops meanwhile leaves it
+  // to the next one's sweep, which deletes it.
+  const release = b.hold(record.boxId);
   let box: Box | undefined;
   try {
     box = await b.open(record, session);
@@ -515,5 +518,6 @@ export async function buildSnapshot(home: string, provider: ProviderId, j: Job, 
   } finally {
     box?.close();
     await b.destroy(record).catch(() => {});
+    release();
   }
 }

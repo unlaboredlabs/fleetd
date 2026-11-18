@@ -18,6 +18,7 @@ import { kernelCmdline, MicroVm, sealScript, type BootPlan, type Booted } from "
 import { BOX_HOME } from "../../src/node/place/provision.ts";
 import { guestOwn } from "../../src/node/place/view.ts";
 import { startOf } from "../../src/node/runner/host.ts";
+import { readBox } from "../../src/node/place/box_record.ts";
 import * as setup from "../../src/node/worktree/setup.ts";
 import type { VmCheck } from "../../src/sandbox/host/capable.ts";
 import type { VmTools } from "../../src/sandbox/host/tools.ts";
@@ -267,6 +268,41 @@ test("a missing, failed or stale image is a clean start plus setup, never a fail
   // Commands removed: no image, nothing to build.
   expect(f.images.status("p1", { commands: [] })).toEqual({ state: "none" });
   f.vm.close();
+}, 60_000);
+
+test("an image build's box is a box of the node's hosts dir, which the node's shutdown ends, and a failed build leaves no disk", async () => {
+  const f = fixture("d");
+  const go = join(root, "d", "go");
+  const waiting = join(root, "d", "waiting");
+  const plan: setup.Plan = { commands: [`touch '${waiting}'; until [ -e '${go}' ]; do sleep 0.05; done`], inputs: ["bun.lock"] };
+  f.images.status("p1", plan);
+  const until = Date.now() + 20_000;
+  while (!existsSync(waiting) && Date.now() < until) await Bun.sleep(20);
+  // Where a node that stops mid-build has its next one end the box at its start (the hosts sweep, the leak reaper).
+  const dir = join(f.node, "hosts", "image-p1");
+  expect(f.boots[0]!.dir).toBe(dir);
+  const leader = readBox(dir)!.leader.pid;
+  const alive = () => {
+    try {
+      process.kill(leader, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  expect(alive()).toBe(true);
+  const part = f.boots[0]!.disk!;
+  expect(existsSync(part)).toBe(true);
+  // The node shuts down: nothing would come back for the build, so its box ends with it.
+  f.vm.close();
+  const gone = Date.now() + 5_000;
+  while (alive() && Date.now() < gone) await Bun.sleep(20);
+  expect(alive()).toBe(false);
+  await f.images.idle();
+  expect(f.images.status("p1", plan).state).toBe("failed");
+  // The failed build's disk, with whatever its setup installed, went with it.
+  expect(existsSync(part)).toBe(false);
+  expect(existsSync(dir)).toBe(false);
 }, 60_000);
 
 test("an image build's seal strips what is the box's alone and refuses a secret's value", () => {

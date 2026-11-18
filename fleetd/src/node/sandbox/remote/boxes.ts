@@ -53,13 +53,15 @@ export class Boxes {
   #down = new Map<ProviderId, { until: number; why: string }>();
   /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
   #making = new Set<string>();
+  /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
+  #held = new Set<string>();
 
   constructor(
     readonly home: string,
     readonly machineId: string,
     private readonly opener: Opener,
-    /** Tests: another provider than the real clients, and another fleetd source. */
-    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex> } = {},
+    /** Tests: another provider than the real clients, another fleetd source, and how long a new box is left alone. */
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number } = {},
   ) {
     for (const p of PROVIDERS) {
       const sealed = this.#keyFile(p);
@@ -199,7 +201,7 @@ export class Boxes {
     const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
     this.#making.add(made.id);
     // Its caller writes the record at once; until a while after, the reaper leaves the box.
-    const made_ = () => setTimeout(() => this.#making.delete(made.id), 60_000).unref?.();
+    const made_ = () => setTimeout(() => this.#making.delete(made.id), this.o.makingMs ?? 60_000).unref?.();
     try {
       const boot = bootArgv(dirs);
       await client.start(made.id, { argv: boot.argv, env: { ...boot.env, FLEETD_BOX_SECRET: record.secret } });
@@ -274,6 +276,12 @@ export class Boxes {
   }
 
   /** Deletes this machine's boxes in every connected account that no session of `known()` holds. How many it deleted. */
+  /** Keeps the box `id` from the sweep until the answer is called: one no session records, while it is in use. */
+  hold(id: string): () => void {
+    this.#held.add(id);
+    return () => void this.#held.delete(id);
+  }
+
   async reap(known: () => Set<string>): Promise<number> {
     let n = 0;
     for (const p of this.connected()) {
@@ -286,7 +294,7 @@ export class Boxes {
       }
       const keep = known();
       for (const b of boxes) {
-        if (b.labels[MACHINE_LABEL] !== label(this.machineId) || keep.has(b.id) || this.#making.has(b.id)) continue;
+        if (b.labels[MACHINE_LABEL] !== label(this.machineId) || keep.has(b.id) || this.#making.has(b.id) || this.#held.has(b.id)) continue;
         try {
           await this.client(p).destroy(b.id);
           n++;

@@ -4,7 +4,7 @@
 // snapshot is gone starts from the template and runs the setup it skipped. A provider that saves no snapshots (E2B,
 // Daytona for now) gives its bots no image: a clean start plus setup.
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { boatStandIn, e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
@@ -38,7 +38,7 @@ function sh(cwd: string, cmd: string): string {
   return r.stdout.toString().trim();
 }
 
-async function world(id: ProviderId) {
+async function world(id: ProviderId, makingMs?: number) {
   const base = mkdtempSync(join(tmp, "t-"));
   const home = join(base, "node");
   const HOME = join(base, "home");
@@ -55,13 +55,14 @@ async function world(id: ProviderId) {
   const boxes = new Boxes(home, "devbox", { open: (b) => b }, {
     provider: (p, auth) => provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
     source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
+    ...(makingMs !== undefined ? { makingMs } : {}),
   });
   boxes.setKeys({ [id]: Buffer.from(JSON.stringify({ provider: id, key: KEY })).toString("base64") });
   boxes.wire({ lead: { relay: new LeadRelay(), identify: () => ({ kind: "none" }) as never, maskFor: () => new Masker([]) } });
   setBoxes(boxes);
   const images = new Images({ home, backend: () => hostedBackend(home, id, HOME), root: () => repo, vars: () => ({ env: {}, secrets: [] }) });
   const env = { HOME, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, FLEETD_NODE_SOCK: join(home, "node.sock"), TMPDIR: join(home, "tmp", "s1") };
-  return { s, home, repo, HOME, images, env, base };
+  return { s, home, repo, HOME, images, env, base, boxes };
 }
 
 /** A stand-in box runs here, at this machine's paths, and its guest outlives its box: the next box's node.sock is free
@@ -140,6 +141,27 @@ test("boat: a session whose snapshot went starts from the template and runs the 
   expect(readFileSync(log, "utf8")).toBe("ran\nran\n");
   expect(sessionImage(w.home, "s2")).toBeUndefined();
   await place.end(dir);
+}, 60_000);
+
+test("boat: the sweep of boxes no session holds leaves a build's box alone until the build ends", async () => {
+  // A new box is left alone for 0 ms here (60 s on a node), so a build longer than that meets the sweep.
+  const w = await world("boat", 0);
+  const go = join(w.base, "go");
+  const waiting = join(w.base, "waiting");
+  const plan: setup.Plan = { commands: [`touch '${waiting}'; until [ -e '${go}' ]; do sleep 0.05; done; echo built`], inputs: ["bun.lock"] };
+  w.images.status("p1", plan);
+  const until = Date.now() + 20_000;
+  while (!existsSync(waiting) && Date.now() < until) await Bun.sleep(20);
+  expect(existsSync(waiting)).toBe(true);
+  await Bun.sleep(50);
+  // The sweep, as the reaper runs it every 10 minutes: the build's box is no session's.
+  expect(await w.boxes.reap(() => new Set())).toBe(0);
+  expect(w.s.boxes.size).toBe(1);
+  writeFileSync(go, "");
+  await w.images.idle();
+  expect(w.images.status("p1", plan).state).toBe("ready");
+  // Once it ended, it is gone and nothing holds the sweep back.
+  expect(w.s.boxes.size).toBe(0);
 }, 60_000);
 
 test("a provider that saves no snapshots gives its bots no image: they start clean and run setup", async () => {
