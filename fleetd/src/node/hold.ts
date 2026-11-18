@@ -65,8 +65,13 @@ export function held(home: string): Set<string> {
 export function clear(home: string) {
   const path = holdPath(home);
   for (const f of [path, screensMark(home), updateMark(home)]) rmSync(f, { force: true });
-  // Emptied, never removed: a VM's share of it would be left on the removed dir.
-  const dir = heldDir(path);
+  emptyHeld(home);
+}
+
+/** The held marks go, `update/held/` itself stays: a VM's writable share of it (node/place/microvm.ts) is bound to that
+ * dir at its boot and lasts through node restarts, so a dir removed and made again would leave it read-only. */
+export function emptyHeld(home: string) {
+  const dir = heldDirOf(home);
   try {
     for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true });
   } catch {}

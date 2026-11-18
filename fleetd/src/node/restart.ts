@@ -3,6 +3,7 @@
 // `apply`) the node restarts itself once no screen is live here, holding its agents' tool calls first, as an update's
 // restart does, so it finds them between steps. The node then stops as for SIGTERM, and its service manager starts it.
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { emptyHeld } from "./hold.ts";
 import { join } from "node:path";
 import { installedExe, replaceFile } from "../update/index.ts";
 import { isHubService, services } from "../update/service.ts";
@@ -48,7 +49,10 @@ export function releaseScreens(home: string): void {
   const ours = until(screensMark(home)) !== undefined;
   rmSync(screensMark(home), { force: true });
   const updating = (until(updateMark(home)) ?? 0) > Date.now();
-  if (ours && !updating) for (const f of ["hold", "hold.update", "held"]) rmSync(join(home, "update", f), { recursive: true, force: true });
+  if (ours && !updating) {
+    for (const f of ["hold", "hold.update"]) rmSync(join(home, "update", f), { force: true });
+    emptyHeld(home);
+  }
 }
 
 export type Restarter = {
