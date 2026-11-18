@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { githubApps } from "../src/hub/github_app/index.ts";
-import { runnerRepos, sendGithubTokens } from "../src/hub/runner/github.ts";
+import { RENEW_MS, runnerRepos, sendGithubTokens, TOKEN_LEFT_MS } from "../src/hub/runner/github.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { keepTokens, useGithubTokens, withGithubTokens } from "../src/node/repos/github.ts";
 import { seal } from "../src/shared/sealed_box.ts";
@@ -125,7 +125,12 @@ test("the hub sends the runner the App's token for each of its bots' repos, seal
     .query("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key) VALUES (?, 'p1', 'shop', ?, 'p1', 'github.com/acme/shop')")
     .run(RUNNER_ID, RUNNER_ID);
   expect(runnerRepos(t.hub)).toEqual(["acme/shop"]);
-  githubApps(t.hub).tokenFor = async (repo: string) => (repo === "acme/shop" ? "ghs_shop123" : undefined);
+  // Every token sent has the runner's whole wait till the next send left, never the hub's cached one with less.
+  const asked: number[] = [];
+  githubApps(t.hub).installationToken = async (repo: string, marginMs: number) => {
+    asked.push(marginMs);
+    return repo === "acme/shop" ? { token: "ghs_shop123", expiresMs: Date.parse("2026-11-08T13:00:00Z") } : undefined;
+  };
   const sent: Record<string, unknown>[] = [];
   t.link.answer = async (_m, frame) => (sent.push(frame as never), { ok: true });
   // Not linked as the runner: nothing goes.
@@ -134,6 +139,8 @@ test("the hub sends the runner the App's token for each of its bots' repos, seal
   t.link.link(RUNNER_ID, [CAP_RUNNER]);
   await sendGithubTokens(t.hub);
   expect(sent).toHaveLength(1);
+  expect(asked).toEqual([TOKEN_LEFT_MS]);
+  expect(TOKEN_LEFT_MS).toBeGreaterThan(RENEW_MS);
   const tokens = (sent[0] as { action: string; tokens: Record<string, string> }).tokens;
   expect((sent[0] as { action: string }).action).toBe("github_tokens");
   expect(JSON.stringify(sent)).not.toContain("ghs_shop123");

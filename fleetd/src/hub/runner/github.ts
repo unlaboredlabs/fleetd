@@ -13,6 +13,8 @@ import { store } from "../store/hub_store.ts";
 
 /** How often the runner's tokens are sent again: well inside an installation token's hour. */
 export const RENEW_MS = 20 * 60_000;
+/** A token sent has at least this long left: the time to the next send, and room for one that fails. */
+export const TOKEN_LEFT_MS = 2 * RENEW_MS + 5 * 60_000;
 export { RUNNER_ID };
 
 /** `owner/name` of each GitHub repo the runner's bots hold a checkout of. */
@@ -37,7 +39,8 @@ export async function sendGithubTokens(hub: Hub, names: string[] = runnerRepos(h
   for (const name of names) {
     let token: string | undefined;
     try {
-      token = await githubApps(hub).tokenFor(name);
+      // Never the hub's own cached one with less left than the runner keeps it: a new one when it has.
+      token = (await githubApps(hub).installationToken(name, TOKEN_LEFT_MS))?.token;
     } catch (e) {
       console.warn(`runner: no GitHub token for ${name}: ${(e as Error).message}`);
     }
