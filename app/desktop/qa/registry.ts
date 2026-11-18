@@ -240,6 +240,9 @@ export const fixtures = [
   "computer-new",
   "computer-nowhere",
   "computer-two",
+  // Runs on, the bot's one pick of provider and size, and a pick whose provider went (fixtures/computer, W720).
+  "computer-runs-on",
+  "computer-runs-on-gone",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
@@ -4272,6 +4275,35 @@ export const screens: readonly Screen[] = [
       await expect(part.getByRole("region", { name: "Image" })).toBeVisible();
       await expect(part.getByRole("textbox", { name: "Setup commands" })).toHaveValue(/cargo fetch/u);
       await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // Runs on: one pick of provider and exact size; its list open, each choice a real machine.
+  {
+    id: "settings.projects",
+    variant: "computer-runs-on",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-runs-on"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
+      const pick = row.getByRole("combobox", { name: "Runs on" });
+      await expect(pick).toContainText("E2B · 4 vCPU / 8 GB");
+      await row.scrollIntoViewIfNeeded();
+      await pick.click();
+      await expect(page.getByRole("option", { name: "boat.dev · 16 vCPU / 32 GB" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "Local VM · 2 vCPU / 4 GB" })).toBeVisible();
+    },
+  },
+  // ...its pick's provider disconnected: the pick stays, and the row says its agents wait and why.
+  {
+    id: "settings.projects",
+    variant: "computer-runs-on-gone",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-runs-on-gone"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
+      await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("Daytona · 4 vCPU / 8 GB");
+      await expect(row).toContainText("Its agents wait: Daytona isn't connected");
+      await row.scrollIntoViewIfNeeded();
     },
   },
   // ...on a machine that builds no images: its setup alone, no image row and no Rebuild.
