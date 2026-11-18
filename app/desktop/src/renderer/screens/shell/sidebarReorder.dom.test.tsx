@@ -562,13 +562,13 @@ describe("the keyboard", () => {
     expect(announced("Bots")).toBe("docs moved to 3 of 3");
   });
 
-  it("moves it a row with Alt+↑ and Alt+↓", async () => {
+  it("moves it a row (three across for five pins) with Alt+↑ and Alt+↓", async () => {
     mount([...ROWS, row("ada"), row("box")]);
     act(() => button("api").focus());
     key("ArrowDown");
     await settle();
-    expect(titles("Bots")).toEqual(["docs", "web", "api", "ada", "box"]);
-    expect(announced("Bots")).toBe("api moved to 3 of 5");
+    expect(titles("Bots")).toEqual(["docs", "web", "ada", "api", "box"]);
+    expect(announced("Bots")).toBe("api moved to 4 of 5");
     key("ArrowUp");
     await settle();
     expect(titles("Bots")).toEqual(["api", "docs", "web", "ada", "box"]);

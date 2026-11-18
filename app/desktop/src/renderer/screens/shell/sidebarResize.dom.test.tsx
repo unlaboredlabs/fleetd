@@ -84,42 +84,42 @@ it("sits on the sidebar's edge as a focusable separator, at today's width", () =
   expect(host.querySelector("#sidebar")).not.toBeNull();
   expect(e?.tabIndex).toBe(0);
   expect([e?.getAttribute("aria-valuemin"), e?.getAttribute("aria-valuemax")]).toEqual(["200", "420"]);
-  expect(width()).toBe(264);
-  expect(variable()).toBe("264px");
+  expect(width()).toBe(280);
+  expect(variable()).toBe("280px");
 });
 
 it("moves by the arrow keys (Right widens), Shift four steps, Home and End to its ends", () => {
   mount();
   key("ArrowRight");
-  expect(width()).toBe(280);
+  expect(width()).toBe(296);
   key("ArrowLeft", true);
-  expect(width()).toBe(216);
-  expect(variable()).toBe("216px");
+  expect(width()).toBe(232);
+  expect(variable()).toBe("232px");
   key("End");
   expect(width()).toBe(420);
   key("Home");
   expect(width()).toBe(200);
   key("Enter");
-  expect(width()).toBe(264);
+  expect(width()).toBe(280);
 });
 
 it("follows a drag on the frame's variable alone, and sets it once as it ends, within its bounds", () => {
   mount();
   const before = renders;
-  pointer("pointerdown", 264);
+  pointer("pointerdown", 280);
   pointer("pointermove", 300);
-  pointer("pointermove", 340);
-  expect(variable()).toBe("340px");
-  expect(edge()?.getAttribute("aria-valuenow")).toBe("340");
+  pointer("pointermove", 356);
+  expect(variable()).toBe("356px");
+  expect(edge()?.getAttribute("aria-valuenow")).toBe("356");
   // Nothing in the sidebar renders again mid-drag.
   expect(renders).toBe(before);
   expect(document.documentElement.dataset["resizing"]).toBe("");
-  pointer("pointerup", 340);
-  expect(width()).toBe(340);
+  pointer("pointerup", 356);
+  expect(width()).toBe(356);
   expect(document.documentElement.dataset["resizing"]).toBeUndefined();
 
   // Past either end it stops there.
-  pointer("pointerdown", 340);
+  pointer("pointerdown", 356);
   pointer("pointermove", 1200);
   expect(variable()).toBe("420px");
   pointer("pointerup", 1200);
@@ -132,21 +132,21 @@ it("follows a drag on the frame's variable alone, and sets it once as it ends, w
 
 it("keeps the width across a relaunch, and a double-click puts it back to the default for good", () => {
   mount();
-  pointer("pointerdown", 264);
-  pointer("pointermove", 330);
-  pointer("pointerup", 330);
+  pointer("pointerdown", 280);
+  pointer("pointermove", 346);
+  pointer("pointerup", 346);
   unmount();
   mount();
-  expect(width()).toBe(330);
-  expect(variable()).toBe("330px");
+  expect(width()).toBe(346);
+  expect(variable()).toBe("346px");
 
   act(() => {
     edge()?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   });
-  expect(width()).toBe(264);
+  expect(width()).toBe(280);
   unmount();
   mount();
-  expect(width()).toBe(264);
+  expect(width()).toBe(280);
   expect(window.localStorage.getItem("fleetd.sidebar.width")).toBeNull();
 });
 

@@ -25,7 +25,9 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
   return (
     <div className={b.card} data-block="pr">
       <div className={b.prTop}>
-        <GitPullRequest className={b.icon} aria-hidden />
+        <span className={b.tile} aria-hidden>
+          <GitPullRequest className={b.icon} />
+        </span>
         <span className={b.prTitle}>
           <Truncate size="md" strong>
             {title}
@@ -34,7 +36,6 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
             {`${pr.repo} #${String(pr.number)}`}
           </Text>
         </span>
-        {state !== undefined ? <StatusChip tone={state.tone}>{state.word}</StatusChip> : null}
       </div>
       <div className={b.facts}>
         {got.isError && row === undefined ? (
@@ -47,6 +48,7 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
           </Text>
         ) : (
           <>
+            {state !== undefined ? <StatusChip tone={state.tone}>{state.word}</StatusChip> : null}
             {checks !== undefined ? <StatusChip tone={checks.tone}>{checks.text}</StatusChip> : null}
             {review !== undefined ? <StatusChip tone={review.tone}>{review.text}</StatusChip> : null}
             {size !== undefined ? (
@@ -60,7 +62,7 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
       </div>
       <div className={b.actions}>
         {project !== undefined ? (
-          <Button variant="secondary" onClick={() => navigate(panelRoute(project, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
+          <Button variant="primary" onClick={() => navigate(panelRoute(project, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
             {changes ? "Open changes" : "Open"}
           </Button>
         ) : null}

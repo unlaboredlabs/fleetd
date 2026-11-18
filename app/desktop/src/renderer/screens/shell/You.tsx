@@ -5,7 +5,7 @@
 // "Not updated", or "Update" with one to take), and a small mark on your picture while a hub is really unreachable or
 // refused your key (for an admin, also while a machine is offline or setup steps are left), its words in the tooltip.
 // Screens and Factory are the round buttons beside: Screens marked while one needs you.
-import { Factory, MonitorSmartphone, Settings } from "lucide-react";
+import { ChevronsUpDown, Factory, MonitorSmartphone, Settings } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
@@ -45,21 +45,23 @@ const useLinkMarks = (): ReadonlyArray<HubMark | null> => {
   });
 };
 
-/** A round icon button of the foot: quiet at rest, filled while its screen is on show. */
-function Round(props: { label: string; shortcut?: ShortcutId; current: boolean; mark?: string | undefined; onClick: () => void; children: ReactNode; opens?: string }) {
+/** A place to go, at the sidebar's top under search: its icon and its word, a dot at the row's end while it needs you. */
+function Place(props: { label: string; shortcut?: ShortcutId; current: boolean; mark?: string | undefined; onClick: () => void; children: ReactNode; opens?: string; aside?: string | undefined }) {
   const tip = props.mark ?? props.label;
   return (
-    <Tooltip content={props.shortcut === undefined ? tip : <>{tip} <Kbd>{display(props.shortcut, platform)}</Kbd></>}>
+    <Tooltip content={props.shortcut === undefined ? props.mark : <>{tip} <Kbd>{display(props.shortcut, platform)}</Kbd></>} side="right">
       <button
         type="button"
-        className={s.round}
-        aria-label={props.mark === undefined ? props.label : `${props.label}: ${props.mark}`}
+        className={s.place}
+        aria-label={`${props.label}${props.aside === undefined ? "" : ` · ${props.aside}`}${props.mark === undefined ? "" : `: ${props.mark}`}`}
         {...(props.current ? { "aria-current": "page" as const } : {})}
         data-opens={props.opens}
         onClick={props.onClick}
       >
         {props.children}
-        {props.mark === undefined ? null : <span className={s.roundMark} aria-hidden />}
+        <span className={s.placeLabel}>{props.label}</span>
+        {props.aside === undefined ? null : <span className={s.placeAside}>{props.aside}</span>}
+        {props.mark === undefined ? null : <span className={s.dot} data-want="you" aria-hidden />}
       </button>
     </Tooltip>
   );
@@ -75,11 +77,28 @@ function ScreensButton({ current, go }: { current: boolean; go: (screen: Screen)
   const count = useToolQuery("screens_count", NO_INPUT, { enabled: served }).data;
   const asking = count?.asking ?? 0;
   const live = count?.live ?? 0;
-  const label = live > 0 ? `Screens · ${String(live)} live` : "Screens";
   return (
-    <Round label={label} current={current} mark={asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined} onClick={() => go({ id: "screens", open: null })}>
+    <Place label="Screens" aside={live > 0 ? `${String(live)} live` : undefined} current={current} mark={asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined} onClick={() => go({ id: "screens", open: null })}>
       <MonitorSmartphone aria-hidden />
-    </Round>
+    </Place>
+  );
+}
+
+/** The sidebar's places, under its search: Screens and the Factory, each a row with its word. */
+export function Places({ screen, factory, go }: YouProps) {
+  return (
+    <div className={s.places}>
+      <ScreensButton current={screen.id === "screens"} go={go} />
+      <Place
+        label="Factory"
+        // A hub from before metrics has no ⌘; (factory/support.ts).
+        {...(factory ? { shortcut: "factory.open" as const } : {})}
+        current={screen.id === "factory" || screen.id === "time"}
+        onClick={() => go(factory ? { id: "factory", project: null } : { id: "time", orderId: null })}
+      >
+        <Factory aria-hidden />
+      </Place>
+    </div>
   );
 }
 
@@ -90,7 +109,7 @@ export interface YouProps {
   readonly go: (screen: Screen) => void;
 }
 
-export function You({ screen, factory, go }: YouProps) {
+export function You({ go }: Pick<YouProps, "go"> & Partial<YouProps>) {
   const hubs = useHubs();
   const hub = useHubState();
   const role = useHubRole();
@@ -112,17 +131,20 @@ export function You({ screen, factory, go }: YouProps) {
           <PopoverTrigger asChild>
             <button type="button" className={s.me} aria-label={said} data-opens="you" data-mark={mark?.tone}>
               <span className={s.meAvatar}>
-                <Avatar name={name} size={28} src={picture} />
+                <Avatar name={name} size={32} src={picture} />
                 {mark === null ? null : <span className={s.meMark} data-tone={mark.tone} aria-hidden />}
               </span>
               <span className={s.meText}>
                 <span className={s.meName}>{name}</span>
-                {quiet === null ? null : (
+                {quiet === null ? (
+                  <span className={s.meRole}>{[me === undefined ? "" : me.role.charAt(0).toUpperCase() + me.role.slice(1), hubs.length === 1 ? (hubs[0]?.label ?? "") : `${String(hubs.length)} hubs`].filter((w) => w !== "").join(" · ")}</span>
+                ) : (
                   <span className={s.meWord}>
                     <UpdateWord quiet={quiet} />
                   </span>
                 )}
               </span>
+              <ChevronsUpDown className={s.meChevron} aria-hidden />
             </button>
           </PopoverTrigger>
         </Tooltip>
@@ -153,18 +175,6 @@ export function You({ screen, factory, go }: YouProps) {
           </MenuRow>
         </PopoverContent>
       </Popover>
-      <div className={s.tools}>
-        <ScreensButton current={screen.id === "screens"} go={go} />
-        <Round
-          label="Factory"
-          // A hub from before metrics has no ⌘; (factory/support.ts).
-          {...(factory ? { shortcut: "factory.open" as const } : {})}
-          current={screen.id === "factory" || screen.id === "time"}
-          onClick={() => go(factory ? { id: "factory", project: null } : { id: "time", orderId: null })}
-        >
-          <Factory aria-hidden />
-        </Round>
-      </div>
     </div>
   );
 }

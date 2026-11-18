@@ -19,12 +19,13 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
-  column-gap: var(--space-2);
+  column-gap: var(--space-1);
   row-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-3) var(--space-2) var(--space-2);
-  /* A soft rounded slab, not a capsule: a step rounder than a bubble, so it reads as the thing everything rests on. */
-  border-radius: 20px;
+  padding: var(--space-2);
+  /* One line by default, the clip and Send inline with the words: round ends while it is one line, and the same 24 px
+     corners as it grows, so it reads as the thing everything rests on. */
+  border-radius: 24px;
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
@@ -49,21 +50,21 @@
   z-index: -2;
   box-shadow: var(--glass-lift);
 }
-/* What goes with the words takes a row of its own over them; then the words, the pill's width; then one row of tools
-   under them, the clip at its start and Send at its end (placed in that order, whatever the markup's). */
+/* What goes with the words takes a row of its own over them; then one row: the clip, the words, Send (placed in that
+   order, whatever the markup's), the buttons staying on the last line as the words wrap. */
 .box > :not(.lead, .input, .tools) {
   grid-column: 1 / -1;
 }
 .box > .input {
   order: 1;
-  grid-column: 1 / -1;
+  grid-column: 2;
 }
 .box > .lead {
-  order: 2;
+  order: 1;
   grid-column: 1;
 }
 .box > .tools {
-  order: 2;
+  order: 1;
   grid-column: 3;
 }
 /* Focused, its edge darkens a step towards a control's (the caret shows where typing goes): a dark ring around the
@@ -122,7 +123,7 @@
   field-sizing: content;
   min-height: var(--leading-md);
   max-height: calc(12 * var(--leading-md));
-  padding: 0 var(--space-2) var(--space-1);
+  padding: 6px var(--space-1);
   resize: none;
   border: none;
   background: transparent;

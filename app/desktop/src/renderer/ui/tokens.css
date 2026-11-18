@@ -19,7 +19,7 @@
   --bg: #ffffff;
   --sheet: #ffffff;
   --sheet-edge: #0f17201a;
-  --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #0f17200a, 0 4px 12px -6px #0f172014;
+  --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #0f17200d, 0 12px 32px -16px #0f172024;
   --sidebar: #f2f3f5;
   --raised: #ffffff;
   --hover: #0f172009;
@@ -27,6 +27,13 @@
   --hairline: #eaecef;
   /* One focus ring everywhere (base.css): a crisp blue, the links' family, so it reads on the neutral accent. */
   --focus: #2b6be4;
+  /* What is open in the sidebar (a chat's row, a pin, a place): cut from the sheet's own white and lifted a breath, so
+     the row and the chat it opens read as one material. */
+  --row-on: #ffffff;
+  --row-on-lift: 0 0 0 1px #0f17200f, 0 1px 2px #0f172012, 0 2px 6px -2px #0f172010;
+  /* The panel recedes: a sheet a step into the frame's tone, with no lift of its own; the chat is the one white
+     surface that floats. */
+  --panel: #f8f9fa;
   /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
   --side-edge: transparent;
   --border: #d6dade;
@@ -122,6 +129,9 @@
   --hairline: #24262b;
   --side-edge: transparent;
   --focus: #5b91f5;
+  --row-on: #1d1e22;
+  --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
+  --panel: #0e0f11;
   --border: #33363d;
   --bubble: #1d1e22;
   --group: #0f1013;
@@ -134,8 +144,10 @@
   --accent: #f3f4f6;
   --accent-fill: #f3f4f6;
   --on-accent: #0c0e11;
-  --accent-deep: #2c2e34;
-  --on-accent-deep: #ffffff;
+  /* Yours, in dark: the light ink, so sent and received part at a glance in both themes (black on white, white on
+     black), a step under white so it doesn't glare. */
+  --accent-deep: #e3e5e8;
+  --on-accent-deep: #0b0d10;
   --link: #74a6ff;
   --switch-on: #2e69cc;
   --success: #5fc487;
@@ -178,7 +190,7 @@
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Type scale (px). Most text is md; titles are md semibold (hierarchy from weight, not size). */
-  --text-xs: 11px; /* metadata: counts, timestamps, field labels */
+  --text-xs: 12px; /* metadata: counts, timestamps, field labels */
   --text-sm: 12px; /* mono: commands, logs, diffs, ids */
   --text-md: 13px; /* controls, lists, titles */
   --text-body: 14px; /* reading text: the chat's words, long prose */
@@ -241,7 +253,7 @@
   --island-gap: 16px;
   --island-band-h: 36px;
   --island-capsule-h: 28px;
-  --sidebar-w: 264px;
+  --sidebar-w: 280px;
   --measure: 720px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;

@@ -4,7 +4,7 @@
 // folded. What you unfolded stays so while the app runs, per project.
 import { ChevronRight } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
-import { cx } from "../../ui";
+import { cx, StateGlyph } from "../../ui";
 import s from "./folds.module.css";
 
 const open = new Map<string, boolean>();
@@ -67,6 +67,10 @@ export function ListNote({ children }: { children: ReactNode }) {
 export function PanelEmpty({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
     <div className={s.empty} data-panel-empty="">
+      {/* The list's own mark for nothing yet, on a tile: the open ring, still. */}
+      <span className={s.emptyMark} aria-hidden>
+        <StateGlyph state="queued" still />
+      </span>
       <h2 className={s.emptyTitle}>{title}</h2>
       {actions === undefined ? null : <div className={s.emptyActions}>{actions}</div>}
     </div>

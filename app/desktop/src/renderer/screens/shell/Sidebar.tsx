@@ -24,7 +24,7 @@
 import { ArrowRight, ChevronDown, ChevronRight, Pin, Plus, Search } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
@@ -45,14 +45,15 @@ import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./S
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { foldKey, holdRows, shownRows } from "./sidebarState";
-import { You } from "./You";
+import { Places, You } from "./You";
 import s from "./sidebar.module.css";
 
 /** A chat's picture in its row: big enough to read its face, the row a 56 px rounded box around it. */
 const AVATAR = 36;
-/** A pinned chat's picture, PIN_COLUMNS to a row 16 px apart, the group centred in the sidebar. */
-const PIN_AVATAR = 72;
-const PIN_COLUMNS = 2;
+/** A pinned chat's picture, pinColumns to a row, the group centred in the sidebar. */
+const PIN_AVATAR = 52;
+/** Three across; four pins as two pairs, so no count leaves a lone pin under a full row of two. */
+const pinColumns = (count: number): number => (count === 4 ? 2 : Math.max(1, Math.min(count, 3)));
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
 export const SPRING = { ms: 360, ease: "var(--ease-spring)" } as const;
 
@@ -79,11 +80,12 @@ const UNREAD = "New message from the lead";
 export function NewButton({ go }: { go: (screen: Screen) => void }) {
   return (
     <>
-      <Tooltip content={`Search · ${display("palette.toggle", window.fleetd.platform)}`}>
-        <button type="button" className={s.round} aria-label="Search" onClick={() => openPalette()}>
-          <Search aria-hidden />
-        </button>
-      </Tooltip>
+      {/* Search, as a field: it opens the palette, which finds chats, agents and commands. */}
+      <button type="button" className={s.search} aria-label="Search" aria-keyshortcuts={display("palette.toggle", window.fleetd.platform)} onClick={() => openPalette()}>
+        <Search aria-hidden />
+        <span className={s.searchWord}>Search</span>
+        <kbd className={s.searchKey}>{display("palette.toggle", window.fleetd.platform)}</kbd>
+      </button>
       <Tooltip content="New bot">
         <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
           <Plus aria-hidden />
@@ -269,6 +271,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
   return (
     <nav className={s.sidebar} aria-label="Sidebar">
       <div className={s.list} onPointerEnter={() => holdRows(keys ?? null)} onPointerLeave={() => holdRows(null)}>
+        <Places screen={screen} factory={factory} go={go} />
         {hubs.map((hub) => {
           // A hub whose projects haven't loaded (offline from the start, say) waits on its own; the others show theirs.
           const waiting = projects === undefined || (loaded.has(hub.id) && loaded.get(hub.id)?.projects === undefined);
@@ -290,7 +293,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
           );
         })}
       </div>
-      <You screen={screen} factory={factory} go={go} />
+      <You go={go} />
     </nav>
   );
 }
@@ -399,7 +402,7 @@ function ProjectGroup(props: {
     name,
     onMove: (order) => pin(layer, rows ?? [], (keys) => inOrder(keys, order)),
     settle: SPRING,
-    grid: { columns: PIN_COLUMNS },
+    grid: { columns: pinColumns(pinned.length) },
     within,
     out: (key, way) => {
       if (way === "down") pin(layer, rows ?? [], (keys) => unpinned(keys, key));
@@ -523,6 +526,7 @@ function ProjectGroup(props: {
             <div
               ref={grid}
               className={s.pins}
+              style={{ "--pin-cols": pinColumns(pins.shown.length) } as CSSProperties}
               {...pins.list}
               data-pinning={reorder.leaving === "up" || undefined}
               data-unpinning={pins.leaving === "down" || undefined}

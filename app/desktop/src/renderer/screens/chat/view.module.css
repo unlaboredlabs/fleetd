@@ -133,7 +133,10 @@
   gap: var(--space-2);
   box-sizing: border-box;
   min-height: var(--island-band-h);
-  padding-bottom: 6px;
+  /* The capsules sit on the composer's top edge, half over it, so they read as the composer's own. */
+  margin-bottom: calc(var(--island-capsule-h) / -2);
+  position: relative;
+  z-index: 3;
   container-type: inline-size;
   pointer-events: none;
 }
@@ -186,7 +189,7 @@
 .line {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-1);
   max-width: 80%;
   min-width: 0;
@@ -350,6 +353,8 @@
   flex: none;
   align-items: center;
   gap: 2px;
+  /* On the bubble's last line, its foot: beside a tall card too, the time and actions sit at its bottom edge. */
+  padding-bottom: 6px;
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
@@ -427,8 +432,8 @@
 }
 .quietRow > .event > span:first-child {
   color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: 12.5px;
+  line-height: var(--leading-sm);
 }
 .event {
   display: flex;
@@ -441,7 +446,7 @@
   flex: none;
   font-family: var(--meta-font);
   font-size: var(--meta-size);
-  color: var(--faint);
+  color: var(--quiet);
   font-variant-numeric: tabular-nums;
 }
 /* A memory refresh's changes, opened under its line: one row each, left-aligned. */
@@ -534,7 +539,9 @@ span.changeUndo {
 }
 .day > * {
   font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
   line-height: var(--leading-xs);
+  letter-spacing: 0.01em;
   color: var(--quiet);
 }
 .clock {

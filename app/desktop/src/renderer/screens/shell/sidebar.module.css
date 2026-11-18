@@ -72,8 +72,8 @@
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
-  min-height: 56px;
-  padding: 0 var(--space-3) 0 10px;
+  min-height: 52px;
+  padding: 0 10px 0 var(--space-2);
   border: none;
   border-radius: var(--row-round);
   background: transparent;
@@ -89,7 +89,8 @@
   background: var(--selected);
 }
 .row[aria-current="page"] {
-  background: var(--selected);
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
 }
 .row:focus-visible {
   outline: 2px solid var(--focus);
@@ -121,10 +122,10 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-md);
+  font-size: 14px;
   font-weight: var(--weight-strong);
   line-height: var(--leading-sm);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -132,7 +133,7 @@
 .when,
 .jump {
   flex: none;
-  color: var(--faint);
+  color: var(--quiet);
   font-family: var(--meta-font);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
@@ -187,14 +188,19 @@
 }
 
 
+/* Every row's mark sits in one column at the row's far end, on the line's centre, 18 px tall: a dot alone, or a small
+   badge with its word or figure. One language for all of them. */
 .mark {
   display: inline-flex;
   flex: none;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-1);
+  min-width: 18px;
+  height: 18px;
   color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: 11px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -209,14 +215,24 @@
   line-height: var(--leading-xs);
 }
 
-.red {
-  color: var(--warning);
-}
-
+.red,
 .work {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-weight: var(--weight-medium);
+}
+.red {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.work {
+  padding-left: 4px;
+  background: var(--hover);
+  color: var(--quiet);
 }
 
 .dot {
@@ -367,6 +383,103 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+/* Search, as a field in the window's top row, beside New: it opens the palette. As tall as the chat's pill. */
+.search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--quiet);
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: text;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.search:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+.search > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.searchWord {
+  flex: 1;
+  min-width: 0;
+}
+.searchKey {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--quiet);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* The places under search (You.tsx Places): a row each, its icon and word; open, the sidebar's open material. */
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+.place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.place:hover {
+  background: var(--hover);
+}
+.place[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+}
+.place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.place > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--quiet);
+}
+.placeLabel {
+  flex: 1;
+  min-width: 0;
+}
+.placeAside {
+  flex: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A screen needs you: one small mark, the words in the tooltip. */
 .roundMark {
   position: absolute;
@@ -391,10 +504,10 @@
   display: flex;
   flex: 1;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
   min-width: 0;
-  min-height: 44px;
-  padding: var(--space-2) 10px;
+  min-height: 52px;
+  padding: var(--space-2);
   border: none;
   border-radius: var(--radius-lg);
   background: transparent;
@@ -439,8 +552,23 @@
   font-size: var(--text-md);
   font-weight: var(--weight-strong);
   line-height: var(--leading-sm);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.meRole {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.meChevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--quiet);
 }
 .meWord {
   display: flex;
@@ -518,28 +646,23 @@
    share of the hair and its pin, kept to the place's outer side, twice that, so the pictures still stand 16 px apart
    and nothing reaches into the list's own padding. */
 .pins {
-  --pin-w: 104px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
+  --pin-cols: 3;
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: var(--space-1) 0;
+  gap: 2px 0;
   margin-bottom: var(--space-3);
-  border-radius: var(--pin-round);
+  border-radius: var(--radius-lg);
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
-/* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin fills it. */
+/* A pin's place: a share of the row (Sidebar.tsx pinColumns: three across, two for four), so the group is a
+   deliberate block at any width and a short last row centres under the full one. */
 .pinSlot {
   display: flex;
-  min-width: 0;
-}
-.pinSlot:nth-child(even) {
-  justify-content: flex-end;
-}
-/* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, still a place wide; a
-   second one brings the two columns back. */
-.pinSlot:only-child {
-  grid-column: 1 / -1;
+  flex: 0 0 calc(100% / var(--pin-cols));
   justify-content: center;
+  min-width: 0;
+  padding: 0 1px;
 }
 .pins > [data-reorder-row][data-lifted] {
   background: transparent;
@@ -601,13 +724,11 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  /* A whole place wide; in a place a hair short (see .pins), short by twice that. */
-  width: calc(200% - var(--pin-w));
+  width: 100%;
   min-width: 0;
-  max-width: var(--pin-w);
-  padding: var(--space-1) 0;
+  padding: var(--space-2) 2px 6px;
   border: none;
-  border-radius: var(--pin-round);
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -626,16 +747,16 @@
   gap: var(--space-1);
   max-width: 100%;
   min-width: 0;
-  min-height: 24px;
-  padding: 0 var(--space-2);
-  border-radius: 12px;
-  transition: background-color var(--dur-quick) var(--ease-snap);
+  min-height: 18px;
+  padding: 0 var(--space-1);
 }
-.pinCell:hover .pinName {
+/* The shade hugs the picture and its name: the whole small box takes it, the open one the sidebar's open material. */
+.pinCell:hover {
   background: var(--hover);
 }
-.pinCell[aria-current="page"] .pinName {
-  background: var(--selected);
+.pinCell[aria-current="page"] {
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
 }
 .pinName > .dot {
   flex: none;
@@ -645,8 +766,9 @@
 .pinTitle {
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.005em;
   line-height: var(--leading-sm);
   white-space: nowrap;
   text-overflow: ellipsis;

@@ -10,16 +10,22 @@
   border: none;
   overflow: visible;
 }
+/* The tabs as one segmented control across the head: a recessed track, the open tab a raised white segment. */
+.bar.bar[role="tablist"] {
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
 .bar .section {
-  flex: none;
+  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
   min-width: 0;
-  height: 32px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
   color: var(--quiet);
   font-size: var(--text-md);
   line-height: var(--leading-xs);
@@ -29,12 +35,12 @@
     color var(--dur-quick) var(--ease-snap);
 }
 .bar .section:hover {
-  background: var(--hover);
   color: var(--text);
 }
 /* aria-selected, not data-state: the tooltip around each tab sets data-state to its own. */
 .bar .section[aria-selected="true"] {
-  background: var(--selected);
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
   color: var(--text);
 }
 .bar .section::after {
@@ -74,13 +80,23 @@
 .label > span {
   grid-area: 1 / 1;
 }
+/* How many, as a small badge after the word: quiet on a closed tab, in the text's colour on the open one. */
 .count {
   flex: none;
-  color: var(--faint);
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--quiet);
   font-family: var(--meta-font);
-  font-size: var(--meta-size);
-  font-weight: 400;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: 16px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.bar .section[aria-selected="true"] .count {
+  color: var(--text);
 }
 .count:empty {
   display: none;

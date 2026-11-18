@@ -10,7 +10,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { parseHash, type Screen } from "./routes";
-import { You } from "./You";
+import { Places, You } from "./You";
 
 const fleetd = vi.hoisted(() => {
   const f = { fixture: null as string | null, platform: "linux", updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) } };
@@ -67,7 +67,8 @@ const mount = async (state: HubState, { me, machines = [], setupLeft = 0 }: { me
     root.render(
       <DataProvider key={String(Math.random())} layer={createDataLayer(hub)}>
         <TooltipProvider>
-          <You screen={{ id: "home" }} factory go={(s) => went.push(s)} />
+          <Places screen={{ id: "home" }} factory go={(s) => went.push(s)} />
+          <You go={(s) => went.push(s)} />
         </TooltipProvider>
       </DataProvider>,
     );
@@ -92,13 +93,11 @@ const open = (): string[] => {
 };
 const SETTINGS = "Settings · Ctrl+,";
 
-it("says your name and nothing else while all is well", async () => {
+it("says your name and your role, as an account, and no mark while all is well", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Sam", role: "owner" }, machines: [machine("devbox", "online")] });
-  expect(me()?.textContent).toBe("Sam");
+  expect(me()?.textContent?.startsWith("SamOwner")).toBe(true);
   expect(me()?.getAttribute("aria-label")).toBe("Sam");
   expect(me()?.dataset["mark"]).toBeUndefined();
-  // No hub name, no dot at rest.
-  expect(host.textContent).not.toContain("devbox");
 });
 
 it("opens on who you are, the hub's name and Settings, and nothing else while all is well", async () => {

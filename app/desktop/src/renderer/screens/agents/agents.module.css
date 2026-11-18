@@ -26,8 +26,12 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  /* In line with the tabs over it: the bands, the glyphs and the tabs' words share the panel's left edges. */
+  /* In line with the tabs over it. */
   padding: 0 var(--space-3);
+}
+/* Each row stands on the panel as a white tile with a gap of its own (VirtualList wraps each in a box). */
+.list [data-index] {
+  padding-bottom: 6px;
 }
 
 /* One agent: its glyph in a gutter and its title; under it what it is doing now. Its role and where its work is are
@@ -35,21 +39,30 @@
    ones lead. */
 .row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   column-gap: var(--space-3);
   row-gap: 2px;
   align-items: center;
   min-width: 0;
   margin-bottom: 0;
-  min-height: 52px;
-  padding: var(--space-2) var(--space-3);
+  min-height: 56px;
+  padding: 10px var(--space-3);
   border-radius: var(--radius-lg);
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
   color: inherit;
   text-decoration: none;
-  transition: background var(--dur-quick) var(--ease-snap);
+  transition:
+    box-shadow var(--dur-quick) var(--ease-snap),
+    transform var(--dur-quick) var(--ease-snap);
 }
 .row:hover {
-  background: var(--hover);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent),
+    0 2px 8px -2px var(--shadow);
+}
+.row:active {
+  transform: scale(0.99);
 }
 .row:focus-visible {
   outline: 2px solid var(--focus);
@@ -81,14 +94,39 @@
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
 }
+/* What it is doing now reads as a sentence: commands and paths in it take the words' face, not the mono. */
+.doing :is(code, samp, kbd, [data-text="code"]) {
+  padding: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: inherit;
+}
 
-/* The state glyph's cell (StateGlyph, ui/primitives): in the row's gutter. */
+/* The state glyph on a small tile tinted by what it means: at work green, waiting on you amber, failed red, done and
+   queued neutral. It spans both lines. */
 .state {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 1 / span 2;
   justify-self: center;
   display: inline-grid;
   place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  color: var(--quiet);
+}
+.state[data-state="working"] {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+.state[data-state="waiting"] {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+}
+.state[data-state="failed"] {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
 }
 
 /* The role's word on a faint wash of its tint. */
@@ -313,13 +351,18 @@
   font-weight: var(--weight-medium);
   line-height: var(--leading-sm);
 }
-/* Its role at the title line's end: the machine voice, quiet, so the list reads as a table of who does what. */
+/* Its role at the title line's end, as a quiet tag. */
 .role {
   grid-row: 1;
   grid-column: 3;
-  color: var(--faint);
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--quiet);
   font-family: var(--meta-font);
-  font-size: var(--meta-size);
-  line-height: var(--leading-sm);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: 18px;
   white-space: nowrap;
 }

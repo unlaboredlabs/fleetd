@@ -68,8 +68,8 @@ afterEach(() => {
   host.remove();
 });
 
-/** The foot's round buttons, by their names. */
-const navRows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>("[class*=tools] button")];
+/** The places under search, by their names. */
+const navRows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>("[class*=places] button")];
 const labels = () => navRows().map((b) => b.getAttribute("aria-label") ?? "");
 const row = (label: string): HTMLElement => {
   const found = navRows().find((b) => b.getAttribute("aria-label")?.startsWith(label) === true);
@@ -151,13 +151,13 @@ describe("the Screens button", () => {
   it("is marked when one asks for you", async () => {
     await counted({ live: 3, asking: 1 });
     expect(row("Screens").getAttribute("aria-label")).toBe("Screens · 3 live: one needs you");
-    expect(row("Screens").querySelector("[class*=roundMark]")).not.toBeNull();
+    expect(row("Screens").querySelector("[class*=dot]")).not.toBeNull();
   });
 
   it("asks a hub without the count for nothing", async () => {
     const calls = await counted({ live: 3, asking: 1 }, ["browser_sessions"]);
     expect(row("Screens").getAttribute("aria-label")).toBe("Screens");
-    expect(row("Screens").querySelector("[class*=roundMark]")).toBeNull();
+    expect(row("Screens").querySelector("[class*=dot]")).toBeNull();
     expect(calls).not.toContain("screens_count");
     expect(calls).not.toContain("browser_sessions");
   });

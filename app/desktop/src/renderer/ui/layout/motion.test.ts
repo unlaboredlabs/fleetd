@@ -75,5 +75,5 @@ it("doesn't move with reduced motion", () => {
 
 it("paints the panel's column in its own tone before the panel slides over it, so no lighter frame shows first", () => {
   expect(decls(rule(layout, ".withAside::before"))).toEqual({ content: '""', "grid-area": "aside", background: "var(--frame)" });
-  expect(decls(rule(layout, ".aside")).background).toBe("var(--sheet)");
+  expect(decls(rule(layout, ".aside")).background).toBe("var(--panel)");
 });

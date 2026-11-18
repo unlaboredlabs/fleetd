@@ -91,15 +91,25 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 0;
-  padding: 22vh var(--space-4) var(--space-4);
+  padding: 24vh var(--space-4) var(--space-4);
   text-align: center;
+}
+.emptyMark {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+  color: var(--quiet);
 }
 .emptyTitle {
   margin: 0;
   color: var(--quiet);
   font-size: var(--text-md);
   line-height: var(--leading-md);
-  font-weight: 400;
+  font-weight: var(--weight-medium);
 }
 .emptyActions {
   display: flex;
