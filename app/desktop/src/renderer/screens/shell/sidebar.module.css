@@ -750,9 +750,13 @@
   min-height: 18px;
   padding: 0 var(--space-1);
 }
-/* The shade hugs the picture and its name: the whole small box takes it, the open one the sidebar's open material. */
-.pinCell:hover {
-  background: var(--hover);
+/* One treatment: no box at rest or under the pointer (the picture lifts a hair), the open one the list rows' open
+   material, every place the same size. */
+.pinCell > :first-child {
+  transition: transform var(--dur-quick) var(--ease-snap);
+}
+.pinCell:hover > :first-child {
+  transform: translateY(-2px);
 }
 .pinCell[aria-current="page"] {
   background: var(--row-on);

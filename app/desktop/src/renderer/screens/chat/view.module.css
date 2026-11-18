@@ -133,10 +133,8 @@
   gap: var(--space-2);
   box-sizing: border-box;
   min-height: var(--island-band-h);
-  /* The capsules sit on the composer's top edge, half over it, so they read as the composer's own. */
-  margin-bottom: calc(var(--island-capsule-h) / -2);
-  position: relative;
-  z-index: 3;
+  /* The capsules float a clear 8 px over the composer, never on its edge. */
+  padding-bottom: var(--space-2);
   container-type: inline-size;
   pointer-events: none;
 }
@@ -430,10 +428,15 @@
   padding-top: var(--space-3);
   min-width: 0;
 }
-.quietRow > .event > span:first-child {
+/* A system line ("PR #10 is in review…", "Memory tidied…"): one quiet centred style, whatever draws its words: 12/18
+   in --quiet, its time last on the same baseline a gap after them, its links and buttons at the same size. */
+.event.event,
+.event.event * {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.event.event {
   color: var(--quiet);
-  font-size: 12.5px;
-  line-height: var(--leading-sm);
 }
 .event {
   display: flex;
@@ -446,7 +449,7 @@
   flex: none;
   font-family: var(--meta-font);
   font-size: var(--meta-size);
-  color: var(--quiet);
+  color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
 /* A memory refresh's changes, opened under its line: one row each, left-aligned. */

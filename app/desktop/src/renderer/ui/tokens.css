@@ -37,12 +37,15 @@
   /* An inset band on a sheet: code, a diff's file head, a track under segments. A step off the sheet, the frame's tone
      in light; in dark a step lighter than the sheet, never the frame's near-black. */
   --inset: #f2f3f5;
+  /* A filled field or select (New bot; Settings' fields are the same fill): no outline, the sheet's white on focus. */
+  --fill: #eff1f3;
+  --fill-hover: #e9ebee;
   /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
   --side-edge: transparent;
   --border: #d6dade;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
-  --bubble: #f1f2f4;
+  --bubble: #edeff2;
   /* A Settings group: one soft fill under a section's rows, no lines between them (DESIGN.md). Controls on it are
      --raised. */
   --group: #ffffff;
@@ -136,6 +139,8 @@
   --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
   --panel: #0e0f11;
   --inset: #1a1b1f;
+  --fill: #1d1f23;
+  --fill-hover: #23252a;
   --border: #33363d;
   --bubble: #1d1e22;
   --group: #0f1013;

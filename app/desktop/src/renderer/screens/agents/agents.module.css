@@ -102,31 +102,22 @@
   font-size: inherit;
 }
 
-/* The state glyph on a small tile tinted by what it means: at work green, waiting on you amber, failed red, done and
-   queued neutral. It spans both lines. */
+/* The state glyph itself, a size up (4 px cells, 14 px across) in its state's colour, on the sheet's white: at work
+   green and stepping on the beat, waiting on you a solid amber block, failed a red cross, done and queued grey. It
+   spans both lines, centred on the title. */
 .state {
   grid-column: 1;
   grid-row: 1 / span 2;
+  align-self: start;
   justify-self: center;
   display: inline-grid;
   place-items: center;
   width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--hover);
-  color: var(--quiet);
+  height: 18px;
 }
-.state[data-state="working"] {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
-}
-.state[data-state="waiting"] {
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-  color: var(--warning);
-}
-.state[data-state="failed"] {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
+.state > [data-state] {
+  --cell: 4px;
+  --gap: 1px;
 }
 
 /* The role's word on a faint wash of its tint. */
