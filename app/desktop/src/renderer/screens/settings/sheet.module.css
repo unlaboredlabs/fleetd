@@ -1,0 +1,403 @@
+/*
+ * Settings as one sheet over the app (SettingsSheet.tsx): the app stays under a light scrim, the sheet floats on it,
+ * its index of pages and the page side by side on the same white, nothing ruled between them.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 40px 48px;
+  background: var(--settings-scrim);
+  backdrop-filter: blur(2px);
+  animation: scrimIn 160ms var(--ease-out) both;
+}
+@keyframes scrimIn {
+  from {
+    background: transparent;
+  }
+}
+
+.sheet {
+  position: relative;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  width: min(1100px, 100%);
+  height: min(860px, 100%);
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--sheet);
+  box-shadow: var(--settings-lift);
+  animation: sheetIn 240ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+.close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  color: var(--quiet);
+  border-radius: var(--radius-md);
+}
+.close > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- Layout "index": a short list of pages at the sheet's left ---- */
+.index {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: 48px var(--space-3) var(--space-6) var(--space-4);
+  background: var(--settings-index);
+  scrollbar-width: none;
+}
+.sheet:focus {
+  outline: none;
+}
+/* The bot whose pages are open, under Bots: set in, by its name. */
+.sub {
+  padding-left: var(--space-3);
+}
+.indexHead {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  margin-bottom: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+}
+.indexTitle {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.groupLabel {
+  padding: 0 var(--space-2) var(--space-1);
+  color: var(--quiet);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
+}
+.item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: start;
+  cursor: default;
+  transition: background-color var(--dur-quick);
+}
+.item:hover {
+  background: var(--hover);
+}
+.item[aria-current="page"] {
+  background: var(--selected);
+  font-weight: var(--weight-medium);
+}
+.item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge {
+  flex: none;
+  color: var(--warning);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.result {
+  height: auto;
+  min-height: 30px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding-block: var(--space-1);
+}
+.result .itemLabel {
+  flex: none;
+  width: 100%;
+}
+.where {
+  color: var(--quiet);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.none {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--quiet);
+  font-size: var(--text-md);
+}
+
+/* The search: a filled field with its magnifier, no frame, the shade of a row's hover deepened. */
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.searchGlyph {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+  pointer-events: none;
+}
+.search > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2) 0 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--settings-field);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  outline: none;
+  transition:
+    background-color var(--dur-quick),
+    border-color var(--dur-quick);
+}
+.search > input::placeholder {
+  color: var(--quiet);
+}
+.search > input:focus {
+  border-color: var(--control-border);
+  background: var(--sheet);
+}
+.search > input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* ---- Layout "tabs": the groups as a switch at the head, a group's pages as tabs under it ---- */
+.sheet[data-layout="tabs"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.scopes {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+.scopeRow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+}
+.scopeSearch {
+  position: relative;
+  width: 220px;
+}
+.scopeSwitch {
+  grid-column: 2;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--settings-field);
+}
+.scopeSwitch > button {
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+.scopeSwitch > button:hover {
+  color: var(--text);
+}
+.scopeSwitch > button[aria-pressed="true"] {
+  background: var(--sheet);
+  color: var(--text);
+  box-shadow: var(--settings-chip);
+}
+.scopeSearch {
+  grid-column: 1;
+  grid-row: 1;
+}
+.pageRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1);
+}
+.pageRow > .item {
+  padding: 0 var(--space-3);
+}
+.popResults {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--sheet);
+  box-shadow: var(--settings-lift);
+}
+
+/* ---- A narrow window: the sheet takes the window, the index a row of its own over the page ---- */
+@media (max-width: 900px) {
+  .scrim {
+    padding: var(--space-2);
+  }
+  .sheet {
+    grid-template-columns: 200px minmax(0, 1fr);
+    height: 100%;
+  }
+}
+@media (max-width: 640px) {
+  .sheet {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .index {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+  .indexHead {
+    display: none;
+  }
+}
+
+/* ---- The controls, as Settings sets them: crisp, light, one height ---- */
+.sheet [role="group"]:has(> button[aria-pressed]) {
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--settings-field);
+  box-shadow: none;
+}
+.sheet [role="group"] > button[aria-pressed] {
+  height: 26px;
+  padding: 0 var(--space-3);
+  border-radius: 7px;
+  font-size: var(--text-md);
+  line-height: 26px;
+}
+.sheet [role="group"] > button[aria-pressed="true"] {
+  background: var(--sheet);
+  box-shadow: var(--settings-chip);
+}
+.sheet button[role="switch"] {
+  width: 34px;
+  height: 20px;
+  margin-top: 0;
+  box-shadow: none;
+}
+.sheet button[role="switch"] > span {
+  width: 16px;
+  height: 16px;
+  box-shadow:
+    0 1px 2px #0000002e,
+    0 0 0 0.5px #00000014;
+}
+.sheet button[role="switch"][data-state="checked"] > span {
+  transform: translateX(16px);
+}
+.sheet button[role="combobox"] {
+  height: 32px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-color: var(--settings-control-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 1px #0f17200a;
+}
+.sheet input:not([type="search"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.sheet textarea {
+  border-color: var(--settings-control-edge);
+  border-radius: var(--radius-md);
+}
+.sheet input:not([type="search"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  height: 32px;
+  padding: 0 var(--space-3);
+}
+
+/* ---- Layout "frame": the window itself, as the app is: the index flush on the frame, the page a sheet set into it ---- */
+.scrim:has(> .sheet[data-layout="frame"]) {
+  padding: var(--frame-inset) var(--frame-inset) var(--frame-inset) 0;
+  background: var(--frame);
+  animation: none;
+}
+.sheet[data-layout="frame"] {
+  grid-template-columns: 248px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+.sheet[data-layout="frame"] .index {
+  background: transparent;
+}
+.sheet[data-layout="frame"] .page {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sheet);
+  background: var(--sheet);
+  box-shadow: var(--sheet-lift);
+}
+.sheet[data-layout="frame"] .close {
+  top: calc(12px + var(--frame-inset));
+  right: calc(12px + var(--frame-inset));
+}

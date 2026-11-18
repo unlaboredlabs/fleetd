@@ -345,3 +345,22 @@
     --dur-panel-out: 0ms;
   }
 }
+
+/* Settings (screens/settings, the sheet over the app): its own few, on top of the shared ones. */
+:root,
+[data-theme="light"] {
+  --settings-scrim: #0b0d1026;
+  --settings-lift: 0 0 0 1px #0f17201a, 0 2px 4px #0f17200a, 0 24px 64px -12px #0f172040;
+  --settings-index: var(--sheet);
+  --settings-field: #0f17200a;
+  --settings-chip: 0 0 0 1px #0f172014, 0 1px 2px #0f17201a;
+  --settings-control-edge: var(--control-border);
+}
+[data-theme="dark"] {
+  --settings-scrim: #0000008c;
+  --settings-lift: 0 0 0 1px #ffffff17, 0 2px 4px #00000066, 0 24px 64px -12px #000000b3;
+  --settings-index: var(--sheet);
+  --settings-field: #ffffff0d;
+  --settings-chip: 0 0 0 1px #ffffff14, 0 1px 2px #00000080;
+  --settings-control-edge: var(--control-border);
+}

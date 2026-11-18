@@ -33,8 +33,7 @@ export function Notifications() {
     setTest(shown ? "sent" : "unsupported");
   };
   return (
-    <SettingsSection title="Notifications" reveal="notifications">
-      <SettingsRow reveal="notifications.kinds" title="Notify me when" hint="Never for the chat in front of you." />
+    <SettingsSection title="Notify me when" reveal="notifications" hint="Never for the chat in front of you.">
       {KINDS.map(({ kind, label }) => (
         <SwitchRow key={kind} title={label} checked={prefs.kinds[kind]} onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })} />
       ))}

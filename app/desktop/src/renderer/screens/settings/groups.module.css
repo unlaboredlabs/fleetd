@@ -20,7 +20,7 @@
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
   min-width: 0;
-  padding: 0 var(--space-1) var(--space-3);
+  padding: 0 var(--space-1) var(--space-2-5, 10px);
 }
 .headText {
   display: flex;
@@ -32,10 +32,10 @@
   align-self: flex-start;
   margin: 0;
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--text-md);
   line-height: var(--leading-md);
   font-weight: var(--weight-strong);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
 }
 /* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
 .title {
@@ -57,7 +57,6 @@
   border: 1px solid var(--group-edge);
   border-radius: var(--radius-group);
   background: var(--group);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow) 35%, transparent);
 }
 /* Rows in a group read as a table's: one hairline between two, inset from the group's edges, never across the page. */
 .group > .row + .row::before {
@@ -106,7 +105,7 @@
   align-items: center;
   column-gap: var(--space-6);
   min-width: 0;
-  min-height: 52px;
+  min-height: 48px;
   padding: var(--space-2) var(--space-4);
 }
 .rowText {
@@ -161,27 +160,49 @@
   align-items: center;
   column-gap: var(--space-3);
   min-width: 0;
-  min-height: 52px;
+  min-height: 48px;
   padding: var(--space-3) var(--space-4);
 }
 .listRow > .control {
   flex-wrap: nowrap;
 }
 .withIcon {
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
 }
-/* On the name's line, however many lines follow it. */
+/* A row's glyph in a small rounded tile of its own (a person's picture fills it): every name in a list starts in one
+   line, and the glyphs read as one set. On the name's line, however many lines follow it. */
 .icon {
   align-self: start;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  color: var(--quiet);
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border-radius: var(--radius-md);
+  background: var(--settings-field);
+  color: var(--text);
+}
+.icon:has(> [data-avatar]) {
+  border-radius: 50%;
+  background: none;
 }
 .icon > svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+/* In a list's row, a choice and an action are quiet until pointed at: a choice its words and a chevron, an action its
+   words, each lighting as a rounded box under the pointer. */
+.listRow .control button[role="combobox"] {
+  width: auto;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  gap: var(--space-1);
+}
+.listRow .control button[role="combobox"]:hover:not(:disabled),
+.listRow .control button[role="combobox"][data-state="open"] {
+  background: var(--hover);
 }
 .name {
   display: flex;
@@ -359,4 +380,51 @@
 /* What a marked row holds under its title (a key's field) starts where its title does, past the dot's room. */
 .row:has(.marked) > .below {
   padding-inline-start: calc(var(--space-4) + 8px + var(--space-3));
+}
+
+/* Loading: two rows' shapes that breathe, in the group's rhythm. */
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 18px var(--space-4);
+}
+.ghostRow {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--settings-field);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+.ghostRow:first-of-type {
+  width: 42%;
+}
+.ghostRow:last-of-type {
+  width: 64%;
+  animation-delay: 0.2s;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghostRow {
+    animation: none;
+  }
+}
+
+/* Nothing yet: centred in its group, a glyph, one line and the one action. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-1);
 }

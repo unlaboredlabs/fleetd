@@ -148,15 +148,16 @@ function Machines() {
   return (
     <div className={s.scroll} data-screen="settings.hub.machines">
       <div className={s.column}>
-        <PageHead title="Machines" />
-        <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
-        <MachineList
-          add={
+        <PageHead
+          title="Machines"
+          aside={
             <span ref={addRef}>
               <AddButton label="Add machine" onClick={() => setOpen({ view: { kind: "choose" }, at: Date.now() })} />
             </span>
           }
         />
+        <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
+        <MachineList />
         <ProvidersGroup />
         <WhatRunsWhere />
         <Updates />

@@ -5,12 +5,12 @@
 // (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke. Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx). On a fleetd cloud team (a hub that
 // came with the account) the plus invites by email instead, and who is invited so is listed under People
 // (EmailInvites.tsx); a self-hosted hub's page is the one above, with nothing of the cloud on it.
-import { Mail, User } from "lucide-react";
+import { Mail } from "lucide-react";
 import { useState } from "react";
 import type { HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { Button, Dialog, Select, Text } from "../../ui";
+import { Avatar, Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { AddButton, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
@@ -173,8 +173,9 @@ function PersonLine({
   return (
     <SettingsListRow
       label={p.name}
-      icon={row.invited ? <Mail /> : <User />}
+      icon={row.invited ? <Mail /> : <Avatar name={p.name} size={28} />}
       name={p.name}
+      hint={row.invited ? undefined : [devices, accounts.line].filter((x) => x !== null && x !== "").join(". ") || undefined}
       meta={row.you ? "you" : undefined}
       controls={
         <>
@@ -207,15 +208,8 @@ function PersonLine({
           ? `Invited ${invitedBy(invite, me)}. ${expiresLine(invite.expiresAt, now)}.`
           : row.invited
             ? "Invited, not joined yet"
-            : devices === ""
-              ? devicesLine(0)
-              : `${devicesLine(row.devices.length)}: ${devices}`}
+            : devicesLine(row.devices.length)}
       </Text>
-      {accounts.line === null || row.invited ? null : (
-        <Text size="sm" tone="quiet" data-accounts>
-          {accounts.line}
-        </Text>
-      )}
       {accounts.pause === null ? null : (
         <Text size="sm" tone="warning">
           <HubText>{accounts.pause}</HubText>

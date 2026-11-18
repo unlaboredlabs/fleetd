@@ -2,7 +2,7 @@
 // (#/settings/projects?for=<machine>/<project>). The archived ones are in their own group under
 // them, each with Bring back: an archived bot is out of the app's sidebar, and this is where it is found again.
 import { useState } from "react";
-import { Button, Text } from "../../ui";
+import { Avatar, Button, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
 import { archiveProject } from "../projects/actions";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
@@ -10,7 +10,7 @@ import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectSummary } from "./contracts";
 import { useLive } from "./hub";
-import { GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { EmptyState, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { formatRoute } from "./route";
 import s from "./settings.module.css";
 
@@ -45,10 +45,11 @@ export function ProjectList() {
           {projects === undefined ? (
             <GroupNote>Loading…</GroupNote>
           ) : active.length === 0 ? (
-            <SettingsRow
-              title={archived.length === 0 ? "No bots yet." : "Every bot is archived."}
-              control={
-                <Button size="sm" onClick={() => navigate({ id: "projects.add" })}>
+            <EmptyState
+              icon={<Avatar name="Bot" bot="idle" size={40} />}
+              title={archived.length === 0 ? "No bots yet" : "Every bot is archived"}
+              action={
+                <Button variant="primary" onClick={() => navigate({ id: "projects.add" })}>
                   New bot
                 </Button>
               }

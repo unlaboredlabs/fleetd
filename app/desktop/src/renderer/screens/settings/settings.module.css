@@ -18,25 +18,55 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--settings-thumb, var(--border)) transparent;
 }
 .column {
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
-  max-width: 720px;
+  max-width: 704px;
   margin: 0 auto;
-  padding: var(--space-6) var(--space-8) var(--space-12);
+  padding: 48px var(--space-10) 96px;
 }
-/* The page's own title, at the head of its column: the one large line on the page; a control for the whole page (an
-   add) at its line's end. */
+/* The page's head: the way back (a bot's Bots) small over the title, the title the one large line on the page, a
+   control for the whole page (an add) at its line's end, and a set's pages as tabs under it. */
 .pageHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-bottom: calc(-1 * var(--space-2));
+}
+.pageLead {
+  display: flex;
+  align-items: center;
+  margin-bottom: calc(-1 * var(--space-3));
+}
+.crumb {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.crumb::after {
+  content: "/";
+  margin-inline: var(--space-2) 0;
+  color: var(--faint);
+}
+.crumb:hover {
+  color: var(--text);
+}
+.pageTitleRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   min-width: 0;
-  margin-bottom: calc(-1 * var(--space-4));
-  padding: 0 var(--space-1);
+  min-height: 32px;
 }
 .pageTitle {
   min-width: 0;
@@ -45,7 +75,7 @@
   font-size: var(--text-title);
   line-height: var(--leading-title);
   font-weight: var(--weight-strong);
-  letter-spacing: -0.022em;
+  letter-spacing: -0.025em;
 }
 /* What was a page once, now a part of another (Frames.tsx): its sections keep the column's rhythm. */
 .part {
@@ -297,12 +327,39 @@
 [data-theme="dark"] {
   --search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239a9fa8' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
 }
-/* A set's pages (a project's, Every project's) as tabs over the page, in line with its column. */
+/* A set's pages (a bot's, Every bot's) as tabs under the page's title: words in a row, the open one in a rounded box,
+   no line under them. */
 .pageTabs {
   flex: none;
 }
-.pageTabList {
-  padding: 0 var(--space-6);
+.pageTabList.pageTabList {
+  gap: 2px;
+  margin-left: calc(-1 * var(--space-3));
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.pageTabList .pageTab {
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--quiet);
+  font-size: var(--text-md);
+  font-weight: var(--weight-regular);
+}
+.pageTabList .pageTab::after,
+.pageTabList .pageTab::before {
+  display: none;
+}
+.pageTabList .pageTab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.pageTabList .pageTab[data-state="active"] {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: var(--weight-medium);
 }
 
 .sidebarNote {
