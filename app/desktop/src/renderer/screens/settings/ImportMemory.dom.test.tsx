@@ -94,6 +94,9 @@ async function mount(missing?: HubError, refuse?: HubError) {
     send(snapshot(1));
   });
   await settle();
+  // The import's steps open from its row.
+  const opener = Array.from(document.querySelectorAll("button")).find((b) => b.textContent.trim() === "Import…");
+  if (opener !== undefined) act(() => opener.click());
   return hub;
 }
 
@@ -118,7 +121,7 @@ const paste = (value: string) => {
   return box;
 };
 
-const status = () => document.querySelector('section[aria-label="Import memory"] [role="status"]')?.textContent ?? "";
+const status = () => document.querySelector('section[data-part="import-memory"] [role="status"]')?.textContent ?? "";
 
 it("shows the two steps with the hub's prompt, and copies it whole", async () => {
   await mount();
@@ -182,7 +185,7 @@ it("says so when nothing was new", async () => {
 
 it("shows nothing on a hub from before Import memory", async () => {
   await mount({ code: "not_found", message: "Unknown tool memory_import." });
-  expect(document.querySelector('section[aria-label="Import memory"]')).toBeNull();
+  expect(document.querySelector('section[data-part="import-memory"]')).toBeNull();
 });
 
 it("never says your memory already has it when nothing fit, or only secrets were skipped", async () => {

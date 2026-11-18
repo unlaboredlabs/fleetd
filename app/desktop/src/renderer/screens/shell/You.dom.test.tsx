@@ -95,7 +95,7 @@ const SETTINGS = "Settings · Ctrl+,";
 
 it("says your name and your role, as an account, and no mark while all is well", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Sam", role: "owner" }, machines: [machine("devbox", "online")] });
-  expect(me()?.textContent?.startsWith("SamOwner")).toBe(true);
+  expect(me()?.textContent.startsWith("SamOwner")).toBe(true);
   expect(me()?.getAttribute("aria-label")).toBe("Sam");
   expect(me()?.dataset["mark"]).toBeUndefined();
 });

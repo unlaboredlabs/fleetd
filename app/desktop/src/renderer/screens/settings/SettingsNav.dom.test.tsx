@@ -115,8 +115,10 @@ const render = async (hash: string, admin: boolean, live = true, features: Reado
   for (let i = 0; i < 3; i++) await settle();
 };
 
-const nav = () => host.querySelector<HTMLElement>("[aria-label='Settings']");
+const nav = () => host.querySelector<HTMLElement>("nav[aria-label='Settings']");
 const rows = () => [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t !== "");
+/** The index's groups, by their labels. */
+const groups = () => [...(nav()?.querySelectorAll("[role='group']") ?? [])].map((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent);
 const button = (text: string, within: ParentNode = document) => {
   const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
   if (b === undefined) throw new Error(`no button ${text} in ${[...within.querySelectorAll("button")].map((x) => x.textContent.trim()).join(" | ")}`);
@@ -144,12 +146,13 @@ const pickTab = async (set: string, name: string) => {
 
 it("has You and Bots for a member as one flat list, Bots listing the bots, each opening its four pages under tabs", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Bots"]);
-  expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
-  // Nothing to pick and nothing nested in the sidebar.
-  expect(nav()?.querySelector("[role='combobox'], [role='group'], select")).toBeNull();
+  // You, then Bots: All bots and each bot by name. No Hub group for a member.
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", "All bots", "docs", "storefront"]);
+  expect(groups()).toEqual(["You", "Bots"]);
+  // Nothing to pick in the index.
+  expect(nav()?.querySelector("[role='combobox'], select")).toBeNull();
 
-  await click(button("Bots", nav() ?? document));
+  await click(button("All bots", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/projects");
   expect(screen()).toBe("settings.projects.list");
   const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Bots']");
@@ -159,7 +162,7 @@ it("has You and Bots for a member as one flat list, Bots listing the bots, each 
   expect(screen()).toBe("settings.projects");
   // Named in the route so a reload or a copied link lands on it.
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/docs");
-  expect(button("Bots", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("docs", nav() ?? document).getAttribute("aria-current")).toBe("page");
 
   // Each of the project's pages is one tab from there, on the same project.
   const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Bot']");
@@ -189,7 +192,7 @@ it("keeps the opened bot across its tabs, and Bots goes back to the list", async
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
   await pickTab("Bot", "Agents");
   expect(window.location.hash).toBe("#/settings/agents?for=devbox/storefront");
-  await click(button("Bots", nav() ?? document));
+  await click(button("All bots", nav() ?? document));
   expect(screen()).toBe("settings.projects.list");
   expect(window.location.hash).toBe("#/settings/projects");
 });
@@ -208,7 +211,7 @@ it("opens a bot's built-in prompts from the one row at the foot of its Instructi
   // No tab of the project's, and no picker: the page is the project's, and goes back to its Instructions.
   expect(host.querySelector("[role='tablist']")).toBeNull();
   expect(host.querySelector("#prompts-scope")).toBeNull();
-  expect(button("Bots", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("storefront", nav() ?? document).getAttribute("aria-current")).toBe("page");
   await click(button("‹ Instructions"));
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
   expect(screen()).toBe("settings.instructions");
@@ -218,7 +221,8 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
   await render("#/settings/accounts", false);
   expect(screen()).toBe("settings.accounts");
-  expect(parts()).toEqual(["claude", "github", "onepassword"]);
+  // One group, an account a row.
+  expect([...host.querySelectorAll("[data-screen='settings.accounts'] section section[aria-label]")].map((r) => r.getAttribute("aria-label"))).toEqual(["Claude", "GitHub", "1Password"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/hubs", false);
@@ -230,17 +234,19 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
 
 const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']") ?? [])].map((b) => b.textContent.trim());
 
-it("has ten rows for an admin and six for a member, one fewer each on a hub without the vault", async () => {
+it("has the Hub group for an admin only, and Vault only on a hub with the vault", async () => {
+  const bots = ["All bots", "docs", "storefront"];
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Bots", "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
+  expect(groups()).toEqual(["You", "Bots", "Hub"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Bots", "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
-  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Bots"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots]);
 });
 
 // Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of
@@ -248,17 +254,17 @@ it("has ten rows for an admin and six for a member, one fewer each on a hub with
 const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: string | null, row: string]> = [
   ["#/settings", "settings.general", null, "General"],
   ["#/settings/general", "settings.general", null, "General"],
-  ["#/settings/accounts", "settings.accounts", null, "Your accounts"],
+  ["#/settings/accounts", "settings.accounts", null, "Accounts"],
   ["#/settings/vault", "settings.vault", null, "Vault"],
-  ["#/settings/your-memory", "settings.your-memory", null, "Your memory"],
+  ["#/settings/your-memory", "settings.your-memory", null, "Memory"],
   ["#/settings/devices", "settings.hubs", "settings.devices", "Hubs & devices"],
   ["#/settings/hubs", "settings.hubs", null, "Hubs & devices"],
-  ["#/settings/projects", "settings.projects.list", null, "Bots"],
-  ["#/settings/agents?for=devbox/docs", "settings.agents", null, "Bots"],
-  ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "Bots"],
-  ["#/settings/automations?for=devbox/docs", "settings.automations", null, "Bots"],
-  ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "Bots"],
-  ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "Bots"],
+  ["#/settings/projects", "settings.projects.list", null, "All bots"],
+  ["#/settings/agents?for=devbox/docs", "settings.agents", null, "docs"],
+  ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "docs"],
+  ["#/settings/automations?for=devbox/docs", "settings.automations", null, "docs"],
+  ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "docs"],
+  ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "docs"],
   ["#/settings/hub/people", "settings.hub.people", null, "People"],
   ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
   ["#/settings/hub/updates", "settings.hub.machines", "settings.hub.updates", "Machines"],

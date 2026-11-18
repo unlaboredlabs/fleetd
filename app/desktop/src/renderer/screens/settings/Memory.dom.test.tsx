@@ -126,9 +126,11 @@ it("lists your memory as one card per entry, with the lead's source and time onl
   expect(list).toHaveLength(4);
   expect(list[0]).toBe("Style");
   expect(list[1]).toContain("Concise. State first.");
-  expect(list[1]).toContain("Remembered by the lead");
+  // Where it came from is the entry's chat mark, named for assistive tech and in its tooltip.
+  const sources = Array.from(document.querySelectorAll('ul[aria-label="Entries of your memory"] > li')).map((li) => li.querySelector("a")?.getAttribute("aria-label") ?? "");
+  expect(sources[1]).toContain("Remembered by the lead");
   // An entry with no note says nothing about where it came from.
-  expect(list[2]).not.toContain("Remembered");
+  expect(sources[2]).toBe("");
   const link = document.querySelector<HTMLAnchorElement>('ul[aria-label="Entries of your memory"] a');
   expect(link?.getAttribute("href")).toContain("m12");
   expect(document.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe(`${String(FILE.length)} of 4,000 characters`);

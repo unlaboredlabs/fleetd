@@ -122,7 +122,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   return (
     <div
       className={n.scrim}
-      data-screen="settings.sheet"
+      data-sheet="settings"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

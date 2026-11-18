@@ -84,6 +84,6 @@ it("with no archived bot has no Archived group, and with every bot archived says
   act(() => root.unmount());
   root = createRoot(host);
   await render([bot("t", "Taxes", AT)]);
-  expect(host.textContent).toContain("Every bot is archived.");
+  expect(host.textContent).toContain("Every bot is archived");
   expect(rows("Archived")).toEqual(["Taxes"]);
 });

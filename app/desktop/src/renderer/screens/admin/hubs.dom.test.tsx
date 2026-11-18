@@ -256,5 +256,6 @@ it("settles with hubs from before hub_info: the Hub group shows once, and nobody
   for (let i = 0; i < 5; i++) await settle();
   expect(calls("hub", "hub_info").length).toBe(asked);
   expect(asked).toBeLessThan(10);
-  expect(host.querySelector("nav[aria-label='Settings'] section[aria-label='Hub']")).not.toBeNull();
+  const groups = [...host.querySelectorAll("nav[aria-label='Settings'] [role='group']")].map((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent);
+  expect(groups).toContain("Hub");
 });
