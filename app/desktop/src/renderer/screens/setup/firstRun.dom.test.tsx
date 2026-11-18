@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// The first run on a team of fleetd cloud with no machine yet: its owners and admins land on Connect a computer,
-// unless this device joined the team by an invitation (decision hosted.invites-need-accept).
+// The first run on a team of fleetd cloud with nothing to run agents on yet: its owners and admins land on Where agents
+// run, unless this device joined the team by an invitation (decision hosted.invites-need-accept); hosted sandboxes
+// connected there ask for Claude until an account reaches them.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
@@ -15,12 +16,12 @@ import { FirstRun } from "./FirstRun";
 
 let host: HTMLDivElement;
 let root: Root;
+let send: (frame: HubFrame) => void = () => undefined;
 
 const render = async (entry: { cloud?: true; invited?: true }) => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  let send: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool) =>
       Promise.resolve({
@@ -77,5 +78,32 @@ it("a team this device joined by invitation never opens on Connect a computer: G
   expect(screen()).not.toBe("setup.machine");
   expect(host.textContent).not.toContain("Connect this computer");
   expect(host.textContent).toContain("Add a bot");
+  stop();
+});
+
+it("hosted sandboxes connected with no Claude account that reaches them: Connect Claude, never that agents run there", async () => {
+  const stop = await render({ cloud: true });
+  const runner = {
+    machineId: "hosted",
+    name: "Hosted sandboxes",
+    runner: true,
+    status: "degraded",
+    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+    lastSeenAt: "2026-11-18T00:00:00Z",
+    nodeVersion: "1.0.0",
+  };
+  const machines = async (list: unknown[]) =>
+    act(async () => {
+      send({ t: "snapshot", snapshot: { cursor: 2, attention: [], machines: list, projects: [] } } as never);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  await machines([runner]);
+  expect(screen()).toBe("setup.machine.hosted");
+  expect(host.textContent).toContain("Connect Claude");
+  expect(host.textContent).not.toContain("Agents run there");
+  // An account reached them: they run agents now.
+  await machines([{ ...runner, status: "online", degradedReason: undefined }]);
+  expect(screen()).toBe("setup.machine.joined");
+  expect(host.textContent).toContain("Hosted sandboxes are connected");
   stop();
 });
