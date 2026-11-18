@@ -83,7 +83,8 @@ export function imageLine(image: ComputerImage | undefined, commands: number, no
   return { text: [`Built ${built}`, size].filter(Boolean).join(" · "), tone: "quiet" };
 }
 
-const WHERE: Record<NonNullable<ComputerImage["where"]>, string> = {
+// Open: a newer hub may keep it somewhere this build has no words for.
+const WHERE: Partial<Record<string, string>> = {
   vm: "a local VM image",
   boat: "a boat.dev snapshot",
   e2b: "an E2B snapshot",
@@ -91,4 +92,4 @@ const WHERE: Record<NonNullable<ComputerImage["where"]>, string> = {
 };
 
 /** Where the image is kept, for the row's hover: "a local VM image". */
-export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : WHERE[image.where]);
+export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : (WHERE[image.where] ?? null));
