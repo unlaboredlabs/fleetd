@@ -777,28 +777,22 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(script).toContain(`fleetd.uid=${uid}`);
 });
 
-test("a box's temp files are in its checkout, out of git: a temp file renames into the checkout, and pnpm's store is the session's", async () => {
+test("a box's pnpm store is in its checkout, out of git; its temp files stay in its scratch dir, outside the repo", async () => {
   const n = node();
   const repo = join(n.home, "wt-tmp");
   mkdirSync(repo, { recursive: true });
   expect(Bun.spawnSync(["git", "init", "-q", repo]).success).toBe(true);
   const dir = join(n.home, "hosts", "s-tmp");
   const place = n.vm.bound({ sessionId: "s-tmp", dir, role: "worker" });
-  // A temp file made in $TMPDIR, then renamed into the checkout (Python's mkstemp and os.replace): in a VM, the home's
-  // scratch dir is a share of its own, and the kernel renames within one share only.
-  const script = 'f=$(mktemp) && echo made > "$f" && mv "$f" "$PWD/out.txt" && echo "tmp=$TMPDIR pnpm=$npm_config_store_dir" && git status --porcelain';
-  const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env: envOf(n.home) });
+  const env = envOf(n.home);
+  const script = 'mkdir -p "$pnpm_config_store_dir" && touch "$pnpm_config_store_dir/x" && echo "tmp=$TMPDIR store=$pnpm_config_store_dir" && git status --porcelain';
+  const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env });
   expect(ran.exitCode).toBe(0);
-  expect(ran.outputTail).toContain(`tmp=${join(repo, ".fleetd/tmp/s-tmp")} pnpm=${join(repo, ".fleetd/tmp/s-tmp/pnpm-store")}`);
-  // git sees the file renamed in, not the temp dir.
-  expect(ran.outputTail.trim().split("\n").slice(-1)[0]).toBe("?? out.txt");
-  expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/tmp/\n");
-  // The next session in this checkout (a reader's, handed on warm) doesn't find the last one's temp files.
-  writeFileSync(join(repo, ".fleetd/tmp/s-tmp/left"), "x");
+  // A temp dir inside the repo would be found by every tool walking up from it (its package.json, its test runner).
+  expect(ran.outputTail).toContain(`tmp=${env.TMPDIR} store=${join(repo, ".fleetd/pnpm-store/")}`);
+  expect(ran.outputTail).not.toContain("??");
+  expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/pnpm-store/\n");
   await place.end(dir);
-  const next = n.vm.bound({ sessionId: "s-tmp2", dir: join(n.home, "hosts", "s-tmp2"), role: "worker" });
-  expect((await next.run({ cwd: repo, argv: ["/bin/sh", "-c", 'ls "$TMPDIR/.."'], timeoutSec: 10, env: envOf(n.home) })).outputTail.trim()).toBe("s-tmp2");
-  await next.end(join(n.home, "hosts", "s-tmp2"));
 }, 30_000);
 
 test("a program on PATH that links into a hidden dir (agent-browser's, into its package) is put back where it links to", () => {
