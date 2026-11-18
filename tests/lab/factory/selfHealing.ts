@@ -42,7 +42,7 @@ export async function selfHealing(f: Factory) {
   // Lost under it: the worktree's directory and the local branch, as a cleanup or a person might; then, a while later
   // (longer than `lab-slow`), the node dies.
   const beforeLoss = await f.cursor();
-  git(project.root, "worktree", "remove", "--force", wt);
+  git(project.root, "worktree", "remove", "--force", "--force", wt);
   git(project.root, "branch", "-q", "-D", branch);
   check(!fs.existsSync(wt), `${wt} is gone`);
   await sleep(2000);
