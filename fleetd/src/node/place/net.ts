@@ -6,7 +6,7 @@
 // (over the box's link, not the network) are untouched. The node reads the addresses again when they change (a new
 // DHCP lease, IPv6's rotating addresses, a VPN coming up) and sets each running box's routes to them, through the
 // shell that holds the namespace (`nsenter`): nothing needs root, and nothing changes on this machine.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
 
 /** The routing table a box's namespace keeps this machine's addresses in, and the rule's priority that reads it
@@ -14,9 +14,63 @@ import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
 export const TABLE = 4790;
 export const RULE_PREF = 10;
 
+/** The kernel's own word on this machine's addresses, as /proc gives them; a stand-in for the tests. */
+export type Kernel = { fibTrie: string; ifInet6: string };
+
+const readKernel = (): Kernel => {
+  const read = (path: string) => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return "";
+    }
+  };
+  return { fibTrie: read("/proc/net/fib_trie"), ifInet6: read("/proc/net/if_inet6") };
+};
+
+/** An IPv6 address from /proc/net/if_inet6's 32 hex digits, as Node writes one: lowercase, each group without its
+ * leading zeros, the longest run of two or more zero groups (the first, on a tie) as `::`. */
+export function ipv6Of(hex: string): string {
+  const groups = (hex.toLowerCase().match(/.{4}/gu) ?? []).map((g) => g.replace(/^0+(?=.)/u, ""));
+  let best = { at: -1, len: 1 };
+  for (let i = 0; i < groups.length; ) {
+    if (groups[i] !== "0") {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < groups.length && groups[j] === "0") j++;
+    if (j - i > best.len) best = { at: i, len: j - i };
+    i = j;
+  }
+  if (best.at < 0) return groups.join(":");
+  return `${groups.slice(0, best.at).join(":")}::${groups.slice(best.at + best.len).join(":")}`;
+}
+
+/** The kernel's local addresses: IPv4's from the `host LOCAL` entries of /proc/net/fib_trie, IPv6's from
+ * /proc/net/if_inet6, of every interface whatever its state (a bridge with no carrier, Docker's docker0, still has its
+ * address, and this machine still answers there). */
+export function kernelAddrs(k: Kernel): string[] {
+  const out: string[] = [];
+  let last: string | undefined;
+  for (const line of k.fibTrie.split("\n")) {
+    const addr = /[|+]-- (\d+\.\d+\.\d+\.\d+)\s*$/u.exec(line)?.[1];
+    if (addr) last = addr;
+    else if (last && /^\s*\/32 host LOCAL\b/u.test(line)) out.push(last);
+  }
+  for (const line of k.ifInet6.split("\n")) {
+    const hex = /^([0-9a-f]{32})\s/iu.exec(line.trim())?.[1];
+    if (hex) out.push(ipv6Of(hex));
+  }
+  return out;
+}
+
+const loopback = (addr: string) => addr === "::1" || addr.startsWith("127.");
+
 /** Every address of this machine but loopback's (the namespace has a loopback of its own), each once, without its
- * zone: `fe80::1%eth0` is `fe80::1`. */
-export function hostAddrs(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces()): string[] {
+ * zone: `fe80::1%eth0` is `fe80::1`. Both what the interfaces list (up ones only, as libuv sees them) and every local
+ * address the kernel holds, a down interface's among them. */
+export function hostAddrs(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(), kernel: Kernel = readKernel()): string[] {
   const out = new Set<string>();
   for (const list of Object.values(ifaces)) {
     for (const a of list ?? []) {
@@ -25,6 +79,7 @@ export function hostAddrs(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkI
       if (addr) out.add(addr);
     }
   }
+  for (const addr of kernelAddrs(kernel)) if (!loopback(addr)) out.add(addr);
   return [...out].sort();
 }
 

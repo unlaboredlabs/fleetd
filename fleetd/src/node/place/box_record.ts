@@ -22,6 +22,8 @@ export type BoxRecord = {
   leader: BoxProc;
   /** The VMM, virtiofsd and passt (pasta, and the shell holding the box's network namespace). */
   helpers: BoxProc[];
+  /** virtiofsd, whose open files the node watches (./microvm.ts watchShares); absent for a box from before. */
+  fs?: BoxProc;
   /** The shell holding the box's network namespace, where its routes keep this machine's addresses out (./net.ts);
    * absent for a box from before the namespace. */
   net?: BoxProc;

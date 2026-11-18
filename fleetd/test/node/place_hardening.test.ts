@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOX_MARKER, boxFile, liveProc, reapLeaked, type BoxRecord } from "../../src/node/place/box_record.ts";
-import { blockedIn, blockLines, blockScript, hostAddrs, netTools, setBlocks, TABLE, type Runner } from "../../src/node/place/net.ts";
+import { blockedIn, blockLines, blockScript, hostAddrs, ipv6Of, netTools, setBlocks, TABLE, type Runner } from "../../src/node/place/net.ts";
 import { startOf } from "../../src/node/runner/host.ts";
 
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-walls-"));
@@ -32,7 +32,46 @@ test("this machine's addresses are every one but loopback's, without zones, each
     eth0: [{ address: "192.168.2.8", internal: false }, { address: "fe80::1%eth0", internal: false }, { address: "2001:DB8::8", internal: false }],
     tailscale0: [{ address: "100.64.0.7", internal: false }, { address: "192.168.2.8", internal: false }],
   } as unknown as Parameters<typeof hostAddrs>[0];
-  expect(hostAddrs(ifaces)).toEqual(["100.64.0.7", "192.168.2.8", "2001:db8::8", "fe80::1"]);
+  expect(hostAddrs(ifaces, { fibTrie: "", ifInet6: "" })).toEqual(["100.64.0.7", "192.168.2.8", "2001:db8::8", "fe80::1"]);
+});
+
+test("a down interface's addresses are this machine's too: the kernel's local table names them, and a box keeps them out", () => {
+  // docker0 with no carrier: libuv lists no interface that isn't up, but the kernel still answers at 172.17.0.1.
+  const fibTrie = [
+    "Main:",
+    "  +-- 0.0.0.0/0 3 0 5",
+    "     |-- 172.17.0.0",
+    "        /16 link UNICAST",
+    "Local:",
+    "  +-- 0.0.0.0/0 3 0 5",
+    "     +-- 127.0.0.0/8 2 0 2",
+    "        +-- 127.0.0.0/31 1 0 0",
+    "           |-- 127.0.0.0",
+    "              /8 host LOCAL",
+    "           |-- 127.0.0.1",
+    "              /32 host LOCAL",
+    "     +-- 172.17.0.0/16 2 0 2",
+    "        |-- 172.17.0.1",
+    "           /32 host LOCAL",
+    "        |-- 172.17.255.255",
+    "           /32 link BROADCAST",
+    "     |-- 192.168.2.8",
+    "        /32 host LOCAL",
+    "",
+  ].join("\n");
+  const ifInet6 = [
+    "00000000000000000000000000000001 01 80 10 80       lo",
+    "fd4a4635315600003a0525fffe3af7be 02 40 00 00   enp3s0",
+    "fe800000000000000000000000000001 05 40 20 80  docker0",
+    "20010db8000000000001000000000000 06 40 00 80   lxdbr0",
+    "",
+  ].join("\n");
+  const up = { eth0: [{ address: "192.168.2.8", internal: false }] } as unknown as Parameters<typeof hostAddrs>[0];
+  expect(hostAddrs(up, { fibTrie, ifInet6 })).toEqual(["172.17.0.1", "192.168.2.8", "2001:db8:0:0:1::", "fd4a:4635:3156:0:3a05:25ff:fe3a:f7be", "fe80::1"]);
+  expect(ipv6Of("00000000000000000000000000000000")).toBe("::");
+  expect(ipv6Of("20010db8000000010000000000000001")).toBe("2001:db8:0:1::1");
+  expect(ipv6Of("20010db8000000000001000000000000")).toBe("2001:db8:0:0:1::");
+  expect(ipv6Of("20010db8000100000000000100000000")).toBe("2001:db8:1::1:0:0");
 });
 
 test("the routes add this machine's addresses first, then drop the ones it no longer has", () => {
@@ -68,7 +107,8 @@ const tools = netTools();
 const nsOk =
   process.platform === "linux" &&
   !("missing" in tools) &&
-  Bun.spawnSync(["unshare", "--user", "--map-root-user", "--net", "true"], { stdout: "ignore", stderr: "ignore" }).success;
+  // A kernel with dummy links (a VM's guest kernel has none: this runs where an agent does).
+  Bun.spawnSync(["unshare", "--user", "--map-root-user", "--net", (tools as { ip: string }).ip, "link", "add", "d0", "type", "dummy"], { stdout: "ignore", stderr: "ignore" }).success;
 
 test.skipIf(!nsOk)("in a real network namespace, this machine's addresses go nowhere while the rest is routed, and follow a change", async () => {
   const { ip, nsenter } = tools as { ip: string; nsenter: string };
