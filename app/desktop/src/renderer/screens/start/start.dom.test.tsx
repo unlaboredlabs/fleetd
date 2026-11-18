@@ -242,6 +242,8 @@ it("a fresh team's first run in the web app opens Get started, and Skip for now 
   again();
 });
 
+// Their limits mount the providers' rows (settings/Provider) here, whose first Select and Menu took past 5 s on a busy CI
+// runner: these two get longer.
 it("where agents run is a computer or hosted sandboxes: the second lists the providers to connect, with no text under them", async () => {
   const stop = await render({});
   expect(host.textContent).toContain("Where agents run");
@@ -250,7 +252,7 @@ it("where agents run is a computer or hosted sandboxes: the second lists the pro
   expect(host.querySelectorAll("[data-sandbox]").length).toBe(3);
   expect(host.textContent).not.toContain("--code 7QK4-M2XD");
   stop();
-});
+}, 20_000);
 
 it("a provider connected and no computer: Connect Claude while its sandboxes have no account, then step 1 is done on the provider", async () => {
   const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });
@@ -267,7 +269,7 @@ it("a provider connected and no computer: Connect Claude while its sandboxes hav
   expect(screen()).toBe("start.github");
   expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("E2B");
   stop();
-});
+}, 20_000);
 
 it("with no computer, step 1 is open on the team's join line, ready to copy", async () => {
   const stop = await render({});
