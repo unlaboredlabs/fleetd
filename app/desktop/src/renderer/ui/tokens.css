@@ -356,6 +356,8 @@
   --settings-field: #0f17200a;
   --settings-fill: #eff1f3;
   --settings-fill-hover: #e9ebee;
+  /* A hairline rim, and a bottom edge of 3.2:1 on the white card. */
+  --settings-field-edge: inset 0 0 0 1px #0f172012, inset 0 -1px 0 #8a9099;
   --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #2b6be42e;
   --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);
@@ -368,6 +370,8 @@
   --settings-field: #ffffff0d;
   --settings-fill: #1d1f23;
   --settings-fill-hover: #23252a;
+  /* A hairline rim, and a bottom edge of 3.9:1 on the dark card. */
+  --settings-field-edge: inset 0 0 0 1px #ffffff0f, inset 0 -1px 0 #6b717a;
   --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #5b91f53d;
   --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);

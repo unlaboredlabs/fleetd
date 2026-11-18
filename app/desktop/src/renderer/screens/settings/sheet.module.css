@@ -314,19 +314,22 @@
 .sheet button[role="switch"][data-state="checked"] > span {
   transform: translateX(16px);
 }
+/* A field is filled, with a hairline rim and one firmer bottom edge (3:1 on the card) that says "type here" without
+   a dark outline all round; focus is the one blue ring. Selects alike; a search the same with its magnifier. */
 .page button[role="combobox"],
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .page textarea {
-  border-color: transparent;
+  /* No border: the rim and the bottom edge are the field's outermost pixels, so the edge stands on the card itself. */
+  border: 0;
   border-radius: var(--radius-md);
   background-color: var(--settings-fill);
-  box-shadow: none;
+  box-shadow: var(--settings-field-edge);
   transition:
     background-color var(--dur-quick),
     box-shadow var(--dur-quick);
 }
 .page button[role="combobox"],
-.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]) {
   height: 32px;
   padding: 0 var(--space-3);
 }
@@ -345,7 +348,6 @@
 .page button[role="combobox"][data-state="open"],
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 .page textarea:focus {
-  border-color: transparent;
   outline: none;
   background-color: var(--sheet);
   box-shadow: var(--settings-ring);
@@ -358,8 +360,12 @@
 .page textarea[aria-invalid="true"] {
   box-shadow: 0 0 0 1px var(--danger);
 }
-/* A page's own search (the Vault's): its magnifier at its start. */
-.page input[type="search"] {
-  padding-left: 32px;
-  background: var(--settings-fill) var(--search-glyph) no-repeat 10px 50% / 14px 14px;
+/* A search (the Vault's, Memory's): its magnifier at its start, its words clear of it. */
+.page input[type="search"]:not([type="checkbox"]) {
+  height: 32px;
+  padding: 0 var(--space-3) 0 32px;
+  background-image: var(--search-glyph);
+  background-repeat: no-repeat;
+  background-position: 10px 50%;
+  background-size: 14px 14px;
 }

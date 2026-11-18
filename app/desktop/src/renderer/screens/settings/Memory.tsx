@@ -170,18 +170,16 @@ const projectTarget = (projectRef: ProjectRef, f: MemoryFile): Target => ({ scop
 function CapMeter({ state, label, changed, inGroup, compact }: { state: CapState; label: string; changed?: string | undefined; inGroup?: boolean; compact?: boolean }) {
   const fill = state.cap > 0 ? Math.min(100, (state.chars / state.cap) * 100) : 0;
   if (compact === true) {
-    const words = `${state.line}${changed ? ` · changed ${when(changed)}` : ""}`;
+    // At the head of its file's group: a short bar, then its words; when it changed is the hover.
     return (
-      <div className={m.meterCompact} title={words}>
-        <div className={m.track} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={state.cap} aria-valuenow={state.chars} aria-valuetext={state.line}>
-          <div className={m.fill} data-over={state.over || undefined} style={{ width: `${String(Math.max(fill, 2))}%` }} />
-        </div>
-        {state.over ? (
-          <Text size="xs" tone="danger">
-            Over its cap
-          </Text>
-        ) : null}
-      </div>
+      <span className={m.meterCompact} data-cap-meter="" title={changed ? `Changed ${when(changed)}` : undefined}>
+        <span className={m.track} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={state.cap} aria-valuenow={state.chars} aria-valuetext={state.line}>
+          <span className={m.fill} data-over={state.over || undefined} style={{ width: `${String(Math.max(fill, 2))}%` }} />
+        </span>
+        <Text size="xs" tone={state.over ? "danger" : "quiet"}>
+          {state.line}
+        </Text>
+      </span>
     );
   }
   return (
@@ -271,6 +269,7 @@ function MemoryGroup(props: {
     <SettingsSection
       title={props.bare === true ? undefined : props.label}
       part={props.part}
+      intro={file && !asText ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} compact /> : undefined}
       hint={
         props.bare === true ? undefined : (
           <>
@@ -281,7 +280,6 @@ function MemoryGroup(props: {
       }
       aside={
         <div className={m.tools}>
-          {file ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} compact /> : null}
           {props.search}
           <Button variant="ghost" size="sm" disabled={file === undefined} onClick={() => setAsText(!asText)}>
             {asText ? "Show entries" : "Edit as text"}
