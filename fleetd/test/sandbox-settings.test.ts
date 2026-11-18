@@ -8,7 +8,7 @@ import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { boxKey } from "../src/hub/hub_links/store.ts";
 import { start as startSandboxLoops } from "../src/hub/sandbox/loops.ts";
 import { sandboxProviders } from "../src/hub/doctor/checks.ts";
-import { guides } from "../src/hub/setup/index.ts";
+import { guides, read as readSteps } from "../src/hub/setup/index.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { Sandboxes } from "../src/node/sandbox/hosted.ts";
 import { provider, ProviderError, type ProviderAuth, type ProviderId } from "../src/sandbox/providers/index.ts";
@@ -175,9 +175,21 @@ test("a domain is a host", () => {
   expect(domainOf("")).toBeNull();
 });
 
-test("the setup step and its check: absent with none connected, ok, untested, failing", () => {
-  const step = guides("http://devbox:4790").find((s) => s.id === "sandboxes")!;
-  expect(step).toMatchObject({ group: "hub", need: { kind: "optional" }, place: "sandboxes", ways: [{ checks: ["hub/sandboxes"] }] });
+test("where agents run is one setup step, a computer or hosted sandboxes; the providers' check: absent with none connected, ok, untested, failing", () => {
+  const all = guides("http://devbox:4790");
+  expect(all.find((s) => s.id === "sandboxes")).toBeUndefined();
+  const step = all.find((s) => s.id === "machines")!;
+  expect(step).toMatchObject({
+    title: "Where agents run",
+    need: { kind: "required" },
+    ways: [
+      { label: "a computer", checks: ["*/online"] },
+      { label: "hosted sandboxes", checks: ["hub/sandboxes"] },
+    ],
+  });
+  // Either one is enough: no computer, and a provider's key that answered.
+  const [read] = readSteps([step], [{ id: "hub/sandboxes", status: "ok", message: "E2B answered for the team's key." } as never]);
+  expect(read).toMatchObject({ status: "done", way: "hosted sandboxes" });
   expect(sandboxProviders([])).toBeUndefined();
   const at = "2026-11-17T00:00:00.000Z";
   expect(sandboxProviders([["E2B", { at, ok: true }], ["Daytona", { at, ok: true }]])).toMatchObject({ status: "ok", message: "E2B and Daytona answered for the team's key." });

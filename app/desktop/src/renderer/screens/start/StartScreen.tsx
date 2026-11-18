@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useHub } from "../../src/data/react";
 import { onWeb } from "../../src/web";
 import { useAddUi } from "../projects/store";
+import { useProviderRows } from "../settings/Providers";
 import { navigate } from "../shell/navigation";
 import { HOME } from "../shell/routes";
 import { stepsLeft } from "./model";
@@ -20,9 +21,11 @@ export function StartScreen({ sample }: { sample: string | null }) {
 function Live() {
   const hub = useHub();
   const { view, actions } = useStart(true, useAddUi());
+  // The second way agents run: the team's own hosted sandbox providers, connected right here.
+  const hosted = useProviderRows(["agents"]);
   const away = !onWeb() || hub.cloud !== true || (view !== null && view.who === "owner" && stepsLeft(view) === 0);
   useEffect(() => {
     if (away) navigate({ ...HOME, at: hub.id }, { replace: true });
   }, [away, hub.id]);
-  return view === null || away ? null : <StartPage view={view} actions={actions} />;
+  return view === null || away ? null : <StartPage view={view} actions={actions} hosted={hosted} />;
 }

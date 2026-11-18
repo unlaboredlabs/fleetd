@@ -75,8 +75,10 @@ const realSpawn: Spawn = (args, stdin) => {
 /** The runner's log lines, in the hub's log. */
 async function relay(stream: ReadableStream<Uint8Array>): Promise<void> {
   let rest = "";
-  for await (const chunk of stream.pipeThrough(new TextDecoderStream())) {
-    const lines = (rest + chunk).split("\n");
+  // A decoder of its own, not TextDecoderStream, whose types differ across @types/node versions (fleetd cloud's).
+  const dec = new TextDecoder();
+  for await (const chunk of stream) {
+    const lines = (rest + dec.decode(chunk, { stream: true })).split("\n");
     rest = lines.pop() ?? "";
     for (const line of lines) if (line.trim()) console.error(`runner: ${line}`);
   }

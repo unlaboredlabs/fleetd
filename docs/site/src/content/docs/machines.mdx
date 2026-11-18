@@ -5,6 +5,10 @@ description: Add workers to the hub, log in their Claude, remove them, and check
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
+A machine is optional: agents run on a computer of yours, in [hosted sandboxes](#sandboxes) on your own E2B,
+boat.dev or Daytona account, or both. With no computer at all, the hub runs them in sandboxes itself ([No computer
+connected](#no-computer)).
+
 You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
 and admins add, repair and remove them in the app, and log in their Claude from it too. The [CLI](#cli) does the same
 from a terminal on the hub.
@@ -440,11 +444,12 @@ provider's limit of 0 sends none.
 
 ## Hosted sandboxes {#sandboxes}
 
-A team can give its agents room past its machines' own [max agents](/docs/projects#max-agents) with its own account
-at a hosted sandbox provider: [E2B](https://e2b.dev), [boat.dev](https://boat.dev) or [Daytona](https://daytona.io).
-Each agent then runs in a sandbox of its own there, made by the machine that holds the bot's checkout and gone
-when the agent ends. The provider bills the team directly, by the second while a sandbox runs; fleetd charges nothing
-for it and holds no account of its own. No machine joins the hub, and the hub talks to no provider.
+A team can run its agents with its own account at a hosted sandbox provider: [E2B](https://e2b.dev),
+[boat.dev](https://boat.dev) or [Daytona](https://daytona.io), instead of a computer or beside one. Each agent then
+runs in a sandbox of its own there, made by the machine that holds the bot's checkout (or by the hub itself, with no
+computer: [below](#no-computer)) and gone when the agent ends. With computers, a provider gives agents room past their
+own [max agents](/docs/projects#max-agents). The provider bills the team directly, by the second while a sandbox runs;
+fleetd charges nothing for it and holds no account of its own.
 
 **Connect one.** Make an API key at the provider: E2B in its console (**API keys**), boat.dev in its dashboard or with
 `boat api-key create`, Daytona in its dashboard (**Keys**). In **Settings › Hub › Machines › Providers** (or
@@ -456,10 +461,10 @@ row's menu, removes the key, its domain and its limit. The guided hub setup (`fl
 it as an optional step, **Hosted sandboxes**.
 
 **Test.** Connect tests the key at once; **Test**, in the row's menu, does it again. The hub sends the key sealed to the team's Linux
-machines online, in the order of their ids, and the first asks the provider for fleetd's sandboxes there, which starts
-nothing. A key the provider refuses, an account at its plan's limit or behind on billing, and a provider (or
-self-hosted domain) that doesn't answer each read as such, with what to do. With no Linux machine online, Test says
-so: sandboxes are made there, never on a Mac.
+machines online, in the order of their ids (with none, to its own runner), and the first asks the provider for
+fleetd's sandboxes there, which starts nothing. A key the provider refuses, an account at its plan's limit or behind on
+billing, and a provider (or self-hosted domain) that doesn't answer each read as such, with what to do. Sandboxes are
+made from Linux on x86_64, never from a Mac: a hub on a Mac with no Linux computer says so.
 
 **Limit and order.** Each connected provider has one number, how many of the team's agents may run there at once
 (0 to 500; 5 until set; 0 keeps the key and sends none). It is the team's total for that provider, across all its
@@ -502,6 +507,25 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B �
   that provider out for 10 minutes, and a minute later fleetd's recovery starts the agent again in its own thread, with
   the message that run never got (its brief, or its lead's message): on the machine's own slots, another provider with
   room, or in line. Twice in a row, and the task fails for its lead to decide.
+
+### No computer connected {#no-computer}
+
+A team with a provider connected and no computer still runs agents. The hub starts a runner of its own, a fleetd node
+that runs no agent on the hub's machine, and every agent of a bot added there, its lead too, runs in a sandbox of the
+connected providers. It shows as **Hosted sandboxes** wherever a bot says where it runs, never in the list of
+computers, and it goes by itself once no provider is connected and no bot lives on it.
+
+- *Bots.* A bot there is a GitHub repository, cloned on the hub with the hub's [GitHub App](/docs/github) token for
+  it; a folder of the hub's machine can't be one. Its agents push and open PRs from their sandboxes as any hosted
+  agent does.
+- *Claude.* Its agents run on the team's Claude account: the hub's API key, or a person's subscription, saved in
+  Settings › Your accounts › Claude. No machine's Claude login comes into it. An account saved before the first
+  provider was connected is saved again once, so it reaches the sandboxes too; Settings says so.
+- *Not there:* browser screens, Android emulators and Linux desktops (they run on a computer), approved commands and
+  checks run on a machine, and the agents' Mac.
+- *With a computer too*, nothing changes for the computer's bots: their agents use its slots first, then the
+  providers, and a new bot goes to a computer.
+- The hub must run on Linux on x86_64 for this, as every machine that makes sandboxes.
 
 **What the machine does.** The first agent to need a provider builds fleetd's template in the team's account (the
 same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with); it takes a few minutes,

@@ -2765,9 +2765,19 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Hub address" }).waitFor({ timeout: 10_000 });
     },
   },
-  // Connect a computer: a team of fleetd cloud with no machine, as its owner. Connect this computer opens a terminal,
-  // or, where none opens, points at the line.
+  // Where agents run: a team of fleetd cloud with nothing to run agents on, as its owner. A computer: Connect this
+  // computer opens a terminal, or, where none opens, points at the line. Or hosted sandboxes: the team's providers.
   { id: "setup.machine", route: "#/", fixtures: ["cloud-connect"] },
+  {
+    id: "setup.machine",
+    route: "#/",
+    fixtures: ["cloud-connect"],
+    variant: "hosted",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Hosted sandboxes" }).click();
+      await page.locator("[data-sandbox]").first().waitFor({ timeout: 10_000 });
+    },
+  },
   {
     id: "setup.machine",
     route: "#/",

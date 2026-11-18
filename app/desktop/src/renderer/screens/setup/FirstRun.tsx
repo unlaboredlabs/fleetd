@@ -1,8 +1,9 @@
-// `#/` on a hub with no projects yet. On a team of fleetd cloud with no machine yet, its owners and admins connect a
-// computer first, unless this device joined the team by an invitation: someone else's team never opens on connecting
-// this computer to it (a machine still joins from Settings › Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's welcome; once
-// none is, and for everyone else, Get started (add a project). Its own chunk, with setup's. On a fleetd cloud team in
-// the web app it is Get started's page (screens/start) instead, for everyone, until its Skip for now.
+// `#/` on a hub with no projects yet. On a team of fleetd cloud with nothing to run agents on yet, its owners and admins
+// pick where agents run first (a computer, or hosted sandboxes: ConnectComputer), unless this device joined the team by
+// an invitation: someone else's team never opens on connecting this computer to it (a machine still joins from Settings ›
+// Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's
+// welcome; once none is, and for everyone else, Get started (add a project). Its own chunk, with setup's. On a fleetd
+// cloud team in the web app it is Get started's page (screens/start) instead, for everyone, until its Skip for now.
 import { useEffect, useState } from "react";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useHubRole, useServes } from "../admin/role";
@@ -17,7 +18,7 @@ const noInput = {};
 
 export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   const role = useHubRole();
-  // fleetd cloud has no setup steps: its admins go on to Connect a computer or Get started.
+  // fleetd cloud has no setup steps: its admins go on to Where agents run or Get started.
   const served = useServes("setup_list");
   const steps = role.administers && served;
   useFreshSetup(steps);
@@ -27,7 +28,8 @@ export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   const cloud = hub.cloud === true && hub.invited !== true && !onWeb();
   const fresh = useData((d) => d.fresh);
   const machines = useData((d) => Object.keys(d.machines).length);
-  // Once shown, Connect a computer stays until the person moves on, so the machine that joins is greeted there.
+  // Once shown, Where agents run stays until the person moves on, so what joins (a computer, or the hub's runner for
+  // hosted sandboxes) is greeted there.
   const [connecting, setConnecting] = useState(false);
   const later = useKept(hub.id).later === true;
   const start = onWeb() && hub.cloud === true && !later;

@@ -1,13 +1,16 @@
-// Connect a computer (hosted-plan §1): where an owner or admin signed in to fleetd cloud lands while their team has
-// no machine. fleetd hosts only the hub, so a computer of theirs is the one step between signing in and a running
-// agent. Connect this computer has main ask the hub for a join line and run it in a terminal; under it, a line of
-// its own to copy for any other computer. Both lines carry no machine name: a computer joins under its own. The
-// screen moves on when a machine shows up in the hub's list.
+// Where agents run (hosted-plan §1, D558): where an owner or admin signed in to fleetd cloud lands while their team has
+// nothing to run agents on. Either way is enough: a computer of theirs (Connect this computer has main ask the hub for
+// a join line and run it in a terminal; under it, a line of its own to copy for any other computer, which carries no
+// machine name: a computer joins under its own), or a hosted sandbox provider on their own key, connected right here as
+// in Settings. The screen moves on when a machine, or the hub's runner for hosted sandboxes, shows up in its list; the
+// runner's agents need a Claude account of the team's, which it asks for until one reaches them.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MachineJoinOutput } from "../../../shared/contracts";
 import type { ConnectComputerOutcome } from "../../../shared/cloud";
 import { useData, useHub } from "../../src/data/react";
-import { Button, copyText, StateGlyph, Text } from "../../ui";
+import { Button, copyText, Segmented, StateGlyph, Text } from "../../ui";
+import { useProviderRows } from "../settings/Providers";
+import { navigate } from "../shell/navigation";
 import { untilLine } from "../addMachine/model";
 import { errorText, useHubCall } from "../settings/hub";
 import s from "./connectComputer.module.css";
@@ -29,14 +32,46 @@ export function ConnectComputer({ onAddProject }: { onAddProject: () => void }) 
   // that joined.
   const [before, setBefore] = useState<ReadonlySet<string>>(() => new Set(Object.keys(machines)));
   const joined = Object.values(machines).find((m) => !before.has(m.machineId));
-  if (joined !== undefined) {
-    return <Joined name={joined.name} onAddProject={onAddProject} onAnother={() => setBefore(new Set(Object.keys(machines)))} />;
-  }
+  const another = () => setBefore(new Set(Object.keys(machines)));
+  // The hub's runner: its sandboxes run agents only once a Claude account of the team's reaches them.
+  if (joined?.runner === true && joined.status !== "online") return <HostedNotReady claude={claudeMissing(joined)} />;
+  if (joined !== undefined) return <Joined name={joined.name} many={joined.runner === true} onAddProject={onAddProject} onAnother={another} />;
   return <Connect />;
+}
+
+/** The runner is degraded for want of a Claude account (node/sessions runnerClaude's words). */
+const claudeMissing = (m: { status: string; degradedReason?: string | undefined }) => m.status === "degraded" && /Claude account/u.test(m.degradedReason ?? "");
+
+/** Hosted sandboxes connected, their agents not able to run yet: Connect Claude, or a moment while they come up. */
+function HostedNotReady({ claude }: { claude: boolean }) {
+  return (
+    <div className={s.screen} data-screen="setup.machine.hosted">
+      <div className={s.column}>
+        <div className={s.head}>
+          <Text as="h1" size="xl" strong>
+            Hosted sandboxes are connected
+          </Text>
+          <Text as="p" tone="quiet">
+            {claude ? "Connect Claude, so their agents can work." : "Getting the sandboxes ready…"}
+          </Text>
+        </div>
+        {claude ? (
+          <div className={s.next}>
+            <Button variant="primary" className={s.connect} onClick={() => navigate({ id: "settings", tab: "accounts" })}>
+              Connect Claude
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function Connect() {
   const hub = useHub();
+  // The second way agents run: the team's own hosted sandbox providers, connected right here.
+  const hosted = useProviderRows(["agents"]);
+  const [way, setWay] = useState<"computer" | "hosted">("computer");
   const call = useHubCall();
   const now = useNow();
   const [join, setJoin] = useState<MachineJoinOutput | null>(null);
@@ -75,90 +110,105 @@ function Connect() {
       <div className={s.column}>
         <div className={s.head}>
           <Text as="h1" size="xl" strong>
-            Connect a computer
-          </Text>
-          <Text as="p" tone="quiet">
-            Your agents run on it, with its Claude login and your code. fleetd hosts only the hub.
+            Where agents run
           </Text>
         </div>
-        {/* A browser opens no terminal: the line below is the way, on this computer too. */}
-        {onWeb() ? null : opened ? (
-          <div className={s.status} role="status">
-            <StateGlyph state="thinking" />
-            <div className={s.words}>
-              <Text>Connecting this computer…</Text>
-              <Text size="sm" tone="quiet">
-                {`${here.terminal === "Terminal" ? "Terminal" : "The terminal"} is installing fleetd and joining. This screen moves on by itself when it has.`}
-              </Text>
-            </div>
-          </div>
+        {hosted ? (
+          <Segmented
+            label="Where agents run"
+            options={[
+              { value: "computer", label: "A computer" },
+              { value: "hosted", label: "Hosted sandboxes" },
+            ]}
+            value={way}
+            onChange={setWay}
+          />
+        ) : null}
+        {way === "hosted" && hosted ? (
+          <div className={s.hosted}>{hosted}</div>
         ) : (
-          <div className={s.here}>
-            <Button variant="primary" className={s.connect} disabled={here === "opening"} onClick={connectHere}>
-              {here === "opening" ? "Opening a terminal…" : "Connect this computer"}
-            </Button>
-            {noTerminal === null ? (
-              <Text size="sm" tone="quiet">
-                A terminal opens, installs fleetd and joins. Agents run while this computer is on and awake.
-              </Text>
-            ) : (
+          <>
+          {/* A browser opens no terminal: the line below is the way, on this computer too. */}
+          {onWeb() ? null : opened ? (
+            <div className={s.status} role="status">
+              <StateGlyph state="thinking" />
+              <div className={s.words}>
+                <Text>Connecting this computer…</Text>
+                <Text size="sm" tone="quiet">
+                  {`${here.terminal === "Terminal" ? "Terminal" : "The terminal"} is installing fleetd and joining. This screen moves on by itself when it has.`}
+                </Text>
+              </div>
+            </div>
+          ) : (
+            <div className={s.here}>
+              <Button variant="primary" className={s.connect} disabled={here === "opening"} onClick={connectHere}>
+                {here === "opening" ? "Opening a terminal…" : "Connect this computer"}
+              </Button>
+              {noTerminal === null ? (
+                <Text size="sm" tone="quiet">
+                  A terminal opens, installs fleetd and joins. Agents run while this computer is on and awake.
+                </Text>
+              ) : (
+                <span role="alert">
+                  <Text size="sm" tone="warning">
+                    {noTerminal}
+                  </Text>
+                </span>
+              )}
+            </div>
+          )}
+          <section className={s.other} aria-label="On another computer">
+            <Text as="h2" size="sm" strong tone="quiet">
+              {onWeb() ? "On your computer" : noTerminal === null ? "On another computer" : "On this or another computer"}
+            </Text>
+            {error !== null ? (
               <span role="alert">
-                <Text size="sm" tone="warning">
-                  {noTerminal}
+                <Text size="sm" tone="danger">
+                  {error}
                 </Text>
               </span>
-            )}
-          </div>
-        )}
-        <section className={s.other} aria-label="On another computer">
-          <Text as="h2" size="sm" strong tone="quiet">
-            {onWeb() ? "On your computer" : noTerminal === null ? "On another computer" : "On this or another computer"}
-          </Text>
-          {error !== null ? (
-            <span role="alert">
-              <Text size="sm" tone="danger">
-                {error}
-              </Text>
-            </span>
-          ) : join === null ? (
-            <Text size="sm" tone="quiet">
-              Making a line…
-            </Text>
-          ) : (
-            <>
-              <div className={s.line} data-expired={expired || undefined}>
-                <code className={s.lineText}>{join.line}</code>
-                {expired ? (
-                  <Button onClick={make}>New line</Button>
-                ) : (
-                  <Button onClick={() => void copyText(join.line).then(setCopied)} onBlur={() => setCopied(false)}>
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                )}
-              </div>
+            ) : join === null ? (
               <Text size="sm" tone="quiet">
-                {expired
-                  ? "This line's code ran out. A code works once, for 15 minutes, so make a new line."
-                  : `Paste it in a terminal there, on macOS or Linux. The computer shows up here by itself. ${untilLine(join.expiresAt)}`}
+                Making a line…
               </Text>
-            </>
-          )}
-        </section>
+            ) : (
+              <>
+                <div className={s.line} data-expired={expired || undefined}>
+                  <code className={s.lineText}>{join.line}</code>
+                  {expired ? (
+                    <Button onClick={make}>New line</Button>
+                  ) : (
+                    <Button onClick={() => void copyText(join.line).then(setCopied)} onBlur={() => setCopied(false)}>
+                      {copied ? "Copied" : "Copy"}
+                    </Button>
+                  )}
+                </div>
+                <Text size="sm" tone="quiet">
+                  {expired
+                    ? "This line's code ran out. A code works once, for 15 minutes, so make a new line."
+                    : `Paste it in a terminal there, on macOS or Linux. The computer shows up here by itself. ${untilLine(join.expiresAt)}`}
+                </Text>
+              </>
+            )}
+          </section>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function Joined({ name, onAddProject, onAnother }: { name: string; onAddProject: () => void; onAnother: () => void }) {
+/** `many`: hosted sandboxes, whose name is a plural. */
+function Joined({ name, many, onAddProject, onAnother }: { name: string; many: boolean; onAddProject: () => void; onAnother: () => void }) {
   return (
     <div className={s.screen} data-screen="setup.machine.joined">
       <div className={s.column}>
         <div className={s.head}>
           <Text as="h1" size="xl" strong>
-            {`${name} is connected`}
+            {`${name} ${many ? "are" : "is"} connected`}
           </Text>
           <Text as="p" tone="quiet">
-            Agents run on it from now on. Start a bot to give them work.
+            Agents run there from now on. Start a bot to give them work.
           </Text>
         </div>
         <div className={s.machine}>
