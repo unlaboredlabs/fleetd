@@ -10,7 +10,7 @@ import { NodeBoxKey } from "../src/node/identity.ts";
 import { keepTokens, useGithubTokens, withGithubTokens } from "../src/node/repos/github.ts";
 import { seal } from "../src/shared/sealed_box.ts";
 import { bestWorker } from "../src/hub/projects/inspect.ts";
-import { type Child, dialUrl, Runner, unsupported } from "../src/hub/runner/index.ts";
+import { type Child, dialUrl, logLine, Runner, unsupported } from "../src/hub/runner/index.ts";
 import { writeConfig } from "../src/node/config.ts";
 import { CAP_RUNNER, RUNNER_ID } from "../src/shared/sandbox.ts";
 import { addMachine, addProject, testHub } from "./screens_helpers.ts";
@@ -149,4 +149,13 @@ test("the hub sends the runner the App's token for each of its bots' repos, seal
   const out = await t.tools.call(t.hub, owner, "machine_remove", { machineId: RUNNER_ID });
   expect("error" in out && out.error.kind === "tool" && out.error.error.message).toBe("Hosted sandboxes are the hub's own, not a computer of the team's: they can't be removed.");
   t.done();
+});
+
+test("the runner's log lines reach the hub's log at the level the node gave them, never all as errors", () => {
+  const said: string[] = [];
+  const log = { debug: (t: string) => said.push(`DEBUG ${t}`), info: (t: string) => said.push(`INFO ${t}`), warn: (t: string) => said.push(`WARN ${t}`), error: (t: string) => said.push(`ERROR ${t}`) };
+  logLine('2026-11-18T18:23:49.899Z INFO fleetd node starting {"machineId":"hosted"}', log);
+  logLine("2026-11-18T18:23:49.899Z WARN a hosted box wasn't deleted", log);
+  logLine("fleetd: the link to the hub failed: refused", log);
+  expect(said).toEqual(['INFO runner: fleetd node starting {"machineId":"hosted"}', "WARN runner: a hosted box wasn't deleted", "INFO runner: fleetd: the link to the hub failed: refused"]);
 });

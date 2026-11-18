@@ -30,6 +30,11 @@ describe("what runs where", () => {
     expect(agentsWhere([])).toBe("Your machines");
     expect(agentsWhere([p("e2b", false, 0), p("boat", false, 0)])).toBe("Your machines");
     expect(agentsWhere([p("daytona", true, 5), p("boat", true, 0), p("e2b", true, 20)])).toBe("Your machines first, then E2B, then Daytona");
+    // No machine of the team's: the providers alone, and with none connected either, none yet.
+    expect(agentsWhere([p("daytona", true, 5), p("e2b", true, 20)], false)).toBe("E2B, then Daytona");
+    expect(agentsWhere([p("e2b", true, 2)], false)).toBe("E2B");
+    expect(agentsWhere([p("e2b", false, 0)], false)).toBe("None yet");
+    expect(agentsWhere([], false)).toBe("None yet");
   });
 
   it("knows which kinds the team's own machines run now", () => {

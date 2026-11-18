@@ -56,12 +56,14 @@ export const YOURS = "Your machines";
 export const NONE = "None yet";
 
 /**
- * Where agents run, in words: the machines, then each connected provider with room (a limit above none) in the order
- * agents go to them once the machines' own limit is reached. Not a choice: each provider's limit sets it.
+ * Where agents run, in words: the machines (`machines`: any of the team's computers runs agents), then each connected
+ * provider with room (a limit above none) in the order agents go to them once the machines' own limit is reached. With
+ * no machine, the providers alone; with neither, none yet. Not a choice: each provider's limit sets it.
  */
-export const agentsWhere = (providers: ReadonlyArray<{ provider: string; connected: boolean; limit: number }>): string => {
+export const agentsWhere = (providers: ReadonlyArray<{ provider: string; connected: boolean; limit: number }>, machines = true): string => {
   const names = ordered(providers.filter((p) => p.connected && p.limit > 0).map((p) => p.provider)).map((id) => specOf(id).name);
-  return names.length === 0 ? YOURS : `${YOURS} first, then ${names.join(", then ")}`;
+  if (names.length === 0) return machines ? YOURS : NONE;
+  return machines ? `${YOURS} first, then ${names.join(", then ")}` : names.join(", then ");
 };
 
 /** The machines a kind of screen can run on now, as machine_roles has them. */
@@ -76,7 +78,7 @@ export const machinesRun = (kind: Capability, machines: ReadonlyArray<Machine>):
 
 /** Where a kind with no provider to choose runs, and how to add one when none does. */
 export const noneHow: Readonly<Record<Capability, string>> = {
-  agents: "Add a machine with the plus above.",
+  agents: "Add a machine with the plus above, or connect a provider.",
   browser: "Turn Browser on in a machine's Screens.",
   desktop: "Turn Linux desktop on in a machine's Screens.",
   android: "Turn Android on in a machine's Screens, or connect Revyl.",

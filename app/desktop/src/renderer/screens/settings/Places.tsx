@@ -49,12 +49,16 @@ export function WhatRunsWhere() {
   const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: live }).data;
   const revyl = useToolQuery("revyl_get", noInput, { enabled: live }).data;
   const slots = useSlots();
+  const team = useData((d) => d.machines);
   const held = slots === undefined ? null : fleetCapLine(slots);
   const row = (kind: Capability): ReactNode => {
     const label = CAPABILITY_WORDS[kind];
     if (kind === "agents") {
-      const where = agentsWhere(sandboxes?.providers ?? []);
-      return <Plain key={kind} kind={kind} label={label} value={where} line={held === null ? null : <span data-fleet-cap="">{held}</span>} />;
+      // The hub's runner for hosted sandboxes is no machine of the team's.
+      const computers = machines === undefined || machinesRun(kind, machines.filter((m) => team[m.machineId]?.runner !== true));
+      const where = agentsWhere(sandboxes?.providers ?? [], computers);
+      const hint = where === NONE ? noneHow[kind] : undefined;
+      return <Plain key={kind} kind={kind} label={label} value={where} hint={hint} line={held === null ? null : <span data-fleet-cap="">{held}</span>} />;
     }
     // A phone kind Revyl runs: its route, while Revyl is connected or the route still names it.
     if (revyl !== undefined && (kind === "ios" || kind === "android") && specOf("revyl").can.includes(kind) && routeChosen(revyl.connected, revyl.routes[kind])) {
