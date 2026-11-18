@@ -48,9 +48,10 @@ import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, type Reach } from
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
-/** A box's guest memory and CPUs (design §7: 4 GiB, 2 vCPUs, as today's 2 build jobs an agent). */
+/** A box's guest memory and CPUs: 4 GiB (design §7), and 4 vCPUs, which cost no memory and match the 4 workers an
+ * agent's test runners get. With 2, fleetd's own test suite took 317.7 s in a VM, and 238.8 s with 4 beside it. */
 export const GUEST_MEM_BYTES = 4 * 2 ** 30;
-export const GUEST_CPUS = 2;
+export const GUEST_CPUS = 4;
 /** What a box takes of the machine's memory, for its cap: the guest plus the VMM, virtiofsd and passt (~30 MB
  * measured), rounded up to 4.1 GiB (design §7's cap table). */
 export const MEM_PER_AGENT_BYTES = Math.round(4.1 * 2 ** 30);
