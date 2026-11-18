@@ -249,14 +249,19 @@ class FakeScreen implements Screen {
 
 /** A stand-in agent-desktop: `snapshot --app X` reads app X into snapshot `sX`, `list-apps` lists Notes and, unless a
  * `textedit-off` file sits beside it (`launch TextEdit` removes it), TextEdit, with their bundle ids; a command on
- * `@sSlow:e1` notes it started in `marker` and runs for 30 s; anything else says what it ran. */
+ * `@sSlow:e1` notes it started in `marker` and runs for 30 s, and a helper it leaves keeps its output open until a
+ * `<marker>.stop` file appears (10 s at most), so once stopped it ends only when the test says; anything else says what
+ * it ran. */
 function standIn(dir: string, marker: string): string {
   const bin = join(dir, "agent-desktop");
   writeFileSync(
     bin,
     `#!/bin/sh
 case "$*" in
-  *@sSlow:e1*) echo started > '${marker}'; exec sleep 30 ;;
+  *@sSlow:e1*)
+    echo started > '${marker}'
+    (i=0; while [ ! -e '${marker}.stop' ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done) &
+    exec sleep 30 ;;
 esac
 if [ "$1" = snapshot ]; then echo "{\\"ok\\":true,\\"data\\":{\\"app\\":\\"$3\\",\\"snapshot_id\\":\\"s$3\\"}}"; exit 0; fi
 if [ "$1" = launch ] && [ "$2" = TextEdit ]; then rm -f '${dir}/textedit-off'; fi
@@ -437,7 +442,8 @@ test("a session that ends mid-command keeps its lease and claim until that comma
   await expect(d.act("th-b", call("agent_desktop", "click @sSlow:e2"))).rejects.toThrow("Slow export");
   await expect(d.act("th-b", call("left_click"))).rejects.toThrow("Slow export");
 
-  // The node stops the command rather than wait out its 40 s, then hands both over.
+  // The node stops the command rather than wait out its 40 s, then hands both over once the command has ended.
+  writeFileSync(join(dir, "slow-started.stop"), "");
   await slow;
   for (let i = 0; i < 200 && d.heldBy() !== undefined; i++) await Bun.sleep(10);
   expect(performance.now() - started).toBeLessThan(10_000);
