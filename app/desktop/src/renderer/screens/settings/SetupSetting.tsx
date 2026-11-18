@@ -168,8 +168,9 @@ function RunsOnRow({ settings }: { settings: Settings }) {
             value: o.value,
             textValue: o.label,
             ...(o.why !== undefined && o.value !== value ? { disabled: true } : {}),
+            // The pick's own reason is the row's line: the trigger shows its label alone.
             label:
-              o.why === undefined ? (
+              o.why === undefined || o.value === value ? (
                 o.label
               ) : (
                 <>
