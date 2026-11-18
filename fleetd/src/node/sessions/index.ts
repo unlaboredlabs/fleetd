@@ -25,7 +25,7 @@ import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { reapLeaked } from "../place/box_record.ts";
-import { hostDir, leavesBox, pick, placeAt, sweep } from "../place/index.ts";
+import { hostDir, isRunner, leavesBox, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxPlaces, hasBox, HostedDown } from "../place/hosted.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
@@ -266,8 +266,23 @@ export function settingsOverlay(
 
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
-/** The hosted provider a place names (the hub's slot board: "local" or a provider), or undefined for this machine. */
-const hostedOf = (place: string | undefined): ProviderId | undefined => ((PROVIDERS as readonly string[]).includes(place ?? "") ? (place as ProviderId) : undefined);
+/** The hosted provider a place names (the hub's slot board: "local" or a provider), or undefined for this machine. On
+ * the hub's runner, which runs nothing on its machine, the provider it puts a session in otherwise. */
+const hostedOf = (place: string | undefined): ProviderId | undefined =>
+  (PROVIDERS as readonly string[]).includes(place ?? "") ? (place as ProviderId) : runnerProvider();
+
+/** What the hub's runner says of its Claude Code: the one every hosted box's template installs, at the version fleetd
+ * was tested with, on the Claude account the hub sealed to it. None held: no agent of its starts, and the person reads
+ * why. A machine's own login never comes into it (there is none). */
+export function runnerClaude(account: ClaudeAccount | undefined): RunnerInfo {
+  const info: RunnerInfo = { runner: "claude", version: `${claude.TESTED} (Claude Code)`, supported: claude.SUPPORTED, versionOk: true, conformanceOk: true, login: "logged_out" };
+  if (account) return { ...info, login: "logged_in", loginKind: account.kind === "hub" ? "api_key" : "subscription" };
+  return {
+    ...info,
+    problem:
+      "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings (save it again if it was connected before the sandbox provider)",
+  };
+}
 
 /** The PreToolUse hook: free while there is no hold, `fleetd update-hold` while there is one (node/hold.rs). */
 export const holdHook = (fleetd: string[], home: string) => {
@@ -817,8 +832,10 @@ export class SessionService {
       case "repo_inspect":
         return { kind: "repo_facts", ...(await inspect(c.path)) };
       case "repo_scan": {
-        const { cloneRoot, repos } = scan(homeDir());
-        return { kind: "repos", cloneRoot, repos, projectsRoot: projectsRoot(homeDir()) };
+        // The hub's runner keeps its bots' checkouts in its own home, never among the hub machine's own.
+        const base = isRunner() ? this.home : homeDir();
+        const { cloneRoot, repos } = scan(base);
+        return { kind: "repos", cloneRoot, repos, projectsRoot: projectsRoot(base) };
       }
       default:
         if (handles(call.op)) return nodeCall(this.#calls, call as Parameters<typeof nodeCall>[1]);
@@ -859,6 +876,8 @@ export class SessionService {
     }
     if (!isAbsolute(workspaceRoot) || !existsSync(workspaceRoot) || !statSync(workspaceRoot).isDirectory())
       throw invalid(`${workspaceRoot} is not a directory on this machine`);
+    if (isRunner() && !workspaceRoot.startsWith(`${this.home}/`))
+      throw invalid(`a bot that runs in hosted sandboxes is cloned from GitHub, not added from a folder of the hub's machine (${workspaceRoot})`);
     this.#machine(this.store.upsertProject({ projectId, title, workspaceRoot, updatedAt: nowIso() }));
     return folder ? { kind: "folder", path: workspaceRoot } : { kind: "done" };
   }
@@ -2228,6 +2247,11 @@ export class SessionService {
 
   async #probe(): Promise<RunnerInfo> {
     const started = Date.now();
+    if (isRunner()) {
+      const info = runnerClaude(held(this.home));
+      this.#healthChanged((h) => h.probed(info, started));
+      return this.#health.info() ?? info;
+    }
     const env = runnerEnv(this.config);
     let info = await claude.probe(this.config.claudeBin, env);
     // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. Read as

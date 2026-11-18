@@ -27,7 +27,7 @@ import {
 } from "./board.ts";
 import { withSandbox } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
-import type { Limit } from "../../shared/sandbox.ts";
+import { type Limit, RUNNER_ID } from "../../shared/sandbox.ts";
 
 export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority, withSandbox } from "./board.ts";
 
@@ -300,7 +300,8 @@ export class Slots {
    * it takes more than before, starts the queued agents that now fit.
    */
   observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
-    const auto = withSandbox(autoCap(load), load.sandbox);
+    // The hub's own runner runs no agent on its machine: its every agent is in a hosted box, counted by provider.
+    const auto = machineId === RUNNER_ID ? { cap: 0, why: "hosted sandboxes only" } : withSandbox(autoCap(load), load.sandbox);
     const room = diskRoom(load);
     const sandboxes = Array.isArray(load.sandboxes) ? load.sandboxes.filter((p): p is string => typeof p === "string") : [];
     const places: Record<string, string> = {};

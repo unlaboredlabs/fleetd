@@ -182,7 +182,11 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
   const m = given ?? bestWorker(hub);
   if (m === undefined) {
     throw problemError(
-      problem("no_worker", "no machine is online to add the bot on", "Start a node (fleetd node run on the machine) or pass a machine id"),
+      problem(
+        "no_worker",
+        "nothing is connected to run the bot: no computer is online and no hosted sandbox provider is connected",
+        "Connect a computer, or connect E2B, boat.dev or Daytona in Settings › Hub › Machines",
+      ),
     );
   }
   const machine = store(hub).machineGet(m);

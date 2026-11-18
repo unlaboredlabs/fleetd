@@ -13,6 +13,12 @@ import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
 export function registerAreas(node: Node): void {
+  // The hub's own runner runs every agent in a hosted box and has no screens or tools of its machine's to offer: only
+  // the sandboxes' area (shared/sandbox.ts CAP_RUNNER).
+  if (node.config.runner) {
+    startSandboxes(node);
+    return;
+  }
   startBrowser(node);
   startSessionRoute(node);
   startScreens(node);

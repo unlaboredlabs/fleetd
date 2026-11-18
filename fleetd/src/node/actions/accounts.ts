@@ -241,6 +241,27 @@ export async function tryAccount(binary: string, env: Env): Promise<void> {
   tried(code === 0, stdout, stderr);
 }
 
+/** An account's Test where no Claude Code runs (the hub's runner, whose agents' Claude Code is in their boxes): the
+ * account's endpoint lists its models for the key or token, which costs nothing and runs no model. `env` holds the
+ * account's variables; what fails says the endpoint's answer, never the value. */
+export async function tryAccountApi(env: Env, fetcher: typeof fetch = fetch): Promise<void> {
+  const base = (env[BASE_URL_ENV] ?? "https://api.anthropic.com").replace(/\/+$/, "");
+  const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
+  if (env[API_KEY_ENV]) headers["x-api-key"] = env[API_KEY_ENV]!;
+  else if (env[OAUTH_TOKEN_ENV]) {
+    headers.authorization = `Bearer ${env[OAUTH_TOKEN_ENV]}`;
+    headers["anthropic-beta"] = "oauth-2025-04-20";
+  } else throw new Error("the account holds no key or token");
+  let response: Response;
+  try {
+    response = await fetcher(`${base}/v1/models?limit=1`, { headers, signal: AbortSignal.timeout(TRY_TIMEOUT_MS) });
+  } catch (error) {
+    throw new Error(`${base} didn't answer: ${(error as Error).message}`);
+  }
+  const body = (await response.text()).slice(0, 300);
+  if (!response.ok) throw new Error(`${base} refused it (HTTP ${response.status}): ${body}`);
+}
+
 /** What a Test's `claude -p --output-format json` said: it worked when it exited 0 with a result that is no error. */
 export function tried(exitedOk: boolean, stdout: string, stderr: string): void {
   let answer: { is_error?: unknown; result?: unknown } | undefined;

@@ -92,7 +92,7 @@ test("connect: the key is kept sealed, checked at once on a machine of the team'
   expect(JSON.stringify(await call(member, "sandbox_get"))).not.toContain(GOOD);
 });
 
-test("a refused key says why, masked, with what fixes it; one no machine can test says so", async () => {
+test("a refused key says why, masked, with what fixes it; one nothing can test says so", async () => {
   machine("devbox");
   const bad = await call(admin, "sandbox_connect", { provider: "daytona", sealed: sealed(BAD), limit: 3 });
   const d = bad.providers[2];
@@ -102,7 +102,8 @@ test("a refused key says why, masked, with what fixes it; one no machine can tes
   expect(JSON.stringify(bad)).not.toContain(BAD);
   t.link.unlink("devbox");
   const none = await call(admin, "sandbox_test", { provider: "daytona" });
-  expect(none.providers[2].check).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("No Linux machine") });
+  // With no machine, the hub's own runner tests it: here it never came up.
+  expect(none.providers[2].check).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("The hub's runner for hosted sandboxes didn't come up") });
 });
 
 test("E2B alone takes a domain, cleaned; a limit is 0 to 500; set and disconnect", async () => {

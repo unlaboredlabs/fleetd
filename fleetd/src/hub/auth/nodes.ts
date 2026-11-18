@@ -3,6 +3,7 @@
 // minted with no machine (the app's Connect a computer) takes the name the node asks for, made unique.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import { isoMs, sha256 } from "./index.ts";
 import {
   anotherComputer,
@@ -165,6 +166,8 @@ export class NodeKeys {
       .get(pubKey);
     if (held) return held.machine_id;
     const taken = (id: string) => {
+      // The hub's own runner's id is never a computer's.
+      if (id === RUNNER_ID) return true;
       const key = this.db.conn
         .query<{ fingerprint: string | null }, [string]>("SELECT fingerprint FROM node_keys WHERE machine_id = ?")
         .get(id);

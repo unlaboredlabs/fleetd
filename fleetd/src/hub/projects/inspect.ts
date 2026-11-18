@@ -1,6 +1,7 @@
 // Pure: GitHub's answers about a repository into a `ProjectInspect`, the line on what the lead will need, the best
 // worker for a clone, and a failed clone's message into a problem with its fix,
 // with the contracts' `github_repo`, `short_remote` and `RepoKey::of` (fleetd-contracts projects.rs, work.rs).
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type {
   CiInfo,
   GitHubRepo,
@@ -208,7 +209,9 @@ export type Worker = {
 
 /** Connected first, then a usable runner, then the fewest running threads, then the lowest load, then the id. */
 export function bestWorker(workers: Worker[]): MachineId | undefined {
+  // A computer of the team's first: the hub's runner (hosted sandboxes) takes a bot only when none can.
   const order = (a: Worker, b: Worker) =>
+    Number(a.machineId === RUNNER_ID) - Number(b.machineId === RUNNER_ID) ||
     Number(!a.ready) - Number(!b.ready) ||
     a.running - b.running ||
     (a.load ?? Number.MAX_VALUE) - (b.load ?? Number.MAX_VALUE) ||

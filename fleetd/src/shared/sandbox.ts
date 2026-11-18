@@ -8,6 +8,16 @@ import type { KnownSandboxCheckReason, KnownSandboxProvider } from "./contracts.
 export const CAP_SANDBOX = "sandbox";
 
 /**
+ * The capability of the hub's own runner (hub/runner): a node the hub starts itself, so that a team with no computer
+ * connected still runs agents. It runs every session (leads too) in a box of the team's connected providers, none on
+ * the machine it runs on: it has no slots of its own, offers no screens and never uses a machine's Claude login.
+ */
+export const CAP_RUNNER = "hosted_runner";
+/** The runner's machine id, and its name where a person reads it. */
+export const RUNNER_ID = "hosted";
+export const RUNNER_NAME = "Hosted sandboxes";
+
+/**
  * Every provider, in the placement order: the order agents go to the connected ones once a machine's own slots are
  * full, which Settings shows. (sandbox/providers' own PROVIDERS is only the clients' list, in no such order.)
  */

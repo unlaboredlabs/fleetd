@@ -1,5 +1,6 @@
 // The update's ports over the running hub: the release feed, this machine's
 // binary and service, and the nodes over the link.
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";
 import { approvals } from "../approvals/index.ts";
@@ -75,6 +76,8 @@ export function hubPorts(hub: Hub): UpdatePorts {
       const ex = executors(hub);
       return store(hub)
         .machinesList()
+        // The hub's own runner updates with the hub that starts it, and its agents' Claude Code is its boxes'.
+        .filter((m) => m.machineId !== RUNNER_ID)
         .map((m) => {
           const claude = ex.cachedRunner(m.machineId)?.version;
           const live = ex.liveSince(m.machineId);

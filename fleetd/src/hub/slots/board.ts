@@ -9,7 +9,7 @@
 // between turns, and a run that comes back goes where its claude still is.
 import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
-import { type Limit, NAMES } from "../../shared/sandbox.ts";
+import { type Limit, NAMES, RUNNER_ID } from "../../shared/sandbox.ts";
 import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
 /** An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet. */
@@ -312,7 +312,8 @@ export class Board {
 
   /** The machine's own slots: a person's setting, else what it fits; UNMEASURED until its node reports. */
   ownCap(m: MachineId): number {
-    if (!this.runsAgents(m)) return 0;
+    // The hub's own runner runs nothing on its machine: every agent of its goes to a hosted provider.
+    if (!this.runsAgents(m) || m === RUNNER_ID) return 0;
     const machine = this.machine(m);
     return machine ? machineCapOf(machine) : UNMEASURED;
   }
@@ -456,9 +457,10 @@ export class Board {
       case "no_agents":
         return `${name} runs no agents: its role is screens only (a hub admin changes it in Settings › Hub › Machines)`;
       case "machine": {
+        const usable = this.hosted_.filter((l) => this.canHost(m, l.provider));
+        if (m === RUNNER_ID) return runnerBlocker(this.hosted_.length > 0, usable.map((l) => `${NAMES[l.provider]} ${this.hostedUse(l.provider)} of ${l.max}`), c.hostable === true);
         const why = machine ? machineWhy(machine) : UNMEASURED_WHY;
         const own = `machine cap: ${this.localHeld(m)} of ${this.ownCap(m)} running on ${name} (${why})`;
-        const usable = this.hosted_.filter((l) => this.canHost(m, l.provider));
         if (usable.length === 0) return own;
         if (c.threadId !== undefined && this.places(m)[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
         if (c.hostable !== true) return `${own}; hosted sandboxes take only agents on a Claude account, not this machine's own login`;
@@ -743,6 +745,15 @@ export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoa
   const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
   const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}) };
   return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
+}
+
+/** Why an agent of a bot no computer runs (the hub's runner) waits: no provider is connected (`connected`) or ready
+ * on the runner yet, it has no Claude account, or every provider is at its limit (`full`, one "E2B 3 of 3" each). */
+export function runnerBlocker(connected: boolean, full: string[], hostable: boolean): string {
+  if (!connected) return "no hosted sandbox provider is connected to run it: an admin connects E2B, boat.dev or Daytona in Settings › Hub › Machines";
+  if (full.length === 0) return "the hosted sandbox providers aren't ready on the hub yet: it starts once they are";
+  if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings";
+  return `hosted sandboxes are full: ${full.join(", ")}`;
 }
 
 /** The board's state as the apps and `cap_set` show it: no count below 0, a machine's `why` cut to WHY_MAX ("auto" only

@@ -98,7 +98,8 @@ export function start(node: Node): Sandboxes | undefined {
   // Made before the sessions start (node/index.ts), so they re-adopt their boxes.
   const boxes = currentBoxes() ?? new Boxes(node.home, node.config.machineId, key);
   setBoxes(boxes);
-  const s = new Sandboxes(key, realProvider, boxes);
+  // Test lists with the provider's client the boxes are made with (a stand-in's, in tests).
+  const s = new Sandboxes(key, boxes.o.provider ?? realProvider, boxes);
   byNode.set(node, s);
   node.area("caps").contribute(() => [CAP_SANDBOX]);
   node.area("hb").contribute((hb) => {

@@ -12,12 +12,13 @@
 import type { KnownSandboxProvider, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf, RUNNER_ID } from "../../shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
+import { runner } from "../runner/index.ts";
 import { slots } from "../slots/index.ts";
 import { store } from "../store/hub_store.ts";
 import { openRawToHub } from "../vault/items.ts";
@@ -192,6 +193,8 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
   const provider = known(providerIn);
   if (!rowOf(hub, provider)) throw new ToolError("invalid", `No ${NAMES[provider]} key is connected.`, "connect one first");
   const at = isoMs(hub.clock.now());
+  // The hub's runner, just started for the key, links within moments: the check waits for it.
+  await runnerLinked(hub);
   const machines = store(hub)
     .machinesList()
     .filter((m) => link(hub).can(m.machineId, CAP_SANDBOX));
@@ -214,15 +217,18 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
     check = { at, ok: false, reason, message: `${m.name}: ${reply.message}`, fix: checkFix(provider, reason, m.name) };
     break;
   }
+  const why = runner(hub).unsupported;
   check ??= {
     at,
     ok: false,
     reason: "failed",
     message:
-      machines.length === 0
-        ? "No Linux machine of the team's is online to test the key: sandboxes are made there."
-        : `No machine of the team's could test the key. No check from ${unanswered.join(", ")}.`,
-    fix: "bring one of the team's Linux machines online with an up-to-date fleetd, then test again",
+      machines.length > 0
+        ? `No machine of the team's could test the key. No check from ${unanswered.join(", ")}.`
+        : why !== undefined
+          ? `Nothing here can test the key: ${why}.`
+          : "The hub's runner for hosted sandboxes didn't come up to test the key.",
+    fix: why !== undefined ? "connect a Linux computer of the team's, then test again" : "test again in a moment; if it still fails, the hub's log says why its runner didn't start",
   };
   hub.db.conn.query("UPDATE sandbox_providers SET check_json = ?1 WHERE provider = ?2").run(JSON.stringify(check), provider);
   return state(hub);
@@ -232,6 +238,8 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
  * to `machineIds` (every machine that makes sandboxes, by default). */
 export function sendLimits(hub: Hub, machineIds?: string[]): void {
   const all = limits(hub);
+  // The hub's own runner runs while a provider is connected (or a bot lives on it).
+  runner(hub).sync();
   try {
     slots(hub).setHosted(all);
   } catch (e) {
@@ -246,6 +254,27 @@ export function sendLimits(hub: Hub, machineIds?: string[]): void {
       await link(hub).request(m, { t: "node_action", id: "", action: "sandbox_limits", limits: all, keys }, { waitSec: 15 });
     })().catch((e: unknown) => console.warn(`sandbox: limits not sent to ${m}: ${(e as Error).message}`));
   }
+}
+
+/** How long a check waits for the hub's runner to link. */
+const RUNNER_UP_MS = 30_000;
+
+/** Resolves once the hub's runner, wanted now, has linked and makes sandboxes, or after RUNNER_UP_MS; at once when it
+ * isn't wanted or already has. */
+function runnerLinked(hub: Hub): Promise<void> {
+  const r = runner(hub);
+  if (!r.running || link(hub).can(RUNNER_ID, CAP_SANDBOX)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      off();
+      resolve();
+    };
+    const off = link(hub).onLinked(({ machineId }) => {
+      if (machineId === RUNNER_ID) done();
+    });
+    const timer = setTimeout(done, RUNNER_UP_MS);
+  });
 }
 
 /** For hub/doctor: each connected provider's name and last check, in the order agents go to them. */

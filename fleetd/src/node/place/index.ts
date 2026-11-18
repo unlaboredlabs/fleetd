@@ -9,7 +9,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { Image } from "../actions/image.ts";
-import { sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
+import { LaunchError, sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
 import { boxFile, destroyBox } from "./box_record.ts";
 import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
 import type { ProviderId } from "../../sandbox/providers/index.ts";
@@ -66,10 +66,34 @@ export const boxOf = (session: string): { box: Box; view?: View } | undefined =>
 export const VM_NO_DESKTOP_LAUNCH =
   "This agent runs in a VM of its own, and the Linux desktop runs on this machine outside it, so it can't launch programs for it: one started there would run outside the VM. Say in your result that the desktop check was skipped.";
 
+let runner: (() => ProviderId | undefined) | undefined;
+
+/** This node is the hub's own runner (shared/sandbox.ts CAP_RUNNER): every session runs in a hosted box, in the
+ * provider the hub placed it in, else the first one `provider` names; none runs on this machine. */
+export const useRunner = (provider: (() => ProviderId | undefined) | undefined) => void (runner = provider);
+export const isRunner = () => runner !== undefined;
+/** The provider the runner puts a session in that the hub placed nowhere; undefined off the runner. */
+export const runnerProvider = (): ProviderId | undefined => runner?.();
+
+/** What the hub's runner says when no provider of the team's takes its agents. */
+export const RUNNER_NO_PROVIDER =
+  "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects E2B, boat.dev or Daytona in Settings › Hub › Machines";
+
+/** The runner's place for a session no provider takes: it never starts there, and says why. */
+const noPlace: Place = {
+  ...processPlace,
+  start: async () => {
+    throw new LaunchError(RUNNER_NO_PROVIDER);
+  },
+  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: RUNNER_NO_PROVIDER }),
+};
+
 /** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it
- * in, else a task's agent in a VM where the machine can run one, else a process. */
+ * in, else a task's agent in a VM where the machine can run one, else a process. On the hub's runner, always a box. */
 export const pick = (s?: PlaceFor): Place => {
-  if (s?.hosted) return hostedPlace(s.hosted, s.sessionId, s.dir);
+  const hosted = s?.hosted ?? runner?.();
+  if (s && hosted) return hostedPlace(hosted, s.sessionId, s.dir);
+  if (runner) return noPlace;
   return s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace;
 };
 

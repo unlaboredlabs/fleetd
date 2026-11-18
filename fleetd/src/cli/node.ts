@@ -51,6 +51,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       machine: "str",
       "claude-config-dir": "str",
       mac: "bool",
+      runner: "bool",
       wait: "str",
       ask: "str",
       after: "str",
@@ -85,6 +86,8 @@ export async function nodeCommand(argv: string[]): Promise<number> {
         enrollOnly: v.flag("enroll-only"),
         ...(dir ? { claudeConfigDir: dir } : {}),
         mac: v.flag("mac"),
+        // The hub's own runner, which the hub starts (hub/runner): not in the usage, as no person runs it.
+        ...(v.flag("runner") ? { runner: true } : {}),
       });
     }
     case "run": {
