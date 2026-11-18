@@ -28,7 +28,8 @@ import {
   type ReactNode,
 } from "react";
 import { Button, cx } from "../../ui";
-import { useData, useHub, useToolQuery } from "../../src/data/react";
+import type { HubView } from "../../src/data/hubs";
+import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
@@ -76,7 +77,14 @@ const BOTS_SHOWN = 8;
 
 const noInput = {};
 
-export function SettingsSheet({ onClose }: { onClose: () => void }) {
+/**
+ * The sheet over the app, on `hub` (absent, the hub in scope): the hub its route names, which may be another than the
+ * app's under it. A switch of hub (a Hub page's Managing) keeps the sheet on screen, its head and the page's frame with
+ * it: only its index and page start afresh, in the other hub's scope, a query keeping the client it was made with.
+ */
+export function SettingsSheet({ hub: on, onClose }: { hub?: HubView; onClose: () => void }) {
+  const here = useHub();
+  const hub = on ?? here;
   const sheet = useRef<HTMLDivElement>(null);
   const [head, setHead] = useState<HTMLDivElement | null>(null);
   // Esc closes the sheet, unless something in it took the key first (a menu, a dialog, a search with words in it).
@@ -116,17 +124,21 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
     };
   }, []);
   // A modal: the app under it (what comes before the scrim in the shell) is out of reach of Tab, clicks and screen
-  // readers until the sheet closes.
+  // readers until the sheet closes, and blurred (sheet.module.css).
   useEffect(() => {
     const under: Element[] = [];
     for (let el = sheet.current?.parentElement?.previousElementSibling ?? null; el !== null; el = el.previousElementSibling) {
       if (!el.hasAttribute("inert")) {
         el.setAttribute("inert", "");
+        el.setAttribute("data-under-sheet", "");
         under.push(el);
       }
     }
     return () => {
-      for (const el of under) el.removeAttribute("inert");
+      for (const el of under) {
+        el.removeAttribute("inert");
+        el.removeAttribute("data-under-sheet");
+      }
     };
   }, []);
   // Focus goes into the sheet, on the sheet itself, so the first Tab reaches the search and nothing shows a ring.
@@ -147,7 +159,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         aria-label="Settings"
         tabIndex={-1}
       >
-        <Index />
+        <HubScope key={hub.id} hub={hub}>
+          <Index />
+        </HubScope>
         <div className={n.page}>
           <div className={n.head}>
             <div ref={setHead} className={n.headSlot} />
@@ -162,9 +176,11 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
               <X aria-hidden />
             </Button>
           </div>
-          <HeadSlot.Provider value={head}>
-            <SettingsScreen />
-          </HeadSlot.Provider>
+          <HubScope key={hub.id} hub={hub}>
+            <HeadSlot.Provider value={head}>
+              <SettingsScreen />
+            </HeadSlot.Provider>
+          </HubScope>
         </div>
       </div>
     </div>
