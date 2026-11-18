@@ -173,6 +173,13 @@ answers at once, its screen on its way. `screen_end` with the waitId gives up a 
   so once. System Chrome brings its own sandbox helper, so `FLEETD_CHROME` set to it keeps the sandbox there.
 - **The node's own connection is hidden from the agent.** The node uses its connection for the recording. The
   agent's driver never sees the node's target sessions or screencast frames.
+- **An agent in a sandbox (a VM, a hosted sandbox) gets its sandbox's network.** Its Chrome is launched fresh for
+  the screen (about a second, not taken warm), pointed at a proxy of the screen's own whose connections the sandbox
+  makes, with no bypass for loopback, no QUIC and no WebRTC around it. So `localhost` is the sandbox's, and this
+  machine's own addresses are out of reach as they are from the sandbox. The screen stays on the agent's machine,
+  the only one that reaches its sandbox. It opens only `http`, `https`, `data:` and `blob:` pages and refuses
+  `file:`, `chrome:` and the like. Downloads and uploads take only paths the sandbox shows from this machine (your
+  worktree), never the sandbox's own `/tmp`; a hosted sandbox shares no files, so they are refused there.
 
 Agents aren't sandboxed on their machine (see [Security](/docs/security#keys)). These measures keep screens apart and
 recorded. They can't stop an agent that sets out to get around them, for example by starting a browser of its own.

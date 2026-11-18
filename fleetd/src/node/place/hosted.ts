@@ -86,6 +86,8 @@ const isDir = (p: string) => {
 
 /** Whether the session has a box now, or one being made. */
 export const hasBox = (session: string) => live.has(session) || making.has(session);
+/** The hosted box of session `session`, once it is up. */
+export const hostedBox = (session: string): Box | undefined => live.get(session)?.box;
 
 export function readRecord(dir: string): HostedRecord | undefined {
   try {

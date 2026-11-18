@@ -265,6 +265,16 @@ export class MicroVm {
     return false;
   }
 
+  /** Session `session`'s box once it is up, and what of this machine it shows. */
+  boxOf(session: string): { box: Box; view?: View } | undefined {
+    for (const [dir, going] of this.#boxes) {
+      if (dir.split("/").at(-1) !== session) continue;
+      const held = Bun.peek(going) as Held | Error | Promise<Held>;
+      return held instanceof Promise || held instanceof Error ? undefined : { box: held.box, ...(held.view ? { view: held.view } : {}) };
+    }
+    return undefined;
+  }
+
   /** Whether `s` runs in a box when the machine can: a task's agent. A lead or a person's own thread stays a process. */
   wants(s: PlaceFor): boolean {
     return s.role === "worker";

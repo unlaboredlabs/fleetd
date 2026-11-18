@@ -412,9 +412,12 @@ not around your files:
   its registry cache broken: `cargo clean`ing it is the fix), uv's cache (`~/.cache/uv`, two VMs building the same
   wheel both build it), and any SQLite database in your home that two agents write. bun, npm, gh, git and claude take
   none.
-- **A VM agent's browser session runs on this machine**, outside the VM: its Chrome reaches what this machine
-  reaches (its own `localhost` ports, its files by `file://`), not the agent's own servers in the VM. The Linux
-  desktop refuses to launch programs for a VM agent, since they'd run outside its VM.
+- **A VM agent's browser sees the VM's network.** Its Chrome runs on this machine, but every connection it makes
+  (pages, websockets, service workers) goes out through the VM: `localhost:5173` is the agent's own dev server in
+  the VM, and this machine's loopback, LAN and tailnet addresses (the hub's among them) are as out of reach as they
+  are from the VM. It opens only `http`, `https`, `data:` and `blob:` pages, never `file:` or `chrome:`, and it
+  downloads to and uploads from only folders the VM shows (your worktree, say), never its `/tmp` or fleetd's own
+  folders. The Linux desktop refuses to launch programs for a VM agent, since they'd run outside its VM.
 - **Other machines on your network and tailnet** are reached as from a plain process: only this machine's own
   addresses are kept out.
 - **The machine's `/usr`, `/etc` and `/opt` are readable** in the VM as they are by you, read-only: what you can't read

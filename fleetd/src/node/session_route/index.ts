@@ -152,8 +152,9 @@ export class Router {
     const op = frame.call.op;
     if (screens(this.node).live(thread)) return this.here(thread, frame);
     const host = hostOf(frame);
-    // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
-    if (this.broker.staysHere(thread)) return this.here(thread, frame);
+    // A lead's runs here, on its project's kept profile: another machine hasn't that profile. So does the browser of
+    // an agent in a box: it goes out through the box (browser/egress.ts), which only this node reaches.
+    if (this.broker.staysHere(thread) || (host === "browser" && this.broker.boxed?.(thread) !== undefined)) return this.here(thread, frame);
     // A fill of a session hosted elsewhere: its runner asks the hub's vault itself. Only a 1Password reference the vault
     // doesn't hold yet (one release) is read here, with this machine's token, and only the value goes, sealed.
     const remote = this.remotes.get(thread);

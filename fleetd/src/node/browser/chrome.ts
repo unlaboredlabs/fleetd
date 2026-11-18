@@ -91,7 +91,7 @@ export function findChrome(root: string): string | undefined {
     .find((bin) => existsSync(bin));
 }
 
-export function args(chrome: string, profile: string, sandboxed: boolean): string[] {
+export function args(chrome: string, profile: string, sandboxed: boolean, extra: string[] = []): string[] {
   const out = [
     "--remote-debugging-pipe",
     "--no-first-run",
@@ -115,7 +115,7 @@ export function args(chrome: string, profile: string, sandboxed: boolean): strin
   ];
   if (!chrome.includes("headless-shell")) out.push("--headless=new");
   if (!sandboxed) out.push("--no-sandbox");
-  out.push("about:blank");
+  out.push(...extra, "about:blank");
   return out;
 }
 
@@ -196,9 +196,9 @@ export class Browser {
   }
 }
 
-/** Launches Chrome on a fresh profile under `profiles`, or on `kept` (a project's), and waits until it answers on its
- * pipe. */
-export async function launch(chrome: string, profiles: string, sandboxed: boolean, kept?: string): Promise<Browser> {
+/** Launches Chrome on a fresh profile under `profiles`, or on `kept` (a project's), with `extra` flags (a boxed
+ * session's proxy, egress.ts), and waits until it answers on its pipe. */
+export async function launch(chrome: string, profiles: string, sandboxed: boolean, kept?: string, extra: string[] = []): Promise<Browser> {
   let profile: string;
   if (kept) {
     readyKept(kept);
@@ -210,7 +210,7 @@ export async function launch(chrome: string, profiles: string, sandboxed: boolea
   let child: Subprocess<"pipe", "pipe", "pipe">;
   try {
     // At the agent OOM score, so memory pressure takes the browser before the node (oom.ts).
-    child = Bun.spawn(["/bin/sh", "-c", `${agentScoreLine()}exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null`, chrome, ...args(chrome, profile, sandboxed)], {
+    child = Bun.spawn(["/bin/sh", "-c", `${agentScoreLine()}exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null`, chrome, ...args(chrome, profile, sandboxed, extra)], {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
@@ -259,8 +259,8 @@ export class Pool<B extends Launched = Launched> {
   refillFailed: string | undefined;
 
   constructor(
-    /** Launches one browser, sandboxed or not, on a fresh profile or on `kept`. */
-    private readonly launchOne: (sandboxed: boolean, kept?: string) => Promise<B>,
+    /** Launches one browser, sandboxed or not, on a fresh profile or on `kept`, with `extra` flags. */
+    private readonly launchOne: (sandboxed: boolean, kept?: string, extra?: string[]) => Promise<B>,
     readonly size: number,
     /** node.json `browser.sandbox`: true requires it, false turns it off; absent, wherever this host allows it. */
     private readonly sandbox: boolean | undefined = undefined,
@@ -271,13 +271,13 @@ export class Pool<B extends Launched = Launched> {
     return this.sandbox === false || this.noSandbox;
   }
 
-  private async launch(kept?: string): Promise<B> {
-    if (this.unsandboxed()) return this.launchOne(false, kept);
+  private async launch(kept?: string, extra?: string[]): Promise<B> {
+    if (this.unsandboxed()) return this.launchOne(false, kept, extra);
     try {
-      return await this.launchOne(true, kept);
+      return await this.launchOne(true, kept, extra);
     } catch (e) {
       if (this.sandbox !== undefined) throw e;
-      const browser = await this.launchOne(false, kept);
+      const browser = await this.launchOne(false, kept, extra);
       console.warn(`${new Date().toISOString()} WARN Chrome's sandbox refused on this host: browsers run with --no-sandbox {"error":${JSON.stringify((e as Error).message)}}`);
       this.noSandbox = true;
       return browser;
@@ -295,6 +295,11 @@ export class Pool<B extends Launched = Launched> {
     const taken = browser ?? (await this.launch());
     this.refill();
     return taken;
+  }
+
+  /** A browser launched now on a fresh profile with `extra` flags (a boxed session's proxy): the warm ones have none. */
+  async takeWith(extra: string[]): Promise<B> {
+    return this.launch(undefined, extra);
   }
 
   /** A browser on a project's kept profile, launched now: the warm ones have fresh profiles. It holds `lease` until it

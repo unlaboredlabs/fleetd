@@ -3,9 +3,11 @@
 //
 //   type u8 | channel u32 BE | length u32 BE | payload
 //
-// - OPEN: a channel starts; its payload is the JSON target. Only the guest opens channels (2 and up), for a connection
-//   to a node.sock forward (`{"unix":path}`) or a TCP forward (`{"tcp":port}`); the node opens only channel 1, the
-//   session host's lines (`{"host":true}`).
+// - OPEN: a channel starts; its payload is the JSON target. The guest opens channels 2 and up (below NODE_CHANNELS),
+//   for a connection to a node.sock forward (`{"unix":path}`) or a TCP forward (`{"tcp":port}`); the node opens
+//   channel 1, the session host's lines (`{"host":true}`), and from NODE_CHANNELS up a connection the guest makes from
+//   inside the box (`{"dial":{"host","port"}}`, its browser's: ../browser/egress.ts). The guest says how that dial
+//   went in a control message, `{"op":"dial","channel":n}` or with `"error"`, before any of the channel's bytes.
 // - DATA: bytes of a channel, at most CHUNK of them a frame.
 // - END: the sender sends nothing more on the channel (a half-close). A channel is done once both sides ended it.
 // - CREDIT: a u32: the receiver handed that many more of the channel's bytes on. A sender keeps at most WINDOW bytes
@@ -27,10 +29,12 @@ export const WINDOW = 256 * 1024;
 const MAX_FRAME = 1 << 20;
 export const CONTROL = 0;
 export const HOST = 1;
+/** The first channel the node opens beside the host's: a dial (`{dial}`). The guest's own stay below it. */
+export const NODE_CHANNELS = 0x8000_0000;
 
-/** A channel's far end: a unix socket, a TCP port (on the guest's loopback, or on `addr` in the guest), or the session
- * host. */
-export type Target = { unix: string } | { tcp: number; addr?: string } | { host: true };
+/** A channel's far end: a unix socket, a TCP port (on the guest's loopback, or on `addr` in the guest), the session
+ * host, or (`dial`) a host and port the guest connects to from inside the box. */
+export type Target = { unix: string } | { tcp: number; addr?: string } | { host: true } | { dial: { host: string; port: number } };
 
 export function frame(type: number, channel: number, payload: Uint8Array = new Uint8Array(0)): Buffer {
   const out = Buffer.allocUnsafe(HEADER + payload.length);
