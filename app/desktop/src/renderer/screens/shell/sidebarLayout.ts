@@ -19,7 +19,7 @@ export const LAYOUTS: ReadonlyArray<{ readonly id: SidebarLayout; readonly label
 ];
 
 const LAYOUT = "fleetd.sidebarLayout";
-export const DEFAULT_LAYOUT: SidebarLayout = "hubs";
+export const DEFAULT_LAYOUT: SidebarLayout = "list";
 
 const isLayout = (v: unknown): v is SidebarLayout => LAYOUTS.some((l) => l.id === v);
 

@@ -15,6 +15,7 @@ import { DWELL_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { pinPlace, Sidebar, SPRING } from "./Sidebar";
+import { resetSidebarView } from "./sidebarLayout";
 
 const SETTLE_MS = SPRING.ms;
 
@@ -103,6 +104,9 @@ let drawn: Map<HTMLElement, number>;
 let cutThen: Map<HTMLElement, readonly [string, string]>;
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   went = [];
   calls = [];
   layer = createDataLayer({

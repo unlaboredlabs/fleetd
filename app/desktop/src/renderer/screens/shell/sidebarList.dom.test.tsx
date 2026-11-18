@@ -14,6 +14,7 @@ import { PROJECT_TOOLS } from "../projects/model";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
+import { resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -89,6 +90,9 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
 };
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   went = [];
   calls = [];
   host = document.createElement("div");

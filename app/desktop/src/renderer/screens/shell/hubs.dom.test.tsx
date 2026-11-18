@@ -156,6 +156,8 @@ const rowNamed = (name: string) => [...host.querySelectorAll<HTMLButtonElement>(
 beforeEach(() => {
   window.location.hash = "#/";
   window.localStorage.clear();
+  // Hubs unless a test picks List (list()); List, the default, has its own tests too.
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
   fake.hubs.clear();
   fake.badge.length = 0;
   fake.chats.length = 0;

@@ -29,6 +29,9 @@ let listener: (frame: HubFrame) => void;
 let went: Screen[];
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   fleetd.fixture = null;
   went = [];
   window.location.hash = "#/";
@@ -170,7 +173,8 @@ it("picks the sidebar's layout in the menu, the one in use pressed, and keeps it
   await mount({ phase: "live", hub: HUB, protocol: 1 });
   open();
   const pressed = () => [...(row("layout")?.querySelectorAll<HTMLButtonElement>("button[aria-pressed='true']") ?? [])].map((b) => b.textContent);
-  expect(pressed()).toEqual(["Hubs"]);
+  // None kept yet: List, the default.
+  expect(pressed()).toEqual(["List"]);
   act(() => [...(row("layout")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === "Rail")?.click());
   expect(pressed()).toEqual(["Rail"]);
   expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");

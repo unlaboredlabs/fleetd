@@ -19,6 +19,7 @@ import { Sidebar, SPRING } from "./Sidebar";
 
 const SETTLE_MS = SPRING.ms;
 import { changePins } from "./pins";
+import { resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -59,6 +60,9 @@ let seq: number;
 
 beforeEach(() => {
   window.localStorage.clear();
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   unread = undefined;
   stored = [];
   sets = [];

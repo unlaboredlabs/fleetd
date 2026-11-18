@@ -16,7 +16,7 @@
   background: none;
 }
 .bar .section {
-  flex: none;
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -63,10 +63,19 @@
   gap: var(--space-1);
   min-width: 0;
 }
-/* As wide as its word at the open tab's weight, so opening a tab moves none of them. */
+/* As wide as its word at the open tab's weight, so opening a tab moves none of them; cut with an ellipsis rather than
+   run out of its tab, should the row ever be a few pixels short before it folds to icons. */
+.words {
+  overflow: hidden;
+}
 .label {
   display: inline-grid;
+  min-width: 0;
   white-space: nowrap;
+}
+.label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .label::after {
   content: attr(data-label);
@@ -94,8 +103,9 @@
 .count:empty {
   display: none;
 }
-/* Measured in the app: four tabs' words with two-figure counts end near 280 px, and with Artifacts near 335. */
-@container (max-width: 290px) {
+/* Measured in the app, each tab as wide as its word: four tabs' words with two-figure counts end near 270 px, and with
+   Artifacts near 350; each folds to icons with room to spare. */
+@container (max-width: 300px) {
   .bar .section {
     flex: 1 1 0;
     padding: 0 var(--space-1);
@@ -107,7 +117,7 @@
     display: none;
   }
 }
-@container (max-width: 340px) {
+@container (max-width: 390px) {
   .bar[data-tabs="5"] .section {
     flex: 1 1 0;
     padding: 0 var(--space-1);

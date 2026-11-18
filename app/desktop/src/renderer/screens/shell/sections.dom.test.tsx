@@ -58,6 +58,9 @@ let seq: number;
 
 beforeEach(() => {
   window.localStorage.clear();
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   resetSidebarView();
   pins = [];
   stored = [];

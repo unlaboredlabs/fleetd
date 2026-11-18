@@ -12,6 +12,7 @@ import { UiProvider } from "../../ui";
 import type { Routed } from "./navigation";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
+import { resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -54,6 +55,9 @@ const mount = (o: { factory?: boolean; screen?: Routed } = {}) =>
   );
 
 beforeEach(() => {
+  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
+  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
+  resetSidebarView();
   went = [];
   host = document.createElement("div");
   document.body.appendChild(host);

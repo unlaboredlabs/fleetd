@@ -1222,7 +1222,9 @@ export const screens: readonly Screen[] = [
     fixtures: ["admin-owner"],
     variant: "restart",
     open: async (page) => {
-      await page.getByRole("button", { name: "Restart hub…" }).click();
+      // In the hub row's "…".
+      await page.getByRole("button", { name: /: more$/u }).first().click();
+      await page.getByRole("menuitem", { name: "Restart hub…" }).click();
       await expect(page.getByRole("dialog", { name: "Restart the hub?" })).toBeVisible();
     },
   },
@@ -2651,7 +2653,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old", "offline-held"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
-  // Settings opened from the sidebar takes its place; Back returns, with focus on the control that opened it.
+  // Settings opened from the sidebar opens as a sheet over it; closing it returns focus to the control that opened it.
   {
     id: "shell",
     route: "#/",
@@ -2661,7 +2663,7 @@ export const screens: readonly Screen[] = [
       await page.locator("[data-opens='you']").click();
       await page.getByRole("dialog", { name: "You" }).getByRole("button", { name: /^Settings/u }).click();
       await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
-      await page.getByRole("button", { name: "Back" }).click();
+      await page.getByRole("button", { name: "Close settings" }).click();
       await expect(page.locator("[data-opens='you']")).toBeFocused();
     },
   },
@@ -2832,7 +2834,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["cloud-github-install", "cloud-github-installed", "cloud-github-not-set-up"],
     variant: "cloud-github",
     open: async (page) => {
-      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "GitHub" }).click();
       await page.locator('[data-screen="settings.hub.setup.step"]').waitFor();
       await expect(page.getByRole("button", { name: "Create GitHub App" })).toHaveCount(0);
     },
@@ -2843,7 +2845,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["cloud-github-connect-first"],
     variant: "cloud-github-connect-first",
     open: async (page) => {
-      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "GitHub" }).click();
       await page.getByRole("button", { name: "Install it on repositories" }).click();
       await page.getByRole("button", { name: "Connect GitHub" }).waitFor();
     },
@@ -3863,7 +3865,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["settings-agents"],
     variant: "edit",
     open: async (page) => {
-      await page.getByRole("button", { name: "Edit medium" }).click();
+      // A profile's editor opens from its name.
+      await page.locator("[data-profile='medium'] button").first().click();
       await page.getByRole("region", { name: "Edit medium" }).waitFor();
     },
   },
@@ -3900,22 +3903,12 @@ export const screens: readonly Screen[] = [
   // and GitHub on a fresh hub, its guide open); any other step is its guide.
   { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done", "setup-all", "admin-owner"] },
   {
-    id: "settings.hub.setup",
-    route: "#/settings/hub/setup",
-    fixtures: ["setup-done"],
-    variant: "done-shown",
-    open: async (page) => {
-      await page.getByRole("button", { name: "Show steps" }).click();
-      await page.getByRole("list", { name: "Steps done" }).waitFor();
-    },
-  },
-  {
     id: "settings.hub.setup.step",
     route: "#/settings/hub/setup",
     fixtures: ["admin-owner", "setup-fresh"],
     variant: "claude",
     open: async (page) => {
-      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "Claude" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "Claude" }).click();
       await page.getByRole("article", { name: "Claude" }).waitFor();
     },
   },
@@ -3925,7 +3918,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["admin-owner"],
     variant: "claude-change",
     open: async (page) => {
-      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "Claude" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "Claude" }).click();
       await page.getByRole("button", { name: "Change" }).click();
       await page.getByRole("textbox", { name: "API key" }).waitFor();
     },
@@ -3936,7 +3929,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["admin-owner", "setup-done", "setup-fresh"],
     variant: "github",
     open: async (page) => {
-      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "GitHub" }).click();
       await page.getByRole("article", { name: "GitHub" }).waitFor();
     },
   },
@@ -3946,7 +3939,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["setup-fresh"],
     variant: "people",
     open: async (page) => {
-      await page.getByRole("list", { name: "Steps left" }).getByRole("button", { name: "People" }).click();
+      await page.getByRole("list", { name: "Steps" }).getByRole("button", { name: "People" }).click();
       await page.getByRole("article", { name: "People" }).waitFor();
     },
   },
@@ -4045,7 +4038,7 @@ export const screens: readonly Screen[] = [
       await storefront.getByRole("button", { name: "devbox's max in Hub › Machines" }).waitFor();
     },
   },
-  // A project's allowed profiles: high (the default, checked for good) and medium, quick left out; and storefront
+  // A project's allowed profiles: high (the default, always), medium switched on, quick off; and storefront
   // allowing the default alone.
   {
     id: "settings.agents",
@@ -4055,7 +4048,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const allowed = page.getByRole("region", { name: "Allowed profiles" });
       await allowed.scrollIntoViewIfNeeded();
-      await allowed.getByRole("checkbox").first().waitFor();
+      await allowed.getByRole("switch").first().waitFor();
     },
   },
   // A link to one project's Agents opens on that project, whichever the sidebar last showed.
