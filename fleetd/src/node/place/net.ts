@@ -67,6 +67,14 @@ export function kernelAddrs(k: Kernel): string[] {
 
 const loopback = (addr: string) => addr === "::1" || addr.startsWith("127.");
 
+/** Tailscale's addresses for this machine's own tailscaled (quad-100), and whether an address is a tailnet one
+ * (100.64.0.0/10). */
+export const TAILSCALE_LOCAL = ["100.100.100.100", "fd7a:115c:a1e0::53"];
+const tailnet = (addr: string) => {
+  const m = /^100\.(\d+)\./u.exec(addr);
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+};
+
 /** Every address of this machine but loopback's (the namespace has a loopback of its own), each once, without its
  * zone: `fe80::1%eth0` is `fe80::1`. Both what the interfaces list (up ones only, as libuv sees them) and every local
  * address the kernel holds, a down interface's among them. */
@@ -80,6 +88,8 @@ export function hostAddrs(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkI
     }
   }
   for (const addr of kernelAddrs(kernel)) if (!loopback(addr)) out.add(addr);
+  // Tailscale's own service on this machine (MagicDNS, its local API's web page), at addresses no interface has.
+  if ([...out].some(tailnet)) for (const a of TAILSCALE_LOCAL) out.add(a);
   return [...out].sort();
 }
 

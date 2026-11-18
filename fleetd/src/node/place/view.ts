@@ -9,7 +9,7 @@
 //
 // The view is assembled by bind mounts in a user and mount namespace of its own, where virtiofsd then serves it: nothing
 // is mounted on this machine, and nothing needs root.
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 /** One path put back in the view, at the same path. */
@@ -137,8 +137,16 @@ export function needs(n: Needs): Share[] {
   // A program on PATH that links elsewhere (agent-browser's, into its package): what it links to, read-only too.
   for (const d of pathsIn(n.env.PATH ?? "")) for (const target of linkedFrom(d)) add(dirname(target), false);
   // The order's variables are re-read before each command, and renewed (GH_TOKEN) by writing a new file in their dir.
+  // Its dir is made now when it isn't there yet (no variable set so far): a share missing at boot is never mounted,
+  // and a variable set later would never reach the box.
   const envFile = n.env.CLAUDE_ENV_FILE;
-  if (envFile) for (const p of sourced(envFile)) add(dirname(p), false);
+  if (envFile)
+    for (const p of sourced(envFile)) {
+      try {
+        mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
+      } catch {}
+      add(dirname(p), false);
+    }
   return [...out].map(([path, rw]) => ({ path, rw })).filter((s) => !guestOwn(s.path));
 }
 

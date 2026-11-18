@@ -111,7 +111,8 @@ const realDoer: Doer = {
     mkdirSync(LAYERS, { recursive: true });
     mount("fleetd-system", LAYERS, "tmpfs", MS_NOSUID | MS_NODEV, "mode=0755");
   },
-  overlay: (target, lower, upper, work) => mount("fleetd-system", target, "overlay", 0, `lowerdir=${lower.join(":")},upperdir=${upper},workdir=${work}`),
+  // nosuid: this machine's setuid programs (sudo, su, mount, pkexec) would run as the guest's root for the agent.
+  overlay: (target, lower, upper, work) => mount("fleetd-system", target, "overlay", MS_NOSUID | MS_NODEV, `lowerdir=${lower.join(":")},upperdir=${upper},workdir=${work}`),
 };
 
 /** Overlay option strings take `:` and `,` as separators and `\` as an escape: a path with one can't be a layer. */

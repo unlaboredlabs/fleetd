@@ -839,3 +839,14 @@ test("a VM's agent is in a box: what this machine would run for it (the Linux de
     useVm(undefined);
   }
 });
+
+test("an order's variables dir that isn't there yet is made before the box boots, so a variable set later reaches it", () => {
+  const home = join(root, "order-home");
+  const dir = join(home, ".fleetd/node/order-env/p1");
+  const envFile = join(home, "claude-env.sh");
+  mkdirSync(home, { recursive: true });
+  writeFileSync(envFile, `if [ -r '${dir}/W3.sh' ]; then . '${dir}/W3.sh'; fi\n`);
+  const shares = needs({ cwd: join(home, "wt"), env: { CLAUDE_ENV_FILE: envFile }, argv: [] });
+  expect(existsSync(dir)).toBe(true);
+  expect(shares).toContainEqual({ path: dir, rw: false });
+});
