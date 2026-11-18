@@ -6,7 +6,7 @@
 // end, the start-up sweep and `stop-all` leaving no process of it behind.
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -45,6 +45,11 @@ afterAll(() => {
 
 const within = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
   Promise.race([p, Bun.sleep(ms).then(() => Promise.reject(new Error(`timed out: ${what}`)))]);
+
+/** Resolves once `ok` holds, looked at every 20 ms. */
+const waitFor = async (ok: () => boolean): Promise<void> => {
+  while (!ok()) await Bun.sleep(20);
+};
 
 const OK: VmCheck = { ok: true, kvm: "direct", dns: ["192.0.2.53"], tools: "ready", net: { ip: "/usr/sbin/ip", nsenter: "/usr/bin/nsenter" } };
 const TOOLS: VmTools = { cloudHypervisor: "/vm/ch", chRemote: "/vm/ch-remote", kernel: "/vm/vmlinux", virtiofsd: "/vm/virtiofsd", passt: "/vm/passt", root: "/vm/root.ext4" };
@@ -434,7 +439,9 @@ test("a box's builds take this machine's build slots, queued with every other ag
   const place = n.vm.bound({ sessionId: "s-build", dir, role: "worker" });
   const bin = join(root, "fake-cargo");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "cargo"), '#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && sleep 30\nexit 0\n');
+  // The slow one says when it has started, so holds the slot.
+  const holding = join(root, "fake-cargo-holding");
+  writeFileSync(join(bin, "cargo"), `#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && touch '${holding}' && sleep 30\nexit 0\n`);
   chmodSync(join(bin, "cargo"), 0o755);
   const env = { ...envOf(n.home), PATH: `${bin}:${process.env.PATH}` };
   const build = (args: string, signal?: AbortSignal) =>
@@ -442,7 +449,9 @@ test("a box's builds take this machine's build slots, queued with every other ag
   // Another agent's build holds the machine's one slot: the box's queues on it, and runs once it frees.
   const other = await take(slotsDir(n.home), 1, 1, 50, () => {});
   const queued = build("build --release");
-  await Bun.sleep(1_500);
+  // Once it waits in the queue (a ticket of its own there), the slot frees.
+  const tickets = () => (existsSync(join(slotsDir(n.home), "queue")) ? readdirSync(join(slotsDir(n.home), "queue")).length : 0);
+  await within(waitFor(() => tickets() > 0), 15_000, "the box's build queued");
   for (const fd of other) closeSync(fd);
   const ran = await within(queued, 15_000, "the box's build");
   expect(ran.exitCode).toBe(0);
@@ -451,16 +460,15 @@ test("a box's builds take this machine's build slots, queued with every other ag
   // A build killed while it holds the slot gives it back at once.
   const abort = new AbortController();
   const slow = build("build slow", abort.signal);
-  await Bun.sleep(1_500);
+  await within(waitFor(() => existsSync(holding)), 15_000, "the slow build holding the slot");
   let waited = false;
   const next = take(slotsDir(n.home), 1, 1, 50, () => (waited = true));
-  await Bun.sleep(300);
-  expect(waited).toBe(true);
+  await within(waitFor(() => waited), 5_000, "the next build waiting");
   abort.abort();
   expect((await slow).exitCode).toBeNull();
   for (const fd of await within(next, 10_000, "the slot back")) closeSync(fd);
   await n.vm.end(dir);
-});
+}, 60_000);
 
 test.skipIf(process.platform !== "linux")("a box under a deep node home keeps every socket address short: its tools get them by name, the node dials through the dir", async () => {
   // A host dir whose sockets' paths are far past a socket address's 108 bytes.

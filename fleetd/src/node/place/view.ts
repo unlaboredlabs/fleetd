@@ -9,7 +9,7 @@
 //
 // The view is assembled by bind mounts in a user and mount namespace of its own, where virtiofsd then serves it: nothing
 // is mounted on this machine, and nothing needs root.
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 /** One path put back in the view, at the same path. */
@@ -112,6 +112,20 @@ function linkedFrom(d: string): string[] {
 /** agent-device's variables naming the dirs it writes (node/device/agent_device.ts agentEnv). */
 const DEVICE_DIRS = ["AGENT_DEVICE_HOME", "AGENT_DEVICE_STATE_DIR"];
 
+/** A file's first 256 bytes, as text. */
+function head(path: string): string {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const buf = Buffer.alloc(256);
+    return buf.subarray(0, readSync(fd, buf, 0, 256, 0)).toString("latin1");
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 /** fleetd's own wrappers in dir `d` (their second line starts `# fleetd's`): the dirs their quoted paths name. */
 function wrapped(d: string): string[] {
   if (guestOwn(real(d))) return [];
@@ -119,8 +133,10 @@ function wrapped(d: string): string[] {
   try {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       if (!e.isFile()) continue;
-      const text = readFileSync(join(d, e.name), "utf8").slice(0, 16_384);
-      if (!text.split("\n")[1]?.startsWith("# fleetd's")) continue;
+      // Its head first: a PATH dir holds large programs too.
+      const path = join(d, e.name);
+      if (!head(path).split("\n")[1]?.startsWith("# fleetd's")) continue;
+      const text = readFileSync(path, "utf8").slice(0, 16_384);
       for (const m of text.matchAll(/'(\/[^'\n]+)'/gu)) {
         try {
           if (statSync(m[1]!).isDirectory()) out.push(m[1]!);
