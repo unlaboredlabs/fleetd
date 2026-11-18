@@ -111,10 +111,6 @@ export const sectionLines = <R extends Marked>(rows: ReadonlyArray<R>, sections:
   return lines;
 };
 
-/** What a screen reader says of a folded label beside its name: what it holds. */
-export const foldedWords = (count: number, dot: "you" | "new" | undefined): string =>
-  [count === 1 ? "1 chat" : `${String(count)} chats`, ...(dot === "you" ? ["one waits on you"] : dot === "new" ? ["something new inside"] : [])].join(", ");
-
 const NONE = {} as const;
 
 const isRef = (c: unknown): c is ProjectRef =>

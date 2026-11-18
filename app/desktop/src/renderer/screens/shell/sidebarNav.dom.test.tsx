@@ -45,10 +45,6 @@ const mount = (o: { factory?: boolean; screen?: Routed } = {}) =>
             projects={[]}
             screen={o.screen ?? { id: "home", at: "hub" }}
             jumpHints={false}
-            collapsed={new Set()}
-            onToggleHub={() => undefined}
-            folded={new Set()}
-            onToggleSection={() => undefined}
             factory={o.factory ?? true}
             go={(s) => went.push(s)}
           />
@@ -128,7 +124,7 @@ describe("the Screens button", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(counting)}>
-            <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory go={(s) => went.push(s)} />
+            <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} factory go={(s) => went.push(s)} />
           </DataProvider>
         </UiProvider>,
       ),

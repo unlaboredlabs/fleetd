@@ -29,8 +29,9 @@ import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
-import { NewButton, Sidebar } from "./Sidebar";
-import { shownRows, useCollapsedHubs, useFoldedSections, useHeldRows, useSidebar } from "./sidebarState";
+import { Sidebar, SidebarTop } from "./Sidebar";
+import { useHeldRows, useSidebar } from "./sidebarState";
+import { showHub, shownRows, useSidebarView, viewedHub } from "./sidebarLayout";
 import { useSidebarWidth } from "./sidebarWidth";
 import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
@@ -129,10 +130,13 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's and a folded section's left out.
-  const [collapsed, toggleHub] = useCollapsedHubs();
-  const [folded, toggleSection] = useFoldedSections();
-  const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1, folded);
+  // ⌘1–9 open the rows the sidebar numbers: those on show in its layout (sidebarLayout.ts), in its order.
+  const view = useSidebarView();
+  const viewHub = viewedHub(view, hubs, route.at);
+  const heldKeys = useHeldRows();
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, heldKeys)), [projects, view, viewHub, heldKeys]);
+  // A bot opened on another hub (the palette, a notification, ⌘1–9 in List) brings its hub on show.
+  useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();
   const [sidebarPx, setSidebarPx] = useSidebarWidth();
 
@@ -306,13 +310,13 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         translucent
         topBar={top}
         under={under}
-        sidebarTop={<NewButton go={go} />}
+        sidebarTop={<SidebarTop go={go} view={view} hub={viewHub} projects={projects} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
           !chrome ? undefined : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} folded={folded} onToggleSection={toggleSection} factory={factory} go={go} />
+              <Sidebar projects={projects} shown={onShow} screen={{ ...screen, at: route.at }} jumpHints={modHeld} view={view} hub={viewHub} factory={factory} go={go} />
             </Boundary>
           ) : undefined
         }

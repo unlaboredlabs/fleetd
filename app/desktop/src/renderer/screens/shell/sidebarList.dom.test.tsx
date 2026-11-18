@@ -79,10 +79,6 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
             projects={projects.map((p) => ({ ...p, hub: "hub" }))}
             screen={{ id: "home", at: "hub" }}
             jumpHints={jumpHints}
-            collapsed={new Set()}
-            onToggleHub={() => undefined}
-            folded={new Set()}
-            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />
@@ -251,7 +247,7 @@ describe("one list", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(quiet)}>
-            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={() => undefined} />
+            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={() => undefined} />
           </DataProvider>
         </UiProvider>,
       ),
@@ -327,10 +323,6 @@ describe("each row's avatar", () => {
               projects={[ADA, pictured, STOREFRONT].map((p) => ({ ...p, hub: "hub" }))}
               screen={{ id: "home", at: "hub" }}
               jumpHints={false}
-              collapsed={new Set()}
-              onToggleHub={() => undefined}
-              folded={new Set()}
-              onToggleSection={() => undefined}
               factory={false}
               go={(s) => went.push(s)}
             />

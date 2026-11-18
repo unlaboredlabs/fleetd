@@ -4,20 +4,23 @@
 // an update's one word under your name while it runs and a while after (updates/quiet.ts: "Updating…", "Updated",
 // "Not updated", or "Update" with one to take), and a small mark on your picture while a hub is really unreachable or
 // refused your key (for an admin, also while a machine is offline or setup steps are left), its words in the tooltip.
-// Screens and Factory are the round buttons beside: Screens marked while one needs you.
-import { ChevronsUpDown, Factory, MonitorSmartphone, Settings } from "lucide-react";
+// Screens and the Factory, rarely opened, sit low: rows over you (Hubs), round buttons beside you (List) or at the
+// rail's foot (Rail), Screens marked while one needs you. The menu also picks the sidebar's layout (sidebarLayout.ts).
+import { ChevronsUpDown, Factory, LayoutList, MonitorSmartphone, Settings } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
-import { Avatar, Kbd, Popover, PopoverContent, PopoverTrigger, Tooltip } from "../../ui";
+import { Avatar, cx, Kbd, Popover, PopoverContent, PopoverTrigger, Segmented, Tooltip } from "../../ui";
 import { useHubRole } from "../admin/role";
 import { UpdateWord, useQuiet } from "../updates";
 import { AppRow, HubRows, MenuRow, useWorkMark } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import type { Screen } from "./routes";
+import h from "./hubStatus.module.css";
 import s from "./sidebar.module.css";
 import { linkMark, type HubMark } from "./youMenu";
+import { LAYOUTS, setLayout, useSidebarView } from "./sidebarLayout";
 
 const platform = window.fleetd.platform;
 const NO_INPUT = {} as const;
@@ -72,11 +75,7 @@ function Place(props: { label: string; shortcut?: ShortcutId; current: boolean; 
  * event), never a project's list.
  */
 function ScreensButton({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
-  // The hub feature that brings screens_count (screensPage/data's THUMBS; named here so the shell loads none of the page).
-  const served = useData((d) => d.features.includes("screen_thumbs"));
-  const count = useToolQuery("screens_count", NO_INPUT, { enabled: served }).data;
-  const asking = count?.asking ?? 0;
-  const live = count?.live ?? 0;
+  const { asking, live } = useScreensCount();
   return (
     <Place label="Screens" aside={live > 0 ? `${String(live)} live` : undefined} current={current} mark={asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined} onClick={() => go({ id: "screens", open: null })}>
       <MonitorSmartphone aria-hidden />
@@ -84,7 +83,49 @@ function ScreensButton({ current, go }: { current: boolean; go: (screen: Screen)
   );
 }
 
-/** The sidebar's places, under its search: Screens and the Factory, each a row with its word. */
+/** Screens on the hub: how many are live and how many ask for you. */
+const useScreensCount = () => {
+  // The hub feature that brings screens_count (screensPage/data's THUMBS; named here so the shell loads none of the page).
+  const served = useData((d) => d.features.includes("screen_thumbs"));
+  const count = useToolQuery("screens_count", NO_INPUT, { enabled: served }).data;
+  return { asking: count?.asking ?? 0, live: count?.live ?? 0 };
+};
+
+/** Screens and the Factory as two round icons (List: beside you; Rail: at its foot), Screens marked while one needs you. */
+export function PlaceIcons({ screen, factory, go, vertical = false }: YouProps & { vertical?: boolean }) {
+  const { asking, live } = useScreensCount();
+  const mark = asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined;
+  const side = vertical ? "right" : "top";
+  return (
+    <div className={cx(s.tools, vertical && s.toolsVertical)}>
+      <Tooltip content={`Screens${live > 0 ? ` · ${String(live)} live` : ""}${mark === undefined ? "" : `: ${mark}`}`} side={side}>
+        <button
+          type="button"
+          className={s.round}
+          aria-label={`Screens${live > 0 ? ` · ${String(live)} live` : ""}${mark === undefined ? "" : `: ${mark}`}`}
+          {...(screen.id === "screens" ? { "aria-current": "page" as const } : {})}
+          onClick={() => go({ id: "screens", open: null })}
+        >
+          <MonitorSmartphone aria-hidden />
+          {mark === undefined ? null : <span className={s.roundMark} aria-hidden />}
+        </button>
+      </Tooltip>
+      <Tooltip content={factory ? <>Factory <Kbd>{display("factory.open", platform)}</Kbd></> : "Factory"} side={side}>
+        <button
+          type="button"
+          className={s.round}
+          aria-label="Factory"
+          {...(screen.id === "factory" || screen.id === "time" ? { "aria-current": "page" as const } : {})}
+          onClick={() => go(factory ? { id: "factory", project: null } : { id: "time", orderId: null })}
+        >
+          <Factory aria-hidden />
+        </button>
+      </Tooltip>
+    </div>
+  );
+}
+
+/** The sidebar's places, low in Hubs, over you: Screens and the Factory, each a row with its word. */
 export function Places({ screen, factory, go }: YouProps) {
   return (
     <div className={s.places}>
@@ -109,7 +150,22 @@ export interface YouProps {
   readonly go: (screen: Screen) => void;
 }
 
-export function You({ go }: Pick<YouProps, "go"> & Partial<YouProps>) {
+/** The menu's layout row: the sidebar's three layouts, the one in use pressed. */
+function LayoutPick() {
+  const { layout } = useSidebarView();
+  return (
+    <div className={cx(h.row, s.layoutRow)} data-line="layout">
+      <span className={h.mark}>
+        <LayoutList aria-hidden />
+      </span>
+      <span className={h.words}>Sidebar</span>
+      <Segmented label="Sidebar layout" options={LAYOUTS.map((l) => ({ value: l.id, label: l.label }))} value={layout} onChange={setLayout} />
+    </div>
+  );
+}
+
+/** You, at the sidebar's foot: your picture and name (`compact`, Rail's: the picture alone), which open your menu. */
+export function You({ go, compact = false, chevron = true }: Pick<YouProps, "go"> & Partial<YouProps> & { compact?: boolean; chevron?: boolean }) {
   const hubs = useHubs();
   const hub = useHubState();
   const role = useHubRole();
@@ -125,15 +181,16 @@ export function You({ go }: Pick<YouProps, "go"> & Partial<YouProps>) {
   const said = [name, quiet === null ? null : quiet.word.text, mark?.why].filter((x) => x != null).join(", ");
 
   return (
-    <div className={s.foot}>
+    <div className={cx(s.you, compact && s.youCompact)}>
       <Popover open={open} onOpenChange={setOpen}>
         <Tooltip content={mark?.why}>
           <PopoverTrigger asChild>
-            <button type="button" className={s.me} aria-label={said} data-opens="you" data-mark={mark?.tone}>
+            <button type="button" className={cx(s.me, compact && s.meCompact)} aria-label={said} data-opens="you" data-mark={mark?.tone}>
               <span className={s.meAvatar}>
-                <Avatar name={name} size={32} src={picture} />
+                <Avatar name={name} size={compact ? 28 : 32} src={picture} />
                 {mark === null ? null : <span className={s.meMark} data-tone={mark.tone} aria-hidden />}
               </span>
+              {compact ? null : (
               <span className={s.meText}>
                 <span className={s.meName}>{name}</span>
                 {quiet === null ? (
@@ -144,11 +201,12 @@ export function You({ go }: Pick<YouProps, "go"> & Partial<YouProps>) {
                   </span>
                 )}
               </span>
-              <ChevronsUpDown className={s.meChevron} aria-hidden />
+              )}
+              {compact || !chevron ? null : <ChevronsUpDown className={s.meChevron} aria-hidden />}
             </button>
           </PopoverTrigger>
         </Tooltip>
-        <PopoverContent side="top" align="start" className={s.youCard} aria-label="You">
+        <PopoverContent side={compact ? "right" : "top"} align={compact ? "end" : "start"} className={s.youCard} aria-label="You">
           <div className={s.youHead}>
             <Avatar name={name} size={32} src={picture} />
             <span className={s.youWho}>
@@ -162,6 +220,7 @@ export function You({ go }: Pick<YouProps, "go"> & Partial<YouProps>) {
             </HubScope>
           ))}
           <AppRow whole={whole.size > 0} />
+          <LayoutPick />
           <MenuRow
             mark={<Settings aria-hidden />}
             end={<Kbd>{display("settings.open", platform)}</Kbd>}

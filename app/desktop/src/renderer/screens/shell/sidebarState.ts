@@ -99,60 +99,6 @@ export function usePanel(): PanelState {
   return { hidden: sidebarHidden(state), tab, toggle, show };
 }
 
-const COLLAPSED = "fleetd.collapsedHubs";
-const FOLDED = "fleetd.foldedSections";
-
-const readSet = (name: string): ReadonlySet<string> => {
-  try {
-    const raw: unknown = JSON.parse(window.localStorage.getItem(name) ?? "[]");
-    return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
-  } catch {
-    return new Set();
-  }
-};
-
-/** A set of ids you toggle, kept under `name` across launches on this computer. */
-function useKeptSet(name: string): readonly [ReadonlySet<string>, (id: string) => void] {
-  const [set, setSet] = useState(() => readSet(name));
-  const toggle = useCallback(
-    (id: string) => {
-      setSet((was) => {
-        const next = new Set(was);
-        if (!next.delete(id)) next.add(id);
-        try {
-          window.localStorage.setItem(name, JSON.stringify([...next]));
-        } catch {
-          // Kept for this window only.
-        }
-        return next;
-      });
-    },
-    [name],
-  );
-  return [set, toggle] as const;
-}
-
-/** The sidebar's hub groups you collapsed, by hub id, kept across launches. */
-export const useCollapsedHubs = (): readonly [ReadonlySet<string>, (hub: string) => void] => useKeptSet(COLLAPSED);
-
-/** One of your sections on one hub, as the folded ones are kept (sections.ts). */
-export const foldKey = (hub: string, section: string): string => `${hub}/${section}`;
-
-/** Your sections you folded, by foldKey, kept across launches as the hub groups are: this computer's alone. */
-export const useFoldedSections = (): readonly [ReadonlySet<string>, (key: string) => void] => useKeptSet(FOLDED);
-
-/**
- * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden, and so are a
- * folded section's chats, bar the pinned ones (among the pins). ⌘1–9 count these, in the sidebar's numbers and in the
- * commands alike.
- */
-export const shownRows = <P extends { readonly hub: string; readonly pinned: boolean; readonly section?: string | undefined }>(
-  rows: ReadonlyArray<P>,
-  collapsed: ReadonlySet<string>,
-  several: boolean,
-  folded: ReadonlySet<string>,
-): ReadonlyArray<P> => rows.filter((p) => !(several && collapsed.has(p.hub)) && (p.pinned || p.section === undefined || !folded.has(foldKey(p.hub, p.section))));
-
 /**
  * The sidebar's rows held where they are while the pointer is over its list (Sidebar.tsx): a chat with new activity
  * keeps its place until the pointer leaves, then glides to it, so a row never moves under a click. Row keys, in the

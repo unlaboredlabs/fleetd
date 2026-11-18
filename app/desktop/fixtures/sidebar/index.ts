@@ -179,6 +179,20 @@ const sectionHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixtur
   return f;
 };
 
+/**
+ * Three hubs and nineteen bots, each hub with pins and sections of its own (W694, the sidebar's layouts): Personal's
+ * Home, Acme's Clients and Later, and Studio's Launch and Ops, whose newsletter waits on you.
+ */
+const manyHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixture => {
+  const f = Fixture.from(sectionHubs(base), "sidebar-many-hubs", "Three hubs, nineteen bots, each hub with its own pins and sections: Personal, Acme and Studio.");
+  const studio = colored(reasons(base("status-rows")));
+  retitle(studio, { storefront: "brand-site", billing: "podcast", checkout: "newsletter", docs: "handbook", inventory: "assets", search: "analytics", mobile: "ios-app", "Rewrite the pricing page headline and the Team plan comparison table from the copy review, keeping both variants": "spring-campaign" });
+  sectioned(studio, ["brand-site"], { Launch: ["newsletter", "podcast", "ios-app"], Ops: ["handbook", "assets", "analytics"] });
+  f.hubs = [...f.hubs, { label: "Studio", color: "violet", fixture: studio }];
+  yourDevices(studio);
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), pins(base("status-rows")), sections(base("status-rows")), hubs(base, false), hubs(base, true), sectionHubs(base)],
+  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), pins(base("status-rows")), sections(base("status-rows")), hubs(base, false), hubs(base, true), sectionHubs(base), manyHubs(base)],
 });

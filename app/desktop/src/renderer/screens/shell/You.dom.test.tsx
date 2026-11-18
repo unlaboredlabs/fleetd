@@ -11,6 +11,7 @@ import { DataProvider } from "../../src/data/react";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { parseHash, type Screen } from "./routes";
 import { Places, You } from "./You";
+import { resetSidebarView } from "./sidebarLayout";
 
 const fleetd = vi.hoisted(() => {
   const f = { fixture: null as string | null, platform: "linux", updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) } };
@@ -91,6 +92,8 @@ const open = (): string[] => {
   if (card() === null) throw new Error("the menu didn't open");
   return [...(card()?.querySelectorAll("[data-line], [data-opens='settings']") ?? [])].map((r) => [...r.children].slice(1).map((c) => c.textContent).join(" · "));
 };
+/** The sidebar's layouts, then Settings: the menu's last two rows. */
+const LAYOUT = "Sidebar · ListHubsRail";
 const SETTINGS = "Settings · Ctrl+,";
 
 it("says your name and your role, as an account, and no mark while all is well", async () => {
@@ -102,16 +105,16 @@ it("says your name and your role, as an account, and no mark while all is well",
 
 it("opens on who you are, the hub's name and Settings, and nothing else while all is well", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1, version: "0.9.2" }, { me: { name: "Sam", role: "owner" }, machines: [machine("devbox", "online")] });
-  expect(open()).toEqual(["devbox", SETTINGS]);
-  expect(card()?.textContent).toBe("SamOwnerdevboxSettingsCtrl+,");
+  expect(open()).toEqual(["devbox", LAYOUT, SETTINGS]);
+  expect(card()?.textContent).toBe("SamOwnerdevboxSidebarListHubsRailSettingsCtrl+,");
   expect(row("hub")?.dataset["mark"]).toBe("success");
 });
 
 it("is the same small menu for a member", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Bob", role: "member" }, machines: [machine("devbox", "online"), machine("laptop", "offline")], setupLeft: 2 });
   expect(me()?.dataset["mark"]).toBeUndefined();
-  expect(open()).toEqual(["devbox", SETTINGS]);
-  expect(card()?.textContent).toBe("BobMemberdevboxSettingsCtrl+,");
+  expect(open()).toEqual(["devbox", LAYOUT, SETTINGS]);
+  expect(card()?.textContent).toBe("BobMemberdevboxSidebarListHubsRailSettingsCtrl+,");
 });
 
 it("marks your picture while the hub is offline or refused the key, never while it first connects or restarts", async () => {
@@ -128,12 +131,12 @@ it("marks your picture while the hub is offline or refused the key, never while 
 
 it("says a problem in one row with the one thing to do, and never the hub's address or its reason", async () => {
   await mount({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", fix: "Run `fleetd doctor` on devbox", retryAt: 0 });
-  expect(open()).toEqual(["Can't reach devbox · Retry", SETTINGS]);
+  expect(open()).toEqual(["Can't reach devbox · Retry", LAYOUT, SETTINGS]);
   expect(card()?.textContent).not.toMatch(/https?:|4790|listening|doctor/u);
   await mount({ phase: "refused", hub: HUB, message: "This key was revoked" });
-  expect(open()).toEqual(["devbox refused the key · Pair again", SETTINGS]);
+  expect(open()).toEqual(["devbox refused the key · Pair again", LAYOUT, SETTINGS]);
   await mount({ phase: "unpaired" });
-  expect(open()).toEqual(["Not paired with a hub · Pair", SETTINGS]);
+  expect(open()).toEqual(["Not paired with a hub · Pair", LAYOUT, SETTINGS]);
 });
 
 it("lets only the hub's name give way in a narrow row, whole on hover; what is wrong and its action stay", async () => {
@@ -149,16 +152,35 @@ it("lets only the hub's name give way in a narrow row, whole on hover; what is w
 it("says the hub is updating through an update's restart, and out of reach only after 2 minutes", async () => {
   const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms, updatingTo: "0.9.3" });
   await mount(away(1_000));
-  expect(open()).toEqual(["devbox · Updating…", SETTINGS]);
+  expect(open()).toEqual(["devbox · Updating…", LAYOUT, SETTINGS]);
   expect(row("hub")?.dataset["mark"]).toBe("ring");
   await mount(away(130_000));
-  expect(open()).toEqual(["Can't reach devbox · Retry", SETTINGS]);
+  expect(open()).toEqual(["Can't reach devbox · Retry", LAYOUT, SETTINGS]);
 });
 
 it("reads the same on sample data: the banner says what it is", async () => {
   fleetd.fixture = "status-rows";
   await mount({ phase: "live", hub: HUB, protocol: 1 });
-  expect(open()).toEqual(["devbox", SETTINGS]);
+  expect(open()).toEqual(["devbox", LAYOUT, SETTINGS]);
+});
+
+it("picks the sidebar's layout in the menu, the one in use pressed, and keeps it on this computer", async () => {
+  window.localStorage.removeItem("fleetd.sidebarLayout");
+  resetSidebarView();
+  await mount({ phase: "live", hub: HUB, protocol: 1 });
+  open();
+  const pressed = () => [...(row("layout")?.querySelectorAll<HTMLButtonElement>("button[aria-pressed='true']") ?? [])].map((b) => b.textContent);
+  expect(pressed()).toEqual(["Hubs"]);
+  act(() => [...(row("layout")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === "Rail")?.click());
+  expect(pressed()).toEqual(["Rail"]);
+  expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");
+  // The next launch reads it back.
+  resetSidebarView();
+  await mount({ phase: "live", hub: HUB, protocol: 1 });
+  open();
+  expect(pressed()).toEqual(["Rail"]);
+  window.localStorage.removeItem("fleetd.sidebarLayout");
+  resetSidebarView();
 });
 
 it("opens Settings › You › Hubs & devices from the hub's row, pairing from Pair, and Settings from its own row", async () => {
@@ -189,7 +211,7 @@ it("marks an admin's picture while a machine is offline, names it in the menu, a
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { machines: [machine("devbox", "online"), machine("buildbox", "offline")] });
   expect(me()?.dataset["mark"]).toBe("warning");
   expect(me()?.getAttribute("aria-label")).toBe("You, buildbox is offline");
-  expect(open()).toEqual(["devbox", "buildbox is offline · Open", SETTINGS]);
+  expect(open()).toEqual(["devbox", "buildbox is offline · Open", LAYOUT, SETTINGS]);
   act(() => row("machines")?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines", machine: "buildbox" });
   expect(card()).toBeNull();
@@ -198,7 +220,7 @@ it("marks an admin's picture while a machine is offline, names it in the menu, a
 it("counts several machines, and opens Machines", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { machines: [machine("devbox", "online"), machine("buildbox", "offline"), machine("laptop", "offline")] });
   expect(me()?.getAttribute("aria-label")).toBe("You, 2 machines offline");
-  expect(open()).toEqual(["devbox", "2 machines offline · Open", SETTINGS]);
+  expect(open()).toEqual(["devbox", "2 machines offline · Open", LAYOUT, SETTINGS]);
   act(() => row("machines")?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines" });
 });
@@ -207,7 +229,7 @@ it("tells an admin of setup steps left, and Finish opens Hub › Setup", async (
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Sam", role: "owner" }, machines: [machine("devbox", "online")], setupLeft: 2 });
   expect(me()?.dataset["mark"]).toBe("warning");
   expect(me()?.getAttribute("aria-label")).toBe("Sam, 2 setup steps left");
-  expect(open()).toEqual(["devbox", "2 setup steps left · Finish", SETTINGS]);
+  expect(open()).toEqual(["devbox", "2 setup steps left · Finish", LAYOUT, SETTINGS]);
   act(() => row("setup")?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.setup" });
   expect(card()).toBeNull();
@@ -216,6 +238,6 @@ it("tells an admin of setup steps left, and Finish opens Hub › Setup", async (
 it("tells a member who to ask when no machine is online, as plain text: Machines is for admins", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Bob", role: "member" }, machines: [machine("devbox", "offline"), machine("laptop", "offline")] });
   expect(me()?.dataset["mark"]).toBe("warning");
-  expect(open()).toEqual(["devbox", "All machines offline · Ask an admin", SETTINGS]);
+  expect(open()).toEqual(["devbox", "All machines offline · Ask an admin", LAYOUT, SETTINGS]);
   expect(row("machines")?.tagName).toBe("DIV");
 });
