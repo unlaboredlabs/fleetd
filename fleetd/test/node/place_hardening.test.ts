@@ -32,7 +32,7 @@ test("this machine's addresses are every one but loopback's, without zones, each
     eth0: [{ address: "192.168.2.8", internal: false }, { address: "fe80::1%eth0", internal: false }, { address: "2001:DB8::8", internal: false }],
     tailscale0: [{ address: "100.64.0.7", internal: false }, { address: "192.168.2.8", internal: false }],
   } as unknown as Parameters<typeof hostAddrs>[0];
-  expect(hostAddrs(ifaces, { fibTrie: "", ifInet6: "" })).toEqual(["100.64.0.7", "192.168.2.8", "2001:db8::8", "fe80::1"]);
+  expect(hostAddrs(ifaces, { fibTrie: "", ifInet6: "" })).toEqual(["100.100.100.100", "100.64.0.7", "192.168.2.8", "2001:db8::8", "fd7a:115c:a1e0::53", "fe80::1"]);
 });
 
 test("a down interface's addresses are this machine's too: the kernel's local table names them, and a box keeps them out", () => {
@@ -68,6 +68,10 @@ test("a down interface's addresses are this machine's too: the kernel's local ta
   ].join("\n");
   const up = { eth0: [{ address: "192.168.2.8", internal: false }] } as unknown as Parameters<typeof hostAddrs>[0];
   expect(hostAddrs(up, { fibTrie, ifInet6 })).toEqual(["172.17.0.1", "192.168.2.8", "2001:db8:0:0:1::", "fd4a:4635:3156:0:3a05:25ff:fe3a:f7be", "fe80::1"]);
+  // A tailnet address means this machine's tailscaled answers at its own quad-100 too.
+  const tailnet = { tailscale0: [{ address: "100.104.0.9", internal: false }] } as unknown as Parameters<typeof hostAddrs>[0];
+  expect(hostAddrs(tailnet, { fibTrie: "", ifInet6: "" })).toEqual(["100.100.100.100", "100.104.0.9", "fd7a:115c:a1e0::53"]);
+  expect(hostAddrs(up, { fibTrie: "", ifInet6: "" })).not.toContain("100.100.100.100");
   expect(ipv6Of("00000000000000000000000000000000")).toBe("::");
   expect(ipv6Of("20010db8000000010000000000000001")).toBe("2001:db8:0:1::1");
   expect(ipv6Of("20010db8000000000001000000000000")).toBe("2001:db8:0:0:1::");

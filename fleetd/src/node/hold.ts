@@ -12,6 +12,8 @@ export const HOOK_TIMEOUT_SECS = 6 * 3600;
 
 export const holdPath = (home: string) => join(home, "update", "hold");
 const heldDir = (hold: string) => join(dirname(hold), "held");
+/** The dir a tool call waiting on the hold marks itself held in: a VM shares only it writable (node/place/microvm.ts). */
+export const heldDirOf = (home: string) => heldDir(holdPath(home));
 const updateMark = (home: string) => join(dirname(holdPath(home)), "hold.update");
 const screensMark = (home: string) => join(dirname(holdPath(home)), "hold.screens");
 
@@ -63,7 +65,16 @@ export function held(home: string): Set<string> {
 export function clear(home: string) {
   const path = holdPath(home);
   for (const f of [path, screensMark(home), updateMark(home)]) rmSync(f, { force: true });
-  rmSync(heldDir(path), { recursive: true, force: true });
+  emptyHeld(home);
+}
+
+/** The held marks go, `update/held/` itself stays: a VM's writable share of it (node/place/microvm.ts) is bound to that
+ * dir at its boot and lasts through node restarts, so a dir removed and made again would leave it read-only. */
+export function emptyHeld(home: string) {
+  const dir = heldDirOf(home);
+  try {
+    for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true });
+  } catch {}
 }
 
 /** When the hold at `path` ends, or undefined when there is none. */

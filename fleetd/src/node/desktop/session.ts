@@ -7,6 +7,7 @@
 // while a person watches it, and records no video meanwhile.
 import { rmSync } from "node:fs";
 import { hasBox, HOSTED_NO_DESKTOP_LAUNCH } from "../place/hosted.ts";
+import { inBox, VM_NO_DESKTOP_LAUNCH } from "../place/index.ts";
 import { join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
 import { RECORDING_FILES } from "../../shared/screens_wire.ts";
@@ -336,6 +337,8 @@ export class Session {
     const command = call.text;
     if (!command) throw new Error("launch needs text: the command");
     if (hasBox(this.thread)) throw new Error(HOSTED_NO_DESKTOP_LAUNCH);
+    // A VM's agent: the display is this machine's, so what it launches would run outside the VM.
+    if (inBox(this.thread)) throw new Error(VM_NO_DESKTOP_LAUNCH);
     const launched = await this.launch(command);
     if (!launched.exited) return { message: `Started \`${command}\` (pid ${launched.pid}). Take a screenshot to see its window.` };
     const { code, output } = launched.exited;

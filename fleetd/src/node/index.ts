@@ -31,6 +31,7 @@ import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
 import { LOGINS } from "./runner/login.ts";
 import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
 import { holdForScreens, ScreensRestart } from "./restart.ts";
+import { emptyHeld } from "./hold.ts";
 import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
@@ -69,8 +70,9 @@ export const CAPABILITIES = [
 
 /** A hash of the OS's id for this computer (fingerprint.rs): the hub never enrolls a second computer under one id. */
 /** Ends the hold (node/hold.rs `clear`): every tool call waiting on it starts. */
-function clearHold(home: string): void {
-  for (const f of ["hold", "hold.screens", "hold.update", "held"]) rmSync(join(home, "update", f), { recursive: true, force: true });
+export function clearHold(home: string): void {
+  for (const f of ["hold", "hold.screens", "hold.update"]) rmSync(join(home, "update", f), { force: true });
+  emptyHeld(home);
 }
 
 /** What a stopped node left that nothing uses now: the remote-screen forwarders and folders of its sessions (their
@@ -596,7 +598,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
-      if (parts.load && vm) reportVm(parts.load, vm.status());
+      if (parts.load && vm) reportVm(parts.load, vm.status(), vm.memGiB());
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },

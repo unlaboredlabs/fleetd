@@ -6,7 +6,7 @@
 // end, the start-up sweep and `stop-all` leaving no process of it behind.
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -15,8 +15,8 @@ import { LeadRelay, leadSocketPath, type LeadSocketHooks } from "../../src/node/
 import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
-import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, fdLimit, forgetAt, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { inBox, leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
+import { FAILED_MS, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -25,12 +25,16 @@ import type { VmTools } from "../../src/sandbox/host/tools.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
-import { apply, layHostSystem, plan } from "../../src/node/sandbox/system.ts";
-import { mountScript, shows } from "../../src/node/place/view.ts";
+import { apply, layHostSystem, OOM_HOOK, OOM_NOTE, oomLine, plan } from "../../src/node/sandbox/system.ts";
+import { withPostToolHook } from "../../src/node/place/endpoint.ts";
+import { guestOwn, mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
+import { homedir } from "node:os";
 import type { Reach } from "../../src/node/place/endpoint.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
-const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-vm-"));
+// Not under /tmp: a box's view never shares the guest's own system dirs, which /tmp is (CI has no TMPDIR).
+const tmpBase = process.env.TMPDIR ?? "/tmp";
+const root = mkdtempSync(join(guestOwn(tmpBase) ? homedir() : tmpBase, "fleetd-vm-"));
 const leaders: number[] = [];
 afterAll(() => {
   // Only the stand-ins this file started, by the groups they lead.
@@ -44,6 +48,11 @@ afterAll(() => {
 
 const within = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
   Promise.race([p, Bun.sleep(ms).then(() => Promise.reject(new Error(`timed out: ${what}`)))]);
+
+/** Resolves once `ok` holds, looked at every 20 ms. */
+const waitFor = async (ok: () => boolean): Promise<void> => {
+  while (!ok()) await Bun.sleep(20);
+};
 
 const OK: VmCheck = { ok: true, kvm: "direct", dns: ["192.0.2.53"], tools: "ready", net: { ip: "/usr/sbin/ip", nsenter: "/usr/bin/nsenter" } };
 const TOOLS: VmTools = { cloudHypervisor: "/vm/ch", chRemote: "/vm/ch-remote", kernel: "/vm/vmlinux", virtiofsd: "/vm/virtiofsd", passt: "/vm/passt", root: "/vm/root.ext4" };
@@ -189,6 +198,11 @@ test("a task's agent gets a box where the machine can run one; a lead, and every
 
 test("a machine that can't run VMs says why, in plain words, and fetches the VM files once while it waits", async () => {
   expect(node({ config: { sandbox: "process" } }).vm.status()).toEqual({ kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true });
+  // An off switch mistyped, or a node.json that doesn't decode: VMs off, and it says why, never on silently.
+  expect(node({ config: { sandbox: "proces" } }).vm.status()).toEqual({ kind: "process", why: `node.json "sandbox" is "proces": "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` });
+  const broken = node();
+  writeFileSync(join(broken.home, "node.json"), "{ not json");
+  expect(JSON.stringify(broken.vm.status())).toContain(`"kind":"process","why":"node.json can't be read (`);
   expect(node({ fleetd: ["/usr/bin/bun", "/src/main.ts"] }).vm.status().kind).toBe("process");
   const noKvm = node({ check: { ok: false, why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" } });
   expect(noKvm.vm.status()).toEqual({ kind: "process", why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" });
@@ -203,6 +217,10 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   const load: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(load, { kind: "microvm" });
   expect(load).toEqual({ sandbox: { kind: "microvm" }, memPerAgentBytes: Math.round(4.1 * 2 ** 30) });
+  // A machine that sets its VMs' memory is counted at that.
+  reportVm(load, { kind: "microvm" }, guestMemGiB(node({ config: { vmMemoryGiB: 8 } }).home));
+  expect(load.memPerAgentBytes).toBe(Math.round(8.1 * 2 ** 30));
+  expect(guestMemGiB(node({ config: { vmMemoryGiB: 1 } }).home)).toBe(4);
   const plain: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(plain, { kind: "process", why: "no KVM" });
   expect(plain).toEqual({ sandbox: { kind: "process", why: "no KVM" } });
@@ -238,6 +256,14 @@ test("setup boots the box and runs in it; the start reuses that box, and the ses
   expect(await inits(link, 1)).toEqual(["r1"]);
   // The session's node.sock calls, at the node's own path in the box, act as its session.
   expect(await sendToNode(leadSocketPath(n.home), { t: "lead_call", id: "c1", cwd: "/", call: { op: "whoami" } }, 5_000, 0)).toMatchObject({ result: { as: "s-setup" } });
+  // A setup command while its session host runs (its worktree came back, say), even one naming a path the box
+  // doesn't show, runs in that box: a new one would end the session.
+  const other = join(root, "setup-elsewhere");
+  mkdirSync(other, { recursive: true });
+  expect(await place.run({ cwd: n.cwd, argv: ["ls", other], timeoutSec: 10, env: envOf(n.home) })).toMatchObject({ exitCode: 0 });
+  expect(readBox(dir)!.leader).toEqual(box.leader);
+  link.send({ Send: { run_id: "r2", text: "still there?", mode: "plain" } });
+  expect(await inits(link, 1)).toEqual(["r2"]);
   await place.stop(dir);
   expect(await gone(box.leader.pid)).toBe(true);
   expect(existsSync(dir)).toBe(false);
@@ -270,8 +296,19 @@ test("a node restart re-adopts the box: the link comes back to the same session 
     expect(readBox(dir)!.view).toMatchObject({ home: root, hidden: [n.home] });
     // Its claude ends and the box with it (the idle close); the next message boots a box that still hides them.
     await again.detach();
+    // A stand-in's session host leads a group of its own, and outlives the box's (a VM's goes with it): ended too.
+    const host = readRegistration(join(dir, "guest", "s-adopt"));
     process.kill(-pid, "SIGKILL");
+    if (host?.hostPid) {
+      try {
+        process.kill(-host.hostPid, "SIGKILL");
+      } catch {}
+      try {
+        process.kill(host.hostPid, "SIGKILL");
+      } catch {}
+    }
     expect(await gone(pid)).toBe(true);
+    if (host?.hostPid) expect(await gone(host.hostPid)).toBe(true);
     const after = await next.bound({ sessionId: "s-adopt", dir, role: "worker" }).start(launch(n.home, "s-adopt", n.cwd, program("claude-adopt2", ECHO_CLAUDE)));
     expect(after.pid).not.toBe(pid);
     const view = readBox(dir)!.view!;
@@ -416,7 +453,9 @@ test("a box's builds take this machine's build slots, queued with every other ag
   const place = n.vm.bound({ sessionId: "s-build", dir, role: "worker" });
   const bin = join(root, "fake-cargo");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "cargo"), '#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && sleep 30\nexit 0\n');
+  // The slow one says when it has started, so holds the slot.
+  const holding = join(root, "fake-cargo-holding");
+  writeFileSync(join(bin, "cargo"), `#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && touch '${holding}' && sleep 30\nexit 0\n`);
   chmodSync(join(bin, "cargo"), 0o755);
   const env = { ...envOf(n.home), PATH: `${bin}:${process.env.PATH}` };
   const build = (args: string, signal?: AbortSignal) =>
@@ -424,7 +463,9 @@ test("a box's builds take this machine's build slots, queued with every other ag
   // Another agent's build holds the machine's one slot: the box's queues on it, and runs once it frees.
   const other = await take(slotsDir(n.home), 1, 1, 50, () => {});
   const queued = build("build --release");
-  await Bun.sleep(1_500);
+  // Once it waits in the queue (a ticket of its own there), the slot frees.
+  const tickets = () => (existsSync(join(slotsDir(n.home), "queue")) ? readdirSync(join(slotsDir(n.home), "queue")).length : 0);
+  await within(waitFor(() => tickets() > 0), 15_000, "the box's build queued");
   for (const fd of other) closeSync(fd);
   const ran = await within(queued, 15_000, "the box's build");
   expect(ran.exitCode).toBe(0);
@@ -433,16 +474,15 @@ test("a box's builds take this machine's build slots, queued with every other ag
   // A build killed while it holds the slot gives it back at once.
   const abort = new AbortController();
   const slow = build("build slow", abort.signal);
-  await Bun.sleep(1_500);
+  await within(waitFor(() => existsSync(holding)), 15_000, "the slow build holding the slot");
   let waited = false;
   const next = take(slotsDir(n.home), 1, 1, 50, () => (waited = true));
-  await Bun.sleep(300);
-  expect(waited).toBe(true);
+  await within(waitFor(() => waited), 5_000, "the next build waiting");
   abort.abort();
   expect((await slow).exitCode).toBeNull();
   for (const fd of await within(next, 10_000, "the slot back")) closeSync(fd);
   await n.vm.end(dir);
-});
+}, 60_000);
 
 test.skipIf(process.platform !== "linux")("a box under a deep node home keeps every socket address short: its tools get them by name, the node dials through the dir", async () => {
   // A host dir whose sockets' paths are far past a socket address's 108 bytes.
@@ -692,7 +732,7 @@ test("a box shares this machine's system dirs read-only, in a share of their own
     "ln -s 'usr/bin' '/h/bin'",
     "[ ! -d '/h/opt/fleetd' ] || mount -t tmpfs -o mode=0700 fleetd-hidden '/h/opt/fleetd'",
     "mount -t tmpfs -o mode=0700 fleetd-hidden '/v/home/u/.fleetd'",
-    "'/vm/virtiofsd' 'host' &\nexec '/vm/virtiofsd' 'view'",
+    "'/vm/virtiofsd' 'host' &\nh=$!\n'/vm/virtiofsd' 'view' &\nw=$!\nwait -n || true",
   ])
     expect(script).toContain(want);
   // A hidden dir in a system dir is hidden there, never put at `/opt` in the view, which would shadow the guest's /opt.
@@ -703,7 +743,14 @@ test("a box shares this machine's system dirs read-only, in a share of their own
     { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
     0,
   );
-  for (const want of ["'\\''--socket-path=host.sock'\\'' '\\''--shared-dir=/n/hosts/s/host'\\''", "'\\''--cache=always'\\'' '\\''--readonly'\\''", "'tag=host,socket=host.sock'", "[ -S host.sock ]"])
+  for (const want of [
+    "'\\''--socket-path=host.sock'\\'' '\\''--shared-dir=/n/hosts/s/host'\\''",
+    "'\\''--cache=always'\\'' '\\''--readonly'\\'' '\\''--translate-uid=host:65534:0:1'\\''",
+    "'tag=host,socket=host.sock'",
+    "[ -S host.sock ]",
+    // The box ends with the first of its VMM and helpers to end.
+    "wait -n $c $p $v",
+  ])
     expect(launcher).toContain(want);
 });
 
@@ -755,11 +802,11 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(guestUser(env, false)).toBeUndefined();
   expect(guestUser({}, true)).toBeUndefined();
   expect(guestUser({ FLEETD_GUEST_UID: "0", FLEETD_GUEST_GID: "0" }, true)).toBeUndefined();
-  expect(asUser(["bun", "test"], { uid: 1000, gid: 1001 })).toEqual(["/usr/bin/setpriv", "--reuid=1000", "--regid=1001", "--clear-groups", "--", "bun", "test"]);
+  expect(asUser(["bun", "test"], { uid: 1000, gid: 1001 })).toEqual(["/bin/sh", "-c", 'echo 0 > /proc/self/oom_score_adj; exec "$@"', "sh", "/usr/bin/setpriv", "--reuid=1000", "--regid=1001", "--clear-groups", "--", "bun", "test"]);
   expect(asUser(["bun", "test"], undefined)).toEqual(["bun", "test"]);
   // The node's own commands (its pin to Claude's relay, which changes the box's loopback) stay root.
   expect(runArgv(["/bin/sh", "-c", "pin"], true, { uid: 1000, gid: 1001 })).toEqual(["/bin/sh", "-c", "pin"]);
-  expect(runArgv(["make"], false, { uid: 1000, gid: 1001 })[0]).toBe("/usr/bin/setpriv");
+  expect(runArgv(["make"], false, { uid: 1000, gid: 1001 })).toContain("/usr/bin/setpriv");
   expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, uid: 1000, gid: 1001 })).toContain("fleetd.once=1 fleetd.uid=1000 fleetd.gid=1001");
   const script = launcherScript(
     { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
@@ -768,4 +815,131 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   const uid = process.getuid!();
   expect(script).toContain(`--translate-uid=map:${uid}:0:1`);
   expect(script).toContain(`fleetd.uid=${uid}`);
+});
+
+test("a box's pnpm store is in its checkout, out of git; its temp files stay in its scratch dir, outside the repo", async () => {
+  const n = node();
+  const repo = join(n.home, "wt-tmp");
+  mkdirSync(repo, { recursive: true });
+  expect(Bun.spawnSync(["git", "init", "-q", repo]).success).toBe(true);
+  const dir = join(n.home, "hosts", "s-tmp");
+  const place = n.vm.bound({ sessionId: "s-tmp", dir, role: "worker" });
+  const env = envOf(n.home);
+  const script = 'mkdir -p "$pnpm_config_store_dir" && touch "$pnpm_config_store_dir/x" && echo "tmp=$TMPDIR store=$pnpm_config_store_dir" && git status --porcelain';
+  const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env });
+  expect(ran.exitCode).toBe(0);
+  // A temp dir inside the repo would be found by every tool walking up from it (its package.json, its test runner).
+  expect(ran.outputTail).toContain(`tmp=${env.TMPDIR} store=${join(repo, ".fleetd/pnpm-store/")}`);
+  expect(ran.outputTail).not.toContain("??");
+  expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/pnpm-store/\n");
+  await place.end(dir);
+}, 30_000);
+
+test("a program on PATH that links into a hidden dir (agent-browser's, into its package) is put back where it links to", () => {
+  const home = join(root, "links-home");
+  const node = join(home, ".fleetd/node");
+  const pkg = join(node, "browser/agent-browser/node_modules/agent-browser/bin");
+  const bin = join(node, "browser/agent-browser/bin");
+  mkdirSync(pkg, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(pkg, "agent-browser-linux-x64"), "#!/bin/sh\n");
+  symlinkSync(join(pkg, "agent-browser-linux-x64"), join(bin, "agent-browser"));
+  const view = viewOf(home, [join(home, ".fleetd")], needs({ cwd: join(home, "wt"), env: { PATH: `${bin}:/usr/bin` }, argv: [] }));
+  expect(shows(view, { path: join(pkg, "agent-browser-linux-x64"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(node, "node.json"), rw: false })).toBe(false);
+});
+
+test("a VM's guest takes this machine's umask and inotify limits, from the kernel line", () => {
+  const like = hostLike();
+  expect(like.umask).toMatch(/^0[0-7]{3}$/);
+  expect(like.watches).toBeGreaterThan(0);
+  expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, like: { umask: "0002", watches: 1048576, instances: 1024 } })).toContain(
+    "fleetd.umask=0002 fleetd.watches=1048576 fleetd.instances=1024",
+  );
+});
+
+test("a VM's agent is in a box: what this machine would run for it (the Linux desktop's launch) is refused", async () => {
+  const n = node();
+  const dir = join(n.home, "hosts", "s-inbox");
+  useVm(n.vm);
+  try {
+    expect(inBox("s-inbox")).toBe(false);
+    await n.vm.bound({ sessionId: "s-inbox", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    expect(inBox("s-inbox")).toBe(true);
+    expect(inBox("s-other")).toBe(false);
+    await n.vm.end(dir);
+    expect(inBox("s-inbox")).toBe(false);
+  } finally {
+    useVm(undefined);
+  }
+});
+
+test("an order's variables dir that isn't there yet is made before the box boots, so a variable set later reaches it", () => {
+  const home = join(root, "order-home");
+  const dir = join(home, ".fleetd/node/order-env/p1");
+  const envFile = join(home, "claude-env.sh");
+  mkdirSync(home, { recursive: true });
+  writeFileSync(envFile, `if [ -r '${dir}/W3.sh' ]; then . '${dir}/W3.sh'; fi\n`);
+  const shares = needs({ cwd: join(home, "wt"), env: { CLAUDE_ENV_FILE: envFile }, argv: [] });
+  expect(existsSync(dir)).toBe(true);
+  expect(shares).toContainEqual({ path: dir, rw: false });
+});
+
+test("a box can mark its tool calls held for an update, and nothing else: the hold and the updater's files stay read-only", async () => {
+  const n = node();
+  const dir = join(n.home, "hosts", "s-held");
+  await n.vm.bound({ sessionId: "s-held", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+  const view = readBox(dir)!.view!;
+  expect(shows(view, { path: join(n.home, "update/held/tu_1"), rw: true })).toBe(true);
+  // The hold (it stalls every agent's tool calls) and the updater's next binary and its sums: never the box's to write.
+  for (const f of ["update/hold", "update/fleetd.next", "update/fleetd.next.sums.json", "update/fleetd.prev"]) expect(shows(view, { path: join(n.home, f), rw: true })).toBe(false);
+  expect(shows(view, { path: join(n.home, "update/hold"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(n.home, "sessions/s-held"), rw: true })).toBe(false);
+  expect(shows(view, { path: join(n.home, "node.json"), rw: false })).toBe(false);
+  await n.vm.end(dir);
+});
+
+test("a VM out of memory tells its agent so, once, at its next tool call: what was killed and the VM's size", () => {
+  const dmesg = "[  10.1] Out of memory: Killed process 412 (cc1plus) total-vm:900kB, anon-rss:1048576kB, file-rss:0kB\n[  99.2] Out of memory: Killed process 977 (rustc) total-vm:4100000kB, anon-rss:3670016kB, file-rss:0kB\n";
+  const line = oomLine(dmesg, 4, "12:00:01");
+  expect(line).toBe(
+    'fleetd: this VM ran out of its 4 GiB of memory at 12:00:01, and its kernel killed rustc (pid 977, 3.5 GB). Run less at once (fewer build jobs or test workers, -j 1), or ask for "vmMemoryGiB" to be raised in this machine\'s node.json (VMs are 4 GiB here).\n',
+  );
+  // The hook, on a stand-in note: it speaks once (exit 2, which claude shows the agent), then stays quiet.
+  const note = join(root, "oom-note");
+  const tmp = join(root, "oom-tmp");
+  mkdirSync(tmp, { recursive: true });
+  const hook = OOM_HOOK.replace(OOM_NOTE, note);
+  const run = () => Bun.spawnSync(["/bin/sh", "-c", hook], { env: { TMPDIR: tmp, PATH: process.env.PATH! }, stderr: "pipe" });
+  expect(run().exitCode).toBe(0);
+  writeFileSync(note, line);
+  const first = run();
+  expect([first.exitCode, first.stderr.toString()]).toEqual([2, line]);
+  expect(run().exitCode).toBe(0);
+  // Beside the hooks claude's settings already have.
+  const args = withPostToolHook(["-p", "--settings", JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }] }, env: { A: "1" } })], "true");
+  expect(JSON.parse(args[2]!)).toEqual({ env: { A: "1" }, hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }, { matcher: "*", hooks: [{ type: "command", command: "true" }] }] } });
+});
+
+test("agent-device in a VM: its wrapper's package and SDK are put back read-only, its session state writable, the node home hidden", () => {
+  const home = join(root, "device-home");
+  const node = join(home, ".fleetd/node");
+  const install = join(node, "device/agent-device");
+  const sdk = join(node, "device/sdk");
+  for (const d of [join(install, "bin"), join(install, "node_modules/agent-device/bin"), join(sdk, "platform-tools")]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(install, "node_modules/agent-device/bin/agent-device.mjs"), "");
+  writeFileSync(
+    join(install, "bin/agent-device"),
+    `#!/bin/sh\n# fleetd's: agent-device 0.21.31, pointed at this session's emulator.\nANDROID_HOME='${sdk}'\nPATH='${join(sdk, "platform-tools")}':"$PATH"\nexec node '${join(install, "node_modules/agent-device/bin/agent-device.mjs")}' "$@"\n`,
+  );
+  // The build-slot wrapper names the node home itself: never put back.
+  mkdirSync(join(node, "build-slots/bin"), { recursive: true });
+  writeFileSync(join(node, "build-slots/bin/cargo"), `#!/bin/sh\n# fleetd's: an agent's cargo build waits its turn.\nexec '/x/fleetd' build-slot '${node}' "$@"\n`);
+  const state = join(node, "device/sessions/s1");
+  const env = { PATH: `${join(install, "bin")}:${join(node, "build-slots/bin")}:/usr/bin`, AGENT_DEVICE_HOME: state, AGENT_DEVICE_STATE_DIR: join(state, "state") };
+  const view = viewOf(home, [join(home, ".fleetd"), node], needs({ cwd: join(home, "wt"), env, argv: [] }));
+  expect(shows(view, { path: join(install, "node_modules/agent-device/bin/agent-device.mjs"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(sdk, "platform-tools"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(state, "state/x"), rw: true })).toBe(true);
+  expect(shows(view, { path: join(node, "node.json"), rw: false })).toBe(false);
 });

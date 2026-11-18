@@ -13,7 +13,7 @@ import { sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.
 import { boxFile, destroyBox } from "./box_record.ts";
 import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
 import type { ProviderId } from "../../sandbox/providers/index.ts";
-import { hostedPlace, readRecord } from "./hosted.ts";
+import { hasBox, hostedPlace, readRecord } from "./hosted.ts";
 import { processPlace } from "./process.ts";
 
 export type PlaceKind = "process" | "microvm" | "hosted";
@@ -48,6 +48,14 @@ let vm: MicroVm | undefined;
 /** The node's VMs (none: every session runs as a process). */
 export const useVm = (m: MicroVm | undefined) => void (vm = m);
 export const currentVm = () => vm;
+
+/** Whether session `session` runs in a box, hosted or this node's VM: what runs on this machine for it (a program the
+ * Linux desktop launches) would run outside that box. */
+export const inBox = (session: string): boolean => hasBox(session) || (vm?.holds(session) ?? false);
+
+/** What the Linux desktop says to a VM's agent asking it to launch a program. */
+export const VM_NO_DESKTOP_LAUNCH =
+  "This agent runs in a VM of its own, and the Linux desktop runs on this machine outside it, so it can't launch programs for it: one started there would run outside the VM. Say in your result that the desktop check was skipped.";
 
 /** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it
  * in, else a task's agent in a VM where the machine can run one, else a process. */

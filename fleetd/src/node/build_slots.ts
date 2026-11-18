@@ -6,7 +6,7 @@
 // locks inside the guest). So a build in a box asks the node for its slots instead, over the box's link
 // (`FLEETD_BUILD_SLOT_SOCK`, where the box's guest listens): the node takes them here, in the same queue as every
 // other agent's build, and holds them until the build's connection ends, however it ends (slotChannel).
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { connect } from "node:net";
 import { constants } from "node:os";
 import { join } from "node:path";
@@ -144,7 +144,7 @@ export function install(home: string, exe: string[]): string {
   const bin = binDir(home);
   mkdirSync(bin, { recursive: true, mode: 0o700 });
   const wrapper = join(bin, "cargo");
-  const script = `#!/bin/sh\n# fleetd's: an agent's cargo build waits its turn for one of the machine's build slots.\nexec ${exe.map(quoted).join(" ")} ${COMMAND} ${quoted(home)} "$@"\n`;
+  const script = `#!/bin/sh\n${WRAPPER_LINE}\nexec ${exe.map(quoted).join(" ")} ${COMMAND} ${quoted(home)} "$@"\n`;
   let old: string | undefined;
   try {
     old = readFileSync(wrapper, "utf8");
@@ -176,7 +176,27 @@ export function addToPath(home: string, exe: string[], env: Record<string, strin
 export const briefLine = (slots: number) =>
   `- Cargo builds, tests, checks and clippy runs take turns for this machine's ${slots} build slots, one each; a \`cargo test\` takes two (a lib's tests beside the lib) unless it builds only \`--lib\` of one package or only named targets (\`--test <name>\`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.\n`;
 
-/** The first `cargo` on `path` outside `skip`. */
+/** The wrapper's mark, its second line: how one fleet's wrapper knows another's. */
+export const WRAPPER_LINE = "# fleetd's: an agent's cargo build waits its turn for one of the machine's build slots.";
+
+/** Whether `bin` is a fleetd wrapper, this node's or another fleet's on the same PATH (a second fleet started from an
+ * agent's shell): each would run the other as the real cargo, without end. */
+function isWrapper(bin: string): boolean {
+  try {
+    const fd = openSync(bin, "r");
+    try {
+      const head = Buffer.alloc(256);
+      const n = readSync(fd, head, 0, head.length, 0);
+      return head.subarray(0, n).toString("utf8").split("\n")[1] === WRAPPER_LINE;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** The first `cargo` on `path` outside `skip` that isn't a fleetd wrapper. */
 export function realCargo(path: string, skip: string): string | undefined {
   const canon = (p: string) => {
     try {
@@ -191,7 +211,7 @@ export function realCargo(path: string, skip: string): string | undefined {
     const bin = join(d, "cargo");
     try {
       const st = statSync(bin);
-      if (st.isFile() && (st.mode & 0o111) !== 0) return bin;
+      if (st.isFile() && (st.mode & 0o111) !== 0 && !isWrapper(bin)) return bin;
     } catch {}
   }
   return undefined;

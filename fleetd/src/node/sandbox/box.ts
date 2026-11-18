@@ -25,6 +25,12 @@ const ANSWER_MS = 15_000;
 const GONE_MS = 30_000;
 const REDIAL_MIN_MS = 50;
 const REDIAL_MAX_MS = 1_000;
+/** How often the node asks a box's guest whether it still answers, and how long it waits before the box counts as
+ * hung (a frozen or panicked guest keeps its vsock socket open, so its link never drops by itself). */
+export const PING_MS = 10_000;
+export const SILENT_MS = 60_000;
+/** How often a local VM's clock is set again from this machine's. */
+export const CLOCK_MS = 10 * 60_000;
 
 export type BoxOptions = {
   /** The session the box runs: every call from it acts as this session. */
@@ -43,6 +49,15 @@ export type BoxOptions = {
   slots?: { sock: string; home: string };
   /** How long a dropped link is dialled again before the guest counts as gone. */
   goneMs?: number;
+  /** Whether the box still runs (its VMM): a dropped link of a box that doesn't ends at once, with no redial. */
+  alive?: () => boolean;
+  /** Called once when the guest stopped answering for `silentMs` (it's ended then); and the stand-ins' times. */
+  hung?: (why: string) => void;
+  pingMs?: number;
+  silentMs?: number;
+  /** Set the guest's clock from this machine's, on each link and every CLOCK_MS: a local VM's (it has no clock of
+   * its own to keep). */
+  clock?: boolean;
 };
 
 /** A port in the box (on its loopback, or on `addr`, an address of the guest's own) whose connections the node pipes
@@ -68,6 +83,9 @@ export class Box {
   /** Why the link ended for good: the guest went away, or the node let go (`close`). */
   readonly gone: Promise<string> = new Promise((r) => (this.#goneResolve = r));
 
+  #ping: ReturnType<typeof setInterval> | undefined;
+  #clockAt = 0;
+
   private constructor(readonly o: BoxOptions) {
     this.#tcp = new Set(o.tcp);
     for (const r of o.relays ?? []) this.#relays.set(relayKey(r.port, r.addr), r);
@@ -77,6 +95,10 @@ export class Box {
   static async open(o: BoxOptions): Promise<Box> {
     const box = new Box(o);
     await box.#connect();
+    if (o.hung) {
+      box.#ping = setInterval(() => void box.#pingOnce(), o.pingMs ?? PING_MS);
+      box.#ping.unref?.();
+    }
     return box;
   }
 
@@ -229,6 +251,7 @@ export class Box {
       if (this.o.slots) await this.#request({ op: "listen", unix: this.o.slots.sock });
       for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
       for (const r of this.#relays.values()) await this.#request(listenOf(r));
+      if (this.o.clock) await this.#setClock();
     } catch (error) {
       if (this.#mux === mux) this.#mux = undefined;
       mux.close((error as Error).message);
@@ -294,6 +317,11 @@ export class Box {
   async #redial(why: string): Promise<void> {
     const deadline = Date.now() + (this.o.goneMs ?? GONE_MS);
     for (let wait = REDIAL_MIN_MS; !this.#over; wait = Math.min(wait * 2, REDIAL_MAX_MS)) {
+      // A box whose VMM is gone won't answer again: its link ends now, not when the redials give up.
+      if (this.o.alive && !this.o.alive()) {
+        this.#end(`the box ended: ${why}`);
+        return;
+      }
       if (Date.now() >= deadline) {
         this.#end(`the box's guest is gone: ${why}`);
         return;
@@ -309,9 +337,43 @@ export class Box {
     }
   }
 
+  /** One ask whether the guest answers: any answer will do (a guest from before `ping` says it has no such op). One
+   * that gets none in `silentMs`, on a link that's up, ends the box as hung. */
+  async #pingOnce(): Promise<void> {
+    if (this.#over || !this.#mux || this.#pinging) return;
+    this.#pinging = true;
+    const silent = this.o.silentMs ?? SILENT_MS;
+    try {
+      if (this.o.clock && Date.now() - this.#clockAt >= CLOCK_MS) await this.#setClock(silent);
+      else await this.#request({ op: "ping" }, silent);
+    } catch (error) {
+      const message = (error as Error).message;
+      if (this.#over || !/didn't answer/u.test(message)) return;
+      const why = `the box's guest stopped answering for ${Math.round(silent / 1000)} s`;
+      this.#end(why);
+      this.o.hung?.(why);
+    } finally {
+      this.#pinging = false;
+    }
+  }
+
+  #pinging = false;
+
+  /** The guest's clock set to this machine's, to the millisecond. */
+  async #setClock(ms = ANSWER_MS): Promise<void> {
+    this.#clockAt = Date.now();
+    try {
+      await this.#request({ op: "clock", ms: Date.now() }, ms);
+    } catch (error) {
+      // A guest from before `clock` answers that it has none: its clock is the kernel line's, as it was.
+      if (/didn't answer/u.test((error as Error).message)) throw error;
+    }
+  }
+
   #end(why: string): void {
     if (this.#over) return;
     this.#over = true;
+    if (this.#ping) clearInterval(this.#ping);
     this.#bridge?.lost();
     this.#mux?.close(why);
     this.#goneResolve(why);

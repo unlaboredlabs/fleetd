@@ -207,7 +207,7 @@ export type SessionCall =
     }
   | { op: "withdraw"; sessionId: ThreadId; runId: string }
   | { op: "interrupt"; sessionId: ThreadId; runId?: string; reason?: string }
-  | { op: "stop"; sessionId: ThreadId; removeWorktree?: boolean }
+  | { op: "stop"; sessionId: ThreadId; removeWorktree?: boolean; idle?: boolean }
   | { op: "answer"; sessionId: ThreadId; requestId: string; decision: PermissionDecision; by?: DecidedBy }
   | { op: "subscribe"; after?: number; spansAfter?: number; caughtUp?: boolean }
   | { op: "follow"; sessionId: ThreadId }

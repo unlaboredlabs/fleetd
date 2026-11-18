@@ -743,7 +743,7 @@ export class SessionService {
       case "interrupt":
         return this.#interrupt(c.sessionId, c.runId, c.reason);
       case "stop":
-        return this.#stop(c.sessionId, !!c.removeWorktree);
+        return c.idle ? this.#stopIdle(c.sessionId) : this.#stop(c.sessionId, !!c.removeWorktree);
       case "answer":
         return this.#answer(c.sessionId, c.requestId, c.decision, c.by);
       case "subscribe":
@@ -2083,6 +2083,19 @@ export class SessionService {
       }
     }, INTERRUPT_GRACE_MS);
     return { kind: "done" };
+  }
+
+  /** The task ended: its agent's claude goes now unless it may still go on by itself (a run under way, a Monitor that
+   * may fire, a screen it holds), as the idle reap would close it later. A VM's box goes with it, rather than holding
+   * its memory, uncounted, for the idle reap's 10 minutes. */
+  async #stopIdle(id: string): Promise<SessionOutput> {
+    const live = this.#live.get(id);
+    if (!this.store.session(id)) return { kind: "done" };
+    if (this.store.runs(id).some((r) => isActive(r.status))) return { kind: "done" };
+    if (live && [...live.watching.values()].some((until) => until > Date.now())) return { kind: "done" };
+    if ((this.#session(id).local.monitors ?? []).some((m) => m.untilMs > Date.now())) return { kind: "done" };
+    if (this.screens?.holdsScreen(id)) return { kind: "done" };
+    return this.#stop(id, false, "its task ended");
   }
 
   async #stop(id: string, removeWorktree: boolean, why = "stopped"): Promise<SessionOutput> {

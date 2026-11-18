@@ -9,7 +9,7 @@
 //
 // The view is assembled by bind mounts in a user and mount namespace of its own, where virtiofsd then serves it: nothing
 // is mounted on this machine, and nothing needs root.
-import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 /** One path put back in the view, at the same path. */
@@ -92,6 +92,61 @@ function pathsIn(value: string): string[] {
   });
 }
 
+/** Where the links in dir `d` lead, each resolved; nothing for a system dir, whose links are the guest's. */
+function linkedFrom(d: string): string[] {
+  if (guestOwn(real(d))) return [];
+  try {
+    return readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      if (!e.isSymbolicLink()) return [];
+      try {
+        return [realpathSync(join(d, e.name))];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** agent-device's variables naming the dirs it writes (node/device/agent_device.ts agentEnv). */
+const DEVICE_DIRS = ["AGENT_DEVICE_HOME", "AGENT_DEVICE_STATE_DIR"];
+
+/** A file's first 256 bytes, as text. */
+function head(path: string): string {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const buf = Buffer.alloc(256);
+    return buf.subarray(0, readSync(fd, buf, 0, 256, 0)).toString("latin1");
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** fleetd's own wrappers in dir `d` (their second line starts `# fleetd's`): the dirs their quoted paths name. */
+function wrapped(d: string): string[] {
+  if (guestOwn(real(d))) return [];
+  const out: string[] = [];
+  try {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      // Its head first: a PATH dir holds large programs too.
+      const path = join(d, e.name);
+      if (!head(path).split("\n")[1]?.startsWith("# fleetd's")) continue;
+      const text = readFileSync(path, "utf8").slice(0, 16_384);
+      for (const m of text.matchAll(/'(\/[^'\n]+)'/gu)) {
+        try {
+          if (statSync(m[1]!).isDirectory()) out.push(m[1]!);
+        } catch {}
+      }
+    }
+  } catch {}
+  return out;
+}
+
 /** The files a sourced env file names in single quotes (the order's variables, secrets/env.ts orderEnvFile). */
 function sourced(file: string): string[] {
   try {
@@ -117,9 +172,35 @@ export function needs(n: Needs): Share[] {
   for (const p of n.ro ?? []) add(p, false);
   for (const a of n.argv) for (const p of pathsIn(a)) add(p, false);
   for (const v of Object.values(n.env)) if (v) for (const p of pathsIn(v)) add(p, false);
+  // A program on PATH that links elsewhere (agent-browser's, into its package): what it links to, read-only too. And a
+  // fleetd wrapper there (agent-device's, cargo's): its tool's install dir, the `bin` dir's parent, and the dirs it
+  // names (the Android SDK).
+  for (const d of pathsIn(n.env.PATH ?? "")) {
+    for (const target of linkedFrom(d)) add(dirname(target), false);
+    const named = wrapped(d);
+    if (named.length && d.endsWith(`${sep}bin`)) add(dirname(d), false);
+    for (const p of named) add(p, false);
+  }
+  // agent-device's session home and state, which it writes: made now, or a share missing at boot is never mounted.
+  for (const k of DEVICE_DIRS) {
+    const p = n.env[k];
+    if (!p || !isAbsolute(p)) continue;
+    try {
+      mkdirSync(p, { recursive: true, mode: 0o700 });
+    } catch {}
+    add(p, true);
+  }
   // The order's variables are re-read before each command, and renewed (GH_TOKEN) by writing a new file in their dir.
+  // Its dir is made now when it isn't there yet (no variable set so far): a share missing at boot is never mounted,
+  // and a variable set later would never reach the box.
   const envFile = n.env.CLAUDE_ENV_FILE;
-  if (envFile) for (const p of sourced(envFile)) add(dirname(p), false);
+  if (envFile)
+    for (const p of sourced(envFile)) {
+      try {
+        mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
+      } catch {}
+      add(dirname(p), false);
+    }
   return [...out].map(([path, rw]) => ({ path, rw })).filter((s) => !guestOwn(s.path));
 }
 
@@ -167,8 +248,8 @@ export type SystemShare = { at: string; exec: string[] };
 /**
  * The shell lines that assemble `view` at `at` (an empty dir) and then exec `exec`: run as root of a user and mount
  * namespace of their own (`unshare --user --map-root-user --mount`), so every mount is that namespace's alone. With
- * `sys`, this machine's system dirs are assembled at `sys.at` too, read-only, and served first by `sys.exec`, in the
- * background: a share of their own, which never changes under the box, so the guest caches it as long as it likes.
+ * `sys`, this machine's system dirs are assembled at `sys.at` too, read-only, and served by `sys.exec` beside `exec`:
+ * a share of their own, which never changes under the box, so the guest caches it as long as it likes. Run by bash.
  */
 export function mountScript(view: View, at: string, exec: string[], sys?: SystemShare, system: SystemDir[] = hostSystem()): string {
   const v = (p: string) => q(at + p);
@@ -197,7 +278,11 @@ export function mountScript(view: View, at: string, exec: string[], sys?: System
     lines.push(`mount --rbind ${q(s.path)} ${v(s.path)}`);
     if (!s.rw) lines.push(`mount -o remount,bind,ro ${v(s.path)}`);
   }
-  if (sys) lines.push(`${sys.exec.map(q).join(" ")} &`);
-  lines.push(`exec ${exec.map(q).join(" ")}`);
+  if (!sys) lines.push(`exec ${exec.map(q).join(" ")}`);
+  else {
+    // Both run, and the first to end takes the other with it (bash's `wait -n`): a box missing a share ends, never
+    // hangs on it.
+    lines.push(`${sys.exec.map(q).join(" ")} &`, "h=$!", `${exec.map(q).join(" ")} &`, "w=$!", "wait -n || true", 'kill "$h" "$w" 2>/dev/null', "exit 1");
+  }
   return `${lines.join("\n")}\n`;
 }

@@ -426,3 +426,17 @@ test("the GitHub notices go out to every agent on the machine at once, as brief 
   expect(most).toBe(2);
   expect(k.ports.briefs[0]?.startsWith("This machine can't reach GitHub right now")).toBe(true);
 });
+
+test("an ended task's agent is closed when idle (a VM's box with it), a review's goes with its worktree", async () => {
+  const k = tasksKit();
+  await k.spawn("Writer");
+  await k.spawn("Review", "review");
+  k.threadRow("s1", "completed", "done");
+  k.threadRow("s2", "completed", "reviewed");
+  k.clock.ms += 10 * 60_000;
+  await k.t.sweep();
+  expect(k.t.get("T1")?.state).toBe("done");
+  await until(() => k.ports.idleStops.length === 1 && k.ports.removed.length === 1);
+  expect(k.ports.idleStops.map((t) => t.threadId)).toEqual(["s1"]);
+  expect(k.ports.removed.map((t) => t.threadId)).toEqual(["s2"]);
+});

@@ -25,6 +25,8 @@ export class FakePorts implements TaskPorts {
   sends: Sent[] = [];
   stops: ThreadRef[] = [];
   removed: ThreadRef[] = [];
+  /** Ended tasks' agents the node was asked to close when idle. */
+  idleStops: ThreadRef[] = [];
   wakes: { r: ProjectRef; kind: WakeKind; text: string }[] = [];
   commands: { machineId: string; cwd: string; argv: string[] }[] = [];
   /** Throws instead of launching, once each. */
@@ -82,6 +84,9 @@ export class FakePorts implements TaskPorts {
   };
   /** Throws instead of removing, per thread id. */
   removeErrors = new Map<string, PortError>();
+  stopIdle = async (thread: ThreadRef) => {
+    this.idleStops.push(thread);
+  };
   removeWorktree = async (thread: ThreadRef) => {
     const error = this.removeErrors.get(thread.threadId);
     if (error) throw error;

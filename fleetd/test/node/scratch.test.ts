@@ -203,3 +203,25 @@ test("the node's start keeps the scratch of every session that may come back, an
   ];
   expect(scratchKept(rows, new Set(["live"]), now)).toEqual(new Set(["waiting", "lead", "live"].map(scratchName)));
 });
+
+test("an ended task's agent closes when idle, keeping its worktree, but not while a Monitor of its own may fire", async () => {
+  const k = await nodeKit();
+  const { call, done, launch } = k;
+  try {
+    const launched = await launch("t1", "r1");
+    const path = (launched.result as { ok: { summary: { worktreePath: string } } }).ok.summary.worktreePath;
+    await until("the run", done("t1", "r1"));
+    const pid = k.service.store.session("t1")!.local.pid!;
+    const arm = (untilMs: number) => k.service.update("t1", (c) => void (c.row.local.monitors = [{ id: "m1", description: "CI", untilMs }]));
+    arm(Date.now() + 60_000);
+    expect((await call("stop", { sessionId: "t1", idle: true })).result).toEqual({ ok: { kind: "done" } });
+    expect(alive(pid)).toBe(true);
+    arm(Date.now() - 1);
+    expect((await call("stop", { sessionId: "t1", idle: true })).result).toEqual({ ok: { kind: "done" } });
+    await until("its process's exit", () => !alive(pid));
+    expect(existsSync(path)).toBe(true);
+  } finally {
+    await k.service.stopAll();
+    k.home.done();
+  }
+});

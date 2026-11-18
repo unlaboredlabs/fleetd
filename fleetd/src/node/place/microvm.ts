@@ -19,7 +19,7 @@
 // session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
 // a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -31,7 +31,8 @@ import { HostLink, LaunchError, prepare, readRegistration, stop as stopHost, sta
 import { descendants, table } from "../runner/procs.ts";
 import { hostScope, spawnScoped, type Scope } from "../runner/scope.ts";
 import { Box } from "../sandbox/box.ts";
-import { HOST_TAG } from "../sandbox/system.ts";
+import { excludeInCheckout } from "../sessions/files.ts";
+import { HOST_TAG, OOM_HOOK } from "../sandbox/system.ts";
 import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
 import { ensureTools, findTools, vmDir, type VmTools } from "../../sandbox/host/tools.ts";
 import { fleetdDir } from "../../shared/home.ts";
@@ -40,19 +41,35 @@ import type { SessionRole } from "../../shared/sessions.ts";
 import { readConfig } from "../config.ts";
 import { homeDir, nowIso } from "../util.ts";
 import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
+import { heldDirOf } from "../hold.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
-import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, type Reach } from "./endpoint.ts";
+import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
-/** A box's guest memory and CPUs (design §7: 4 GiB, 2 vCPUs, as today's 2 build jobs an agent). */
-export const GUEST_MEM_BYTES = 4 * 2 ** 30;
-export const GUEST_CPUS = 2;
-/** What a box takes of the machine's memory, for its cap: the guest plus the VMM, virtiofsd and passt (~30 MB
- * measured), rounded up to 4.1 GiB (design §7's cap table). */
-export const MEM_PER_AGENT_BYTES = Math.round(4.1 * 2 ** 30);
+/** A box's guest memory by default, GiB, and its CPUs. 4 GiB, as the cap counts it whole: fleetd's own check peaked at
+ * 3 GB, but a real crate's tests didn't link in it (rustc killed at 3.5 GB). A machine that builds such sets its own in
+ * node.json (`vmMemoryGiB`, 2 to 256), and an agent that runs out is told so. No compressed swap: the guest kernel has
+ * no zram, and zswap needs a swap device the guest has nowhere to put. 4 vCPUs,
+ * which cost no memory and match the 4 workers an agent's test runners get: with 2, fleetd's own test suite took
+ * 317.7 s in a VM, and 238.8 s with 4 beside it. */
+export const GUEST_MEM_GIB = 4;
+export const GUEST_CPUS = 4;
+
+/** This machine's VMs' memory, GiB: node.json's `vmMemoryGiB` when it's a whole number from 2 to 256, else the default. */
+export function guestMemGiB(home: string): number {
+  let n: unknown;
+  try {
+    n = readConfig(home)?.vmMemoryGiB;
+  } catch {}
+  return typeof n === "number" && Number.isInteger(n) && n >= 2 && n <= 256 ? n : GUEST_MEM_GIB;
+}
+
+/** What a box takes of the machine's memory, for its cap: all of its guest's (what a guest has touched isn't given
+ * back), plus the VMM, virtiofsd and passt (~30 MB measured), rounded up by 0.1 GiB (design §7's cap table). */
+export const memPerAgentBytes = (gib: number) => Math.round((gib + 0.1) * 2 ** 30);
 /** The vsock port sandbox-guest listens on in every box (each VM has its own vsock space). */
 export const GUEST_PORT = 5000;
 const GUEST_ADDR = "10.0.2.15";
@@ -85,6 +102,8 @@ export type BootPlan = {
   check: Extract<VmCheck, { ok: true }>;
   blocked: string[];
   scope?: Scope;
+  /** The guest's memory, GiB (GUEST_MEM_GIB when absent). */
+  memGiB?: number;
 };
 /** What a box's boot leaves: its launcher, its VMM and helpers once they run, virtiofsd among them, and the shell
  * holding its network namespace. */
@@ -235,6 +254,17 @@ export class MicroVm {
     }
   }
 
+  /** This machine's VMs' memory, GiB. */
+  memGiB(): number {
+    return guestMemGiB(this.o.home);
+  }
+
+  /** Whether session `session` runs in a box of this node's now (one booting counts). */
+  holds(session: string): boolean {
+    for (const dir of this.#boxes.keys()) if (dir.split("/").at(-1) === session) return true;
+    return false;
+  }
+
   /** Whether `s` runs in a box when the machine can: a task's agent. A lead or a person's own thread stays a process. */
   wants(s: PlaceFor): boolean {
     return s.role === "worker";
@@ -253,8 +283,13 @@ export class MicroVm {
     let off: unknown;
     try {
       off = readConfig(this.o.home)?.sandbox;
-    } catch {}
+    } catch (error) {
+      // Its off switch can't be read: off, rather than on against what it may say.
+      return { kind: "process", why: `node.json can't be read (${(error as Error).message}), so VMs are off until it can` };
+    }
     if (off === "process") return { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true };
+    if (off !== undefined && off !== "microvm")
+      return { kind: "process", why: `node.json "sandbox" is ${JSON.stringify(off)}: "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` };
     if (this.#failed && now < this.#failed.until) {
       const at = new Date(this.#failed.until).toISOString().slice(11, 16);
       return { kind: "process", why: `the last VM didn't start: ${this.#failed.why}; the node tries VMs again after ${at} UTC` };
@@ -305,17 +340,29 @@ export class MicroVm {
     };
   }
 
-  /** What every command of session `s` sees besides what it names: its session's files, the update hold, the binary. */
+  /** What every command of session `s` sees read-only besides what it names: its session's files, the update hold,
+   * the binary. */
   #base(s: PlaceFor): string[] {
-    const update = join(this.o.home, "update");
-    mkdirSync(update, { recursive: true });
-    return [join(this.o.home, "sessions", s.sessionId), update, this.o.fleetd[0]!];
+    mkdirSync(join(this.o.home, "update"), { recursive: true });
+    return [join(this.o.home, "sessions", s.sessionId), join(this.o.home, "update"), this.o.fleetd[0]!];
   }
 
-  /** A command's environment in a box: git's GitHub helper, and its builds' turns asked of the node over the box's
-   * link (the machine's build slots, not ones of the box's own). */
-  #inBox<E extends Record<string, string | undefined>>(env: E): E & Record<string, string> {
-    return { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as E & Record<string, string>;
+  /** And writable, only where its waits on the update hold mark their tool calls held (`update/held/`): the hold
+   * itself stays read-only, or an agent could hold every agent of the machine. Without the marks, the node's drain
+   * waits out its 10 minutes for an agent in a VM. */
+  #update(): string {
+    const held = heldDirOf(this.o.home);
+    mkdirSync(held, { recursive: true });
+    return held;
+  }
+
+  /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
+   * (the machine's build slots, not ones of the box's own), and pnpm's store in its checkout (boxStore). */
+  async #inBox<E extends Record<string, string | undefined>>(env: E, cwd: string): Promise<E & Record<string, string>> {
+    const out = { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as Record<string, string | undefined>;
+    const store = await boxStore(cwd);
+    if (store) out.pnpm_config_store_dir ??= store;
+    return out as E & Record<string, string>;
   }
 
   #hidden(): string[] {
@@ -326,13 +373,13 @@ export class MicroVm {
     if (this.status().kind !== "microvm") return processPlace.run(r);
     let held: Held;
     try {
-      held = await this.#box(s, needs({ cwd: r.cwd, env: r.env ?? {}, argv: r.argv, ro: this.#base(s) }));
+      held = await this.#box(s, needs({ cwd: r.cwd, env: r.env ?? {}, argv: r.argv, rw: [this.#update()], ro: this.#base(s) }), undefined, true);
     } catch (error) {
       console.warn(`${nowIso()} WARN no VM for a setup command: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
       this.failed((error as Error).message);
       return processPlace.run(r);
     }
-    return held.box.run(r.env ? { ...r, env: this.#inBox(r.env) } : r);
+    return held.box.run(r.env ? { ...r, env: await this.#inBox(r.env, r.cwd) } : r);
   }
 
   async start(s: PlaceFor, l: Launch): Promise<HostLink> {
@@ -342,7 +389,7 @@ export class MicroVm {
       return processPlace.start(l);
     }
     const addDirs = l.args.flatMap((a, i) => (l.args[i - 1] === "--add-dir" ? [a] : []));
-    const need = needs({ cwd: l.cwd, env: l.env, argv: [l.program, ...l.args], rw: addDirs, ro: this.#base(s) });
+    const need = needs({ cwd: l.cwd, env: l.env, argv: [l.program, ...l.args], rw: [...addDirs, this.#update()], ro: this.#base(s) });
     let held: Held;
     try {
       held = await this.#box(s, need, l.scope);
@@ -354,7 +401,7 @@ export class MicroVm {
     }
     // Claude, whatever its endpoint, through the node, checked from inside the box: a box that can't reach it runs
     // nothing, and the agent runs as a plain process instead of stalling on every call.
-    const endpoint = claudeEndpoint(l);
+    const endpoint = claudeEndpoint(l, true);
     let args: string[];
     try {
       // The guest helper is root: the relay takes the endpoint's own port, and claude calls the URL as set.
@@ -362,7 +409,8 @@ export class MicroVm {
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
       writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
-      args = boxArgs(l.args, r);
+      // The guest's word that it ran out of memory reaches the agent at its next tool call, not a bare "Killed".
+      args = withPostToolHook(boxArgs(l.args, r), OOM_HOOK);
     } catch (error) {
       const why = `${(error as Error).message} (the endpoint from ${endpoint.source})`;
       console.warn(`${nowIso()} WARN a VM couldn't reach Claude: the session runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify(why)}}`);
@@ -381,7 +429,7 @@ export class MicroVm {
       }
       // The guest runs the agent as this machine's user, but as root when that is root (a node run as root), which
       // claude refuses to skip its prompts for unless it knows it's in a sandbox.
-      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
+      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...(await this.#inBox(l.env, l.cwd)), IS_SANDBOX: "1" } });
       const leader = held.record.leader;
       const registration: Registration = { protocol: info.protocol, hostPid: leader.pid, hostStart: leader.start, pid: leader.pid, start: leader.start, marker: "", refused: info.refused ?? null };
       writeFileSync(join(l.dir, "host.json"), JSON.stringify(registration));
@@ -394,12 +442,20 @@ export class MicroVm {
     }
   }
 
-  /** The session's box: the one booted for it when it shows `need` and runs no host yet, else a new one. */
-  #box(s: PlaceFor, need: Share[], scope?: Scope): Promise<Held> {
+  /** The session's box: the one booted for it when it shows `need` and runs no host yet, else a new one. A setup
+   * command (`run`) takes the box a live session host runs in as it is, even one that shows less than it needs: a new
+   * box would end that session. */
+  #box(s: PlaceFor, need: Share[], scope?: Scope, run = false): Promise<Held> {
     const going = this.#boxes.get(s.dir);
     const next = (async () => {
       const held = await going?.catch(() => undefined);
-      if (held?.view && covers(held.view, need) && boxAlive(held.record) && !readRegistration(s.dir)) return held;
+      const alive = held?.view !== undefined && boxAlive(held.record);
+      const hosting = !!readRegistration(s.dir);
+      if (alive && covers(held!.view!, need) && (run || !hosting)) return held!;
+      if (alive && run && hosting) {
+        console.warn(`${nowIso()} WARN a setup command runs in its session's VM, which doesn't show every path it names {"sessionId":"${s.sessionId}"}`);
+        return held!;
+      }
       // A new box shows what the last one did and what this needs; fleetd's own folders stay hidden either way.
       const view = viewOf(this.o.userHome ?? homeDir(), this.#hidden(), [...(held?.view?.shares ?? []), ...need]);
       held?.box.close();
@@ -418,7 +474,7 @@ export class MicroVm {
     const at = Date.now();
     this.#net = check.net;
     const blocked = this.#addrs();
-    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, ...(scope ? { scope } : {}) };
+    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, memGiB: this.memGiB(), ...(scope ? { scope } : {}) };
     const booted = await (this.o.boot ?? bootCloudHypervisor)(plan);
     const record: BoxRecord = {
       kind: "microvm",
@@ -459,6 +515,10 @@ export class MicroVm {
           ...(record.relays ? { relays: record.relays } : {}),
           lead: lazyHooks(lead),
           ...(this.o.goneMs !== undefined ? { goneMs: this.o.goneMs } : {}),
+          // A box whose VMM ended ends its link at once; one whose guest stopped answering goes, and says so.
+          alive: () => boxAlive(record),
+          hung: (why) => void this.#hung(dir, session, why),
+          clock: true,
         });
       } catch (error) {
         last = (error as Error).message;
@@ -466,6 +526,13 @@ export class MicroVm {
       if (Date.now() >= until) throw new Error(`the VM's guest didn't answer within ${BOOT_MS / 1000} s: ${last}`);
       await Bun.sleep(DIAL_EVERY_MS);
     }
+  }
+
+  /** A box whose guest stopped answering (frozen, or its kernel panicked): it's destroyed, and its session's host link
+   * ends with it, as when a VM ends. */
+  async #hung(dir: string, session: string, why: string): Promise<void> {
+    console.warn(`${nowIso()} WARN a VM stopped answering: it was ended, and its agent's next turn starts a new one {"sessionId":"${session}","why":${JSON.stringify(why)}}`);
+    await this.#drop(dir);
   }
 
   /** After a node restart: dials the box `dir` recorded again and links to the session host in it. */
@@ -528,11 +595,11 @@ function toolsOrThrow(): NetTools {
   return net;
 }
 
-/** A heartbeat's word on where this machine's agents run: in VMs, sized at MEM_PER_AGENT_BYTES each for the hub's cap,
+/** A heartbeat's word on where this machine's agents run: in VMs of `memGiB` each (memPerAgentBytes, for the hub's cap),
  * or as plain processes and why. */
-export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus): void {
+export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus, memGiB = GUEST_MEM_GIB): void {
   load.sandbox = status;
-  if (status.kind === "microvm") load.memPerAgentBytes = MEM_PER_AGENT_BYTES;
+  if (status.kind === "microvm") load.memPerAgentBytes = memPerAgentBytes(memGiB);
 }
 
 /**
@@ -552,6 +619,22 @@ export function gitInBox<E extends Record<string, string | undefined>>(env: E): 
     [`GIT_CONFIG_KEY_${n + 1}`]: key,
     [`GIT_CONFIG_VALUE_${n + 1}`]: "!gh auth git-credential",
   };
+}
+
+/** Where a box's pnpm store goes in its checkout, kept out of git (the checkout's .git/info/exclude). */
+export const BOX_STORE = ".fleetd/pnpm-store/";
+
+/**
+ * A box's pnpm store, `<checkout>/.fleetd/pnpm-store`, when its cwd is a git checkout. pnpm's store in the home is a
+ * SQLite index (WAL, its -shm mapped), and file locks don't cross a VM's share: two VMs, or a VM and a plain process,
+ * would write it at once. And pnpm links from its store, which it can't across shares: given the home's, it made a
+ * store of its own at the checkout's root, where git saw it. This one is on the checkout's share and out of git; it
+ * costs a download of the packages once a checkout (seconds), and goes with it.
+ */
+export async function boxStore(cwd: string): Promise<string | undefined> {
+  if (!existsSync(join(cwd, ".git"))) return undefined;
+  if (!(await excludeInCheckout(cwd, BOX_STORE))) return undefined;
+  return join(cwd, BOX_STORE);
 }
 
 /** The port a URL names on this machine's loopback, if it does. */
@@ -666,7 +749,7 @@ function consoleTail(dir: string): string {
 
 /** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the
  * user the guest runs the agent as (this machine's own, sandbox-guest's FLEETD_GUEST_UID and _GID). */
-export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number }): string {
+export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; like?: HostLike; memGiB?: number }): string {
   return [
     "console=ttyS0",
     "root=/dev/vda",
@@ -684,7 +767,26 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
     ...(p.dns.length ? [`fleetd.dns=${p.dns.join(",")}`] : []),
     "fleetd.once=1",
     ...(p.uid !== undefined && p.gid !== undefined ? [`fleetd.uid=${p.uid}`, `fleetd.gid=${p.gid}`] : []),
+    ...(p.like ? [`fleetd.umask=${p.like.umask}`, `fleetd.watches=${p.like.watches}`, `fleetd.instances=${p.like.instances}`] : []),
+    ...(p.memGiB ? [`fleetd.mem=${p.memGiB}`] : []),
   ].join(" ");
+}
+
+/** What the guest takes from this machine so its agent works as a plain process here does: the node's umask (files
+ * group-writable or not), and inotify's limits (a kernel sized for the guest's 4 GiB allows 35k watches, which a dev
+ * server and a test watcher over a large repo outrun). */
+export type HostLike = { umask: string; watches: number; instances: number };
+
+export function hostLike(): HostLike {
+  const sys = (name: string, fallback: number) => {
+    try {
+      const n = Number(readFileSync(`/proc/sys/fs/inotify/${name}`, "utf8").trim());
+      return Number.isInteger(n) && n > 0 ? n : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return { umask: process.umask().toString(8).padStart(4, "0"), watches: sys("max_user_watches", 1_048_576), instances: sys("max_user_instances", 1024) };
 }
 
 /** The flags pasta (passt's binary under that name) links a box's network namespace to this machine's network with:
@@ -717,7 +819,9 @@ export function launcherScript(b: BootPlan, now: number): string {
   ];
   const virtiofsd = share(SOCKS.fs, viewDir, ["--cache=auto"]);
   const hostDir = join(dir, "host");
-  const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly"]);
+  // This machine's root owns most of its system files, which its namespace sees as the overflow id: they show as
+  // root's in the guest, as here (ssh refuses a config file nobody owns).
+  const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly", "--translate-uid=host:65534:0:1", "--translate-gid=host:65534:0:1"]);
   const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
   // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
   const inNamespace = [`cd ${q(dir)} || exit 1`, blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
@@ -729,13 +833,13 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--kernel",
     tools.kernel,
     "--cmdline",
-    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid }),
+    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, like: hostLike(), memGiB: b.memGiB ?? GUEST_MEM_GIB }),
     "--disk",
     `path=${tools.root},readonly=on,image_type=raw`,
     "--cpus",
     `boot=${GUEST_CPUS}`,
     "--memory",
-    `size=${GUEST_MEM_BYTES / 2 ** 20}M,shared=on`,
+    `size=${(b.memGiB ?? GUEST_MEM_GIB) * 1024}M,shared=on`,
     "--fs",
     `tag=view,socket=${SOCKS.fs}`,
     `tag=${HOST_TAG},socket=${SOCKS.host}`,
@@ -755,16 +859,19 @@ export function launcherScript(b: BootPlan, now: number): string {
     `cd ${q(dir)} || exit 1`,
     `${pasta} 2>>box.log &`,
     "p=$!",
-    `unshare --user --map-root-user --mount --propagation private -- /bin/sh -c ${q(views)} 2>>box.log &`,
+    `unshare --user --map-root-user --mount --propagation private -- /bin/bash -c ${q(views)} 2>>box.log &`,
     "v=$!",
     "i=0",
     'until [ -S net.sock ] && [ -S fs.sock ] && [ -S host.sock ]; do i=$((i+1)); if [ $i -gt 1000 ] || ! kill -0 $p $v 2>/dev/null; then echo "passt or virtiofsd didn\'t start" >>box.log; kill $p $v 2>/dev/null; exit 1; fi; sleep 0.01; done',
     `${vmmLine} 2>>box.log &`,
     "c=$!",
     'echo "$c $p $v" > pids',
-    "wait $c",
+    // The box ends with the first of them to: a VM whose files or network went (its virtiofsd or passt killed, by the
+    // OOM killer say) would otherwise hang on every file, or lose the network without a word.
+    "wait -n $c $p $v",
     "s=$?",
-    "kill $p $v 2>/dev/null",
+    'if kill -0 $c 2>/dev/null; then echo "the VM ended because one of its helpers did (virtiofsd or passt)" >>box.log; fi',
+    "kill $c $p $v 2>/dev/null",
     "exit $s",
   ].join("\n");
 }
