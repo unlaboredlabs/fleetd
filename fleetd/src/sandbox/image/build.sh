@@ -39,6 +39,13 @@ install -m 0755 "$src/passt" "$out/$(pin .assets.passt)"
 
 # The root: the Dockerfile's image as a directory owned by root, then an ext4 holding exactly it.
 docker build --progress=plain -t fleetd-box -f "$here/Dockerfile" "$(mktemp -d "$work/ctx.XXXXXX")" 2>&1 | tail -40
+# What agents' pre-push checks (scripts/check.sh) need of it: GTK 3 and every library it links, for Electron, and the
+# Chrome that CHROME names, the same in the image's ENV and its guest.env, starting.
+docker run --rm fleetd-box bash -euc '
+  libs=$(ldd /usr/lib/x86_64-linux-gnu/libgtk-3.so.0)
+  ! grep "not found" <<<"$libs" || exit 1
+  [ "$CHROME" = "$(sed -n "s/^CHROME=//p" /etc/fleetd/guest.env)" ] || { echo "guest.env names another CHROME"; exit 1; }
+  "$CHROME" --version'
 box=$(docker create fleetd-box /bin/true)
 root=$work/root
 sudo mkdir "$root"

@@ -37,6 +37,9 @@ RUN curl -fsSL -o /tmp/gh.tgz https://github.com/cli/cli/releases/download/v2.10
 # on the devbox). The builds sit at a fixed path PLAYWRIGHT_BROWSERS_PATH names, since a local box's home is the
 # host's: /etc/fleetd/guest.env holds it for sessions started by `fleetd sandbox-guest`.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+# The headless shell at a path without its build number, named by CHROME as the site's layout check looks for it
+# (.github/site-layout-check.mjs), here and in /etc/fleetd/guest.env.
+ENV CHROME=/usr/local/bin/chrome-headless-shell
 # Node.js 24, pinned and checked, with npm, and pnpm and Yarn at their pins (fleetd's own lockfile installs:
 # app/desktop's pnpm-lock.yaml, the package-lock.json files, a yarn.lock), all in /opt/node and on PATH. Playwright's
 # installer runs under it, as the node runs it (npx).
@@ -48,9 +51,15 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
  && for b in npm npx corepack pnpm pnpx yarn yarnpkg; do [ ! -e /opt/node/bin/$b ] || ln -sf /opt/node/bin/$b /usr/local/bin/$b; done \
  && node --version && npm --version && pnpm --version && yarn --version \
  && cd /tmp/pw && npx --yes playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
+ && ln -s /opt/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME" \
  && chmod -R a+rX /opt/ms-playwright /opt/node \
  && cd / && rm -rf /tmp/pw /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
  && mkdir -p /etc/fleetd \
- && printf 'PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\n' > /etc/fleetd/guest.env \
+ && printf 'PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\nCHROME=%s\n' "$CHROME" > /etc/fleetd/guest.env \
  && printf 'fleetd-box\n' > /etc/hostname \
  && git config --system --add safe.directory '*'
+
+# GTK 3, which Electron links even headless (app/desktop's engine tests start it), with dbus-x11 as the session bus
+# dconf asks for, which keeps systemd out. Its icon themes go: nothing headless draws them, and they're most of its size.
+RUN apt-get update && apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 \
+ && rm -rf /usr/share/icons/* /var/lib/apt/lists/*

@@ -1,7 +1,8 @@
 // The sandbox image's recipe (sandbox/image/): its key follows every part of it, its Dockerfile stays buildable by
 // hosted providers with no context, and its pins are fleetd's own.
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLAYWRIGHT_VERSION } from "../../src/node/browser/chrome.ts";
 import { DOCKERFILE, IMAGE, imageKey, INIT, SOURCES } from "../../src/sandbox/image/recipe.ts";
@@ -56,4 +57,36 @@ test("the init parses, and starts sandbox-guest on the link socket", () => {
   expect(ran.stderr.toString()).toBe("");
   expect(ran.exitCode).toBe(0);
   expect(INIT).toContain('"$exe" sandbox-guest --listen "$link" --dir /run/fleetd/guest');
+});
+
+// scripts/check.sh desktop and site, which every writer runs before a push, pass in a box as on its machine.
+test("a box has what the pre-push checks need: GTK for Electron, and CHROME naming the headless shell", () => {
+  expect(DOCKERFILE).toContain("install -y --no-install-recommends dbus-x11 libgtk-3-0t64 ");
+  const chrome = /^ENV CHROME=(\S+)$/mu.exec(DOCKERFILE)?.[1];
+  expect(chrome).toBe("/usr/local/bin/chrome-headless-shell");
+  // The link, and guest.env naming it for sessions sandbox-guest starts.
+  expect(DOCKERFILE).toContain('/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME"');
+  expect(DOCKERFILE).toContain(String.raw`CHROME=%s\n' "$CHROME" > /etc/fleetd/guest.env`);
+  // build.sh checks both in the image it builds.
+  const build = readFileSync(join(dir, "build.sh"), "utf8");
+  expect(build).toContain("ldd /usr/lib/x86_64-linux-gnu/libgtk-3.so.0");
+  expect(build).toContain('"$CHROME" --version');
+});
+
+test("the init gives each box a machine id of its own, as systemd's: 32 hex digits, new each boot", () => {
+  const lines = INIT.split("\n").filter((l) => l.includes("/etc/machine-id") && !l.trim().startsWith("#"));
+  expect(lines.length).toBeGreaterThan(0);
+  const tmp = mkdtempSync(join(tmpdir(), "machine-id-"));
+  try {
+    const file = join(tmp, "machine-id");
+    const ids = [1, 2].map(() => {
+      const ran = Bun.spawnSync(["bash", "-euc", lines.join("\n").replaceAll("/etc/machine-id", file)], { stderr: "pipe" });
+      expect(ran.stderr.toString()).toBe("");
+      return readFileSync(file, "utf8");
+    });
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{32}\n$/u);
+    expect(ids[0]).not.toBe(ids[1]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
