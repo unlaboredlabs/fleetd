@@ -11,8 +11,9 @@
 // off the screen until that frame is out (keypress p95 10-13 ms on CI's runner, 7 riding). A step held up by a long
 // task lands as soon as the thread is free; either way the next stays on the clock.
 //
-// :root carries data-beat while the beat runs; no beat while the window is hidden, or with reduced motion: then :root
-// has no data-beat, and each loop shows its still shape.
+// :root carries data-beat while the beat runs; no beat while the window is hidden or not focused, or with reduced
+// motion: then :root has no data-beat, and each loop shows its still shape. Every beat is a frame of the whole page
+// (about 5 ms of CPU on a machine that composites in software), so a window you aren't using draws none.
 import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 
 export const BEAT_MS = 120;
@@ -58,9 +59,13 @@ const onInput = (): void => {
 
 const reduced = (): boolean => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** The window has the focus, as its focus and blur events say: a page opened from the address bar starts without it,
+ * and steps all the same. */
+let focused = true;
+
 const sync = (): void => {
   const root = document.documentElement;
-  const run = loops.size > 0 && !document.hidden && !reduced();
+  const run = loops.size > 0 && !document.hidden && !reduced() && focused;
   if (run && timer === undefined) {
     root.dataset["beat"] = "";
     zero = performance.now();
@@ -77,6 +82,17 @@ const sync = (): void => {
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", sync);
+  window.addEventListener("focus", () => {
+    focused = true;
+    sync();
+  });
+  // The focus has left the window by the next task, or moved to an iframe in it, which still counts.
+  window.addEventListener("blur", () =>
+    window.setTimeout(() => {
+      focused = document.hasFocus();
+      sync();
+    }, 0),
+  );
   // Capture, ahead of the app's own handlers: whatever they change draws on the same frame as the step.
   for (const type of ["keydown", "pointerdown", "wheel"] as const) window.addEventListener(type, onInput, { capture: true, passive: true });
   if (typeof window.matchMedia === "function") window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", sync);

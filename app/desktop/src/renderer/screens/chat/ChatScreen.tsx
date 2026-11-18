@@ -9,7 +9,7 @@
 // an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget, type TagActions } from "./actions";
-import { Button, FrameTitle, IdChip, StatusChip, Text, toast } from "../../ui";
+import { Button, FrameTitle, IdChip, markShown, StatusChip, Text, toast } from "../../ui";
 import type { ChatAbout } from "../../../shared/contracts";
 import { LensCapsule } from "./lens/Lens";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
@@ -126,6 +126,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const next = kept.from === built ? kept : { from: built, rows: built === undefined ? undefined : keepRows(kept.rows, built) };
   if (next !== kept) setKept(next);
   const rows = next.rows;
+  // The chat's first rows are what the app opened on: what waits for them (Settings' chunk) may load now.
+  const loaded = rows !== undefined;
+  useEffect(() => {
+    if (loaded) markShown();
+  }, [loaded]);
   const items = view?.items;
   const older = view?.hasOlder === true;
   const waiting = useMemo(

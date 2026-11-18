@@ -180,16 +180,36 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
   );
 }
 
+/**
+ * whenShort's formatters, each made once: toLocaleTimeString with options makes a new one per call, which costs far
+ * more than formatting with it, and every row asks on each render of the sidebar (the start renders it several times).
+ */
+const WHEN_FORMATS = {
+  clock: { hour: "numeric", minute: "2-digit" },
+  weekday: { weekday: "short" },
+  date: { day: "numeric", month: "short" },
+  dateYear: { day: "numeric", month: "short", year: "2-digit" },
+} as const satisfies Record<string, Intl.DateTimeFormatOptions>;
+const whenFormatters = new Map<keyof typeof WHEN_FORMATS, Intl.DateTimeFormat>();
+const whenFormat = (kind: keyof typeof WHEN_FORMATS, at: Date): string => {
+  let f = whenFormatters.get(kind);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat(undefined, WHEN_FORMATS[kind]);
+    whenFormatters.set(kind, f);
+  }
+  return f.format(at);
+};
+
 /** When a line was written, as a chats list says it: "09:14" today, "Yesterday", "Tue" this week, else "3 Nov". */
 export const whenShort = (iso: string, now = new Date()): string => {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((day(now) - day(at)) / 86_400_000);
-  if (days <= 0) return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (days <= 0) return whenFormat("clock", at);
   if (days === 1) return "Yesterday";
-  if (days < 7) return at.toLocaleDateString(undefined, { weekday: "short" });
-  return at.toLocaleDateString(undefined, at.getFullYear() === now.getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "2-digit" });
+  if (days < 7) return whenFormat("weekday", at);
+  return whenFormat(at.getFullYear() === now.getFullYear() ? "date" : "dateYear", at);
 };
 
 /** The row's one mark: a dot while it wants you or has a new message, else a red main, else how many agents work. */

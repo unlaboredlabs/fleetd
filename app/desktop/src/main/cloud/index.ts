@@ -11,7 +11,7 @@ import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
 import { writePrivate } from "../hub/credentials";
 import { realTerminalDeps } from "../pairing/terminal";
-import { trustSystemCAs } from "../trust";
+import { systemCAs } from "../trust";
 import { CloudAccount, SavedAccount, type CloudHub } from "./account";
 import type { CloudConfig } from "./config";
 import { connectComputer } from "./connect";
@@ -61,8 +61,8 @@ const save = (dir: string, account: SavedAccount | null): void => {
 const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "desktop app";
 
 export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, local: boolean, open: (url: string) => Promise<void>): Cloud => {
-  const fetch = (url: string, init: RequestInit): Promise<Response> => {
-    trustSystemCAs();
+  const fetch = async (url: string, init: RequestInit): Promise<Response> => {
+    await systemCAs();
     return globalThis.fetch(url, init);
   };
   /** A hub that came with the account, at a team address, with its key; null for any other. */

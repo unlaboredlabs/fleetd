@@ -107,6 +107,9 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** Every chat's rows' heights as last measured, by key: a chat opened again lays its rows out at their heights at once. */
+const heights = new Map<string | number, number>();
+
 const RowView = memo(function RowView(props: {
   row: Row;
   project: ProjectRef;
@@ -382,6 +385,7 @@ export function ChatList(props: {
         items={rows}
         getKey={(r) => r.key}
         estimateSize={56}
+        heights={heights}
         // The list runs on behind the composer's island; its end keeps the island's room, so the last row scrolls
         // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
         // until then, a one-line island's.

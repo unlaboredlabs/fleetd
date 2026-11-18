@@ -1,5 +1,6 @@
 // The screen host: which component each route shows, so the router stays the one place routes meet screens.
 import { lazy, Suspense, type ReactNode } from "react";
+import { preloadable, preloadWhenIdle } from "../../ui";
 import type { Screen } from "./routes";
 import { ChatScreen } from "../chat";
 // Small, and in the title row of both its tabs: not a chunk of its own.
@@ -8,12 +9,19 @@ import { FactoryTabs } from "../factory/FactoryTabs";
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
-const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
+// Settings is loaded once the app has painted (preloadScreens), so its first open shows at once.
+const settings = () => import("../settings/SettingsScreen");
+const SettingsScreen = preloadable(() => settings().then((m) => m.SettingsScreen));
+/** Settings opens as a sheet over the app (Shell); the sheet ships in Settings' chunk. */
+export const SettingsSheet = preloadable(() => import("../settings/SettingsSheet").then((m) => m.SettingsSheet));
 const ScreensPage = lazy(() => import("../screensPage/ScreensPage").then((m) => ({ default: m.ScreensPage })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
 const StartScreen = lazy(() => import("../start/StartScreen").then((m) => ({ default: m.StartScreen })));
 const SetupScreen = lazy(() => import("../setup/SetupScreen").then((m) => ({ default: m.SetupScreen })));
+
+/** Loads, once the app has painted, the screens opened often enough that a wait on their first open would show. */
+export const preloadScreens = (): void => preloadWhenIdle(SettingsScreen, SettingsSheet);
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
 const Loading = ({ children }: { children: ReactNode }) => <Suspense fallback={<div aria-busy="true" />}>{children}</Suspense>;

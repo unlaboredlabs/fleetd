@@ -7,6 +7,7 @@ export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/ar
 export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";
 export { useReorder, type Reorder } from "./lib/reorder";
 export { BEAT_MS, BEATS, useBeat, useBeatRef } from "./lib/beat";
+export { afterFirstPaint, markShown, preloadable, preloadWhenIdle, type Preloadable } from "./lib/idle";
 
 export { Text, textClass, type TextProps, type TextSize, type TextTone, type TextStyleProps } from "./text/Text";
 export { Truncate, type TruncateProps } from "./text/Truncate";
@@ -55,7 +56,7 @@ export { profileLine, profileWord } from "./primitives/profiles";
 
 export { Code, InlineCode, renderTokens, type CodeProps } from "./markdown/Code";
 export { resolveLang, langForPath, highlight, type CodeLang, type Tokens } from "./markdown/highlighter";
-export { Markdown, type MarkdownProps } from "./markdown/Markdown";
+export { Markdown, preloadMarkdown, type MarkdownProps } from "./markdown/Markdown";
 export { VirtualList, type VirtualListProps } from "./list/VirtualList";
 export {
   AppFrame,

@@ -45,7 +45,10 @@ export const KEEPALIVE_MS = 25_000;
 const KEY_RECHECK_MS = 15_000;
 /** Bytes one connection may have waiting for its socket (app_ws/outbox.rs `MAX_QUEUED_BYTES`). */
 export const MAX_QUEUED_BYTES = 8 << 20;
-/** Bytes per connection per second shared by the live feed and status answers (live.rs `MAX_BYTES_PER_SEC`). */
+/**
+ * Bytes per connection per second shared by the live feed and status answers (live.rs `MAX_BYTES_PER_SEC`). A status
+ * answer waits on it only while its socket is behind; one that has taken everything gets the answer at once.
+ */
 export const MAX_BYTES_PER_SEC = 32 * 1024;
 
 /** The client messages the hub reads beyond the base set (the `ready` frame's `features`; the apps gate on them). */
@@ -527,9 +530,15 @@ export class AppWs {
         frame = errorFrame(internalError(), id);
       }
       const text = JSON.stringify(frame);
-      // Status answers share the live feed's per-connection budget: one over it waits for the next second.
+      // Status answers share the live feed's per-connection budget, so a slow link isn't sent more than it takes. A
+      // socket that has taken everything before gets its answer at once, spent from the budget so the feed yields to
+      // it; one still behind waits for the next second once the answer is over it.
       if (tool.startsWith("status_")) {
         for (;;) {
+          if (conn.buffered() === 0 && !conn.closed) {
+            conn.spend(this.hub.clock.now(), text.length);
+            break;
+          }
           const wait = conn.reserve(this.hub.clock.now(), text.length);
           if (wait === 0 || conn.closed) break;
           await Bun.sleep(wait);

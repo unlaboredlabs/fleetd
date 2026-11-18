@@ -169,8 +169,9 @@ export class Hubs {
   }
 
   /**
-   * Dials every hub. Main calls it once the first window shows: reading the OS's CAs and opening sockets (tens of ms)
-   * then happens beside the page, not before the window. A hub paired later dials at once.
+   * Dials every hub. Main calls it as it creates the first window, so the hub answers while the page loads: the
+   * page's subscribe then gets the snapshot main holds (HubService) rather than waiting on a round trip. A hub paired
+   * later dials at once.
    */
   start(): void {
     this.#started = true;

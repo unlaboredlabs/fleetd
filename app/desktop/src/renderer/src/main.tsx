@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { sendKept } from "../screens/checklist/removal";
 import { registerSettingsCommands } from "../screens/settings/commands";
-import { applyTheme, storedMode, UiProvider, type ThemeMode } from "../ui";
+import { applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
 import { App } from "./App";
 import { Boundary, reportError } from "./Boundary";
 import { FIRST_HUB } from "../../shared/hubs";
@@ -34,6 +34,10 @@ const first = hubs.getState().hubs[0]?.layer;
 if (first !== undefined) registerSettingsCommands(first);
 // Checklist removals the last run quit before sending, each to its own hub.
 sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer);
+
+// The chat's messages are markdown: its parser loads alongside the first render and the hub's first data, not after.
+// Asked for before the render is, so it is handled first.
+preloadMarkdown();
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");

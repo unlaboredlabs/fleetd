@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import type { WebContents } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HubCacheFile } from "./cache";
-import { HubService } from "./service";
+import { HELD_EVENTS_MAX, HubService } from "./service";
 import type { CredentialEnv } from "./credentials";
 import type { FixtureFile } from "./fixture";
 import type { ConnectionEvents, Transport } from "./transport";
@@ -79,6 +79,53 @@ describe("hub service", () => {
     hub?.onOpen();
     hub?.onText(JSON.stringify({ t: "ready", protocol: 1 }));
     expect(sent.filter((m) => m["t"] === "live")).toEqual([{ t: "live", board: true, focus: "ws-1" }]);
+    service.stop();
+  });
+
+  it("starts a window that subscribes after the hub answered from what main holds, not a round trip", () => {
+    const sent: Record<string, unknown>[] = [];
+    let events: ConnectionEvents | null = null;
+    const transport: Transport = (_url, e) => {
+      events = e;
+      return { send: (text) => sent.push(JSON.parse(text) as Record<string, unknown>), ping: () => undefined, close: () => undefined };
+    };
+    const service = new HubService({ kind: "hub", id: "hub", credentials: {} as CredentialEnv, loaded: { saved: { url: "http://devbox:4790", key: "k1" } }, ephemeral: true, transport, cache: cacheFile().cache });
+    const frames: { t: string; seq?: number }[] = [];
+    const window = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      send: (_channel: string, _hub: string, frame: { t: string; event?: { seq: number } }) => frames.push(frame.event === undefined ? { t: frame.t } : { t: frame.t, seq: frame.event.seq }),
+    }) as unknown as WebContents;
+    const snapshots = () => sent.filter((m) => m["t"] === "snapshot").length;
+    // Dialled as the window opens; the hub answers while its page still loads.
+    service.start();
+    const hub = events as ConnectionEvents | null;
+    hub?.onOpen();
+    hub?.onText(JSON.stringify({ t: "ready", protocol: 1 }));
+    hub?.onText(JSON.stringify({ t: "snapshot", cursor: 10, machines: [] }));
+    hub?.onText(JSON.stringify({ t: "event", seq: 11, type: "task.started" }));
+    expect(snapshots()).toBe(1);
+    // The page subscribes: the state, the held snapshot and the event since, at once; no second snapshot is asked for.
+    service.subscribe(window);
+    expect(frames).toEqual([{ t: "state" }, { t: "snapshot" }, { t: "event", seq: 11 }]);
+    expect(snapshots()).toBe(1);
+    // What comes after reaches it as it comes.
+    hub?.onText(JSON.stringify({ t: "event", seq: 12, type: "task.started" }));
+    expect(frames.at(-1)).toEqual({ t: "event", seq: 12 });
+    // Too much since the snapshot to be worth playing back: a window subscribing now asks for a fresh one.
+    for (let seq = 13; seq <= 13 + HELD_EVENTS_MAX; seq++) hub?.onText(JSON.stringify({ t: "event", seq, type: "task.started" }));
+    frames.length = 0;
+    service.subscribe(window);
+    expect(frames).toEqual([{ t: "state" }]);
+    expect(snapshots()).toBe(2);
+    // Its answer is held again for the next; a dropped link holds nothing.
+    hub?.onText(JSON.stringify({ t: "snapshot", cursor: 300, machines: [] }));
+    frames.length = 0;
+    service.subscribe(window);
+    expect(frames).toEqual([{ t: "state" }, { t: "snapshot" }]);
+    hub?.onClose(1006, "");
+    frames.length = 0;
+    service.subscribe(window);
+    expect(frames).toEqual([{ t: "state" }]);
     service.stop();
   });
 

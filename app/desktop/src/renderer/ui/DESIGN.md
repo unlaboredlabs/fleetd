@@ -124,8 +124,11 @@ breaks a rule changes this page in the same PR and says why.
 - **The bot is the one exception to the beat** (D377, `primitives/Bot`, `lib/botLife`): one character for every
   project without a picture, whose motion says its state (idle, thinking, working, needs you, done, an error). Its
   channels are springs at the display's rate, so a state change blends from wherever it is. It draws frames only while
-  it's on screen, the window is visible and it moves: idle bots in a list take turns for a blink or a glance, one every
-  1.6 to 3.6 s, and only a bot in a live state keeps moving. While you type every bot holds still (its clock stops) until
+  it's on screen, the window is visible and focused, and it moves: idle bots in a list take turns for a blink or a
+  glance, one every 1.6 to 3.6 s, and only a bot in a live state keeps moving. A frame is drawn only once its outline
+  has moved a quarter of a device pixel: the clock looks ahead on a copy of the rig and sleeps until then, rather than
+  waking every display frame (a 60 fps loop for six bots was 15% of a core at rest). Out of focus every bot settles into
+  its still pose, as with reduced motion, and so does the beat. While you type every bot holds still (its clock stops) until
   1.2 s after the last key, so a key press never waits on its frame. With reduced motion each state settles into its
   still pose. It has no circle: the body alone, in one calm slate, is the picture, cropped to fill its box, and its hops
   and slumps reach past it, so nothing that holds it clips it (pictures and initials stay round). Below 44 px as drawn

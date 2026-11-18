@@ -21,6 +21,9 @@ export interface VirtualListProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
   /** A first guess at a row's height; rows are measured after they render, so they can be any height. */
   estimateSize?: number;
+  /** Heights of rows measured before, by key, kept and read across lists: a row drawn again (a chat opened again) starts
+   * at its height rather than the guess, so its first layout is its last. Only for keys unique across the lists. */
+  heights?: Map<string | number, number>;
   overscan?: number;
   /** Space between rows, px. */
   gap?: number;
@@ -40,6 +43,18 @@ export interface VirtualListProps<T> {
   role?: "list" | "presentation";
 }
 
+/** How many rows' heights a `heights` map keeps, the oldest dropped first. */
+const HEIGHTS_MAX = 5000;
+const remember = (heights: Map<string | number, number>, key: string | number, height: number): void => {
+  if (heights.get(key) === height) return;
+  heights.delete(key);
+  heights.set(key, height);
+  if (heights.size > HEIGHTS_MAX) {
+    const oldest = heights.keys().next().value;
+    if (oldest !== undefined) heights.delete(oldest);
+  }
+};
+
 /**
  * A long list that renders only what is on screen. It fills its parent's height and scrolls itself. Rows size to
  * their content (wrapped text included) and are re-measured when they resize.
@@ -54,7 +69,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => props.estimateSize ?? 28,
+    estimateSize: (i) => {
+      const item = items[i];
+      return (item === undefined ? undefined : props.heights?.get(getKey(item, i))) ?? props.estimateSize ?? 28;
+    },
     getItemKey: (i) => {
       const item = items[i];
       return item === undefined ? i : getKey(item, i);
@@ -89,6 +107,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       if (!(child instanceof HTMLElement)) continue;
       const index = Number(child.dataset["index"]);
       const measured = Math.round(child.getBoundingClientRect().height);
+      const item = items[index];
+      if (props.heights && item !== undefined) remember(props.heights, getKey(item, index), measured);
       if (sizes.has(index) && sizes.get(index) !== measured) virtualizer.resizeItem(index, measured);
     }
   });

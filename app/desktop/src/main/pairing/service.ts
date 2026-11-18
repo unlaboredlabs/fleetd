@@ -19,7 +19,7 @@ import {
 } from "../../shared/pairing";
 import { privateHubOrigin, readAppPairFile, removeAppPairFile, type FileRead } from "./appPairFile";
 import { probe, redeem, type Fetch } from "./hubHttp";
-import { trustSystemCAs } from "../trust";
+import { systemCAs } from "../trust";
 import { openSetup, realTerminalDeps } from "./terminal";
 
 /** The startup probe only decides a hint, so it gives up quickly. */
@@ -57,8 +57,8 @@ export const realPairingDeps = (
 ): PairingDeps => ({
   keyStore,
   // Node's fetch, not Electron's `net`: the page's session (defaultSession) blocks every request but its own origin.
-  fetch: (url, init) => {
-    trustSystemCAs();
+  fetch: async (url, init) => {
+    await systemCAs();
     return globalThis.fetch(url, init);
   },
   connect,

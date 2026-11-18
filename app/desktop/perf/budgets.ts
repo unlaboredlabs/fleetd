@@ -11,6 +11,13 @@ export interface Results {
   /** firstPaintMs minus firstPaintRefMs: what the app adds to Electron's own start, which CI gates. */
   readonly firstPaintOverMs: number;
   /**
+   * Median, ms from spawning the app until the chat it opens on shows its words (three rows in, no markdown
+   * placeholder left, and its composer): the same warm launches as first paint.
+   */
+  readonly chatShownMs: number;
+  /** chatShownMs minus firstPaintRefMs: what the app adds before its chat reads, over Electron's own start; CI gates it. */
+  readonly chatOverMs: number;
+  /**
    * The memory budget, MB, after 10 s idle: deduplicated memory summed over every app process. On Linux that is PSS;
    * on macOS the physical footprint (Activity Monitor's "Memory").
    */
@@ -45,6 +52,10 @@ export const RULES: Record<Metric, Rule> = {
   firstPaintMs: { label: "first paint", unit: "ms", higher: false, limit: 600 },
   firstPaintRefMs: { label: "bare Electron", unit: "ms", higher: false },
   firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
+  chatShownMs: { label: "chat shown", unit: "ms", higher: false },
+  // What a start costs past first paint (the hub's data, the chat's rows and their markdown), which "app over bare"
+  // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there.
+  chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI reads about 58 a round

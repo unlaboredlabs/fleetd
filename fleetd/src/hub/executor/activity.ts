@@ -1,6 +1,7 @@
 // What each followed thread is doing now, for the app's live lanes: one ActivityTracker (./activity_tracker.ts) per
 // followed thread. Fed every thread event of a followed session: `activity(hub).onThreadEvent(machineId, frame)` from
-// the executor; read by /app's live pump through `activity(hub).live(ref)`.
+// the executor; read by /app's live pump through `activity(hub).live(ref)`, which `watch`es for the threads that moved
+// so a lane reaches the app as it changes rather than on its next tick.
 import type { ThreadRef } from "../../shared/contracts.ts";
 import type { ThreadEventFrame } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
@@ -27,6 +28,7 @@ const PRUNE_EVERY_MS = 60_000;
 /** Every followed thread's tracker, by machine and thread. */
 export class Activities {
   private readonly trackers = new Map<string, { tracker: ActivityTracker; ready: boolean; lastMs: number }>();
+  private readonly watchers = new Set<(r: ThreadRef) => void>();
   private lastPruneMs = 0;
 
   constructor(private readonly hub: Hub) {}
@@ -44,6 +46,20 @@ export class Activities {
       entry.ready = true;
     }
     entry.tracker.apply(frame.event, now);
+    const ref = { machineId, threadId: frame.sessionId };
+    for (const watcher of this.watchers) {
+      try {
+        watcher(ref);
+      } catch (error) {
+        console.error("activity watcher failed:", error);
+      }
+    }
+  }
+
+  /** Calls `fn` after each thread event a tracker took, with its thread. Returns the unwatch. */
+  watch(fn: (r: ThreadRef) => void): () => void {
+    this.watchers.add(fn);
+    return () => this.watchers.delete(fn);
   }
 
   /** Drops the trackers idle past TRACKER_IDLE_MS with no run going, at most once a minute. */

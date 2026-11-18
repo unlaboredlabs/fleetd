@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { appWs } from "../src/hub/app_ws/index.ts";
+import { MAX_BYTES_PER_SEC } from "../src/hub/app_ws/server.ts";
 import { doctor } from "../src/hub/doctor/index.ts";
 import { updates } from "../src/hub/update/tools.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
@@ -174,6 +175,26 @@ test("the seam: on(type) serves an area's message, sendTo answers it, onClose he
   for (let i = 0; i < 100 && closed === 0; i++) await Bun.sleep(5);
   expect(closed).toBe(1);
   off();
+});
+
+test("a status answer doesn't wait behind the live feed's budget on a socket that takes everything", async () => {
+  // Answers as big as a 40-bot hub's status (29 KB): two of them, or one after a busy second of the feed, pass the
+  // connection's 32 KB/s budget. Each still comes at once; only a socket still behind waits for the next second.
+  const rows = Array.from({ length: 300 }, (_, i) => ({ state: "running", items: [{ title: `${"x".repeat(80)} ${i}` }] }));
+  tools.add("status_get", () => ({ rows }) as never);
+  const key = insertKey(hub.db, all, "status-busy");
+  const { app } = await authed(key);
+  const conn = appWs(hub).connections().find((c) => c.key === key);
+  expect(conn).toBeDefined();
+  // The feed spent this second's budget, as a busy board does.
+  conn?.spend(hub.clock.now(), MAX_BYTES_PER_SEC);
+  for (const id of ["s1", "s2", "s3"]) {
+    const t0 = performance.now();
+    await app.send({ t: "call", id, tool: "status_get", input: {} });
+    expect(await app.next((f) => f.id === id)).toMatchObject({ t: "result", output: { rows: expect.any(Array) } });
+    expect(performance.now() - t0).toBeLessThan(100);
+  }
+  app.close();
 });
 
 test("each frame runs on the key as it is now: a person lowered to member loses admin on their open connection", async () => {

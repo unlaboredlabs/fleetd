@@ -9,6 +9,7 @@ import {
   type LiveText,
   type MachineLive,
   type SlotState,
+  type ThreadRef,
 } from "../../../shared/contracts.ts";
 import { isoMs } from "../../auth/index.ts";
 import type { StreamText } from "../../executor/activity.ts";
@@ -16,8 +17,8 @@ import type { StreamText } from "../../executor/activity.ts";
 /** The hub keeps an encoded frame under this; lanes that don't fit go in the next tick. */
 export const LIVE_MAX_FRAME_BYTES = 16 * 1024;
 
-/** One lane in scope at this tick, with its streamed text when it is focused. */
-export type LaneNow = { lane: LiveLane; text?: StreamText };
+/** One lane in scope at this tick, with its streamed text when it is focused, and the thread it follows. */
+export type LaneNow = { lane: LiveLane; text?: StreamText; thread?: ThreadRef };
 
 /** What a tick read. Absent parts were not read this tick and stay as last sent. */
 export type TickInput = {
