@@ -1,9 +1,9 @@
 // The sidebar's foot (W530, W714): you, and beside you Screens and the Factory, rarely opened, as two small icons,
 // Screens marked while one needs you. Your picture and name open your menu: who you are, this app's own update when
 // there is one, Settings, Appearance, Keyboard shortcuts and Help; on the web, Sign out. The row is your picture and
-// name alone; an update says itself quietly as a small mark on your picture while it runs and a while after, its word
-// in the tooltip (updates/quiet.ts: "Updating…", "Updated", "Not updated", or "Update" with one to take). Hubs, and
-// what is off with them, are the hub row's (Sidebar.tsx HubSwitcher), which useHubsMark marks.
+// name alone; this app's update to take, going on or not taken is a small mark on your picture, its words in the
+// tooltip and its row in the menu (AppItem). Hubs, and what is off with them, a hub's update among it, are the hub
+// row's (Sidebar.tsx HubSwitcher), which useHubsMark and useHubUpdate mark.
 import { ArrowUpRight, Factory, Keyboard, LifeBuoy, LogOut, Monitor, MonitorSmartphone, Moon, Settings, Sun, SunMoon } from "lucide-react";
 import type { ReactNode } from "react";
 import { display } from "../../../shared/shortcuts";
@@ -12,7 +12,8 @@ import { Avatar, Kbd, Menu, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, Me
 import { openShortcuts } from "../palette/state";
 import { onWeb } from "../../src/web";
 import { useHubRole } from "../admin/role";
-import { useQuiet } from "../updates";
+import { useAppUpdate } from "../updates/state";
+import { appLine } from "./youMenu";
 import { AppItem, useWorkMark } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
@@ -107,25 +108,25 @@ export const useHubsMark = (): HubMark | null => worst([...useLinkMarks(), useWo
  * Sign out. Hubs aren't here: they are the hub row's (Sidebar.tsx HubSwitcher), with what is off with each.
  */
 export function You({ go }: Pick<YouProps, "go">) {
-  const hub = useHubState();
   const role = useHubRole();
   const me = role.me;
   const picture = usePersonPicture(me?.personId, me?.avatar);
-  const quiet = useQuiet(hub);
+  // This app's own update, the one thing the menu under your name acts on: a hub's is the hub switcher's.
+  const app = appLine(useAppUpdate());
   const name = me?.name ?? "You";
-  const said = [name, quiet === null ? null : quiet.word.text].filter((x) => x != null).join(", ");
+  const said = [name, app?.text].filter((x) => x != null).join(", ");
   const roleWord = me === undefined ? "" : me.role.charAt(0).toUpperCase() + me.role.slice(1);
 
   return (
     <div className={s.you}>
       <Menu>
-        <Tooltip content={quiet?.word.text}>
+        <Tooltip content={app?.text}>
           <MenuTrigger asChild>
             <button type="button" className={s.me} aria-label={said} data-opens="you">
               <span className={s.meAvatar}>
                 <Avatar name={name} size={24} src={picture} />
-                {/* An update going on, in or to take: a small mark, its word in the tooltip and its row in the menu. */}
-                {quiet === null ? null : <span className={s.meMark} data-tone="update" aria-hidden />}
+                {/* This app's update to take, going on or not taken: a small mark, its words in the tooltip and its row in the menu. */}
+                {app === null ? null : <span className={s.meMark} data-tone="update" aria-hidden />}
               </span>
               <span className={s.meName}>{name}</span>
             </button>

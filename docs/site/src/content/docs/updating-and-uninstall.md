@@ -49,9 +49,8 @@ seconds of restart fails, and the agent tries it again. A machine counts as upda
 build.
 
 While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
-goes once the hub is back. For an update, a small mark on your picture at the bottom of the sidebar says **Updating…**
-when you point at it; past 10 seconds the
-screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**; past 2
+goes once the hub is back. For an update, the hub's menu at the top of the sidebar says **Updating…** under the hub;
+past 10 seconds the screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**; past 2
 minutes it is shown as offline. Any other restart or stop says nothing of updates and is shown as offline once it
 passes 10 seconds. Back on the new build, it says **Updated** for 15 minutes. When the hub or a machine didn't take
 the new build, it says **Not updated** to owners and admins, and the menu there has a row saying what didn't update

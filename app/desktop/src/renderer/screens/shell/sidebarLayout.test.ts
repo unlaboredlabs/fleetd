@@ -24,6 +24,18 @@ describe("the rows on show, which ⌘1–9 count", () => {
     expect(keys(shownRows(ROWS, view({ sort: "needs" }), "a"))).toEqual(["pin", "Api", "top", "garden"]);
   });
 
+  it("are sorted within each section, the groups in the frame's order, as the sidebar draws them", () => {
+    const sectioned = [
+      { ...row("zed", "a"), section: undefined },
+      { ...row("amy", "a"), section: undefined },
+      { ...row("web", "a", { want: true }), section: "work" },
+      { ...row("api", "a"), section: "work" },
+      { ...row("bee", "a", { want: true }), section: "home" },
+    ];
+    expect(keys(shownRows(sectioned, view({ sort: "name" }), "a"))).toEqual(["amy", "zed", "api", "web", "bee"]);
+    expect(keys(shownRows(sectioned, view({ sort: "needs" }), "a"))).toEqual(["zed", "amy", "web", "api", "bee"]);
+  });
+
   it("keep the order they came in when sorted by recent", () => {
     const rest = ROWS.filter((r) => !r.pinned);
     expect(sortRows(rest, "recent")).toBe(rest);

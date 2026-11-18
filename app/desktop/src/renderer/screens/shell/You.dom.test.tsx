@@ -180,10 +180,11 @@ it("lets only the hub's name give way in a narrow line, whole on hover; what is 
   expect([...(name?.parentElement?.children ?? [])].map((c) => c.textContent)).toEqual(["devbox", " refused the key"]);
 });
 
-it("says nothing through an update's restart, and that the hub is out of reach only after 2 minutes", async () => {
+it("says the hub is updating through an update's restart, and out of reach only after 2 minutes", async () => {
   const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms, updatingTo: "0.9.3" });
   await mount(away(1_000));
-  expect(lines()).toEqual([]);
+  expect(lines()).toEqual(["devbox · Updating…"]);
+  expect(line("hub")?.dataset["mark"]).toBe("ring");
   close();
   await mount(away(130_000));
   expect(lines()).toEqual(["Can't reach devbox · Retry"]);

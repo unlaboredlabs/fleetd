@@ -48,7 +48,7 @@ import { addSection, changeSections, moveChat, moveSection, newSectionId, remove
 import type { Placed } from "./Shell";
 import { holdRows } from "./sidebarState";
 import { setListView, showHub, shownRows, SORTS, sortRows, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
-import { HubLines } from "./HubStatus";
+import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
 import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
@@ -171,20 +171,22 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
  */
 function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   const hubs = useHubs();
-  // Something is off with a hub, or another hub wants you: the switcher says so, quietly, without opening.
+  // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
+  // without opening.
   const off = useHubsMark();
+  const update = useHubUpdate();
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
   const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(projects, h.id) > 0);
   return (
     <Menu>
-      <Tooltip content={off?.why}>
+      <Tooltip content={off?.why ?? update ?? undefined}>
         <MenuTrigger asChild>
-          <button type="button" className={s.switcher} aria-label={[hub.label, elsewhere ? "another hub needs you" : null, off?.why].filter((w) => w != null).join(", ")} data-opens="hubs" data-mark={off?.tone}>
+          <button type="button" className={s.switcher} aria-label={[hub.label, elsewhere ? "another hub needs you" : null, off?.why, update].filter((w) => w != null).join(", ")} data-opens="hubs" data-mark={off?.tone}>
             <HubMark hub={hub} size={20} />
             <span className={s.switcherName}>{hub.label}</span>
             <ChevronDown className={s.switcherChevron} aria-hidden />
-            {elsewhere || off !== null ? <span className={s.dot} data-want="you" data-tone={off?.tone} aria-hidden /> : null}
+            {elsewhere || off !== null || update !== null ? <span className={s.dot} data-want="you" data-tone={off?.tone} aria-hidden /> : null}
           </button>
         </MenuTrigger>
       </Tooltip>

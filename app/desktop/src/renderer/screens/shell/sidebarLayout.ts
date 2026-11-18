@@ -85,6 +85,7 @@ interface Shown {
   readonly hub: string;
   readonly pinned: boolean;
   readonly want?: unknown;
+  readonly section?: string | undefined;
   readonly project: { readonly title: string };
 }
 
@@ -96,8 +97,17 @@ export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarS
       ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
       : rows;
 
-/** The rows on show, in order: the hub's pins, then its other bots in the list's order. ⌘1–9 count these. */
+/**
+ * The rows on show, in the order the sidebar draws them: the hub's pins, then its other bots group by group (the chats
+ * in no section, then each section, in the order the frame arranged them), each group in the list's order. ⌘1–9 count
+ * these.
+ */
 export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string): ReadonlyArray<P> => {
   const own = rows.filter((p) => p.hub === hub);
-  return [...own.filter((p) => p.pinned), ...sortRows(own.filter((p) => !p.pinned), v.sort)];
+  const rest = own.filter((p) => !p.pinned);
+  const group = new Map<string | undefined, number>();
+  for (const p of rest) if (!group.has(p.section)) group.set(p.section, group.size);
+  // A stable sort by group keeps each group in the list's order.
+  const grouped = sortRows(rest, v.sort).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
+  return [...own.filter((p) => p.pinned), ...grouped];
 };

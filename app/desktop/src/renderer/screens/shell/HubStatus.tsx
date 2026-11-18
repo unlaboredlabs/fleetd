@@ -16,7 +16,7 @@ import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
 import { startScreen } from "../start/kept";
 import { useStartLeft } from "../start/state";
-import { appLine, machinesLine, menuLines, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
+import { appLine, machinesLine, menuLines, setupLine, updateLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
 
@@ -86,6 +86,12 @@ export function AppItem() {
   return line === null ? null : <LineItem line={line} act={act} />;
 }
 
+/**
+ * The hub in scope's update that needs someone, an owner's or admin's to take or one that didn't go in (youMenu.ts
+ * updateLine): the hub switcher's dot, its words in the tooltip; null while there is none.
+ */
+export const useHubUpdate = (): string | null => updateLine(useQuiet(useHubState(), false))?.text ?? null;
+
 /** This hub's machines as the menu reads them; undefined until they are known. */
 const useMenuMachines = (): readonly MenuMachine[] | undefined => useData(selectMachines)?.map((m) => m.machine);
 
@@ -115,8 +121,8 @@ export const useWorkMark = (): HubMark | null => {
 
 /**
  * The hub in scope's lines under its name in the hub switcher: what is off with it, each with the one thing to do. The
- * hub's own line shows only when there is something to do (Retry, Pair): all well, connecting or updating, its name
- * above says enough.
+ * hub's own line shows only when it has something to do (Retry, Pair) or to say (Updating…, Updated, Reconnecting…):
+ * all well or connecting, its name above says enough.
  */
 export function HubLines() {
   const hub = useHubState();
@@ -125,7 +131,7 @@ export function HubLines() {
   const startLeft = useStartLeft();
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
-  const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() }).filter((l) => !(l.key === "hub" && l.action === undefined));
+  const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() }).filter((l) => !(l.key === "hub" && l.action === undefined && l.aside === undefined));
   const layer = useDataLayer();
   const self = useHub();
   const several = work.label !== null;
