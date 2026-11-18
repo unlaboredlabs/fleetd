@@ -53,10 +53,13 @@ const read = (file: string) => {
 const settingsFlags = (args: string[]) => args.flatMap((a, i) => (args[i - 1] === "--settings" ? [a] : []));
 const inline = (v: string) => v.trimStart().startsWith("{");
 
+/** Where claude reads a machine's managed settings, which rank above every other. */
+export const MANAGED_SETTINGS = "/etc/claude-code/managed-settings.json";
+
 /** The Claude endpoint claude picks for launch `l`, lowest first: its environment, the user's settings, the project's,
- * the project's local ones, then each `--settings` (a file or inline JSON). The machine's managed settings aren't a
- * box's: its /etc is its own. */
-export function claudeEndpoint(l: Pick<Launch, "env" | "args" | "cwd">): Endpoint {
+ * the project's local ones, each `--settings` (a file or inline JSON), then, with `managed` (a local VM, whose /etc is
+ * this machine's), this machine's managed settings. A hosted box's /etc is its own. */
+export function claudeEndpoint(l: Pick<Launch, "env" | "args" | "cwd">, managed = false): Endpoint {
   let found: Endpoint = { url: ANTHROPIC_API, source: "Anthropic's API, the default" };
   const fromEnv = l.env.ANTHROPIC_BASE_URL?.trim();
   if (fromEnv) found = { url: fromEnv, source: "the environment" };
@@ -64,6 +67,7 @@ export function claudeEndpoint(l: Pick<Launch, "env" | "args" | "cwd">): Endpoin
   for (const [text, source] of [
     ...files.map((f) => [read(f), f] as const),
     ...settingsFlags(l.args).map((f) => (inline(f) ? ([f, "--settings"] as const) : ([read(f), f] as const))),
+    ...(managed ? [[read(MANAGED_SETTINGS), MANAGED_SETTINGS] as const] : []),
   ]) {
     const url = settingsUrl(text);
     if (url) found = { url, source };
@@ -159,15 +163,29 @@ export async function loopbackFor(port: number, ms = 1_000): Promise<string> {
  * project's settings: the file's or inline JSON, merged, inline. Unchanged when the box calls the URL as set. */
 export function boxArgs(args: string[], r: Pick<Reach, "url" | "boxUrl">): string[] {
   if (r.boxUrl === r.url) return args;
+  return withSettings(args, (base) => ({ ...base, env: { ...((base.env as Record<string, unknown>) ?? {}), ANTHROPIC_BASE_URL: r.boxUrl } }));
+}
+
+/** claude's argv with its `--settings` (the file's or inline JSON, or none) changed by `edit`, inline. */
+export function withSettings(args: string[], edit: (base: Record<string, unknown>) => Record<string, unknown>): string[] {
   const at = args.findIndex((a, i) => args[i - 1] === "--settings");
-  let base: { env?: Record<string, unknown> } = {};
+  let base: Record<string, unknown> = {};
   if (at >= 0) {
     try {
       base = JSON.parse(inline(args[at]!) ? args[at]! : (read(args[at]!) ?? "{}"));
     } catch {}
   }
-  const merged = JSON.stringify({ ...base, env: { ...(base.env ?? {}), ANTHROPIC_BASE_URL: r.boxUrl } });
+  const merged = JSON.stringify(edit(base));
   return at >= 0 ? args.map((a, i) => (i === at ? merged : a)) : [...args, "--settings", merged];
+}
+
+/** claude's argv with `command` run after each of its tool calls, beside any hooks its settings have. */
+export function withPostToolHook(args: string[], command: string): string[] {
+  return withSettings(args, (base) => {
+    const hooks = (base.hooks as Record<string, unknown[]> | undefined) ?? {};
+    const after = [...(hooks.PostToolUse ?? []), { matcher: "*", hooks: [{ type: "command", command }] }];
+    return { ...base, hooks: { ...hooks, PostToolUse: after } };
+  });
 }
 
 const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;

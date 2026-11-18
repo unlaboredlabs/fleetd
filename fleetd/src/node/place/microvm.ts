@@ -32,7 +32,7 @@ import { descendants, table } from "../runner/procs.ts";
 import { hostScope, spawnScoped, type Scope } from "../runner/scope.ts";
 import { Box } from "../sandbox/box.ts";
 import { excludeInCheckout } from "../sessions/files.ts";
-import { HOST_TAG } from "../sandbox/system.ts";
+import { HOST_TAG, OOM_HOOK } from "../sandbox/system.ts";
 import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
 import { ensureTools, findTools, vmDir, type VmTools } from "../../sandbox/host/tools.ts";
 import { fleetdDir } from "../../shared/home.ts";
@@ -44,17 +44,29 @@ import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
-import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, type Reach } from "./endpoint.ts";
+import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
-/** A box's guest memory and CPUs: 4 GiB (design §7), and 4 vCPUs, which cost no memory and match the 4 workers an
- * agent's test runners get. With 2, fleetd's own test suite took 317.7 s in a VM, and 238.8 s with 4 beside it. */
-export const GUEST_MEM_BYTES = 4 * 2 ** 30;
+/** A box's guest memory by default, GiB, and its CPUs. 8 GiB: in 4, a real crate's tests didn't link (rustc killed at
+ * 3.5 GB), and fleetd's own check peaked at 3 GB. A machine sets its own in node.json (`vmMemoryGiB`, 2 to 256). 4 vCPUs,
+ * which cost no memory and match the 4 workers an agent's test runners get: with 2, fleetd's own test suite took
+ * 317.7 s in a VM, and 238.8 s with 4 beside it. */
+export const GUEST_MEM_GIB = 8;
 export const GUEST_CPUS = 4;
-/** What a box takes of the machine's memory, for its cap: the guest plus the VMM, virtiofsd and passt (~30 MB
- * measured), rounded up to 4.1 GiB (design §7's cap table). */
-export const MEM_PER_AGENT_BYTES = Math.round(4.1 * 2 ** 30);
+
+/** This machine's VMs' memory, GiB: node.json's `vmMemoryGiB` when it's a whole number from 2 to 256, else the default. */
+export function guestMemGiB(home: string): number {
+  let n: unknown;
+  try {
+    n = readConfig(home)?.vmMemoryGiB;
+  } catch {}
+  return typeof n === "number" && Number.isInteger(n) && n >= 2 && n <= 256 ? n : GUEST_MEM_GIB;
+}
+
+/** What a box takes of the machine's memory, for its cap: all of its guest's (what a guest has touched isn't given
+ * back), plus the VMM, virtiofsd and passt (~30 MB measured), rounded up by 0.1 GiB (design §7's cap table). */
+export const memPerAgentBytes = (gib: number) => Math.round((gib + 0.1) * 2 ** 30);
 /** The vsock port sandbox-guest listens on in every box (each VM has its own vsock space). */
 export const GUEST_PORT = 5000;
 const GUEST_ADDR = "10.0.2.15";
@@ -87,6 +99,8 @@ export type BootPlan = {
   check: Extract<VmCheck, { ok: true }>;
   blocked: string[];
   scope?: Scope;
+  /** The guest's memory, GiB (GUEST_MEM_GIB when absent). */
+  memGiB?: number;
 };
 /** What a box's boot leaves: its launcher, its VMM and helpers once they run, virtiofsd among them, and the shell
  * holding its network namespace. */
@@ -237,6 +251,11 @@ export class MicroVm {
     }
   }
 
+  /** This machine's VMs' memory, GiB. */
+  memGiB(): number {
+    return guestMemGiB(this.o.home);
+  }
+
   /** Whether session `session` runs in a box of this node's now (one booting counts). */
   holds(session: string): boolean {
     for (const dir of this.#boxes.keys()) if (dir.split("/").at(-1) === session) return true;
@@ -376,7 +395,7 @@ export class MicroVm {
     }
     // Claude, whatever its endpoint, through the node, checked from inside the box: a box that can't reach it runs
     // nothing, and the agent runs as a plain process instead of stalling on every call.
-    const endpoint = claudeEndpoint(l);
+    const endpoint = claudeEndpoint(l, true);
     let args: string[];
     try {
       // The guest helper is root: the relay takes the endpoint's own port, and claude calls the URL as set.
@@ -384,7 +403,8 @@ export class MicroVm {
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
       writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
-      args = boxArgs(l.args, r);
+      // The guest's word that it ran out of memory reaches the agent at its next tool call, not a bare "Killed".
+      args = withPostToolHook(boxArgs(l.args, r), OOM_HOOK);
     } catch (error) {
       const why = `${(error as Error).message} (the endpoint from ${endpoint.source})`;
       console.warn(`${nowIso()} WARN a VM couldn't reach Claude: the session runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify(why)}}`);
@@ -448,7 +468,7 @@ export class MicroVm {
     const at = Date.now();
     this.#net = check.net;
     const blocked = this.#addrs();
-    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, ...(scope ? { scope } : {}) };
+    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, memGiB: this.memGiB(), ...(scope ? { scope } : {}) };
     const booted = await (this.o.boot ?? bootCloudHypervisor)(plan);
     const record: BoxRecord = {
       kind: "microvm",
@@ -569,11 +589,11 @@ function toolsOrThrow(): NetTools {
   return net;
 }
 
-/** A heartbeat's word on where this machine's agents run: in VMs, sized at MEM_PER_AGENT_BYTES each for the hub's cap,
+/** A heartbeat's word on where this machine's agents run: in VMs of `memGiB` each (memPerAgentBytes, for the hub's cap),
  * or as plain processes and why. */
-export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus): void {
+export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus, memGiB = GUEST_MEM_GIB): void {
   load.sandbox = status;
-  if (status.kind === "microvm") load.memPerAgentBytes = MEM_PER_AGENT_BYTES;
+  if (status.kind === "microvm") load.memPerAgentBytes = memPerAgentBytes(memGiB);
 }
 
 /**
@@ -723,7 +743,7 @@ function consoleTail(dir: string): string {
 
 /** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the
  * user the guest runs the agent as (this machine's own, sandbox-guest's FLEETD_GUEST_UID and _GID). */
-export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; like?: HostLike }): string {
+export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; like?: HostLike; memGiB?: number }): string {
   return [
     "console=ttyS0",
     "root=/dev/vda",
@@ -742,6 +762,7 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
     "fleetd.once=1",
     ...(p.uid !== undefined && p.gid !== undefined ? [`fleetd.uid=${p.uid}`, `fleetd.gid=${p.gid}`] : []),
     ...(p.like ? [`fleetd.umask=${p.like.umask}`, `fleetd.watches=${p.like.watches}`, `fleetd.instances=${p.like.instances}`] : []),
+    ...(p.memGiB ? [`fleetd.mem=${p.memGiB}`] : []),
   ].join(" ");
 }
 
@@ -806,13 +827,13 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--kernel",
     tools.kernel,
     "--cmdline",
-    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, like: hostLike() }),
+    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, like: hostLike(), memGiB: b.memGiB ?? GUEST_MEM_GIB }),
     "--disk",
     `path=${tools.root},readonly=on,image_type=raw`,
     "--cpus",
     `boot=${GUEST_CPUS}`,
     "--memory",
-    `size=${GUEST_MEM_BYTES / 2 ** 20}M,shared=on`,
+    `size=${(b.memGiB ?? GUEST_MEM_GIB) * 1024}M,shared=on`,
     "--fs",
     `tag=view,socket=${SOCKS.fs}`,
     `tag=${HOST_TAG},socket=${SOCKS.host}`,

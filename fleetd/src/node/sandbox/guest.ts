@@ -43,7 +43,7 @@ import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
-import { layHostSystem, setClock } from "./system.ts";
+import { layHostSystem, setClock, watchOom } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
 export const GUEST_PROTOCOL = 1;
@@ -542,6 +542,7 @@ export async function main(argv: string[]): Promise<number> {
     try {
       const laid = layHostSystem();
       if (laid) process.stderr.write(`${new Date().toISOString()} INFO sandbox-guest: ${laid}\n`);
+      watchOom();
     } catch (error) {
       warn(`can't lay this machine's system dirs over the image's: ${(error as Error).message}`);
       return 1;

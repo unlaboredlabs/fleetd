@@ -228,3 +228,43 @@ function pidsOf(name: string): number[] {
     }
   });
 }
+
+/** Where a local VM's guest says its kernel ran out of memory, for the agent's next tool call (OOM_HOOK). */
+export const OOM_NOTE = "/run/fleetd/oom";
+
+/** The hook claude runs after each tool call in a local VM: the guest's word that it ran out of memory, once, as the
+ * tool call's feedback (exit 2), where the agent otherwise saw only "Killed". A shell test, a few ms a call. */
+export const OOM_HOOK = `f=${OOM_NOTE}; [ -s "$f" ] || exit 0; s="\${TMPDIR:-/tmp}/.fleetd-oom-seen"; cmp -s "$f" "$s" 2>/dev/null && exit 0; cp "$f" "$s" 2>/dev/null; cat "$f" >&2; exit 2`;
+
+/** The kernel's OOM kills so far (/proc/vmstat oom_kill). */
+const oomKills = (): number => Number(/^oom_kill (\d+)$/mu.exec(readFileSync("/proc/vmstat", "utf8"))?.[1] ?? 0);
+
+/** The line for the agent from the kernel's last OOM kill (dmesg's `Killed process <pid> (<name>) ... anon-rss:<kB>`). */
+export function oomLine(dmesg: string, memGiB: number, at: string): string {
+  const kills = [...dmesg.matchAll(/Killed process (\d+) \(([^)]*)\)[^\n]*?anon-rss:(\d+)kB/gu)];
+  const last = kills.at(-1);
+  const what = last ? `${last[2]} (pid ${last[1]}, ${(Number(last[3]) / 2 ** 20).toFixed(1)} GB)` : "a process";
+  return `fleetd: this VM ran out of its ${memGiB} GiB of memory at ${at}, and its kernel killed ${what}. Run less at once (fewer build jobs or test workers, -j 1), or ask for the machine's VMs to be made larger (node.json "vmMemoryGiB").\n`;
+}
+
+/** In a local VM: watches the kernel's OOM kills and writes the last one's line to OOM_NOTE, readable by the agent. */
+export function watchOom(env: Record<string, string | undefined> = process.env, everyMs = 2_000): void {
+  const memGiB = Number(env.FLEETD_GUEST_MEM) || 0;
+  if (process.getuid?.() !== 0 || !env.FLEETD_GUEST_UID || !memGiB) return;
+  let seen: number;
+  try {
+    seen = oomKills();
+  } catch {
+    return;
+  }
+  const timer = setInterval(() => {
+    try {
+      const now = oomKills();
+      if (now <= seen) return;
+      seen = now;
+      const dmesg = Bun.spawnSync(["dmesg"], { stdout: "pipe", stderr: "ignore" }).stdout.toString();
+      writeFileSync(OOM_NOTE, oomLine(dmesg, memGiB, new Date().toISOString().slice(11, 19)), { mode: 0o644 });
+    } catch {}
+  }, everyMs);
+  timer.unref?.();
+}

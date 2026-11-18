@@ -16,7 +16,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { inBox, leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, fdLimit, forgetAt, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { FAILED_MS, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -25,7 +25,8 @@ import type { VmTools } from "../../src/sandbox/host/tools.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
-import { apply, layHostSystem, plan } from "../../src/node/sandbox/system.ts";
+import { apply, layHostSystem, OOM_HOOK, OOM_NOTE, oomLine, plan } from "../../src/node/sandbox/system.ts";
+import { withPostToolHook } from "../../src/node/place/endpoint.ts";
 import { mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
 import type { Reach } from "../../src/node/place/endpoint.ts";
 
@@ -193,7 +194,7 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   expect(node({ config: { sandbox: "proces" } }).vm.status()).toEqual({ kind: "process", why: `node.json "sandbox" is "proces": "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` });
   const broken = node();
   writeFileSync(join(broken.home, "node.json"), "{ not json");
-  expect(broken.vm.status().why).toStartWith("node.json can't be read (");
+  expect(JSON.stringify(broken.vm.status())).toContain(`"kind":"process","why":"node.json can't be read (`);
   expect(node({ fleetd: ["/usr/bin/bun", "/src/main.ts"] }).vm.status().kind).toBe("process");
   const noKvm = node({ check: { ok: false, why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" } });
   expect(noKvm.vm.status()).toEqual({ kind: "process", why: "This user can't open /dev/kvm.", fix: "sudo usermod -aG kvm $USER" });
@@ -207,7 +208,11 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   // A heartbeat sizes the cap on the box's memory only when agents run in VMs, and says why when they don't.
   const load: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(load, { kind: "microvm" });
-  expect(load).toEqual({ sandbox: { kind: "microvm" }, memPerAgentBytes: Math.round(4.1 * 2 ** 30) });
+  expect(load).toEqual({ sandbox: { kind: "microvm" }, memPerAgentBytes: Math.round(8.1 * 2 ** 30) });
+  // A machine that sets its VMs' memory is counted at that.
+  reportVm(load, { kind: "microvm" }, guestMemGiB(node({ config: { vmMemoryGiB: 4 } }).home));
+  expect(load.memPerAgentBytes).toBe(Math.round(4.1 * 2 ** 30));
+  expect(guestMemGiB(node({ config: { vmMemoryGiB: 1 } }).home)).toBe(8);
   const plain: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(plain, { kind: "process", why: "no KVM" });
   expect(plain).toEqual({ sandbox: { kind: "process", why: "no KVM" } });
@@ -867,4 +872,26 @@ test("a box can mark its tool calls held for an update (the update dir is writab
   expect(shows(view, { path: join(n.home, "sessions/s-held"), rw: true })).toBe(false);
   expect(shows(view, { path: join(n.home, "node.json"), rw: false })).toBe(false);
   await n.vm.end(dir);
+});
+
+test("a VM out of memory tells its agent so, once, at its next tool call: what was killed and the VM's size", () => {
+  const dmesg = "[  10.1] Out of memory: Killed process 412 (cc1plus) total-vm:900kB, anon-rss:1048576kB, file-rss:0kB\n[  99.2] Out of memory: Killed process 977 (rustc) total-vm:4100000kB, anon-rss:3670016kB, file-rss:0kB\n";
+  const line = oomLine(dmesg, 8, "12:00:01");
+  expect(line).toBe(
+    'fleetd: this VM ran out of its 8 GiB of memory at 12:00:01, and its kernel killed rustc (pid 977, 3.5 GB). Run less at once (fewer build jobs or test workers, -j 1), or ask for the machine\'s VMs to be made larger (node.json "vmMemoryGiB").\n',
+  );
+  // The hook, on a stand-in note: it speaks once (exit 2, which claude shows the agent), then stays quiet.
+  const note = join(root, "oom-note");
+  const tmp = join(root, "oom-tmp");
+  mkdirSync(tmp, { recursive: true });
+  const hook = OOM_HOOK.replace(OOM_NOTE, note);
+  const run = () => Bun.spawnSync(["/bin/sh", "-c", hook], { env: { TMPDIR: tmp, PATH: process.env.PATH! }, stderr: "pipe" });
+  expect(run().exitCode).toBe(0);
+  writeFileSync(note, line);
+  const first = run();
+  expect([first.exitCode, first.stderr.toString()]).toEqual([2, line]);
+  expect(run().exitCode).toBe(0);
+  // Beside the hooks claude's settings already have.
+  const args = withPostToolHook(["-p", "--settings", JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }] }, env: { A: "1" } })], "true");
+  expect(JSON.parse(args[2]!)).toEqual({ env: { A: "1" }, hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }, { matcher: "*", hooks: [{ type: "command", command: "true" }] }] } });
 });

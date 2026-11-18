@@ -371,8 +371,8 @@ every agent on a Mac.
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
 | Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
-| Memory | Each VM is 4 GB and 4 CPUs (the CPUs are shared with the machine's other work, and cost no memory). The machine's [max agents](/docs/projects#max-agents) counts 4.1 GB an agent for it, so a 60 GB machine runs 10 at once where it ran 22 as plain processes. Machines, or [hosted sandboxes](#sandboxes), add more. |
-| Speed | Builds and tests over the shared files take about 16% longer and a third more CPU than a plain process. |
+| Memory | Each VM has 8 GiB and 4 CPUs. The CPUs are shared with the machine's other work and cost no memory. The memory is taken as the VM uses it, but not given back until the VM ends, so the machine's [max agents](/docs/projects#max-agents) counts all of it plus 0.1 GiB an agent: a 64 GB machine runs 5 VMs at once (24 as plain processes), and a 32 GB one 2. A machine sets its VMs' size in `~/.fleetd/node/node.json`, `"vmMemoryGiB"` (2 to 256): 4 GiB runs 10 on 64 GB and 5 on 32 GB, 6 GiB 7 and 3. A VM that runs out of its memory tells its agent at its next tool call what was killed and how large the VM is. A VM goes when its task ends. Machines, or [hosted sandboxes](#sandboxes), add more. |
+| Speed | Builds over the shared files take about 16% longer and a third more CPU than a plain process. A test suite that starts many short processes takes longer: on the devbox fleetd's own took 234 s in a VM against 91–112 s as a plain process on 4 CPUs, and fleetd-cloud's with its Postgres 366 s against 206 s. Starting a process costs about 3× more in a VM, and git's many small writes on the shared files more still. |
 | What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user, mount and network namespaces, `ip` (iproute2), `nsenter` (util-linux) and `/dev/net/tun`, which most Linux machines have, and a DNS server the VM can reach, not on this machine itself. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
 
 The machine's page says which, under Agents: **Each agent runs in** **A VM**, or **A process** with the reason and,
@@ -386,6 +386,7 @@ A machine that can't run VMs never refuses agents: they run as plain processes, 
 | Why it runs plain processes | Fix |
 |---|---|
 | turned off on this machine (node.json "sandbox": "process") | Remove the key. |
+| node.json "sandbox" is something else, or node.json can't be read | Fix the file: `"process"` turns VMs off, no key turns them on. Until then they stay off. |
 | VMs need Linux with KVM; this machine runs macOS | None: a Mac runs plain processes. |
 | This user can't open /dev/kvm | Add the user to the `kvm` group (the line gives the command): the node then starts VMs through `sg kvm` within minutes, with no restart. |
 | AppArmor keeps this user from making the user namespace virtiofsd shares files from | The line gives the `sysctl` that allows it. |

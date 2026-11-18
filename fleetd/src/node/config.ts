@@ -30,6 +30,8 @@ export type NodeConfig = {
   /** Where this machine's agents run: in a VM of their own when it can run one (absent, the default), or `"process"`,
    * as plain processes (node/place/microvm.ts). */
   sandbox?: "process";
+  /** Each agent's VM's memory, GiB (node/place/microvm.ts GUEST_MEM_GIB when absent): the hub's cap counts it whole. */
+  vmMemoryGiB?: number;
 };
 
 /** MachineId: `[a-z0-9-]{1,32}`. */

@@ -596,7 +596,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
-      if (parts.load && vm) reportVm(parts.load, vm.status());
+      if (parts.load && vm) reportVm(parts.load, vm.status(), vm.memGiB());
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },
