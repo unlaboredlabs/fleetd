@@ -148,6 +148,19 @@ describe("the layer and the cache", () => {
     expect(selectNotLive(layer.store.getState())).toBe(true);
   });
 
+  it("stays plain from `ready` until its snapshot, the link up but not yet read", async () => {
+    vi.useFakeTimers();
+    const { layer, send: frame } = cachedLayer();
+    frame({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    await vi.waitFor(() => expect(selectShownProjects(layer.store.getState())).toHaveLength(1));
+    frame(live());
+    expect(selectOfflineAsOf(layer.store.getState())).toBeUndefined();
+    expect(selectNotLive(layer.store.getState())).toBe(false);
+    frame(snapshot(1));
+    expect(layer.store.getState()).toMatchObject({ fresh: true, starting: false });
+    expect(selectNotLive(layer.store.getState())).toBe(false);
+  });
+
   it("says offline at once when the first connect fails within its quiet seconds", async () => {
     vi.useFakeTimers();
     const { layer, send: frame } = cachedLayer();
