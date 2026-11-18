@@ -15,8 +15,9 @@
   right: var(--space-2);
   display: grid;
   place-items: center;
-  width: var(--field);
-  height: var(--field);
+  /* 32 px round, on the picture: a glass button of its own, not a field's height (W714 made those 36). */
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: 999px;

@@ -1524,7 +1524,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Save checkout.jpg" })).toBeAttached();
     },
     // The pointer goes back on the picture at each size (the window's resize moved the picture from under it): the
-    // button shows, a field's 32 px round and 8 px in from the picture's top right corner (the 4/8 grid, W694), and the
+    // button shows, 32 px round and 8 px in from the picture's top right corner (the 4/8 grid, W694), and the
     // picture stays where it was.
     check: async (page) => {
       const picture = page.getByRole("img", { name: "The checkout with the code applied" });
