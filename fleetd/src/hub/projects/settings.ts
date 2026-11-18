@@ -42,6 +42,7 @@ import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { chatTagsOn, computerOf, setAvatarColor, setChatTags, setComputer } from "../project_lead/store.ts";
 import { providerStates } from "../sandbox/index.ts";
+import { taskAccountKey } from "../claude_accounts/index.ts";
 import { slots } from "../slots/index.ts";
 import { computerChoices, computerLabel, RUNNER_ID } from "../../shared/sandbox.ts";
 import * as repos from "../repos/store.ts";
@@ -319,7 +320,10 @@ function choicesOf(hub: Hub, r: ProjectRef, pick: ComputerPick | undefined): Com
     } catch {}
     machine ??= { name: store(hub).machineGet(r.machineId)?.name ?? r.machineId };
   }
-  return computerChoices({ ...(machine ? { machine } : {}), providers: providerStates(hub), ...(pick ? { pick } : {}) });
+  // Whether the bot's agents run on a Claude account (an order may name its own; the bot's is what its agents get by
+  // default): only those go into a machine's VMs that sign in with its own login, or to a hosted sandbox.
+  const account = taskAccountKey(hub.db, r, undefined, r.machineId) !== undefined;
+  return computerChoices({ ...(machine ? { machine } : {}), providers: providerStates(hub), ...(pick ? { pick } : {}), account });
 }
 
 /** Sets the bot's agents' computer to `pick`, one of its choices that can be used now, or drops it (undefined). Its

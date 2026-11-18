@@ -32,7 +32,7 @@ export type Auto = { cap: number; why: string; sandbox?: SlotSandbox; host?: Hos
 
 /** A machine's CPUs and memory (GB as sold), as its node last said: which Local VM sizes it runs (shared/sandbox.ts
  * computerChoices). Not stored: it comes with every heartbeat. */
-export type Host = { cpus: number; memGb?: number };
+export type Host = { cpus: number; memGb?: number; vmGb?: number };
 
 /** Total memory in GB as the machine is sold: the kernel reports a little less than is installed. */
 const soldGb = (bytes: number) => Math.floor((bytes + GIB - 1) / GIB);
@@ -72,10 +72,12 @@ export function autoCap(load: NodeLoad): Auto {
   return { cap, why };
 }
 
-/** The machine's CPUs and memory as `Auto.host` keeps them (fleetd cloud's machines too). */
+/** The machine's CPUs and memory as `Auto.host` keeps them (fleetd cloud's machines too), and in VMs what one of its
+ * default VMs takes of its memory, GiB (memPerAgentBytes): the slot a VM of a bot's own size is counted against. */
 export const hostOf = (load: NodeLoad): Host => ({
   cpus: load.cpus,
   ...(load.memTotalBytes !== undefined && load.memTotalBytes !== null ? { memGb: soldGb(load.memTotalBytes) } : {}),
+  ...(load.sandbox?.kind === "microvm" && typeof load.memPerAgentBytes === "number" && load.memPerAgentBytes > 0 ? { vmGb: load.memPerAgentBytes / GIB } : {}),
 });
 
 /** New agents the machine's free disk takes above the floor; undefined while the node reports no disk. */

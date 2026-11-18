@@ -829,7 +829,10 @@ function toolsOrThrow(): NetTools {
 /** A heartbeat's word on where this machine's agents run: in VMs of `memGiB` each (memPerAgentBytes, for the hub's cap),
  * or as plain processes and why. */
 export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus, memGiB = GUEST_MEM_GIB): void {
-  load.sandbox = status.kind === "microvm" ? { kind: "microvm", ...(status.why ? { why: status.why } : {}), ...(status.fix ? { fix: status.fix } : {}) } : status;
+  load.sandbox =
+    status.kind === "microvm"
+      ? { kind: "microvm", ...(status.why ? { why: status.why } : {}), ...(status.fix ? { fix: status.fix } : {}), ...(status.accountsOnly ? { accountsOnly: true } : {}) }
+      : status;
   if (status.kind === "microvm") load.memPerAgentBytes = memPerAgentBytes(memGiB);
 }
 

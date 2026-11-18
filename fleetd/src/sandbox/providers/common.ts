@@ -29,11 +29,14 @@ export type ComputerKind = "vm" | ProviderId;
  * sizes a computer is made at (never rounded to a nearest one). boat's are its machine types (docs.boat.dev/machines).
  * E2B and Daytona fix a box's size in its template or snapshot, which fleetd builds once per size: E2B's within its
  * plans' 8 vCPUs and 8 GiB (memory a whole, even number of GiB), Daytona's within its 4 vCPUs and 8 GB. A Local VM's
- * are offered where its machine has the CPUs and twice the memory (the hub's `computerChoices`).
+ * are offered where its machine has the CPUs and twice the memory (the hub's `computerChoices`), and each counts its
+ * memory's worth of its machine's slots (hub/slots/board.ts slotsOf).
  */
 export const SIZES: Readonly<Record<ComputerKind, readonly Size[]>> = {
   vm: [
     { cpu: 2, memGb: 4 },
+    // A VM's own default with no pick (node/place/microvm.ts GUEST_CPUS, GUEST_MEM_GIB): picking it is what Automatic gives.
+    { cpu: 4, memGb: 4 },
     { cpu: 4, memGb: 8 },
     { cpu: 8, memGb: 16 },
   ],

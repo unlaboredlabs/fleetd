@@ -359,7 +359,7 @@ describe("board", () => {
     expect([k.board.placeOf("T2"), k.board.sizeOf("T2")]).toEqual([LOCAL, { cpu: 8, memGb: 16 }]);
     // Full: each waits for its own computer, never another's, nor another size.
     expect(acquire("T3", e2b)).toEqual(queued("its bot's computer is E2B · 4 vCPU / 8 GB: E2B is full, 1 of 1"));
-    expect(acquire("T4", vm)).toEqual(queued("its bot's computer is Local VM · 8 vCPU / 16 GB: 1 of 1 running on air-box (memory 18 GB)"));
+    expect(acquire("T4", vm)).toEqual(queued("its bot's computer is Local VM · 8 vCPU / 16 GB: 1 of 1 in use on air-box (memory 18 GB)"));
     // A bot with no pick is placed as before, with the default size.
     k.release("T2");
     expect(k.board.placeOf("T4")).toBe(LOCAL);
@@ -386,6 +386,48 @@ describe("board", () => {
     expect(k.board.setComputer(vm, undefined)).toBe(true);
     k.board.evaluate();
     expect([k.board.placeOf("T8"), k.board.sizeOf("T8")]).toEqual([LOCAL, undefined]);
+  });
+
+  test("a Local VM counts its memory's worth of its machine's slots, so a big pick never over-commits it", () => {
+    const [big, small, free] = [project_("pb", "air"), project_("ps", "air"), project_("pf", "air")];
+    // 10 slots of 4 GiB VMs (4.1 GiB each with their overhead).
+    const host = { cpus: 32, memGb: 64, vmGb: 4.1 };
+    const k = Kit.on(undefined, [{ ...machine("air", 10), auto: { cap: 10, why: "memory 64 GB", sandbox: { kind: "microvm" }, host } }]);
+    k.board.setComputer(big, { kind: "vm", cpu: 8, memGb: 16 });
+    k.board.setComputer(small, { kind: "vm", cpu: 4, memGb: 4 });
+    const acquire = (h: string, r: ProjectRef) => k.board.acquire(h, r, "work", true);
+    // 16 GB takes 4 slots, 4 GB one, an unpicked agent one: 4 + 4 + 1 + 1 = 10.
+    expect(acquire("T1", big)).toEqual(GRANTED);
+    expect(acquire("T2", big)).toEqual(GRANTED);
+    expect(acquire("T3", small)).toEqual(GRANTED);
+    expect(acquire("T4", free)).toEqual(GRANTED);
+    // Full: a third 16 GB VM waits, and so does any agent, though only 4 agents run.
+    expect(acquire("T5", big)).toEqual(queued("its bot's computer is Local VM · 8 vCPU / 16 GB, which takes 4 of air-box's slots: 10 of 10 in use on air-box (memory 64 GB)"));
+    expect(acquire("T6", free)).toEqual(
+      queued("machine cap: 10 of 10 slots in use on air-box (memory 64 GB), by 4 agents, a bot's bigger VMs taking more than one"),
+    );
+    // A 16 GB VM ends: its 4 slots go to the first in line, the next 16 GB VM.
+    k.release("T1");
+    expect([k.board.placeOf("T5"), k.board.placeOf("T6")]).toEqual([LOCAL, undefined]);
+    k.release("T3");
+    expect(k.board.placeOf("T6")).toBe(LOCAL);
+  });
+
+  test("a machine whose VMs take only agents on a Claude account: a Local VM pick's agents on its own login wait, saying why", () => {
+    const vm = project_("pv", "air");
+    const sandbox = { kind: "microvm" as const, why: "this machine signs in to Claude with its own login", accountsOnly: true };
+    const k = Kit.on(undefined, [{ ...machine("air", 2), auto: { cap: 2, why: "memory 18 GB", sandbox, host: { cpus: 16, memGb: 32 } } }]);
+    k.board.setComputer(vm, { kind: "vm", cpu: 2, memGb: 4 });
+    // Never placed on the machine, where the node would refuse it: it waits and says so.
+    expect(k.board.acquire("T1", vm, "work", false)).toEqual(
+      queued(
+        "its bot's computer is Local VM · 2 vCPU / 4 GB, but air-box's VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude, or pick another on the bot's Computer page",
+      ),
+    );
+    expect(k.board.placeOf("T1")).toBeUndefined();
+    // On a Claude account it goes into a VM.
+    expect(k.board.acquire("T2", vm, "work", true)).toEqual(GRANTED);
+    expect([k.board.placeOf("T2"), k.board.sizeOf("T2")]).toEqual([LOCAL, { cpu: 2, memGb: 4 }]);
   });
 
   test("the hub's runner beside a computer: the computer's bots run as before, the runner's only in hosted boxes", () => {

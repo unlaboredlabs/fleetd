@@ -2,6 +2,7 @@
 // machine it may have, provider and exact size together, only of what the team has; a pick is one of them exactly,
 // kept, and the slot board places the bot's agents by it; a pick whose provider went stays shown, saying why.
 import { expect, test } from "bun:test";
+import { ClaudeAccountStore } from "../src/hub/claude_accounts/index.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
 import { computers } from "../src/hub/project_lead/store.ts";
@@ -11,10 +12,12 @@ import { key, kit, project } from "./work-kit.ts";
 
 const GIB = 2 ** 30;
 
-function bot(vms: "on" | "off" | "by choice" = "on") {
+/** The bot, on devbox; `account`: its agents run on the hub's Claude API account, not devbox's own login. */
+function bot(vms: "on" | "off" | "by choice" | "login only" = "on", account = true) {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
+  if (account) new ClaudeAccountStore(k.hub.db).putHubApi({ sealedOn: [{ machineId: "devbox", fingerprint: "ab12cd34" }], connectedAt: "x", updatedAt: "x" } as never);
   k.hub.db.conn.run("INSERT INTO machines (machine_id, data) VALUES ('devbox', '{\"machineId\":\"devbox\",\"name\":\"devbox\",\"nodeVersion\":\"1\",\"status\":\"online\",\"lastSeenAt\":\"x\"}')");
   Object.assign(executors(k.hub), {
     isConnected: () => true,
@@ -26,8 +29,14 @@ function bot(vms: "on" | "off" | "by choice" = "on") {
   });
   Object.assign(link(k.hub), { can: () => true });
   const sandbox =
-    vms === "on" ? { kind: "microvm" as const } : vms === "off" ? { kind: "process" as const, why: "no /dev/kvm" } : { kind: "process" as const, why: "turned off", expected: true as const };
-  slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox });
+    vms === "on"
+      ? { kind: "microvm" as const }
+      : vms === "login only"
+        ? { kind: "microvm" as const, why: "this machine signs in to Claude with its own login", accountsOnly: true as const }
+        : vms === "off"
+          ? { kind: "process" as const, why: "no /dev/kvm" }
+          : { kind: "process" as const, why: "turned off", expected: true as const };
+  slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox, memPerAgentBytes: 4.1 * GIB });
   const connect = (p: string) => k.hub.db.conn.run("INSERT INTO sandbox_providers (provider, sealed, max_agents) VALUES (?1, x'00', 3)", [p]);
   const get = async () => (await k.ok(key("read"), "project_settings_get", r)).settings;
   return { k, r, connect, get };
@@ -40,6 +49,7 @@ test("the choices are each real machine the bot can have: its machine's Local VM
   expect(s.computer).toBeUndefined();
   expect(s.computers.map((c: { label: string }) => c.label)).toEqual([
     "Local VM · 2 vCPU / 4 GB",
+    "Local VM · 4 vCPU / 4 GB",
     "Local VM · 4 vCPU / 8 GB",
     "Local VM · 8 vCPU / 16 GB",
     "E2B · 2 vCPU / 4 GB",
@@ -53,6 +63,7 @@ test("VMs that can't run now say why on each; VMs off by choice aren't offered; 
   const off = bot("off");
   expect((await off.get()).computers).toEqual([
     { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
+    { kind: "vm", cpu: 4, memGb: 4, label: "Local VM · 4 vCPU / 4 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
     { kind: "vm", cpu: 4, memGb: 8, label: "Local VM · 4 vCPU / 8 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
     { kind: "vm", cpu: 8, memGb: 16, label: "Local VM · 8 vCPU / 16 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
   ]);
@@ -105,4 +116,29 @@ test("a pick whose provider was disconnected stays shown, saying why, never as a
     unavailable: "Daytona isn't connected: an admin connects it in Settings › Hub › Machines",
   });
   expect(s.computers.filter((c: { kind: string }) => c.kind === "daytona")).toHaveLength(1);
+});
+
+test("a bot whose agents run on its machine's own Claude login: VMs that take only accounts and hosted sandboxes say so, and can't be picked", async () => {
+  const { k, r, connect, get } = bot("login only", false);
+  connect("e2b");
+  const s = await get();
+  const vmWhy = "devbox's VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude";
+  const hostedWhy = "hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Your accounts › Claude";
+  expect(s.computers.map((c: { label: string; unavailable?: string }) => [c.label, c.unavailable])).toEqual([
+    ["Local VM · 2 vCPU / 4 GB", vmWhy],
+    ["Local VM · 4 vCPU / 4 GB", vmWhy],
+    ["Local VM · 4 vCPU / 8 GB", vmWhy],
+    ["Local VM · 8 vCPU / 16 GB", vmWhy],
+    ["E2B · 2 vCPU / 4 GB", hostedWhy],
+    ["E2B · 4 vCPU / 8 GB", hostedWhy],
+    ["E2B · 8 vCPU / 8 GB", hostedWhy],
+  ]);
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "vm", cpu: 2, memGb: 4 } })).toBe("invalid");
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 2, memGb: 4 } })).toBe("invalid");
+  // On a machine whose VMs take every agent, its VMs are the bot's to pick; hosted ones still aren't.
+  const open = bot("on", false);
+  open.connect("e2b");
+  const choices = (await open.get()).computers as { kind: string; unavailable?: string }[];
+  expect(choices.filter((c) => c.kind === "vm").every((c) => c.unavailable === undefined)).toBe(true);
+  expect(choices.filter((c) => c.kind === "e2b").every((c) => c.unavailable === hostedWhy)).toBe(true);
 });

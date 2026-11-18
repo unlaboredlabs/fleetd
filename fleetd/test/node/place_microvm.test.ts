@@ -16,10 +16,12 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { inBox, leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { FAILED_MS, GUEST_CPUS, GUEST_MEM_GIB, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
+import { hostOf } from "../../src/hub/slots/sizing.ts";
+import { SIZES } from "../../src/sandbox/providers/common.ts";
 import type { VmCheck } from "../../src/sandbox/host/capable.ts";
 import type { VmTools } from "../../src/sandbox/host/tools.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
@@ -230,6 +232,14 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   expect(note.sandbox).toEqual({ kind: "microvm", why: "a login stays here, so some run as plain processes.", fix: "claude setup-token" });
   expect(withSandbox({ cap: 22, why: "memory 60 GB, about 2 GB an agent" }, { kind: "process", why: "no KVM" }).why).toBe("memory 60 GB, about 2 GB an agent; agents run as plain processes: no KVM");
   expect(withSandbox({ cap: 22, why: "x" }, undefined).why).toBe("x");
+  // VMs that take only agents on a Claude account say so to the hub, which offers a bot on its own login none of them;
+  // and the hub counts a bot's own VM size against the machine's default VM's memory.
+  const login: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
+  reportVm(login, { kind: "microvm", why: "a login stays here", fix: "claude setup-token", accountsOnly: true });
+  expect(login.sandbox).toEqual({ kind: "microvm", why: "a login stays here", fix: "claude setup-token", accountsOnly: true });
+  expect(withSandbox({ cap: 10, why: "memory 60 GB" }, login.sandbox).sandbox).toEqual({ kind: "microvm", why: "a login stays here", fix: "claude setup-token", accountsOnly: true });
+  expect(hostOf({ cpus: 16, load1: 0, memTotalBytes: 64 * 2 ** 30, ...login })).toEqual({ cpus: 16, memGb: 64, vmGb: Math.round(4.1 * 2 ** 30) / 2 ** 30 });
+  expect(hostOf({ cpus: 16, load1: 0, memTotalBytes: 64 * 2 ** 30, ...plain })).toEqual({ cpus: 16, memGb: 64 });
 });
 
 test("setup boots the box and runs in it; the start reuses that box, and the session's pid is the box's", async () => {
@@ -477,6 +487,10 @@ test("a box's network follows this machine's addresses: new ones are set out of 
   expect(readBox(dir)!.blocked).toEqual(["192.0.2.1", "2001:db8::2"]);
   await vm.end(dir);
   vm.close();
+});
+
+test("the Local VM a bot gets with no pick is one of the sizes it may pick, so the default-looking choice never gives less", () => {
+  expect(SIZES.vm).toContainEqual({ cpu: GUEST_CPUS, memGb: GUEST_MEM_GIB });
 });
 
 test("a bot's Local VM pick boots at its size exactly; one that can't be had here is refused, never a process or the default", async () => {

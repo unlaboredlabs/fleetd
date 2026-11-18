@@ -260,13 +260,14 @@ size or provider. The choices are:
 
 | Choice | Sizes |
 |---|---|
-| Local VM | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB: those the bot's machine has the CPUs and twice the memory for. Listed only where it runs [VMs](/docs/machines#vms); while it can't now (no `/dev/kvm`, the last VM failed), each says why. |
+| Local VM | 2 vCPU / 4 GB, 4 vCPU / 4 GB (what Automatic gives), 4 vCPU / 8 GB, 8 vCPU / 16 GB: those the bot's machine has the CPUs and twice the memory for. Listed only where it runs [VMs](/docs/machines#vms); while it can't now (no `/dev/kvm`, the last VM failed), each says why. Each VM counts its memory's worth of the machine's [max agents](#max-agents): an 8 vCPU / 16 GB one on a machine of 4 GiB VMs counts as 4. |
 | boat.dev | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB: its machine types. |
 | E2B | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 8 GB: within its plans' 8 vCPUs and 8 GiB, memory a whole, even number of GiB. |
 | Daytona | 2 vCPU / 4 GB, 4 vCPU / 8 GB: within its 4 vCPUs and 8 GB. |
 
 A hosted provider is listed only once the team [connected it](/docs/machines#sandboxes); one whose key failed its last
-test says so. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
+test says so. Hosted sandboxes take only agents on a Claude account, and so do the VMs of a machine signed in to Claude
+with its own `claude login`: for a bot whose agents run on that login, those choices say so and can't be picked. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
 of that size (a few minutes, once); boat.dev sizes each sandbox as it starts.
 
 **Automatic**, the default, places agents as before: the machine's own slots (in a VM of 4 vCPUs and its

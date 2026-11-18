@@ -7993,6 +7993,11 @@ export type SlotStatePerMachine = {
  * or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).
  */
 export type SlotSandbox = {
+  /**
+   * In VMs, but only agents on a Claude account of their bot's: the machine signs in to Claude with its own login,
+   * which never goes into a VM, so a bot with none runs its agents as plain processes there.
+   */
+  accountsOnly?: boolean;
   /** The plain processes are by choice or the machine's design: nothing to fix. */
   expected?: boolean;
   /** The command that fixes it, run on the machine. */

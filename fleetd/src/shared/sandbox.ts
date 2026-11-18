@@ -86,6 +86,16 @@ export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): 
 export const vmFits = (size: Size, host: { cpus: number; memGb?: number } | undefined): boolean =>
   host !== undefined && host.memGb !== undefined && size.cpu <= host.cpus && size.memGb * 2 <= host.memGb;
 
+/** Why a bot's agents can't have a hosted sandbox: they'd run on their machine's own Claude login, which never leaves it. */
+export const NO_ACCOUNT_HOSTED = `hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Your accounts › Claude`;
+
+/** Why machine `m`'s VMs won't take a bot's agents (`account`: they run on a Claude account), or undefined when they will:
+ * a machine signed in with its own `claude login` puts only agents on an account in its VMs (node/place/microvm.ts). */
+export const vmTakes = (m: { name: string; sandbox?: SlotSandbox }, account: boolean): string | undefined =>
+  m.sandbox?.accountsOnly && !account
+    ? `${m.name}'s VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude`
+    : undefined;
+
 /** The bot's machine as `computerChoices` reads it; undefined for a bot no machine runs (the hub's runner). */
 export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number } };
 
@@ -95,20 +105,21 @@ export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cp
  * each connected provider's sizes in ORDER (a key that failed its last check says so). A pick no longer among them (its
  * provider disconnected, a size its machine no longer runs) stays, saying why, so it is never shown as another.
  */
-export function computerChoices(o: { machine?: ComputerMachine; providers: readonly SandboxProviderState[]; pick?: ComputerPick }): ComputerChoice[] {
+export function computerChoices(o: { machine?: ComputerMachine; providers: readonly SandboxProviderState[]; pick?: ComputerPick; account: boolean }): ComputerChoice[] {
   const out: ComputerChoice[] = [];
   const add = (kind: ComputerKind, size: Size, unavailable?: string) =>
     out.push({ kind, cpu: size.cpu, memGb: size.memGb, label: computerLabel({ kind, ...size }), ...(unavailable ? { unavailable } : {}) });
   const m = o.machine;
   const sb = m?.sandbox;
   if (m && sb && (sb.kind === "microvm" || !sb.expected)) {
-    const off = sb.kind === "microvm" ? undefined : `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}`;
+    const off = sb.kind !== "microvm" ? `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}` : vmTakes(m, o.account);
     for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off);
   }
   for (const p of ORDER) {
     const st = o.providers.find((x) => x.provider === p);
     if (!st?.connected) continue;
-    const off = st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? "test it again in Settings › Hub › Machines"}` : undefined;
+    const off =
+      st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? "test it again in Settings › Hub › Machines"}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
     for (const size of SIZES[p]) add(p, size, off);
   }
   const pick = o.pick;

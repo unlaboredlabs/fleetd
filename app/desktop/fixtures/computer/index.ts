@@ -91,7 +91,7 @@ const BUILT = (now: string): JsonObject => ({ builtAt: at(now, -3 * HOUR), bytes
 /** Choices as the hub words them (shared/sandbox.ts computerChoices). */
 const sized = (kind: string, name: string, sizes: [number, number][]): JsonObject[] =>
   sizes.map(([cpu, memGb]) => ({ kind, cpu, memGb, label: `${name} · ${String(cpu)} vCPU / ${String(memGb)} GB` }));
-const VM = sized("vm", "Local VM", [[2, 4], [4, 8], [8, 16]]);
+const VM = sized("vm", "Local VM", [[2, 4], [4, 4], [4, 8], [8, 16]]);
 
 /** storefront ready, with `computer` picked among `computers`. */
 const runsOn = (base: Fixture, name: string, about: string, computer: JsonObject, computers: JsonObject[]): Fixture => {
