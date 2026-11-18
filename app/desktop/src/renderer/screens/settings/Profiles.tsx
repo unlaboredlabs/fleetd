@@ -4,7 +4,7 @@
 // `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and says which leads run on.
 import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef } from "../../../shared/contracts";
-import { Button, Checkbox, Field, Input, Select, Switch, Text } from "../../ui";
+import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { toHash } from "../shell/routes";
 import { adminNames, adminWho } from "../sessions/pickScreen";
@@ -26,7 +26,7 @@ import {
   updateInput,
   type ProfileDraft,
 } from "./profilesModel";
-import { AddButton, DangerButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, DangerButton, GroupNote, Notice, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -149,21 +149,15 @@ function ProfileRow({ profile: p, lead, models, onEdit }: { profile: Profile; le
       label={p.name}
       data={{ "data-profile": p.name }}
       meta={[p.default ? "default" : null, lead ? "lead" : null].filter((w) => w !== null).join(" · ") || undefined}
+      hint={p.note === "" ? undefined : p.note}
+      open={{ onClick: onEdit }}
       controls={
-        <Button variant="quiet" size="sm" onClick={onEdit} aria-label={`Edit ${p.name}`}>
-          Edit
-        </Button>
+        <Text size="sm" tone="quiet">
+          {runsLine(models, p)}
+        </Text>
       }
     >
-      <Text size="sm" tone="quiet">
-        {runsLine(models, p)}
-      </Text>
-      {p.note === "" ? null : <Text size="sm">{p.note}</Text>}
-      {p.refused === undefined ? null : (
-        <Text size="sm" tone="danger">
-          {p.refused}
-        </Text>
-      )}
+      {p.refused === undefined ? null : <Notice tone="danger">{p.refused}</Notice>}
     </SettingsListRow>
   );
 }
@@ -313,41 +307,54 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
       .finally(() => setBusy(undefined));
   };
   return (
-    <div className={s.stack}>
+    <SettingsSection
+      title="Allowed profiles"
+      reveal="agents.profiles"
+      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every bot › Agents."
+    >
       {view.profiles.map((p) => (
-        <Checkbox
+        <SettingsRow
           key={p.id}
-          label={
-            <>
+          title={
+            <span className={s.titleMeta}>
               <Text mono>{p.name}</Text>
-              <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}`}</Text>
-            </>
+              <Text size="sm" tone="quiet">
+                {runsLine(view.models, p)}
+              </Text>
+            </span>
           }
-          description={p.default ? `Always allowed.${p.note === "" ? "" : ` ${p.note}`}` : p.note === "" ? undefined : p.note}
-          checked={p.default || allowed.includes(p.name)}
-          disabled={!live || p.default || busy !== undefined}
-          onCheckedChange={(on) => toggle(p.name, on === true)}
+          label={p.name}
+          hint={p.default ? `Always allowed: the hub's default.${p.note === "" ? "" : ` ${p.note}`}` : p.note === "" ? undefined : p.note}
+          control={
+            p.default ? (
+              <Text size="sm" tone="quiet">
+                Always
+              </Text>
+            ) : (
+              <Toggle aria-label={`Allow ${p.name}`} checked={allowed.includes(p.name)} disabled={!live || busy !== undefined} onCheckedChange={(on) => toggle(p.name, on)} />
+            )
+          }
         />
       ))}
       {lead === undefined ? null : (
-        <div className={s.inline} data-lead-profile={lead.name}>
-          <Text size="xs" tone="quiet">
-            {administers
-              ? `Leads run on ${lead.name}.`
-              : `Leads run on ${lead.name}. Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
-          </Text>
-          {administers ? (
-            <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
-              Change in Every bot › Agents
-            </Button>
-          ) : null}
-        </div>
+        <SettingsRow
+          title="Leads run on"
+          hint={administers ? undefined : `Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
+          data={{ "data-lead-profile": lead.name }}
+          control={
+            administers ? (
+              <Button size="sm" variant="ghost" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
+                <Text mono>{lead.name}</Text>
+              </Button>
+            ) : (
+              <Text mono tone="quiet">
+                {lead.name}
+              </Text>
+            )
+          }
+        />
       )}
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
-        </p>
-      )}
-    </div>
+      {error === undefined ? null : <Notice tone="danger">{`Not changed: ${error}`}</Notice>}
+    </SettingsSection>
   );
 }

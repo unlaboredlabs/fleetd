@@ -58,6 +58,8 @@ export function ImportMemory() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<MemoryImportOutput | null>(null);
   const [error, setError] = useState<{ text: string; noProject: boolean } | null>(null);
+  // Shut at rest: one row with Import…, which opens the two steps in place.
+  const [open, setOpen] = useState(false);
 
   // A hub from before Import memory has no such call: the section isn't there.
   if (!live || (read.error instanceof CallError && lacksTool(read.error.error))) return null;
@@ -92,7 +94,19 @@ export function ImportMemory() {
   const full = done?.skipped.filter((x) => x.why === "full") ?? [];
 
   return (
-    <SettingsSection title="Import memory" reveal="import-memory" hint="Bring what another AI assistant knows about you, so you don't teach it all again.">
+    <SettingsSection reveal="import-memory">
+      <SettingsRow
+        title="Import from another assistant"
+        hint="Bring what another AI assistant knows about you, so you don't teach it all again."
+        line={done === null ? undefined : importSummary(done)}
+        control={
+          <Button size="sm" variant={open ? "ghost" : "secondary"} onClick={() => setOpen(!open)}>
+            {open ? "Close" : "Import…"}
+          </Button>
+        }
+      />
+      {open ? (
+      <>
       <SettingsRow
         title="1. Copy this prompt into a chat with your other AI assistant"
         control={
@@ -161,6 +175,8 @@ export function ImportMemory() {
           ) : null}
         </div>
       </SettingsRow>
+      </>
+      ) : null}
     </SettingsSection>
   );
 }

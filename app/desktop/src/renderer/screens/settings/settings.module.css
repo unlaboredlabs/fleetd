@@ -558,3 +558,10 @@
   background: var(--hover);
   color: var(--text);
 }
+
+/* A hub's address beside its state, in machine type. */
+.addressPart {
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}

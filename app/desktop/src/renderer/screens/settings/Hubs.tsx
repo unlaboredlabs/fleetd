@@ -7,7 +7,7 @@ import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
-import { Button, Dialog, Field, Input, Text, Truncate, type TextTone } from "../../ui";
+import { Button, Dialog, Field, Input, type TextTone } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
 import { useKeyStore } from "../onboarding";
@@ -17,8 +17,9 @@ import { HubText } from "../projects/HubText";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
-import { AddButton, GroupNote, RowMenu, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, GroupNote, Notice, RowMenu, SettingsRow, SettingsSection } from "./parts";
 import { onWeb } from "../../src/web";
+import s from "./settings.module.css";
 
 /** Settings › You › Hubs & devices: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
@@ -162,6 +163,8 @@ function HubSetting({ only }: { only: boolean }) {
   const { step, restart } = useHubRestart();
   const [confirm, setConfirm] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  // Its name and colour open in the row from its menu: at rest the hub is one row.
+  const [editing, setEditing] = useState(false);
   const hub = state.phase === "unpaired" ? null : state.hub;
   // A restart this row asked for says how it goes; a failed one keeps the connection's line beside its own.
   const line = (step.at === "failed" ? null : restartLine(step)) ?? phaseLine(state);
@@ -172,10 +175,15 @@ function HubSetting({ only }: { only: boolean }) {
     <SettingsRow
       reveal={only ? "hubs.hub" : `hubs.${self.id}`}
       // A team on the web goes by its name, one or several.
-      title={only && !onWeb() ? "Hub" : self.label}
+      title={self.label}
       hint={self.cloud === true ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
       // The hub's fix may name a command in backticks: shown as code.
-      line={<HubText>{line.text}</HubText>}
+      line={
+        <>
+          <HubText>{line.text.replace(/\.$/u, "")}</HubText>
+          {hub && line.tone !== "warning" && line.tone !== "danger" ? <span className={s.addressPart}>{` · ${hub.replace(/^https?:\/\//u, "")}`}</span> : null}
+        </>
+      }
       lineTone={line.tone}
       control={
         <>
@@ -190,11 +198,12 @@ function HubSetting({ only }: { only: boolean }) {
             </Button>
           ) : null}
           {/* Admins of this hub only, and only while it is there to ask. */}
-          {(administers && restarts && (state.phase === "live" || busy)) || (hub && !onWeb()) ? (
+          {hub !== null || (administers && restarts && (state.phase === "live" || busy)) ? (
             <RowMenu
               label={self.label}
               disabled={busy}
               items={[
+                ...(hub !== null ? [{ label: "Name and colour…", onSelect: () => setEditing(true) }] : []),
                 ...(administers && restarts && (state.phase === "live" || busy) ? [{ label: "Restart hub…", onSelect: () => setConfirmRestart(true) }] : []),
                 ...(hub && !onWeb() ? [{ label: only ? "Disconnect and forget key…" : "Remove…", onSelect: () => setConfirm(true), danger: true }] : []),
               ]}
@@ -204,20 +213,22 @@ function HubSetting({ only }: { only: boolean }) {
       }
     >
       {failed ? (
-        <div role="alert">
-          <Text size="sm" tone="danger">
-            <HubText>{failed.text}</HubText>
-          </Text>
-        </div>
-      ) : null}
-      {hub ? (
-        <Truncate mono size="sm" tone="quiet">
-          {hub}
-        </Truncate>
+        <Notice tone="danger">
+          <HubText>{failed.text}</HubText>
+        </Notice>
       ) : null}
       {/* Said only where there's something to fix: a key kept in the OS store needs no line. */}
       {store === null || store.kind === "os" ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
-      {hub === null ? null : <NameAndColor key={`${self.label}:${self.color ?? ""}`} />}
+      {hub === null || !editing ? null : (
+        <div className={s.connectForm}>
+          <NameAndColor key={`${self.label}:${self.color ?? ""}`} />
+          <div className={s.inline}>
+            <Button size="sm" onClick={() => setEditing(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
       <ForgetHubDialog open={confirm} onOpenChange={setConfirm} only={only} />
       <RestartHubDialog open={confirmRestart} onOpenChange={setConfirmRestart} onRestart={restart} only={only} />
     </SettingsRow>
