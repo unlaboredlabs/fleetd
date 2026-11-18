@@ -41,6 +41,14 @@ breaks a rule changes this page in the same PR and says why.
   sentence says what a tab or a group is: that is the tab's tooltip, which focus and a screen reader get too. A row is
   its title and where it stands; an id, a branch or a repo is its tooltip's or the opened view's. An empty list is one
   short line. Three stacked rows of switches read as menus to work through before the list (D439).
+- **Flush, not floating:** the window is three columns, sidebar, chat and panel, meeting at hairlines. No grey frame
+  with rounded sheets set into it, no card around a column. What floats over the app (a dialog, the Settings sheet,
+  the palette, the composer island, the top row's glass capsules) is the only thing with lift.
+- **Corners come from one scale** (`--radius-*`), by what a thing is, never chosen per screen: `xs` 4 px for marks
+  inside text (a count chip, kbd, inline code, a checkbox); `sm` 6 px for what you press or type in, and a row's hover
+  and selected box; `md` 8 px for what holds things (a block in the chat, a Settings group, a menu); `lg` 10 px for
+  what floats over the app, and nothing rounder. A chat bubble is `--radius-bubble`, 12 px. A thing inside another is
+  never rounder than it. Pills (`--radius-pill`) only for what is one by nature: a capsule, a pin, an avatar, a dot.
 - **Cards only where they earn it:** one thing that stands apart from the list around it (what merges now, a PR's
   summary, a floating surface). Never a card per row.
 - **No coloured left edge** on a card, row or callout. A quote or indent rule is a neutral `--hairline`.
@@ -68,8 +76,9 @@ breaks a rule changes this page in the same PR and says why.
 
 ## Controls
 
-- **Compact:** segmented controls and tabs are 22–26 px tall, with `xs` text, `--radius-sm` segments in a `--hover`
-  track, and the selected one `--raised` with a hairline ring and weight 500.
+- **Compact:** segmented controls are 22–28 px tall, `--radius-sm` segments in a `--radius-md` track, the selected
+  one `--raised` with a hairline ring and weight 500. The panel's tabs have no track: words, the open one a soft
+  `--selected` box.
 - **Aligned:** an icon sits beside its word, never above it, and both are centred in the control. A count is bare
   figures in `--faint` with tabular numerals, on the word's baseline at the same size. No pill.
 
