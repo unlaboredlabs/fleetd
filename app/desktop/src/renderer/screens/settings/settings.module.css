@@ -27,38 +27,21 @@
   gap: var(--space-10);
   max-width: 704px;
   margin: 0 auto;
-  padding: 48px var(--space-10) 96px;
+  padding: var(--space-2) var(--space-10) 96px;
 }
-/* The page's head: the way back (a bot's Bots) small over the title, the title the one large line on the page, a
-   control for the whole page (an add) at its line's end, and a set's pages as tabs under it. */
+/* The page's head, in the sheet's header zone (SettingsSheet.tsx) or at the column's head: the way back (a built-in
+   prompt's) small over the title, the title the one large line on the page with the set's picture before it, a
+   control for the whole page at its line's end, and a set's pages as tabs under it. */
 .pageHead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   min-width: 0;
-  margin-bottom: calc(-1 * var(--space-2));
 }
 .pageLead {
   display: flex;
   align-items: center;
-  margin-bottom: calc(-1 * var(--space-3));
-}
-.crumb {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--quiet);
-  font: inherit;
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
-}
-.crumb::after {
-  content: "/";
-  margin-inline: var(--space-2) 0;
-  color: var(--faint);
-}
-.crumb:hover {
-  color: var(--text);
+  margin-bottom: calc(-1 * var(--space-2));
 }
 .pageTitleRow {
   display: flex;
@@ -69,6 +52,9 @@
   min-height: 32px;
 }
 .pageTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
   margin: 0;
   color: var(--text);
@@ -76,6 +62,10 @@
   line-height: var(--leading-title);
   font-weight: var(--weight-strong);
   letter-spacing: -0.025em;
+}
+.pageIcon {
+  flex: none;
+  display: grid;
 }
 /* What was a page once, now a part of another (Frames.tsx): its sections keep the column's rhythm. */
 .part {
@@ -506,4 +496,22 @@
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: var(--space-2);
+}
+
+/* A line of its own under a row's title (Claude's Runs on): its quiet name, then its control. */
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+/* A connect form, opened in its row: its steps, its field, its buttons. */
+.connectForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--settings-index);
 }

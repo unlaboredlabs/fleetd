@@ -14,9 +14,9 @@ import { when } from "../live/when";
 import { vaultServed } from "./vaultModel";
 import { Button, Field, InlineCode, Input, Text } from "../../ui";
 import { sealedLine } from "./claudeModel";
-import { ConfirmRemove, MissingOn, Problem, TestButton, useMachines } from "./claudeParts";
+import { ConfirmRemove, MissingOn, Problem, useMachines } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { RowMenu, SettingsRow } from "./parts";
 import s from "./settings.module.css";
 
 /** 1Password's page that makes a service account (hub/setup's ONEPASSWORD_NEW). */
@@ -32,7 +32,7 @@ type Tried = { readonly test: OnePasswordTest } | { readonly error: string };
  * A Test's verdict: "Reads fleetd (on devbox, today 14:02)." for one vault; more than one wants a look, as the hub's
  * hub/onepassword_vault check says; or 1Password's words, the token masked.
  */
-export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean; text: string } {
+export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean; text: string; short?: string } {
   const at = `on ${test.machineId}, ${when(test.at, nowMs)}`;
   if (!test.ok) {
     const said = (test.error ?? "1Password said nothing").trim().replace(/\.$/u, "");
@@ -44,6 +44,7 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
   const list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
   return {
     ok: false,
+    short: `Reads ${list}: it should read only fleetd's vault. Replace it with a service account that does.`,
     text: `Reads ${list} (${at}): an agent on a machine holding it could read every item in each. Make a service account that reads only fleetd's vault, paste its token here, and revoke this one in 1Password.`,
   };
 }
@@ -52,44 +53,30 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
 const IMPORT_INTRO =
   "Optional: a place to import logins, cards and addresses from into the team vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
 
+/** 1Password, as one row of Your accounts. */
 export function OnePasswordSettings() {
   const live = useLive();
   const vault = useData((st) => vaultServed(st.features));
   const read = useToolQuery("onepassword_get", noInput, { enabled: live });
-  return (
-    <SettingsSection
-      title="1Password"
-      reveal="onepassword"
-      hint={
-        vault
-          ? IMPORT_INTRO
-          : "The logins your agents sign in to sites with, in the orders you start. They name a 1Password item and fleetd types the value in; no agent ever sees it."
-      }
-    >
-      {!live ? (
-        <GroupNote>Not connected. Connect to a hub to set up 1Password.</GroupNote>
-      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <GroupNote>This hub reads 1Password only with a bot&apos;s OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.</GroupNote>
-      ) : read.error instanceof CallError && read.error.error.code === "forbidden" ? (
-        <GroupNote>This device&apos;s key belongs to no person, so it has no 1Password of its own. Pair the app as yourself to set it up.</GroupNote>
-      ) : read.isLoadingError ? (
-        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
-      ) : read.data === undefined ? (
-        <GroupNote>Loading…</GroupNote>
-      ) : (
-        <ServiceAccount token={read.data.token} />
-      )}
-    </SettingsSection>
-  );
+  const hint = vault
+    ? IMPORT_INTRO
+    : "The logins your agents sign in to sites with, in the orders you start. They name a 1Password item and fleetd types the value in; no agent ever sees it.";
+  const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="onepassword" mark="off" title="1Password" hint={hint} line={line} lineTone={tone} />;
+  if (!live) return note("Not connected. Connect to a hub to set up 1Password.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub reads 1Password only with a bot's OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.");
+  if (read.error instanceof CallError && read.error.error.code === "forbidden") return note("This device's key belongs to no person. Pair the app as yourself to set it up.");
+  if (read.isLoadingError) return note(errorText(read.error), "danger");
+  if (read.data === undefined) return note("Loading…");
+  return <ServiceAccount token={read.data.token} hint={hint} />;
 }
 
-function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
+function ServiceAccount({ token, hint }: { token: OnePasswordToken | undefined; hint: string }) {
   const machines = useMachines();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const { hub } = useDataLayer();
   const [value, setValue] = useState("");
-  const [replacing, setReplacing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -116,12 +103,12 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       return;
     }
     setValue("");
-    setReplacing(false);
+    setConnecting(false);
     refetch(["onepassword_get"]);
     await test();
   };
   const form = (
-    <>
+    <div className={s.connectForm}>
       <ol className={s.steps}>
         <li>
           <Text size="sm">Make a vault for fleetd with only the logins and card your agents may use.</Text>
@@ -143,63 +130,65 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       <Field label="Token">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} placeholder="ops_…" onChange={(e) => setValue(e.target.value)} />
       </Field>
-      {/* Save shows once there is a token to save. */}
-      {value.trim() === "" && !busy && !replacing ? null : (
-        <div className={s.inline}>
-          {value.trim() === "" && !busy ? null : (
-            <Button variant="primary" disabled={busy} onClick={() => void save()}>
-              {busy ? "Saving…" : "Save and test"}
-            </Button>
-          )}
-          {replacing ? (
-            <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setValue(""), setProblem(null))}>
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-      )}
-    </>
+      <div className={s.inline}>
+        <Button variant="primary" disabled={busy || value.trim() === ""} onClick={() => void save()}>
+          {busy ? "Saving…" : "Save and test"}
+        </Button>
+        <Button variant="ghost" disabled={busy} onClick={() => (setConnecting(false), setValue(""), setProblem(null))}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
-  const help = "The token is kept encrypted on the hub's machines. A bot's own 1Password token wins over it.";
   const shown = tried ?? (token?.lastTest === undefined ? undefined : { test: token.lastTest });
   const verdict = shown === undefined ? null : "error" in shown ? { ok: false, text: shown.error } : vaultsLine(shown.test, nowMs);
+  const failed = verdict !== null && !verdict.ok;
+  const sealed = token === undefined ? "" : ` ${sealedLine(token.sealedOn)}.`;
   return (
     <SettingsRow
       reveal="onepassword.token"
-      title="Service account"
-      hint={help}
-      line={token === undefined ? null : sealedLine(token.sealedOn)}
+      mark={token === undefined ? "off" : failed ? "needs" : "ready"}
+      markLabel={token === undefined ? "1Password: not set up" : failed ? "1Password: needs a look" : "1Password: set up"}
+      title="1Password"
+      hint={`${hint} The token is kept encrypted on the hub's machines. A bot's own 1Password token wins over it.${sealed}`}
+      line={
+        testing ? (
+          <span role="status">Testing…</span>
+        ) : token === undefined ? (
+          "Not set up"
+        ) : failed ? (
+          <span title={verdict.text}>
+            <HubText>{"short" in verdict ? (verdict.short ?? verdict.text) : verdict.text}</HubText>
+          </span>
+        ) : verdict === null ? (
+          "Service account"
+        ) : (
+          <HubText>{verdict.text.replace(/ \(.*\)\.$/u, "")}</HubText>
+        )
+      }
+      lineTone={!testing && failed ? "warning" : "quiet"}
       control={
-        token === undefined ? undefined : (
-          <>
-            <TestButton testing={testing} onTest={() => void test()} />
-            {replacing ? null : (
-              <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
-                Replace
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
-              Remove
+        token === undefined ? (
+          connecting ? undefined : (
+            <Button size="sm" onClick={() => setConnecting(true)}>
+              Set up
             </Button>
-          </>
+          )
+        ) : (
+          <RowMenu
+            label="1Password"
+            disabled={testing}
+            items={[
+              { label: "Test", onSelect: () => void test() },
+              { label: "Replace token", onSelect: () => setConnecting(true) },
+              { label: "Remove", onSelect: () => setRemoving(true), danger: true },
+            ]}
+          />
         )
       }
     >
-      {token === undefined ? (
-        form
-      ) : (
-        <>
-          <MissingOn sealedOn={token.sealedOn} machines={machines.ids} there="agents there fill no logins with it" />
-          {verdict === null ? null : (
-            <div role={verdict.ok ? "status" : "alert"}>
-              <Text size="sm" tone={verdict.ok ? "quiet" : "danger"}>
-                <HubText>{verdict.text}</HubText>
-              </Text>
-            </div>
-          )}
-          {replacing ? form : null}
-        </>
-      )}
+      {token === undefined ? null : <MissingOn sealedOn={token.sealedOn} machines={machines.ids} there="agents there fill no logins with it" />}
+      {connecting ? form : null}
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove

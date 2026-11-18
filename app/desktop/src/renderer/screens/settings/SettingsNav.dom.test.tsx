@@ -12,7 +12,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AppFrame, TopBar, UiProvider } from "../../ui";
 import { SETTINGS_TABS } from "../shell/routes";
-import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
+import { SettingsSheet } from "./SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -98,9 +98,9 @@ const render = async (hash: string, admin: boolean, live = true, features: Reado
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AppFrame topBar={<TopBar />} sidebar={<SettingsSidebar onBack={() => undefined} />}>
-            <SettingsScreen />
-          </AppFrame>
+          <AppFrame topBar={<TopBar />}>
+    <SettingsSheet onClose={() => undefined} />
+  </AppFrame>
         </DataProvider>
       </UiProvider>,
     );

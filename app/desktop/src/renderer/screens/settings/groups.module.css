@@ -32,10 +32,10 @@
   align-self: flex-start;
   margin: 0;
   color: var(--text);
-  font-size: var(--text-md);
+  font-size: 14px;
   line-height: var(--leading-md);
   font-weight: var(--weight-strong);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
 }
 /* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
 .title {
@@ -105,8 +105,8 @@
   align-items: center;
   column-gap: var(--space-6);
   min-width: 0;
-  min-height: 48px;
-  padding: var(--space-2) var(--space-4);
+  min-height: 52px;
+  padding: 10px var(--space-4);
 }
 .rowText {
   display: flex;
@@ -160,8 +160,8 @@
   align-items: center;
   column-gap: var(--space-3);
   min-width: 0;
-  min-height: 48px;
-  padding: var(--space-3) var(--space-4);
+  min-height: 52px;
+  padding: 10px var(--space-4);
 }
 .listRow > .control {
   flex-wrap: nowrap;
@@ -369,7 +369,6 @@
 }
 .withMark {
   grid-template-columns: 8px minmax(0, 1fr) auto;
-  padding-block: 14px;
 }
 /* What a place's state is in words, at its row's end: quiet while all is well, the dot's colour when not. */
 .state {
@@ -427,4 +426,58 @@
   display: grid;
   place-items: center;
   margin-bottom: var(--space-1);
+}
+
+/* A notice: what went wrong or needs a look, compact under its row's title. A tint of its tone, its mark in the tone,
+   the words in the text's colour, its one action at the end. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.notice[data-tone="danger"] {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.noticeMark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--warning);
+}
+.notice[data-tone="danger"] .noticeMark {
+  color: var(--danger);
+}
+.noticeText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.noticeAction {
+  flex: none;
+  align-self: center;
+}
+
+/* A row with a notice under its title keeps its control on the title's line. */
+.rowHead:has(.notice) > .control,
+.listRow:has(.notice) > .control {
+  align-self: start;
+}
+
+/* A list's row with a dot and one line: the dot on the name's line, centred with it. */
+.withMark > .mark {
+  align-self: center;
+  margin-top: 0;
+}
+.withMark:has(> .rowText > :nth-child(2)) > .mark {
+  align-self: start;
+  margin-top: 6px;
 }

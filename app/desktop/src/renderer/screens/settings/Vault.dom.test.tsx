@@ -16,7 +16,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { HubVault } from "./Vault";
 import { PaymentsSetting } from "./Payments";
-import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
+import { SettingsSheet } from "./SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -124,10 +124,7 @@ const render = async (hash: string, features: string[] = TEAM, page?: ReactNode,
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
           {page ?? (
-            <>
-              <SettingsSidebar onBack={() => undefined} />
-              <SettingsScreen />
-            </>
+            <SettingsSheet onClose={() => undefined} />
           )}
         </DataProvider>
       </UiProvider>,

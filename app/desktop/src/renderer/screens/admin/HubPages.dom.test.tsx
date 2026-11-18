@@ -15,7 +15,7 @@ import { DataProvider } from "../../src/data/react";
 import { AppFrame, TopBar, UiProvider } from "../../ui";
 import { Instructions } from "../settings/Instructions";
 import { Prompts } from "../settings/Prompts";
-import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
+import { SettingsSheet } from "../settings/SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -149,15 +149,12 @@ const render = async (node: React.ReactNode) => {
 };
 
 const admin = (
-  <>
-    <SettingsSidebar onBack={() => undefined} />
-    <SettingsScreen />
-  </>
+  <SettingsSheet onClose={() => undefined} />
 );
 /** Settings in the window's frame, whose top row holds a page's name and its way back. */
 const framed = (
-  <AppFrame topBar={<TopBar />} sidebar={<SettingsSidebar onBack={() => undefined} />}>
-    <SettingsScreen />
+  <AppFrame topBar={<TopBar />}>
+    <SettingsSheet onClose={() => undefined} />
   </AppFrame>
 );
 

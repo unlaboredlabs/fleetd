@@ -12,32 +12,25 @@ import { Button } from "../../ui";
 import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { RowMenu, SettingsRow } from "./parts";
 import { onWeb } from "../../src/web";
 
 const noInput = {};
 
+const HINT = "The pull requests agents open for the orders you start open as this account.";
+
+/** GitHub, as one row of Your accounts. */
 export function GithubSettings() {
   const live = useLive();
   const cloud = useHub().cloud === true;
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
-  return (
-    <SettingsSection title="GitHub" reveal="github" hint="The pull requests agents open for the orders you start open as this account.">
-      {!live ? (
-        <GroupNote>Not connected. Connect to a hub to connect your GitHub.</GroupNote>
-      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <GroupNote>This hub opens PRs with each machine&apos;s own gh login. Update fleetd on the hub to connect your own GitHub.</GroupNote>
-      ) : read.isLoadingError ? (
-        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
-      ) : read.data === undefined ? (
-        <GroupNote>Loading…</GroupNote>
-      ) : read.data.app === undefined ? (
-        <GroupNote>{cloud ? "GitHub isn't set up on this service." : "This hub has no GitHub App yet. An admin creates it in Hub › Setup."}</GroupNote>
-      ) : (
-        <Account info={read.data} />
-      )}
-    </SettingsSection>
-  );
+  const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="github" mark="off" title="GitHub" hint={HINT} line={line} lineTone={tone} />;
+  if (!live) return note("Not connected. Connect to a hub to connect your GitHub.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub opens PRs with each machine's own gh login. Update fleetd on the hub to connect your own GitHub.");
+  if (read.isLoadingError) return note(errorText(read.error), "danger");
+  if (read.data === undefined) return note("Loading…");
+  if (read.data.app === undefined) return note(cloud ? "GitHub isn't set up on this service." : "This hub has no GitHub App yet. An admin creates it in Hub › Setup.");
+  return <Account info={read.data} />;
 }
 
 function Account({ info }: { info: GithubAppGetOutput }) {
@@ -72,8 +65,10 @@ function Account({ info }: { info: GithubAppGetOutput }) {
   return (
     <SettingsRow
       reveal="github.account"
-      title="Your GitHub"
-      hint={`You sign in through the hub's App, ${info.app?.name ?? ""}. The hub keeps the token and renews it, and never shows it. GitHub drops a connection that was revoked there or unused for six months.`}
+      mark={me === undefined ? "off" : lapsed ? "needs" : "ready"}
+      markLabel={me === undefined ? "GitHub: not connected" : lapsed ? "GitHub: connect again" : "GitHub: connected"}
+      title="GitHub"
+      hint={`${HINT} You sign in through the hub's App, ${info.app?.name ?? ""}. The hub keeps the token and renews it, and never shows it. GitHub drops a connection that was revoked there or unused for six months.`}
       lineTone={me !== undefined && lapsed ? "warning" : "quiet"}
       line={
         me === undefined ? (
@@ -81,7 +76,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
         ) : lapsed ? (
           <span role="alert">{`GitHub no longer takes your connection as ${me.login}. Connect again to open pull requests.`}</span>
         ) : (
-          `Connected as ${me.login} since ${dayWords(me.connectedAt)}.`
+          `${me.login} · since ${dayWords(me.connectedAt)}`
         )
       }
       control={
@@ -92,13 +87,11 @@ function Account({ info }: { info: GithubAppGetOutput }) {
             </Button>
           ) : null}
           {me === undefined || lapsed ? (
-            <Button variant="primary" disabled={waiting} onClick={() => void connect()}>
+            <Button size="sm" disabled={waiting} onClick={() => void connect()}>
               {waiting ? (onWeb() ? "Opening GitHub…" : "Waiting for GitHub…") : lapsed ? "Connect again" : "Connect GitHub"}
             </Button>
           ) : (
-            <Button variant="ghost" onClick={() => setRemoving(true)}>
-              Disconnect
-            </Button>
+            <RowMenu label="GitHub" items={[{ label: "Disconnect", onSelect: () => setRemoving(true), danger: true }]} />
           )}
         </>
       }

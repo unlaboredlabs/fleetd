@@ -1,18 +1,21 @@
 // Settings (⌘, or the app menu) is one sheet over the app (D211): the chat and its sidebar stay where they were under
-// it, and closing it (its ×, Esc) returns to them. In the sheet, a short index of pages in three groups and the page
-// beside it. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: the list of bots, each opening its pages under
-// tabs (Frames.tsx). Hub, for the hub's owners and admins only: People, Machines, Every bot and Setup, which says how
-// many required steps are left. Vault shows only on a hub that serves it. A search at the index's head narrows to an
-// option by name. A page that became a part of another (route.ts) has no entry: its links open the page that holds it.
-import { Search, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+// it, and closing it (its ×, Esc) returns to them. In the sheet, an index of pages on a quiet surface of its own, and
+// the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
+// The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
+// bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
+// and admins only: People, Machines, Every bot and Setup, which says how many required steps are left. Vault shows
+// only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
+// of another (route.ts) has no entry: its links open the page that holds it.
+import { Brain, Layers, LayoutGrid, ListChecks, LockKeyhole, MonitorSmartphone, Search, Server, SlidersHorizontal, UserRound, Users, X } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Button, cx } from "../../ui";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useServes, useSettledAdministers } from "../admin/role";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
+import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
-import { parseScope } from "./editor";
-import { scopeName, useProjects } from "./parts";
+import { HeadSlot, useProjects } from "./parts";
 import { formatRoute, isEveryProject, isProjectTab, pageOf, projectFor, tabHref, useSettingsRoute, type Tab } from "./route";
 import { openOption, optionsFor, pagePath, searchSettings } from "./search";
 import { SettingsScreen } from "./SettingsScreen";
@@ -20,26 +23,30 @@ import { vaultServed } from "./vaultModel";
 import n from "./sheet.module.css";
 
 /** You's pages, by their short names in the index. */
-const YOU: ReadonlyArray<{ tab: Tab; label: string }> = [
-  { tab: "general", label: "General" },
-  { tab: "accounts", label: "Accounts" },
-  { tab: "vault", label: "Vault" },
-  { tab: "your-memory", label: "Memory" },
-  { tab: "hubs", label: "Hubs & devices" },
+const YOU: ReadonlyArray<{ tab: Tab; label: string; icon: ReactNode }> = [
+  { tab: "general", label: "General", icon: <SlidersHorizontal /> },
+  { tab: "accounts", label: "Accounts", icon: <UserRound /> },
+  { tab: "vault", label: "Vault", icon: <LockKeyhole /> },
+  { tab: "your-memory", label: "Memory", icon: <Brain /> },
+  { tab: "hubs", label: "Hubs & devices", icon: <MonitorSmartphone /> },
 ];
 
 /** The Hub group's pages; Every bot opens on its first tab. */
-const HUB_PAGES: ReadonlyArray<{ tab: HubTab; label: string }> = [
-  { tab: "hub.people", label: "People" },
-  { tab: "hub.machines", label: "Machines" },
-  { tab: "hub.profiles", label: "Every bot" },
-  { tab: "hub.setup", label: "Setup" },
+const HUB_PAGES: ReadonlyArray<{ tab: HubTab; label: string; icon: ReactNode }> = [
+  { tab: "hub.people", label: "People", icon: <Users /> },
+  { tab: "hub.machines", label: "Machines", icon: <Server /> },
+  { tab: "hub.profiles", label: "Every bot", icon: <Layers /> },
+  { tab: "hub.setup", label: "Setup", icon: <ListChecks /> },
 ];
+
+/** The bots the index lists by name; past them, All bots has the rest. */
+const BOTS_SHOWN = 8;
 
 const noInput = {};
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const sheet = useRef<HTMLDivElement>(null);
+  const [head, setHead] = useState<HTMLDivElement | null>(null);
   // Esc closes the sheet, unless something in it took the key first (a menu, a dialog, a search with words in it).
   useEffect(() => {
     const on = (e: globalThis.KeyboardEvent) => {
@@ -59,15 +66,22 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
       <div ref={sheet} className={n.sheet} role="dialog" aria-modal="true" aria-label="Settings" tabIndex={-1}>
         <Index />
         <div className={n.page}>
-          <SettingsScreen />
+          <div className={n.head}>
+            <div ref={setHead} className={n.headSlot} />
+            <Button variant="ghost" iconOnly aria-label="Close settings" title="Close (Esc)" className={n.close} onClick={onClose}>
+              <X aria-hidden />
+            </Button>
+          </div>
+          <HeadSlot.Provider value={head}>
+            <SettingsScreen />
+          </HeadSlot.Provider>
         </div>
-        <Button variant="ghost" iconOnly aria-label="Close settings" title="Close (Esc)" className={n.close} onClick={onClose}>
-          <X aria-hidden />
-        </Button>
       </div>
     </div>
   );
 }
+
+type Entry = { key: string; label: string; icon: ReactNode; current: boolean; badge?: string | undefined; go: () => void };
 
 /** Where each entry goes, and whether it is the page on show. */
 function useEntries() {
@@ -78,44 +92,73 @@ function useEntries() {
   const steps = useServes("setup_list");
   const setup = useToolQuery("setup_list", noInput, { enabled: steps && administers });
   const left = steps ? (setup.data?.requiredLeft ?? 0) : 0;
+  const projects = useProjects();
   const on = pageOf(route.tab);
-  const you = YOU.filter((p) => vault || p.tab !== "vault").map((p) => ({
+  const you: Entry[] = YOU.filter((p) => vault || p.tab !== "vault").map((p) => ({
     key: p.tab,
     label: p.label,
+    icon: p.icon,
     current: on === p.tab,
     go: () => (window.location.hash = tabHref(p.tab)),
   }));
-  // A bot's pages show it under Bots, by name, as the page on show; Bots is then its way back to the list.
-  const projects = useProjects();
-  const botKey = isProjectTab(route.tab) && !(route.tab === "projects" && route.for === null) ? projectFor(route, projects) : null;
-  const bots = { key: "projects", label: "Bots", current: isProjectTab(route.tab) && botKey === null, go: () => (window.location.hash = formatRoute({ tab: "projects" })) };
-  const bot = botKey === null ? null : { key: botKey, label: scopeName(parseScope(botKey), projects), current: true, go: () => undefined };
-  const hub = administers
+  // A bot's pages light its own row; the list of them lights All bots.
+  const list = route.tab === "projects" && route.for === null;
+  const open = isProjectTab(route.tab) && !list ? projectFor(route, projects) : null;
+  const active = (projects ?? []).filter((p) => !isArchived(p));
+  const bots: Entry[] = [
+    { key: "projects", label: "All bots", icon: <LayoutGrid />, current: list, go: () => (window.location.hash = formatRoute({ tab: "projects" })) },
+    ...active.slice(0, BOTS_SHOWN).map((p) => {
+      const key = `${p.machineId}/${p.projectId}`;
+      return {
+        key,
+        label: p.title,
+        icon: <ProjectAvatar project={p} size={18} />,
+        current: open === key,
+        go: () => (window.location.hash = formatRoute({ tab: "projects", for: key })),
+      };
+    }),
+  ];
+  const hub: Entry[] | null = administers
     ? HUB_PAGES.map((p) => ({
         key: p.tab,
         label: p.label,
+        icon: p.icon,
         current: p.tab === "hub.profiles" ? isEveryProject(on) : on === p.tab,
         badge: p.tab === "hub.setup" && left > 0 ? `${String(left)} left` : undefined,
         go: () => navigate({ id: "settings", tab: p.tab, at: id }),
       }))
     : null;
-  return { you, bots, bot, hub, administers, vault };
+  return { you, bots, hub, administers, vault };
 }
-
-type Entry = { key: string; label: string; current: boolean; badge?: string | undefined; go: () => void };
 
 function Item({ entry }: { entry: Entry }) {
   return (
     <button type="button" className={n.item} aria-current={entry.current ? "page" : undefined} onClick={entry.go}>
+      <span className={n.itemIcon} aria-hidden>
+        {entry.icon}
+      </span>
       <span className={n.itemLabel}>{entry.label}</span>
       {entry.badge === undefined ? null : <span className={n.badge}>{entry.badge}</span>}
     </button>
   );
 }
 
-/** The sheet's own short list of pages, beside the page, a search at its head. */
+function Group({ id, label, entries }: { id: string; label: string; entries: ReadonlyArray<Entry> }) {
+  return (
+    <div className={n.group} role="group" aria-labelledby={id}>
+      <span id={id} className={n.groupLabel}>
+        {label}
+      </span>
+      {entries.map((e) => (
+        <Item key={e.key} entry={e} />
+      ))}
+    </div>
+  );
+}
+
+/** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
-  const { you, bots, bot, hub, administers, vault } = useEntries();
+  const { you, bots, hub, administers, vault } = useEntries();
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
   const results = searchSettings(query, optionsFor(administers, vault));
@@ -149,29 +192,9 @@ function Index() {
         </div>
       ) : (
         <>
-          <div className={n.group}>
-            {you.map((e) => (
-              <Item key={e.key} entry={e} />
-            ))}
-          </div>
-          <div className={n.group}>
-            <Item entry={bots} />
-            {bot === null ? null : (
-              <div className={n.sub}>
-                <Item entry={bot} />
-              </div>
-            )}
-          </div>
-          {hub === null ? null : (
-            <div className={n.group} role="group" aria-labelledby="settings-hub-group">
-              <span id="settings-hub-group" className={n.groupLabel}>
-                Hub
-              </span>
-              {hub.map((e) => (
-                <Item key={e.key} entry={e} />
-              ))}
-            </div>
-          )}
+          <Group id="settings-you" label="You" entries={you} />
+          <Group id="settings-bots" label="Bots" entries={bots} />
+          {hub === null ? null : <Group id="settings-hub" label="Hub" entries={hub} />}
         </>
       )}
     </nav>

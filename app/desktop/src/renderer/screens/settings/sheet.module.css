@@ -46,11 +46,25 @@
   }
 }
 
+/* The page's header zone: its head (title, the page's own control, a set's tabs) in the column's measure, on the
+   index title's line, the × at the sheet's end of that line; the page scrolls under it. */
+.head {
+  position: relative;
+  flex: none;
+  padding: 20px 0 20px;
+  /* The page's scroll keeps a gutter for its bar: the head keeps the same, so title and column share one edge. */
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+.headSlot {
+  max-width: 704px;
+  margin: 0 auto;
+  padding: 0 var(--space-10);
+}
 .close {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2;
+  top: 22px;
+  right: 16px;
   color: var(--quiet);
   border-radius: var(--radius-md);
 }
@@ -66,28 +80,24 @@
   min-height: 0;
 }
 
-/* ---- The index: a short list of pages at the sheet's left ---- */
+/* ---- The index: the sheet's pages on a quiet surface of its own ---- */
 .index {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5, 20px);
   min-height: 0;
   overflow-y: auto;
-  padding: 48px var(--space-3) var(--space-6) var(--space-4);
+  padding: 20px var(--space-3) var(--space-6);
   background: var(--settings-index);
   scrollbar-width: none;
 }
 .sheet:focus {
   outline: none;
 }
-/* The bot whose pages are open, under Bots: set in, by its name. */
-.sub {
-  padding-left: var(--space-3);
-}
 .indexHead {
   display: flex;
   align-items: center;
-  height: 32px;
+  height: 36px;
   margin-bottom: calc(-1 * var(--space-2));
   padding: 0 var(--space-2);
 }
@@ -101,7 +111,7 @@
 .group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .groupLabel {
   padding: 0 var(--space-2) var(--space-1);
@@ -112,9 +122,9 @@
 }
 .item {
   display: flex;
-  width: 100%;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
+  width: 100%;
   min-width: 0;
   height: 30px;
   padding: 0 var(--space-2);
@@ -132,13 +142,31 @@
 .item:hover {
   background: var(--hover);
 }
+/* The page on show: a white chip lifted off the index's surface, its words medium. */
 .item[aria-current="page"] {
-  background: var(--selected);
+  background: var(--settings-current);
+  box-shadow: var(--settings-chip);
   font-weight: var(--weight-medium);
 }
 .item:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: -2px;
+}
+.itemIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--quiet);
+}
+.itemIcon > svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+.item[aria-current="page"] .itemIcon {
+  color: var(--text);
 }
 .itemLabel {
   flex: 1;
@@ -198,7 +226,7 @@
   padding: 0 var(--space-2) 0 32px;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--settings-field);
+  background: var(--settings-fill);
   color: var(--text);
   font: inherit;
   font-size: var(--text-md);
@@ -211,8 +239,8 @@
   color: var(--quiet);
 }
 .search > input:focus {
-  border-color: var(--control-border);
   background: var(--sheet);
+  box-shadow: var(--settings-ring);
 }
 .search > input::-webkit-search-cancel-button {
   display: none;
@@ -239,24 +267,28 @@
     gap: var(--space-1);
     padding: var(--space-3);
   }
-  .indexHead {
+  .indexHead,
+  .groupLabel {
     display: none;
+  }
+  .item {
+    width: auto;
   }
 }
 
-/* ---- The controls, as Settings sets them: crisp, light, one height ---- */
+/* ---- The controls, as Settings sets them: filled, no dark outline, one height, one focus ring ---- */
 .sheet [role="group"]:has(> button[aria-pressed]) {
   padding: 2px;
   border-radius: 9px;
-  background: var(--settings-field);
+  background: var(--settings-fill);
   box-shadow: none;
 }
 .sheet [role="group"] > button[aria-pressed] {
-  height: 26px;
+  height: 28px;
   padding: 0 var(--space-3);
   border-radius: 7px;
   font-size: var(--text-md);
-  line-height: 26px;
+  line-height: 28px;
 }
 .sheet [role="group"] > button[aria-pressed="true"] {
   background: var(--sheet);
@@ -278,35 +310,52 @@
 .sheet button[role="switch"][data-state="checked"] > span {
   transform: translateX(16px);
 }
-.sheet button[role="combobox"] {
-  height: 32px;
-  padding: 0 var(--space-2) 0 var(--space-3);
-  border-color: var(--settings-control-edge);
+.page button[role="combobox"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.page textarea {
+  border-color: transparent;
   border-radius: var(--radius-md);
-  box-shadow: 0 1px 1px #0f17200a;
+  background-color: var(--settings-fill);
+  box-shadow: none;
+  transition:
+    background-color var(--dur-quick),
+    box-shadow var(--dur-quick);
 }
-.sheet input:not([type="search"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-.sheet textarea {
-  border-color: var(--settings-control-edge);
-  border-radius: var(--radius-md);
-}
-.sheet input:not([type="search"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+.page button[role="combobox"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
   height: 32px;
   padding: 0 var(--space-3);
 }
-
-/* A page's own search (the Vault's): the index's filled field, its magnifier at its start. */
-.page input[type="search"] {
-  height: 32px;
-  padding: 0 var(--space-3) 0 32px;
+.page button[role="combobox"] {
+  padding-right: var(--space-2);
+}
+.page textarea {
+  padding: 6px var(--space-3);
+}
+.page button[role="combobox"]:hover:not(:disabled),
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover:not(:disabled):not(:focus),
+.page textarea:hover:not(:disabled):not(:focus) {
+  background-color: var(--settings-fill-hover);
+}
+.page button[role="combobox"]:focus-visible,
+.page button[role="combobox"][data-state="open"],
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.page textarea:focus {
   border-color: transparent;
-  border-radius: var(--radius-md);
-  background: var(--settings-field) var(--search-glyph) no-repeat 10px 50% / 14px 14px;
-}
-.page input[type="search"]:focus {
-  border-color: var(--control-border);
+  outline: none;
   background-color: var(--sheet);
+  box-shadow: var(--settings-ring);
 }
-.page input[type="search"]::placeholder {
+.page input::placeholder,
+.page textarea::placeholder {
   color: var(--quiet);
+}
+.page input[aria-invalid="true"],
+.page textarea[aria-invalid="true"] {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+/* A page's own search (the Vault's): its magnifier at its start. */
+.page input[type="search"] {
+  padding-left: 32px;
+  background: var(--settings-fill) var(--search-glyph) no-repeat 10px 50% / 14px 14px;
 }

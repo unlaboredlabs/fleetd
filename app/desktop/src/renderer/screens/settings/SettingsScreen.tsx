@@ -22,7 +22,7 @@ import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
 import { OnePasswordSettings } from "./OnePassword";
 import { Part, ProjectFrame } from "./Frames";
-import { PageHead, useProjects } from "./parts";
+import { PageHead, SettingsSection, useProjects } from "./parts";
 import { ProjectList } from "./ProjectList";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
@@ -95,9 +95,11 @@ function YourAccounts() {
     <div className={s.scroll} data-screen="settings.accounts">
       <div className={s.column}>
         <PageHead title="Accounts" />
-        <ClaudeSettings />
-        <GithubSettings />
-        <OnePasswordSettings />
+        <SettingsSection>
+          <ClaudeSettings />
+          <GithubSettings />
+          <OnePasswordSettings />
+        </SettingsSection>
       </div>
     </div>
   );

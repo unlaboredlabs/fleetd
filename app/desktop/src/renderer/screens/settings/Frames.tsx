@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { Tab, TabList, Tabs } from "../../ui";
 import { useData, useHub } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { PageFrame, scopeName, useProjects } from "./parts";
 import { parseScope } from "./editor";
 import { EVERY_PROJECT, formatRoute, pageOf, PROJECT_TABS, type Tab as SettingsTab } from "./route";
@@ -34,16 +35,13 @@ export function ProjectFrame({ project, tab, children }: { project: string; tab:
   // Vault, only on a hub that serves it.
   const vault = useData((st) => vaultServed(st.features));
   const tabs = vault ? PROJECT_TABS : PROJECT_TABS.filter((t) => t !== "project-vault");
-  const lead = (
-    <button type="button" className={s.crumb} onClick={() => navigate({ id: "settings", tab: "projects" })}>
-      Bots
-    </button>
-  );
+  const [machineId = "", projectId = ""] = project.split("/");
+  const summary = projects?.find((p) => p.machineId === machineId && p.projectId === projectId);
   return (
     <PageFrame.Provider
       value={{
         title: scopeName(parseScope(project), projects),
-        lead,
+        ...(summary === undefined ? {} : { icon: <ProjectAvatar project={summary} size={28} /> }),
         tabs: <PageTabs label="Bot" tabs={tabs} current={tab} onOpen={(t) => (window.location.hash = formatRoute({ tab: t, for: project }))} />,
       }}
     >

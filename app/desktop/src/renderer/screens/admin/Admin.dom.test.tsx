@@ -13,7 +13,8 @@ import { UiProvider } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { parseHash } from "../shell/routes";
 import { Sidebar } from "../shell/Sidebar";
-import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
+import { SettingsScreen } from "../settings/SettingsScreen";
+import { SettingsSheet } from "../settings/SettingsSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -135,7 +136,7 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
             <Entry />
           ) : (
             <TooltipProvider>
-              <SettingsSidebar onBack={() => undefined} />
+              <SettingsSheet onClose={() => undefined} />
             </TooltipProvider>
           )}
         </DataProvider>

@@ -10,6 +10,7 @@ import { Button, Dialog, Text } from "../../ui";
 import { HubText } from "../projects/HubText";
 import { boxesOf, missingOn, testLine } from "./claudeModel";
 import { errorText, useHubCall, useRefetch } from "./hub";
+import { Notice } from "./parts";
 
 /** A claude -p call takes up to 90 s on the node, plus the way there and back. */
 const TEST_MS = 120_000;
@@ -60,17 +61,22 @@ export function TestResult({ tried, nowMs }: { tried: Tried | undefined; nowMs: 
   if (tried === undefined) return null;
   if ("error" in tried) {
     return (
-      <div role="alert">
-        <Text size="sm" tone="danger">
-          <HubText>{tried.error}</HubText>
-        </Text>
-      </div>
+      <Notice tone="danger">
+        <HubText>{tried.error}</HubText>
+      </Notice>
     );
   }
   const line = testLine(tried.test, nowMs);
+  if (!line.ok) {
+    return (
+      <Notice tone="danger">
+        <HubText>{line.text}</HubText>
+      </Notice>
+    );
+  }
   return (
-    <div role={line.ok ? "status" : "alert"}>
-      <Text size="sm" tone={line.ok ? "quiet" : "danger"}>
+    <div role="status">
+      <Text size="sm" tone="quiet">
         <HubText>{line.text}</HubText>
       </Text>
     </div>
@@ -83,13 +89,7 @@ export function MissingOn({ sealedOn, machines, there = "nothing runs on it ther
   const names = useData((d) => d.machines);
   const missing = missingOn(sealedOn, machines).map((m) => names[m]?.name ?? m);
   if (missing.length === 0) return null;
-  return (
-    <div role="status">
-      <Text size="sm" tone="warning">
-        {`Not on ${missing.join(", ")}: ${there}. Save it again while ${missing.length === 1 ? "it is" : "they are"} online.`}
-      </Text>
-    </div>
-  );
+  return <Notice tone="warning">{`Not on ${missing.join(", ")}: ${there}. Save it again while ${missing.length === 1 ? "it is" : "they are"} online.`}</Notice>;
 }
 
 export function TestButton(props: { testing: boolean; onTest: () => void }) {
@@ -103,11 +103,9 @@ export function TestButton(props: { testing: boolean; onTest: () => void }) {
 export function Problem({ text }: { text: string | null }) {
   if (text === null) return null;
   return (
-    <div role="alert">
-      <Text size="sm" tone="danger">
-        <HubText>{text}</HubText>
-      </Text>
-    </div>
+    <Notice tone="danger">
+      <HubText>{text}</HubText>
+    </Notice>
   );
 }
 
