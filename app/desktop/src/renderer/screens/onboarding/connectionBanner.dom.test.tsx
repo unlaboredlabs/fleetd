@@ -7,7 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { ConnectionBanner } from "./ConnectionBanner";
+import { CONNECT_QUIET_MS, ConnectionBanner } from "./ConnectionBanner";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -21,8 +21,8 @@ let host: HTMLDivElement;
 let root: Root;
 let send: (frame: HubFrame) => void = () => undefined;
 
-beforeEach(() => {
-  probe.mockClear();
+/** The banner over a data layer of its own, `send` its hub's frames. */
+const mount = () => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -43,6 +43,10 @@ beforeEach(() => {
       </DataProvider>,
     );
   });
+};
+beforeEach(() => {
+  probe.mockClear();
+  mount();
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -117,4 +121,72 @@ it("takes the version a node came back online with after it was away", async () 
     await new Promise((r) => setTimeout(r, 0));
   });
   expect(banner()).toBeNull();
+});
+
+// W715: the web app sat on an amber "Connecting to https://<team>.fleetd.dev…" for the 3 to 5 seconds its first
+// connect took, over the bot list the last visit kept. A first attempt is quiet for its first seconds; one that is
+// still running after them is named, and one that failed says why at once.
+const reconnecting = () => host.querySelector("[data-banner='reconnecting']")?.textContent ?? null;
+const HUB = "https://acme.fleetd.dev";
+/** Mounted again on fake timers: the quiet seconds start as the banner mounts. */
+const remount = () => {
+  act(() => root.unmount());
+  host.remove();
+  mount();
+};
+
+it("says nothing while a first attempt runs its first seconds, then names the hub it is still reaching", () => {
+  vi.useFakeTimers();
+  remount();
+  try {
+    act(() => {
+      send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    });
+    expect(reconnecting()).toBeNull();
+    act(() => void vi.advanceTimersByTime(CONNECT_QUIET_MS - 100));
+    expect(reconnecting()).toBeNull();
+    act(() => void vi.advanceTimersByTime(100));
+    expect(reconnecting()).toBe(`Connecting to ${HUB}…`);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("never shows a first attempt that is up within its quiet seconds", () => {
+  vi.useFakeTimers();
+  remount();
+  try {
+    act(() => {
+      send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    });
+    act(() => void vi.advanceTimersByTime(800));
+    act(() => {
+      send({ t: "state", state: { phase: "live", hub: HUB, protocol: 1, version: "0.2.0" } });
+    });
+    act(() => void vi.advanceTimersByTime(CONNECT_QUIET_MS));
+    expect(reconnecting()).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("says at once why an attempt failed, within the first seconds too", () => {
+  vi.useFakeTimers();
+  remount();
+  try {
+    act(() => {
+      send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    });
+    act(() => {
+      send({ t: "state", state: { phase: "retrying", hub: HUB, reason: "The hub refused the connection", retryAt: Date.now() + 1_000 } });
+    });
+    expect(reconnecting()).toContain("The hub refused the connection.");
+    // The next attempt keeps the reason on screen rather than going quiet again.
+    act(() => {
+      send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 1 } });
+    });
+    expect(reconnecting()).toContain("The hub refused the connection.");
+  } finally {
+    vi.useRealTimers();
+  }
 });

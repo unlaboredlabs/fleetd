@@ -7,18 +7,25 @@ import { useCommands } from "../palette";
 import { restartOf, wakeQuiet } from "../shell/model";
 import { useOfflineAsOf } from "../shell/offline";
 import { sentence, type Reaching } from "./form";
-import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
+import { useHubProbe, useHubState, useQuietAtFirst, useReaching, useSecondsUntil } from "./hooks";
 import { Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
+
+/**
+ * A first attempt, with nothing failed yet, says nothing for this long: most links are up well within it, and the
+ * bot list the last visit kept is on screen meanwhile. One still running after it is named.
+ */
+export const CONNECT_QUIET_MS = 3_000;
 
 /** "a", "a and b", "a, b and c". */
 const listed = (names: ReadonlyArray<string>) => (names.length === 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.slice(-1).join("")}`);
 
 /**
  * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update. A
- * planned restart isn't out of reach until it has run 2 minutes. A machine is named only when it is linked and still
- * behind once the hub's update of it should have ended, never while that update is on its way.
+ * planned restart isn't out of reach until it has run 2 minutes, nor a first attempt its first CONNECT_QUIET_MS. A
+ * machine is named only when it is linked and still behind once the hub's update of it should have ended, never while
+ * that update is on its way.
  * Offline, the project list and the chats stay on screen marked with the time they were last current (this banner
  * names it too); every other screen shows its skeleton, so nothing held is presented as live.
  */
@@ -31,6 +38,7 @@ export function ConnectionBanner() {
   const nowMs = useNow(machines.some((m) => m.status !== "offline"), 60_000);
   const state = useHubState();
   const reach = useReaching(state);
+  const first = useQuietAtFirst(reach !== null && reach.reason === null, CONNECT_QUIET_MS);
   const layer = useDataLayer();
   // Waiting out a retry: an attempt that is running has nothing to hurry.
   const waiting = reach !== null && reach.reason !== null && reach.retryAt !== null;
@@ -46,7 +54,7 @@ export function ConnectionBanner() {
   // network comes back. Read against the clock at each redial's state.
   // eslint-disable-next-line react-hooks/purity
   const [restart, waking] = useMemo(() => [restartOf(state, Date.now()), wakeQuiet(state, Date.now())] as const, [state]);
-  if ((restart !== null && restart.phase !== "outage") || waking) return null;
+  if ((restart !== null && restart.phase !== "outage") || waking || first) return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;

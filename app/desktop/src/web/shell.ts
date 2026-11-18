@@ -1,7 +1,8 @@
 // `window.fleetd` in a browser: the web app's half of the shell seam (the desktop's is the preload, src/preload). The
 // renderer reaches its shell through FleetdApi alone, so this one file makes it a web app for fleetd cloud. What it
 // does in place of each part of the desktop's shell:
-//   the hub connection   each team's hub socket on this origin, the session's cookie its auth (hub.ts); no key, no cache
+//   the hub connection   each team's hub socket on this origin, the session's cookie its auth (hub.ts); no key
+//   the offline cache    each team's in this browser, the account's only, gone at sign-out (cache.ts)
 //   hubs                 the account's teams, as the session says; their names and colours kept in this browser
 //   sign-in, sign-out    WorkOS's page by a navigation, and back (session.ts); the gate before the app (Gate.tsx)
 //   secrets, the vault   sealed here with libsodium, as main seals them; a vault value is never shown or copied here
@@ -29,6 +30,7 @@ import type { Transport } from "../main/hub/link";
 import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSandboxKey, submitSecret } from "../main/secret";
 import { sessionHash } from "../shared/sessionHash";
 import { saveVaultItem, unlockVault } from "../main/vault";
+import { webCache, type CacheStorage } from "./cache";
 import { WebHub } from "./hub";
 import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
@@ -56,8 +58,8 @@ export interface WebDeps {
   readonly notify: (title: string, options: { body: string; tag: string }, onClick: () => void) => Promise<boolean>;
   readonly setTitle: (count: number) => void;
   readonly random: (bytes: number) => Uint8Array;
-  /** Names and colours the person gave teams in this browser. */
-  readonly storage: Pick<Storage, "getItem" | "setItem">;
+  /** Names and colours the person gave teams in this browser, and their offline caches (cache.ts). */
+  readonly storage: CacheStorage;
   readonly platform: FleetdApi["platform"];
   readonly version: string;
 }
@@ -106,6 +108,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   const ids = teamHubIds(session.teams.map((t) => t.id));
   for (const team of session.teams) teams.set(ids.get(team.id) ?? teamHubId(team.id), team);
   let names = readNames(deps.storage);
+  const cache = webCache(deps.storage, session.email, session.teams.map((t) => t.id));
   const entries = (): readonly HubEntry[] =>
     [...teams].map(([id, team]) => {
       const own = names[team.id];
@@ -124,7 +127,10 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
     checkedAt = now;
     void readSession(deps.fetch).then((read) => {
       checking = false;
-      if (!read.ok && read.signedOut === true) deps.go(signInPath(deps.here()));
+      if (!read.ok && read.signedOut === true) {
+        cache.clear();
+        deps.go(signInPath(deps.here()));
+      }
       else if (read.ok && read.session.teams.map((t) => t.id).join() !== session.teams.map((t) => t.id).join()) deps.reload();
     });
   };
@@ -282,8 +288,17 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       thumbs: (hub, on) => Promise.resolve(hubs.get(hub)?.thumbs(on)),
       resync: (hub) => Promise.resolve(hubs.get(hub)?.resync()),
       retryNow: (hub) => Promise.resolve(hubs.get(hub)?.retryNow()),
-      // Nothing of a team's is kept in the browser: a shared computer keeps no chat after the tab closes.
-      cache: { read: () => Promise.resolve(null), write: () => Promise.resolve() },
+      cache: {
+        read: (hub) => {
+          const team = teams.get(hub);
+          return Promise.resolve(team === undefined ? null : cache.read(team.id));
+        },
+        write: (hub, text) => {
+          const team = teams.get(hub);
+          if (team !== undefined) cache.write(team.id, text);
+          return Promise.resolve();
+        },
+      },
       connect: () => Promise.resolve({ ok: false, message: NEEDS_DESKTOP }),
       forget: () => Promise.resolve(),
     },
@@ -303,6 +318,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
           const { code, message, fix } = out.failure;
           return { kept: [], failure: { code, message: `Not signed out: ${message}`, ...(fix === undefined ? {} : { fix }) } };
         }
+        cache.clear();
         deps.go("/");
         return { kept: [] };
       },

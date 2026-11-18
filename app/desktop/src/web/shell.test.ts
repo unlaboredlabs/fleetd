@@ -23,8 +23,15 @@ interface Call {
   readonly init: RequestInit | undefined;
 }
 
-/** A fleetd cloud on the other end of fetch and the socket: records what the page asks, answers as told. */
-const setup = (answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 }), session: WebSession = SESSION) => {
+/**
+ * A fleetd cloud on the other end of fetch and the socket: records what the page asks, answers as told. `stored` is
+ * this browser's localStorage, shared by the pages a test opens one after another.
+ */
+const setup = (
+  answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 }),
+  session: WebSession = SESSION,
+  stored = new Map<string, string>(),
+) => {
   const calls: Call[] = [];
   const sockets: Array<{ url: string; events: ConnectionEvents; sent: Array<Record<string, unknown>>; headers: Readonly<Record<string, string>> | undefined }> = [];
   const transport: Transport = (url, events, headers) => {
@@ -32,7 +39,6 @@ const setup = (answer: (path: string, init?: RequestInit) => Response = () => ne
     sockets.push(socket);
     return { send: (text) => void socket.sent.push(JSON.parse(text) as Record<string, unknown>), ping: () => undefined, close: () => undefined };
   };
-  const stored = new Map<string, string>();
   const went: string[] = [];
   const opened: string[] = [];
   const saved: Array<{ name: string; blob: Blob }> = [];
@@ -57,7 +63,15 @@ const setup = (answer: (path: string, init?: RequestInit) => Response = () => ne
     notify: () => Promise.resolve(true),
     setTitle: () => undefined,
     random: (n) => new Uint8Array(n).fill(0xab),
-    storage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => void stored.set(k, v) },
+    storage: {
+      getItem: (k) => stored.get(k) ?? null,
+      setItem: (k, v) => void stored.set(k, v),
+      removeItem: (k) => void stored.delete(k),
+      key: (i) => [...stored.keys()][i] ?? null,
+      get length() {
+        return stored.size;
+      },
+    },
     platform: "darwin",
     version: "test",
   };
@@ -76,12 +90,85 @@ afterEach(() => {
 });
 
 describe("the web shell", () => {
-  it("says it is the web, with no fixture, vibrancy or cache", async () => {
+  it("says it is the web, with no fixture or vibrancy, and no cache before a visit kept one", async () => {
     const { api } = setup();
     expect(api.shell).toBe("web");
     expect(api.fixture).toBeNull();
     expect(api.vibrancy).toBe(false);
     expect(await api.hub.cache.read(ACME)).toBeNull();
+  });
+
+  it("keeps each team's offline cache in this browser, so the next visit shows the bot list before the socket is up", async () => {
+    const stored = new Map<string, string>();
+    const first = setup(undefined, SESSION, stored);
+    await first.api.hub.cache.write(ACME, '{"projects":["acme"]}');
+    await first.api.hub.cache.write("9a8b7c6d00004000", '{"projects":["side"]}');
+    // Another page of the same account: each team reads its own.
+    const again = setup(undefined, SESSION, stored);
+    expect(await again.api.hub.cache.read(ACME)).toBe('{"projects":["acme"]}');
+    expect(await again.api.hub.cache.read("9a8b7c6d00004000")).toBe('{"projects":["side"]}');
+    expect(await again.api.hub.cache.read("0000000000000000")).toBeNull();
+  });
+
+  it("drops a team's cache once the account has left it, and every one when another account signs in", async () => {
+    const stored = new Map<string, string>();
+    const first = setup(undefined, SESSION, stored);
+    await first.api.hub.cache.write(ACME, "acme's");
+    await first.api.hub.cache.write("9a8b7c6d00004000", "side's");
+    const left = setup(undefined, { ...SESSION, teams: SESSION.teams.slice(0, 1) }, stored);
+    expect(await left.api.hub.cache.read(ACME)).toBe("acme's");
+    expect([...stored.values()]).not.toContain("side's");
+    const other = setup(undefined, { ...SESSION, email: "sam@example.com" }, stored);
+    expect(await other.api.hub.cache.read(ACME)).toBeNull();
+    expect([...stored.values()]).not.toContain("acme's");
+  });
+
+  it("clears the cache at sign-out, and a write on the way out (pagehide) doesn't bring it back", async () => {
+    const stored = new Map<string, string>();
+    const t = setup(() => new Response(null, { status: 204 }), SESSION, stored);
+    await t.api.hub.cache.write(ACME, "acme's");
+    await t.api.cloud.signOut();
+    await t.api.hub.cache.write(ACME, "acme's, again");
+    expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
+    expect(await setup(undefined, SESSION, stored).api.hub.cache.read(ACME)).toBeNull();
+  });
+
+  it("keeps nothing from a tab still open after the account signed out in another, nor after another account signed in", async () => {
+    const stored = new Map<string, string>();
+    const cached = () => [...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"));
+    const a = setup(() => new Response(null, { status: 204 }), SESSION, stored);
+    const b = setup(undefined, SESSION, stored);
+    await b.api.hub.cache.write(ACME, "lea's");
+    await a.api.cloud.signOut();
+    expect(cached()).toEqual([]);
+    // B's link drops, then B closes: its writes find the cache no longer Lea's.
+    await b.api.hub.cache.write(ACME, "lea's, again");
+    expect(cached()).toEqual([]);
+    // Sam signs in on this computer, in the same team, while B is still open: B neither writes into Sam's cache nor
+    // reads it.
+    const sam = setup(undefined, { ...SESSION, email: "sam@example.com" }, stored);
+    await sam.api.hub.cache.write(ACME, "sam's");
+    await b.api.hub.cache.write(ACME, "lea's, on the way out");
+    expect(await b.api.hub.cache.read(ACME)).toBeNull();
+    expect(await setup(undefined, { ...SESSION, email: "sam@example.com" }, stored).api.hub.cache.read(ACME)).toBe("sam's");
+  });
+
+  it("clears a cache the index no longer lists", async () => {
+    const stored = new Map<string, string>([["fleetd.web.cache.3f2b9c1e-0000-4000-8000-000000000001", "left behind"]]);
+    const t = setup(() => new Response(null, { status: 204 }), SESSION, stored);
+    expect(await t.api.hub.cache.read(ACME)).toBeNull();
+    expect([...stored.values()]).not.toContain("left behind");
+  });
+
+  it("clears the cache when the page finds itself signed out", async () => {
+    const stored = new Map<string, string>();
+    const t = setup((path) => (path === "/web/session" ? new Response(null, { status: 401 }) : new Response(null, { status: 404 })), SESSION, stored);
+    await t.api.hub.cache.write(ACME, "acme's");
+    t.api.hub.subscribe(ACME, () => undefined);
+    t.sockets[0]?.events.onClose(4401, "unauthorized");
+    await vi.runAllTimersAsync();
+    expect(t.went[0]).toMatch(/^\/web\/sign-in/u);
+    expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
   });
 
   it("lists the account's teams as cloud hubs, and keeps a new name and colour in this browser", async () => {
