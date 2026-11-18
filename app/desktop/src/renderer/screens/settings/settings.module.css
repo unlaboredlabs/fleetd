@@ -534,3 +534,27 @@
   border-radius: var(--radius-md);
   background: var(--settings-index);
 }
+
+/* The way back to the page that opened this one (a step's Setup): small, quiet, its chevron before it. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  margin-left: -6px;
+  padding: 0 var(--space-2) 0 2px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-md);
+}
+.back > svg {
+  width: 16px;
+  height: 16px;
+}
+.back:hover {
+  background: var(--hover);
+  color: var(--text);
+}

@@ -485,3 +485,19 @@
   align-self: start;
   margin-top: 6px;
 }
+
+/* A checklist row's check in place of a glyph's tile: done in the text's colour, to do faint, a look in warning. */
+.icon:has(> [data-step-glyph]) {
+  background: none;
+}
+.icon > [data-step-glyph] {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.6;
+}
+.icon > [data-step-glyph="todo"] {
+  color: var(--faint);
+}
+.icon > [data-step-glyph="look"] {
+  color: var(--warning);
+}

@@ -12,7 +12,7 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { Avatar, Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { AddButton, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
+import { AddButton, Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import { openUpdates } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
@@ -180,7 +180,9 @@ function PersonLine({
       controls={
         <>
           {row.roles.length === 0 ? (
-            <Text tone="quiet">{roleWord(p.role)}</Text>
+            <span className={a.roleWord} title={row.why || undefined}>
+              <Text tone="quiet">{roleWord(p.role)}</Text>
+            </span>
           ) : (
             <Select
               aria-label={`${p.name}'s role`}
@@ -192,14 +194,16 @@ function PersonLine({
             />
           )}
           {invite !== undefined && row.removable ? (
-            <Button variant="ghost" disabled={!live || busy} onClick={() => run("invite_revoke", { inviteId: invite.inviteId }, "Not revoked")}>
-              Revoke
-            </Button>
+            <RowMenu
+              label={p.name}
+              disabled={!live || busy}
+              items={[{ label: "Revoke invite", onSelect: () => run("invite_revoke", { inviteId: invite.inviteId }, "Not revoked"), danger: true }]}
+            />
           ) : row.removable ? (
-            <Button variant="ghost" disabled={!live || busy} onClick={onRemove}>
-              Remove
-            </Button>
-          ) : null}
+            <RowMenu label={p.name} disabled={!live || busy} items={[{ label: "Remove from hub", onSelect: onRemove, danger: true }]} />
+          ) : (
+            <span className={a.menuRoom} />
+          )}
         </>
       }
     >
@@ -211,22 +215,11 @@ function PersonLine({
             : devicesLine(row.devices.length)}
       </Text>
       {accounts.pause === null ? null : (
-        <Text size="sm" tone="warning">
+        <Notice tone="warning">
           <HubText>{accounts.pause}</HubText>
-        </Text>
+        </Notice>
       )}
-      {row.why ? (
-        <Text size="sm" tone="quiet">
-          {row.why}
-        </Text>
-      ) : null}
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="sm" tone="danger">
-            {error}
-          </Text>
-        </p>
-      )}
+      {error === undefined ? null : <Notice tone="danger">{error}</Notice>}
     </SettingsListRow>
   );
 }

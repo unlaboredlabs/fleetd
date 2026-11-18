@@ -17,7 +17,7 @@ import { HubText } from "../projects/HubText";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
-import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, GroupNote, RowMenu, SettingsRow, SettingsSection } from "./parts";
 import { onWeb } from "../../src/web";
 
 /** Settings › You › Hubs & devices: each hub this app is paired with, and Add a hub. */
@@ -190,12 +190,16 @@ function HubSetting({ only }: { only: boolean }) {
             </Button>
           ) : null}
           {/* Admins of this hub only, and only while it is there to ask. */}
-          {administers && restarts && (state.phase === "live" || busy) ? (
-            <Button disabled={busy} onClick={() => setConfirmRestart(true)}>
-              Restart hub…
-            </Button>
+          {(administers && restarts && (state.phase === "live" || busy)) || (hub && !onWeb()) ? (
+            <RowMenu
+              label={self.label}
+              disabled={busy}
+              items={[
+                ...(administers && restarts && (state.phase === "live" || busy) ? [{ label: "Restart hub…", onSelect: () => setConfirmRestart(true) }] : []),
+                ...(hub && !onWeb() ? [{ label: only ? "Disconnect and forget key…" : "Remove…", onSelect: () => setConfirm(true), danger: true }] : []),
+              ]}
+            />
           ) : null}
-          {hub && !onWeb() ? <DangerButton onClick={() => setConfirm(true)}>{only ? "Disconnect and forget key" : "Remove…"}</DangerButton> : null}
         </>
       }
     >

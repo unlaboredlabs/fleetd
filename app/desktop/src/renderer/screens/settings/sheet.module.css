@@ -251,6 +251,10 @@
   .scrim {
     padding: var(--space-2);
   }
+  /* The column fills the pane: the head keeps clear of the ×. */
+  .headSlot {
+    padding-right: 56px;
+  }
   .sheet {
     grid-template-columns: 200px minmax(0, 1fr);
     height: 100%;

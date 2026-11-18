@@ -351,24 +351,24 @@
 [data-theme="light"] {
   --settings-scrim: #0b0d1026;
   --settings-lift: 0 0 0 1px #0f17201a, 0 2px 4px #0f17200a, 0 24px 64px -12px #0f172040;
-  --settings-index: #f6f7f9;
-  --settings-current: #ffffff;
+  --settings-index: var(--panel);
+  --settings-current: var(--row-on);
   --settings-field: #0f17200a;
   --settings-fill: #eff1f3;
   --settings-fill-hover: #e9ebee;
   --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #2b6be42e;
-  --settings-chip: 0 0 0 1px #0f172014, 0 1px 2px #0f17201a;
+  --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);
 }
 [data-theme="dark"] {
   --settings-scrim: #0000008c;
   --settings-lift: 0 0 0 1px #ffffff17, 0 2px 4px #00000066, 0 24px 64px -12px #000000b3;
-  --settings-index: #0e0f11;
-  --settings-current: #212328;
+  --settings-index: var(--panel);
+  --settings-current: var(--row-on);
   --settings-field: #ffffff0d;
   --settings-fill: #1d1f23;
   --settings-fill-hover: #23252a;
   --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #5b91f53d;
-  --settings-chip: 0 0 0 1px #ffffff14, 0 1px 2px #00000080;
+  --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);
 }

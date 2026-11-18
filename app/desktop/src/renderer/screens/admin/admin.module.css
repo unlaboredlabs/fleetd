@@ -166,3 +166,14 @@
   align-self: center;
   margin-top: 0;
 }
+
+/* A role with no choice (your own): its word at the choice's place, why on hover. */
+.roleWord {
+  display: inline-flex;
+  padding: 0 var(--space-2);
+}
+/* The "…"'s room in a row without one, so every role ends on one edge. */
+.menuRoom {
+  display: inline-block;
+  width: var(--control);
+}

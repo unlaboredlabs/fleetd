@@ -4,23 +4,23 @@
 // it is needed, or that it wants a look); then the other steps still left. A row opens the step in place of the
 // list, the way back in the window's top row: for the hub's own accounts that page holds the account's controls
 // (the hub's Claude API key, Claude.tsx; its GitHub App, github/AdminGithub.tsx) over the step's guide (its paste
-// values, where else its result is saved, its Test). Other steps that are done fold into one quiet line, which shows
-// them again to change a value or test one. What needs the admin now comes first (setup/steps.ts's setupLayout). The
+// values, where else its result is saved, its Test). Steps that are done stay in the list as checked rows, to change
+// a value or test one. What needs the admin now comes first (setup/steps.ts's setupLayout). The
 // open step is this page's own: the route names only the page; a search or a link for an account's option (useWanted)
 // opens the account that holds it, and one for Hub accounts lands on the accounts. A hub too old to serve its steps
 // still lists its own two accounts, which open their controls.
+import { ChevronLeft, Circle, CircleAlert, CircleCheck } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { Person } from "../../../shared/contracts";
-import { Button, Text } from "../../ui";
+import { Text } from "../../ui";
 import { AdminGithub } from "../github/AdminGithub";
 import { Part } from "../settings/Frames";
-import { PageFrame, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
+import { Notice, PageFrame, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { revealNext, useWanted } from "../settings/reveal";
 import { StepGuide, useSetupSteps } from "../setup/SetupScreen";
 import { doneWords, needWords, requiredLeft, setupLayout, type SetupStep } from "../setup/steps";
 import { ClaudeAdmin } from "./Claude";
 import s from "../settings/settings.module.css";
-import a from "./admin.module.css";
 
 /** The hub's own accounts, whose controls their step's page holds: by the step's id, each with its name. */
 const HUB_ACCOUNTS: ReadonlyArray<readonly [id: string, title: string]> = [
@@ -35,7 +35,6 @@ const HOLDS: Readonly<Record<string, string>> = { "admin.claude": "claude", "adm
 export function SetupPage({ me }: { me: Person | undefined }) {
   const steps = useSetupSteps();
   const [open, setOpen] = useState<string | null>(null);
-  const [folded, setFolded] = useState(true);
   const back = useCallback(() => {
     // An option its account's page never showed (a hub that doesn't serve it) stops waiting, or it would open the
     // account again.
@@ -68,55 +67,55 @@ export function SetupPage({ me }: { me: Person | undefined }) {
   }
   const { accounts, others, done, othersFirst } = setupLayout(list);
   const required = requiredLeft(list);
-  const rows = (of: ReadonlyArray<SetupStep>, account = false) => of.map((st) => <StepRow key={st.id} step={st} account={account} onOpen={() => setOpen(st.id)} />);
   const problem = steps !== null && "problem" in steps ? steps : null;
-  const accountsPart = (
-    <Part key="accounts" reveal="hub.accounts" screen="settings.hub.accounts">
-      <SettingsSection title="Accounts">
-        <SettingsList label="Accounts">
-          {rows(accounts, true)}
-          {/* The hub's own accounts keep their row, and so their controls, whatever the hub's steps say or don't. */}
-          {HUB_ACCOUNTS.filter(([id]) => !list.some((st) => st.id === id)).map(([id, title]) => (
-            <SettingsListRow key={id} name={title} label={title} open={{ onClick: () => setOpen(id) }} data={{ "data-step": id }} />
-          ))}
-        </SettingsList>
-      </SettingsSection>
-    </Part>
-  );
-  const othersPart =
-    others.length === 0 ? null : (
-      <SettingsSection key="others" title="This hub">
-        <SettingsList label="Steps left">{rows(others)}</SettingsList>
-      </SettingsSection>
-    );
+  // One checklist: what needs the admin now first, then the accounts, then what is done, each row a check.
+  const ordered = othersFirst ? [...others, ...accounts] : [...accounts, ...others];
+  const all = [...ordered, ...done];
+  const doneCount = all.filter((st) => st.status === "done").length;
   return (
     <div className={s.scroll} data-screen={problem === null ? "settings.hub.setup" : "settings.hub.setup.error"}>
       <div className={s.column}>
-        <PageHead title="Setup">
+        <PageHead
+          title="Setup"
+          aside={
+            all.length === 0 ? undefined : (
+              <Text tone="quiet" data-done={String(done.length)}>
+                {doneCount === all.length ? "All set up" : `${String(doneCount)} of ${String(all.length)} done`}
+              </Text>
+            )
+          }
+        >
           {problem !== null ? (
             <Text tone={problem.old ? "quiet" : "danger"}>{problem.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : problem.problem}</Text>
-          ) : required === 0 ? null : (
-            `${required} required before agents can run.`
-          )}
+          ) : null}
         </PageHead>
-        {othersFirst ? [othersPart, accountsPart] : [accountsPart, othersPart]}
-        {done.length === 0 ? null : (
-          <SettingsSection
-            data={{ "data-done": String(done.length) }}
-            intro={
-              <span className={a.doneLine}>
-                {list.every((st) => st.status === "done") ? "Everything is set up." : `${done.length} done.`}
-                <Button variant="link" size="sm" aria-expanded={!folded} onClick={() => setFolded(!folded)}>
-                  {folded ? "Show steps" : "Hide steps"}
-                </Button>
-              </span>
-            }
-          >
-            {folded ? null : <SettingsList label="Steps done">{rows(done)}</SettingsList>}
+        {required === 0 ? null : <Notice tone="warning">{`${String(required)} required before agents can run.`}</Notice>}
+        <Part reveal="hub.accounts" screen="settings.hub.accounts">
+          <SettingsSection>
+            <SettingsList label="Steps">
+              {all.map((st) => (
+                <StepRow key={st.id} step={st} account={accounts.includes(st)} onOpen={() => setOpen(st.id)} />
+              ))}
+              {/* The hub's own accounts keep their row, and so their controls, whatever the hub's steps say or don't. */}
+              {HUB_ACCOUNTS.filter(([id]) => !list.some((st) => st.id === id)).map(([id, title]) => (
+                <SettingsListRow key={id} name={title} label={title} icon={<StepGlyph status="done" />} open={{ onClick: () => setOpen(id) }} data={{ "data-step": id }} />
+              ))}
+            </SettingsList>
           </SettingsSection>
-        )}
+        </Part>
       </div>
     </div>
+  );
+}
+
+/** A step's state as its check: done, to do, or wanting a look. */
+function StepGlyph({ status }: { status: SetupStep["status"] }) {
+  return status === "done" ? (
+    <CircleCheck data-step-glyph="done" aria-label="Done" />
+  ) : status === "look" ? (
+    <CircleAlert data-step-glyph="look" aria-label="Needs a look" />
+  ) : (
+    <Circle data-step-glyph="todo" aria-label="To do" />
   );
 }
 
@@ -129,7 +128,8 @@ function StepRow({ step, account, onOpen }: { step: SetupStep; account: boolean;
     <SettingsListRow
       name={step.title}
       label={step.title}
-      meta={step.status === "todo" ? needWords(step.need) : account ? doneWords(step) : undefined}
+      icon={<StepGlyph status={step.status} />}
+      meta={step.status === "todo" ? needWords(step.need) : account || step.status === "done" ? doneWords(step) : undefined}
       state={step.status === "look" ? { word: "Needs a look", tone: step.failing === true ? "danger" : "warning" } : undefined}
       open={{ onClick: onOpen }}
       data={{ "data-step": step.id, "data-status": step.status }}
@@ -151,9 +151,10 @@ function StepPage({ id, title, step, me, onBack }: { id: string; title: string; 
     () => ({
       title,
       lead: (
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          ‹ Setup
-        </Button>
+        <button type="button" className={s.back} onClick={onBack}>
+          <ChevronLeft aria-hidden />
+          Setup
+        </button>
       ),
     }),
     [title, onBack],
