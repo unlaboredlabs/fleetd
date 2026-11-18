@@ -5,7 +5,7 @@
 //   can run one. It records its box in the session's host dir (`box.json`), which `placeAt` reads back;
 // - `hosted` (./hosted.ts): the session host in a box of the team's own hosted provider, when the hub's slot board
 //   placed the session there. Its record is `place.json`, which `placeAt` reads first.
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { Image } from "../actions/image.ts";
@@ -73,12 +73,16 @@ export const pick = (s?: PlaceFor): Place => {
   return s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace;
 };
 
-/** A box whose node has no VMs now (turned off since it started): it can still be ended. */
+/** A box whose node has no VMs now (turned off since it started): it can still be ended, its dir with it. */
 const strayBox: Place = {
   ...processPlace,
   kind: "microvm",
   adopt: async () => undefined,
-  end: async (dir) => (await destroyBox(dir)) + (await processPlace.end(dir)),
+  async end(dir) {
+    const ended = (await destroyBox(dir)) + (await processPlace.end(dir));
+    rmSync(dir, { recursive: true, force: true });
+    return ended;
+  },
 };
 
 /** The place the session whose host dir is `dir` was started in. */

@@ -19,7 +19,7 @@
 // session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
 // a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -582,10 +582,12 @@ export class MicroVm {
     await stopHost(dir);
   }
 
-  /** The task ended: its box goes, with everything its turns left running in it. */
+  /** The task ended: its box goes, with everything its turns left running in it, and so does its dir, which holds only
+   * what the box left (its dead sockets, its console log): the next start makes it afresh. */
   async end(dir: string): Promise<number> {
-    const ended = await this.#drop(dir);
-    return ended + (await processPlace.end(dir));
+    const ended = (await this.#drop(dir)) + (await processPlace.end(dir));
+    rmSync(dir, { recursive: true, force: true });
+    return ended;
   }
 
   /** Lets go of every box's link (the node's shutdown): the boxes and their sessions go on for the next node. */
@@ -800,9 +802,14 @@ export function hostLike(): HostLike {
 }
 
 /** The flags pasta (passt's binary under that name) links a box's network namespace to this machine's network with:
- * no ports in either way (`-t`/`-u` into it, `-T`/`-U` out of it to this machine's loopback), and no gateway address
- * that means this machine. */
+ * no ports in either way (`-t`/`-u` into it, `-T`/`-U` out of it to this machine's loopback), no gateway address
+ * that means this machine, and no DNS of its own (NO_DNS). */
 export const PASTA_FLAGS = ["-q", "-f", "--config-net", "-t", "none", "-u", "none", "-T", "none", "-U", "none", "--no-map-gw"];
+
+/** pasta and passt give out no nameserver or search list: the guest's resolv.conf comes from the kernel line
+ * (`fleetd.dns=`), and on a machine whose resolv.conf names only a local stub they'd warn at every start that they
+ * found none. */
+const NO_DNS = ["-D", "none", "-S", "none"];
 
 /** The launcher's script, run in the box's host dir: passt and virtiofsd in the background, then the VMM once they
  * listen, each with the box's sockets by name in that dir (SOCKS); it ends with the VMM, and its helpers with it. passt
@@ -832,10 +839,10 @@ export function launcherScript(b: BootPlan, now: number): string {
   // This machine's root owns most of its system files, which its namespace sees as the overflow id: they show as
   // root's in the guest, as here (ssh refuses a config file nobody owns).
   const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly", "--translate-uid=host:65534:0:1", "--translate-gid=host:65534:0:1"]);
-  const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
+  const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none", ...NO_DNS];
   // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
   const inNamespace = [`cd ${q(dir)} || exit 1`, blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
-  const pasta = `(exec -a pasta ${[tools.passt, ...PASTA_FLAGS, "--", "/bin/sh", "-c", inNamespace].map(q).join(" ")})`;
+  const pasta = `(exec -a pasta ${[tools.passt, ...PASTA_FLAGS, ...NO_DNS, "--", "/bin/sh", "-c", inNamespace].map(q).join(" ")})`;
   const vmm = [
     tools.cloudHypervisor,
     "--api-socket",
