@@ -11,6 +11,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, useToolQuery } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { resetServes } from "../admin/role";
 import { MachineScreens, Recordings } from "./Screens";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -77,6 +78,10 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 /** What machine_roles answers now. */
 let listed: MachineRolesEntry[];
+/** Whether machine_roles says how long recordings are kept (a hub from before it doesn't). */
+let withRetention: boolean;
+/** What hub_info says the hub leaves out: fleetd cloud leaves its own update out. */
+let leftOut: string[] | undefined;
 let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
@@ -85,6 +90,9 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   listed = [devbox, mac1, lab, agentsOnly];
+  withRetention = true;
+  leftOut = undefined;
+  resetServes();
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -101,8 +109,10 @@ const render = async () => {
       calls.push({ tool, input });
       const output =
         tool === "machine_roles"
-          ? { machines: listed, retention: { retentionDays: 30, maxGbPerProject: 20 } }
-          : tool === "machine_screens_set"
+          ? { machines: listed, ...(withRetention ? { retention: { retentionDays: 30, maxGbPerProject: 20 } } : {}) }
+          : tool === "hub_info"
+            ? { version: "0.9.0", protocol: 1, busy: [], admin: true, ...(leftOut === undefined ? {} : { leftOut }) }
+            : tool === "machine_screens_set"
             ? { machine: devbox, next: "Saved. It applies once the screen live here ends, when the node restarts." }
             : {};
       return Promise.resolve({ ok: true, output });
@@ -169,6 +179,20 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
   expect(host.querySelector("[aria-label='Recordings per bot, at most']")).toBeNull();
+});
+
+it("tells a hub without recordings' retention to update only when it is updated from here, never fleetd cloud", async () => {
+  withRetention = false;
+  await render();
+  expect(host.textContent).toContain("Update the hub's fleetd to change this here.");
+  act(() => root.unmount());
+  root = createRoot(host);
+  leftOut = ["hub_update", "hub_restart"];
+  resetServes();
+  await render();
+  await settle();
+  expect(host.textContent).not.toContain("Update the hub's fleetd");
+  expect(host.querySelector("[data-screens-retention]")).toBeNull();
 });
 
 it("says once that an offline machine's switches wait for it, not on every row", async () => {

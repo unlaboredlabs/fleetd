@@ -11,7 +11,7 @@ import { CloudDownload, Folder, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Button, Select, StateGlyph, Text, Truncate, cx, type GlyphState } from "../../ui";
 import { discovery as discoveryOf, orList, projectHome, repoSuggestions, target, type Discovery, type Worker } from "./discovery";
-import { botAtFolder, botHolding, botName, busy, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
+import { botAtFolder, botHolding, botName, busy, needsUpdate, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -137,15 +137,11 @@ function HubPick() {
   );
 }
 
-/** Why the bot can't be made on `to` as it stands, with the fix; null when it can. */
-const blocker = (to: Worker | null, d: Discovery | null, repos: ReadonlyArray<RepoDraft>): string | null => {
+/** Why the bot can't be made on `to` as it stands (`typed`: the add field's text, which goes in too), with the fix; null when it can. */
+const blocker = (to: Worker | null, d: Discovery | null, repos: ReadonlyArray<RepoDraft>, typed: string | null): string | null => {
   if (d === null) return null;
   if (to === null) return `No machine is online to make it on: start fleetd on ${orList(d.workers.map((w) => w.name))}.`;
-  // With no folder of its own listed, the machine makes one, which a node from before W123 can't.
-  if (ownRepo(repos) === undefined && to.projectsRoot === undefined && d.workers.some((w) => w.machineId === to.machineId)) {
-    return `Update fleetd on ${to.name} to make a bot there, or add a folder that's already on it.`;
-  }
-  return null;
+  return d.workers.some((w) => w.machineId === to.machineId) ? needsUpdate(to, repos, typed) : null;
 };
 
 function Form({ ui, field }: { ui: AddUi; field: RefObject<HTMLInputElement | null> }) {
@@ -155,7 +151,7 @@ function Form({ ui, field }: { ui: AddUi; field: RefObject<HTMLInputElement | nu
   const online = (d?.workers ?? []).filter((w) => w.online);
   const problem = nameProblem(ui.name);
   const named = botName(ui.name, ui.repos);
-  const block = blocker(to, d, ui.repos);
+  const block = blocker(to, d, ui.repos, ui.adding);
   /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
   const botAt = (path: string): string | undefined => botAtFolder(projects, to?.machineId, path)?.title;
   const go = () => {

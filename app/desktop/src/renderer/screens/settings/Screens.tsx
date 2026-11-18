@@ -4,11 +4,12 @@
 // the line under the switch follows what the node says (installing, starting once its live screens end). A kind that
 // can't run for something missing shows the command that fixes it, to run on that machine. The at-once limit is
 // machine_roles_set. An idle screen ends after the node's timeout (30 minutes; the
-// agents' Mac's own screen, 5), said in a line. Retention is browser_retention_set, for every project: the app sets
+// agents' Mac's own screen, 5), said in a line. Retention is browser_retention_set, for every bot: the app sets
 // only the days, and the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
 import { useState, type ReactNode } from "react";
 import type { HostCheck, MachineRolesEntry, SessionHost, ToolInput } from "../../../shared/contracts";
-import { useToolQuery } from "../../src/data/react";
+import { useHub, useToolQuery } from "../../src/data/react";
+import { useServes } from "../admin/role";
 import { Button, Select, Text, Toggle } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
@@ -141,7 +142,7 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
   );
 }
 
-/** How long the hub keeps every project's recordings. */
+/** How long the hub keeps every bot's recordings. */
 export function Recordings() {
   const live = useLive();
   const read = useToolQuery("machine_roles", noInput);
@@ -149,11 +150,16 @@ export function Recordings() {
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo>(null);
+  // Only a hub updated from here is told to update: fleetd cloud updates itself (it leaves hub_update out).
+  const servesUpdate = useServes("hub_update");
+  const cloud = useHub().cloud === true;
+  const updatable = servesUpdate && !cloud;
   const retention = read.data?.retention;
   if (!live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
   if (read.error) return <GroupNote tone="danger">{`Couldn't read it: ${errorText(read.error)}`}</GroupNote>;
   if (read.data === undefined) return <GroupNote>Loading…</GroupNote>;
-  if (retention === undefined) return <GroupNote>Update the hub&apos;s fleetd to change this here.</GroupNote>;
+  // A hub from before retention was in machine_roles.
+  if (retention === undefined) return updatable ? <GroupNote>Update the hub&apos;s fleetd to change this here.</GroupNote> : null;
   const set = (retentionDays: number) => {
     setBusy(true);
     setEcho(null);

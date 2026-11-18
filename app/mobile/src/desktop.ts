@@ -102,6 +102,7 @@ export {
   busy as createBusy,
   createStep,
   initialCreate,
+  needsUpdate,
   outcomeLine,
   ownRepo,
   repoKey,

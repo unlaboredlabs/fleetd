@@ -181,6 +181,9 @@ export const deleteBlocked = (settings: ProjectSettings): string | undefined =>
 /** New Bot's line while the hub link is down: Create stays pressable and says this rather than going grey. */
 export const NOT_CONNECTED = "Not connected to the hub. Create works once it's back.";
 
+/** What New Bot still says once the link is `live` again: not that it is down. */
+export const refusalNow = (refused: string | undefined, live: boolean): string | undefined => (live && refused === NOT_CONNECTED ? undefined : refused);
+
 /**
  * Why New Bot's Create can't go now, first reason first; undefined when it can. `typed` is the add field's text as
  * typedRepo reads it, `typedBot` the bot a typed folder already is, `block` why its machine can't take it, `named` the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, subtitle } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -177,7 +177,13 @@ describe("New Bot's Create", () => {
     expect(createRefusal({ ...ok, live: false, named: "" })).toBe(NOT_CONNECTED);
     expect(createRefusal({ ...ok, typed: { why: "Type the folder's full path, starting with /." } })).toBe("Type the folder's full path, starting with /.");
     expect(createRefusal({ ...ok, typedBot: { title: "Notes", workspaceRoot: "/home/ada/notes" } })).toBe("~/notes is already the bot Notes: open it from Chats.");
-    expect(createRefusal({ ...ok, block: "Update fleetd on devbox to make a bot there, or add a folder that's already on it." })).toContain("Update fleetd on devbox");
+    expect(createRefusal({ ...ok, block: "devbox needs a fleetd update to make a bot with no folder: update fleetd there, or add a folder that's already on devbox." })).toContain("devbox needs a fleetd update");
     expect(createRefusal({ ...ok, named: "" })).toBe("Name it, or add a repo.");
+  });
+
+  it("stops saying the hub isn't there once the link is back, and keeps any other refusal", () => {
+    expect(refusalNow(NOT_CONNECTED, true)).toBeUndefined();
+    expect(refusalNow(NOT_CONNECTED, false)).toBe(NOT_CONNECTED);
+    expect(refusalNow("Name it, or add a repo.", true)).toBe("Name it, or add a repo.");
   });
 });

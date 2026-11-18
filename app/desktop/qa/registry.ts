@@ -3080,7 +3080,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Name" }).fill("Field notes");
       await page.getByRole("combobox", { name: "Machine" }).click();
       await page.getByRole("option", { name: "buildbox", exact: true }).click();
-      await page.getByText(/Update fleetd on buildbox/u).waitFor();
+      await page.getByText(/buildbox needs a fleetd update/u).waitFor();
     },
   },
   // Made: the bot's chat opens behind, and the dialog shows each repo coming in: a clone at git's 42%, and one whose

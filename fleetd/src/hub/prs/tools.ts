@@ -44,7 +44,7 @@ async function prList(hub: Hub, caller: Caller, input: Record<string, unknown>) 
       `No bot ${project.projectId} on ${project.machineId}.`,
       `Call project_get with machineId ${project.machineId} and no projectId.`,
       undefined,
-      "It was removed, or its machine was: the projects list has the ones that are left.",
+      "It was removed, or its machine was: the list of bots has the ones that are left.",
     );
   }
   const now = hub.clock.now();

@@ -136,7 +136,7 @@ export function register(tools: Registry): void {
     if (!added) throw internalError();
     return {
       link: keptInfo(added),
-      next: `The lead reaches ${hello.projects.length} project(s) on ${input.label}: factory_status and project_message with hub "${input.label}".`,
+      next: `The lead reaches ${hello.projects.length} bot(s) on ${input.label}: factory_status and project_message with hub "${input.label}".`,
       projects: hello.projects,
     };
   });

@@ -598,7 +598,7 @@ function finish(list: Checklist, summary: Summary, paired: boolean) {
   const lines: string[] = [];
   if (summary.hub) lines.push(`hub       ${summary.hub}`);
   if (summary.workers.length > 0) lines.push(`workers   ${summary.workers.join(", ")}`);
-  if (summary.project) lines.push(`bot   ${summary.project}`);
+  if (summary.project) lines.push(`bot       ${summary.project}`);
   if (summary.pairing) lines.push(`app       ${summary.pairing}`);
   if (which("fleetd") === undefined) lines.push('PATH      add: export PATH="$HOME/.local/bin:$PATH"');
   if (list.rich) list.boxed("fleetd is ready", lines.join("\n"));

@@ -80,13 +80,13 @@ const render = async () => {
       }
       if (tool === "project_add") {
         const { title, path } = input as { title: string; path?: string };
-        if (title === "Old notes") {
-          return Promise.resolve({ ok: false, error: { code: "invalid", message: `${ROOT}/old-notes on devbox already holds files`, fix: "Give the bot another name" } });
-        }
         const at = path ?? `${ROOT}/${title.toLowerCase().replace(/ /gu, "-")}`;
-        const answer = { ok: true as const, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } };
+        const answer =
+          title === "Old notes"
+            ? { ok: false as const, error: { code: "invalid", message: `${ROOT}/old-notes on devbox already holds files`, fix: "Give the bot another name" } }
+            : { ok: true as const, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } };
         if (held !== undefined) return new Promise((resolve) => (held = () => resolve(answer)));
-        return Promise.resolve({ ok: true, output: { machineId: "devbox", path: at, projectId: "p9", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } } });
+        return Promise.resolve(answer);
       }
       if (tool === "project_repo_add") {
         const { url } = input as { url?: string };
@@ -210,6 +210,9 @@ describe("New bot", () => {
     await press(button("Create"));
     expect(document.querySelector('[role="alert"]')?.textContent).toBe('"che" isn\'t a repo yet: pick one from the list, or clear the field.');
     expect(madeWith()).toEqual([]);
+    // Editing the field takes the refusal away.
+    await type(field("Repo to add"), "chec");
+    expect(document.querySelector('[role="alert"]')).toBeNull();
     await type(field("Repo to add"), "acme/shop");
     await press(button("Create"));
     expect(madeWith()).toEqual([
@@ -261,10 +264,36 @@ describe("New bot", () => {
     expect(field("Name").value).toBe("Old notes");
   });
 
-  it("on a machine too old to make a bot's folder, says to update it", async () => {
+  it("on a machine too old to make a bot's folder, says it needs an update, and takes a folder typed in the field", async () => {
     projectsRoot = undefined;
     await render();
-    expect(document.body.textContent).toContain("Update fleetd on devbox to make a bot there, or add a folder that's already on it.");
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("devbox needs a fleetd update to make a bot with no folder: update fleetd there, or add a folder that's already on devbox.");
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    await type(field("Repo to add"), "/home/w/src/docs");
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await press(button("Create"));
+    expect(madeWith()).toEqual([["project_add", { machineId: "devbox", path: "/home/w/src/docs", title: "docs" }]]);
+  });
+
+  it("refused while hidden, shows why when opened again, and Back keeps what was typed", async () => {
+    held = () => undefined;
+    await render();
+    await type(field("Name"), "Old notes");
+    await addRepo("acme/shop");
+    await key(field("Name"), "Enter");
+    act(() => closeAddProject());
+    await act(async () => {
+      held?.();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+    // The toast is dismissed: the sidebar's + brings back the refusal, not a blank form.
+    act(() => openAddProject());
+    await settle();
+    expect(document.querySelector('[data-screen="projects.add.error"]')?.textContent).toContain("already holds files.");
+    await press(button("Back"));
+    expect(field("Name").value).toBe("Old notes");
+    expect(listed()).toEqual(["acme/shop"]);
   });
 
   it("hidden while the bot is made, says so once, and the next New bot is a fresh form", async () => {

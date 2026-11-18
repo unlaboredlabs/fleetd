@@ -52,7 +52,7 @@ export const unknownProject = (r: ProjectRef) =>
     `No bot ${r.projectId} on ${r.machineId}.`,
     `Call project_get with machineId ${r.machineId} and no projectId.`,
     undefined,
-    "It was removed, or its machine was: the projects list has the ones that are left.",
+    "It was removed, or its machine was: the list of bots has the ones that are left.",
   );
 
 export const unknownThread = (r: ThreadRef) =>
