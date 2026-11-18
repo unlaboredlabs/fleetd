@@ -41,6 +41,16 @@ test("its pins are fleetd's own: Playwright's and bun's", () => {
   expect(ci).toContain(`bun-version: ${IMAGE.pins.bun}`);
 });
 
+test("a box has what fleetd's own lockfile installs run (a box sees nothing of its machine's home): real Node, npm, pnpm at the desktop app's pin, Yarn", () => {
+  expect(DOCKERFILE).toContain(`node-v${IMAGE.pins.node}-linux-x64.tar.xz`);
+  const desktop = JSON.parse(readFileSync(join(import.meta.dir, "../../../app/desktop/package.json"), "utf8")) as { packageManager: string };
+  expect(desktop.packageManager).toBe(`pnpm@${IMAGE.pins.pnpm}`);
+  expect(DOCKERFILE).toContain(`pnpm@${IMAGE.pins.pnpm} yarn@${IMAGE.pins.yarn}`);
+  for (const b of ["node", "npm", "npx", "pnpm", "yarn"]) expect(DOCKERFILE).toContain(` ${b} `);
+  // `node` is Node.js itself, never Bun (a test of fleetd-cloud runs `node --input-type=module`).
+  expect(DOCKERFILE).not.toContain("ln -sf bun /usr/local/bin/node");
+});
+
 test("the init parses, and starts sandbox-guest on the link socket", () => {
   const ran = Bun.spawnSync(["bash", "-n", join(dir, "init.sh")], { stderr: "pipe" });
   expect(ran.stderr.toString()).toBe("");

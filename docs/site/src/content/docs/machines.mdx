@@ -367,11 +367,12 @@ every agent on a Mac.
 
 | What | How |
 |---|---|
-| Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only, and the folder where its tool calls mark themselves waiting on an update (`update/held/`), writable. `/tmp` is the VM's own memory (1 GiB at most, `/dev/shm` 512 MiB: a tool writing more there, past `$TMPDIR`, runs out of space) and goes with the VM, at the idle close after 10 minutes too, while `$TMPDIR` stays until the task ends: keep what must last between turns there. The worktree, its scratch dir (`$TMPDIR`) and the home are shares of their own in the VM, and Linux renames and hard-links within one only: a link or rename between them fails (`EXDEV`). Package managers fall back to copying from their caches in your home; pnpm gets a store in the worktree (`.fleetd/pnpm-store/`, kept out of git), since its shared store is a database two VMs can't share (a checkout downloads its packages once, a few seconds). A tool that writes a temp file in `$TMPDIR` and renames it into the checkout fails there; most write theirs beside the file instead. A change made to the files from outside the VM (by you, or the node) raises no inotify event inside it, so a watcher there misses it until it looks again. |
-| Its system | The machine's own `/usr`, `/etc` and `/opt` (and `/bin`, `/lib`… beside them) are shared read-only, in a share of their own, and laid over the VM's image, with a writable layer of the VM's own on top: a tool installed in your home that links the machine's libraries (a Postgres built for its ICU, say) runs in the VM as it does here, what the image adds stays (Playwright's browsers), and what the agent writes there goes with the VM. The agent runs as you, with your user's ids, never root. |
-| Open files | virtiofsd, which shares the files, keeps one open file for each file the VM has looked at, until the VM forgets it, and can hold only as many as the machine lets one process (524,288 on the devbox). The node counts them every second, and at a quarter of that it has the VM forget the files it isn't using, and says so in its log (`a VM's file share held … open files`), so an agent never meets the limit. Warm package caches stay shared: nothing is fetched again. |
+| Its files | Nothing of your home: the machine is a plain host for VMs, and a VM is set up as a [hosted sandbox](#sandboxes) is. It sees its worktree and its repo's `.git` (writable, at the same paths, so builds, commits, setup and `chat_file` work as before), its scratch dir (`$TMPDIR`), the session's own fleetd files and the tools fleetd installed for it (agent-browser, agent-device), read-only, and the folder where its tool calls mark themselves waiting on an update (`update/held/`). Not your `~/.claude`, `~/.config` (gh), `~/.ssh`, shell files, toolchains (`~/.cargo`, `~/.rustup`, `~/.bun`, `~/.local`), package caches, your other repos, or the repo's main checkout. `/tmp` is the VM's own memory (1 GiB at most, `/dev/shm` 512 MiB) and goes with the VM, at the idle close after 10 minutes too, while `$TMPDIR` stays until the task ends: keep what must last between turns there. Each share is its own file system in the VM, and Linux renames and hard-links within one only: a link or rename between the worktree and `$TMPDIR` fails (`EXDEV`). pnpm gets a store in the worktree (`.fleetd/pnpm-store/`, kept out of git). A change made to the files from outside the VM raises no inotify event inside it. |
+| What it is given | A home of its own (`~/.fleetd/node/vm/homes/<session>`), kept between its VMs (the idle close) and removed when its task ends; its `.gitconfig` holds only your git name and email. Package caches (Bun's, npm's, `XDG_CACHE_HOME`) in `~/.fleetd/node/vm/cache`, shared by the machine's VMs. Its order's variables (`GH_TOKEN`) and none of another order's, renewed as the hub renews them; never the machine's gh login. Your environment without the variables that name a place in your home it doesn't have (`CARGO_HOME`, say); `PATH` adds its home's `~/.local/bin`, `~/.cargo/bin` and `~/.bun/bin`. Its transcript, so it resumes after the idle close, and it comes back to the machine's Claude folder once the VM is done. |
+| Its tools | Its image's: Ubuntu 24.04 with git, gh, Bun, Node.js 24 with npm, pnpm and Yarn (so fleetd's own installs from a repo's lockfiles run there), a C toolchain, Python 3, Playwright's Chrome, and the usual network and archive tools. Anything else (Rust, Postgres) its bot's [setup commands](/docs/projects#setup) install into its home: they run in the VM, with its home and caches. The home goes when the task ends, so each task installs them again (seconds: rustup's minimal toolchain took 11 s on the devbox). The machine's own `claude` runs there, linked into `~/.fleetd/node/vm/claude`. The agent runs at your user's ids, under your user name, never root. |
+| Open files | virtiofsd, which shares the files, keeps one open file for each file the VM has looked at, until the VM forgets it, and can hold only as many as the machine lets one process (524,288 on the devbox). The node counts them every second, and at a quarter of that it has the VM forget the files it isn't using, and says so in its log (`a VM's file share held … open files`), so an agent never meets the limit. |
 | Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). Its own addresses are those of every interface, up or down (Docker's `docker0` with no container still answers). The internet and DNS work as before, over IPv4 only: the guest kernel has no IPv6, so a server listening on `::` or `::1` in the VM fails, and an IPv6-only host can't be reached. `ping` works. Other machines are reached as from a plain process: the LAN (your router's page) and every other tailnet peer. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's and Android's adb, at the same `127.0.0.1` ports as before. |
-| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the bot's, `--settings`, managed settings), the last one setting it winning. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
+| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the bot's, `--settings`, managed settings), the last one setting it winning. The VM's claude gets the Claude variables of your settings' `env` (`ANTHROPIC_*`, `CLAUDE_*` and the like: the endpoint and its token) in settings of its own, and nothing else of `~/.claude`. A bot's [Claude account](/docs/people#claude) signs it in too. A machine whose agents sign in with its own Claude login (`claude login`, kept in `~/.claude/.credentials.json`) can't give a VM that login, which renews itself there: an agent whose bot has a Claude account still runs in a VM, and every other runs as a plain process. The machine's page says so, with the fix: `claude setup-token`, and the token it prints in `~/.fleetd/claude.env` as `CLAUDE_CODE_OAUTH_TOKEN=…`. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
 | Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
 | Start and end | About 1 s to start, on top of the worktree. Setup commands run in it. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
@@ -387,6 +388,13 @@ reason. The doctor's `vm` row for the machine says the same, with the fix
 where there is one: it passes when agents run in VMs, or as plain processes by choice or on a Mac, and warns otherwise.
 A machine that can't run VMs never refuses agents: they run as plain processes, and both say why.
 
+A machine signed in to Claude with its own login (`claude login`), and with no token a VM can be given, still shows
+**A VM**, in warning colour, with a line saying that its agents whose bot has no Claude account run as plain
+processes, and the command that fixes it: `claude setup-token`, whose token goes in `~/.fleetd/claude.env` as
+`CLAUDE_CODE_OAUTH_TOKEN=<token>`. Agents on a bot's Claude account run in VMs either way. Each agent's setup commands
+run where the agent does: in its VM, or as plain processes with it. The doctor's `vm` row warns
+with the same.
+
 | Why it runs plain processes | Fix |
 |---|---|
 | turned off on this machine (node.json "sandbox": "process") | Remove the key. |
@@ -400,22 +408,17 @@ A machine that can't run VMs never refuses agents: they run as plain processes, 
 | this node runs fleetd from source | Run an installed fleetd. |
 | the last VM didn't start: … (the box can't reach Claude at host:port, say) | The node tries VMs again 10 minutes later; until then every new agent runs as a plain process. The reason names the endpoint and the file that set it: check that this machine reaches it. An endpoint a bot's own `.claude/settings.json` names sends only that agent to a plain process. |
 
-**What stays shared on purpose.** A VM is a wall around the machine's processes, network and fleetd's own folders,
-not around your files:
+**What stays shared on purpose.** A VM is a wall around the machine's processes, network, your home and fleetd's own
+folders. What it still shares:
 
-- **Your home folder is shared writable**, as a plain process has it, so the agent can read and change what you can
-  there: `~/.ssh` and its keys, `~/.config/gh` and other CLIs' logins, your other bots, and the package caches.
 - **Each repo's `.git` is shared writable** with every agent working in that repo, so an agent can change another's
   branch or refs, as it can as a plain process.
-- **The machine's Claude login** (`~/.claude`) is shared with a session that uses it.
-- **The agent runs as you**, with your user's ids: files it writes are yours.
+- **The VM caches** (`~/.fleetd/node/vm/cache`) are shared writable by every VM on the machine, so one agent could
+  poison a package another one installs.
+- **The agent runs at your user's ids**: files it writes in its worktree are yours.
 - **File locks don't cross a VM's share.** A lock (`flock`, `fcntl`) taken in the VM holds only inside it: another
   VM, or a plain process such as the lead, takes the same lock at once. Lock files made by creating them (git's
-  `index.lock`, claude's own) work across. What relies on such locks in the shared home: cargo's
-  `~/.cargo/.package-cache` and its `.global-cache` database (two cargo builds fetching at once in two VMs can leave
-  its registry cache broken: `cargo clean`ing it is the fix), uv's cache (`~/.cache/uv`, two VMs building the same
-  wheel both build it), and any SQLite database in your home that two agents write. bun, npm, gh, git and claude take
-  none.
+  `index.lock`, claude's own) work across.
 - **A VM agent's browser sees the VM's network.** Its Chrome runs on this machine, but every connection it makes
   (pages, websockets, service workers) goes out through the VM: `localhost:5173` is the agent's own dev server in
   the VM, and this machine's loopback, LAN and tailnet addresses (the hub's among them) are as out of reach as they
@@ -424,10 +427,8 @@ not around your files:
   folders. The Linux desktop refuses to launch programs for a VM agent, since they'd run outside its VM.
 - **Other machines on your network and tailnet** are reached as from a plain process: only this machine's own
   addresses are kept out.
-- **The machine's `/usr`, `/etc` and `/opt` are readable** in the VM as they are by you, read-only: what you can't read
-  there (`/etc/shadow`), it can't either.
 
-Keep anything an agent must not read out of your home on that machine, or give agents a machine of their own.
+Leads and a person's own threads aren't in VMs: they run in your home as plain processes.
 
 **Leaked VMs.** A VM goes with its agent, at stop and at the task's end, and powers itself off 2 s after its session
 ends, so one whose session is over doesn't stay. Each VM's processes carry a marker naming the folder

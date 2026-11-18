@@ -1282,7 +1282,7 @@ export class SessionService {
     // A claude still in a VM on a machine that runs none now (turned off, or its last VM failed) goes before a new turn,
     // which starts as a plain process from its transcript. Never mid-turn: a run under way (a steer, a message queued
     // behind it, a Monitor's wake) finishes in its box, as the reaper waits for it.
-    if (current && !current.closing && leavesBox(hostDir(this.home, id), this.store.runs(id))) {
+    if (current && !current.closing && leavesBox(hostDir(this.home, id), this.store.runs(id), !!this.#session(id).local.claudeAccount)) {
       console.log(`${nowIso()} INFO moving a session out of its VM: this machine runs agents as plain processes now {"sessionId":"${id}"}`);
       current.closing = true;
       current.link.send(shutdown(REAP_GRACE_MS));
@@ -1322,7 +1322,7 @@ export class SessionService {
     const mark = marker(id);
     let link: HostLink;
     try {
-      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }).start({
+      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }).start({
         fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
@@ -1973,7 +1973,7 @@ export class SessionService {
       );
     };
     const outcome = await setup.run(
-      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }),
+      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }),
       plan,
       row.local.cwd,
       env,

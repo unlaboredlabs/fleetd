@@ -124,7 +124,8 @@ test("a red batch sends each PR alone: the green one merges, the red one goes ba
   await k.settle(20);
   expect(k.change(13).state).toBe("merged");
   expect(k.change(14).state).toBe("ci_failed");
-});
+  // About 21 s of real work alone on a 4-CPU VM (an agent's), past 30 s beside the rest of the suite there.
+}, 60_000);
 
 test("a PR left out for its own red head tells its writer once per head, with the check and its log", async () => {
   const k = kit();

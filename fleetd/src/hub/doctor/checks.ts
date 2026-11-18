@@ -709,7 +709,11 @@ function screen(machineId: string, name: string, offline: boolean, health: Scree
  * its agents run without a VM's walls. Undefined offline and from a node that doesn't say (older, or the agents' Mac). */
 export function vms(machineId: string, offline: boolean, sandbox: NodeLoad["sandbox"]): DoctorCheck | undefined {
   if (!sandbox || offline) return undefined;
-  if (sandbox.kind === "microvm") return machineEntry(machineId, "vm", "ok", `Agents on ${machineId} run in VMs of their own.`);
+  if (sandbox.kind === "microvm" && !sandbox.why) return machineEntry(machineId, "vm", "ok", `Agents on ${machineId} run in VMs of their own.`);
+  if (sandbox.kind === "microvm") {
+    const fix = sandbox.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within a minute`, sandbox.fix);
+    return machineEntry(machineId, "vm", "warn", `Agents on ${machineId} run in VMs of their own, but ${sandbox.why}`, fix);
+  }
   const why = `Agents on ${machineId} run as plain processes, not in VMs: ${sandbox.why}`;
   if (sandbox.expected) return machineEntry(machineId, "vm", "ok", why);
   const fix = sandbox.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within a minute`, sandbox.fix);

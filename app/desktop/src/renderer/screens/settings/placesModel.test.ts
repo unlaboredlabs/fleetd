@@ -23,6 +23,11 @@ describe("where a machine's agents run", () => {
 
   it("reads the node's own word, and keeps the cap's reason apart from it", () => {
     expect(isolationOf(`${MEM}; each agent in a VM of its own`, { kind: "microvm" })).toEqual({ why: MEM, isolation: { vm: true } });
+    // In VMs, but agents with no Claude account of their bot's not (a machine signed in with `claude login`).
+    expect(isolationOf(`${MEM}; each agent in a VM of its own, but no token`, { kind: "microvm", why: "no token, so some run as plain processes", fix: "claude setup-token" })).toEqual({
+      why: MEM,
+      isolation: { vm: true, why: "No token, so some run as plain processes.", fix: "claude setup-token" },
+    });
     expect(isolationOf(`${MEM}; agents run as plain processes: no KVM Fix: sudo modprobe kvm`, { kind: "process", why: "no KVM", fix: "sudo modprobe kvm" })).toEqual({
       why: MEM,
       isolation: { vm: false, why: "No KVM.", expected: false, fix: "sudo modprobe kvm" },

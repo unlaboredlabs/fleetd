@@ -307,11 +307,11 @@ export function MachineCap({ machineId, name }: { machineId: string; name: strin
               ? m.isolation.why
               : "A VM of its own keeps an agent from the machine's other agents and its files. Where a machine can't run VMs, its agents run as plain processes."
           }
-          control={<Text tone={!m.isolation.vm && !m.isolation.expected ? "warning" : "quiet"}>{m.isolation.vm ? "A VM" : "A process"}</Text>}
+          control={<Text tone={(!m.isolation.vm && !m.isolation.expected) || (m.isolation.vm && m.isolation.why) ? "warning" : "quiet"}>{m.isolation.vm ? "A VM" : "A process"}</Text>}
           data={{ "data-vm": m.isolation.vm ? "on" : "off" }}
         >
           {/* Visible only when something is wrong; a choice or the machine's design is the hover's. */}
-          {m.isolation.vm || m.isolation.expected ? null : (
+          {(m.isolation.vm && !m.isolation.why) || (!m.isolation.vm && m.isolation.expected) ? null : (
             <div className={s.fixBlock}>
               <Text size="sm" tone="warning">
                 {m.isolation.fix === undefined ? m.isolation.why : `${m.isolation.why} Run on ${name}:`}

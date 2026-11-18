@@ -2,8 +2,8 @@
 // CI builds them (build.sh, .github/workflows/vm-image.yml) and publishes them to the GitHub release `vm-<key>`, where
 // the key is the hash of this recipe: the Dockerfile, the init, the build script and the tools' commits. Changing any
 // of them makes a new key, so CI builds a new release and every node fetches it, with no pin to bump by hand. claude
-// and fleetd aren't in the image: a local VM gets the machine's own over the same-path share, so neither a Claude Code
-// bump nor a fleetd update rebuilds it.
+// and fleetd aren't in the image: a local VM's node gives it its own (node/place/provision.ts), so neither a Claude
+// Code bump nor a fleetd update rebuilds it.
 //
 // Run as a script, it prints the recipe as JSON, for build.sh and the workflow.
 import { createHash } from "node:crypto";
@@ -43,6 +43,9 @@ export const IMAGE = {
   pins: {
     ubuntu: "24.04",
     bun: "1.4.3",
+    node: "24.22.3",
+    pnpm: "12.11.2",
+    yarn: "1.22.22",
     gh: "2.104.0",
     playwright: "1.64.1",
     virtiofsd: SOURCES.virtiofsd.version,

@@ -10,6 +10,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "../runner/procs.ts";
 import type { Relay } from "../sandbox/box.ts";
+import type { Transcript } from "./provision.ts";
 import type { View } from "./view.ts";
 
 /** One process of a box. */
@@ -37,6 +38,8 @@ export type BoxRecord = {
   port: number;
   /** What the box shows of this machine, as it booted: a next node that adopts it starts from this, never from less. */
   view?: View;
+  /** The session's transcript here and in the box (./provision.ts): it comes back here once the box is done with it. */
+  transcript?: Transcript;
 };
 
 export const boxFile = (dir: string) => join(dir, "box.json");

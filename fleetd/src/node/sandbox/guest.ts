@@ -45,7 +45,7 @@ import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
-import { layHostSystem, setClock, watchOom } from "./system.ts";
+import { setClock, setUpGuest, watchOom } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
 export const GUEST_PROTOCOL = 1;
@@ -572,14 +572,14 @@ export async function main(argv: string[]): Promise<number> {
   let finished!: () => void;
   const over = new Promise<void>((r) => (finished = r));
   const once = process.env.FLEETD_GUEST_ONCE === "1";
-  // A local VM's system dirs: this machine's over the image's, before anything runs on them.
+  // A local VM's agent user and limits, before anything runs.
   if (listen) {
     try {
-      const laid = layHostSystem();
-      if (laid) process.stderr.write(`${new Date().toISOString()} INFO sandbox-guest: ${laid}\n`);
+      const done = setUpGuest();
+      if (done) process.stderr.write(`${new Date().toISOString()} INFO sandbox-guest: ${done}\n`);
       watchOom();
     } catch (error) {
-      warn(`can't lay this machine's system dirs over the image's: ${(error as Error).message}`);
+      warn(`can't set the VM up: ${(error as Error).message}`);
       return 1;
     }
   }
