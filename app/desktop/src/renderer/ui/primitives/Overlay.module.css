@@ -3,15 +3,16 @@
   /* Over the title bar, a floating surface is the app, not the window's drag handle. */
   -webkit-app-region: no-drag;
   z-index: 50;
-  min-width: 180px;
+  min-width: 192px;
   max-width: min(420px, calc(100vw - 2 * var(--edge-inset)));
   max-height: var(--radix-popper-available-height, 70vh);
   overflow-y: auto;
   padding: var(--space-1);
+  border: 1px solid var(--menu-edge);
   border-radius: var(--radius-md);
   background: var(--raised);
   color: var(--text);
-  box-shadow: var(--float-shadow);
+  box-shadow: var(--menu-shadow);
   font-size: var(--text-md);
   line-height: var(--leading-md);
   transform-origin: var(--radix-popper-transform-origin, center);
@@ -21,31 +22,38 @@
 @keyframes enter {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.97);
   }
 }
 
+/* A menu's row (Menu, ContextMenu, a Select's options): compact, its icon muted at the start, a rounded box under the
+   pointer or the keys, a shortcut or a tick at its end. */
 .item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--row);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  min-height: 28px;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-xs);
   min-width: 0;
+  outline: none;
   cursor: default;
+  user-select: none;
 }
 .item > svg {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   color: var(--quiet);
 }
-.item[data-highlighted] {
+.item[data-highlighted],
+.item[data-state="open"] {
   background: var(--selected);
 }
 .item[data-disabled] {
   color: var(--faint);
+  pointer-events: none;
 }
 .item[data-disabled] > svg {
   color: var(--faint);
@@ -55,10 +63,20 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A shortcut at the row's end, quiet and a step smaller, its keys spaced a hair. */
 .itemHint {
   flex: none;
+  margin-left: auto;
+  padding-left: var(--space-3);
   color: var(--quiet);
   font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+}
+/* A submenu's chevron, at the row's end. */
+.item > .subChevron {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
 }
 .danger {
   color: var(--danger);
@@ -66,21 +84,34 @@
 .danger > svg {
   color: var(--danger);
 }
+.danger[data-highlighted] {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+/* A choice's tick, at the row's end (a checkbox or a radio item). */
 .indicator {
   flex: none;
+  order: 9;
   width: 14px;
+  margin-left: auto;
   display: inline-flex;
   justify-content: center;
 }
-/* The tick sits inside Radix's own indicator. */
 .indicator svg {
   width: 14px;
   height: 14px;
 }
+/* A group's quiet word over its rows. */
+.label {
+  padding: 6px var(--space-2) 4px;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-xs);
+}
 .separator {
   height: 1px;
   margin: var(--space-1) calc(-1 * var(--space-1));
-  background: var(--hairline);
+  background: var(--menu-edge);
 }
 
 .tooltip {
@@ -129,19 +160,36 @@
   width: 100%;
   min-width: 0;
   height: var(--field);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-md);
+  background: var(--field-bg);
+  box-shadow: var(--field-shadow);
   color: var(--text);
   text-align: left;
+  transition:
+    border-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
+}
+/* A select is a field (Field.module.css): the same edge, the same focus. */
+.trigger:hover:not(:disabled) {
+  border-color: var(--field-border-hover);
+}
+.trigger:focus-visible,
+.trigger[data-state="open"] {
+  border-color: var(--field-border-focus);
+  outline: none;
+  box-shadow: var(--field-shadow), var(--field-ring);
+}
+.trigger[aria-invalid="true"] {
+  border-color: var(--danger);
 }
 .trigger[data-placeholder] .triggerValue {
-  color: var(--faint);
+  color: var(--quiet);
 }
 .trigger:disabled {
-  color: var(--faint);
-  border-color: var(--hairline);
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .trigger > svg {
   flex: none;

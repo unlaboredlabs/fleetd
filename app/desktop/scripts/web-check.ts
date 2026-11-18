@@ -83,6 +83,12 @@ for (const [pattern, what] of FIRST) {
 }
 if (!html.includes('<link rel="preload" href="/web/session" as="fetch"'))
   found.push("index.html doesn't preload /web/session: the page would ask who is signed in only once its script has run");
+// The tab's icon, at the origin's root: a browser asks /favicon.ico by itself, and the cloud answers index.html for a
+// file it doesn't hold.
+for (const icon of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
+  if (!fs.existsSync(path.join(dir, icon))) found.push(`the build holds no ${icon}`);
+  else if (!html.includes(`href="/${icon}"`)) found.push(`index.html doesn't link /${icon}`);
+}
 const kb = Math.round(bytes / 1024);
 if (kb > FIRST_LOAD_KB) found.push(`the first load is ${kb} KB gzip, over its ${FIRST_LOAD_KB} KB budget`);
 if (first.size > FIRST_LOAD_FILES) found.push(`the first load is ${first.size} files, over its ${FIRST_LOAD_FILES}`);

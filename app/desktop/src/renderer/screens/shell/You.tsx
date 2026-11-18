@@ -1,26 +1,25 @@
-// The sidebar's foot (W530): you, and two places to go. Your picture and name open a small menu (W607): who you are,
-// a row per hub (a dot and its name, all being well; HubStatus.tsx), this app's own update once below them, and
-// Settings. What is off is one more row each, with the one thing to do, and shows without opening anything, quietly:
-// an update's one word under your name while it runs and a while after (updates/quiet.ts: "Updating…", "Updated",
-// "Not updated", or "Update" with one to take), and a small mark on your picture while a hub is really unreachable or
-// refused your key (for an admin, also while a machine is offline or setup steps are left), its words in the tooltip.
-// Screens and the Factory, rarely opened, sit low: rows over you (Hubs), round buttons beside you (List) or at the
-// rail's foot (Rail), Screens marked while one needs you. The menu also picks the sidebar's layout (sidebarLayout.ts).
-import { ChevronsUpDown, Factory, LayoutList, MonitorSmartphone, Settings } from "lucide-react";
-import { useCallback, useState, type ReactNode } from "react";
-import { display, type ShortcutId } from "../../../shared/shortcuts";
-import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
-import { Avatar, cx, Kbd, Popover, PopoverContent, PopoverTrigger, Segmented, Tooltip } from "../../ui";
+// The sidebar's foot (W530, W714): you, and beside you Screens and the Factory, rarely opened, as two small icons,
+// Screens marked while one needs you. Your picture and name open your menu: who you are, this app's own update when
+// there is one, Settings, Appearance, Keyboard shortcuts and Help; on the web, Sign out. The row is your picture and
+// name alone; this app's update to take, going on or not taken is a small mark on your picture, its words in the
+// tooltip and its row in the menu (AppItem). Hubs, and what is off with them, a hub's update among it, are the hub
+// row's (Sidebar.tsx HubSwitcher), which useHubsMark and useHubUpdate mark.
+import { ArrowUpRight, Factory, Keyboard, LifeBuoy, LogOut, Monitor, MonitorSmartphone, Moon, Settings, Sun, SunMoon } from "lucide-react";
+import type { ReactNode } from "react";
+import { display } from "../../../shared/shortcuts";
+import { useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { Avatar, Kbd, Menu, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger, THEME_MODES, Tooltip, useTheme, type ThemeMode } from "../../ui";
+import { openShortcuts } from "../palette/state";
+import { onWeb } from "../../src/web";
 import { useHubRole } from "../admin/role";
-import { UpdateWord, useQuiet } from "../updates";
-import { AppRow, HubRows, MenuRow, useWorkMark } from "./HubStatus";
+import { useAppUpdate } from "../updates/state";
+import { appLine } from "./youMenu";
+import { AppItem, useWorkMark } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import type { Screen } from "./routes";
-import h from "./hubStatus.module.css";
 import s from "./sidebar.module.css";
 import { linkMark, type HubMark } from "./youMenu";
-import { LAYOUTS, setLayout, useSidebarView } from "./sidebarLayout";
 
 const platform = window.fleetd.platform;
 const NO_INPUT = {} as const;
@@ -48,41 +47,6 @@ const useLinkMarks = (): ReadonlyArray<HubMark | null> => {
   });
 };
 
-/** A place to go, at the sidebar's top under search: its icon and its word, a dot at the row's end while it needs you. */
-function Place(props: { label: string; shortcut?: ShortcutId; current: boolean; mark?: string | undefined; onClick: () => void; children: ReactNode; opens?: string; aside?: string | undefined }) {
-  const tip = props.mark ?? props.label;
-  return (
-    <Tooltip content={props.shortcut === undefined ? props.mark : <>{tip} <Kbd>{display(props.shortcut, platform)}</Kbd></>} side="right">
-      <button
-        type="button"
-        className={s.place}
-        aria-label={`${props.label}${props.aside === undefined ? "" : ` · ${props.aside}`}${props.mark === undefined ? "" : `: ${props.mark}`}`}
-        {...(props.current ? { "aria-current": "page" as const } : {})}
-        data-opens={props.opens}
-        onClick={props.onClick}
-      >
-        {props.children}
-        <span className={s.placeLabel}>{props.label}</span>
-        {props.aside === undefined ? null : <span className={s.placeAside}>{props.aside}</span>}
-        {props.mark === undefined ? null : <span className={s.dot} data-want="you" aria-hidden />}
-      </button>
-    </Tooltip>
-  );
-}
-
-/**
- * Screens (D305): marked while one asks for you. One hub-wide count (screens_count, read again on each screen's
- * event), never a project's list.
- */
-function ScreensButton({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
-  const { asking, live } = useScreensCount();
-  return (
-    <Place label="Screens" aside={live > 0 ? `${String(live)} live` : undefined} current={current} mark={asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined} onClick={() => go({ id: "screens", open: null })}>
-      <MonitorSmartphone aria-hidden />
-    </Place>
-  );
-}
-
 /** Screens on the hub: how many are live and how many ask for you. */
 const useScreensCount = () => {
   // The hub feature that brings screens_count (screensPage/data's THUMBS; named here so the shell loads none of the page).
@@ -91,13 +55,13 @@ const useScreensCount = () => {
   return { asking: count?.asking ?? 0, live: count?.live ?? 0 };
 };
 
-/** Screens and the Factory as two round icons (List: beside you; Rail: at its foot), Screens marked while one needs you. */
-export function PlaceIcons({ screen, factory, go, vertical = false }: YouProps & { vertical?: boolean }) {
+/** Screens and the Factory as two small icons beside you, Screens marked while one needs you. */
+export function PlaceIcons({ screen, factory, go }: YouProps) {
   const { asking, live } = useScreensCount();
   const mark = asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined;
-  const side = vertical ? "right" : "top";
+  const side = "top";
   return (
-    <div className={cx(s.tools, vertical && s.toolsVertical)}>
+    <div className={s.tools}>
       <Tooltip content={`Screens${live > 0 ? ` · ${String(live)} live` : ""}${mark === undefined ? "" : `: ${mark}`}`} side={side}>
         <button
           type="button"
@@ -125,24 +89,6 @@ export function PlaceIcons({ screen, factory, go, vertical = false }: YouProps &
   );
 }
 
-/** The sidebar's places, low in Hubs, over you: Screens and the Factory, each a row with its word. */
-export function Places({ screen, factory, go }: YouProps) {
-  return (
-    <div className={s.places}>
-      <ScreensButton current={screen.id === "screens"} go={go} />
-      <Place
-        label="Factory"
-        // A hub from before metrics has no ⌘; (factory/support.ts).
-        {...(factory ? { shortcut: "factory.open" as const } : {})}
-        current={screen.id === "factory" || screen.id === "time"}
-        onClick={() => go(factory ? { id: "factory", project: null } : { id: "time", orderId: null })}
-      >
-        <Factory aria-hidden />
-      </Place>
-    </div>
-  );
-}
-
 export interface YouProps {
   readonly screen: Screen;
   /** The hub reports metrics (or hasn't said yet): the Factory opens on Output, else on Agent time. */
@@ -150,106 +96,92 @@ export interface YouProps {
   readonly go: (screen: Screen) => void;
 }
 
-/** The menu's layout row: the sidebar's three layouts, the one in use pressed. A pick applies at once and closes the menu. */
-function LayoutPick({ close }: { close: () => void }) {
-  const { layout } = useSidebarView();
-  return (
-    <div className={cx(h.row, s.layoutRow)} data-line="layout">
-      <span className={h.mark}>
-        <LayoutList aria-hidden />
-      </span>
-      <span className={h.words}>Sidebar</span>
-      <Segmented
-        label="Sidebar layout"
-        options={LAYOUTS.map((l) => ({ value: l.id, label: l.label }))}
-        value={layout}
-        onChange={(next) => {
-          setLayout(next);
-          close();
-        }}
-      />
-    </div>
-  );
-}
+/**
+ * What is off on any hub (a link refused or out of reach; for an admin a machine or setup steps), the most pressing:
+ * the hub switcher's mark, since the hubs and what to do about them live there.
+ */
+export const useHubsMark = (): HubMark | null => worst([...useLinkMarks(), useWorkMark()]);
 
-/** You, at the sidebar's foot: your picture and name (`compact`, Rail's: the picture alone), which open your menu. */
-export function You({ go, compact = false, chevron = true }: Pick<YouProps, "go"> & Partial<YouProps> & { compact?: boolean; chevron?: boolean }) {
-  const hubs = useHubs();
-  const hub = useHubState();
+/**
+ * You, at the sidebar's foot: your picture and name, which open your menu (W714): who you are, this app's update when
+ * there is one, then Settings, Appearance, Keyboard shortcuts and Help, each shortcut at its row's end; on the web,
+ * Sign out. Hubs aren't here: they are the hub row's (Sidebar.tsx HubSwitcher), with what is off with each.
+ */
+export function You({ go }: Pick<YouProps, "go">) {
   const role = useHubRole();
   const me = role.me;
   const picture = usePersonPicture(me?.personId, me?.avatar);
-  const quiet = useQuiet(hub);
-  const mark = worst([...useLinkMarks(), useWorkMark()]);
-  const [open, setOpen] = useState(false);
-  // The hubs whose rows offer their whole update, which ends in this app's restart: its own row waits meanwhile.
-  const [whole, setWhole] = useState<ReadonlySet<string>>(() => new Set());
-  const offers = useCallback((id: string, on: boolean) => setWhole((was) => (was.has(id) === on ? was : on ? new Set([...was, id]) : new Set([...was].filter((h) => h !== id)))), []);
+  // This app's own update, the one thing the menu under your name acts on: a hub's is the hub switcher's.
+  const app = appLine(useAppUpdate());
   const name = me?.name ?? "You";
-  const said = [name, quiet === null ? null : quiet.word.text, mark?.why].filter((x) => x != null).join(", ");
+  const said = [name, app?.text].filter((x) => x != null).join(", ");
+  const roleWord = me === undefined ? "" : me.role.charAt(0).toUpperCase() + me.role.slice(1);
 
   return (
-    <div className={cx(s.you, compact && s.youCompact)}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <Tooltip content={mark?.why}>
-          <PopoverTrigger asChild>
-            <button type="button" className={cx(s.me, compact && s.meCompact)} aria-label={said} data-opens="you" data-mark={mark?.tone}>
+    <div className={s.you}>
+      <Menu>
+        <Tooltip content={app?.text}>
+          <MenuTrigger asChild>
+            <button type="button" className={s.me} aria-label={said} data-opens="you">
               <span className={s.meAvatar}>
-                <Avatar name={name} size={compact ? 28 : 32} src={picture} />
-                {mark === null ? null : <span className={s.meMark} data-tone={mark.tone} aria-hidden />}
+                <Avatar name={name} size={24} src={picture} />
+                {/* This app's update to take, going on or not taken: a small mark, its words in the tooltip and its row in the menu. */}
+                {app === null ? null : <span className={s.meMark} data-tone="update" aria-hidden />}
               </span>
-              {compact ? null : (
-              <span className={s.meText}>
-                <span className={s.meName}>{name}</span>
-                {quiet === null ? (
-                  <span className={s.meRole}>{[me === undefined ? "" : me.role.charAt(0).toUpperCase() + me.role.slice(1), hubs.length === 1 ? (hubs[0]?.label ?? "") : `${String(hubs.length)} hubs`].filter((w) => w !== "").join(" · ")}</span>
-                ) : (
-                  <span className={s.meWord}>
-                    <UpdateWord quiet={quiet} />
-                  </span>
-                )}
-              </span>
-              )}
-              {compact || !chevron ? null : <ChevronsUpDown className={s.meChevron} aria-hidden />}
+              <span className={s.meName}>{name}</span>
             </button>
-          </PopoverTrigger>
+          </MenuTrigger>
         </Tooltip>
-        <PopoverContent side={compact ? "right" : "top"} align={compact ? "end" : "start"} className={s.youCard} aria-label="You">
-          <div className={s.youHead}>
-            <Avatar name={name} size={32} src={picture} />
+        <MenuContent side="top" align="start" className={s.youCard} aria-label="You">
+          <MenuLabel className={s.youHead}>
+            <Avatar name={name} size={28} src={picture} />
             <span className={s.youWho}>
               <span className={s.youName}>{name}</span>
-              {me === undefined ? null : <span className={s.youRole}>{me.role.charAt(0).toUpperCase() + me.role.slice(1)}</span>}
+              {roleWord === "" ? null : <span className={s.youRole}>{roleWord}</span>}
             </span>
-          </div>
-          {hubs.map((h) => (
-            <HubScope key={h.id} hub={h}>
-              <OneHub close={() => setOpen(false)} offers={offers} />
-            </HubScope>
-          ))}
-          <AppRow whole={whole.size > 0} />
-          <LayoutPick close={() => setOpen(false)} />
-          <MenuRow
-            mark={<Settings aria-hidden />}
-            end={<Kbd>{display("settings.open", platform)}</Kbd>}
-            data-opens="settings"
-            onClick={() => {
-              setOpen(false);
-              go({ id: "settings", tab: "general" });
-            }}
-          >
+          </MenuLabel>
+          <MenuSeparator />
+          <AppItem />
+          <MenuItem icon={<Settings aria-hidden />} hint={display("settings.open", platform)} data-opens="settings" onSelect={() => go({ id: "settings", tab: "general" })}>
             Settings
-          </MenuRow>
-        </PopoverContent>
-      </Popover>
+          </MenuItem>
+          <AppearanceSub />
+          <MenuItem icon={<Keyboard aria-hidden />} hint={display("shortcuts.show", platform)} onSelect={openShortcuts}>
+            Keyboard shortcuts
+          </MenuItem>
+          <MenuItem icon={<LifeBuoy aria-hidden />} hint={<ArrowUpRight className={s.youOut} aria-hidden />} onSelect={() => void window.fleetd.openExternal(DOCS)}>
+            Help & docs
+          </MenuItem>
+          {onWeb() ? (
+            <>
+              <MenuSeparator />
+              <MenuItem icon={<LogOut aria-hidden />} onSelect={() => void window.fleetd.cloud.signOut().then(() => window.location.assign("/"))}>
+                Sign out
+              </MenuItem>
+            </>
+          ) : null}
+        </MenuContent>
+      </Menu>
     </div>
   );
 }
 
-/** One hub's rows, in its scope, with its own live state. */
-function OneHub({ close, offers }: { close: () => void; offers: (id: string, on: boolean) => void }) {
-  const hub = useHubState();
-  const { id } = useHub();
-  const whole = useCallback((on: boolean) => offers(id, on), [offers, id]);
-  return <HubRows hub={hub} close={close} whole={whole} />;
+/** Appearance, a row that opens Light, Dark and Match system beside it, the one in use ticked and named at its end. */
+function AppearanceSub() {
+  const { mode, setMode } = useTheme();
+  return (
+    <MenuSub icon={<SunMoon aria-hidden />} label="Appearance" hint={THEME_MODES.find((m) => m.value === mode)?.label}>
+      <MenuRadioGroup value={mode} onValueChange={(v) => setMode(v as ThemeMode)}>
+        {THEME_MODES.map((m) => (
+          <MenuRadioItem key={m.value} value={m.value} icon={MODE_ICON[m.value]}>
+            {m.label}
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+    </MenuSub>
+  );
 }
+
+const DOCS = "https://fleetd.sh/docs";
+
+const MODE_ICON: Record<ThemeMode, ReactNode> = { light: <Sun aria-hidden />, dark: <Moon aria-hidden />, system: <Monitor aria-hidden /> };

@@ -28,10 +28,25 @@
   --hairline: #eaecef;
   /* One focus ring everywhere (base.css): a crisp blue, the links' family, so it reads on the neutral accent. */
   --focus: #2b6be4;
-  /* What is open in the sidebar (a chat's row, a pin, a place): cut from the sheet's own white and lifted a breath, so
-     the row and the chat it opens read as one material. */
-  --row-on: #ffffff;
-  --row-on-lift: 0 0 0 1px #0f17200f, 0 1px 2px #0f172012, 0 2px 6px -2px #0f172010;
+  /* What is open in the sidebar (a chat's row, a pin, a place): a faint, even tint a step off the sidebar's own tone,
+     twice the hover's, with no edge and no shadow. A tint, not a colour, so it reads the same on the Mac's see-through
+     sidebar as on the plain one. */
+  --row-on: #0f172010;
+  --row-on-lift: none;
+  /* ...and a sidebar row under the pointer, half that. */
+  --row-hover: #0f172008;
+  /* Every field (Input, Textarea, Select, a sealed field, a search; ui/primitives/Field.module.css): a clear 1px
+     edge all round on the surface's own colour, and a breath of shadow under it. Focused, the edge darkens and a soft
+     3 px ring of the same neutral grows round it; with an error, both in the danger's red. Never the link blue. */
+  --field-bg: transparent;
+  /* The sidebar's search field: the page's white, a little see-through on the Mac's material. */
+  --sidebar-field: #ffffffb3;
+  --field-border: #c9cdd3;
+  --field-border-hover: #b3b8bf;
+  --field-border-focus: #868c95;
+  --field-shadow: 0 1px 2px #0f17200d;
+  --field-ring: 0 0 0 3px #868c9540;
+  --field-danger-ring: 0 0 0 3px #b8322d26;
   /* The panel recedes: a breath off the chat's white, past a hairline. */
   --panel: #fbfbfc;
   /* An inset band on a sheet: code, a diff's file head, a track under segments. A step off the sheet, the frame's tone
@@ -132,8 +147,17 @@
   --selected: #ffffff14;
   --hairline: #24262b;
   --focus: #5b91f5;
-  --row-on: #1d1e22;
-  --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
+  --row-on: #ffffff17;
+  --row-on-lift: none;
+  --row-hover: #ffffff09;
+  --field-bg: #ffffff08;
+  --sidebar-field: #ffffff0a;
+  --field-border: #ffffff2b;
+  --field-border-hover: #ffffff3d;
+  --field-border-focus: #8f949c;
+  --field-shadow: 0 1px 2px #00000040;
+  --field-ring: 0 0 0 3px #8f949c52;
+  --field-danger-ring: 0 0 0 3px #f2847f40;
   --panel: #101114;
   --inset: #1a1b1f;
   --fill: #1d1f23;
@@ -239,11 +263,15 @@
   /* Fixed heights keep rows and controls aligned across screens. */
   --row: 32px;
   --control: 28px;
-  --field: 32px;
+  --field: 36px;
   --bar: 40px;
   /* The window's top row, which floats over the screen (no bar of its own); the main process centres the macOS traffic
      lights in it (shared/frame.ts TOP_BAR). */
   --top-bar-height: 48px;
+  /* Over the sidebar's hub row: nothing without traffic lights, where the hub's row is the first line and as tall as
+     the top row beside it (macOS below). */
+  --side-strip: 0px;
+  --hub-row-height: var(--top-bar-height);
   /* How far a glass capsule (the chat's pill) sits in from the top row's top and bottom edges. */
   --glass-inset: 8px;
   /* The glass's blur, the same in both themes. */
@@ -255,7 +283,7 @@
   --island-gap: 16px;
   --island-band-h: 36px;
   --island-capsule-h: 28px;
-  --sidebar-w: 280px;
+  --sidebar-w: 256px;
   --measure: 720px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;
@@ -280,6 +308,9 @@
   /* What is selected (a sidebar row, a tab, a segment): a raised chip, its hairline edge and a breath of lift. */
   --chip: 0 0 0 1px var(--hairline), 0 1px 2px #0f17200d;
   --float-shadow: 0 0 0 1px var(--hairline), 0 2px 4px -1px var(--shadow), 0 16px 36px -12px var(--shadow);
+  /* A menu (Menu, ContextMenu, a Select's list, the sidebar's menus): one hairline and a soft, close shadow. */
+  --menu-edge: var(--hairline);
+  --menu-shadow: 0 1px 2px color-mix(in srgb, var(--shadow) 50%, transparent), 0 8px 20px -6px var(--shadow);
   /* What Show went to in a chat (what the lead waits on): a soft ring in the accent, fading out over --dur-shown. */
   --shown-ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --shown-ring-width: 4px;
@@ -315,11 +346,17 @@
 
 :root[data-platform="darwin"] {
   --traffic-lights-inset: 84px;
+  /* The traffic lights get the sidebar's first row to themselves, an empty drag strip as tall as the top row beside
+     it; the hub's row is the line under it, a step shorter. */
+  --side-strip: var(--top-bar-height);
+  --hub-row-height: 44px;
 }
 
 /* The web app (src/web) has no title bar to make room in, on a Mac too. */
 :root[data-shell="web"] {
   --traffic-lights-inset: 0px;
+  --side-strip: 0px;
+  --hub-row-height: var(--top-bar-height);
 }
 
 /* Chromium composites without a GPU (main/index.ts): the glass is the page's raised tone, as with Reduce transparency.
@@ -356,9 +393,6 @@
   --settings-field: #0f17200a;
   --settings-fill: #eff1f3;
   --settings-fill-hover: #e9ebee;
-  /* A hairline rim, and a bottom edge of 3.2:1 on the white card. */
-  --settings-field-edge: inset 0 0 0 1px #0f172012, inset 0 -1px 0 #8a9099;
-  --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #2b6be42e;
   --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);
 }
@@ -370,9 +404,6 @@
   --settings-field: #ffffff0d;
   --settings-fill: #1d1f23;
   --settings-fill-hover: #23252a;
-  /* A hairline rim, and a bottom edge of 3.9:1 on the dark card. */
-  --settings-field-edge: inset 0 0 0 1px #ffffff0f, inset 0 -1px 0 #6b717a;
-  --settings-ring: 0 0 0 1px var(--focus), 0 0 0 4px #5b91f53d;
   --settings-chip: var(--row-on-lift);
   --settings-control-edge: var(--control-border);
 }

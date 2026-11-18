@@ -89,16 +89,14 @@
   z-index: 2;
   width: 0;
 }
-/* The sidebar's first row: the traffic lights on macOS, then its own controls, centred on the window's top row as the
-   chat's pill is. Part of the drag region. */
+/* The sidebar's top: on macOS an empty strip for the traffic lights (--side-strip), as tall as the top row beside it so
+   the lights and the chat's pill share one centre line; then the sidebar's own first row (the hub's), its full width.
+   Without traffic lights the strip is nothing and that row is the first line. Part of the drag region. */
 .sideTop {
   flex: none;
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1);
-  height: var(--top-bar-height);
-  padding-inline: max(var(--space-2), var(--traffic-lights-inset)) var(--space-2);
+  flex-direction: column;
+  padding-top: var(--side-strip);
   -webkit-app-region: drag;
   user-select: none;
 }

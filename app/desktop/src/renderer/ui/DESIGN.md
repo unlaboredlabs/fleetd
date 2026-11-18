@@ -44,14 +44,22 @@ breaks a rule changes this page in the same PR and says why.
 - **Flush, not floating:** the window is three columns, sidebar, chat and panel, meeting at hairlines. No grey frame
   with rounded sheets set into it, no card around a column. What floats over the app (a dialog, the Settings sheet,
   the palette, the composer island, the top row's glass capsules) is the only thing with lift.
-- **The sidebar has three layouts** (`shell/sidebarLayout.ts`), picked under your name and kept on this computer:
-  List (the default: every hub's bots in one list, each row's line led by a quiet word for its section or hub, no
-  colour), Hubs (one hub at a time, its pins as 40 px pictures, a step over a row's) and Rail (the hubs down the edge,
-  sections as tabs). None stacks groups that fold. Screens and the Factory sit low, never at the top. Rows that glide
-  stay transparent: on macOS the sidebar is the window's see-through material, and a solid fill shows as a black box.
+- **One sidebar** (`shell/Sidebar.tsx`, 256 px by default): one hub at a time, its name on a line of its own under the
+  traffic lights (the web's first line, as tall as the top row beside it), then search and New bot, the pins, the
+  bots, your sections under quiet labels. Nothing stacks groups that fold. The open row is a faint tint a step off the
+  sidebar's own tone (`--row-on`), the hovered one half that (`--row-hover`), no edge or shadow. Screens and the
+  Factory are two small icons beside you at the foot, never at the top; you are your picture and name, no second
+  line. Rows that glide stay transparent: on macOS the sidebar is the window's see-through material, and a solid fill
+  shows as a black box.
+- **Menus are one kind** (`Menu`, `ContextMenu`, a `Select`'s list): a hairline and a soft close shadow, compact
+  rows with a muted icon, a rounded box under the pointer or the keys, a quiet label over a group, thin separators, a
+  shortcut or a tick at a row's end; keys and typeahead move through them.
+- **Fields are one kind** (`Input`, `Textarea`, `Select`, a sealed field, a search): 36 px, `md` corners, a clear 1 px
+  edge (`--field-border`) and a breath of shadow; focused, the edge darkens and a soft 3 px neutral ring grows round
+  it; an error is the danger's edge and ring; disabled is half opacity. Never a fill with a firmer bottom edge.
 - **Corners come from one scale** (`--radius-*`), by what a thing is, never chosen per screen: `xs` 4 px for marks
-  inside text (a count chip, kbd, inline code, a checkbox); `sm` 6 px for what you press or type in, and a row's hover
-  and selected box; `md` 8 px for what holds things (a block in the chat, a Settings group, a menu); `lg` 10 px for
+  inside text (a count chip, kbd, inline code, a checkbox); `sm` 6 px for what you press, and a row's hover and
+  selected box; `md` 8 px for what holds things (a block in the chat, a Settings group, a menu) and a field; `lg` 10 px for
   what floats over the app, and nothing rounder. The one exception is a chat bubble (`--radius-bubble`, 19 px, its
   run's inner corners 6 px): bubbles keep their soft rounding, the human's call, so a one-line bubble is near a
   capsule and reads as speech. A thing inside another is never rounder than it. Pills (`--radius-pill`) only for what is one by nature: a capsule, a pin, an avatar, a dot.

@@ -29,8 +29,8 @@ bot's lead. The one step still to do is open; each one done keeps a line saying 
 3. **Start a bot.** Pick a repository: fleetd clones it onto the computer (or for hosted sandboxes, onto the hub) and
    opens the bot's chat. **Empty bot** makes one with no repository.
 
-**Skip for now** goes to the app. Until everything is done, the menu under your name has **Finish setting up** with
-the steps left, which opens the page where you left off.
+**Skip for now** goes to the app. Until everything is done, the team's menu at the top of the sidebar has **Finish
+setting up** under the team, with the steps left, which opens the page where you left off.
 
 A teammate who joins by an invitation lands on the same page with the team's bots listed first, and their own GitHub
 as one row under them.

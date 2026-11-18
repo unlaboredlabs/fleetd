@@ -31,7 +31,7 @@ export {
 } from "./primitives/Field";
 export { Select, type SelectProps, type SelectOption } from "./primitives/Select";
 export { Segmented, type SegmentOption } from "./primitives/Segmented";
-export { Menu, MenuTrigger, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./primitives/Menu";
+export { Menu, MenuTrigger, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuCheckboxItem, MenuLabel, MenuGroup, MenuSub, MenuSeparator } from "./primitives/Menu";
 export {
   ContextMenu,
   ContextMenuItem,

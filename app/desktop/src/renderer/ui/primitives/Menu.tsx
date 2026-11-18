@@ -1,11 +1,12 @@
 import { DropdownMenu as D } from "radix-ui";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
 import { cx } from "../lib/cx";
 import s from "./Overlay.module.css";
 
 /*
- * A dropdown menu (from a button). Item labels wrap instead of clipping; a hint (shortcut) sits on the right.
+ * A dropdown menu (from a button): compact rows, keyboard navigation and typeahead (Radix), a quiet label over a group,
+ * thin separators; a shortcut or a choice's tick sits at a row's end. Item labels wrap instead of clipping.
  */
 
 const Open = createContext(false);
@@ -67,16 +68,66 @@ export function MenuItem({ icon, hint, danger, className, children, ...rest }: C
   );
 }
 
-export function MenuRadioItem({ hint, className, children, ...rest }: ComponentProps<typeof D.RadioItem> & ItemExtras) {
+export function MenuRadioItem({ icon, hint, className, children, ...rest }: ComponentProps<typeof D.RadioItem> & ItemExtras) {
   return (
     <D.RadioItem className={cx(s.item, className)} {...rest}>
+      <ItemInner icon={icon} hint={hint}>
+        {children}
+      </ItemInner>
       <span className={s.indicator}>
         <D.ItemIndicator>
           <Check />
         </D.ItemIndicator>
       </span>
-      <ItemInner hint={hint}>{children}</ItemInner>
     </D.RadioItem>
+  );
+}
+
+/** A choice that is on or off, its tick at the row's end. */
+export function MenuCheckboxItem({ icon, className, children, ...rest }: ComponentProps<typeof D.CheckboxItem> & Pick<ItemExtras, "icon">) {
+  return (
+    <D.CheckboxItem className={cx(s.item, className)} {...rest}>
+      {icon}
+      <span className={s.itemLabel} data-text="wrap">
+        {children}
+      </span>
+      <span className={s.indicator}>
+        <D.ItemIndicator>
+          <Check />
+        </D.ItemIndicator>
+      </span>
+    </D.CheckboxItem>
+  );
+}
+
+/** A group's quiet word over its rows. */
+export function MenuLabel({ className, ...rest }: ComponentProps<typeof D.Label>) {
+  return <D.Label className={cx(s.label, className)} {...rest} />;
+}
+
+export const MenuGroup = D.Group;
+
+/** A row that opens more rows beside it (Appearance's three). */
+export function MenuSub({ label, icon, hint, children }: { label: ReactNode; icon?: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <D.Sub open={open} onOpenChange={setOpen}>
+      <D.SubTrigger className={s.item}>
+        {icon}
+        <span className={s.itemLabel} data-text="wrap">
+          {label}
+        </span>
+        {hint ? <span className={s.itemHint}>{hint}</span> : null}
+        <ChevronRight className={s.subChevron} aria-hidden />
+      </D.SubTrigger>
+      {open ? (
+        <D.Portal>
+          <D.SubContent className={s.surface} sideOffset={6} collisionPadding={8}>
+            {children}
+          </D.SubContent>
+        </D.Portal>
+      ) : null}
+    </D.Sub>
   );
 }
 

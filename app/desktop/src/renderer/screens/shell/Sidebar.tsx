@@ -1,36 +1,37 @@
-// The sidebar (W530): your chats, each a row with its picture, its name and its newest line, newest first, and you at
-// its foot (You.tsx). New sits at the top, beside the window's controls (NewButton). Your pinned chats stay on top in
-// your order (pins.ts): in Hubs up to three to a line, each a picture over its name in a capsule (a name cut short
-// shows whole in a tooltip); in List a row of capsules: drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
-// there, or a pin down out of them to unpin it. Every other chat takes its place by
+// The sidebar (W530, W714): one hub at a time, its row of its own under the window's traffic lights (on the web its
+// first line): the hub's mark and name, which pick another hub and say what is off with one, and the list's ⋯; under it
+// search (the palette) and New bot, a plus at the search's end. Then your chats, each a row with its picture, its name
+// and its newest line, newest first, and you at the foot with Screens and the Factory as two small icons beside you
+// (You.tsx). Your pinned chats stay on top in your order (pins.ts), up to three to a line, each a picture over its name
+// in a capsule (a name cut short shows whole in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them;
+// drag a chat up among them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
 // so a row never moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a
 // block: the warning's colour, why in its tooltip) or has a new message (the accent's, its line in full voice), else
-// says a red main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of the times on the first nine
-// rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins it, renames it, copies its
-// path, archives it (Undo in the toast) or deletes it (from its settings, which list its worktrees and ask for its
-// name first). An archived project is in none (Settings › Projects brings it back).
+// says a red main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
+// the times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
+// it, renames it, copies its path, archives it (Undo in the toast) or deletes it (from its settings, which list its
+// worktrees and ask for its name first). An archived project is in none (the ⋯'s Archived bots, Settings › Projects,
+// brings it back). The ⋯ orders the list (newest first, by name, or the ones that want you first) and makes its rows
+// compact (sidebarLayout.ts), kept on this computer.
 //
-// Your own sections (sections.ts) come under the chats in none, each under a quiet label, in your order, its chats
-// newest first: a row's menu moves it to one, out of them, or into a new one you name; dragging it onto a section's
-// label or one of its chats moves it there too, and onto a chat in none takes it out, the held row saying where it
-// would go where its time was. A label never folds; its menu renames the section, moves it up or down, or removes it
-// (its chats go back on top). A pinned chat shows among the pins only, and keeps its section.
-//
-// Three layouts carry them (sidebarLayout.ts), none of them stacked groups that fold: List, every bot of every hub in
-// one list, each row saying its hub and section; Hubs, one hub at a time, picked at the top; Rail, the hubs down a
-// slim rail at the edge. The menu under your name picks one.
-import { ArrowRight, Check, ChevronDown, Pin, Plus, Search } from "lucide-react";
+// The chats in none of your sections come first (under a quiet Bots label once you have sections), then your sections
+// (sections.ts), each under its quiet label, in your order: a row's menu moves it to one, out of them, or into a new
+// one you name; dragging it onto a section's label or one of its chats moves it there too, and onto a chat in none
+// takes it out, the held row saying where it would go where its time was. A label never folds; its menu (right-click, or its ⋯ under the pointer)
+// renames the section, moves it up or down, or removes it (its chats go back on top). A pinned chat shows among the pins
+// only, and keeps its section.
+import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, observeSize, Popover, PopoverContent, PopoverTrigger, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { useHubState } from "./hubFeed";
@@ -46,20 +47,18 @@ import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./S
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { holdRows } from "./sidebarState";
-import { showHub, showSection, shownRows, useSidebarView, viewedHub, type SidebarView } from "./sidebarLayout";
-import { Places, PlaceIcons, You } from "./You";
+import { setListView, showHub, shownRows, SORTS, sortRows, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
+import { HubLines, useHubUpdate } from "./HubStatus";
+import { onWeb } from "../../src/web";
+import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
 
-/** A chat's picture in its row: big enough to read its face, the row a 52 px rounded box around it; List's a step
- * smaller, as its rows carry more of them. */
-const AVATAR = 36;
-const LIST_AVATAR = 32;
-/** A pin in List's capsules: the picture beside the name. */
-const CAPSULE_AVATAR = 20;
-/** Rail's one-line rows. */
-const DENSE_AVATAR = 24;
+/** A chat's picture in its row: big enough to read its face, the row a 46 px rounded box around it. */
+const AVATAR = 32;
+/** Compact rows' (the ⋯'s Compact rows): one line each. */
+const DENSE_AVATAR = 22;
 /** A pinned chat's picture, pinColumns to a row, the group centred in the sidebar: a step over a row's, no more. */
-const PIN_AVATAR = 40;
+const PIN_AVATAR = 36;
 /** Three across; four pins as two pairs, so no count leaves a lone pin under a full row of two. */
 const pinColumns = (count: number): number => (count === 4 ? 2 : Math.max(1, Math.min(count, 3)));
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
@@ -73,9 +72,9 @@ export interface SidebarProps {
   readonly jumpHints: boolean;
   /** The rows on show, in order, as the frame counts them for ⌘1–9 (sidebarLayout.ts shownRows); absent, worked out here. */
   readonly shown?: ReadonlyArray<Placed> | undefined;
-  /** The layout, and what Hubs and Rail show; absent, the window's. */
+  /** What it shows (sidebarLayout.ts); absent, the window's. */
   readonly view?: SidebarView | undefined;
-  /** The hub Hubs and Rail show (sidebarLayout.ts viewedHub); absent, the screen's. */
+  /** The hub on show (sidebarLayout.ts viewedHub); absent, the screen's. */
   readonly hub?: string | undefined;
   /** The hub reports metrics (or hasn't said yet): the Factory opens on Output, else on Agent time. */
   readonly factory: boolean;
@@ -93,37 +92,62 @@ const SearchField = () => (
   </button>
 );
 
-const NewBot = ({ go }: { go: (screen: Screen) => void }) => (
-  <Tooltip content="New bot">
-    <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
-      <Plus aria-hidden />
-    </button>
-  </Tooltip>
-);
+/**
+ * The list's ⋯: how the hub's bots are ordered and drawn (sidebarLayout.ts), kept on this computer, and where the
+ * archived ones are. View options, not settings.
+ */
+function ListMenu({ go }: { go: (screen: Screen) => void }) {
+  const view = useSidebarView();
+  return (
+    <Menu>
+      <Tooltip content="View options">
+        <MenuTrigger asChild>
+          <button type="button" className={s.new} aria-label="View options" data-opens="list-menu">
+            <Ellipsis aria-hidden />
+          </button>
+        </MenuTrigger>
+      </Tooltip>
+      <MenuContent align="end" className={s.listMenu} aria-label="View options">
+        <MenuLabel>Sort by</MenuLabel>
+        <MenuRadioGroup value={view.sort} onValueChange={(v) => setListView({ sort: v as SidebarSort })}>
+          {SORTS.map((o) => (
+            <MenuRadioItem key={o.id} value={o.id}>
+              {o.label}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        <MenuSeparator />
+        <MenuCheckboxItem icon={<Rows3 aria-hidden />} checked={view.compact} onCheckedChange={(on) => setListView({ compact: on })} onSelect={(e) => e.preventDefault()}>
+          Compact rows
+        </MenuCheckboxItem>
+        <MenuItem icon={<Archive aria-hidden />} onSelect={() => go({ id: "settings", tab: "projects" })}>
+          Archived bots
+        </MenuItem>
+      </MenuContent>
+    </Menu>
+  );
+}
 
 /**
- * The sidebar's top row, beside the window's controls. List and Rail: search as a field, and New. Hubs: the hub on
- * show, which picks another, then search and New as two icons.
+ * The sidebar's top, a line of its own under the window's traffic lights (on the web, its first line): the hub on show,
+ * which picks another, and the list's ⋯; under it search, as a field, and New bot, a plus at its end.
  */
-export function SidebarTop({ go, view, hub, projects }: { go: (screen: Screen) => void; view: SidebarView; hub: string; projects: ReadonlyArray<Placed> | undefined }) {
-  if (view.layout !== "hubs") {
-    return (
-      <>
-        <SearchField />
-        <NewBot go={go} />
-      </>
-    );
-  }
+export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void; hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   return (
-    <>
-      <HubSwitcher hub={hub} projects={projects} />
-      <Tooltip content={<>Search <kbd className={s.searchKey}>{display("palette.toggle", window.fleetd.platform)}</kbd></>}>
-        <button type="button" className={s.new} aria-label="Search" aria-keyshortcuts={display("palette.toggle", window.fleetd.platform)} onClick={() => openPalette()}>
-          <Search aria-hidden />
-        </button>
-      </Tooltip>
-      <NewBot go={go} />
-    </>
+    <div className={s.sideHead}>
+      <div className={s.hubRow}>
+        <HubSwitcher hub={hub} projects={projects} />
+        <ListMenu go={go} />
+      </div>
+      <div className={s.topTools}>
+        <SearchField />
+        <Tooltip content="New bot">
+          <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
+            <Plus aria-hidden />
+          </button>
+        </Tooltip>
+      </div>
+    </div>
   );
 }
 
@@ -139,44 +163,53 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
   );
 }
 
-/** Hubs' top: the hub on show, its name strong; a click lists every hub, a dot by each where a bot wants you. */
+/**
+ * The hub row's switcher: the hub on show, its name strong; a click lists every hub as a menu, the one on show ticked
+ * and a dot by each where a bot wants you, and under each what is off with it (can't reach it, a machine to look at,
+ * setup left) with the one thing to do (HubStatus.tsx HubLines). Hubs live here, not in the menu under your name. Add
+ * a hub at its foot (the desktop app's; the web app's teams come with the sign-in).
+ */
 function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   const hubs = useHubs();
-  const [open, setOpen] = useState(false);
+  // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
+  // without opening.
+  const off = useHubsMark();
+  const update = useHubUpdate();
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
-  // Another hub wants you: the switcher says so, quietly, without opening.
   const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(projects, h.id) > 0);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button type="button" className={s.switcher} aria-label={`${hub.label}${elsewhere ? ", another hub needs you" : ""}`} data-opens="hubs">
-          <HubMark hub={hub} />
-          <span className={s.switcherName}>{hub.label}</span>
-          {hubs.length > 1 ? <ChevronDown className={s.switcherChevron} aria-hidden /> : null}
-          {elsewhere ? <span className={s.dot} data-want="you" aria-hidden /> : null}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className={s.hubCard} aria-label="Hubs">
-        {hubs.map((h) => (
-          <button
-            key={h.id}
-            type="button"
-            className={s.hubItem}
-            {...(h.id === hub.id ? { "aria-current": "true" as const } : {})}
-            onClick={() => {
-              showHub(h.id);
-              setOpen(false);
-            }}
-          >
-            <HubMark hub={h} />
-            <span className={s.hubItemName}>{h.label}</span>
-            {wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-hidden /> : null}
-            {h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : null}
+    <Menu>
+      <Tooltip content={off?.why ?? update ?? undefined}>
+        <MenuTrigger asChild>
+          <button type="button" className={s.switcher} aria-label={[hub.label, elsewhere ? "another hub needs you" : null, off?.why, update].filter((w) => w != null).join(", ")} data-opens="hubs" data-mark={off?.tone}>
+            <HubMark hub={hub} size={20} />
+            <span className={s.switcherName}>{hub.label}</span>
+            <ChevronDown className={s.switcherChevron} aria-hidden />
+            {elsewhere || off !== null || update !== null ? <span className={s.dot} data-want="you" data-tone={off?.tone} aria-hidden /> : null}
           </button>
+        </MenuTrigger>
+      </Tooltip>
+      <MenuContent align="start" className={s.hubCard} aria-label="Hubs">
+        <MenuLabel>Hubs</MenuLabel>
+        {hubs.map((h) => (
+          <HubScope key={h.id} hub={h}>
+            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => showHub(h.id)}>
+              {h.label}
+            </MenuItem>
+            <HubLines />
+          </HubScope>
         ))}
-      </PopoverContent>
-    </Popover>
+        {onWeb() ? null : (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<Plus aria-hidden />} onSelect={() => (window.location.hash = "#/onboarding?add")}>
+              Add a hub…
+            </MenuItem>
+          </>
+        )}
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -249,21 +282,13 @@ interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly asOf: string | undefined;
   /** Held over one of your sections or a chat in none, where it would go if let go, shown where the time is. */
   readonly into?: string | undefined;
-  /** List's mark of where the bot lives: its section's (or hub's) name, before its line. */
-  readonly where?: Where | undefined;
   readonly avatar?: number | undefined;
-  /** Rail's: one line, the picture, the name and the mark; the time and the line are in the row's description. */
+  /** Compact: one line, the picture, the name and the mark; the time and the line are in the row's description. */
   readonly dense?: boolean | undefined;
 }
 
-/** Where a bot lives, as List's row says it: a word, its section's or (with several hubs) its hub's. */
-interface Where {
-  readonly word: string | undefined;
-  readonly tip: string;
-}
-
 /** One chat's row: picture, name and time, then its line and its mark. The menu's trigger props go on its button. */
-function Row({ p, current, jump, asOf, into, where, avatar = AVATAR, dense = false, ...rest }: RowProps) {
+function Row({ p, current, jump, asOf, into, avatar = AVATAR, dense = false, ...rest }: RowProps) {
   const m = mark(p);
   // Offline the marks are the last known ones, and their words say since when ("as of 09:02").
   const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
@@ -320,11 +345,6 @@ function Row({ p, current, jump, asOf, into, where, avatar = AVATAR, dense = fal
           )}
         </span>
         <span className={s.bottom}>
-          {where?.word === undefined ? null : (
-            <span className={s.where} title={where.tip} data-where="">
-              <span className={s.whereWord}>{where.word}</span>
-            </span>
-          )}
           <span className={s.line} data-empty={p.line === "" || undefined}>
             <HubText>{lineOf(p)}</HubText>
           </span>
@@ -402,31 +422,6 @@ function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   );
 }
 
-/**
- * A pin in List: its picture beside its name, strong, in a capsule that takes the shade while open or under the
- * pointer. New, the dot comes before the name (the warning's when it waits on you); with ⌘ held, its jump number.
- */
-function PinCapsule({ p, current, jump, asOf, ...rest }: RowProps) {
-  const m = mark(p);
-  const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
-  const dot = p.want !== undefined ? "want" : p.unread ? "new" : undefined;
-  return (
-    <button
-      type="button"
-      className={s.capsule}
-      {...(current ? { "aria-current": "page" as const } : {})}
-      data-unread={dot !== undefined || undefined}
-      aria-description={tip}
-      title={p.project.title}
-      {...rest}
-    >
-      <ProjectAvatar project={p.project} size={CAPSULE_AVATAR} own={botOwn(p)} />
-      <span className={s.capsuleName}>{p.project.title}</span>
-      {jump !== null ? <span className={s.jump}>{jump}</span> : dot !== undefined ? <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden /> : null}
-    </button>
-  );
-}
-
 export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: SidebarProps) {
   const hubs = useHubs();
   const windowView = useSidebarView();
@@ -440,175 +435,28 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   };
   // Nothing outlives the sidebar holding its rows.
   useEffect(() => () => holdRows(null), []);
-  // Held in the order they are on show, so List's keep theirs too.
-  const keys = (view.layout === "hubs" ? projects : shown)?.map((p) => p.key);
+  const keys = projects?.map((p) => p.key);
   const shownHub = hubs.find((h) => h.id === hub) ?? hubs[0];
   const openOn = (id: string): ProjectKey | null => (screen.id === "project" && screen.at === id ? screen.project : null);
   const hold = { onPointerEnter: () => holdRows(keys ?? null), onPointerLeave: () => holdRows(null) };
-
-  if (view.layout === "list") {
-    return (
-      <nav className={s.sidebar} aria-label="Sidebar" data-layout="list">
-        <div className={s.list} {...hold}>
-          <ListBots rows={shown} hubs={hubs} openOn={openOn} jumpOf={jumpOf} go={go} />
-        </div>
-        <div className={s.foot}>
-          <You go={go} chevron={false} />
-          <PlaceIcons screen={screen} factory={factory} go={go} />
-        </div>
-      </nav>
-    );
-  }
-
-  // Hubs and Rail: one hub's bots. A hub whose projects haven't loaded (offline from the start, say) waits on its own.
+  // A hub whose projects haven't loaded (offline from the start, say) waits on its own.
   const waiting = projects === undefined || shownHub === undefined || (loaded.has(shownHub.id) && loaded.get(shownHub.id)?.projects === undefined);
-  const rows = waiting ? undefined : view.layout === "rail" ? shown : projects.filter((p) => p.hub === shownHub.id);
-  const group =
-    shownHub === undefined ? null : (
-      <HubScope key={shownHub.id} hub={shownHub}>
-        <ProjectGroup rows={rows} all={projects?.filter((p) => p.hub === shownHub.id) ?? []} flat={view.layout === "rail"} section={view.layout === "rail" ? view.section : null} several={hubs.length > 1} open={openOn(shownHub.id)} jumpOf={jumpOf} go={go} />
-      </HubScope>
-    );
-
-  if (view.layout === "rail") {
-    return (
-      <nav className={cx(s.sidebar, s.railed)} aria-label="Sidebar" data-layout="rail">
-        <HubRail hub={shownHub?.id ?? hub} projects={projects} screen={screen} factory={factory} go={go} />
-        <div className={s.list} {...hold}>
-          {group}
-        </div>
-      </nav>
-    );
-  }
+  const rows = waiting ? undefined : projects.filter((p) => p.hub === shownHub.id);
 
   return (
-    <nav className={s.sidebar} aria-label="Sidebar" data-layout="hubs">
+    <nav className={s.sidebar} aria-label="Sidebar" data-compact={view.compact || undefined}>
       <div className={s.list} {...hold}>
-        {group}
-      </div>
-      <div className={s.bottomPlaces}>
-        <Places screen={screen} factory={factory} go={go} />
+        {shownHub === undefined ? null : (
+          <HubScope key={shownHub.id} hub={shownHub}>
+            <ProjectGroup rows={rows} all={projects?.filter((p) => p.hub === shownHub.id) ?? []} view={view} several={hubs.length > 1} open={openOn(shownHub.id)} jumpOf={jumpOf} go={go} />
+          </HubScope>
+        )}
       </div>
       <div className={s.foot}>
         <You go={go} />
+        <PlaceIcons screen={screen} factory={factory} go={go} />
       </div>
     </nav>
-  );
-}
-
-/**
- * Rail: your hubs down the sidebar's left edge, each its mark, the one on show in the open rows' box, a dot by another
- * where a bot wants you; Screens, the Factory and you at its foot.
- */
-function HubRail({ hub, projects, screen, factory, go }: { hub: string; projects: ReadonlyArray<Placed> | undefined; screen: Routed; factory: boolean; go: (screen: Screen) => void }) {
-  const hubs = useHubs();
-  return (
-    <div className={s.rail}>
-      <div className={s.railHubs} role="group" aria-label="Hubs">
-        {hubs.map((h) => {
-          // The hub on show says what wants you in its own rows; the others, by a dot on their mark.
-          const wanting = h.id === hub ? 0 : wantingOn(projects, h.id);
-          return (
-            <Tooltip key={h.id} content={h.label} side="right">
-              <button
-                type="button"
-                className={s.railHub}
-                aria-label={`${h.label}${wanting > 0 ? `: ${wanting === 1 ? "one needs you" : `${String(wanting)} need you`}` : ""}`}
-                {...(h.id === hub ? { "aria-current": "true" as const } : {})}
-                onClick={() => showHub(h.id)}
-              >
-                <HubMark hub={h} size={28} />
-                {wanting > 0 ? <span className={cx(s.dot, s.railDot)} data-want="you" aria-hidden /> : null}
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-      <div className={s.railFoot}>
-        <PlaceIcons screen={screen} factory={factory} go={go} vertical />
-        <You go={go} compact />
-      </div>
-    </div>
-  );
-}
-
-/**
- * List: the pins of every hub, as capsules, then every other bot newest first, each row saying where it lives in a
- * quiet word: its section's name, or with several hubs its hub's in none; no colour, so the names lead.
- * Each row is in its hub's scope, so its menu pins, moves and renames on its own hub.
- */
-function ListBots({ rows, hubs, openOn, jumpOf, go }: { rows: ReadonlyArray<Placed> | undefined; hubs: readonly HubView[]; openOn: (hub: string) => ProjectKey | null; jumpOf: (p: Placed) => number | null; go: (screen: Screen) => void }) {
-  const state = useHubState();
-  const pinned = useMemo(() => (rows ?? []).filter((p) => p.pinned), [rows]);
-  const rest = useMemo(() => (rows ?? []).filter((p) => !p.pinned), [rows]);
-  const byHub = useMemo(() => new Map(hubs.map((h) => [h.id, h])), [hubs]);
-  const ofHub = useMemo(() => {
-    const m = new Map<string, Placed[]>();
-    for (const p of rows ?? []) m.set(p.hub, [...(m.get(p.hub) ?? []), p]);
-    return m;
-  }, [rows]);
-  // The rows glide to their new places, as the other layouts' do; none lifts.
-  const reorder = useReorder({
-    keys: useMemo(() => rest.map((p) => p.key), [rest]),
-    name: (key) => rest.find((p) => p.key === key)?.project.title ?? "",
-    onMove: () => undefined,
-    settle: SPRING,
-    fixed: true,
-  });
-  if (rows === undefined) return <Loading busy={state.phase === "live" || state.phase === "connecting"} />;
-  if (rows.length === 0) return <NoBots go={go} at={{}} />;
-  const several = hubs.length > 1;
-  return (
-    <>
-      {pinned.length === 0 ? null : (
-        <div className={s.capsules} role="group" aria-label="Pinned">
-          {pinned.map((p) => {
-            const hub = byHub.get(p.hub);
-            return hub === undefined ? null : (
-              <HubScope key={p.key} hub={hub}>
-                <ListBot p={p} hubRows={ofHub.get(p.hub) ?? []} several={several} current={sameProject(openOn(p.hub), p.project)} jump={jumpOf(p)} go={go} pin />
-              </HubScope>
-            );
-          })}
-        </div>
-      )}
-      <div className={s.rows} {...reorder.list}>
-        {rest.map((p) => {
-          const hub = byHub.get(p.hub);
-          return hub === undefined ? null : (
-            <div key={p.key} {...reorder.row(p.key)}>
-              <HubScope hub={hub}>
-                <ListBot p={p} hubRows={ofHub.get(p.hub) ?? []} several={several} current={sameProject(openOn(p.hub), p.project)} jump={jumpOf(p)} go={go} />
-              </HubScope>
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
-/** One of List's bots, in its hub's scope: a row, or a pin's capsule, with the bot's menu. */
-function ListBot({ p, hubRows, several, current, jump, go, pin: asPin = false }: { p: Placed; hubRows: ReadonlyArray<Placed>; several: boolean; current: boolean; jump: number | null; go: (screen: Screen) => void; pin?: boolean }) {
-  const hub = useHub();
-  const asOf = useOfflineAsOf();
-  const bot = useBotMenu(hubRows, several ? { at: hub.id } : {}, go);
-  const section = p.section === undefined ? undefined : bot.sections.find((x) => x.id === p.section)?.name;
-  const where: Where = {
-    word: section ?? (several ? hub.label : undefined),
-    tip: [several ? hub.label : undefined, section].filter((w) => w !== undefined).join(" · "),
-  };
-  return (
-    <>
-      <ContextMenu menu={bot.menu(p)}>
-        {asPin ? (
-          <PinCapsule p={p} current={current} jump={jump} asOf={asOf} onClick={() => bot.openRow(p)} />
-        ) : (
-          <Row p={p} current={current} jump={jump} asOf={asOf} where={where} avatar={LIST_AVATAR} onClick={() => bot.openRow(p)} />
-        )}
-      </ContextMenu>
-      {bot.dialogs}
-    </>
   );
 }
 
@@ -651,6 +499,15 @@ export const pinPlace = (cells: readonly DOMRect[], at: { readonly x: number; re
 /** A section's label among the rows' keys: no chat's key starts so. */
 const labelKey = (section: string): string => `\0${section}`;
 const NO_SECTIONS: readonly ChatSection[] = [];
+/** The label over the chats in none of your sections: no section has its id. */
+const BOTS: ChatSection = { id: "~bots", name: "Bots", chats: [] };
+
+/** A section label's ⋯: the label's own menu (its right-click one), opened under the button. */
+const openLabelMenu = (e: ReactMouseEvent<HTMLButtonElement>) => {
+  const label = e.currentTarget.closest("[data-section]")?.querySelector("[data-section-label]");
+  const box = e.currentTarget.getBoundingClientRect();
+  label?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom + 4 }));
+};
 /** Where a chat let go on a chat in no section goes: out of its own. No section has this id. */
 const NO_SECTION = "";
 
@@ -730,42 +587,44 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
 }
 
 /**
- * One hub's chats, Hubs' and Rail's: its pins, then its other chats. In Hubs (not `flat`), the chats in none of your
- * sections, then each section under its quiet label, always open; in Rail (`flat`), the chats on show newest first,
- * your sections as tabs over them (`section` the one picked).
+ * One hub's chats: its pins, then the chats in none of your sections under a quiet Bots label, then each section under
+ * its label, always open, each in the list's order (sidebarLayout.ts sortRows).
  */
 function ProjectGroup(props: {
   rows: ReadonlyArray<Placed> | undefined;
   all: ReadonlyArray<Placed>;
-  flat: boolean;
-  section: string | null;
+  view: SidebarView;
   several: boolean;
   open: ProjectKey | null;
   jumpOf: (p: Placed) => number | null;
   go: (screen: Screen) => void;
 }) {
-  const { rows, flat, open, go } = props;
+  const { rows, open, go } = props;
   const hub = useHub();
   const state = useHubState();
   const asOf = useOfflineAsOf();
   const at = props.several ? { at: hub.id } : {};
-  // The hub's own rows, which pins change among; Rail shows a part of them.
+  // The hub's own rows, which pins change among.
   const all = props.all;
   const bot = useBotMenu(all, at, go);
   const { layer, sections, change, pinned, pinOn, openRow, menu } = bot;
-  // Under the pins: the chats in none of your sections, then each section's label and its chats; or, flat, the chats.
-  const lines = useMemo(
-    () =>
-      flat
-        ? (rows ?? []).filter((p) => !p.pinned).map((row) => ({ t: "chat" as const, row }))
-        : sectionLines(
-            (rows ?? []).filter((p) => !p.pinned),
-            sections,
-            () => false,
-          ),
-    [rows, sections, flat],
-  );
-  const labelled = lines.flatMap((l) => (l.t === "section" ? [l.section.id] : []));
+  // Under the pins: the chats in none of your sections under Bots, then each section's label and its chats.
+  const { sort, compact } = props.view;
+  const lines = useMemo(() => {
+    const below = sectionLines(
+      sortRows(
+        (rows ?? []).filter((p) => !p.pinned),
+        sort,
+      ),
+      sections,
+      () => false,
+    );
+    // With sections on show, the chats in none get a label of their own too; with none, no label at all.
+    const labelled = below[0]?.t === "chat" && below.some((l) => l.t === "section");
+    return labelled ? [{ t: "section" as const, section: BOTS, folded: false, count: 0, dot: undefined }, ...below] : below;
+  }, [rows, sections, sort]);
+  // Your sections on show, in order: what a label's Move up and Move down pass (Bots is none of them).
+  const labelled = lines.flatMap((l) => (l.t === "section" && l.section !== BOTS ? [l.section.id] : []));
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);
   const name = (key: string) => rowsByKey.get(key)?.project.title ?? "";
   // The pins lift and move inside their grid, and the hub keeps your order; the other rows' order is their activity's,
@@ -777,7 +636,7 @@ function ProjectGroup(props: {
     name,
     onMove: (order) => pin(layer, all, (keys) => inOrder(keys, order)),
     settle: SPRING,
-    grid: { columns: flat ? 1 : pinColumns(pinned.length) },
+    grid: { columns: pinColumns(pinned.length) },
     out: (key, way) => {
       if (way === "down") pin(layer, all, (keys) => unpinned(keys, key));
     },
@@ -793,11 +652,9 @@ function ProjectGroup(props: {
     out: (key, way, place) => {
       if (way === "up") pinOn(key, pinPlace([...(grid.current?.children ?? [])].map((c) => c.getBoundingClientRect()), place));
     },
-    // Over another section's label or one of its chats, a chat let go joins that section; over a chat in none, it
-    // leaves its own. Rail has no labels: its rows' menus move them.
-    ...(flat
-      ? {}
-      : {
+    // Over another section's label or one of its chats, a chat let go joins that section; over a chat in none (or Bots),
+    // it leaves its own.
+    ...{
           onto: {
             over: (key: string, point: { x: number; y: number }) => {
               for (const el of list.current?.children ?? []) {
@@ -813,12 +670,11 @@ function ProjectGroup(props: {
               if (p !== undefined) change((now) => moveChat(now, routeOf(p), to === NO_SECTION ? null : to));
             },
           },
-        }),
+    },
   });
   const labelMenu = (section: ChatSection) => () => {
-    const place = labelled.indexOf(section.id);
-    const order = flat ? sections.map((x) => x.id) : labelled;
-    const i = flat ? order.indexOf(section.id) : place;
+    const order = labelled;
+    const i = labelled.indexOf(section.id);
     return (
       <>
         <ContextMenuItem onSelect={() => bot.setNaming({ t: "rename", section })}>Rename…</ContextMenuItem>
@@ -827,10 +683,7 @@ function ProjectGroup(props: {
         {i < order.length - 1 ? <ContextMenuItem onSelect={() => change((now) => moveSection(now, section.id, 1, order))}>Move down</ContextMenuItem> : null}
         <ContextMenuSeparator />
         <ContextMenuItem
-          onSelect={() => {
-            if (props.section === section.id) showSection(null);
-            change((now) => removeSection(now, section.id));
-          }}
+          onSelect={() => change((now) => removeSection(now, section.id))}
         >
           Remove section
         </ContextMenuItem>
@@ -844,11 +697,10 @@ function ProjectGroup(props: {
         // Loading (startup, or a resync after the link dropped): never the "no projects" words, never old rows. Busy
         // only while something is on its way, not while the hub is unreachable.
         <Loading busy={state.phase === "live" || state.phase === "connecting"} />
-      ) : rows.length === 0 && props.section === null ? (
+      ) : rows.length === 0 ? (
         <NoBots go={go} at={at} />
       ) : (
         <>
-          {flat ? <RailHead several={props.several} sections={sections} section={props.section} labelMenu={labelMenu} asOf={asOf} /> : null}
           {/* With nothing pinned yet, a chat being dragged has somewhere to go: a slim place for the first pin. */}
           {pins.shown.length === 0 && reorder.lifted ? (
             <div className={s.pinZone} data-pinning={reorder.leaving === "up" || undefined}>
@@ -859,8 +711,8 @@ function ProjectGroup(props: {
           {pins.shown.length === 0 ? null : (
             <div
               ref={grid}
-              className={cx(s.pins, flat && s.pinRows)}
-              style={{ "--pin-cols": flat ? 1 : pinColumns(pins.shown.length) } as CSSProperties}
+              className={s.pins}
+              style={{ "--pin-cols": pinColumns(pins.shown.length) } as CSSProperties}
               {...pins.list}
               data-pinning={reorder.leaving === "up" || undefined}
               data-unpinning={pins.leaving === "down" || undefined}
@@ -871,11 +723,7 @@ function ProjectGroup(props: {
                 return (
                   <div key={key} className={s.pinSlot} {...pins.row(key)}>
                     <ContextMenu menu={menu(p)}>
-                      {flat ? (
-                        <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} dense onClick={() => openRow(p)} />
-                      ) : (
-                        <PinCell p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
-                      )}
+                      <PinCell p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
                     </ContextMenu>
                   </div>
                 );
@@ -887,11 +735,25 @@ function ProjectGroup(props: {
               if (line.t === "section") {
                 // A label glides and closes up as the rows do, and never lifts.
                 const { ref, style } = reorder.row(labelKey(line.section.id));
+                const own = line.section !== BOTS;
                 return (
-                  <div key={labelKey(line.section.id)} ref={ref} style={style} className={s.sectionSlot} data-reorder-row="" data-section={line.section.id}>
-                    <ContextMenu menu={labelMenu(line.section)}>
-                      <SectionLabel line={line} taking={reorder.onto === line.section.id} />
-                    </ContextMenu>
+                  <div key={labelKey(line.section.id)} ref={ref} style={style} className={s.sectionSlot} data-reorder-row="" {...(own ? { "data-section": line.section.id } : { "data-section-bots": "" })}>
+                    {own ? (
+                      <>
+                        <ContextMenu menu={labelMenu(line.section)}>
+                          <SectionLabel line={line} taking={reorder.onto === line.section.id} />
+                        </ContextMenu>
+                        <span className={s.labelTools}>
+                          <Tooltip content="Section options">
+                            <button type="button" className={cx(s.new, s.labelTool)} aria-label={`${line.section.name} options`} onClick={openLabelMenu}>
+                              <Ellipsis aria-hidden />
+                            </button>
+                          </Tooltip>
+                        </span>
+                      </>
+                    ) : (
+                      <SectionLabel line={line} taking={false} />
+                    )}
                   </div>
                 );
               }
@@ -904,7 +766,7 @@ function ProjectGroup(props: {
               return (
                 <div key={p.key} {...row} data-section={p.section}>
                   <ContextMenu menu={menu(p)}>
-                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} into={into} dense={flat} onClick={() => openRow(p)} />
+                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} into={into} dense={compact} onClick={() => openRow(p)} />
                   </ContextMenu>
                 </div>
               );
@@ -917,37 +779,5 @@ function ProjectGroup(props: {
       </span>
       {bot.dialogs}
     </section>
-  );
-}
-
-/**
- * Rail's head over the hub's bots: with several hubs, the hub's name; and your sections on it as tabs, All first,
- * when there are any. A tab's menu renames, moves or removes its section.
- */
-function RailHead({ several, sections, section, labelMenu, asOf }: { several: boolean; sections: readonly ChatSection[]; section: string | null; labelMenu: (section: ChatSection) => () => ReactNode; asOf: string | undefined }) {
-  const hub = useHub();
-  return (
-    <div className={s.railHead}>
-      {several ? (
-        <div className={s.railTitle}>
-          <span className={s.railTitleName}>{hub.label}</span>
-          {asOf === undefined ? null : <span className={s.groupAside}>{asOf}</span>}
-        </div>
-      ) : null}
-      {sections.length === 0 ? null : (
-        <div className={s.tabs} role="tablist" aria-label="Sections">
-          <button type="button" role="tab" className={s.tab} aria-selected={section === null} onClick={() => showSection(null)}>
-            All
-          </button>
-          {sections.map((x) => (
-            <ContextMenu key={x.id} menu={labelMenu(x)}>
-              <button type="button" role="tab" className={s.tab} aria-selected={section === x.id} onClick={() => showSection(x.id)}>
-                {x.name}
-              </button>
-            </ContextMenu>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

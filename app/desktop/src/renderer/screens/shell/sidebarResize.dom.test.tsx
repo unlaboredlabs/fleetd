@@ -84,29 +84,29 @@ it("sits on the sidebar's edge as a focusable separator, at today's width", () =
   expect(host.querySelector("#sidebar")).not.toBeNull();
   expect(e?.tabIndex).toBe(0);
   expect([e?.getAttribute("aria-valuemin"), e?.getAttribute("aria-valuemax")]).toEqual(["200", "420"]);
-  expect(width()).toBe(280);
-  expect(variable()).toBe("280px");
+  expect(width()).toBe(256);
+  expect(variable()).toBe("256px");
 });
 
 it("moves by the arrow keys (Right widens), Shift four steps, Home and End to its ends", () => {
   mount();
   key("ArrowRight");
-  expect(width()).toBe(296);
+  expect(width()).toBe(272);
   key("ArrowLeft", true);
-  expect(width()).toBe(232);
-  expect(variable()).toBe("232px");
+  expect(width()).toBe(208);
+  expect(variable()).toBe("208px");
   key("End");
   expect(width()).toBe(420);
   key("Home");
   expect(width()).toBe(200);
   key("Enter");
-  expect(width()).toBe(280);
+  expect(width()).toBe(256);
 });
 
 it("follows a drag on the frame's variable alone, and sets it once as it ends, within its bounds", () => {
   mount();
   const before = renders;
-  pointer("pointerdown", 280);
+  pointer("pointerdown", 256);
   pointer("pointermove", 300);
   pointer("pointermove", 356);
   expect(variable()).toBe("356px");
@@ -132,7 +132,7 @@ it("follows a drag on the frame's variable alone, and sets it once as it ends, w
 
 it("keeps the width across a relaunch, and a double-click puts it back to the default for good", () => {
   mount();
-  pointer("pointerdown", 280);
+  pointer("pointerdown", 256);
   pointer("pointermove", 346);
   pointer("pointerup", 346);
   unmount();
@@ -143,10 +143,10 @@ it("keeps the width across a relaunch, and a double-click puts it back to the de
   act(() => {
     edge()?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   });
-  expect(width()).toBe(280);
+  expect(width()).toBe(256);
   unmount();
   mount();
-  expect(width()).toBe(280);
+  expect(width()).toBe(256);
   expect(window.localStorage.getItem("fleetd.sidebar.width")).toBeNull();
 });
 

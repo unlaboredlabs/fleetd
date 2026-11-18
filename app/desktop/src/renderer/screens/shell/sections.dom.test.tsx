@@ -15,7 +15,7 @@ import { DataProvider, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { useSidebarProjects } from "./data";
 import { Sidebar, SPRING } from "./Sidebar";
-import { resetSidebarView, setLayout } from "./sidebarLayout";
+import { resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -59,7 +59,6 @@ let seq: number;
 beforeEach(() => {
   window.localStorage.clear();
   // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
-  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
   resetSidebarView();
   resetSidebarView();
   pins = [];
@@ -193,12 +192,12 @@ const press = (name: string): HTMLButtonElement => {
 };
 
 describe("your sections in the sidebar", () => {
-  it("has the chats in none on top with no label, then each section in your order, a pinned chat among the pins only", async () => {
+  it("has the chats in none on top under a quiet Bots label, then each section in your order, a pinned chat among the pins only", async () => {
     pins = [ref("web")];
     stored = [section("s1", "Work", "api", "web"), section("s2", "All pinned", "web"), section("s3", "Home", "garden", "old")];
     await mount();
     expect(pinned()).toEqual(["web"]);
-    expect(lines()).toEqual(["new", "docs", "[Work]", "api", "[Home]", "garden", "old"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "[Work]", "api", "[Home]", "garden", "old"]);
     // A label is a quiet word that never folds: no open or shut, no count.
     expect(label("Work").hasAttribute("aria-expanded")).toBe(false);
     expect(label("Work").hasAttribute("aria-description")).toBe(false);
@@ -209,10 +208,10 @@ describe("your sections in the sidebar", () => {
   it("follows another device's change live", async () => {
     stored = [section("s1", "Work", "api")];
     await mount();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     stored = [section("s2", "Home", "garden"), section("s1", "Job", "api", "docs")];
     await announced();
-    expect(lines()).toEqual(["new", "web", "old", "[Home]", "garden", "[Job]", "docs", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "web", "old", "[Home]", "garden", "[Job]", "docs", "api"]);
     expect(sets).toEqual([]);
   });
 
@@ -222,23 +221,8 @@ describe("your sections in the sidebar", () => {
     const jumps = () => [...host.querySelectorAll("[class*=jump]")].map((j) => j.textContent);
     expect(jumps()).toEqual(["1", "2", "3", "4", "5", "6"]);
     act(() => label("Work").click());
-    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
     expect(jumps()).toEqual(["1", "2", "3", "4", "5", "6"]);
-  });
-
-  it("in Rail, has your sections as tabs over the chats, newest first: All, then one section's", async () => {
-    stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
-    act(() => setLayout("rail"));
-    await mount(true);
-    const tabs = () => [...host.querySelectorAll<HTMLButtonElement>("[role='tab']")];
-    expect(tabs().map((t) => `${t.textContent}${t.getAttribute("aria-selected") === "true" ? "*" : ""}`)).toEqual(["All*", "Work", "Home"]);
-    // No labels in Rail: every chat newest first.
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "api", "old"]);
-    act(() => tabs()[1]?.click());
-    expect(lines()).toEqual(["web", "api"]);
-    // ⌘1–9 count what the tab shows.
-    expect([...host.querySelectorAll("[class*=jump]")].map((j) => j.textContent)).toEqual(["1", "2"]);
-    expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");
   });
 
   it("moves a chat to a section, out of them, and into a new one it asks the name of", async () => {
@@ -247,13 +231,13 @@ describe("your sections in the sidebar", () => {
     expect(await moveTo("docs")).toEqual(["Work", "Home", "No section*", "New section…"]);
     await choose("Home");
     // At once, newest first in its section; the hub gets the whole list.
-    expect(lines()).toEqual(["new", "web", "old", "[Work]", "api", "[Home]", "docs", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "web", "old", "[Work]", "api", "[Home]", "docs", "garden"]);
     expect(sets.map(said)).toEqual([["Work: api", "Home: garden docs"]]);
 
     // Out of its section, the last of it: the section goes too.
     expect(await moveTo("api")).toEqual(["Work*", "Home", "No section", "New section…"]);
     await choose("No section");
-    expect(lines()).toEqual(["new", "web", "api", "old", "[Home]", "docs", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "web", "api", "old", "[Home]", "docs", "garden"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Home: garden docs"]);
 
     // A new one: a name the hub would refuse is said before it is sent.
@@ -268,7 +252,7 @@ describe("your sections in the sidebar", () => {
     act(() => press("Create").click());
     await settle();
     expect(document.querySelector("[role='dialog']")).toBeNull();
-    expect(lines()).toEqual(["web", "api", "old", "[Home]", "docs", "garden", "[Later]", "new"]);
+    expect(lines()).toEqual(["[Bots]", "web", "api", "old", "[Home]", "docs", "garden", "[Later]", "new"]);
     const made = sets.at(-1) ?? [];
     expect(said(made)).toEqual(["Home: garden docs", "Later: new"]);
     expect(made[1]?.id).toMatch(/^[\da-f-]{36}$/u);
@@ -296,7 +280,7 @@ describe("your sections in the sidebar", () => {
 
     rightClick(label("Later"));
     await choose("Move up");
-    expect(lines()).toEqual(["new", "docs", "web", "[Work]", "api", "[Later]", "old", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "web", "[Work]", "api", "[Later]", "old", "[Home]", "garden"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Work: api", "Later: old", "Home: garden"]);
 
     rightClick(label("Work"));
@@ -314,7 +298,7 @@ describe("your sections in the sidebar", () => {
     // Removed, its chats are in none, back on top.
     rightClick(label("Later"));
     await choose("Remove section");
-    expect(lines()).toEqual(["new", "docs", "web", "old", "[Job]", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "web", "old", "[Job]", "api", "[Home]", "garden"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Job: api", "Home: garden"]);
   });
 
@@ -325,7 +309,7 @@ describe("your sections in the sidebar", () => {
     await moveTo("docs");
     await choose("Work");
     await settle();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     expect(document.body.textContent).toContain("Couldn’t save your sections");
     expect(document.body.textContent).toContain("A section's name is up to 40 characters.");
 
@@ -334,7 +318,7 @@ describe("your sections in the sidebar", () => {
     await moveTo("docs");
     await choose("Work");
     await settle();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     expect(document.body.textContent).toContain("This hub doesn’t keep sections yet. Update it to use them.");
     expect(document.body.textContent).not.toContain("unknown tool");
   });
@@ -351,7 +335,7 @@ describe("a change made before the hub has said what your sections are", () => {
     let answer: () => void = () => undefined;
     reading = new Promise((done) => (answer = done));
     await mount();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     await moveTo("docs");
     await choose("Work");
     await moveTo("web");
@@ -368,7 +352,7 @@ describe("a change made before the hub has said what your sections are", () => {
       ["Work: api docs", "Home: garden"],
       ["Work: api docs web", "Home: garden"],
     ]);
-    expect(lines()).toEqual(["new", "old", "[Work]", "docs", "web", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "old", "[Work]", "docs", "web", "api", "[Home]", "garden"]);
   });
 
   it("sends nothing when the hub can't say, and says why", async () => {
@@ -376,12 +360,12 @@ describe("a change made before the hub has said what your sections are", () => {
     stored = [section("s1", "Work", "api"), section("s2", "Home", "garden")];
     unread = { code: "forbidden", message: "This device is no longer signed in." };
     await mount();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     await moveTo("docs");
     await choose("Work");
     await settle();
     expect(sets).toEqual([]);
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     expect(document.body.textContent).toContain("Couldn’t save your sections");
     expect(document.body.textContent).toContain("This device is no longer signed in.");
 
@@ -423,8 +407,8 @@ describe("a chat dragged in the sidebar", () => {
     stored = [section("s1", "Work", "api"), section("s2", "Home", "garden")];
     place();
     await mount();
-    expect(lines()).toEqual(["new", "docs", "web", "old", "[Work]", "api", "[Home]", "garden"]);
-    const y = carry("docs", 4);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "web", "old", "[Work]", "api", "[Home]", "garden"]);
+    const y = carry("docs", 5);
     expect(label("Work").hasAttribute("data-taking")).toBe(true);
     expect(label("Home").hasAttribute("data-taking")).toBe(false);
     // The lifted row may cover the label, so it says where it would go, in place of its time.
@@ -432,7 +416,7 @@ describe("a chat dragged in the sidebar", () => {
     point("pointerup", y);
     await settle();
     expect(host.querySelector("[class*='into']")).toBeNull();
-    expect(lines()).toEqual(["new", "web", "old", "[Work]", "docs", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "web", "old", "[Work]", "docs", "api", "[Home]", "garden"]);
     expect(sets.map(said)).toEqual([["Work: api docs", "Home: garden"]]);
   });
 
@@ -440,15 +424,15 @@ describe("a chat dragged in the sidebar", () => {
     stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
     place();
     await mount();
-    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
     // Onto garden, in Home.
-    point("pointerup", carry("api", 7));
+    point("pointerup", carry("api", 8));
     await landed();
-    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Work: web", "Home: garden api"]);
 
     // Over its own section's label, and over another chat of its section: nothing takes it, and nothing is sent.
-    for (const line of [5, 6]) {
+    for (const line of [6, 7]) {
       const y = carry("api", line);
       expect(host.querySelector("[data-lifted]")?.textContent).toContain("api");
       expect(host.querySelector("[data-taking]")).toBeNull();
@@ -456,7 +440,7 @@ describe("a chat dragged in the sidebar", () => {
       point("pointerup", y);
       await landed();
     }
-    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
     expect(sets).toHaveLength(1);
   });
 
@@ -464,24 +448,24 @@ describe("a chat dragged in the sidebar", () => {
     stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
     place();
     await mount();
-    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
-    const y = carry("web", 1);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
+    const y = carry("web", 2);
     // No label takes it: the lifted row says it would be in none.
     expect(host.querySelector("[data-taking]")).toBeNull();
     expect(host.querySelector("[data-lifted] [class*='into']")?.textContent).toBe("No section");
     point("pointerup", y);
     await landed();
-    expect(lines()).toEqual(["new", "docs", "web", "old", "[Work]", "api", "[Home]", "garden"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "web", "old", "[Work]", "api", "[Home]", "garden"]);
     expect(sets.map(said)).toEqual([["Work: api", "Home: garden"]]);
 
     // A section goes with its last chat, by drag as by the menu.
-    point("pointerup", carry("garden", 1));
+    point("pointerup", carry("garden", 2));
     await landed();
-    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Work: api"]);
 
     // A chat in none over another: nothing takes it, and nothing is sent.
-    const over = carry("docs", 3);
+    const over = carry("docs", 4);
     expect(host.querySelector("[data-lifted]")?.textContent).toContain("docs");
     expect(host.querySelector("[class*='into']")).toBeNull();
     point("pointerup", over);

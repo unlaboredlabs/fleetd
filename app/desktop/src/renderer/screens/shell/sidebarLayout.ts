@@ -1,70 +1,65 @@
-// The sidebar's three layouts (W694), picked in the menu under your name and kept on this computer. None stacks
-// collapsible groups; each carries several hubs and your sections its own way:
-//   List  every bot of every hub in one list, newest first, each row marked with its hub and section; the pins a
-//         row of capsules over it; Screens and the Factory beside your name.
-//   Hubs  one hub at a time, picked from its name at the top; its pins, then its bots, your sections as plain words
-//         between them; Screens and the Factory over your name.
-//   Rail  a slim rail of your hubs down the left edge, Screens, the Factory and you at its foot; beside it the hub's
-//         pins and its bots, your sections as tabs over them.
-// Which hub Hubs and Rail show, and which section Rail's tabs show, are this window's: opening a bot of another hub
-// shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows).
+// What the sidebar shows (W694, W714): one hub at a time, picked from its name in the hub row; its pins, then its bots,
+// your sections under quiet labels. The list's ⋯ orders the bots (newest first, by name, or the ones that want you
+// first) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
+// another hub shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows). A computer that kept the
+// old List or Rail layout (fleetd.sidebarLayout) just shows this.
 import { useSyncExternalStore } from "react";
 
-export type SidebarLayout = "list" | "hubs" | "rail";
-
-export const LAYOUTS: ReadonlyArray<{ readonly id: SidebarLayout; readonly label: string; readonly idea: string }> = [
-  { id: "list", label: "List", idea: "Every bot in one list, newest first" },
-  { id: "hubs", label: "Hubs", idea: "One hub at a time, picked at the top" },
-  { id: "rail", label: "Rail", idea: "Your hubs in a rail down the side" },
+/** How the hub's bots are ordered under the pins, in each section: newest first, by name, or the ones that want you first. */
+export type SidebarSort = "recent" | "name" | "needs";
+export const SORTS: ReadonlyArray<{ readonly id: SidebarSort; readonly label: string }> = [
+  { id: "recent", label: "Recent" },
+  { id: "name", label: "Name" },
+  { id: "needs", label: "Needs you first" },
 ];
 
-const LAYOUT = "fleetd.sidebarLayout";
-export const DEFAULT_LAYOUT: SidebarLayout = "list";
+const LIST = "fleetd.sidebarList";
 
-const isLayout = (v: unknown): v is SidebarLayout => LAYOUTS.some((l) => l.id === v);
+const isSort = (v: unknown): v is SidebarSort => SORTS.some((s) => s.id === v);
 
-const read = (): SidebarLayout => {
+const readList = (): { sort: SidebarSort; compact: boolean } => {
   try {
-    const v = window.localStorage.getItem(LAYOUT);
-    return isLayout(v) ? v : DEFAULT_LAYOUT;
+    const v: unknown = JSON.parse(window.localStorage.getItem(LIST) ?? "{}");
+    const o = typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+    return { sort: isSort(o["sort"]) ? o["sort"] : "recent", compact: o["compact"] === true };
   } catch {
-    return DEFAULT_LAYOUT;
+    return { sort: "recent", compact: false };
   }
 };
 
 export interface SidebarView {
-  readonly layout: SidebarLayout;
-  /** The hub Hubs and Rail show; null: the screen's. */
+  /** The hub on show; null: the screen's. */
   readonly hub: string | null;
-  /** Rail's tab: one of your sections on that hub, by id; null: all its bots. */
-  readonly section: string | null;
+  readonly sort: SidebarSort;
+  /** One line a bot: its picture, its name and its mark. */
+  readonly compact: boolean;
 }
 
 let view: SidebarView | null = null;
 const listeners = new Set<() => void>();
-const current = (): SidebarView => (view ??= { layout: read(), hub: null, section: null });
+const current = (): SidebarView => (view ??= { hub: null, ...readList() });
 
 const set = (next: Partial<SidebarView>): void => {
   const was = current();
   const merged = { ...was, ...next };
-  if (merged.layout === was.layout && merged.hub === was.hub && merged.section === was.section) return;
+  if (merged.hub === was.hub && merged.sort === was.sort && merged.compact === was.compact) return;
   view = merged;
   for (const l of listeners) l();
 };
 
-export const setLayout = (layout: SidebarLayout): void => {
+/** The list's order and density, from its ⋯ menu. */
+export const setListView = (next: Partial<Pick<SidebarView, "sort" | "compact">>): void => {
+  const { sort, compact } = { ...current(), ...next };
   try {
-    window.localStorage.setItem(LAYOUT, layout);
+    window.localStorage.setItem(LIST, JSON.stringify({ sort, compact }));
   } catch {
     // Kept for this window only.
   }
-  set({ layout });
+  set({ sort, compact });
 };
 
-/** Show `hub` in Hubs and Rail, on all its bots. */
-export const showHub = (hub: string): void => set(current().hub === hub ? {} : { hub, section: null });
-
-export const showSection = (section: string | null): void => set({ section });
+/** Show `hub`. */
+export const showHub = (hub: string): void => set({ hub });
 
 export const useSidebarView = (): SidebarView =>
   useSyncExternalStore(
@@ -75,13 +70,13 @@ export const useSidebarView = (): SidebarView =>
     current,
   );
 
-/** For tests: forget the window's view and read the kept layout again. */
+/** For tests: forget the window's view and read the kept one again. */
 export const resetSidebarView = (): void => {
   view = null;
   for (const l of listeners) l();
 };
 
-/** The hub a layout shows: the one picked, while it is still paired, else the screen's. */
+/** The hub on show: the one picked, while it is still paired, else the screen's. */
 export const viewedHub = (v: SidebarView, hubs: ReadonlyArray<{ readonly id: string }>, screenHub: string): string =>
   v.hub !== null && hubs.some((h) => h.id === v.hub) ? v.hub : screenHub;
 
@@ -89,36 +84,30 @@ interface Shown {
   readonly key: string;
   readonly hub: string;
   readonly pinned: boolean;
-  readonly at: string;
+  readonly want?: unknown;
   readonly section?: string | undefined;
+  readonly project: { readonly title: string };
 }
 
-const time = (iso: string): number => {
-  const t = Date.parse(iso);
-  return Number.isNaN(t) ? 0 : t;
-};
+/** Bots in the list's order: as they came (newest first, held while the pointer is over the list), by name, or the ones that want you first. */
+export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort): ReadonlyArray<P> =>
+  sort === "name"
+    ? rows.toSorted((a, b) => a.project.title.localeCompare(b.project.title, undefined, { sensitivity: "base" }))
+    : sort === "needs"
+      ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
+      : rows;
 
 /**
- * List's order: the pins, hub by hub in your order of them, then every other bot newest first. While the pointer is
- * over the list (`held`, the keys as they were on show), each keeps its place, and a new one goes last.
+ * The rows on show, in the order the sidebar draws them: the hub's pins, then its other bots group by group (the chats
+ * in no section, then each section, in the order the frame arranged them), each group in the list's order. ⌘1–9 count
+ * these.
  */
-export const listOrder = <P extends Shown>(rows: ReadonlyArray<P>, held: readonly string[] | null): ReadonlyArray<P> => {
-  const pins = rows.filter((p) => p.pinned);
-  const rest = rows.filter((p) => !p.pinned);
-  if (held === null) return [...pins, ...rest.toSorted((a, b) => time(b.at) - time(a.at))];
-  const at = (p: P) => {
-    const i = held.indexOf(p.key);
-    return i === -1 ? Infinity : i;
-  };
-  return [...pins, ...rest.toSorted((a, b) => at(a) - at(b))];
-};
-
-/** Rail's tab, as it filters the hub's bots: a pin shows among the pins whatever the tab. */
-export const inSection = (p: Shown, section: string | null): boolean => section === null || p.pinned || p.section === section;
-
-/** The rows on show, in the order the layout draws them: ⌘1–9 count these. */
-export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, held: readonly string[] | null = null): ReadonlyArray<P> => {
-  if (v.layout === "list") return listOrder(rows, held);
+export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string): ReadonlyArray<P> => {
   const own = rows.filter((p) => p.hub === hub);
-  return v.layout === "rail" ? listOrder(own.filter((p) => inSection(p, v.section)), held) : own;
+  const rest = own.filter((p) => !p.pinned);
+  const group = new Map<string | undefined, number>();
+  for (const p of rest) if (!group.has(p.section)) group.set(p.section, group.size);
+  // A stable sort by group keeps each group in the list's order.
+  const grouped = sortRows(rest, v.sort).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
+  return [...own.filter((p) => p.pinned), ...grouped];
 };

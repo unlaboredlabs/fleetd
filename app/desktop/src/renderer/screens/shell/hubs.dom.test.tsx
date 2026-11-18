@@ -15,7 +15,7 @@ import { runCommand } from "../palette/registry";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
-import { resetSidebarView, setLayout, showHub } from "./sidebarLayout";
+import { resetSidebarView, showHub } from "./sidebarLayout";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -136,28 +136,30 @@ const settle = () => act(() => new Promise((r) => setTimeout(r, 0)));
 /** The sidebar's bots, by name, in order (each named by one of `names`). */
 const bots = (...names: string[]) =>
   [...host.querySelectorAll<HTMLElement>("nav[aria-label='Sidebar'] [data-reorder-row] button")].flatMap((b) => names.filter((n) => b.textContent.startsWith(n)).slice(0, 1));
-const list = () => {
-  window.localStorage.setItem("fleetd.sidebarLayout", "list");
-  resetSidebarView();
+/** The hub row's switcher, as a screen reader hears it: the hub on show, and what is off with any. */
+const switcher = () => host.querySelector<HTMLElement>("[data-opens='hubs']");
+/** Opens a menu from its trigger, as the keys do (a press opens it on pointer-down, which the DOM here has no way to give). */
+const openMenu = (trigger: HTMLElement | null | undefined) => act(() => void trigger?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+const closeMenu = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+/** A menu row's words, without its mark or what sits at its end. */
+const words = (r: HTMLElement) => r.querySelector("[data-text]")?.textContent ?? "";
+/** The switcher's menu: each hub by its name, and the lines under it that say what is off. */
+const hubMenu = () => {
+  openMenu(switcher());
+  const rows = [...document.querySelectorAll<HTMLElement>("[role='menu'] [role='menuitem']")].map((r) => (r.dataset["line"] === undefined ? words(r) : `  ${words(r)}`));
+  closeMenu();
+  return rows;
 };
-/** The foot's name, as a screen reader hears it: your name, and what is off. */
-const you = () => host.querySelector<HTMLElement>("[data-opens='you']")?.getAttribute("aria-label");
-/** The card under your name: each hub's section, by its name. */
-const hubCards = () => {
-  act(() => host.querySelector<HTMLElement>("[data-opens='you']")?.click());
-  const cards = [...document.querySelectorAll<HTMLElement>("[aria-label='You'] [data-hub-card]")].map((c) => [c.getAttribute("aria-label"), c.dataset["hubCard"]]);
-  act(() => {
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  });
-  return cards;
+/** Picks a hub in the switcher's menu. */
+const pickHub = (name: string) => {
+  openMenu(switcher());
+  act(() => [...document.querySelectorAll<HTMLElement>("[role='menu'] [role='menuitem']")].find((r) => words(r) === name)?.click());
 };
 const rowNamed = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("nav button, aside button, button")].find((b) => b.textContent.startsWith(name));
 
 beforeEach(() => {
   window.location.hash = "#/";
   window.localStorage.clear();
-  // Hubs unless a test picks List (list()); List, the default, has its own tests too.
-  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
   fake.hubs.clear();
   fake.badge.length = 0;
   fake.chats.length = 0;
@@ -168,8 +170,7 @@ afterEach(() => {
   host.remove();
 });
 
-it("shows both hubs' bots in one list, each hub with its own connection, one offline beside one live", async () => {
-  list();
+it("shows each hub's bots, each hub with its own connection, one offline beside one live", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme", color: "amber" },
@@ -181,22 +182,16 @@ it("shows both hubs' bots in one list, each hub with its own connection, one off
   });
   await settle();
   expect(bots("storefront", "billing")).toEqual(["storefront"]);
-  // In Hubs, the offline hub on show waits without claiming to load.
-  act(() => {
-    setLayout("hubs");
-    showHub("a1b2");
-  });
+  // The offline hub on show waits without claiming to load.
+  act(() => showHub("a1b2"));
   await settle();
   const acme = host.querySelector('section[aria-label="Acme"]');
   expect(acme?.querySelector('[aria-label="Loading bots"]')?.getAttribute("aria-busy")).toBe("false");
-  act(() => setLayout("list"));
+  act(() => showHub("hub"));
   await settle();
-  // One offline marks your name, saying which; the card has both.
-  expect(you()).toBe("You, Can't reach Acme");
-  expect(hubCards()).toEqual([
-    ["Personal", "live"],
-    ["Acme", "retrying"],
-  ]);
+  // One offline marks the switcher, saying which; its menu has both hubs, and under Acme what is off.
+  expect(switcher()?.getAttribute("aria-label")).toBe("Personal, Can't reach Acme");
+  expect(hubMenu()).toEqual(["Personal", "Acme", "  Can't reach Acme", "Add a hub…"]);
 
   // Acme comes back: its project joins the list, and the badge counts both hubs' projects that need you.
   act(() => {
@@ -204,13 +199,15 @@ it("shows both hubs' bots in one list, each hub with its own connection, one off
     hub("a1b2").send(project("laptop", "billing"));
   });
   await settle();
-  expect(bots("storefront", "billing").toSorted()).toEqual(["billing", "storefront"]);
-  expect(you()).toBe("You");
+  act(() => showHub("a1b2"));
+  await settle();
+  expect(bots("storefront", "billing")).toEqual(["billing"]);
+  // Back: nothing off with either hub (Personal's bot still wants you, which the switcher says on its own).
+  expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another hub needs you");
   expect(fake.badge.at(-1)).toBe(2);
 });
 
 it("opens a bot on its own hub, and that hub alone gets its calls", async () => {
-  list();
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -234,6 +231,8 @@ it("opens a bot on its own hub, and that hub alone gets its calls", async () => 
   expect(host.querySelector('[data-screen="agents"]')).not.toBeNull();
   const before = hub("hub").calls.length;
   const acmeBefore = hub("a1b2").calls.length;
+  act(() => showHub("a1b2"));
+  await settle();
   act(() => rowNamed("billing")?.click());
   await settle();
   await settle();
@@ -254,7 +253,6 @@ it("opens a bot on its own hub, and that hub alone gets its calls", async () => 
 });
 
 it("opens a first-hub notification on the first hub, even while another hub is on screen", async () => {
-  list();
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -265,6 +263,8 @@ it("opens a first-hub notification on the first hub, even while another hub is o
     hub("a1b2").send(live());
     hub("a1b2").send(project("laptop", "billing"));
   });
+  await settle();
+  act(() => showHub("a1b2"));
   await settle();
   act(() => rowNamed("billing")?.click());
   await settle();
@@ -286,7 +286,7 @@ it("opens a first-hub notification on the first hub, even while another hub is o
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
 });
 
-it("⌘1–9 open the rows on show: in Hubs the hub on show's, the screen's until another is picked", async () => {
+it("⌘1–9 open the rows on show: the hub on show's, the screen's until another is picked", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -304,8 +304,7 @@ it("⌘1–9 open the rows on show: in Hubs the hub on show's, the screen's unti
   });
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
   // Picked at the top: Acme's bots, and only them.
-  act(() => host.querySelector<HTMLButtonElement>('[data-opens="hubs"]')?.click());
-  act(() => [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Hubs"] button')].find((b) => b.textContent.includes("Acme"))?.click());
+  pickHub("Acme");
   await settle();
   expect(bots("storefront", "billing")).toEqual(["billing"]);
   act(() => {
@@ -314,34 +313,32 @@ it("⌘1–9 open the rows on show: in Hubs the hub on show's, the screen's unti
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("in List, puts every hub's bots in one list, newest first, each saying its hub, and numbers them so", async () => {
-  list();
-  await mount([
-    { id: "hub", label: "Personal" },
-    { id: "a1b2", label: "Acme" },
-  ]);
+it("orders the list from its ⋯ by name or the ones that want you first, draws it compact, and keeps that on this computer", async () => {
+  await mount([{ id: "hub", label: "devbox" }]);
   act(() => {
     hub("hub").send(live());
     hub("hub").send(withTwo("devbox", "storefront", "Ada"));
-    hub("a1b2").send(live());
-    hub("a1b2").send(withTwo("laptop", "billing", "Bee"));
   });
   await settle();
-  // The newer two first, each hub's in its order where they tie.
-  expect(bots("Ada", "Bee", "storefront", "billing")).toEqual(["Ada", "Bee", "storefront", "billing"]);
-  expect([...host.querySelectorAll("[data-where]")].map((w) => w.textContent)).toEqual(["Personal", "Acme", "Personal", "Acme"]);
-  act(() => {
-    runCommand("project.open.2");
-  });
-  expect(window.location.hash).toBe("#/project/laptop/Bee?at=a1b2");
-  // Hubs: the hub on show's alone, Acme's now.
-  act(() => setLayout("hubs"));
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  const pick = (name: string) => {
+    openMenu(host.querySelector<HTMLElement>("[data-opens='list-menu']"));
+    act(() => [...document.querySelectorAll<HTMLElement>("[role='menu'] [role='menuitemradio'], [role='menu'] [role='menuitemcheckbox']")].find((r) => r.textContent === name)?.click());
+  };
+  pick("Name");
   await settle();
-  expect(bots("Ada", "Bee", "storefront", "billing")).toEqual(["Bee", "billing"]);
-  act(() => {
-    runCommand("project.open.1");
-  });
-  expect(window.location.hash).toBe("#/project/laptop/Bee?at=a1b2");
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  pick("Compact rows");
+  await settle();
+  expect(host.querySelector("nav[aria-label='Sidebar']")?.hasAttribute("data-compact")).toBe(true);
+  expect(JSON.parse(window.localStorage.getItem("fleetd.sidebarList") ?? "null")).toEqual({ sort: "name", compact: true });
+  // Opened again: as it was left.
+  act(() => root.unmount());
+  host.remove();
+  resetSidebarView();
+  await mount([{ id: "hub", label: "devbox" }]);
+  await settle();
+  expect(host.querySelector("nav[aria-label='Sidebar']")?.hasAttribute("data-compact")).toBe(true);
 });
 
 /**
@@ -407,8 +404,8 @@ it("with one hub, shows no name and no group: the sidebar is as it always was", 
   });
   await settle();
   expect(host.textContent).not.toContain("Bots");
-  expect(you()).toBe("You");
-  expect(hubCards()).toEqual([["Hub", "live"]]);
+  expect(switcher()?.getAttribute("aria-label")).toBe("devbox");
+  expect(hubMenu()).toEqual(["devbox", "Add a hub…"]);
   act(() => rowNamed("storefront")?.click());
   expect(window.location.hash).toBe("#/project/devbox/storefront");
 });
@@ -446,48 +443,26 @@ it("says which hub a new bot goes to with several hubs, the hub on screen first,
   expect(picker()).toBeNull();
 });
 
-it("redraws the sidebar in the layout picked under your name at once, closes the menu, and opens in it at the next launch", async () => {
-  list();
-  const entries: HubEntry[] = [
+it("opens on the one sidebar on a computer that kept the old List or Rail layout", async () => {
+  window.localStorage.setItem("fleetd.sidebarLayout", "rail");
+  resetSidebarView();
+  await mount([
     { id: "hub", label: "Personal" },
-    { id: "a1b2", label: "Acme", color: "amber" },
-  ];
-  await mount(entries);
+    { id: "a1b2", label: "Acme" },
+  ]);
   act(() => {
     hub("hub").send(live());
     hub("hub").send(project("devbox", "storefront"));
     hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
   });
   await settle();
-  const layout = () => host.querySelector("nav[aria-label='Sidebar']")?.getAttribute("data-layout");
-  const menu = () => document.querySelector("[data-line='layout']");
-  const pick = (name: string) => {
-    act(() => host.querySelector<HTMLElement>("[data-opens='you']")?.click());
-    expect(menu()).not.toBeNull();
-    act(() => [...document.querySelectorAll<HTMLButtonElement>("[aria-label='Sidebar layout'] button")].find((b) => b.textContent === name)?.click());
-  };
-  expect(layout()).toBe("list");
-  pick("Rail");
-  // No reload: the sidebar is Rail's as the menu closes, and the pick is kept on this computer.
-  expect(layout()).toBe("rail");
-  expect(menu()).toBeNull();
-  expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");
-  // The one in use closes the menu all the same.
-  pick("Rail");
-  expect(menu()).toBeNull();
-  pick("Hubs");
-  expect(layout()).toBe("hubs");
-  // Quit and open again: the app opens in Hubs.
-  act(() => root.unmount());
-  host.remove();
-  resetSidebarView();
-  await mount(entries);
-  await settle();
-  expect(layout()).toBe("hubs");
+  expect(switcher()?.getAttribute("aria-label")).toMatch(/^Personal\b/u);
+  expect(bots("storefront", "billing")).toEqual(["storefront"]);
+  expect(host.querySelector("[data-layout]")).toBeNull();
 });
 
 it("opens Settings on another hub over the chat you were in, never that chat in the other hub's frame, and closes back to it", async () => {
-  list();
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
@@ -505,7 +480,7 @@ it("opens Settings on another hub over the chat you were in, never that chat in 
   await settle();
   const last = window.localStorage.getItem("fleetd.lastProject");
   expect(last).not.toBeNull();
-  // A bot of Acme's settings, from List, where every hub's bots are.
+  // Acme's settings, while Personal's chat is on screen.
   act(() => {
     window.location.hash = "#/settings/general?at=a1b2";
   });
@@ -523,4 +498,45 @@ it("opens Settings on another hub over the chat you were in, never that chat in 
   await settle();
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
   expect(window.localStorage.getItem("fleetd.lastProject")).toBe(last);
+});
+
+it("switches the hub a Hub page manages in place: the sheet and the app under it stay, the page's reads go to the other hub", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
+  });
+  act(() => {
+    window.location.hash = "#/project/devbox/storefront?at=hub";
+  });
+  await settle();
+  act(() => {
+    window.location.hash = "#/settings/hub/people?at=hub";
+  });
+  await vi.waitFor(async () => {
+    await settle();
+    expect(document.querySelector("[data-managing='hub'] [data-admin-hub='a1b2']")).not.toBeNull();
+  });
+  const sheet = document.querySelector("[data-sheet='settings']");
+  const frame = host.querySelector("[data-screen='shell']");
+  // Nothing of the sheet leaves the screen meanwhile, not even for a frame: a sheet mounted again plays its entrance
+  // again, the scrim from clear and the sheet from nothing, which flashes the whole window.
+  const removed: Node[] = [];
+  const watch = new MutationObserver((records) => records.forEach((r) => removed.push(...r.removedNodes)));
+  watch.observe(document.body, { childList: true, subtree: true });
+  act(() => document.querySelector<HTMLButtonElement>("[data-admin-hub='a1b2']")?.click());
+  await settle();
+  watch.disconnect();
+  expect(document.querySelector("[data-managing='a1b2']")).not.toBeNull();
+  expect(document.querySelector("[data-sheet='settings']")).toBe(sheet);
+  expect(removed.filter((n) => n === sheet || n === frame || n.contains(sheet))).toEqual([]);
+  // The app under it is still the chat you were in, on its own hub; the page reads Acme's people.
+  expect(host.querySelector("[data-screen='shell']")).toBe(frame);
+  expect(fake.chats.filter(([id, p]) => id === "a1b2" && p !== null)).toEqual([]);
+  expect(hub("a1b2").calls.some((c) => c.tool === "people_list")).toBe(true);
 });

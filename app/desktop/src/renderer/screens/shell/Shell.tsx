@@ -68,7 +68,11 @@ export function Shell() {
   const placed = usePlaced(hubs, route.at);
   const homeRow = route.id === "home" && placed !== undefined ? homeProject(placed, readLast()) : null;
   const at = homeRow?.hub ?? route.at;
-  const hub = hubs.find((h) => h.id === at) ?? hubs[0];
+  // Under Settings the app stays on the hub it was on, whichever hub the sheet is on (it has that hub's scope): a
+  // switch of the hub a Hub page manages never remounts the frame, and the sheet in it, as the other hub's.
+  const [under, setUnder] = useState(at);
+  if (route.id !== "settings" && under !== at) setUnder(at);
+  const hub = hubs.find((h) => h.id === (route.id === "settings" ? under : at)) ?? hubs.find((h) => h.id === at) ?? hubs[0];
   // The project on screen, the same object while it is the same project: each hub's watcher reads by it.
   const homeOpen = useMemo(() => (homeRow === null ? null : routeOf(homeRow)), [homeRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   // Where closing Settings returns: the last route before it, on its hub. Kept here, outside the hub's frame, so
@@ -77,6 +81,7 @@ export function Shell() {
   const left: Screen = { ...route, at };
   if (route.id !== "settings" && route.id !== "onboarding" && toHash(left) !== toHash(away)) setAway(left);
   if (hub === undefined) return null;
+  const sheetHub = hubs.find((h) => h.id === route.at) ?? hub;
   const open = route.id === "project" || route.id === "session" ? route.project : homeRow?.hub === hub.id ? homeOpen : null;
   // Keyed by the hub: a query keeps the client it was made with, so what is on screen starts afresh on another hub
   // rather than reading the one before. The sidebar's shown or hidden is the window's, not a hub's.
@@ -87,7 +92,7 @@ export function Shell() {
           <HubWatch open={h.id === hub.id ? open : null} />
         </HubScope>
       ))}
-      <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} />
+      <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} sheetHub={sheetHub} />
     </HubScope>
   );
 }
@@ -127,19 +132,18 @@ const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> |
   }, [rows, hubs, on, held]);
 };
 
-function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
+function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: Screen; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar>; sheetHub: HubView }) {
   const hub = useHubState();
   const features = useData((st) => st.features);
   // A restart's held view (data/store.ts RESTART_HOLD_MS): what shows is as it was, so it steps back a little.
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  // ⌘1–9 open the rows the sidebar numbers: those on show in its layout (sidebarLayout.ts), in its order.
+  // ⌘1–9 open the rows the sidebar numbers: those on show (sidebarLayout.ts), in its order.
   const view = useSidebarView();
   const viewHub = viewedHub(view, hubs, route.at);
-  const heldKeys = useHeldRows();
-  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, heldKeys)), [projects, view, viewHub, heldKeys]);
-  // A bot opened on another hub (the palette, a notification, ⌘1–9 in List) brings its hub on show.
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub)), [projects, view, viewHub]);
+  // A bot opened on another hub (the palette, a notification) brings its hub on show.
   useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();
   const [sidebarPx, setSidebarPx] = useSidebarWidth();
@@ -316,7 +320,7 @@ function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hu
         translucent
         topBar={top}
         under={under}
-        sidebarTop={<SidebarTop go={go} view={view} hub={viewHub} projects={projects} />}
+        sidebarTop={<SidebarTop go={go} hub={viewHub} projects={projects} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
@@ -359,6 +363,7 @@ function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hu
         <Boundary key="settings" part="Settings">
           <Suspense fallback={null}>
             <SettingsSheet
+              hub={sheetHub}
               onClose={() => {
                 back();
                 // Back to the chat it left; from a link straight to Settings, to the chat `#/` opens, by its own URL.

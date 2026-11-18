@@ -12,7 +12,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { parseHash } from "../shell/routes";
-import { Sidebar } from "../shell/Sidebar";
+import { Sidebar, SidebarTop } from "../shell/Sidebar";
 import { SettingsScreen } from "../settings/SettingsScreen";
 import { SettingsSheet } from "../settings/SettingsSheet";
 import { chooseFromRow } from "../settings/rowMenu.testing";
@@ -216,13 +216,14 @@ it("lists the Hub group's pages flat, and Setup always, saying how many required
   expect(rows().at(-1)).toBe("Setup");
 });
 
-it("marks an admin's name while required setup steps are left, and opens Hub › Setup from their card", async () => {
+it("marks the hub switcher for an admin while required setup steps are left, and opens Hub › Setup from its menu", async () => {
   setupLeft = 2;
   const went: unknown[] = [];
   const go = (s: unknown) => went.push(s);
   function Opener() {
       return (
       <TooltipProvider>
+        <SidebarTop hub="hub" projects={[]} go={go} />
         <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={go} />
       </TooltipProvider>
     );
@@ -252,12 +253,13 @@ it("marks an admin's name while required setup steps are left, and opens Hub ›
     await new Promise((r) => setTimeout(r, 0));
   });
   for (let i = 0; i < 3; i++) await settle();
-  const you = host.querySelector<HTMLElement>("[data-opens='you']");
-  expect(you?.dataset["mark"]).toBe("warning");
-  expect(you?.getAttribute("aria-label")).toContain("2 setup steps left");
-  if (you === null) throw new Error("no name at the foot");
-  await click(you);
-  const setup = document.querySelector<HTMLElement>("[aria-label='You'] [data-line='setup']");
+  const switcher = host.querySelector<HTMLElement>("[data-opens='hubs']");
+  expect(switcher?.dataset["mark"]).toBe("warning");
+  expect(switcher?.getAttribute("aria-label")).toContain("2 setup steps left");
+  if (switcher === null) throw new Error("no hub switcher");
+  // A menu opens from the keys as from a press (on pointer-down, which the DOM here can't give).
+  act(() => void switcher.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  const setup = document.querySelector<HTMLElement>("[role='menu'] [data-line='setup']");
   expect(setup?.textContent).toBe("2 setup steps leftFinish");
   if (setup === null) throw new Error("no Setup line");
   await click(setup);
