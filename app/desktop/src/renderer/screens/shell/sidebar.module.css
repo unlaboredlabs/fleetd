@@ -819,13 +819,12 @@
   letter-spacing: 0;
 }
 
-/* List: where a bot lives, at the start of its line: its hub's colour as a short bar, its section's or hub's name
-   in the line's own grey, a step stronger; then the line. */
+/* List: where a bot lives, at the start of its line: its section's or hub's name in the line's own grey, a step
+   stronger, and a dot apart from the line. No colour: the names lead. */
 .where {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 5px;
   max-width: 45%;
   min-width: 0;
   color: var(--quiet);
@@ -833,11 +832,14 @@
   font-weight: var(--weight-medium);
   line-height: var(--leading-xs);
 }
-.whereMark {
+.where::after {
+  content: "·";
   flex: none;
-  width: 3px;
-  height: 10px;
-  border-radius: 1px;
+  padding-left: 4px;
+  font-weight: var(--weight-regular);
+}
+.bottom > .where {
+  margin-right: -4px;
 }
 .whereWord {
   min-width: 0;

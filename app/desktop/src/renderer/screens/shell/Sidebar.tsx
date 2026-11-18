@@ -59,8 +59,8 @@ const LIST_AVATAR = 32;
 const CAPSULE_AVATAR = 20;
 /** Rail's one-line rows. */
 const DENSE_AVATAR = 24;
-/** A pinned chat's picture, pinColumns to a row, the group centred in the sidebar. */
-const PIN_AVATAR = 52;
+/** A pinned chat's picture, pinColumns to a row, the group centred in the sidebar: a step over a row's, no more. */
+const PIN_AVATAR = 40;
 /** Three across; four pins as two pairs, so no count leaves a lone pin under a full row of two. */
 const pinColumns = (count: number): number => (count === 4 ? 2 : Math.max(1, Math.min(count, 3)));
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
@@ -230,16 +230,15 @@ interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly asOf: string | undefined;
   /** Held over one of your sections or a chat in none, where it would go if let go, shown where the time is. */
   readonly into?: string | undefined;
-  /** List's mark of where the bot lives: its hub's colour and its section's (or hub's) name, before its line. */
+  /** List's mark of where the bot lives: its section's (or hub's) name, before its line. */
   readonly where?: Where | undefined;
   readonly avatar?: number | undefined;
   /** Rail's: one line, the picture, the name and the mark; the time and the line are in the row's description. */
   readonly dense?: boolean | undefined;
 }
 
-/** Where a bot lives, as List's row says it: its hub's colour (with several hubs) and a word, its section's or its hub's. */
+/** Where a bot lives, as List's row says it: a word, its section's or (with several hubs) its hub's. */
 interface Where {
-  readonly color: string | undefined;
   readonly word: string | undefined;
   readonly tip: string;
 }
@@ -302,10 +301,9 @@ function Row({ p, current, jump, asOf, into, where, avatar = AVATAR, dense = fal
           )}
         </span>
         <span className={s.bottom}>
-          {where === undefined || (where.color === undefined && where.word === undefined) ? null : (
+          {where?.word === undefined ? null : (
             <span className={s.where} title={where.tip} data-where="">
-              {where.color === undefined ? null : <span className={s.whereMark} style={{ background: where.color }} aria-hidden />}
-              {where.word === undefined ? null : <span className={s.whereWord}>{where.word}</span>}
+              <span className={s.whereWord}>{where.word}</span>
             </span>
           )}
           <span className={s.line} data-empty={p.line === "" || undefined}>
@@ -516,8 +514,8 @@ function HubRail({ hub, projects, screen, factory, go }: { hub: string; projects
 }
 
 /**
- * List: the pins of every hub, as capsules, then every other bot newest first, each row saying where it lives: with
- * several hubs, its hub's colour and its section's name, or its hub's in none; with one, its section's name alone.
+ * List: the pins of every hub, as capsules, then every other bot newest first, each row saying where it lives in a
+ * quiet word: its section's name, or with several hubs its hub's in none; no colour, so the names lead.
  * Each row is in its hub's scope, so its menu pins, moves and renames on its own hub.
  */
 function ListBots({ rows, hubs, openOn, jumpOf, go }: { rows: ReadonlyArray<Placed> | undefined; hubs: readonly HubView[]; openOn: (hub: string) => ProjectKey | null; jumpOf: (p: Placed) => number | null; go: (screen: Screen) => void }) {
@@ -578,7 +576,6 @@ function ListBot({ p, hubRows, several, current, jump, go, pin: asPin = false }:
   const bot = useBotMenu(hubRows, several ? { at: hub.id } : {}, go);
   const section = p.section === undefined ? undefined : bot.sections.find((x) => x.id === p.section)?.name;
   const where: Where = {
-    color: several && hub.color !== undefined ? HUB_COLOR[hub.color] : undefined,
     word: section ?? (several ? hub.label : undefined),
     tip: [several ? hub.label : undefined, section].filter((w) => w !== undefined).join(" · "),
   };
