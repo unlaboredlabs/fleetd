@@ -1,7 +1,7 @@
 // The sidebar (W530): your chats, each a row with its picture, its name and its newest line, newest first, and you at
 // its foot (You.tsx). New sits at the top, beside the window's controls (NewButton). Your pinned chats stay on top in
-// your order (pins.ts), two to a line, each a large picture over its name in a capsule (a name cut short shows whole
-// in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
+// your order (pins.ts): in Hubs up to three to a line, each a picture over its name in a capsule (a name cut short
+// shows whole in a tooltip); in List a row of capsules: drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
 // there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
@@ -15,9 +15,8 @@
 // Your own sections (sections.ts) come under the chats in none, each under a quiet label, in your order, its chats
 // newest first: a row's menu moves it to one, out of them, or into a new one you name; dragging it onto a section's
 // label or one of its chats moves it there too, and onto a chat in none takes it out, the held row saying where it
-// would go where its time was. A label's click folds its section to one line, kept on this computer
-// (sidebarState.ts); its menu renames the section, moves it up or down, or removes it (its chats go back on top). A
-// pinned chat shows among the pins only, and keeps its section.
+// would go where its time was. A label never folds; its menu renames the section, moves it up or down, or removes it
+// (its chats go back on top). A pinned chat shows among the pins only, and keeps its section.
 //
 // Three layouts carry them (sidebarLayout.ts), none of them stacked groups that fold: List, every bot of every hub in
 // one list, each row saying its hub and section; Hubs, one hub at a time, picked at the top; Rail, the hubs down a

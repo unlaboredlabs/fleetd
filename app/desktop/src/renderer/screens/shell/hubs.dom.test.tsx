@@ -445,3 +445,43 @@ it("says which hub a new bot goes to with several hubs, the hub on screen first,
   expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
   expect(picker()).toBeNull();
 });
+
+it("redraws the sidebar in the layout picked under your name at once, closes the menu, and opens in it at the next launch", async () => {
+  list();
+  const entries: HubEntry[] = [
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme", color: "amber" },
+  ];
+  await mount(entries);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+  });
+  await settle();
+  const layout = () => host.querySelector("nav[aria-label='Sidebar']")?.getAttribute("data-layout");
+  const menu = () => document.querySelector("[data-line='layout']");
+  const pick = (name: string) => {
+    act(() => host.querySelector<HTMLElement>("[data-opens='you']")?.click());
+    expect(menu()).not.toBeNull();
+    act(() => [...document.querySelectorAll<HTMLButtonElement>("[aria-label='Sidebar layout'] button")].find((b) => b.textContent === name)?.click());
+  };
+  expect(layout()).toBe("list");
+  pick("Rail");
+  // No reload: the sidebar is Rail's as the menu closes, and the pick is kept on this computer.
+  expect(layout()).toBe("rail");
+  expect(menu()).toBeNull();
+  expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");
+  // The one in use closes the menu all the same.
+  pick("Rail");
+  expect(menu()).toBeNull();
+  pick("Hubs");
+  expect(layout()).toBe("hubs");
+  // Quit and open again: the app opens in Hubs.
+  act(() => root.unmount());
+  host.remove();
+  resetSidebarView();
+  await mount(entries);
+  await settle();
+  expect(layout()).toBe("hubs");
+});

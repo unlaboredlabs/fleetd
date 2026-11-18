@@ -176,6 +176,9 @@ it("picks the sidebar's layout in the menu, the one in use pressed, and keeps it
   // None kept yet: List, the default.
   expect(pressed()).toEqual(["List"]);
   act(() => [...(row("layout")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === "Rail")?.click());
+  // A pick closes the menu; open again, Rail is the one pressed.
+  expect(card()).toBeNull();
+  open();
   expect(pressed()).toEqual(["Rail"]);
   expect(window.localStorage.getItem("fleetd.sidebarLayout")).toBe("rail");
   // The next launch reads it back.

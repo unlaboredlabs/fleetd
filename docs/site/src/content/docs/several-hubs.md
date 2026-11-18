@@ -51,11 +51,18 @@ The phone app has the same under Settings, **Restart Hub**, for admins.
 
 ## One sidebar {#sidebar}
 
-Each hub's bots sit under its name in the sidebar, in the order you added the hubs. Click a hub's name to
-collapse its group. A collapsed group still says how many of its bots need you. ⌘1 to ⌘9 count only the rows you
-can see.
+Pick how the sidebar carries your hubs in the menu under your name, **Sidebar**: **List**, **Hubs** or **Rail**. The
+app keeps your pick on this computer (in the web app, in this browser) and redraws the sidebar at once.
 
-With one hub there is no name and no group, so the sidebar looks as it always has.
+- **List** (the default): every hub's bots in one list, newest first, your pins as a row of capsules over it. Each row
+  starts with a quiet word for where the bot lives: its section, or its hub's name when it's in none.
+- **Hubs**: one hub at a time. Its name at the top opens the list of your hubs; a dot by its name means a bot on
+  another hub needs you. Under it, that hub's pins, its bots, then your sections under their labels.
+- **Rail**: your hubs as small squares down the sidebar's edge, a dot on one whose bots need you. Beside them, that
+  hub's pins and bots, with your sections as tabs over them.
+
+Opening a bot from elsewhere (a notification, ⌘K) shows its hub. ⌘1 to ⌘9 count the rows you can see, in order. With
+one hub, List and Hubs show the same bots, with no hub's name on any row.
 
 ## Everything that needs you {#attention}
 
@@ -63,7 +70,7 @@ Every hub counts toward what needs you:
 
 | Where | With several hubs |
 |---|---|
-| The sidebar | Each row's mark (reply, approve, secret, blocked) sits in its hub's group. |
+| The sidebar | Each row's mark (reply, approve, secret, blocked) sits on its bot's row; in Hubs and Rail, a hub that isn't on show carries a dot. |
 | The Dock badge | Counts the bots that need you on every hub. |
 | Notifications | Come from every hub, each under its own quiet hours. The title starts with the hub's name, and clicking one opens that hub's bot. |
 | Status | Has a section per hub, under its name. |
