@@ -51,6 +51,8 @@ export const CAP_SKILLS = "skills";
 export const CAP_HAS_FILE = "has_file";
 export const CAP_ORDER_ENV = "order_env";
 export const CAP_WORKTREE_SETUP = "worktree_setup";
+/** The node builds its bots' computer images, and answers `project_image`. */
+export const CAP_COMPUTER_IMAGE = "computer_image";
 export const CAP_ALLOWED_ONLY = "allowed_only";
 export const CAP_ISOLATED = "isolated";
 export const CAP_BROWSER = "browser";

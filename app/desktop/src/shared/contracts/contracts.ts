@@ -2264,6 +2264,37 @@ export type CommandStat = {
 /** Full lowercase hex commit SHA, 40 or 64 characters */
 export type CommitSha = string;
 
+/**
+ * A repo's computer image: its setup commands run once, kept as the disk new agents start from (a local VM's layer, or a
+ * hosted provider's snapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start
+ * from now, kept through a rebuild and a failed build.
+ */
+export type ComputerImage = {
+  /** The image agents start from now; absent when there is none. */
+  builtAt?: Timestamp;
+  /** Its size on disk; absent when the provider doesn't say. */
+  bytes?: number;
+  /** When the last build failed (`failed`). */
+  failedAt?: Timestamp;
+  /** The end of the failed build's log (`failed`), at most 4000 characters. */
+  log?: string;
+  /** When the build under way started (`building`). */
+  startedAt?: Timestamp;
+  state: ComputerImageState;
+  /** Where it is kept: this machine's VMs, or a hosted provider's snapshot. */
+  where?: ComputerImageWhere;
+};
+
+/** none: no setup commands, or no image yet and none building; building; ready; failed: the last build failed. */
+export type KnownComputerImageState = "none" | "building" | "ready" | "failed";
+/** KnownComputerImageState, or a value from a newer hub. */
+export type ComputerImageState = KnownComputerImageState | (string & {});
+
+/** "vm": this machine's local VMs; else the hosted provider. */
+export type KnownComputerImageWhere = "vm" | "e2b" | "boat" | "daytona";
+/** KnownComputerImageWhere, or a value from a newer hub. */
+export type ComputerImageWhere = KnownComputerImageWhere | (string & {});
+
 export type Coverage = {
   /** The read hit its span cap and kept the newest spans. */
   capped?: boolean;
@@ -6168,6 +6199,20 @@ export type ProjectIconSetOutput = {
 
 export type ProjectId = string;
 
+export type ProjectImageRebuildInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+  /** The repo whose image to build again; absent, or the project's own directory: the project's. */
+  repo?: RepoName;
+};
+
+export type ProjectImageRebuildOutput = {
+  /** The image now, building. */
+  image: ComputerImage;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspect = {
   ci: CiInfo;
@@ -6362,6 +6407,10 @@ export type ProjectSetOutput = {
 export type ProjectSettings = {
   /** Its agents' variables, by name. A secret's value is never here. */
   env: ProjectEnvVar[];
+  /**
+   * `setup`'s computer image, from the node, now: absent while it is offline or too old to say, and from older hubs.
+   */
+  image?: ComputerImage;
   machineId: MachineId;
   projectId: ProjectId;
   /** The repo `setup` is for; absent when it is the project's own directory's, and from older hubs. */
@@ -10105,6 +10154,7 @@ export interface ToolMap {
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_icon_set: { input: ProjectIconSetInput; output: ProjectIconSetOutput };
+  project_image_rebuild: { input: ProjectImageRebuildInput; output: ProjectImageRebuildOutput };
   project_purchases: { input: ProjectPurchasesInput; output: ProjectPurchasesOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_repo_add: { input: ProjectRepoAddInput; output: ProjectRepoAddOutput };

@@ -33,6 +33,7 @@ export const TOOLS = {
   project_settings_get: { scope: "read", module: "src/hub/projects" },
   project_settings_set: { scope: "operate", module: "src/hub/projects" },
   project_env_set: { scope: "operate", module: "src/hub/projects" },
+  project_image_rebuild: { scope: "operate", module: "src/hub/projects" },
   mcp_servers_get: { scope: "read", module: "src/hub/mcp_servers" },
   mcp_server_set: { scope: "operate", module: "src/hub/mcp_servers" },
   mcp_server_remove: { scope: "operate", module: "src/hub/mcp_servers" },

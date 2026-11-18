@@ -8,6 +8,7 @@
 //   the environment to a private file first, and the detached command reads and removes it (shell.ts).
 // - The guest's port is reached through boat's token-gated URL for it (`POST /host`, which answers the same URL again),
 //   with fleetd's own secret besides.
+// - A bot's computer image (`snapshot`) is a saved snapshot of a box that ran its setup; `forget` deletes it.
 // - boat builds no images: `build` replays the recipe's steps as root on a fresh box from boat's own Ubuntu 24.04
 //   image, saves it as a saved snapshot, and deletes the box.
 import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, type ProviderAuth, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
@@ -108,7 +109,8 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           labels,
           name: `fleetd ${c.key}`,
           noEnv: true,
-          snapshots: false,
+          // An image build's box is saved (`snapshot`) once it ran setup; no other box ever is.
+          ...(c.keep ? {} : { snapshots: false }),
           monitoring: false,
         },
         c.key,
@@ -171,6 +173,21 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
 
     async lifetime(id, ms, l = {}) {
       await http.call("PATCH", box(id), { body: { ttlSeconds: seconds(ms) }, signal: l.signal });
+    },
+
+    async snapshot(id, name, s = {}) {
+      await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name }, signal: s.signal });
+      for (;;) {
+        const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal: s.signal });
+        const status = g.body?.snapshot?.status;
+        if (status === "ready") return name;
+        if (status === "failed") throw new ProviderError("failed", `boat couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
+        await pause(pollMs, s.signal);
+      }
+    },
+
+    async forget(template, f = {}) {
+      await http.call("DELETE", `/saved-snapshots/${encodeURIComponent(template)}`, { ok: [404], signal: f.signal });
     },
 
     async build(dockerfile: string, b: BuildOptions) {

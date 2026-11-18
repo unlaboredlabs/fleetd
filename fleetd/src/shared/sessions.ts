@@ -40,6 +40,7 @@ import type {
   VaultKind,
   WorkstreamId,
   WorktreeSetup,
+  ComputerImage,
 } from "./contracts.ts";
 
 // ---- Types sessions.rs uses from other contract modules that the rendered contracts don't carry. ----
@@ -192,6 +193,8 @@ export type SessionCall =
   | { op: "vault_import_search"; personId: PersonId; query: string; kinds?: VaultKind[] }
   | { op: "claude_models" }
   | { op: "project_worktrees"; projectId: ProjectId }
+  /** The checkout's computer image for `setup` (its repo's): one due starts building, `rebuild` builds it again. */
+  | { op: "project_image"; projectId: ProjectId; setup: WorktreeSetup; rebuild?: boolean; base?: string }
   | ({ op: "launch" } & SessionLaunch)
   | {
       op: "send";
@@ -361,6 +364,7 @@ export type SessionOutput =
   | ({ kind: "landed_log" } & LandedLog)
   | { kind: "project_env"; secrets: EnvSecretSaved[] }
   | ({ kind: "project_worktrees" } & ProjectWorktrees)
+  | { kind: "project_image"; image: ComputerImage }
   | { kind: "mcp_secrets"; secrets: McpSecretSaved[] }
   | ({ kind: "mcp_tested" } & McpTestResult)
   | { kind: "claude_account_saved"; fingerprint?: SecretFingerprint }
@@ -511,6 +515,8 @@ export type MachineEvent =
   | ({ type: "session_updated" } & SessionSummary)
   | ({ type: "runner_info" } & RunnerInfo)
   | ({ type: "steer" } & SteerReceipt)
+  /** A checkout's computer image changed: a build started, ended or failed. */
+  | { type: "image"; projectId: ProjectId; image: ComputerImage }
   /** Everything before it on this subscription is out. */
   | { type: "caught_up" };
 

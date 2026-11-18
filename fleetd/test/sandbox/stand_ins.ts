@@ -283,6 +283,10 @@ export function boatStandIn(runner?: Runner): StandIn {
         return Response.json({ ok: true, snapshot: { name: c.body.name, status: "saving" } }, { status: 202 });
       }
       m = /^\/saved-snapshots\/([^/]+)$/.exec(p);
+      if (m && c.method === "DELETE") {
+        saved.delete(m[1]!);
+        return Response.json({ ok: true });
+      }
       if (m) {
         const k = (saved.get(m[1]!) ?? 0) + 1;
         saved.set(m[1]!, k);

@@ -53,13 +53,15 @@ export class Boxes {
   #down = new Map<ProviderId, { until: number; why: string }>();
   /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
   #making = new Set<string>();
+  /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
+  #held = new Set<string>();
 
   constructor(
     readonly home: string,
     readonly machineId: string,
     private readonly opener: Opener,
-    /** Tests: another provider than the real clients, and another fleetd source. */
-    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex> } = {},
+    /** Tests: another provider than the real clients, another fleetd source, and how long a new box is left alone. */
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number } = {},
   ) {
     for (const p of PROVIDERS) {
       const sealed = this.#keyFile(p);
@@ -140,10 +142,15 @@ export class Boxes {
     return c;
   }
 
+  /** The name of the template boxes start from, for this recipe: what a bot's computer image builds on. */
+  templateName(): string {
+    return templateName(hostedRecipe(base, { claude: TESTED }));
+  }
+
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's needed. */
   template(p: ProviderId): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
-    const name = templateName(recipe);
+    const name = this.templateName();
     const file = join(this.home, "sandbox", `template-${p}.json`);
     let kept: { name?: string; id?: string } = {};
     try {
@@ -182,18 +189,19 @@ export class Boxes {
     return { sha256, ...(url ? { url } : {}), bytes: async () => new Uint8Array(await Bun.file(exe).arrayBuffer()) };
   }
 
-  /** Creates a box for `session` from the provider's template, starts its bootstrap and hands it fleetd. */
-  async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size): Promise<BoxRecord> {
+  /** Creates a box for `session` from the provider's template (or `o.template`: a bot's computer image), starts its
+   * bootstrap and hands it fleetd. `o.keep`: an image build's box, which the provider may save. */
+  async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size, o: { template?: string; keep?: boolean } = {}): Promise<BoxRecord> {
     const client = this.client(p);
-    const template = await this.template(p);
+    const template = o.template ?? (await this.template(p));
     // A key per attempt, never the session's: boat and E2B keep a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;
-    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}) });
+    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });
     const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
     this.#making.add(made.id);
     // Its caller writes the record at once; until a while after, the reaper leaves the box.
-    const made_ = () => setTimeout(() => this.#making.delete(made.id), 60_000).unref?.();
+    const made_ = () => setTimeout(() => this.#making.delete(made.id), this.o.makingMs ?? 60_000).unref?.();
     try {
       const boot = bootArgv(dirs);
       await client.start(made.id, { argv: boot.argv, env: { ...boot.env, FLEETD_BOX_SECRET: record.secret } });
@@ -268,6 +276,12 @@ export class Boxes {
   }
 
   /** Deletes this machine's boxes in every connected account that no session of `known()` holds. How many it deleted. */
+  /** Keeps the box `id` from the sweep until the answer is called: one no session records, while it is in use. */
+  hold(id: string): () => void {
+    this.#held.add(id);
+    return () => void this.#held.delete(id);
+  }
+
   async reap(known: () => Set<string>): Promise<number> {
     let n = 0;
     for (const p of this.connected()) {
@@ -280,7 +294,7 @@ export class Boxes {
       }
       const keep = known();
       for (const b of boxes) {
-        if (b.labels[MACHINE_LABEL] !== label(this.machineId) || keep.has(b.id) || this.#making.has(b.id)) continue;
+        if (b.labels[MACHINE_LABEL] !== label(this.machineId) || keep.has(b.id) || this.#making.has(b.id) || this.#held.has(b.id)) continue;
         try {
           await this.client(p).destroy(b.id);
           n++;

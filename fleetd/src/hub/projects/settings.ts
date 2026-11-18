@@ -2,6 +2,8 @@
 // `project_settings_get`, `project_settings_set` and `project_env_set`, and what the hub keeps of them:
 // `project_settings.setup` (each new worktree's commands, in the project's own directory) and the `project_env` rows.
 // Each of the project's other repos has its own `setup` (`repos.setup`); none falls back to another's.
+// A repo's setup commands are also its computer image's recipe (node/place/image.ts): its checkout's node builds the
+// image when they change and on a Rebuild (`project_image_rebuild`), and says when it did; the settings show it.
 //
 // A variable is set on the project's node first, which keeps the value; only then does the hub record it. The hub's
 // row holds a plain variable's value and a secret's fingerprint: a secret reaches the hub sealed to the node's box
@@ -22,16 +24,17 @@ import type {
   RepoId,
   RepoName,
   WorktreeSetup,
+  ComputerImage,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
+import { CAP_COMPUTER_IMAGE, CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownMachine, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { executors } from "../executor/index.ts";
-import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
+import { projectEnv, projectImage, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { chatTagsOn, setAvatarColor, setChatTags } from "../project_lead/store.ts";
@@ -223,6 +226,41 @@ export function repoNamed(hub: Hub, r: ProjectRef, name: RepoName | undefined): 
   throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no repo ${name}.`, fix);
 }
 
+/** Where `repo` of the project (its own directory when none) has its files, and so its computer image. */
+const checkoutOf = (r: ProjectRef, repo: ProjectRepo | undefined): ProjectRef => repo?.checkout ?? r;
+
+/** `repo`'s computer image from its checkout's node, for `setup`; undefined while it is offline, too old or silent. A
+ * build that's due starts there. */
+async function imageOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined, setup: WorktreeSetup, rebuild = false): Promise<ComputerImage | undefined> {
+  const c = checkoutOf(r, repo);
+  if (!executors(hub).isConnected(c.machineId) || !link(hub).can(c.machineId, CAP_COMPUTER_IMAGE)) return undefined;
+  // Built from the repo's base branch, where its new worktrees start.
+  const base = (repo ?? repos.own(hub.db.conn, r))?.base;
+  try {
+    return await projectImage(hub, c.machineId, c.projectId, setup, rebuild, base);
+  } catch (error) {
+    if (rebuild) throw fromExecutor(error);
+    return undefined;
+  }
+}
+
+/** The setup of `repo` (or the project's own) changed: its checkout's node builds the image for the new commands. */
+export function setupChanged(hub: Hub, r: ProjectRef, repoId: RepoId | undefined): void {
+  const repo = repoId === undefined ? undefined : repos.get(hub.db.conn, repoId)?.repo;
+  const setup = projectSettings(hub).setupIn(r, repoId);
+  if (!setup) return;
+  void imageOf(hub, r, repo, setup);
+}
+
+/** A checkout's computer image changed on machine `m`: every bot holding it reads its settings again. */
+export function imageChanged(hub: Hub, m: MachineId, projectId: string): void {
+  const checkout = { machineId: m, projectId };
+  const bots: { r: ProjectRef; repo?: RepoName }[] = [];
+  if (store(hub).projectGet(checkout)) bots.push({ r: checkout });
+  for (const h of repos.holders(hub.db.conn, checkout)) bots.push({ r: h.project, repo: h.repo.name });
+  for (const b of bots) announce(hub, b.r, "its computer image changed", { image: true, ...(b.repo ? { repo: b.repo } : {}) });
+}
+
 /** The project's settings, with `setup` that of `repo` when one is given. */
 async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined): Promise<ProjectSettings> {
   const project = store(hub).projectGet(r);
@@ -244,6 +282,8 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   // The node says it with the worktrees; the settings say it of the project.
   const signinsKept = worktrees?.signinsKept;
   if (worktrees) delete worktrees.signinsKept;
+  const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
+  const image = await imageOf(hub, r, repo, setup);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -251,7 +291,8 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     workspaceRoot: project.workspaceRoot,
     ...(repo ? { repo: repo.name } : {}),
     env: s.env(r),
-    setup: s.setupIn(r, repo?.repoId) ?? setupOf(undefined),
+    setup,
+    ...(image ? { image } : {}),
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
     ...(signinsKept !== undefined ? { signinsKept } : {}),
@@ -318,6 +359,27 @@ export function register(tools: Registry): void {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }
     return { settings, next };
+  });
+
+  tools.add("project_image_rebuild", async (hub, caller, input) => {
+    const m = input.machineId;
+    requireRole(caller, "operate", m);
+    const r = { machineId: m, projectId: input.projectId };
+    if (!store(hub).projectGet(r)) throw unknownProject(r);
+    const repo = repoNamed(hub, r, input.repo);
+    const setup = projectSettings(hub).setupIn(r, repo?.repoId);
+    if (!setup) throw new ToolError("invalid", "It has no setup commands, so it has no computer image to build.", "Set its setup commands first.");
+    const c = checkoutOf(r, repo);
+    if (!store(hub).machineGet(c.machineId)) throw unknownMachine(c.machineId);
+    if (!executors(hub).isConnected(c.machineId)) throw offline(c.machineId);
+    if (!link(hub).can(c.machineId, CAP_COMPUTER_IMAGE))
+      throw new ToolError("invalid", `${c.machineId}'s node is too old to build computer images.`, `Update fleetd on ${c.machineId} and restart its node.`);
+    const image = (await imageOf(hub, r, repo, setup, true))!;
+    const next =
+      image.state === "building"
+        ? "It builds in the background; new agents start from it once it's ready."
+        : `${c.machineId} builds no computer images: its agents run as plain processes there, and setup runs in each new worktree.`;
+    return { image, next };
   });
 
   tools.add("project_env_set", async (hub, caller, input) => {

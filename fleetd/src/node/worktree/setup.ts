@@ -2,6 +2,8 @@
 // agent starts, each with `sh -c`, the project's (and order's) variables and a 10 minute limit, until one fails. The
 // agent starts either way and hears what failed. A worktree set up before is not set up again while its commands and the contents of the files setup names as
 // its inputs are unchanged: the digest is kept in the worktree's own git directory, which goes when the worktree does.
+// Nor where the agent's box starts from its bot's computer image (../place/image.ts), which ran the same commands with the
+// same inputs, unless they wrote into the checkout, which an image doesn't hold.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -16,7 +18,10 @@ export const SETUP_TIMEOUT_SEC = 600;
 export type Plan = WorktreeSetup & { timeoutSec?: number };
 
 export type Ran = { command: string; exitCode: number | null; outputTail: string; timedOut: boolean; tookMs: number };
-export type Outcome = { kind: "done"; ran: Ran[] } | { kind: "reused" } | { kind: "failed"; ran: Ran[]; skipped: string[] };
+export type Outcome = { kind: "done"; ran: Ran[] } | { kind: "reused" } | { kind: "image"; builtAt: string } | { kind: "failed"; ran: Ran[]; skipped: string[] };
+
+/** The computer image a session's box starts from (../place/image.ts Choice). */
+export type FromImage = { builtAt: string; worktree: boolean };
 
 const ok = (r: Ran) => r.exitCode === 0;
 /** "exited 1 after 12 s", "passed its 600 s limit", "ended by a signal after 3 s". */
@@ -91,8 +96,13 @@ export async function run(
   started: (i: number) => void,
   ended: (i: number, ran: Ran) => void,
   signal?: AbortSignal,
+  image?: FromImage,
 ): Promise<Outcome> {
   const d = digest(setup, cwd);
+  if (image && !image.worktree && (setup.commands ?? []).length) {
+    record(cwd, d);
+    return { kind: "image", builtAt: image.builtAt };
+  }
   if (d && reusable(cwd, d)) return { kind: "reused" };
   const commands = setup.commands ?? [];
   const ran: Ran[] = [];
@@ -120,6 +130,7 @@ const tail = (text: string, max: number) => tailUtf16(text.trimEnd(), max);
 export function note(outcome: Outcome, timeoutSec: number, again: boolean): string | undefined {
   const when = again ? "before you went on" : "before you started";
   if (outcome.kind === "reused") return "Setup did not run again: this worktree was set up before with the same commands and inputs.";
+  if (outcome.kind === "image") return `Setup did not run: your machine started from the bot's computer image, built at ${outcome.builtAt} by these setup commands with the same inputs.`;
   if (outcome.kind === "done")
     return outcome.ran.length ? `Setup ran in this worktree ${when}: ${outcome.ran.map((r) => `${code(r.command)} (${how(r, timeoutSec)})`).join(", ")}.` : undefined;
   const last = outcome.ran[outcome.ran.length - 1];

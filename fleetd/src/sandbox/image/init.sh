@@ -1,7 +1,9 @@
 #!/bin/bash
 # PID 1 of a local sandbox VM (/sbin/fleetd-init in the root image). The kernel mounts the image read-only as / and
 # runs this, which:
-#   - puts a private, writable layer (tmpfs) over the read-only image, so a box writes anywhere and leaves nothing;
+#   - puts a private, writable layer over the read-only image, so a box writes anywhere and leaves nothing behind it: the
+#     box's own disk (fleetd.upper, formatted the first time), else a tmpfs; and between them, read-only, its bot's
+#     image (fleetd.layer: an earlier box's disk, whose upper dir is that layer), so the box starts as setup left it;
 #   - mounts the host's share, virtiofs tag `view` (a dir mirroring host paths), at /run/fleetd/view and binds each of
 #     its top-level dirs at the same path here, so the worktree, claude's dir and the fleetd binary sit where they do
 #     on the host;
@@ -11,6 +13,7 @@
 # Kernel arguments it reads, each optional except fleetd.exe:
 #   fleetd.exe=<host path of fleetd>  fleetd.net=<addr/prefix>,<gateway>  fleetd.dns=<ip>[,<ip>…]
 #   fleetd.port=<vsock port the node dials>  fleetd.now=<host clock, Unix seconds>
+#   fleetd.upper=<the box's own disk>  fleetd.layer=<its bot's image, read-only>
 # Every fleetd.<name>=<value> also reaches sandbox-guest as FLEETD_GUEST_<NAME>=<value>.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8
 
@@ -30,12 +33,35 @@ if [ "$$" = 1 ] && [ ! -d /run/fleetd/lower/sbin ]; then
   mountpoint -q /dev || mount -t devtmpfs dev /dev
   mount -t tmpfs -o mode=0755 tmpfs /run || off "can't mount a tmpfs on /run"
   new=/run/fleetd/root
-  mkdir -p /run/fleetd/lower /run/fleetd/rw/up /run/fleetd/rw/work "$new"
+  upper= layer=
+  for word in $(cat /proc/cmdline); do
+    case $word in fleetd.upper=*) upper=${word#*=} ;; fleetd.layer=*) layer=${word#*=} ;; esac
+  done
+  mkdir -p /run/fleetd/lower /run/fleetd/rw "$new"
+  if [ -n "$upper" ]; then
+    blkid -p "$upper" >/dev/null 2>&1 || mkfs.ext4 -q -F -m 0 -E lazy_itable_init=1,lazy_journal_init=1 "$upper" ||
+      off "can't format the box's disk $upper"
+    mount -t ext4 "$upper" /run/fleetd/rw || off "can't mount the box's disk $upper"
+  fi
+  mkdir -p /run/fleetd/rw/up /run/fleetd/rw/work
   mount --bind / /run/fleetd/lower || off "can't mount the image again"
-  mount -t overlay overlay -o lowerdir=/run/fleetd/lower,upperdir=/run/fleetd/rw/up,workdir=/run/fleetd/rw/work "$new" ||
+  lower=/run/fleetd/lower
+  if [ -n "$layer" ]; then
+    # Its bot's image: a box that can't mount it starts clean, as one with none, and its agent runs setup.
+    mkdir -p /run/fleetd/layer
+    if mount -t ext4 -o ro "$layer" /run/fleetd/layer && [ -d /run/fleetd/layer/up ]; then
+      lower=/run/fleetd/layer/up:/run/fleetd/lower
+      export FLEETD_LAYER=1
+    else
+      say "can't mount the bot's image $layer: the box starts clean"
+    fi
+  fi
+  mount -t overlay overlay -o "lowerdir=$lower,upperdir=/run/fleetd/rw/up,workdir=/run/fleetd/rw/work" "$new" ||
     off "can't put a writable layer over the image"
-  mkdir -p "$new/run/fleetd/lower" "$new/oldroot" "$new/proc" "$new/dev"
+  mkdir -p "$new/run/fleetd/lower" "$new/run/fleetd/rw" "$new/oldroot" "$new/proc" "$new/dev"
   mount --move /run/fleetd/lower "$new/run/fleetd/lower"
+  # The disk stays reachable, for an image build to seal it (node/place/microvm.ts sealScript).
+  [ -z "$upper" ] || mount --move /run/fleetd/rw "$new/run/fleetd/rw"
   mount --move /dev "$new/dev"
   mount --move /proc "$new/proc"
   cd "$new" && pivot_root . oldroot || off "can't switch to the writable root"
@@ -52,6 +78,9 @@ mount -t devpts -o gid=5,mode=0620,ptmxmode=0666 devpts /dev/pts
 mount -t tmpfs -o mode=1777 tmpfs /dev/shm
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 mkdir -p /run/fleetd /run/lock
+# Whether this boot stacked the bot's image: a session that chose it checks before skipping its setup.
+rm -f /run/fleetd/image
+[ "${FLEETD_LAYER:-}" != 1 ] || : >/run/fleetd/image
 hostname "$(cat /etc/hostname 2>/dev/null || echo fleetd-box)"
 
 # fleetd.<name>=<value> from the kernel's command line.
@@ -70,6 +99,8 @@ if [ -n "${arg[net]}" ]; then
 fi
 rm -f /etc/resolv.conf
 for ns in ${arg[dns]//,/ }; do echo "nameserver $ns"; done >/etc/resolv.conf
+# A machine id of its own, as systemd gives a first boot: the image's is empty, and what fingerprints a machine reads it.
+tr -d - </proc/sys/kernel/random/uuid >/etc/machine-id
 
 view=/run/fleetd/view
 if mkdir -p "$view" && mount -t virtiofs view "$view" 2>/dev/null; then

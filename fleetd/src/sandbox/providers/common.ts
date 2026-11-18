@@ -34,6 +34,8 @@ export type CreateOptions = {
   lifetimeMs: number;
   /** boat sizes at create; E2B and Daytona fix the size in the template (`build`). */
   size?: Size;
+  /** A bot's image build's box (`snapshot`): made so the provider can save it. */
+  keep?: boolean;
   signal?: AbortSignal;
 };
 
@@ -66,6 +68,11 @@ export interface Provider {
   lifetime(id: string, ms: number, o?: { signal?: AbortSignal }): Promise<void>;
   /** Builds `dockerfile` (one FROM, then RUN/ENV/WORKDIR/USER only) into the team's account as `o.name`; answers what `create` takes. */
   build(dockerfile: string, o: BuildOptions): Promise<string>;
+  /** Saves the box's disk as `name`, what `create` then takes as its template (a bot's computer image); a provider
+   * without it gives its bots no image, and their boxes start from the template and run setup. */
+  snapshot?(id: string, name: string, o?: { signal?: AbortSignal }): Promise<string>;
+  /** Deletes what `snapshot` made; one already gone is no error. */
+  forget?(template: string, o?: { signal?: AbortSignal }): Promise<void>;
 }
 
 /** The stand-in servers' hooks: another fetch and WebSocket, other base URLs, and how often a build is polled. */

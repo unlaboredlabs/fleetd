@@ -27,7 +27,6 @@ import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
 import { guestAccount, OOM_HOOK, OOM_NOTE, oomLine, setUpGuest, withUser } from "../../src/node/sandbox/system.ts";
 import { withPostToolHook } from "../../src/node/place/endpoint.ts";
-import { boxHome } from "../../src/node/place/provision.ts";
 import { guestOwn, mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
 import { homedir } from "node:os";
 import type { Reach } from "../../src/node/place/endpoint.ts";
@@ -484,14 +483,14 @@ test("a box's builds take this machine's build slots, queued with every other ag
   const n = node({ config: { buildSlots: 1 } });
   const dir = join(n.home, "hosts", "s-build");
   const place = n.vm.bound({ sessionId: "s-build", dir, role: "worker" });
-  // Its cargo where a toolchain its setup installs goes: the box's own home (this machine's PATH isn't the box's).
-  const bin = join(boxHome(n.home, "s-build"), ".cargo/bin");
+  // Its cargo on a dir of PATH the box shows (its checkout's): this machine's own PATH isn't the box's.
+  const bin = join(n.cwd, ".tools/bin");
   mkdirSync(bin, { recursive: true });
   // The slow one says when it has started, so holds the slot.
   const holding = join(root, "fake-cargo-holding");
   writeFileSync(join(bin, "cargo"), `#!/bin/sh\necho "cargo ran: $*"\n[ "$2" = slow ] && touch '${holding}' && sleep 30\nexit 0\n`);
   chmodSync(join(bin, "cargo"), 0o755);
-  const env = envOf(n.home);
+  const env = { ...envOf(n.home), PATH: `${bin}:${process.env.PATH}` };
   const build = (args: string, signal?: AbortSignal) =>
     place.run({ cwd: n.cwd, argv: [process.execPath, MAIN, "build-slot", n.home, ...args.split(" ")], timeoutSec: 30, env, ...(signal ? { signal } : {}) });
   // Another agent's build holds the machine's one slot: the box's queues on it, and runs once it frees.

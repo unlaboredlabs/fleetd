@@ -5,7 +5,7 @@
 // talks to a remote then asks a credential helper of fleetd's for github.com, which answers with the token for that
 // repo and nothing else, after every helper of the machine's own configuration is cleared. Never in an agent's session:
 // agents in boxes get the order's own token, as every hosted agent does.
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
@@ -37,6 +37,17 @@ export function keepTokens(h: string, tokens: Record<string, string>, box: Opene
     kept++;
   }
   return kept;
+}
+
+/** The kept token of the checkout whose origin is `origin` (a GitHub URL), on the runner; undefined elsewhere. */
+export function keptToken(origin: string | undefined): string | undefined {
+  const m = origin && /github\.com[/:]([A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/.exec(origin);
+  if (home === undefined || !m) return undefined;
+  try {
+    return readFileSync(join(dirOf(home), m[1]!.toLowerCase().replace("/", "@")), "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The credential helper: the kept token for the repo git asks about (its path, `owner/name[.git]`), else nothing. */

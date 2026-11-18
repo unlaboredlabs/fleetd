@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync,
 import { rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { mkdirPrivate, readConfig } from "../config.ts";
-import type { ClaudeAccount } from "../../shared/contracts.ts";
+import type { ClaudeAccount, ComputerImage } from "../../shared/contracts.ts";
 import type { McpSessionConfig, SkillBundle } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { leadSocketPath } from "../lead/index.ts";
@@ -51,6 +51,7 @@ import { Steers } from "./steers.ts";
 import { Stages } from "../../shared/stages.ts";
 import { tilde } from "../runner/claude/setup.ts";
 import * as setup from "../worktree/setup.ts";
+import { images, startsFrom, takesImage } from "../place/image.ts";
 import * as hooks from "../worktree/hooks.ts";
 import type { LaunchArea, ScreenHooks } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
@@ -560,6 +561,23 @@ export class SessionService {
     return row ? this.#secrets(row) : [];
   }
 
+  /** A bot's variables as its image's build gets them (setup's, with no order's), and its secrets' values. */
+  imageVars(projectId: string): { env: Record<string, string>; secrets: string[] } {
+    const env: Record<string, string> = { ...gitCommandEnv() } as Record<string, string>;
+    for (const [k, v] of projectVars(this.home, projectId)) if (!(k in env) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
+    return { env, secrets: projectSecrets(this.home, projectId) };
+  }
+
+  /** A checkout's computer image changed: the hub hears it, and tells its apps. */
+  imageChanged(projectId: string, image: ComputerImage): void {
+    this.#machine(this.store.appendEvent({ type: "image", projectId, image }));
+  }
+
+  /** A checkout's directory on this machine, if the node has the project. */
+  projectRootOf(projectId: string): string | undefined {
+    return this.store.project(projectId)?.workspaceRoot;
+  }
+
   #secrets(row: SessionRow): [string, string][] {
     const project = projectVars(this.home, row.summary.projectId);
     const secretValues = new Set(projectSecrets(this.home, row.summary.projectId));
@@ -737,6 +755,12 @@ export class SessionService {
         return { kind: "done" };
       case "project_worktrees":
         return this.#projectWorktrees(c.projectId);
+      case "project_image": {
+        this.#projectRoot(c.projectId);
+        const imgs = images();
+        if (!imgs) return { kind: "project_image", image: { state: "none" } };
+        return { kind: "project_image", image: c.rebuild ? imgs.ensure(c.projectId, c.setup ?? {}, true, c.base) : imgs.status(c.projectId, c.setup ?? {}, c.base) };
+      }
       case "launch":
         return this.#launchOnce(c as unknown as SessionLaunch);
       case "send": {
@@ -934,6 +958,7 @@ export class SessionService {
     }
     // Its kept browser profile goes with it, before the project does.
     await this.forgetSignins(projectId);
+    await images()?.removeProject(projectId);
     forgetProjectEnv(this.home, projectId);
     mcp.forgetSecrets(this.home, projectId);
     // The HOME of its own it kept from before D310, if it has one (own_homes.ts).
@@ -1972,8 +1997,12 @@ export class SessionService {
         }),
       );
     };
+    const place = pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) });
+    // A box starts from its bot's computer image where one is ready for this setup (place/image.ts): its setup ran there.
+    const chose = place.kind === "process" || !takesImage(row.local) ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, place.kind === "hosted" ? hostedOf(row.local.hosted) : "vm", row.local.baseRef);
+    const image = await startsFrom(place, chose, this.home, id, row.local.cwd, env);
     const outcome = await setup.run(
-      pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }),
+      place,
       plan,
       row.local.cwd,
       env,
@@ -1984,6 +2013,7 @@ export class SessionService {
       },
       (i, ran) => item(i, ran),
       signal,
+      image,
     );
     // An interrupt or stop ended setup: its command was killed, and setup stays due.
     if (signal.aborted) {
