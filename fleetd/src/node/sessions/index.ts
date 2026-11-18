@@ -281,7 +281,7 @@ export function runnerClaude(account: ClaudeAccount | undefined): RunnerInfo {
   return {
     ...info,
     problem:
-      "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings (save it again if it was connected before the sandbox provider)",
+      "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
   };
 }
 

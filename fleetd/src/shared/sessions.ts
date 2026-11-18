@@ -187,6 +187,8 @@ export type SessionCall =
   | { op: "signins_forget"; projectId: ProjectId }
   | { op: "order_env_drop"; projectId: ProjectId; orderId: WorkstreamId; name?: EnvVarName; fingerprint?: SecretFingerprint }
   | { op: "claude_account_secret"; account: ClaudeAccount; set?: ClaudeSecretSet }
+  /** The account's secret sealed to `to`, another machine's box key: how the hub's runner gets it (hub/claude_accounts). */
+  | { op: "claude_account_reseal"; account: ClaudeAccount; to: BoxPublicKey }
   | { op: "claude_account_test"; account: ClaudeAccount }
   | { op: "onepassword_token"; personId: PersonId; sealed?: SealedSecret }
   | { op: "onepassword_test"; personId: PersonId }
@@ -373,6 +375,7 @@ export type SessionOutput =
   | { kind: "mcp_secrets"; secrets: McpSecretSaved[] }
   | ({ kind: "mcp_tested" } & McpTestResult)
   | { kind: "claude_account_saved"; fingerprint?: SecretFingerprint }
+  | { kind: "claude_account_resealed"; sealed?: SealedSecret }
   | { kind: "claude_account_tested"; ok: boolean; error?: string }
   | { kind: "onepassword_saved"; fingerprint?: SecretFingerprint }
   | { kind: "onepassword_tested"; vaults?: string[]; error?: string }

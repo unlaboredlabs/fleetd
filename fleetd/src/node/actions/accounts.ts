@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClaudeAccount } from "../../shared/contracts.ts";
+import { seal } from "../../shared/sealed_box.ts";
 import type { ApiModel, ClaudeSecretSet } from "../../shared/sessions.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
@@ -103,6 +104,23 @@ export function applyAccount(home: string, account: ClaudeAccount, set: ClaudeSe
     bytes.fill(0);
   }
   return fingerprintOf(value);
+}
+
+/** The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for the hub's runner
+ * to take with nobody pasting it again; none when this node holds no such secret. */
+export function resealAccount(home: string, account: ClaudeAccount, to: string): string | undefined {
+  const file = read(home, account);
+  if (!file) return undefined;
+  const key = Buffer.from(to, "base64");
+  if (key.length !== 32) throw new Error("the box key to seal to is not 32 bytes");
+  const plain = Buffer.from(file.value);
+  try {
+    return Buffer.from(seal(key, plain)).toString("base64");
+  } catch {
+    throw new Error(`${shown(account)} could not be sealed`);
+  } finally {
+    plain.fill(0);
+  }
 }
 
 /** The variables a claude on `account` gets, and its secret by the variable's name for masking. Throws when the node

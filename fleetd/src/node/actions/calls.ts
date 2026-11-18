@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, tryAccount, tryAccountApi } from "./accounts.ts";
+import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
@@ -134,6 +134,10 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     case "claude_account_secret": {
       const fingerprint = asInvalid(() => applyAccount(home, call.account, call.set, ctx.boxKey));
       return { kind: "claude_account_saved", ...(fingerprint ? { fingerprint } : {}) };
+    }
+    case "claude_account_reseal": {
+      const sealed = asInvalid(() => resealAccount(home, call.account, call.to));
+      return { kind: "claude_account_resealed", ...(sealed ? { sealed } : {}) };
     }
     case "claude_account_test": {
       const env = ctx.runnerEnv();

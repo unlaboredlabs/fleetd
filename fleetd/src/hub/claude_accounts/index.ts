@@ -8,8 +8,10 @@ import type {
   ClaudeAccount,
   ClaudeChoice,
   ClaudeHubApi,
+  ClaudeSealedOn,
   ClaudeSettings,
   ClaudeSubscription,
+  ClaudeTest,
   ProjectRef,
 } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
@@ -29,6 +31,8 @@ export {
 } from "./setup.ts";
 
 const HUB = "hub";
+/** What each account keeps of the machines: where it is held, and its last Test. */
+type Held = { sealedOn: ClaudeSealedOn[]; lastTest?: ClaudeTest | null };
 const MEMBERS_USE_HUB_API = "members_use_hub_api";
 const parse = <T>(data: string | undefined | null): T | undefined => {
   if (data == null) return undefined;
@@ -42,9 +46,19 @@ const parse = <T>(data: string | undefined | null): T | undefined => {
 export class ClaudeAccountStore {
   constructor(private readonly db: HubDb) {}
 
-  private get<T>(account: string): T | undefined {
+  private get<T extends Held>(account: string): T | undefined {
     const row = this.db.conn.query<{ data: string }, [string]>("SELECT data FROM claude_accounts WHERE account = ?").get(account);
-    return parse<T>(row?.data);
+    const held = parse<T>(row?.data);
+    return held && this.present(held);
+  }
+
+  /** The account as the machines there are now hold it: a machine removed since (a cloud machine, say) neither holds
+   * it nor tested it, so its last Test is not the account's current result. */
+  private present<T extends Held>(held: T): T {
+    const machines = new Set(this.db.conn.query<{ machine_id: string }, []>("SELECT machine_id FROM machines").all().map((r) => r.machine_id));
+    const out = { ...held, sealedOn: held.sealedOn.filter((s) => machines.has(s.machineId)) };
+    if (held.lastTest && !machines.has(held.lastTest.machineId)) delete out.lastTest;
+    return out;
   }
 
   private put(account: string, value: unknown): void {
@@ -72,7 +86,7 @@ export class ClaudeAccountStore {
     const out = new Map<string, ClaudeSubscription>();
     for (const r of rows.sort((a, b) => (a.account < b.account ? -1 : 1))) {
       const s = parse<ClaudeSubscription>(r.data);
-      if (s) out.set(r.account, s);
+      if (s) out.set(r.account, this.present(s));
     }
     return out;
   }

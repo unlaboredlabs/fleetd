@@ -72,6 +72,8 @@ export const CAP_FOLDER_MAKE = "folder_make";
 export const CAP_SESSION_END = "session_end";
 export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
+/** `claude_account_reseal`: the node seals a Claude account it holds to another machine's box key (the hub's runner). */
+export const CAP_CLAUDE_RESEAL = "claude_reseal";
 export const CAP_ONEPASSWORD = "onepassword";
 export const CAP_ONEPASSWORD_CARDS = "onepassword_cards";
 /** `vault_adopt`, `vault_import_read`, `vault_import_search`, and fills from the vault (node_link.rs CAP_VAULT). */
