@@ -51,7 +51,7 @@ import { Steers } from "./steers.ts";
 import { Stages } from "../../shared/stages.ts";
 import { tilde } from "../runner/claude/setup.ts";
 import * as setup from "../worktree/setup.ts";
-import { images, startsFrom } from "../place/image.ts";
+import { images, startsFrom, takesImage } from "../place/image.ts";
 import * as hooks from "../worktree/hooks.ts";
 import type { LaunchArea, ScreenHooks } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
@@ -1999,7 +1999,7 @@ export class SessionService {
     };
     const place = pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) });
     // A box starts from its bot's computer image where one is ready for this setup (place/image.ts): its setup ran there.
-    const chose = place.kind === "process" ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, place.kind === "hosted" ? hostedOf(row.local.hosted) : "vm", row.local.baseRef);
+    const chose = place.kind === "process" || !takesImage(row.local) ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, place.kind === "hosted" ? hostedOf(row.local.hosted) : "vm", row.local.baseRef);
     const image = await startsFrom(place, chose, this.home, id, row.local.cwd, env);
     const outcome = await setup.run(
       place,

@@ -89,6 +89,11 @@ export async function startsFrom(place: Pick<Place, "fromImage">, choice: Choice
   return undefined;
 }
 
+/** Whether a session's setup may start from, and so build, its bot's image: a task's worktree on its branch, whose
+ * setup is the bot's and whose base is the bot's. A reader's or reviewer's detached worktree (its base a PR's head, its
+ * setup its own installs) neither uses nor builds one. */
+export const takesImage = (local: { branch?: string }): boolean => !!local.branch;
+
 /** A file's contents for the key, or undefined when it isn't there. */
 type Reader = (path: string) => Uint8Array | undefined;
 
@@ -216,8 +221,10 @@ export class Images {
    * one named. */
   #ref(project: string, root: string, base?: string): string {
     const k = this.#kept(project);
-    if (base && base !== k.base) this.#save(project, { ...k, base });
-    return baseRef(root, base ?? k.base);
+    // A branch's name, never a commit (a detached worktree's base): the bot's base is where its work lands.
+    const named = base && !/^[0-9a-f]{40}$/u.test(base) ? base : undefined;
+    if (named && named !== k.base) this.#save(project, { ...k, base: named });
+    return baseRef(root, named ?? k.base);
   }
 
   /** The bot's image as the Computer page shows it, `base` its base branch. One due (none for its key yet, and none

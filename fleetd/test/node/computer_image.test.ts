@@ -13,7 +13,7 @@ import type { Duplex } from "node:stream";
 import type { ComputerImage } from "../../src/shared/contracts.ts";
 import { LeadRelay, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
-import { Images, sessionDisk, sessionImage, sessionLayer, startsFrom, type Backend } from "../../src/node/place/image.ts";
+import { Images, sessionDisk, sessionImage, sessionLayer, startsFrom, takesImage, type Backend } from "../../src/node/place/image.ts";
 import { kernelCmdline, MicroVm, sealScript, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { BOX_HOME } from "../../src/node/place/provision.ts";
 import { guestOwn } from "../../src/node/place/view.ts";
@@ -337,6 +337,33 @@ test("the image is built from the bot's base branch, which its new worktrees sta
   // The base was kept: a later look without it builds nothing new.
   expect(f.images.status("p1", plan).state).toBe("ready");
   expect(readFileSync(log, "utf8")).toBe("ran\n");
+  f.vm.close();
+}, 60_000);
+
+test("a reader's or reviewer's detached worktree at a PR's head never moves the bot's image off its base", async () => {
+  const f = fixture("h");
+  const log = join(root, "h", "ran.log");
+  const plan: setup.Plan = { commands: [`echo built >> '${log}'`], inputs: ["bun.lock"] };
+  f.images.status("p1", plan, "main");
+  await f.images.idle();
+  expect(readFileSync(log, "utf8")).toBe("built\n");
+  // A PR that changes the lockfile, which a reviewer's worktree is detached at: its base is the PR head's commit.
+  git(f.repo, "checkout", "-q", "-b", "pr");
+  writeFileSync(join(f.repo, "bun.lock"), "lock v2\n");
+  git(f.repo, "commit", "-qam", "bump");
+  const head = git(f.repo, "rev-parse", "HEAD");
+  git(f.repo, "checkout", "-q", "main");
+  const wt = worktreeOf(f.repo, join(root, "h", "wt-review"), head);
+  // The node never asks: a detached session (no branch) takes no image.
+  expect(takesImage({})).toBe(false);
+  expect(takesImage({ branch: "fleetd/T1-x" })).toBe(true);
+  // And were its commit named as a base, it isn't kept as the bot's: the image stays main's, built once.
+  expect(f.images.use("p1", plan, wt, "r1", "vm", head)).toBeUndefined();
+  await f.images.idle();
+  expect(f.images.status("p1", plan).state).toBe("ready");
+  expect(readFileSync(log, "utf8")).toBe("built\n");
+  const wt2 = worktreeOf(f.repo, join(root, "h", "wt-task"), "main");
+  expect(f.images.use("p1", plan, wt2, "t1", "vm", "main")).toBeDefined();
   f.vm.close();
 }, 60_000);
 
