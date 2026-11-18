@@ -112,6 +112,9 @@ The **ⓘ** at the top of a chat opens its bot's page:
 - **Agent profiles**, when the hub has more than one: the profiles its lead may run agents on. The hub's default is
   always allowed.
 - **Machine** and **Folder**: where it runs, read only.
+- **[Computer](/docs/projects#computer)**: each repo's setup commands, and the image its agents' computers start from: **Ready**,
+  **Building…**, **Failed** (tap it for the build's log) or **Not built yet**, when it was built and its size.
+  **Rebuild** builds it again in the background. Edit the commands in the desktop app.
 - **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the bot's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
   and what it learned, as in the desktop app's settings.

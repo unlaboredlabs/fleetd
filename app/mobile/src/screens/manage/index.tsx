@@ -1,5 +1,5 @@
 // Making and managing bots from the phone: their screens in the root stack (New Bot as a sheet; New Screen, a
-// screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs,
+// screen of your own, as one too; a project's screen, Rename, Agent Profiles, its Computer, Approvals, Payments, Linked hubs,
 // Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, its Vault (screens/vault), pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
 // bar. App.tsx adds these to its
@@ -11,6 +11,7 @@ import type { ChatInfoParams, RootParams } from "../../hubContext";
 import { useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { Approvals } from "./Approvals";
+import { Computer, ComputerLog } from "./Computer";
 import { ApprovedLog } from "./ApprovedLog";
 import { IconPicker } from "./IconPicker";
 import { Info } from "./Info";
@@ -137,6 +138,8 @@ function ChatInfo() {
       <InfoStack.Screen name="ArtifactVersions" component={ArtifactVersions} options={pushed(t, "Versions")} />
       <InfoStack.Screen name="Dms" component={Dms} options={pushed(t, "DMs Between Agents")} />
       <InfoStack.Screen name="Dm" component={Dm} options={pushed(t, "DM")} />
+      <InfoStack.Screen name="Computer" component={Computer} options={pushed(t, "Computer")} />
+      <InfoStack.Screen name="ComputerLog" component={ComputerLog} options={pushed(t, "Log")} />
       <InfoStack.Screen name="Vault" component={Vault} options={pushed(t, "Vault")} />
       <InfoStack.Screen name="VaultItem" component={VaultItem} options={pushed(t, "")} />
       <InfoStack.Screen name="VaultEdit" component={VaultEdit} options={sheet(t, "")} />
