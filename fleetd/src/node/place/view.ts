@@ -109,6 +109,28 @@ function linkedFrom(d: string): string[] {
   }
 }
 
+/** agent-device's variables naming the dirs it writes (node/device/agent_device.ts agentEnv). */
+const DEVICE_DIRS = ["AGENT_DEVICE_HOME", "AGENT_DEVICE_STATE_DIR"];
+
+/** fleetd's own wrappers in dir `d` (their second line starts `# fleetd's`): the dirs their quoted paths name. */
+function wrapped(d: string): string[] {
+  if (guestOwn(real(d))) return [];
+  const out: string[] = [];
+  try {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      const text = readFileSync(join(d, e.name), "utf8").slice(0, 16_384);
+      if (!text.split("\n")[1]?.startsWith("# fleetd's")) continue;
+      for (const m of text.matchAll(/'(\/[^'\n]+)'/gu)) {
+        try {
+          if (statSync(m[1]!).isDirectory()) out.push(m[1]!);
+        } catch {}
+      }
+    }
+  } catch {}
+  return out;
+}
+
 /** The files a sourced env file names in single quotes (the order's variables, secrets/env.ts orderEnvFile). */
 function sourced(file: string): string[] {
   try {
@@ -134,8 +156,24 @@ export function needs(n: Needs): Share[] {
   for (const p of n.ro ?? []) add(p, false);
   for (const a of n.argv) for (const p of pathsIn(a)) add(p, false);
   for (const v of Object.values(n.env)) if (v) for (const p of pathsIn(v)) add(p, false);
-  // A program on PATH that links elsewhere (agent-browser's, into its package): what it links to, read-only too.
-  for (const d of pathsIn(n.env.PATH ?? "")) for (const target of linkedFrom(d)) add(dirname(target), false);
+  // A program on PATH that links elsewhere (agent-browser's, into its package): what it links to, read-only too. And a
+  // fleetd wrapper there (agent-device's, cargo's): its tool's install dir, the `bin` dir's parent, and the dirs it
+  // names (the Android SDK).
+  for (const d of pathsIn(n.env.PATH ?? "")) {
+    for (const target of linkedFrom(d)) add(dirname(target), false);
+    const named = wrapped(d);
+    if (named.length && d.endsWith(`${sep}bin`)) add(dirname(d), false);
+    for (const p of named) add(p, false);
+  }
+  // agent-device's session home and state, which it writes: made now, or a share missing at boot is never mounted.
+  for (const k of DEVICE_DIRS) {
+    const p = n.env[k];
+    if (!p || !isAbsolute(p)) continue;
+    try {
+      mkdirSync(p, { recursive: true, mode: 0o700 });
+    } catch {}
+    add(p, true);
+  }
   // The order's variables are re-read before each command, and renewed (GH_TOKEN) by writing a new file in their dir.
   // Its dir is made now when it isn't there yet (no variable set so far): a share missing at boot is never mounted,
   // and a variable set later would never reach the box.

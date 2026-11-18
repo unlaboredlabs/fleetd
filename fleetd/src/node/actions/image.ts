@@ -3,7 +3,7 @@
 // following a last symlink and checked to be the one resolved, and its bytes must be what its name says
 // (fleetd-contracts mcp.rs `AttachmentMime`).
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
-import { basename, join, sep } from "node:path";
+import { basename, isAbsolute, join, sep } from "node:path";
 import { ATTACHMENT_MAX_BYTES, type AttachmentMime } from "../../shared/contracts.ts";
 import { IMAGE_PIECE_BYTES } from "../../shared/sessions.ts";
 
@@ -99,7 +99,8 @@ export function readImage(root: string, path: string, offset: number, file: bool
   }
   let real: string;
   try {
-    real = realpathSync(join(realRoot, path));
+    // Relative to the working directory, or absolute inside it, as the tool says.
+    real = realpathSync(isAbsolute(path) ? path : join(realRoot, path));
   } catch (error) {
     throw new Error(`${path} is not readable here: ${(error as Error).message}`);
   }

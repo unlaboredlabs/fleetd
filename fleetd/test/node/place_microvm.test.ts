@@ -895,3 +895,26 @@ test("a VM out of memory tells its agent so, once, at its next tool call: what w
   const args = withPostToolHook(["-p", "--settings", JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }] }, env: { A: "1" } })], "true");
   expect(JSON.parse(args[2]!)).toEqual({ env: { A: "1" }, hooks: { PostToolUse: [{ matcher: "Bash", hooks: [] }, { matcher: "*", hooks: [{ type: "command", command: "true" }] }] } });
 });
+
+test("agent-device in a VM: its wrapper's package and SDK are put back read-only, its session state writable, the node home hidden", () => {
+  const home = join(root, "device-home");
+  const node = join(home, ".fleetd/node");
+  const install = join(node, "device/agent-device");
+  const sdk = join(node, "device/sdk");
+  for (const d of [join(install, "bin"), join(install, "node_modules/agent-device/bin"), join(sdk, "platform-tools")]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(install, "node_modules/agent-device/bin/agent-device.mjs"), "");
+  writeFileSync(
+    join(install, "bin/agent-device"),
+    `#!/bin/sh\n# fleetd's: agent-device 0.21.31, pointed at this session's emulator.\nANDROID_HOME='${sdk}'\nPATH='${join(sdk, "platform-tools")}':"$PATH"\nexec node '${join(install, "node_modules/agent-device/bin/agent-device.mjs")}' "$@"\n`,
+  );
+  // The build-slot wrapper names the node home itself: never put back.
+  mkdirSync(join(node, "build-slots/bin"), { recursive: true });
+  writeFileSync(join(node, "build-slots/bin/cargo"), `#!/bin/sh\n# fleetd's: an agent's cargo build waits its turn.\nexec '/x/fleetd' build-slot '${node}' "$@"\n`);
+  const state = join(node, "device/sessions/s1");
+  const env = { PATH: `${join(install, "bin")}:${join(node, "build-slots/bin")}:/usr/bin`, AGENT_DEVICE_HOME: state, AGENT_DEVICE_STATE_DIR: join(state, "state") };
+  const view = viewOf(home, [join(home, ".fleetd"), node], needs({ cwd: join(home, "wt"), env, argv: [] }));
+  expect(shows(view, { path: join(install, "node_modules/agent-device/bin/agent-device.mjs"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(sdk, "platform-tools"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(state, "state/x"), rw: true })).toBe(true);
+  expect(shows(view, { path: join(node, "node.json"), rw: false })).toBe(false);
+});
