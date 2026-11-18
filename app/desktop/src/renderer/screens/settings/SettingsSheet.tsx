@@ -120,13 +120,13 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const under: Element[] = [];
     for (let el = sheet.current?.parentElement?.previousElementSibling ?? null; el !== null; el = el.previousElementSibling) {
-      if (el instanceof HTMLElement && !el.inert) {
-        el.inert = true;
+      if (!el.hasAttribute("inert")) {
+        el.setAttribute("inert", "");
         under.push(el);
       }
     }
     return () => {
-      for (const el of under) if (el instanceof HTMLElement) el.inert = false;
+      for (const el of under) el.removeAttribute("inert");
     };
   }, []);
   // Focus goes into the sheet, on the sheet itself, so the first Tab reaches the search and nothing shows a ring.
