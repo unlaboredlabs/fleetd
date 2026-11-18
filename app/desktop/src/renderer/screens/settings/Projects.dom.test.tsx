@@ -130,6 +130,7 @@ afterEach(() => {
   host.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
@@ -178,6 +179,10 @@ const render = async (page: "project" | "instructions" = "project") => {
           ok: true,
           output: url ? { path: "/home/w/src/web", addId: "a1" } : { path: "/home/w/src/api", next: "api is a repo of the bot now, at /home/w/src/api on devbox." },
         });
+      }
+      if (tool === "project_image_rebuild") {
+        const was = answers[0]?.image ?? { state: "none" };
+        return Promise.resolve({ ok: true, output: { image: { builtAt: was.builtAt, bytes: was.bytes, state: "building", startedAt: AT } } });
       }
       if (tool === "project_repo_remove") {
         return Promise.resolve({ ok: true, output: { removed: api, cancelled: [], next: "Its checkout stays at /home/w/src/api on devbox, files and all." } });
@@ -336,9 +341,11 @@ describe("Settings → Bots", () => {
 
   it("saves the setup, under the repos, in order, with its inputs, and no limit or start-anyway to pick", async () => {
     await render();
-    // Setup is a section of its own, under Code's repos.
-    const section = document.querySelector<HTMLElement>('section[data-part="projects.setup"]');
-    if (section === null) throw new Error("no setup section");
+    // Computer is a section of its own, under Code's repos: its setup, and no image row while it has no commands.
+    const section = document.querySelector<HTMLElement>('section[data-part="projects.computer"]');
+    if (section === null) throw new Error("no computer section");
+    expect(section.querySelector("h2")?.textContent).toBe("Computer");
+    expect(section.querySelector("[data-image-state]")).toBeNull();
     expect(section.querySelector("input")).toBeNull();
     expect(section.querySelector('[role="switch"]')).toBeNull();
     expect(section.textContent).toContain("up to 10 minutes");
@@ -359,6 +366,43 @@ describe("Settings → Bots", () => {
       setup: { commands: ["pnpm install --frozen-lockfile", "pnpm codegen"], inputs: ["pnpm-lock.yaml"] },
     });
     expect(section.textContent).toContain("Saved.");
+  });
+
+  it("shows the computer's image: a failed build with its log behind Log, the older one still built, and Rebuild", async () => {
+    // The clock, held on a whole minute, as the page reads it.
+    const NOW = Date.parse("2026-11-18T12:00:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    const ago = (ms: number) => new Date(NOW - ms).toISOString();
+    answers = [
+      {
+        ...settings,
+        setup: { commands: ["pnpm install", "cargo fetch"], inputs: [] },
+        image: { state: "failed", failedAt: ago(12 * 60_000), log: "$ cargo fetch\nerror: failed to fetch `https://index.crates.io/`", builtAt: ago(3 * 3_600_000), bytes: 1_181_116_006, where: "vm" },
+      },
+    ];
+    await render();
+    const row = () => {
+      const el = document.querySelector<HTMLElement>('section[data-part="projects.computer"] [data-image-state]');
+      if (el === null) throw new Error("no image row");
+      return el;
+    };
+    expect(row().getAttribute("data-image-state")).toBe("failed");
+    expect(row().textContent).toContain("Failed 12m ago · last built 3h ago");
+    expect(row().textContent).toContain("Kept as a local VM image.");
+    // Its log only behind Log.
+    expect(row().querySelector("pre")).toBeNull();
+    await click(button("Log"));
+    expect(row().querySelector("pre")?.textContent).toContain("error: failed to fetch");
+    await click(button("Hide log"));
+    expect(row().querySelector("pre")).toBeNull();
+    // Rebuild: the hub answers building, and the row says so with no Rebuild while it builds.
+    await click(button("Rebuild"));
+    await settle();
+    expect(calls.find((c) => c.tool === "project_image_rebuild")?.input).toEqual({ machineId: "devbox", projectId: "p1" });
+    expect(row().getAttribute("data-image-state")).toBe("building");
+    expect(row().textContent).toContain("Building… · last built 3h ago");
+    expect(() => button("Rebuild")).toThrow();
+    expect(() => button("Log")).toThrow();
   });
 
   it("deletes only once the name is typed, names the worktree with uncommitted changes, and removes the worktrees", async () => {
@@ -565,8 +609,8 @@ describe("Settings → Bots → Repos", () => {
     if (el === null) throw new Error("no repos section");
     return el;
   };
-  /** Setup's own section, under Code. */
-  const setupTitle = () => document.querySelector('section[data-part="projects.setup"] h2')?.textContent;
+  /** Computer's own section, under Code. */
+  const setupTitle = () => document.querySelector('section[data-part="projects.computer"] h2')?.textContent;
   const row = (name: string) => {
     const el = section().querySelector<HTMLElement>(`[role="listitem"][aria-label="${name}"]`);
     if (el === null) throw new Error(`no repo ${name}`);
@@ -591,11 +635,11 @@ describe("Settings → Bots → Repos", () => {
     expect(text).toContain("/home/w/src/storefront on devbox");
     // The project's own directory's setup is the project's, shown once, below: the row doesn't repeat it.
     expect(text).not.toContain("pnpm install");
-    expect(setupTitle()).toBe("Setup");
+    expect(setupTitle()).toBe("Computer");
     expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
   });
 
-  it("shows two repos, each with a setup section of its own, and saves another repo's with its name", async () => {
+  it("shows two repos, each with a computer section of its own, and saves another repo's with its name", async () => {
     repos = [web, api];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     repoAnswers = {
@@ -612,10 +656,10 @@ describe("Settings → Bots → Repos", () => {
     expect(text).toContain("p9 on devbox");
     expect(text).not.toContain("go mod download");
     // No default: the project's own directory's setup, then api's.
-    expect(setupTitle()).toBe("Setup: web");
+    expect(setupTitle()).toBe("Computer: web");
     expect(document.body.textContent).not.toContain("Default setup");
-    const apiSetup = [...document.querySelectorAll<HTMLElement>("section")].find((x) => x.querySelector("h2")?.textContent === "Setup: api");
-    if (apiSetup === undefined) throw new Error("no setup for api");
+    const apiSetup = [...document.querySelectorAll<HTMLElement>("section")].find((x) => x.querySelector("h2")?.textContent === "Computer: api");
+    if (apiSetup === undefined) throw new Error("no computer for api");
     const commands = apiSetup.querySelector("textarea");
     if (commands === null) throw new Error("no api commands");
     expect(commands.value).toBe("go mod download\nmake gen");

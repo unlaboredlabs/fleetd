@@ -1,6 +1,9 @@
-// Settings → Projects → Setup commands, the parts with no React: a draft of the fields and the setup it saves. The hub
-// checks the same rules (WorktreeSetup's schema); these only say so before a call.
-import type { WorktreeSetup } from "../../../shared/contracts";
+// Settings › Bots › Bot › Computer, the parts with no React: a draft of the setup fields and the setup it saves, and the
+// words for the computer image that setup builds. The hub checks the same rules (WorktreeSetup's schema); these only say
+// so before a call.
+import type { ComputerImage, WorktreeSetup } from "../../../shared/contracts";
+import { age } from "../live/when";
+import { fmtBytes } from "../time/format";
 
 /** WorktreeSetup's most commands and input files. */
 export const SETUP_COMMANDS_MAX = 20;
@@ -51,3 +54,41 @@ export const changed = (draft: SetupDraft, setup: WorktreeSetup): boolean => {
   const same = (a: string, b: string) => lines(a).join("\n") === lines(b).join("\n");
   return !same(draft.commands, was.commands) || !same(draft.inputs, was.inputs);
 };
+
+/** The image row's line: its state now, in a few words, and whether it is a problem. */
+export type ImageLine = { readonly text: string; readonly tone: "quiet" | "danger" };
+
+const ago = (iso: string | undefined, nowMs: number): string | null => {
+  const t = iso === undefined ? Number.NaN : Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const a = age(nowMs - t);
+  return a === "<1m" ? "just now" : `${a} ago`;
+};
+
+/**
+ * What the Image row says, or null when there is no row: no commands means no image (the hub says "none"), and an
+ * older hub sends no image at all. A building or failed image may still have an older one serving, built at `builtAt`.
+ */
+export function imageLine(image: ComputerImage | undefined, commands: number, nowMs: number): ImageLine | null {
+  if (image === undefined || (commands === 0 && image.state === "none")) return null;
+  const built = ago(image.builtAt, nowMs);
+  const size = image.bytes === undefined ? null : fmtBytes(image.bytes);
+  const last = built === null ? null : `last built ${built}`;
+  if (image.state === "building") return { text: ["Building…", last].filter(Boolean).join(" · "), tone: "quiet" };
+  if (image.state === "failed") {
+    const failed = ago(image.failedAt, nowMs);
+    return { text: [failed === null ? "Failed" : `Failed ${failed}`, last].filter(Boolean).join(" · "), tone: "danger" };
+  }
+  if (built === null) return { text: "Not built yet", tone: "quiet" };
+  return { text: [`Built ${built}`, size].filter(Boolean).join(" · "), tone: "quiet" };
+}
+
+const WHERE: Record<NonNullable<ComputerImage["where"]>, string> = {
+  vm: "a local VM image",
+  boat: "a boat.dev snapshot",
+  e2b: "an E2B snapshot",
+  daytona: "a Daytona snapshot",
+};
+
+/** Where the image is kept, for the row's hover: "a local VM image". */
+export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : WHERE[image.where]);

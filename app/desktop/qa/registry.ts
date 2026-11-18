@@ -233,6 +233,12 @@ export const fixtures = [
   "integrations-signin",
   // Paper, a named service, connected (fixtures/integrations, W686).
   "integrations-paper",
+  // A bot's Computer, one fixture an image state, and a bot with two repos (fixtures/computer, W705).
+  "computer-ready",
+  "computer-building",
+  "computer-failed",
+  "computer-new",
+  "computer-two",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
@@ -4260,6 +4266,57 @@ export const screens: readonly Screen[] = [
       await part.getByRole("button", { name: "Show older" }).click();
       await expect(part.getByRole("button", { name: "Show older" })).toBeEnabled();
       await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // A bot's Computer (W705): its image built, building, failed or not built yet, each with its setup under it; a failed
+  // one with its log opened; and two repos, each its own Computer, api's with no commands and so no image row.
+  {
+    id: "settings.projects",
+    variant: "computer",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-ready", "computer-building", "computer-failed", "computer-new"],
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Computer", exact: true });
+      await expect(part.getByRole("region", { name: "Image" })).toBeVisible();
+      await expect(part.getByRole("textbox", { name: "Setup commands" })).toHaveValue(/cargo fetch/u);
+      await part.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "computer-log",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-failed"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Image" });
+      await row.getByRole("button", { name: "Log" }).click();
+      await expect(row.getByLabel("Image build log")).toContainText("Could not resolve host");
+      await row.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "computer-rebuild",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-ready"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Image" });
+      await row.getByRole("button", { name: "Rebuild" }).click();
+      await expect(row).toContainText("Building…");
+      await expect(row.getByRole("button", { name: "Rebuild" })).toHaveCount(0);
+      await row.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "computer-two",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-two"],
+    open: async (page) => {
+      await expect(page.getByRole("region", { name: "Computer: storefront" }).getByRole("region", { name: "Image" })).toBeVisible();
+      const api = page.getByRole("region", { name: "Computer: api" });
+      await expect(api.getByRole("region", { name: "Image" })).toHaveCount(0);
+      await api.scrollIntoViewIfNeeded();
     },
   },
   // A project's servers that sign in with OAuth (W354): mail signed in, calendar signed out by its service with Reconnect.

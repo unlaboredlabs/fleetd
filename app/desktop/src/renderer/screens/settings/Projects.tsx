@@ -1,5 +1,5 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// picture (Picture.tsx), its bot's color (BotColor.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
+// picture (Picture.tsx), its bot's color (BotColor.tsx), its name, its repos with their computer (RepoSetting.tsx, SetupSetting.tsx),
 // its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
