@@ -143,15 +143,15 @@ const unseedable = (listed: ReadonlyArray<Tool>) =>
 
 /**
  * The writes that take away what other calls need, called after every other write and in this order: an automation
- * (automation_delete), a phone (push_device_remove), a profile (profile_delete), a project and all it holds, its
- * decisions among them (project_remove), a person (person_remove), an invite and the person it brought who never
+ * (automation_delete), a phone (push_device_remove), a profile (profile_delete), a project's lead, which doesn't start
+ * once it is archived (project_archive), a project and all it holds, its decisions among them (project_remove), a person (person_remove), an invite and the person it brought who never
  * joined (invite_revoke), a device (device_revoke), and last of all a machine and all it holds, its projects among them
  * (machine_remove). Each is given only what the run made, never what the team held before it seeded (the caller, the
  * device it calls from, the default profile): what the target seeded (the automation, the project, its machine), the
  * phone, the profile and the person and invite the seeds made, and a spare device of the caller's, made for
  * device_revoke.
  */
-const LAST = ["automation_delete", "push_device_remove", "profile_delete", "project_remove", "person_remove", "invite_revoke", "device_revoke", "machine_remove"];
+const LAST = ["automation_delete", "push_device_remove", "profile_delete", "project_archive", "project_remove", "person_remove", "invite_revoke", "device_revoke", "machine_remove"];
 
 /**
  * LAST's writes whose id is a number, which no read hands the suite as an id: each takes what a seed made from that
@@ -168,12 +168,13 @@ const FROM_SEEDS: Readonly<Record<string, (seeded: ReadonlyArray<{ tool: string;
  * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer (and
  * for a secret sealed to machines, the hub's failed "No machine took it."): the ones below, each called on the machine
  * (and project) the team's reads turn up with what else it needs, project_remove (LAST), which the hub refuses so
- * while the project's machine is known and offline, machine_screens_set, which its node takes, and lead_start, which
- * launches the project's lead there. A target's seed
+ * while the project's machine is known and offline, machine_screens_set, which its node takes, lead_start, which
+ * launches the project's lead there, project_files, which its node reads, and project_signins_forget, which forgets
+ * the project's browser sign-ins there. A target's seed
  * puts its project on such a machine: one that joined once and is offline now. With no machine to name they aren't
  * called.
  */
-const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove", "claude_subscription_set", "onepassword_set", "machine_screens_set", "lead_start"];
+const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove", "claude_subscription_set", "onepassword_set", "machine_screens_set", "lead_start", "project_files", "project_signins_forget"];
 
 /** A person's secret sealed for the machine the reads turn up, as a real box (to a key of the run's own: no machine opens it). */
 const sealedForMachine = async (ids: Ids, secret: string) => {
@@ -247,6 +248,9 @@ const REFUSALS: Readonly<Record<string, readonly [codes: ReadonlyArray<string>, 
   sandbox_connect: [["invalid"], "a run has no provider key, and nothing it makes up is sealed to the hub's own key"],
   sandbox_set: [["invalid"], "a limit is a connected provider's, and a run's hub has none connected"],
   sandbox_test: [["invalid"], "a run's hub has no provider key connected to test"],
+  project_avatar_get: [["not_found"], "a run reads a bot's picture before project_avatar_set gives it one"],
+  machine_claude_login: [["failed"], "no node joins, so no machine logs claude in"],
+  project_image_rebuild: [["invalid", "machine_offline"], "a run's bots have no setup commands, and no node joins to build an image"],
 };
 
 /**
