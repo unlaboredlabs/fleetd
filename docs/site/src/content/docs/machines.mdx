@@ -364,6 +364,8 @@ every agent on a Mac.
 | What | How |
 |---|---|
 | Its files | The agent's worktree, its repo's `.git`, its scratch dir and your home are shared into the VM at the same paths, writable, so builds, commits, setup and `chat_file` work as before. fleetd's own folders (`~/.fleetd`: the hub, the vault, keys, the node's other sessions) are hidden, but for what the session runs with, read-only. `/tmp` is the VM's own and goes with it. |
+| Its system | The machine's own `/usr`, `/etc` and `/opt` (and `/bin`, `/lib`… beside them) are shared read-only, in a share of their own, and laid over the VM's image, with a writable layer of the VM's own on top: a tool installed in your home that links the machine's libraries (a Postgres built for its ICU, say) runs in the VM as it does here, what the image adds stays (Playwright's browsers), and what the agent writes there goes with the VM. The agent runs as you, with your user's ids, never root. |
+| Open files | virtiofsd, which shares the files, keeps one open file for each file the VM has looked at, until the VM forgets it, and can hold only as many as the machine lets one process (524,288 on the devbox). The node counts them every second, and at a quarter of that it has the VM forget the files it isn't using, and says so in its log (`a VM's file share held … open files`), so an agent never meets the limit. Warm package caches stay shared: nothing is fetched again. |
 | Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). The internet and DNS work as before. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's and Android's adb, at the same `127.0.0.1` ports as before. |
 | Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the bot's, `--settings`, managed settings), the last one setting it winning. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
 | Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
@@ -401,7 +403,9 @@ not around your files:
 - **Each repo's `.git` is shared writable** with every agent working in that repo, so an agent can change another's
   branch or refs, as it can as a plain process.
 - **The machine's Claude login** (`~/.claude`) is shared with a session that uses it.
-- **The guest runs as root**, which this machine sees as you: files it writes are yours.
+- **The agent runs as you**, with your user's ids: files it writes are yours.
+- **The machine's `/usr`, `/etc` and `/opt` are readable** in the VM as they are by you, read-only: what you can't read
+  there (`/etc/shadow`), it can't either.
 
 Keep anything an agent must not read out of your home on that machine, or give agents a machine of their own.
 

@@ -24,13 +24,14 @@
 // Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port` (with `"addr":ip`, one of the
 // guest's own addresses, to listen there instead of its loopback),
 // `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`, `{"id":n,"op":"run","run","argv","cwd","env",
-// "timeoutSec","scrub"}` and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
+// "timeoutSec","scrub","root"?}` (`root`: the node's own command, never run as the agent's user) and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
 // `{"id":n,"op":"write","path","data":base64,"append"?,"mode"?}` and `{"id":n,"op":"read","path","offset","max"}`
-// (answers `{"data":base64,"size"}`); guest → node `{"id":n,"ok":{…}}` or
+// (answers `{"data":base64,"size"}`), and in a local VM `{"id":n,"op":"forget"}` (its kernel drops the files it
+// caches, and the share's server the fd it keeps for each); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // and `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines.
 import { type ChildProcess, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { chownSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
 import { createServer, connect, isIP, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
@@ -41,6 +42,7 @@ import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
+import { layHostSystem } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
 export const GUEST_PROTOCOL = 1;
@@ -203,6 +205,7 @@ export class Guest {
       else if (m.op === "write") answer = { ok: await write(m) };
       else if (m.op === "read") answer = { ok: await read(m) };
       else if (m.op === "cancel") answer = { ok: this.#runs.get(String(m.run))?.abort() ?? null };
+      else if (m.op === "forget") answer = { ok: await forget() };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
       answer = { error: (error as Error).message };
@@ -251,7 +254,7 @@ export class Guest {
       return await runConfined(
         {
           cwd,
-          argv: argv as string[],
+          argv: runArgv(argv as string[], m.root === true),
           timeoutSec,
           ...(env && typeof env === "object" ? { env: { ...(env as Record<string, string>), ...imageEnv() } } : {}),
           scrub: Array.isArray(scrub) ? scrub.filter((v): v is string => typeof v === "string") : [],
@@ -276,10 +279,13 @@ export class Guest {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     for (const f of ["host.json", "sock"]) rmSync(join(dir, f), { force: true });
     const log = openSync(join(dir, "host.log"), "w");
-    const [exe, ...pre] = selfArgv();
+    const user = guestUser();
+    // Its dir, and the one beside it its host records what its tree left in (`<dir>.left`), are the user's.
+    if (user) for (const f of [this.o.dir, dir, join(dir, "host.log")]) chownSync(f, user.uid, user.gid);
+    const [exe, ...argv] = asUser([...selfArgv(), SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])]);
     let child: ChildProcess;
     try {
-      child = spawn(exe!, [...pre, SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])], {
+      child = spawn(exe!, argv, {
         cwd,
         env: { ...(env && typeof env === "object" ? env : process.env), ...imageEnv() } as NodeJS.ProcessEnv,
         stdio: ["ignore", "ignore", log],
@@ -311,6 +317,26 @@ export class Guest {
     return info;
   }
 }
+
+/** The user a local VM's guest runs the agent as, from the kernel's command line (FLEETD_GUEST_UID and _GID, the
+ * node's own user): what runs on this machine as a plain process runs as that user, never root (Postgres refuses
+ * root, and so do others). None where the guest isn't root or wasn't given one (a hosted box, a stand-in). */
+export function guestUser(env: Record<string, string | undefined> = process.env, root = process.getuid?.() === 0): { uid: number; gid: number } | undefined {
+  const uid = Number(env.FLEETD_GUEST_UID);
+  const gid = Number(env.FLEETD_GUEST_GID);
+  if (!root || !env.FLEETD_GUEST_UID || !env.FLEETD_GUEST_GID || !Number.isInteger(uid) || !Number.isInteger(gid) || uid <= 0) return undefined;
+  return { uid, gid };
+}
+
+/** `argv` run as the guest's user, where it has one: through setpriv (util-linux's, on every Linux and in the image),
+ * which execs it, so its pid and process group are the command's own. */
+export function asUser(argv: string[], user = guestUser()): string[] {
+  if (!user) return argv;
+  return ["/usr/bin/setpriv", `--reuid=${user.uid}`, `--regid=${user.gid}`, "--clear-groups", "--", ...argv];
+}
+
+/** A `run`'s argv: as the guest's user, but for the node's own (`root`). */
+export const runArgv = (argv: string[], root: boolean, user = guestUser()): string[] => (root ? argv : asUser(argv, user));
 
 /** Where a box's image names what its own programs need (Playwright's browsers, say): its init gives them to the guest,
  * and the guest to every session host and command it starts, over what the node sent. */
@@ -437,6 +463,16 @@ async function write(m: Record<string, unknown>): Promise<number> {
   return bytes.length;
 }
 
+/** The kernel's caches a guest drops at `forget`: 2, its dentries and inodes, and with them their pages. */
+export const DROP_CACHES = "/proc/sys/vm/drop_caches";
+
+/** `forget`: the guest's kernel forgets every file it holds no open file or cwd of, which tells the share's server
+ * (virtiofsd) to close the fd it keeps for each (the node's watch, ../place/microvm.ts watchShares). */
+async function forget(): Promise<null> {
+  await writeFile(DROP_CACHES, "2");
+  return null;
+}
+
 /** `read`: up to READ_CHUNK bytes of a file of the box from `offset`, and its size. */
 async function read(m: Record<string, unknown>): Promise<{ data: string; size: number }> {
   if (typeof m.path !== "string") throw new Error("read needs a path");
@@ -489,6 +525,16 @@ export async function main(argv: string[]): Promise<number> {
   let finished!: () => void;
   const over = new Promise<void>((r) => (finished = r));
   const once = process.env.FLEETD_GUEST_ONCE === "1";
+  // A local VM's system dirs: this machine's over the image's, before anything runs on them.
+  if (listen) {
+    try {
+      const laid = layHostSystem();
+      if (laid) process.stderr.write(`${new Date().toISOString()} INFO sandbox-guest: ${laid}\n`);
+    } catch (error) {
+      warn(`can't lay this machine's system dirs over the image's: ${(error as Error).message}`);
+      return 1;
+    }
+  }
   const guest = new Guest({ listen: listen ?? "", dir, loopback: flag("--loopback") ?? "127.0.0.1", ...(once ? { done: () => finished() } : {}) });
   try {
     if (listen) await guest.serve();

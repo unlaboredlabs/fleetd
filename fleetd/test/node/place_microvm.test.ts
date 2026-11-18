@@ -6,7 +6,7 @@
 // end, the start-up sweep and `stop-all` leaving no process of it behind.
 import { afterAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -16,7 +16,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { FAILED_MS, fdLimit, forgetAt, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -24,8 +24,9 @@ import type { VmCheck } from "../../src/sandbox/host/capable.ts";
 import type { VmTools } from "../../src/sandbox/host/tools.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import type { NodeLoad } from "../../src/shared/node_link.ts";
-import { imageEnv } from "../../src/node/sandbox/guest.ts";
-import { shows } from "../../src/node/place/view.ts";
+import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
+import { apply, layHostSystem, plan } from "../../src/node/sandbox/system.ts";
+import { mountScript, shows } from "../../src/node/place/view.ts";
 import type { Reach } from "../../src/node/place/endpoint.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
@@ -587,4 +588,184 @@ test("a setup command whose box doesn't boot runs as a plain process, and the ma
   expect(status.kind).toBe("process");
   expect(status.kind === "process" && status.why).toContain("the last VM didn't start: the VM didn't start: Invalid socket path: net.sock");
   vm.close();
+});
+
+test("a box's share is watched: at a quarter of its fd limit the guest forgets its files, and the node says so", async () => {
+  const n = node();
+  let open = 10;
+  const forgot: number[] = [];
+  const logs: string[] = [];
+  const log = console.log;
+  const warn = console.warn;
+  console.log = (line: string) => logs.push(line);
+  console.warn = (line: string) => logs.push(line);
+  // A stand-in virtiofsd: a forget brings its count down to what the agent keeps open (`kept`).
+  let kept = 100;
+  const vm = new MicroVm({
+    ...n.vm.o,
+    shareFds: () => ({ open, limit: 1000 }),
+    forget: async () => {
+      forgot.push(open);
+      open = kept;
+    },
+    shareEveryMs: 3_600_000,
+  });
+  const dir = join(n.home, "hosts", "s-share");
+  try {
+    await vm.bound({ sessionId: "s-share", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    await vm.watchShares();
+    open = 249;
+    await vm.watchShares();
+    expect(forgot).toEqual([]);
+    open = 250;
+    await vm.watchShares();
+    expect(forgot).toEqual([250]);
+    expect(logs.some((l) => l.includes("INFO a VM's file share held 250 open files of its 1000: the VM forgot the ones it wasn't using, 100 now"))).toBe(true);
+    // The agent keeps 600 open itself: forgetting again only once the count is an eighth of the limit over that, and
+    // the node warns, once, that the agent's own files near the limit.
+    kept = 600;
+    open = 300;
+    await vm.watchShares();
+    expect(forgot).toEqual([250, 300]);
+    expect(logs.filter((l) => l.includes("WARN the agent in a VM keeps 600 files open itself, of its file share's 1000")).length).toBe(1);
+    open = 700;
+    await vm.watchShares();
+    expect(forgot).toEqual([250, 300]);
+    open = 725;
+    await vm.watchShares();
+    expect(forgot).toEqual([250, 300, 725]);
+    expect(logs.filter((l) => l.includes("WARN the agent in a VM keeps")).length).toBe(1);
+    // Once what it keeps falls, a quarter of the limit is the mark again.
+    kept = 50;
+    open = 60;
+    await vm.watchShares();
+    open = 250;
+    await vm.watchShares();
+    expect(forgot).toEqual([250, 300, 725, 250]);
+  } finally {
+    console.log = log;
+    console.warn = warn;
+    await vm.end(dir);
+    vm.close();
+  }
+  expect(forgetAt(524_288, 0)).toBe(131_072);
+  expect(forgetAt(524_288, 120_000)).toBe(185_536);
+});
+
+test("a box's guest is told to forget through its link, and a guest that can't says why in the node's log", async () => {
+  const n = node();
+  const logs: string[] = [];
+  const warn = console.warn;
+  console.warn = (line: string) => logs.push(line);
+  // The real guest (not root here) can't write the kernel's drop_caches: the op reaches it, and its error the log.
+  const vm = new MicroVm({ ...n.vm.o, shareFds: () => ({ open: 500, limit: 1000 }), shareEveryMs: 3_600_000 });
+  const dir = join(n.home, "hosts", "s-forget");
+  try {
+    await vm.bound({ sessionId: "s-forget", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    await vm.watchShares();
+    const line = logs.find((l) => l.includes("WARN a VM's file share holds 500 open files of its 1000, and the VM couldn't forget the ones it isn't using"));
+    expect(line).toBeDefined();
+    expect(line).not.toContain("no such op");
+  } finally {
+    console.warn = warn;
+    await vm.end(dir);
+    vm.close();
+  }
+});
+
+test.skipIf(process.platform !== "linux")("a process's open files and its limit are read from /proc", () => {
+  const before = openFds(process.pid);
+  const fd = openSync(join(root, "an-open-file"), "w");
+  expect(openFds(process.pid)).toBe(before + 1);
+  closeSync(fd);
+  expect(fdLimit(process.pid)).toBeGreaterThan(0);
+});
+
+test("a box shares this machine's system dirs read-only, in a share of their own, links as links, fleetd's hidden there too", () => {
+  const system = [{ name: "usr" }, { name: "opt" }, { name: "bin", link: "usr/bin" }];
+  const script = mountScript({ home: "/home/u", hidden: ["/home/u/.fleetd", "/opt/fleetd"], shares: [] }, "/v", ["/vm/virtiofsd", "view"], { at: "/h", exec: ["/vm/virtiofsd", "host"] }, system);
+  for (const want of [
+    "mount -t tmpfs -o mode=0755 fleetd-system '/h'",
+    "mount --rbind '/usr' '/h/usr'",
+    "mount -o remount,bind,ro '/h/usr'",
+    "mount -o remount,bind,ro '/h/opt'",
+    "ln -s 'usr/bin' '/h/bin'",
+    "[ ! -d '/h/opt/fleetd' ] || mount -t tmpfs -o mode=0700 fleetd-hidden '/h/opt/fleetd'",
+    "mount -t tmpfs -o mode=0700 fleetd-hidden '/v/home/u/.fleetd'",
+    "'/vm/virtiofsd' 'host' &\nexec '/vm/virtiofsd' 'view'",
+  ])
+    expect(script).toContain(want);
+  // A hidden dir in a system dir is hidden there, never put at `/opt` in the view, which would shadow the guest's /opt.
+  expect(script).not.toContain("'/v/opt/fleetd'");
+  expect(script.indexOf("'/h/opt'")).toBeLessThan(script.indexOf("'/h/opt/fleetd'"));
+  // The share's own virtiofsd: read-only, cached as long as the guest likes; the view's checks each file with the host.
+  const launcher = launcherScript(
+    { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
+    0,
+  );
+  for (const want of ["'\\''--socket-path=host.sock'\\'' '\\''--shared-dir=/n/hosts/s/host'\\''", "'\\''--cache=always'\\'' '\\''--readonly'\\''", "'tag=host,socket=host.sock'", "[ -S host.sock ]"])
+    expect(launcher).toContain(want);
+});
+
+test("a guest lays this machine's system dirs over the image's: /usr first, dirs before links, its own network files kept", () => {
+  const steps = plan([{ name: "lib64", link: "usr/lib" }, { name: "etc" }, { name: "usr" }, { name: "lib32" }, { name: "home" }], (name) => name !== "lib32", "/s", "/img");
+  expect(steps).toEqual([
+    { name: "usr", lower: ["/s/usr", "/img/usr"] },
+    { name: "etc", lower: ["/s/etc", "/img/etc"] },
+    { name: "lib32", lower: ["/s/lib32"] },
+    { name: "lib64", link: "usr/lib" },
+  ]);
+  // On a stand-in root: the overlay mounts are recorded, and what they'd show is written as this machine's /etc.
+  const r = join(root, "guest-root");
+  mkdirSync(join(r, "etc"), { recursive: true });
+  writeFileSync(join(r, "etc/resolv.conf"), "nameserver 192.0.2.53\n");
+  writeFileSync(join(r, "etc/hostname"), "fleetd-box\n");
+  symlinkSync("usr/lib64", join(r, "lib64"));
+  mkdirSync(join(r, "lib32-real"));
+  const mounts: string[][] = [];
+  apply(steps, {
+    root: r,
+    layers: join(r, "run/fleetd/system"),
+    prepare: () => {},
+    overlay: (target, lower, upper, work) => {
+      mounts.push([target, lower.join(":"), upper, work]);
+      // This machine's /etc over the guest's: its resolv.conf a link to its own stub, which the guest's replaces.
+      if (target.endsWith("/etc")) {
+        rmSync(join(r, "etc/resolv.conf"));
+        symlinkSync("../run/systemd/resolve/stub-resolv.conf", join(r, "etc/resolv.conf"));
+        writeFileSync(join(r, "etc/gitconfig"), "[user]\n\tname = u");
+      }
+    },
+  });
+  expect(mounts.map((m) => m[0])).toEqual([join(r, "usr"), join(r, "etc"), join(r, "lib32")]);
+  expect(mounts[0]!.slice(1)).toEqual(["/s/usr:/img/usr", join(r, "run/fleetd/system/usr/up"), join(r, "run/fleetd/system/usr/work")]);
+  expect(readlinkSync(join(r, "lib64"))).toBe("usr/lib");
+  expect(readFileSync(join(r, "etc/resolv.conf"), "utf8")).toBe("nameserver 192.0.2.53\n");
+  expect(readFileSync(join(r, "etc/hostname"), "utf8")).toBe("fleetd-box\n");
+  expect(readFileSync(join(r, "etc/gitconfig"), "utf8")).toBe("[user]\n\tname = u\n[safe]\n\tdirectory = *\n");
+  expect(() => apply([{ name: "usr", lower: ["/a:b"] }], { root: r, layers: join(r, "l"), prepare: () => {}, overlay: () => {} })).toThrow("can't layer");
+  // Only the VM's own guest lays them: never a stand-in an agent in the box runs (not root, no kernel's user).
+  expect(layHostSystem({ FLEETD_GUEST_UID: "1000" })).toBeUndefined();
+  expect(layHostSystem({})).toBeUndefined();
+});
+
+test("a local VM's guest runs the agent as this machine's user, never root; elsewhere as it is", () => {
+  const env = { FLEETD_GUEST_UID: "1000", FLEETD_GUEST_GID: "1001" };
+  expect(guestUser(env, true)).toEqual({ uid: 1000, gid: 1001 });
+  expect(guestUser(env, false)).toBeUndefined();
+  expect(guestUser({}, true)).toBeUndefined();
+  expect(guestUser({ FLEETD_GUEST_UID: "0", FLEETD_GUEST_GID: "0" }, true)).toBeUndefined();
+  expect(asUser(["bun", "test"], { uid: 1000, gid: 1001 })).toEqual(["/usr/bin/setpriv", "--reuid=1000", "--regid=1001", "--clear-groups", "--", "bun", "test"]);
+  expect(asUser(["bun", "test"], undefined)).toEqual(["bun", "test"]);
+  // The node's own commands (its pin to Claude's relay, which changes the box's loopback) stay root.
+  expect(runArgv(["/bin/sh", "-c", "pin"], true, { uid: 1000, gid: 1001 })).toEqual(["/bin/sh", "-c", "pin"]);
+  expect(runArgv(["make"], false, { uid: 1000, gid: 1001 })[0]).toBe("/usr/bin/setpriv");
+  expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, uid: 1000, gid: 1001 })).toContain("fleetd.once=1 fleetd.uid=1000 fleetd.gid=1001");
+  const script = launcherScript(
+    { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
+    0,
+  );
+  const uid = process.getuid!();
+  expect(script).toContain(`--translate-uid=map:${uid}:0:1`);
+  expect(script).toContain(`fleetd.uid=${uid}`);
 });

@@ -196,7 +196,7 @@ const said = (o: RunOutcome) => (o.notRun ?? o.outputTail.trim().split("\n").sli
  * plain words. */
 export async function reach(box: Box, r: Reach): Promise<void> {
   if (r.pin) {
-    const pinned = await box.run({ argv: ["/bin/sh", "-c", pinScript(r.pin)], cwd: "/", timeoutSec: 15 });
+    const pinned = await box.run({ argv: ["/bin/sh", "-c", pinScript(r.pin)], cwd: "/", timeoutSec: 15, root: true });
     if (pinned.exitCode !== 0) throw new Error(`the box couldn't point ${r.label} at the node: ${said(pinned)}`);
   }
   if (r.relay) {

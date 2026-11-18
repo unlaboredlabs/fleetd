@@ -50,6 +50,8 @@ describe("the slots, against another build-slot", () => {
     writeFileSync(join(home, "node.json"), JSON.stringify({ hub: "http://127.0.0.1:1", machineId: "devbox", name: "devbox", enrolled: true, buildSlots: 1 }));
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FLEETD_HOME: home };
     delete (env as Record<string, string | undefined>).FLEETD_BUILD_SLOT;
+    // An agent in a VM runs these with its box's way to the node's slots, which isn't this test's.
+    delete (env as Record<string, string | undefined>).FLEETD_BUILD_SLOT_SOCK;
     return { home, env };
   };
   const cmd = (which: "bun" | "rust", home: string) =>

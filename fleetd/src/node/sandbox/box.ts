@@ -90,14 +90,16 @@ export class Box {
   }
 
   /** Runs a command in the box (a setup command), confined to its cwd, its group killed at its timeout or `r.signal`.
-   * A link that drops meanwhile ends the wait with a run that didn't finish. */
-  async run(r: ConfinedRun): Promise<RunOutcome> {
+   * A link that drops meanwhile ends the wait with a run that didn't finish. As the agent's user where the guest runs
+   * it as one (a local VM's), unless `root`: the node's own commands in the box (its pin to Claude's relay). */
+  async run(r: ConfinedRun & { root?: boolean }): Promise<RunOutcome> {
     const run = `r${++this.#runs}`;
     const cancel = () => void this.#request({ op: "cancel", run }).catch(() => {});
     r.signal?.addEventListener("abort", cancel, { once: true });
     try {
       const m: Record<string, unknown> = { op: "run", run, argv: r.argv, cwd: r.cwd, timeoutSec: r.timeoutSec, scrub: r.scrub ?? [] };
       if (r.env) m.env = r.env;
+      if (r.root) m.root = true;
       return (await this.#request(m, r.timeoutSec * 1000 + ANSWER_MS)) as RunOutcome;
     } catch (error) {
       return { exitCode: null, outputTail: "", timedOut: false, notRun: `the box didn't run it: ${(error as Error).message}` };
@@ -163,6 +165,12 @@ export class Box {
       at += b.length;
       if (b.length === 0 || at >= got.size) return new Uint8Array(Buffer.concat(parts));
     }
+  }
+
+  /** Has the box's kernel forget the files it caches but holds no open file of (a local VM's: its share's server
+   * then closes the fd it keeps for each). */
+  async forget(): Promise<void> {
+    await this.#request({ op: "forget" }, ANSWER_MS * 4);
   }
 
   /** Lets go of the link (the node's shutdown): the guest and its session go on, for the next node to dial. */

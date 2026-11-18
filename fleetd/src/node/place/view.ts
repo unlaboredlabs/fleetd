@@ -3,11 +3,13 @@
 // plain process has it, but fleetd's own folders in it (the fleetd dir, the node's home: the hub's database, the vault,
 // keys, other sessions' files, the node's own socket) are hidden, and only what the session runs with is put back: its
 // worktree, git dir and scratch writable, its session files, the fleetd binary, the update hold, its order's variables
-// and the tools on its PATH read-only. Paths in the guest's own system dirs (/usr, /etc…) are the guest's.
+// and the tools on its PATH read-only. This machine's own system dirs (/usr, /etc, /opt and the /bin, /lib… beside
+// them) are a second share (`host`), read-only, which the guest lays over its image's (../sandbox/system.ts): a tool
+// installed in the home that links this machine's libraries finds them in the box.
 //
 // The view is assembled by bind mounts in a user and mount namespace of its own, where virtiofsd then serves it: nothing
 // is mounted on this machine, and nothing needs root.
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 /** One path put back in the view, at the same path. */
@@ -22,7 +24,8 @@ export type View = {
   shares: Share[];
 };
 
-/** The guest's own top-level dirs: a path there is the guest's, never this machine's. */
+/** The guest's own top-level dirs: a path there is never put back by itself (the guest's system is this machine's own
+ * system dirs over its image's, HOST_SYSTEM). */
 const SYSTEM = new Set(["bin", "boot", "dev", "etc", "lib", "lib32", "lib64", "libx32", "opt", "proc", "root", "run", "sbin", "sys", "tmp", "usr", "var"]);
 
 export const under = (path: string, root: string) => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
@@ -138,15 +141,54 @@ export const covers = (view: View, shares: Share[]) => shares.every((s) => holds
 
 const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
+/** This machine's system dirs a box's guest lays over its image's own (../sandbox/system.ts), read-only. */
+export const HOST_SYSTEM = ["usr", "etc", "opt", "bin", "sbin", "lib", "lib32", "lib64", "libx32"] as const;
+
+/** One of this machine's system dirs: a dir, or a link (merged /usr's /bin → usr/bin) to `link`. */
+export type SystemDir = { name: string; link?: string };
+
+/** This machine's system dirs, as they are here. */
+export function hostSystem(root = "/"): SystemDir[] {
+  return HOST_SYSTEM.flatMap((name) => {
+    const path = join(root, name);
+    try {
+      const st = lstatSync(path);
+      if (st.isSymbolicLink()) return [{ name, link: readlinkSync(path) }];
+      return st.isDirectory() ? [{ name }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** Where this machine's system dirs are shared from: a dir of the box's, served by a virtiofsd of its own (`exec`). */
+export type SystemShare = { at: string; exec: string[] };
+
 /**
  * The shell lines that assemble `view` at `at` (an empty dir) and then exec `exec`: run as root of a user and mount
- * namespace of their own (`unshare --user --map-root-user --mount`), so every mount is that namespace's alone.
+ * namespace of their own (`unshare --user --map-root-user --mount`), so every mount is that namespace's alone. With
+ * `sys`, this machine's system dirs are assembled at `sys.at` too, read-only, and served first by `sys.exec`, in the
+ * background: a share of their own, which never changes under the box, so the guest caches it as long as it likes.
  */
-export function mountScript(view: View, at: string, exec: string[]): string {
+export function mountScript(view: View, at: string, exec: string[], sys?: SystemShare, system: SystemDir[] = hostSystem()): string {
   const v = (p: string) => q(at + p);
   const lines = ["set -e", `mount -t tmpfs -o mode=0755 fleetd-view ${q(at)}`];
   lines.push(`mkdir -p ${v(view.home)}`, `mount --rbind ${q(view.home)} ${v(view.home)}`);
-  for (const h of [...view.hidden].sort((a, b) => a.length - b.length)) lines.push(`mkdir -p ${v(h)}`, `mount -t tmpfs -o mode=0700 fleetd-hidden ${v(h)}`);
+  const h = (p: string) => q(`${sys!.at}${p}`);
+  if (sys) {
+    // Each one read-only at `<sys.at>/<name>`; a link stays the link it is here.
+    lines.push(`mount -t tmpfs -o mode=0755 fleetd-system ${h("")}`);
+    for (const d of system) {
+      if (d.link !== undefined) lines.push(`ln -s ${q(d.link)} ${h(`/${d.name}`)}`);
+      else lines.push(`mkdir -p ${h(`/${d.name}`)}`, `mount --rbind ${q(`/${d.name}`)} ${h(`/${d.name}`)}`, `mount -o remount,bind,ro ${h(`/${d.name}`)}`);
+    }
+  }
+  for (const hidden of [...view.hidden].sort((a, b) => a.length - b.length)) {
+    // Hidden in the system dirs too, where one is there (it never is unless fleetd's dir was put in one).
+    if (sys && system.some((d) => d.link === undefined && under(hidden, `/${d.name}`)))
+      lines.push(`[ ! -d ${h(hidden)} ] || mount -t tmpfs -o mode=0700 fleetd-hidden ${h(hidden)}`);
+    if (!guestOwn(hidden)) lines.push(`mkdir -p ${v(hidden)}`, `mount -t tmpfs -o mode=0700 fleetd-hidden ${v(hidden)}`);
+  }
   for (const s of [...view.shares].sort((a, b) => a.path.length - b.path.length)) {
     if (!existsSync(s.path)) continue;
     const dir = statSync(s.path).isDirectory();
@@ -155,6 +197,7 @@ export function mountScript(view: View, at: string, exec: string[]): string {
     lines.push(`mount --rbind ${q(s.path)} ${v(s.path)}`);
     if (!s.rw) lines.push(`mount -o remount,bind,ro ${v(s.path)}`);
   }
+  if (sys) lines.push(`${sys.exec.map(q).join(" ")} &`);
   lines.push(`exec ${exec.map(q).join(" ")}`);
   return `${lines.join("\n")}\n`;
 }

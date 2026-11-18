@@ -68,7 +68,8 @@ const tools = netTools();
 const nsOk =
   process.platform === "linux" &&
   !("missing" in tools) &&
-  Bun.spawnSync(["unshare", "--user", "--map-root-user", "--net", "true"], { stdout: "ignore", stderr: "ignore" }).success;
+  // A kernel with dummy links (a VM's guest kernel has none: this runs where an agent does).
+  Bun.spawnSync(["unshare", "--user", "--map-root-user", "--net", (tools as { ip: string }).ip, "link", "add", "d0", "type", "dummy"], { stdout: "ignore", stderr: "ignore" }).success;
 
 test.skipIf(!nsOk)("in a real network namespace, this machine's addresses go nowhere while the rest is routed, and follow a change", async () => {
   const { ip, nsenter } = tools as { ip: string; nsenter: string };

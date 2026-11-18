@@ -9,6 +9,9 @@
 //   socket (`CONNECT <port>`), over which the node holds one link (../sandbox/box.ts) for the session host's lines, the
 //   session's node.sock calls, its TCP forwards and its relay to Claude (./endpoint.ts), which is checked from inside the
 //   box before the agent starts there.
+// In the guest, the agent runs as this machine's user over this machine's own system dirs (read-only, over the image's:
+// ../sandbox/system.ts), so a tool that runs here as a plain process runs there too; and the node watches the files
+// each box's share holds open (`watchShares`), which the guest forgets before they reach virtiofsd's limit.
 // A box boots for a session's setup commands (`run`) or its start, whichever comes first, and its start reuses it when
 // it shows every path the session needs. It goes with its session host (the guest powers off once it ended,
 // `fleetd.once`), at `stop` and `end`, and by the session row's recorded pid, which is the launcher's. A session that
@@ -16,7 +19,7 @@
 // session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
 // a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -25,9 +28,10 @@ import type { LeadSocketHooks } from "../lead/index.ts";
 import { leadSocketPath } from "../lead/index.ts";
 import { agentScoreLine } from "../oom.ts";
 import { HostLink, LaunchError, prepare, readRegistration, stop as stopHost, startOf, type Launch, type Registration } from "../runner/host.ts";
-import { table } from "../runner/procs.ts";
+import { descendants, table } from "../runner/procs.ts";
 import { hostScope, spawnScoped, type Scope } from "../runner/scope.ts";
 import { Box } from "../sandbox/box.ts";
+import { HOST_TAG } from "../sandbox/system.ts";
 import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
 import { ensureTools, findTools, vmDir, type VmTools } from "../../sandbox/host/tools.ts";
 import { fleetdDir } from "../../shared/home.ts";
@@ -60,6 +64,8 @@ const CHECK_EVERY_MS = 60_000;
 export const ADDRS_EVERY_MS = 2_000;
 /** How long after a box that failed new sessions run as plain processes. */
 export const FAILED_MS = 10 * 60_000;
+/** How often the node counts the files each box's share holds open. */
+export const SHARE_EVERY_MS = 1_000;
 
 export type PlaceFor = { sessionId: string; dir: string; role: SessionRole };
 
@@ -80,9 +86,23 @@ export type BootPlan = {
   blocked: string[];
   scope?: Scope;
 };
-/** What a box's boot leaves: its launcher, its VMM and helpers once they run, and the shell holding its network
- * namespace. */
-export type Booted = { leader: BoxProc; helpers: BoxProc[]; net?: BoxProc };
+/** What a box's boot leaves: its launcher, its VMM and helpers once they run, virtiofsd among them, and the shell
+ * holding its network namespace. */
+export type Booted = { leader: BoxProc; helpers: BoxProc[]; fs?: BoxProc; net?: BoxProc };
+
+/** The files a box's share (virtiofsd) holds open, and how many it may. */
+export type ShareFds = { open: number; limit: number };
+
+/**
+ * The count at which a box's guest is told to forget its files (`Box.forget`), given the lowest count seen since it
+ * last was: a quarter of the share's limit, or an eighth over what the agent's own open files keep, whichever is more.
+ * virtiofsd keeps an fd for each file the guest's kernel has looked up until the kernel forgets it, which a guest with
+ * memory to spare never does by itself: a `bun install` over a large cache took one to its limit in two minutes, and
+ * every file open in the box failed after (ENFILE). Forgetting at a quarter leaves the other three for the seconds
+ * before the next count, at any rate a guest looks files up.
+ */
+export const forgetAt = (limit: number, low: number) => Math.max(Math.floor(limit / 4), low + Math.floor(limit / 8));
+
 
 export type MicroVmOptions = {
   /** The node's home. */
@@ -109,7 +129,16 @@ export type MicroVmOptions = {
   /** The person's home, shared whole. */
   userHome?: string;
   goneMs?: number;
+  /** How a box's share's open files are counted, and how its guest is told to forget its files (the stand-ins'), and
+   * how often. */
+  shareFds?: (r: BoxRecord) => ShareFds | undefined;
+  forget?: (box: Box) => Promise<void>;
+  shareEveryMs?: number;
 };
+
+/** What the share watch knows of one box: its virtiofsd processes, and the lowest count since it last forgot (0
+ * before it ever did). */
+type ShareWatch = { procs?: BoxProc[]; low: number; full?: boolean };
 
 /** A box the node holds a link to; `view` is what it shows, absent for a record from before it was kept. */
 type Held = { box: Box; view: View | undefined; record: BoxRecord };
@@ -122,10 +151,58 @@ export class MicroVm {
   #watch: ReturnType<typeof setInterval>;
   #warned = new Set<string>();
   #failed: { until: number; why: string } | undefined;
+  #shareWatch: ReturnType<typeof setInterval>;
+  #shares = new Map<string, ShareWatch>();
+  #counting = false;
 
   constructor(readonly o: MicroVmOptions) {
     this.#watch = setInterval(() => void this.keepOff(), ADDRS_EVERY_MS);
     this.#watch.unref?.();
+    this.#shareWatch = setInterval(() => void this.watchShares(), o.shareEveryMs ?? SHARE_EVERY_MS);
+    this.#shareWatch.unref?.();
+  }
+
+  /**
+   * Counts the files each running box's share holds open, and has a box whose count reached `forgetAt` forget the
+   * files it isn't using, so no agent ever meets the share's limit; says so in the node's log, and warns when what
+   * the agent itself keeps open nears it.
+   */
+  async watchShares(): Promise<void> {
+    if (this.#counting || !this.#boxes.size) return;
+    this.#counting = true;
+    try {
+      for (const [dir, going] of [...this.#boxes]) {
+        const held = Bun.peek(going) as Held | Error | Promise<Held>;
+        if (held instanceof Promise || held instanceof Error) continue;
+        const w = this.#shares.get(dir) ?? { low: 0 };
+        this.#shares.set(dir, w);
+        const count = () => (this.o.shareFds ?? ((r) => shareFds(r, w)))(held.record);
+        const fds = count();
+        if (!fds) continue;
+        w.low = Math.min(w.low, fds.open);
+        if (fds.open >= forgetAt(fds.limit, w.low)) await this.#forget(dir, held, w, fds, count);
+      }
+    } finally {
+      this.#counting = false;
+    }
+  }
+
+  async #forget(dir: string, held: Held, w: ShareWatch, before: ShareFds, count: () => ShareFds | undefined): Promise<void> {
+    const session = dir.split("/").at(-1)!;
+    try {
+      await (this.o.forget ? this.o.forget(held.box) : held.box.forget());
+    } catch (error) {
+      console.warn(`${nowIso()} WARN a VM's file share holds ${before.open} open files of its ${before.limit}, and the VM couldn't forget the ones it isn't using {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+      return;
+    }
+    // virtiofsd closes them as the guest's word of each reaches it.
+    await Bun.sleep(100);
+    const after = count()?.open ?? before.open;
+    w.low = after;
+    console.log(`${nowIso()} INFO a VM's file share held ${before.open} open files of its ${before.limit}: the VM forgot the ones it wasn't using, ${after} now {"sessionId":"${session}"}`);
+    const full = after >= before.limit / 2;
+    if (full && !w.full) console.warn(`${nowIso()} WARN the agent in a VM keeps ${after} files open itself, of its file share's ${before.limit}: at ${before.limit} every file open in its VM fails {"sessionId":"${session}"}`);
+    w.full = full;
   }
 
   #addrs(): string[] {
@@ -280,7 +357,7 @@ export class MicroVm {
     const endpoint = claudeEndpoint(l);
     let args: string[];
     try {
-      // The guest is root: the relay takes the endpoint's own port, and claude calls the URL as set.
+      // The guest helper is root: the relay takes the endpoint's own port, and claude calls the URL as set.
       const r = reachOf(endpoint.url, { lowPorts: true });
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
@@ -302,8 +379,8 @@ export class MicroVm {
         held.record.tcp = [...new Set([...held.record.tcp, ...ports])];
         writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
       }
-      // The guest runs as root over files the host's user owns, which claude refuses to skip its prompts for unless it
-      // knows it's in a sandbox.
+      // The guest runs the agent as this machine's user, but as root when that is root (a node run as root), which
+      // claude refuses to skip its prompts for unless it knows it's in a sandbox.
       const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
       const leader = held.record.leader;
       const registration: Registration = { protocol: info.protocol, hostPid: leader.pid, hostStart: leader.start, pid: leader.pid, start: leader.start, marker: "", refused: info.refused ?? null };
@@ -343,7 +420,16 @@ export class MicroVm {
     const blocked = this.#addrs();
     const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, ...(scope ? { scope } : {}) };
     const booted = await (this.o.boot ?? bootCloudHypervisor)(plan);
-    const record: BoxRecord = { kind: "microvm", leader: booted.leader, helpers: booted.helpers, tcp: [], port: GUEST_PORT, view, ...(booted.net ? { net: booted.net, blocked } : {}) };
+    const record: BoxRecord = {
+      kind: "microvm",
+      leader: booted.leader,
+      helpers: booted.helpers,
+      tcp: [],
+      port: GUEST_PORT,
+      view,
+      ...(booted.fs ? { fs: booted.fs } : {}),
+      ...(booted.net ? { net: booted.net, blocked } : {}),
+    };
     writeFileSync(boxFile(s.dir), JSON.stringify(record));
     try {
       const box = await this.#open(s.dir, s.sessionId, record, at + BOOT_MS);
@@ -408,6 +494,7 @@ export class MicroVm {
   async #drop(dir: string): Promise<number> {
     const held = await this.#boxes.get(dir)?.catch(() => undefined);
     this.#boxes.delete(dir);
+    this.#shares.delete(dir);
     const ended = await destroyBox(dir);
     held?.box.close();
     return ended;
@@ -427,6 +514,7 @@ export class MicroVm {
   /** Lets go of every box's link (the node's shutdown): the boxes and their sessions go on for the next node. */
   close(): void {
     clearInterval(this.#watch);
+    clearInterval(this.#shareWatch);
     for (const held of this.#boxes.values()) void held.then((h) => h.box.close(), () => {});
     this.#boxes.clear();
   }
@@ -515,7 +603,7 @@ function lazyHooks(get: () => LeadSocketHooks | undefined): LeadSocketHooks {
 
 /** The box's sockets, in its host dir. The launcher's tools are given them relative to that dir (their cwd), so no
  * address outgrows a socket's 108 bytes however deep the node's home is. */
-export const SOCKS = { api: "api.sock", fs: "fs.sock", net: "net.sock", vsock: "vsock.sock" } as const;
+export const SOCKS = { api: "api.sock", fs: "fs.sock", host: "host.sock", net: "net.sock", vsock: "vsock.sock" } as const;
 
 /** Where to connect to the socket `name` in `dir`: its path, or on Linux, when that is too long for a socket address,
  * the same socket through an open fd of the dir (`done` closes it once connected), as the session host's dial does. */
@@ -563,6 +651,9 @@ export function vsockDial(dir: string, port: number): Promise<Duplex> {
 
 const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
+/** This machine's user, which the guest runs the agent as. */
+const ids = () => ({ uid: process.getuid?.() ?? 1000, gid: process.getgid?.() ?? 1000 });
+
 /** The last lines of the VM's console, for why it didn't come up. */
 function consoleTail(dir: string): string {
   try {
@@ -573,8 +664,9 @@ function consoleTail(dir: string): string {
   }
 }
 
-/** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh). */
-export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number }): string {
+/** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the
+ * user the guest runs the agent as (this machine's own, sandbox-guest's FLEETD_GUEST_UID and _GID). */
+export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number }): string {
   return [
     "console=ttyS0",
     "root=/dev/vda",
@@ -591,6 +683,7 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
     `fleetd.net=${GUEST_ADDR}/24,${GUEST_GW}`,
     ...(p.dns.length ? [`fleetd.dns=${p.dns.join(",")}`] : []),
     "fleetd.once=1",
+    ...(p.uid !== undefined && p.gid !== undefined ? [`fleetd.uid=${p.uid}`, `fleetd.gid=${p.gid}`] : []),
   ].join(" ");
 }
 
@@ -599,14 +692,32 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
  * that means this machine. */
 export const PASTA_FLAGS = ["-q", "-f", "--config-net", "-t", "none", "-u", "none", "-T", "none", "-U", "none", "--no-map-gw"];
 
-/** The launcher's script, run in the box's host dir: passt and virtiofsd in the background, then the VMM once both
- * listen, each with the box's sockets by name in that dir (SOCKS); it ends with the VMM, and its helpers with it. passt runs in a network namespace of its own, which pasta links to this machine's network,
- * behind a shell that first routes this machine's own addresses (`blocks`, ./net.ts) nowhere. Their pids go to `pids`
- * as `<vmm> <pasta> <virtiofsd>`. */
+/** The launcher's script, run in the box's host dir: passt and virtiofsd in the background, then the VMM once they
+ * listen, each with the box's sockets by name in that dir (SOCKS); it ends with the VMM, and its helpers with it. passt
+ * runs in a network namespace of its own, which pasta links to this machine's network, behind a shell that first routes
+ * this machine's own addresses (`blocks`, ./net.ts) nowhere. virtiofsd serves the view (`view`), and a second one, its
+ * child, this machine's system dirs (`host`, read-only, cached by the guest as long as it likes: they don't change
+ * under a box). Their pids go to `pids` as `<vmm> <pasta> <virtiofsd>`. */
 export function launcherScript(b: BootPlan, now: number): string {
   const { dir, tools, check, view } = b;
   const viewDir = join(dir, "view");
-  const virtiofsd = [tools.virtiofsd, `--socket-path=${SOCKS.fs}`, `--shared-dir=${viewDir}`, "--sandbox=namespace", "--announce-submounts", "--cache=auto", "--log-level=error"];
+  // In the namespace it runs in, this machine's user is root: its files are the guest's agent's (its user, at the same
+  // ids, kernelCmdline), and the guest's root's are this machine's user's too.
+  const { uid, gid } = ids();
+  const share = (sock: string, at: string, more: string[]) => [
+    tools.virtiofsd,
+    `--socket-path=${sock}`,
+    `--shared-dir=${at}`,
+    "--sandbox=namespace",
+    "--announce-submounts",
+    ...more,
+    `--translate-uid=map:${uid}:0:1`,
+    `--translate-gid=map:${gid}:0:1`,
+    "--log-level=error",
+  ];
+  const virtiofsd = share(SOCKS.fs, viewDir, ["--cache=auto"]);
+  const hostDir = join(dir, "host");
+  const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly"]);
   const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
   // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
   const inNamespace = [`cd ${q(dir)} || exit 1`, blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
@@ -618,7 +729,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--kernel",
     tools.kernel,
     "--cmdline",
-    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now }),
+    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid }),
     "--disk",
     `path=${tools.root},readonly=on,image_type=raw`,
     "--cpus",
@@ -627,6 +738,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     `size=${GUEST_MEM_BYTES / 2 ** 20}M,shared=on`,
     "--fs",
     `tag=view,socket=${SOCKS.fs}`,
+    `tag=${HOST_TAG},socket=${SOCKS.host}`,
     "--net",
     `vhost_user=true,socket=${SOCKS.net},num_queues=2`,
     "--vsock",
@@ -637,7 +749,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     "off",
   ];
   const vmmLine = check.kvm === "sg" ? `sg kvm -c ${q(`exec ${vmm.map(q).join(" ")}`)}` : vmm.map(q).join(" ");
-  const views = mountScript(view, viewDir, virtiofsd);
+  const views = mountScript(view, viewDir, virtiofsd, { at: hostDir, exec: host });
   return [
     agentScoreLine(),
     `cd ${q(dir)} || exit 1`,
@@ -646,7 +758,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     `unshare --user --map-root-user --mount --propagation private -- /bin/sh -c ${q(views)} 2>>box.log &`,
     "v=$!",
     "i=0",
-    'until [ -S net.sock ] && [ -S fs.sock ]; do i=$((i+1)); if [ $i -gt 1000 ] || ! kill -0 $p $v 2>/dev/null; then echo "passt or virtiofsd didn\'t start" >>box.log; kill $p $v 2>/dev/null; exit 1; fi; sleep 0.01; done',
+    'until [ -S net.sock ] && [ -S fs.sock ] && [ -S host.sock ]; do i=$((i+1)); if [ $i -gt 1000 ] || ! kill -0 $p $v 2>/dev/null; then echo "passt or virtiofsd didn\'t start" >>box.log; kill $p $v 2>/dev/null; exit 1; fi; sleep 0.01; done',
     `${vmmLine} 2>>box.log &`,
     "c=$!",
     'echo "$c $p $v" > pids',
@@ -660,6 +772,7 @@ export function launcherScript(b: BootPlan, now: number): string {
 /** Starts a box's launcher, in a scope of its own that outlives the node, and waits for its VMM to run. */
 export async function bootCloudHypervisor(b: BootPlan): Promise<Booted> {
   mkdirSync(join(b.dir, "view"), { recursive: true });
+  mkdirSync(join(b.dir, "host"), { recursive: true });
   writeFileSync(join(b.dir, "blocks"), blockLines(b.blocked));
   const log = openSync(join(b.dir, "box.log"), "a");
   let child;
@@ -690,7 +803,8 @@ export async function bootCloudHypervisor(b: BootPlan): Promise<Booted> {
       const pasta = pids[1];
       const holder = pasta && table().find((p) => p.ppid === pasta.pid && p.start !== undefined && !p.zombie);
       const net = holder ? { pid: holder.pid, start: holder.start! } : undefined;
-      return { leader, helpers: net ? [...pids, net] : pids, ...(net ? { net } : {}) };
+      const fs = pids.length === 3 ? pids[2] : undefined;
+      return { leader, helpers: net ? [...pids, net] : pids, ...(fs ? { fs } : {}), ...(net ? { net } : {}) };
     }
     if (startOf(pid) !== start || child.exitCode !== null) throw new Error(`the VM didn't start: ${boxLog(b.dir)}`);
     if (Date.now() >= until) {
@@ -700,6 +814,45 @@ export async function bootCloudHypervisor(b: BootPlan): Promise<Booted> {
       throw new Error(`the VM's helpers didn't start within 15 s: ${boxLog(b.dir)}`);
     }
     await Bun.sleep(10);
+  }
+}
+
+/** How many files `pid` holds open: its fd dir's size (Linux 6.2 and later), else its entries. */
+export function openFds(pid: number): number {
+  const fd = `/proc/${pid}/fd`;
+  const size = statSync(fd).size;
+  return size > 0 ? size : readdirSync(fd).length;
+}
+
+/** `pid`'s limit on open files, from its own limits. */
+export function fdLimit(pid: number): number | undefined {
+  const line = readFileSync(`/proc/${pid}/limits`, "utf8")
+    .split("\n")
+    .find((l) => l.startsWith("Max open files"));
+  const soft = Number(line?.slice("Max open files".length).trim().split(/\s+/u)[0]);
+  return Number.isFinite(soft) && soft > 0 ? soft : undefined;
+}
+
+/** The files the box's share holds open and its limit: of its virtiofsd process nearest its own limit (one serves the
+ * view and one this machine's system dirs, each from a child in a sandbox of its own). The processes are found once,
+ * and again only when one has gone, and kept in `w`. */
+function shareFds(r: BoxRecord, w: ShareWatch): ShareFds | undefined {
+  if (!r.fs || !liveProc(r.fs)) return undefined;
+  try {
+    if (!w.procs?.length || !w.procs.every((p) => liveProc(p))) {
+      const procs = table();
+      w.procs = [r.fs, ...descendants(procs, r.fs.pid).flatMap((p) => (p.start === undefined ? [] : [{ pid: p.pid, start: p.start }]))];
+    }
+    let worst: ShareFds | undefined;
+    for (const p of w.procs) {
+      const limit = fdLimit(p.pid);
+      if (!limit) continue;
+      const open = openFds(p.pid);
+      if (!worst || open / limit > worst.open / worst.limit) worst = { open, limit };
+    }
+    return worst;
+  } catch {
+    return undefined;
   }
 }
 
