@@ -70,6 +70,8 @@ if [ -n "${arg[net]}" ]; then
 fi
 rm -f /etc/resolv.conf
 for ns in ${arg[dns]//,/ }; do echo "nameserver $ns"; done >/etc/resolv.conf
+# A machine id of its own, as systemd gives a first boot: the image's is empty, and what fingerprints a machine reads it.
+tr -d - </proc/sys/kernel/random/uuid >/etc/machine-id
 
 view=/run/fleetd/view
 if mkdir -p "$view" && mount -t virtiofs view "$view" 2>/dev/null; then
