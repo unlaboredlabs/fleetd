@@ -90,7 +90,7 @@
   box-shadow: var(--chip);
 }
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -361,7 +361,7 @@
 .new:focus-visible,
 .round:focus-visible,
 .me:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 /* A screen needs you: one small mark, the words in the tooltip. */
@@ -613,7 +613,7 @@
     box-shadow var(--dur-quick) var(--ease-snap);
 }
 .pinCell:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .pinName {
@@ -686,7 +686,7 @@
   color: var(--text);
 }
 .sectionHead:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* 12/16, whatever the text's own size brings. */

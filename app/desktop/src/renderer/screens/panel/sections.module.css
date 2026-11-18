@@ -41,7 +41,7 @@
   display: none;
 }
 .bar .section:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* Only when the words don't fit. */

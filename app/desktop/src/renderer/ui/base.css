@@ -49,7 +49,7 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background: var(--frame);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-md);
@@ -136,13 +136,13 @@ ol {
   outline: none;
 }
 :focus-visible {
-  /* An outline in the accent (4.5:1 on every surface), not a shadow, so hover and active fills can't hide it. */
-  outline: 2px solid var(--accent);
+  /* An outline in the focus blue (3:1 on every surface), not a shadow, so hover and active fills can't hide it. */
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--focus) 24%, transparent);
 }
 
 /* Thin, quiet scrollbars that match the theme (Chromium). */

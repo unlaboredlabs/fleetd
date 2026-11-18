@@ -21,7 +21,7 @@
   background: var(--hover);
 }
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .glyph {
@@ -595,7 +595,7 @@
   appearance: none;
 }
 .range:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -830,7 +830,7 @@
   background: var(--hover);
 }
 .kind:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 .kind:disabled {

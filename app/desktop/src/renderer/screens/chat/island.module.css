@@ -70,7 +70,7 @@ button.press:hover::before {
 }
 /* `all: unset` drops the app's focus outline too (base.css :focus-visible). */
 .press:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -233,7 +233,7 @@ button.press:hover::before {
   text-decoration: underline;
 }
 .dms:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {

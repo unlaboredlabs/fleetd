@@ -51,7 +51,7 @@
   background: var(--hover);
 }
 .row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* Waiting on you: no wash and no edge (DESIGN.md); the glyph's solid block and the words "needs you" in the warning
