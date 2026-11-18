@@ -250,7 +250,8 @@ export type NodeActionKind =
   | "screens"
   | "revyl_check"
   | "sandbox_check"
-  | "sandbox_limits";
+  | "sandbox_limits"
+  | "github_tokens";
 
 /** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
@@ -273,6 +274,9 @@ export type NodeAction = {
   /** `sandbox_limits`: each connected provider's `{"provider","key","domain"?}` sealed to this node's box key (base64),
    * for the node to make agents' boxes with. Never given to a session. */
   keys?: Record<string, string>;
+  /** `github_tokens`, to the hub's runner only: an installation token of the hub's GitHub App for each `owner/name` of
+   * its bots' repos, sealed to its box key (base64), for its own clones and fetches (node/repos/github.ts). */
+  tokens?: Record<string, string>;
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
    * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores

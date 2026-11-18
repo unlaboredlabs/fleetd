@@ -1,6 +1,7 @@
 // machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove, machine_join and
 // machine_claude_login: an owner's or admin's device only, as
 // everything on the Hub pages of the app's Settings.
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type { MachineHost, MachineHostSource } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isMachineId, readSetup } from "../../cli/common.ts";
@@ -92,6 +93,14 @@ export function register(tools: Registry): void {
 
   tools.add("machine_remove", async (hub, caller, input) => {
     admin(caller);
+    // The hub's own runner is no computer to remove: it goes by itself once nothing hosted needs it.
+    if (input.machineId === RUNNER_ID) {
+      throw new ToolError(
+        "invalid",
+        "Hosted sandboxes are the hub's own, not a computer of the team's: they can't be removed.",
+        "Disconnect every provider in Settings › Hub › Machines › Providers and delete the bots that run there; the hub then stops running them.",
+      );
+    }
     if (input.force !== true) refuseRemoval(hub, input.machineId);
     const steps = new Steps();
     const removed = await stopped(

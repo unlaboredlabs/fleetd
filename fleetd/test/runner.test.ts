@@ -2,11 +2,17 @@
 // once with an enroll code for its reserved id and links as a node after, starts again when it ends, and stops with
 // the hub. Where hosted boxes can't be made from, it never runs. New bots go to a computer of the team's first.
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { githubApps } from "../src/hub/github_app/index.ts";
+import { runnerRepos, sendGithubTokens } from "../src/hub/runner/github.ts";
+import { NodeBoxKey } from "../src/node/identity.ts";
+import { keepTokens, useGithubTokens, withGithubTokens } from "../src/node/repos/github.ts";
+import { seal } from "../src/shared/sealed_box.ts";
 import { bestWorker } from "../src/hub/projects/inspect.ts";
 import { type Child, dialUrl, Runner, unsupported } from "../src/hub/runner/index.ts";
 import { writeConfig } from "../src/node/config.ts";
-import { RUNNER_ID } from "../src/shared/sandbox.ts";
+import { CAP_RUNNER, RUNNER_ID } from "../src/shared/sandbox.ts";
 import { addMachine, addProject, testHub } from "./screens_helpers.ts";
 
 function kit(why?: string) {
@@ -83,5 +89,57 @@ test("a new bot goes to a computer of the team's first, to the runner only when 
   // No computer takes the id of the hub's runner.
   const code = t.hub.auth.nodes.createEnrollToken(undefined, "test").token;
   expect(t.hub.auth.nodes.enrollNode(code, RUNNER_ID, "a".repeat(43))).toBe(`${RUNNER_ID}-2`);
+  t.done();
+});
+
+test("the runner's own git with GitHub answers only with the hub's token for that repo, never a login of the hub's machine", async () => {
+  const home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-runner-git-"));
+  const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
+  const sealed = (t: string) => Buffer.from(seal(Buffer.from(box.publicKey(), "base64"), new TextEncoder().encode(t))).toString("base64");
+  expect(keepTokens(home, { "Acme/Shop": sealed("ghs_shop123"), "../evil": sealed("x"), "acme/other": "bm90IHNlYWxlZA==" }, box)).toBe(1);
+  // A machine's own helper (a `gh` login) is there, and never asked.
+  const gitconfig = join(home, "gitconfig");
+  writeFileSync(gitconfig, "[credential]\n\thelper = !echo password=machine-login\n");
+  const fill = (path: string) => {
+    useGithubTokens(home);
+    const env = withGithubTokens({ PATH: process.env.PATH, HOME: home, GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" } as Record<string, string | undefined>);
+    useGithubTokens(undefined);
+    const r = Bun.spawnSync(["git", "credential", "fill"], { env: env as Record<string, string>, stdin: new TextEncoder().encode(`protocol=https\nhost=github.com\npath=${path}\n\n`) });
+    return r.stdout.toString();
+  };
+  expect(fill("acme/shop.git")).toContain("password=ghs_shop123");
+  const other = fill("acme/elsewhere.git");
+  expect(other).not.toContain("machine-login");
+  expect(other).not.toContain("ghs_shop123");
+  // Off the runner, git is as it was.
+  expect(withGithubTokens({})).toEqual({});
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("the hub sends the runner the App's token for each of its bots' repos, sealed to it, and the runner can't be removed", async () => {
+  const t = testHub();
+  const box = new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)));
+  addMachine(t.hub, RUNNER_ID, { boxPubKey: box.publicKey(), runner: true });
+  addProject(t.hub, RUNNER_ID, "p1");
+  t.hub.db.conn
+    .query("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key) VALUES (?, 'p1', 'shop', ?, 'p1', 'github.com/acme/shop')")
+    .run(RUNNER_ID, RUNNER_ID);
+  expect(runnerRepos(t.hub)).toEqual(["acme/shop"]);
+  githubApps(t.hub).tokenFor = async (repo: string) => (repo === "acme/shop" ? "ghs_shop123" : undefined);
+  const sent: Record<string, unknown>[] = [];
+  t.link.answer = async (_m, frame) => (sent.push(frame as never), { ok: true });
+  // Not linked as the runner: nothing goes.
+  await sendGithubTokens(t.hub);
+  expect(sent).toEqual([]);
+  t.link.link(RUNNER_ID, [CAP_RUNNER]);
+  await sendGithubTokens(t.hub);
+  expect(sent).toHaveLength(1);
+  const tokens = (sent[0] as { action: string; tokens: Record<string, string> }).tokens;
+  expect((sent[0] as { action: string }).action).toBe("github_tokens");
+  expect(JSON.stringify(sent)).not.toContain("ghs_shop123");
+  expect(new TextDecoder().decode(box.open(new Uint8Array(Buffer.from(tokens["acme/shop"]!, "base64")))!)).toBe("ghs_shop123");
+  const owner = { keyId: "k", name: "desk", prefix: "fld_x", grants: [{ role: "admin" as const, machines: "*" as const }], createdAt: new Date(0).toISOString(), kind: "human" as const };
+  const out = await t.tools.call(t.hub, owner, "machine_remove", { machineId: RUNNER_ID });
+  expect("error" in out && out.error.kind === "tool" && out.error.error.message).toBe("Hosted sandboxes are the hub's own, not a computer of the team's: they can't be removed.");
   t.done();
 });

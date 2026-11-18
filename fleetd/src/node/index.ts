@@ -38,6 +38,7 @@ import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
 import { RevylScreens } from "./revyl/index.ts";
 import { sandboxesOf } from "./sandbox/hosted.ts";
+import { keepTokens, useGithubTokens } from "./repos/github.ts";
 import { CAP_RUNNER, RUNNER_NAME } from "../shared/sandbox.ts";
 import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
@@ -428,7 +429,10 @@ export async function startNode(
   }));
   registerAreas(node);
   // The hub's own runner: every session in a box of the first connected provider the hub didn't place it elsewhere in.
-  if (config.runner) useRunner(() => sandboxesOf(node)?.placeable()[0]);
+  if (config.runner) {
+    useRunner(() => sandboxesOf(node)?.placeable()[0]);
+    useGithubTokens(home);
+  }
   // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).
   sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
   // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
@@ -545,6 +549,11 @@ export async function startNode(
         if (frame.action === "revyl_check") {
           const revyl = screens(node).revyl;
           if (revyl instanceof RevylScreens) return void revyl.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
+        }
+        // The hub's runner: the hub's GitHub tokens for its own clones and fetches.
+        if (frame.action === "github_tokens" && config.runner) {
+          const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);
+          return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `${kept} GitHub tokens kept` });
         }
         // A node where agents never run in sandboxes (macOS, the agents' Mac) answers below that it doesn't know them.
         if (frame.action === "sandbox_check" || frame.action === "sandbox_limits") {

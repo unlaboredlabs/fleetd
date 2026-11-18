@@ -8,6 +8,7 @@ import { dirname, isAbsolute } from "node:path";
 import type { ClonePhase } from "../../shared/contracts.ts";
 import type { CloneProgressFrame, GhRepo, GhRepos } from "../../shared/sessions.ts";
 import { PARTIAL } from "../repos/index.ts";
+import { githubTokensOn, withGithubTokens } from "../repos/github.ts";
 import { CallRefusal, invalid } from "./refusal.ts";
 
 const GH_LIMIT = "100";
@@ -51,8 +52,10 @@ export function parseProgress(line: string): Progress | undefined {
 const hasGh = () => (process.env.PATH ?? "").split(":").some((dir) => dir && existsSync(`${dir}/gh`));
 
 async function gitClone(url: string, dest: string, progress: (p: Progress) => void): Promise<void> {
-  const pre = hasGh() ? ["-c", "credential.https://github.com.helper=!gh auth git-credential"] : [];
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -o BatchMode=yes" } as Record<string, string>;
+  // The hub's runner clones with the hub's GitHub token for the repo, never a `gh` login of the machine it is on.
+  const runner = githubTokensOn();
+  const pre = hasGh() && !runner ? ["-c", "credential.https://github.com.helper=!gh auth git-credential"] : [];
+  const env = withGithubTokens({ ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -o BatchMode=yes" } as Record<string, string>);
   let proc: Bun.Subprocess<"ignore", "ignore", "pipe">;
   try {
     proc = Bun.spawn(["git", ...pre, "clone", "--progress", "--", url, dest], { env, stdin: "ignore", stdout: "ignore", stderr: "pipe" });
