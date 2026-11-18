@@ -320,6 +320,8 @@ test("a node restart re-adopts the box: the link comes back to the same session 
     expect(await place.end(dir)).toBeGreaterThan(0);
     expect(await gone(after.pid)).toBe(true);
     expect(await place.adopt(dir)).toBeUndefined();
+    // Its host dir goes too: nothing of the box is left on this machine's disk.
+    expect(existsSync(dir)).toBe(false);
   } finally {
     useVm(undefined);
   }
@@ -338,6 +340,30 @@ test("the box goes with its session host: once claude exits, the guest ends and 
   expect(events.some((e) => typeof e === "object" && "Exited" in e)).toBe(true);
   expect(await gone(link.pid, 8_000)).toBe(true);
   await place.stop(dir);
+}, 30_000);
+
+test("a task's end leaves nothing of its box in the node's hosts dir, on a node with VMs or one that turned them off", async () => {
+  const n = node();
+  const hosts = join(n.home, "hosts");
+  useVm(n.vm);
+  try {
+    for (const [id, vms] of [["s-end", true], ["s-stray", false]] as const) {
+      const dir = join(hosts, id);
+      await n.vm.bound({ sessionId: id, dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5 });
+      const box = readBox(dir)!;
+      expect(readdirSync(dir).length).toBeGreaterThan(0);
+      // The task ends as SessionService's stop ends it, through the place its host dir names.
+      useVm(vms ? n.vm : undefined);
+      expect(placeAt(dir).kind).toBe("microvm");
+      expect(await placeAt(dir).end(dir)).toBeGreaterThan(0);
+      expect(await gone(box.leader.pid)).toBe(true);
+      expect(existsSync(dir)).toBe(false);
+      useVm(n.vm);
+    }
+    expect(readdirSync(hosts)).toEqual([]);
+  } finally {
+    useVm(undefined);
+  }
 }, 30_000);
 
 test("stop-all and the start-up sweep destroy boxes; a refused box falls back to a plain process", async () => {
@@ -383,8 +409,10 @@ test("a box's launcher, kernel line and forwards", () => {
   expect(script).not.toContain("sudo");
   // passt runs in pasta's network namespace, with no port either way and no gateway meaning this machine, behind the
   // routes that keep this machine's own addresses out, which must be set before passt starts (or the box doesn't).
-  expect(script).toContain("(exec -a pasta '/vm/passt' '-q' '-f' '--config-net' '-t' 'none' '-u' 'none' '-T' 'none' '-U' 'none' '--no-map-gw' '--' '/bin/sh' '-c'");
+  // Neither gives out DNS: the guest's comes from the kernel line, and a machine with a stub resolver isn't warned about.
+  expect(script).toContain("(exec -a pasta '/vm/passt' '-q' '-f' '--config-net' '-t' 'none' '-u' 'none' '-T' 'none' '-U' 'none' '--no-map-gw' '-D' 'none' '-S' 'none' '--' '/bin/sh' '-c'");
   const inNs = script.slice(script.indexOf("'/bin/sh' '-c'"));
+  expect(inNs.replaceAll("'\\''", "'")).toContain("'--no-map-gw' '-a' '10.0.2.15' '-n' '24' '-g' '10.0.2.2' '-t' 'none' '-u' 'none' '-D' 'none' '-S' 'none' &");
   expect(inNs.indexOf("rule add pref 10 table 4790 || exit 1")).toBeGreaterThan(0);
   expect(inNs.indexOf("-batch")).toBeLessThan(inNs.indexOf("'--vhost-user'"));
   expect(forwards({ AGENT_BROWSER_CDP: "ws://127.0.0.1:41234/devtools/browser/t", ANDROID_ADB_SERVER_PORT: "15037" })).toEqual([41234, 15037]);
