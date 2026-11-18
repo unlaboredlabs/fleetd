@@ -769,3 +769,27 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(script).toContain(`--translate-uid=map:${uid}:0:1`);
   expect(script).toContain(`fleetd.uid=${uid}`);
 });
+
+test("a box's temp files are in its checkout, out of git: a temp file renames into the checkout, and pnpm copies from its store", async () => {
+  const n = node();
+  const repo = join(n.home, "wt-tmp");
+  mkdirSync(repo, { recursive: true });
+  expect(Bun.spawnSync(["git", "init", "-q", repo]).success).toBe(true);
+  const dir = join(n.home, "hosts", "s-tmp");
+  const place = n.vm.bound({ sessionId: "s-tmp", dir, role: "worker" });
+  // A temp file made in $TMPDIR, then renamed into the checkout (Python's mkstemp and os.replace): in a VM, the home's
+  // scratch dir is a share of its own, and the kernel renames within one share only.
+  const script = 'f=$(mktemp) && echo made > "$f" && mv "$f" "$PWD/out.txt" && echo "tmp=$TMPDIR pnpm=$npm_config_package_import_method" && git status --porcelain';
+  const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env: envOf(n.home) });
+  expect(ran.exitCode).toBe(0);
+  expect(ran.outputTail).toContain(`tmp=${join(repo, ".fleetd/tmp/s-tmp")} pnpm=copy`);
+  // git sees the file renamed in, not the temp dir.
+  expect(ran.outputTail.trim().split("\n").slice(-1)[0]).toBe("?? out.txt");
+  expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/tmp/\n");
+  // The next session in this checkout (a reader's, handed on warm) doesn't find the last one's temp files.
+  writeFileSync(join(repo, ".fleetd/tmp/s-tmp/left"), "x");
+  await place.end(dir);
+  const next = n.vm.bound({ sessionId: "s-tmp2", dir: join(n.home, "hosts", "s-tmp2"), role: "worker" });
+  expect((await next.run({ cwd: repo, argv: ["/bin/sh", "-c", 'ls "$TMPDIR/.."'], timeoutSec: 10, env: envOf(n.home) })).outputTail.trim()).toBe("s-tmp2");
+  await next.end(join(n.home, "hosts", "s-tmp2"));
+}, 30_000);

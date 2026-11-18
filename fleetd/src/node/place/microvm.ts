@@ -19,7 +19,7 @@
 // session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
 // a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -31,6 +31,7 @@ import { HostLink, LaunchError, prepare, readRegistration, stop as stopHost, sta
 import { descendants, table } from "../runner/procs.ts";
 import { hostScope, spawnScoped, type Scope } from "../runner/scope.ts";
 import { Box } from "../sandbox/box.ts";
+import { excludeInCheckout } from "../sessions/files.ts";
 import { HOST_TAG } from "../sandbox/system.ts";
 import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
 import { ensureTools, findTools, vmDir, type VmTools } from "../../sandbox/host/tools.ts";
@@ -312,10 +313,15 @@ export class MicroVm {
     return [join(this.o.home, "sessions", s.sessionId), update, this.o.fleetd[0]!];
   }
 
-  /** A command's environment in a box: git's GitHub helper, and its builds' turns asked of the node over the box's
-   * link (the machine's build slots, not ones of the box's own). */
-  #inBox<E extends Record<string, string | undefined>>(env: E): E & Record<string, string> {
-    return { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as E & Record<string, string>;
+  /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
+   * (the machine's build slots, not ones of the box's own), its temp files in its checkout (boxTmp), and pnpm copying
+   * from its store in the home rather than making one in the checkout (a link across shares can't be made). */
+  async #inBox<E extends Record<string, string | undefined>>(env: E, cwd: string, session: string): Promise<E & Record<string, string>> {
+    const out = { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as Record<string, string | undefined>;
+    out.npm_config_package_import_method ??= "copy";
+    const tmp = await boxTmp(cwd, session);
+    if (tmp) for (const k of ["TMPDIR", "TMP", "TEMP"]) out[k] = tmp;
+    return out as E & Record<string, string>;
   }
 
   #hidden(): string[] {
@@ -332,7 +338,7 @@ export class MicroVm {
       this.failed((error as Error).message);
       return processPlace.run(r);
     }
-    return held.box.run(r.env ? { ...r, env: this.#inBox(r.env) } : r);
+    return held.box.run(r.env ? { ...r, env: await this.#inBox(r.env, r.cwd, s.sessionId) } : r);
   }
 
   async start(s: PlaceFor, l: Launch): Promise<HostLink> {
@@ -381,7 +387,7 @@ export class MicroVm {
       }
       // The guest runs the agent as this machine's user, but as root when that is root (a node run as root), which
       // claude refuses to skip its prompts for unless it knows it's in a sandbox.
-      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...this.#inBox(l.env), IS_SANDBOX: "1" } });
+      const info = await held.box.start({ sessionId: l.sessionId, program: l.program, args, cwd: l.cwd, env: { ...(await this.#inBox(l.env, l.cwd, s.sessionId)), IS_SANDBOX: "1" } });
       const leader = held.record.leader;
       const registration: Registration = { protocol: info.protocol, hostPid: leader.pid, hostStart: leader.start, pid: leader.pid, start: leader.start, marker: "", refused: info.refused ?? null };
       writeFileSync(join(l.dir, "host.json"), JSON.stringify(registration));
@@ -552,6 +558,26 @@ export function gitInBox<E extends Record<string, string | undefined>>(env: E): 
     [`GIT_CONFIG_KEY_${n + 1}`]: key,
     [`GIT_CONFIG_VALUE_${n + 1}`]: "!gh auth git-credential",
   };
+}
+
+/** Where a box's temp files go in its checkout, kept out of git (the checkout's .git/info/exclude). */
+export const BOX_TMP = ".fleetd/tmp/";
+
+/**
+ * A box session's temp dir, `<checkout>/.fleetd/tmp/<session>`, when its cwd is a git checkout: on the same share as
+ * the files it writes, where the home's scratch dir is a share of its own, and the kernel renames and links within one
+ * only (a temp file renamed into the checkout, Python's mkstemp and os.replace, failed with EXDEV). It goes with the
+ * checkout; another session's dir there (a reader's checkout handed on warm) goes when this one starts. Claude's own
+ * (CLAUDE_CODE_TMPDIR) stays the scratch dir the node reads.
+ */
+export async function boxTmp(cwd: string, session: string): Promise<string | undefined> {
+  if (!/^[\w.-]+$/u.test(session) || !existsSync(join(cwd, ".git"))) return undefined;
+  if (!(await excludeInCheckout(cwd, BOX_TMP))) return undefined;
+  const root = join(cwd, BOX_TMP);
+  const dir = join(root, session);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  for (const other of readdirSync(root)) if (other !== session) rmSync(join(root, other), { recursive: true, force: true });
+  return dir;
 }
 
 /** The port a URL names on this machine's loopback, if it does. */

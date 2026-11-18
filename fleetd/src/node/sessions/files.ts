@@ -103,21 +103,23 @@ export async function putFile(root: string, relPath: string, bytes: Uint8Array):
     rmSync(tmp, { force: true });
     throw error;
   }
-  await excludeAttachments(root);
+  await excludeInCheckout(root, ATTACHMENTS_DIR);
 }
 
-/** `.fleetd/attachments/` in the checkout's `.git/info/exclude`, once. */
-async function excludeAttachments(root: string): Promise<void> {
+/** `/<dir>` (a dir of fleetd's in the checkout, `.fleetd/attachments/`) in the checkout's `.git/info/exclude`, once.
+ * False where the checkout isn't git's. */
+export async function excludeInCheckout(root: string, dir: string): Promise<boolean> {
   let file: string;
   try {
     file = (await git(root, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])).trim();
   } catch {
-    return;
+    return false;
   }
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (text.split("\n").some((l) => l.trim() === `/${ATTACHMENTS_DIR}`)) return;
+  if (text.split("\n").some((l) => l.trim() === `/${dir}`)) return true;
   mkdirSync(join(file, ".."), { recursive: true });
-  appendFileSync(file, `${text && !text.endsWith("\n") ? "\n" : ""}/${ATTACHMENTS_DIR}\n`);
+  appendFileSync(file, `${text && !text.endsWith("\n") ? "\n" : ""}/${dir}\n`);
+  return true;
 }
 
 /** Whether `relPath` is a plain file holding the bytes whose sha256 is `sha256`. */
