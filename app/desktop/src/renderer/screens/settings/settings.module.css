@@ -503,6 +503,23 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* A bot's Computer: the end of a failed image build's log, under its row, scrolling on its own. */
+.imageLog {
+  max-height: 240px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* Why something is off and the command that fixes it, as one block under its row's title. */
 .fixBlock {

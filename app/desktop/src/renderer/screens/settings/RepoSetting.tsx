@@ -1,5 +1,5 @@
 // Settings › Projects › Project › Code: the git repos a project holds (ProjectSummary.repos), each with its remote, base
-// branch and checkout; then each repo's Setup in a section of its own (SetupSetting.tsx). Add a repo (the plus) takes a
+// branch and checkout; then each repo's Computer in a section of its own (SetupSetting.tsx). Add a repo (the plus) takes a
 // checkout on the project's machine or a GitHub repo to clone there (project_repo_add); Remove takes one out
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
 import { GitBranch } from "lucide-react";
@@ -10,7 +10,7 @@ import { useData } from "../../src/data/react";
 import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
 import { AddButton, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
-import { RepoSetup, Setup } from "./SetupSetting";
+import { Computer, RepoComputer } from "./SetupSetting";
 import { addInput, checkoutPath, isOwn, sourceProblem } from "./repoModel";
 import s from "./settings.module.css";
 
@@ -18,7 +18,7 @@ type Echo = { ok: boolean; text: string };
 
 /**
  * A project's Code section: its repos, a plus to add one, then what `children` adds (its environment variables); and
- * each repo's Setup, in a section of its own under it: the project's own directory's first, while it is one of them (a
+ * each repo's Computer, in a section of its own under it: the project's own directory's first, while it is one of them (a
  * project's own repo is listed from its first agent on).
  */
 export function RepoSection({ settings, children }: { settings: Settings; children?: ReactNode }) {
@@ -57,10 +57,10 @@ export function RepoSection({ settings, children }: { settings: Settings; childr
         {children}
       </SettingsSection>
       {own !== undefined || others.length === 0 ? (
-        <Setup settings={settings} title={others.length === 0 ? "Setup" : `Setup: ${own?.name ?? settings.title}`} reveal="projects.setup" />
+        <Computer settings={settings} title={others.length === 0 ? "Computer" : `Computer: ${own?.name ?? settings.title}`} reveal="projects.computer" />
       ) : null}
       {others.map((repo) => (
-        <RepoSetup key={repo.repoId} settings={settings} repo={repo.name} />
+        <RepoComputer key={repo.repoId} settings={settings} repo={repo.name} />
       ))}
       <RemoveRepoDialog
         repo={removing}

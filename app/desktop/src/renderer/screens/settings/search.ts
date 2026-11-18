@@ -88,7 +88,12 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.name", label: "Bot name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
-  { key: "projects.setup", label: "Setup", tab: "projects", keywords: ["setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
+  {
+    key: "projects.computer",
+    label: "Computer",
+    tab: "projects",
+    keywords: ["setup", "setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm", "computer image", "prebuilt", "snapshot", "rebuild", "vm", "sandbox"],
+  },
   { key: "projects.linked", label: "Linked hubs", tab: "projects", keywords: ["hub link", "link key", "other hub", "reach"] },
   { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["checker", "approve", "ask me", "yolo", "auto"] },
   { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["checker", "log", "auto-approved", "yolo", "history"] },

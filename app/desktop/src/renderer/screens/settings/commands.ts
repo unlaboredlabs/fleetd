@@ -36,9 +36,9 @@ const pages: Command[] = [
   {
     id: "go:settings.projects",
     title: "Bot settings",
-    detail: "A bot's name, repos, environment variables, setup and MCP servers, or delete it",
+    detail: "A bot's name, repos, environment variables, computer and MCP servers, or delete it",
     group: "settings",
-    keywords: ["env", "secrets", "setup", "mcp", "integrations", "delete bot", "rename"],
+    keywords: ["env", "secrets", "setup", "computer", "image", "mcp", "integrations", "delete bot", "rename"],
     run: () => go(tabHref("projects")),
   },
   {
