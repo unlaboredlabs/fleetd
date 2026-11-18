@@ -3,7 +3,8 @@
 // vault's personal env item was, once the hub kept one team vault) fails here, not only in a run of the suite by hand.
 // And the vault seed's mark sits where only a reveal shows it, so the two-team cases' canary keeps its meaning. Then the
 // whole `--areas` contract on it: every tool the hub lists called as a run calls it, and none fails, so a tool the run
-// calls wrongly, or a hub answer its schema doesn't hold, fails here too.
+// calls wrongly, or a hub answer its schema doesn't hold, fails here too. Its seed puts a bot on a machine that is
+// offline, as the cloud's does, so a new bot tool a run's hub refuses without an entry in areas.ts fails here as well.
 import { join } from "node:path";
 import { afterAll, expect, test } from "bun:test";
 import mcpToolsText from "../../../app/desktop/src/shared/contracts/schema/McpTools.json" with { type: "text" };
@@ -13,11 +14,14 @@ import type { Team } from "../../../tests/compare/target.ts";
 import { decodeOutput } from "../../src/hub/api/decode.ts";
 import { doctor } from "../../src/hub/doctor/index.ts";
 import { githubApps } from "../../src/hub/github_app/index.ts";
+import { wire as wireLeads } from "../../src/hub/leads/wiring.ts";
 import { serve, stop } from "../../src/hub/http/index.ts";
 import { addingGh } from "../../src/hub/projects/discover.ts";
 import { people } from "../../src/hub/people/store.ts";
 import { build } from "../../src/hub/serve/index.ts";
+import { store } from "../../src/hub/store/hub_store.ts";
 import { vault } from "../../src/hub/vault/index.ts";
+import type { ProjectSummary } from "../../src/shared/contracts.ts";
 import { openSealed, publicKeyOf } from "../../src/shared/sealed_box_core.ts";
 import { hubHome } from "../helpers.ts";
 
@@ -42,6 +46,8 @@ function openHub(): Team {
   d.runCmd = async () => ({ ran: false, error: "ENOENT" });
   Object.assign(addingGh(hub), { repoList: async () => ({ owners: [], repos: [], problem: "gh is not here" }) });
   githubApps(hub).setEndpoints({ api: github.url.origin, web: github.url.origin });
+  // A lead launches through the executor, as `hub start`'s loops wire it, so lead_start reaches the offline machine.
+  wireLeads(hub);
   const owner = people(hub).ensureOwner();
   const server = serve(hub, tools, 0);
   done.push(async () => {
@@ -55,6 +61,15 @@ function openHub(): Team {
     key: async ({ name }) => hub.auth.keys.createKeyFor(name, [{ role: "admin", machines: "*" }], "human", owner.personId).key,
     enrol: async () => {
       throw new Error("no machine joins an --areas run");
+    },
+    // A bot on a machine that joined once and is offline now, as the cloud's seed makes: the bot's tools are called,
+    // so a new one a run's hub refuses fails here, not first in the cloud's run.
+    seed: async () => {
+      const at = "2026-01-01T00:00:00.000Z";
+      store(hub).machineUpsert({ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "offline", lastSeenAt: at } as never);
+      store(hub).projectsUpsertMany("devbox", [
+        { machineId: "devbox", projectId: "areas", title: "Areas", workspaceRoot: "/srv/areas", lastActivityAt: at, threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as unknown as ProjectSummary,
+      ]);
     },
   };
 }
@@ -93,7 +108,7 @@ test("the whole --areas contract passes on the open hub: each listed tool called
   }, () => Date.parse("2026-01-02T00:00:00.000Z"));
   expect(checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`)).toEqual([]);
   // Called, not skipped: the ones a run's hub refuses.
-  for (const tool of ["github_app_test", "github_app_remove", "doctor_fix", "machine_add_plan", "machine_add", "pair_code_create"]) {
+  for (const tool of ["github_app_test", "github_app_remove", "doctor_fix", "machine_add_plan", "machine_add", "pair_code_create", "project_image_rebuild", "lead_start"]) {
     expect(checks.find((c) => c.name.startsWith(`MCP ${tool} `))?.skipped).toBeUndefined();
   }
 });
