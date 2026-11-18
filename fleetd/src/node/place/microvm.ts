@@ -48,7 +48,7 @@ import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxP
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
 import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
-import { boxHome, forClaude, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
+import { boxHome, forClaude, machineSignIn, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
@@ -84,6 +84,10 @@ const CHECK_EVERY_MS = 60_000;
 export const ADDRS_EVERY_MS = 2_000;
 /** How long after a box that failed new sessions run as plain processes. */
 export const FAILED_MS = 10 * 60_000;
+/** What lets a machine signed in with `claude login` run its agents in VMs: a token a VM can be given. */
+export const SIGN_IN_FIX =
+  "run `claude setup-token` and put the token it prints in ~/.fleetd/claude.env as CLAUDE_CODE_OAUTH_TOKEN=<token> (or give Claude's settings an ANTHROPIC_API_KEY): agents then run in VMs within a minute";
+
 /** How often the node counts the files each box's share holds open. */
 export const SHARE_EVERY_MS = 1_000;
 
@@ -151,6 +155,9 @@ export type MicroVmOptions = {
   setBlocks?: (holder: number, want: string[]) => void;
   /** How a box is pointed at Claude and checked (endpoint.ts reach). */
   reach?: (box: Box, r: Reach) => Promise<void>;
+  /** The environment this machine's claude runs with (the node's runner env): what says whether a VM can be given a
+   * way to sign in to Claude (./provision.ts machineSignIn). Unset: not checked. */
+  claudeEnv?: () => Record<string, string | undefined>;
   goneMs?: number;
   /** How a box's share's open files are counted, and how its guest is told to forget its files (the stand-ins'), and
    * how often. */
@@ -319,6 +326,10 @@ export class MicroVm {
     if (/\s/u.test(this.o.fleetd[0]!)) return { kind: "process", why: `the fleetd binary's path has a space in it (${this.o.fleetd[0]})` };
     const check = (this.o.check ?? (() => canRunVms(this.o.home)))();
     if (!check.ok) return { kind: "process", why: check.why, ...(check.fix ? { fix: check.fix } : {}), ...(check.expected ? { expected: true } : {}) };
+    // A machine whose agents sign in to Claude with its own login has nothing a VM can be given: every agent runs as a
+    // plain process, and the machine says so, with the fix.
+    const noSignIn = this.o.claudeEnv ? machineSignIn(this.o.claudeEnv()) : undefined;
+    if (noSignIn) return { kind: "process", why: noSignIn, fix: SIGN_IN_FIX };
     if (!this.#tools()) {
       this.#fetchTools();
       return { kind: "process", why: "fetching the VM files (Cloud Hypervisor, the guest kernel and root image) for the first time", expected: true };

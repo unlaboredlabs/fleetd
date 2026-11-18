@@ -184,22 +184,40 @@ export class NoClaudeLogin extends Error {}
 export function forClaude(p: Provision & { program: string; boxEnv: Record<string, string> }): ForClaude {
   const hostConfig = configDir(p.env as Record<string, string>);
   const boxConfig = p.boxEnv.CLAUDE_CONFIG_DIR!;
-  const relayed: Record<string, string> = {};
-  for (const file of [join(hostConfig, "settings.json"), MANAGED_SETTINGS]) Object.assign(relayed, claudeVars(file));
+  const relayed = relayedVars(p.env);
+  const why = noSignIn({ ...relayed, ...p.boxEnv }, hostConfig);
+  if (why) throw new NoClaudeLogin(why);
   mkdirSync(boxConfig, { recursive: true, mode: 0o700 });
   writeAtomic(join(boxConfig, "settings.json"), `${JSON.stringify(Object.keys(relayed).length ? { env: relayed } : {}, null, 2)}\n`);
-  const has = (k: string) => !!(p.boxEnv[k] || relayed[k]);
-  if (!CREDENTIALS.some(has) && !CLOUDS.some(has))
-    throw new NoClaudeLogin(
-      existsSync(join(hostConfig, ".credentials.json"))
-        ? "this agent signs in to Claude with this machine's own login, which stays on the machine and is never given to a VM: give its bot a Claude account (or put a token in Claude's settings) to run it in one"
-        : "nothing signs this agent in to Claude that a VM can be given (no Claude account for its bot, and no token in the environment or Claude's settings)",
-    );
   const here = sessionFile(hostConfig, p.cwd, p.session);
   const box = sessionFile(boxConfig, p.cwd, p.session);
   const transcript = here && box ? { here, box } : undefined;
   if (transcript) newer(transcript.here, transcript.box);
   return { program: linkClaude(p.node, p.program), ro: [boxClaudeDir(p.node)], ...(transcript ? { transcript } : {}) };
+}
+
+/** Claude's own variables in the settings of a claude run with `env` (its user's, then this machine's managed ones):
+ * what its box's claude is given. */
+function relayedVars(env: Env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const file of [join(configDir(env as Record<string, string>), "settings.json"), MANAGED_SETTINGS]) Object.assign(out, claudeVars(file));
+  return out;
+}
+
+/** Why nothing in `vars` (a claude's environment and its settings' Claude variables) signs a box's claude in, or
+ * undefined when something does. */
+function noSignIn(vars: Record<string, string | undefined>, config: string): string | undefined {
+  const has = (k: string) => !!vars[k];
+  if (CREDENTIALS.some(has) || CLOUDS.some(has)) return undefined;
+  return existsSync(join(config, ".credentials.json"))
+    ? "this machine signs in to Claude with its own login (`claude login`), which stays on the machine and is never given to a VM"
+    : "nothing signs agents in to Claude that a VM can be given (no token in the environment or Claude's settings)";
+}
+
+/** Why agents of this machine, run with `env` (the node's claude environment, runner env), can't sign in to Claude
+ * in a VM, or undefined when they can: its machine status says so (./microvm.ts). */
+export function machineSignIn(env: Env): string | undefined {
+  return noSignIn({ ...relayedVars(env), ...env }, configDir(env as Record<string, string>));
 }
 
 /** The box's transcript back here, where it is newer: what the next start, in a box or not, resumes from. */

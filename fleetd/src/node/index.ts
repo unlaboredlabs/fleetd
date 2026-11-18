@@ -398,15 +398,16 @@ export async function startNode(
   const fleetd = pinSelf(home);
   // A task's agent runs in a VM of its own where this machine can run one; its boxes are re-adopted with its sessions,
   // before the node.sock hooks they answer calls with exist.
-  let leadHooks: LeadSocketHooks | undefined;
-  const vm = isAgentsMac(config) || config.runner ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope });
-  useVm(vm);
-  // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
-  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
   // The hub's runner reads no claude.env of the machine it runs on: its agents run on the team's Claude account.
   const sessionConfig = configFor(home, config.runner ? home : fleetdDir(), fleetd, boxKey);
   // Its sessions' claude is the one their boxes' template installs.
   if (config.runner) sessionConfig.claudeBin = BOX_CLAUDE.path;
+  let leadHooks: LeadSocketHooks | undefined;
+  const vm =
+    isAgentsMac(config) || config.runner ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope, claudeEnv: () => runnerEnv(sessionConfig) });
+  useVm(vm);
+  // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
+  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
   const sessions = await SessionService.start(sessionConfig);
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.

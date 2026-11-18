@@ -15,7 +15,8 @@ import type { Duplex } from "node:stream";
 import { LeadRelay, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
 import { readBox } from "../../src/node/place/box_record.ts";
-import { MicroVm, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
+import { MicroVm, SIGN_IN_FIX, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
+import { processPlace } from "../../src/node/place/process.ts";
 import { boxHome, forClaude, keepShown, NoClaudeLogin, provision, transcriptBack } from "../../src/node/place/provision.ts";
 import { guestOwn, mountScript, shows, under, type View } from "../../src/node/place/view.ts";
 import { marker, readRegistration, startOf, type HostLink } from "../../src/node/runner/host.ts";
@@ -299,7 +300,7 @@ test("a machine's own Claude login never goes into a box: the agent runs as a pl
   const claudeBin = join(p.h, ".local/bin/claude");
   write(claudeBin, CLAUDE(join(root, "env-d.txt")), 0o755);
   expect(() => forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: given.env })).toThrow(NoClaudeLogin);
-  expect(() => forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: given.env })).toThrow("this machine's own login");
+  expect(() => forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: given.env })).toThrow("its own login (`claude login`)");
   // A bot's Claude account signs it in.
   expect(forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: { ...given.env, CLAUDE_CODE_OAUTH_TOKEN: "acct" } }).program).toStartWith(join(p.node, "vm/claude/"));
   // At the start: no box, the session as a plain process on this machine.
@@ -310,7 +311,26 @@ test("a machine's own Claude login never goes into a box: the agent runs as a pl
   expect(readBox(dir)).toBeUndefined();
   // Not the machine's VMs: only this session (another bot's may have an account).
   expect(vm.status().kind).toBe("microvm");
-  await vm.bound({ sessionId: "s4", dir, role: "worker" }).end(dir);
+  // Its task ends where its session ran, as a plain process: what its VM was given goes too (its home, its copies of
+  // the order's variables), never left on this machine's disk.
+  expect(existsSync(boxHome(p.node, "s4"))).toBe(true);
+  await processPlace.end(dir);
+  expect(existsSync(boxHome(p.node, "s4"))).toBe(false);
+  expect(existsSync(join(p.node, "vm/env/s4"))).toBe(false);
+  // The machine says so: with the node's own Claude environment, its VMs are off, with why and the fix, never an
+  // app that says agents run in VMs while none do.
+  const said = new MicroVm({ home: p.node, fleetd: ["/opt/fleetd"], lead: () => undefined, check: () => OK, tools: () => TOOLS, claudeEnv: () => ({ HOME: p.h }) });
+  expect(said.status()).toEqual({ kind: "process", why: expect.stringContaining("its own login (`claude login`)"), fix: SIGN_IN_FIX });
+  expect(SIGN_IN_FIX).toContain("claude setup-token");
+  said.close();
+  // A token in claude.env (the node's environment), or one in Claude's settings: VMs.
+  const token = new MicroVm({ ...said.o, claudeEnv: () => ({ HOME: p.h, CLAUDE_CODE_OAUTH_TOKEN: "t" }) });
+  expect(token.status().kind).toBe("microvm");
+  token.close();
+  write(p.secrets.claudeSettings, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "gw" } }));
+  const settings = new MicroVm({ ...said.o });
+  expect(settings.status().kind).toBe("microvm");
+  settings.close();
 }, 30_000);
 
 test("a transcript comes back only when the box's is newer, and a missing one changes nothing", () => {
