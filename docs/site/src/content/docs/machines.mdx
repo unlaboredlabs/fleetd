@@ -391,7 +391,8 @@ A machine that can't run VMs never refuses agents: they run as plain processes, 
 A machine signed in to Claude with its own login (`claude login`), and with no token a VM can be given, still shows
 **A VM**, in warning colour, with a line saying that its agents whose bot has no Claude account run as plain
 processes, and the command that fixes it: `claude setup-token`, whose token goes in `~/.fleetd/claude.env` as
-`CLAUDE_CODE_OAUTH_TOKEN=<token>`. Agents on a bot's Claude account run in VMs either way. The doctor's `vm` row warns
+`CLAUDE_CODE_OAUTH_TOKEN=<token>`. Agents on a bot's Claude account run in VMs either way. Each agent's setup commands
+run where the agent does: in its VM, or as plain processes with it. The doctor's `vm` row warns
 with the same.
 
 | Why it runs plain processes | Fix |

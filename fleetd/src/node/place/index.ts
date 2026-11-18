@@ -124,10 +124,10 @@ export const placeAt = (dir: string): Place => {
 /** Whether the session whose host dir is `dir`, with `runs`, leaves its VM now: it runs in one on a machine whose next
  * start of it wouldn't (VMs turned off, or its last VM failed), and no run of it is under way, which finishes in its
  * box. Its claude then goes before the next turn, which starts where `pick` says. */
-export const leavesBox = (dir: string, runs: { status: string }[]): boolean =>
+export const leavesBox = (dir: string, runs: { status: string }[], account = false): boolean =>
   !runs.some((r) => r.status === "running" || r.status === "waiting") &&
   placeAt(dir).kind === "microvm" &&
-  pick({ sessionId: dir.split("/").at(-1)!, dir, role: "worker" }).kind !== "microvm";
+  pick({ sessionId: dir.split("/").at(-1)!, dir, role: "worker", account }).kind !== "microvm";
 
 /** Stops every session's host in `hosts` but those of `keep`, and removes their dirs. How many were still running. */
 export const sweep = (hosts: string, keep: Set<string>): Promise<number> => sweepHosts(hosts, keep);

@@ -17,6 +17,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { readBox } from "../../src/node/place/box_record.ts";
 import { MicroVm, SIGN_IN_FIX, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
+import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
 import { boxHome, forClaude, keepShown, NoClaudeLogin, provision, transcriptBack } from "../../src/node/place/provision.ts";
 import { guestOwn, mountScript, shows, under, type View } from "../../src/node/place/view.ts";
 import { marker, readRegistration, startOf, type HostLink } from "../../src/node/runner/host.ts";
@@ -95,7 +96,9 @@ function personHome(name: string) {
 
 /** The stand-in VM: sandbox-guest in a group it leads, its listen socket in the box's dir. */
 async function standInBoot(b: BootPlan): Promise<Booted> {
+  // A VM's node.sock and build-slots.sock are in its own view and go with it; a stand-in's are on this machine's disk.
   rmSync(join(dirname(dirname(b.dir)), "node.sock"), { force: true });
+  rmSync(join(dirname(dirname(b.dir)), "build-slots.sock"), { force: true });
   const child = spawn(process.execPath, [MAIN, "sandbox-guest", "--listen", join(b.dir, "link.sock"), "--dir", join(b.dir, "guest"), "--loopback", "127.0.0.2"], {
     cwd: b.dir,
     env: { ...process.env, FLEETD_GUEST_ONCE: "1" },
@@ -313,7 +316,7 @@ test("a machine's own Claude login never goes into a box: its agent runs as a pl
   // Not the machine's VMs: only this session. The machine runs agents in VMs still, and says which don't, why and the
   // fix, in its status (the app's and the doctor's line), never "in VMs" with nothing more while some aren't.
   const status = vm.status();
-  expect(status).toEqual({ kind: "microvm", why: expect.stringContaining("its own login (`claude login`)"), fix: SIGN_IN_FIX });
+  expect(status).toEqual({ kind: "microvm", why: expect.stringContaining("its own login (`claude login`)"), fix: SIGN_IN_FIX, accountsOnly: true });
   expect(status.why).toContain("agents whose bot has no Claude account run as plain processes");
   expect(status.why).toContain("~/.fleetd/claude.env as CLAUDE_CODE_OAUTH_TOKEN=<token>");
   expect(SIGN_IN_FIX).toBe("claude setup-token");
@@ -332,6 +335,33 @@ test("a machine's own Claude login never goes into a box: its agent runs as a pl
   await firstInit(inBox);
   expect(readBox(acct)).toBeDefined();
   await vm.bound({ sessionId: "s5", dir: acct, role: "worker" }).end(acct);
+
+  // Setup and its agent run in the same place, picked once per session (index.ts pick, as sessions/index.ts asks it
+  // for setup and for the start): a session with no Claude account runs both as plain processes, never its setup in a
+  // VM whose home and tools its agent wouldn't have; one on a bot's account runs both in a VM.
+  useVm(vm);
+  try {
+    for (const [id, account] of [["s6", false], ["s7", true]] as const) {
+      const d = join(p.node, "hosts", id);
+      const env6 = { ...sessionEnv(p, id), ...(account ? { CLAUDE_CODE_OAUTH_TOKEN: "account-token" } : {}) };
+      const forSetup = pick({ sessionId: id, dir: d, role: "worker", account });
+      expect(forSetup.kind).toBe(account ? "microvm" : "process");
+      const ran = await forSetup.run({ cwd: p.wt, argv: ["sh", "-c", "echo $HOME"], timeoutSec: 10, env: env6 });
+      expect(ran.exitCode).toBe(0);
+      // A plain process's setup has the machine's home, a VM's its own.
+      expect(ran.outputTail.trim()).toBe(account ? boxHome(p.node, id) : p.h);
+      const forStart = pick({ sessionId: id, dir: d, role: "worker", account });
+      expect(forStart.kind).toBe(forSetup.kind);
+      const started = await forStart.start({ fleetd: [process.execPath, MAIN], dir: d, sessionId: id, program: claudeBin, args: [], cwd: p.wt, env: env6 });
+      await firstInit(started);
+      expect(readBox(d) !== undefined).toBe(account);
+      // Neither is moved between turns: each stays where it was picked.
+      if (account) expect(leavesBox(d, [], true)).toBe(false);
+      await placeAt(d).end(d);
+    }
+  } finally {
+    useVm(undefined);
+  }
   // Its task ends where its session ran, as a plain process: what its VM was given goes too (its home, its copies of
   // the order's variables), never left on this machine's disk.
   expect(existsSync(boxHome(p.node, "s4"))).toBe(true);

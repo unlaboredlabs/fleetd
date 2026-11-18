@@ -93,7 +93,9 @@ export const SIGN_IN_HOW =
 /** How often the node counts the files each box's share holds open. */
 export const SHARE_EVERY_MS = 1_000;
 
-export type PlaceFor = { sessionId: string; dir: string; role: SessionRole };
+/** The session a place is picked for; `account`: it runs on a Claude account of its bot's (actions/accounts.ts), a
+ * sign-in of its own a VM can be given wherever the machine's own can't be. */
+export type PlaceFor = { sessionId: string; dir: string; role: SessionRole; account?: boolean };
 
 /** The node's dirs of the tools it installs for agents (./view.ts fleetdOwn), shown to every box that has them. */
 const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/bin", "revyl/bin", "mac/bin"];
@@ -101,7 +103,7 @@ const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/
 /** Where this machine's agents run, and why when it's a plain process (or, in VMs, which of them don't and why:
  * `why` and `fix` on `microvm`): `fix` the command that fixes it, `expected` when
  * it's by choice or the machine's design (turned off, macOS, the VM files on their way), nothing to fix. */
-export type VmStatus = { kind: "microvm"; why?: string; fix?: string } | { kind: "process"; why: string; fix?: string; expected?: true };
+export type VmStatus = { kind: "microvm"; why?: string; fix?: string; accountsOnly?: true } | { kind: "process"; why: string; fix?: string; expected?: true };
 
 /** What a box needs started: its dir, its view, its port, the fleetd binary the guest runs, the tools, the check, and
  * this machine's addresses its network keeps out. */
@@ -298,7 +300,11 @@ export class MicroVm {
 
   /** Whether `s` runs in a box when the machine can: a task's agent. A lead or a person's own thread stays a process. */
   wants(s: PlaceFor): boolean {
-    return s.role === "worker";
+    // On a machine whose own Claude sign-in can't go into a VM, only a session on a Claude account of its bot's: one
+    // that would run as a plain process runs its setup commands as one too, never its setup in a VM it doesn't run in.
+    if (s.role !== "worker") return false;
+    const st = this.status();
+    return !(st.kind === "microvm" && st.accountsOnly) || !!s.account;
   }
 
   /** Where this machine's agents run now, and why when not in a VM. Cached a minute; fetches the VM files the first
@@ -337,7 +343,7 @@ export class MicroVm {
     // Claude account of its bot's still runs in one (each start checks its own, provision.ts forClaude), and every other
     // runs as a plain process. The machine says so, with the fix.
     const noSignIn = this.o.claudeEnv ? machineSignIn(this.o.claudeEnv()) : undefined;
-    if (noSignIn) return { kind: "microvm", why: `${noSignIn}, so agents whose bot has no Claude account run as plain processes: ${SIGN_IN_HOW}.`, fix: SIGN_IN_FIX };
+    if (noSignIn) return { kind: "microvm", why: `${noSignIn}, so agents whose bot has no Claude account run as plain processes: ${SIGN_IN_HOW}.`, fix: SIGN_IN_FIX, accountsOnly: true };
     return { kind: "microvm" };
   }
 
@@ -671,7 +677,7 @@ function toolsOrThrow(): NetTools {
 /** A heartbeat's word on where this machine's agents run: in VMs of `memGiB` each (memPerAgentBytes, for the hub's cap),
  * or as plain processes and why. */
 export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus, memGiB = GUEST_MEM_GIB): void {
-  load.sandbox = status;
+  load.sandbox = status.kind === "microvm" ? { kind: "microvm", ...(status.why ? { why: status.why } : {}), ...(status.fix ? { fix: status.fix } : {}) } : status;
   if (status.kind === "microvm") load.memPerAgentBytes = memPerAgentBytes(memGiB);
 }
 
