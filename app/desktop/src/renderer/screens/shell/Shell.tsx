@@ -224,6 +224,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const onboarding = blocked || screen.id === "onboarding" || screen.id === "start";
   const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding;
+  // Settings opens over Get started too, which links to it (Connect Claude): it has the window to itself, not the sheet.
+  const settings = sheet && (chrome || screen.id === "start");
 
   const go = (next: Screen) => navigate(next);
   const goTo = (p: Placed) => go({ id: "project", project: routeOf(p), message: null, at: p.hub });
@@ -359,7 +361,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         </div>
       </AppFrame>
       </PanelHandleProvider>
-      {chrome && sheet ? (
+      {settings ? (
         <Boundary key="settings" part="Settings">
           <Suspense fallback={null}>
             <SettingsSheet
