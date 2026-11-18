@@ -102,6 +102,13 @@ test("the VM row says where agents run: in VMs, off by choice, or the reason wit
   // A reason with no command still says itself, and warns.
   const noDns = c.vms("devbox", false, { kind: "process", why: "No DNS server for VMs." })!;
   expect([noDns.status, noDns.fix, noDns.message.endsWith("No DNS server for VMs.")]).toEqual(["warn", undefined, true]);
+  // In VMs, but some agents not (a machine signed in with `claude login`): it warns, with which and the fix.
+  const login = c.vms("devbox", false, { kind: "microvm", why: "this machine signs in to Claude with its own login, so agents whose bot has no Claude account run as plain processes", fix: "claude setup-token" })!;
+  expect([login.status, login.fix?.command, login.message]).toEqual([
+    "warn",
+    "claude setup-token",
+    "Agents on devbox run in VMs of their own, but this machine signs in to Claude with its own login, so agents whose bot has no Claude account run as plain processes",
+  ]);
   expect(c.vms("devbox", true, { kind: "microvm" })).toBeUndefined();
   expect(c.vms("devbox", false, undefined)).toBeUndefined();
 });

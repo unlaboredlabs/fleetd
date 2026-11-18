@@ -225,6 +225,10 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   reportVm(plain, { kind: "process", why: "no KVM" });
   expect(plain).toEqual({ sandbox: { kind: "process", why: "no KVM" } });
   expect(withSandbox({ cap: 10, why: "memory 60 GB, about 4.4 GB an agent" }, { kind: "microvm" }).why).toBe("memory 60 GB, about 4.4 GB an agent; each agent in a VM of its own");
+  // In VMs, but some agents not: which, why and the fix in the same line, and on the slot's sandbox for the app.
+  const note = withSandbox({ cap: 10, why: "memory 60 GB" }, { kind: "microvm", why: "a login stays here, so some run as plain processes.", fix: "claude setup-token" });
+  expect(note.why).toBe("memory 60 GB; each agent in a VM of its own, but a login stays here, so some run as plain processes. Fix: claude setup-token");
+  expect(note.sandbox).toEqual({ kind: "microvm", why: "a login stays here, so some run as plain processes.", fix: "claude setup-token" });
   expect(withSandbox({ cap: 22, why: "memory 60 GB, about 2 GB an agent" }, { kind: "process", why: "no KVM" }).why).toBe("memory 60 GB, about 2 GB an agent; agents run as plain processes: no KVM");
   expect(withSandbox({ cap: 22, why: "x" }, undefined).why).toBe("x");
 });

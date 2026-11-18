@@ -739,7 +739,13 @@ export function clip(text: string, max: number): string {
  * it beside the machine's cap). Here, beside `clip`, so fleetd cloud sizes its machines with it too. */
 export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T & { sandbox?: SlotSandbox } {
   if (!sandbox) return auto;
-  if (sandbox.kind === "microvm") return { ...auto, why: `${auto.why}; each agent in a VM of its own`, sandbox: { kind: "microvm" } };
+  if (sandbox.kind === "microvm") {
+    // In VMs, but some agents not (a machine signed in with `claude login`): which, why and the fix, in the same line.
+    if (!sandbox.why) return { ...auto, why: `${auto.why}; each agent in a VM of its own`, sandbox: { kind: "microvm" } };
+    const note = clip(String(sandbox.why), SANDBOX_WHY_MAX);
+    const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
+    return { ...auto, why: `${auto.why}; each agent in a VM of its own, but ${fix ? `${note} Fix: ${fix}` : note}`, sandbox: { kind: "microvm", why: note, ...(fix ? { fix } : {}) } };
+  }
   // Whole, or cut with an ellipsis: a reason is never dropped from the line people read.
   const reason = clip(String(sandbox.why ?? "") || "no reason given", SANDBOX_WHY_MAX);
   const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;

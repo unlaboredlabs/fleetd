@@ -84,9 +84,11 @@ const CHECK_EVERY_MS = 60_000;
 export const ADDRS_EVERY_MS = 2_000;
 /** How long after a box that failed new sessions run as plain processes. */
 export const FAILED_MS = 10 * 60_000;
-/** What lets a machine signed in with `claude login` run its agents in VMs: a token a VM can be given. */
-export const SIGN_IN_FIX =
-  "run `claude setup-token` and put the token it prints in ~/.fleetd/claude.env as CLAUDE_CODE_OAUTH_TOKEN=<token> (or give Claude's settings an ANTHROPIC_API_KEY): agents then run in VMs within a minute";
+/** What lets a machine signed in with `claude login` run all its agents in VMs: a token a VM can be given, which this
+ * command prints (`SIGN_IN_HOW` says where it goes). */
+export const SIGN_IN_FIX = "claude setup-token";
+export const SIGN_IN_HOW =
+  "put the token `claude setup-token` prints in ~/.fleetd/claude.env as CLAUDE_CODE_OAUTH_TOKEN=<token>, and they run in VMs within a minute";
 
 /** How often the node counts the files each box's share holds open. */
 export const SHARE_EVERY_MS = 1_000;
@@ -96,9 +98,10 @@ export type PlaceFor = { sessionId: string; dir: string; role: SessionRole };
 /** The node's dirs of the tools it installs for agents (./view.ts fleetdOwn), shown to every box that has them. */
 const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/bin", "revyl/bin", "mac/bin"];
 
-/** Where this machine's agents run, and why when it's a plain process: `fix` the command that fixes it, `expected` when
+/** Where this machine's agents run, and why when it's a plain process (or, in VMs, which of them don't and why:
+ * `why` and `fix` on `microvm`): `fix` the command that fixes it, `expected` when
  * it's by choice or the machine's design (turned off, macOS, the VM files on their way), nothing to fix. */
-export type VmStatus = { kind: "microvm" } | { kind: "process"; why: string; fix?: string; expected?: true };
+export type VmStatus = { kind: "microvm"; why?: string; fix?: string } | { kind: "process"; why: string; fix?: string; expected?: true };
 
 /** What a box needs started: its dir, its view, its port, the fleetd binary the guest runs, the tools, the check, and
  * this machine's addresses its network keeps out. */
@@ -326,14 +329,15 @@ export class MicroVm {
     if (/\s/u.test(this.o.fleetd[0]!)) return { kind: "process", why: `the fleetd binary's path has a space in it (${this.o.fleetd[0]})` };
     const check = (this.o.check ?? (() => canRunVms(this.o.home)))();
     if (!check.ok) return { kind: "process", why: check.why, ...(check.fix ? { fix: check.fix } : {}), ...(check.expected ? { expected: true } : {}) };
-    // A machine whose agents sign in to Claude with its own login has nothing a VM can be given: every agent runs as a
-    // plain process, and the machine says so, with the fix.
-    const noSignIn = this.o.claudeEnv ? machineSignIn(this.o.claudeEnv()) : undefined;
-    if (noSignIn) return { kind: "process", why: noSignIn, fix: SIGN_IN_FIX };
     if (!this.#tools()) {
       this.#fetchTools();
       return { kind: "process", why: "fetching the VM files (Cloud Hypervisor, the guest kernel and root image) for the first time", expected: true };
     }
+    // A machine whose agents sign in to Claude with its own login has nothing a VM can be given for them: an agent on a
+    // Claude account of its bot's still runs in one (each start checks its own, provision.ts forClaude), and every other
+    // runs as a plain process. The machine says so, with the fix.
+    const noSignIn = this.o.claudeEnv ? machineSignIn(this.o.claudeEnv()) : undefined;
+    if (noSignIn) return { kind: "microvm", why: `${noSignIn}, so agents whose bot has no Claude account run as plain processes: ${SIGN_IN_HOW}.`, fix: SIGN_IN_FIX };
     return { kind: "microvm" };
   }
 

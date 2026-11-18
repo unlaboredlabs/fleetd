@@ -129,9 +129,9 @@ echo '{"type":"system","subtype":"init","claude_code_version":"2.1.302","model":
 while read line; do :; done
 `;
 
-function vmFor(node: string) {
+function vmFor(node: string, claudeEnv?: () => Record<string, string | undefined>) {
   const h = hooks();
-  return new MicroVm({ home: node, fleetd: ["/opt/fleetd"], lead: () => h, check: () => OK, tools: () => TOOLS, boot: standInBoot, dial: unixDial, reach: async () => {}, goneMs: 1_000 });
+  return new MicroVm({ home: node, fleetd: ["/opt/fleetd"], lead: () => h, check: () => OK, tools: () => TOOLS, boot: standInBoot, dial: unixDial, reach: async () => {}, goneMs: 1_000, ...(claudeEnv ? { claudeEnv } : {}) });
 }
 
 /** What the session's spec gives claude (sessions/index.ts #spec), as a plain process has it in the person's home. */
@@ -291,7 +291,7 @@ test("what a box is given: a value naming a place of the home it doesn't have is
   expect(given.ro.concat(given.rw).some((x) => under(join(p.node, "order-env"), x) || under(x, join(p.node, "order-env")))).toBe(false);
 });
 
-test("a machine's own Claude login never goes into a box: the agent runs as a plain process, and says why", async () => {
+test("a machine's own Claude login never goes into a box: its agent runs as a plain process, one on a bot's Claude account in a VM, and the machine says which", async () => {
   const p = personHome("home-d");
   // The person's settings without a token: the login is the OAuth one in .credentials.json.
   write(p.secrets.claudeSettings, JSON.stringify({ env: { DISABLE_AUTOUPDATER: "1" } }));
@@ -303,33 +303,49 @@ test("a machine's own Claude login never goes into a box: the agent runs as a pl
   expect(() => forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: given.env })).toThrow("its own login (`claude login`)");
   // A bot's Claude account signs it in.
   expect(forClaude({ node: p.node, session: "s4", cwd: p.wt, env, program: claudeBin, boxEnv: { ...given.env, CLAUDE_CODE_OAUTH_TOKEN: "acct" } }).program).toStartWith(join(p.node, "vm/claude/"));
-  // At the start: no box, the session as a plain process on this machine.
-  const vm = vmFor(p.node);
+  // At the start, on a machine whose node knows its own Claude environment (the login, nothing a VM can be given): no
+  // box, the session as a plain process on this machine.
+  const vm = vmFor(p.node, () => ({ HOME: p.h }));
   const dir = join(p.node, "hosts", "s4");
   const link = await vm.bound({ sessionId: "s4", dir, role: "worker" }).start({ fleetd: [process.execPath, MAIN], dir, sessionId: "s4", program: claudeBin, args: [], cwd: p.wt, env });
   await firstInit(link);
   expect(readBox(dir)).toBeUndefined();
-  // Not the machine's VMs: only this session (another bot's may have an account).
-  expect(vm.status().kind).toBe("microvm");
+  // Not the machine's VMs: only this session. The machine runs agents in VMs still, and says which don't, why and the
+  // fix, in its status (the app's and the doctor's line), never "in VMs" with nothing more while some aren't.
+  const status = vm.status();
+  expect(status).toEqual({ kind: "microvm", why: expect.stringContaining("its own login (`claude login`)"), fix: SIGN_IN_FIX });
+  expect(status.why).toContain("agents whose bot has no Claude account run as plain processes");
+  expect(status.why).toContain("~/.fleetd/claude.env as CLAUDE_CODE_OAUTH_TOKEN=<token>");
+  expect(SIGN_IN_FIX).toBe("claude setup-token");
+  // Another bot's agent on the same machine, on its Claude account (its session's own token, actions/accounts.ts):
+  // in a VM of its own.
+  const acct = join(p.node, "hosts", "s5");
+  const inBox = await vm.bound({ sessionId: "s5", dir: acct, role: "worker" }).start({
+    fleetd: [process.execPath, MAIN],
+    dir: acct,
+    sessionId: "s5",
+    program: claudeBin,
+    args: [],
+    cwd: p.wt,
+    env: { ...sessionEnv(p, "s5"), CLAUDE_CODE_OAUTH_TOKEN: "account-token" },
+  });
+  await firstInit(inBox);
+  expect(readBox(acct)).toBeDefined();
+  await vm.bound({ sessionId: "s5", dir: acct, role: "worker" }).end(acct);
   // Its task ends where its session ran, as a plain process: what its VM was given goes too (its home, its copies of
   // the order's variables), never left on this machine's disk.
   expect(existsSync(boxHome(p.node, "s4"))).toBe(true);
   await processPlace.end(dir);
   expect(existsSync(boxHome(p.node, "s4"))).toBe(false);
   expect(existsSync(join(p.node, "vm/env/s4"))).toBe(false);
-  // The machine says so: with the node's own Claude environment, its VMs are off, with why and the fix, never an
-  // app that says agents run in VMs while none do.
-  const said = new MicroVm({ home: p.node, fleetd: ["/opt/fleetd"], lead: () => undefined, check: () => OK, tools: () => TOOLS, claudeEnv: () => ({ HOME: p.h }) });
-  expect(said.status()).toEqual({ kind: "process", why: expect.stringContaining("its own login (`claude login`)"), fix: SIGN_IN_FIX });
-  expect(SIGN_IN_FIX).toContain("claude setup-token");
-  said.close();
-  // A token in claude.env (the node's environment), or one in Claude's settings: VMs.
-  const token = new MicroVm({ ...said.o, claudeEnv: () => ({ HOME: p.h, CLAUDE_CODE_OAUTH_TOKEN: "t" }) });
-  expect(token.status().kind).toBe("microvm");
+  vm.close();
+  // A token in claude.env (the node's environment), or one in Claude's settings: every agent in a VM, nothing to say.
+  const token = new MicroVm({ ...vm.o, claudeEnv: () => ({ HOME: p.h, CLAUDE_CODE_OAUTH_TOKEN: "t" }) });
+  expect(token.status()).toEqual({ kind: "microvm" });
   token.close();
   write(p.secrets.claudeSettings, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "gw" } }));
-  const settings = new MicroVm({ ...said.o });
-  expect(settings.status().kind).toBe("microvm");
+  const settings = new MicroVm({ ...vm.o });
+  expect(settings.status()).toEqual({ kind: "microvm" });
   settings.close();
 }, 30_000);
 
