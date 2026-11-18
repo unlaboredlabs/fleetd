@@ -6405,6 +6405,13 @@ export type ProjectSetOutput = {
 };
 
 export type ProjectSettings = {
+  /** Its pick of its agents' computer, exactly what each of them gets; absent: none (the default placement and size). */
+  computer?: ComputerPick;
+  /**
+   * What it may pick, each a real machine: the Local VM where its machine runs VMs, and each connected provider's
+   * sizes; one that can't be used now says why, the pick among them. Absent with `repo`, and from older hubs.
+   */
+  computers?: ComputerChoice[];
   /** Its agents' variables, by name. A secret's value is never here. */
   env: ProjectEnvVar[];
   /**
@@ -6448,6 +6455,10 @@ export type ProjectSettingsSetInput = {
   avatarColor?: BotColor;
   /** Turns its chat's tags on or off (a trial; off by default). */
   chatTags?: boolean;
+  /** Its agents' computer from now on: one of `computers`, exactly. */
+  computer?: ComputerPick;
+  /** Drop its pick: its agents are placed and sized by default again. */
+  computerDefault?: boolean;
   machineId: MachineId;
   projectId: ProjectId;
   /**
@@ -7236,6 +7247,29 @@ export type SandboxDisconnectInput = {
 
 export type SandboxGetInput = { [key: string]: unknown };
 
+/** Where an agent's computer is: its machine's own VM (`vm`), or a box of a hosted provider. */
+export type KnownComputerKind = "vm" | "e2b" | "boat" | "daytona";
+/** KnownComputerKind, or a value from a newer hub. */
+export type ComputerKind = KnownComputerKind | (string & {});
+
+/** A bot's agents' computer: where, and its exact size. */
+export type ComputerPick = {
+  cpu: number;
+  kind: ComputerKind;
+  memGb: number;
+};
+
+/** One computer a bot may pick. */
+export type ComputerChoice = {
+  cpu: number;
+  kind: ComputerKind;
+  /** As a person reads it: "E2B · 4 vCPU / 8 GB". */
+  label: string;
+  memGb: number;
+  /** Why it can't be used now; absent while it can. */
+  unavailable?: string;
+};
+
 /** A hosted sandbox provider a team connects with its own key. */
 export type KnownSandboxProvider = "e2b" | "boat" | "daytona";
 /** KnownSandboxProvider, or a value from a newer hub. */
@@ -7959,6 +7993,11 @@ export type SlotStatePerMachine = {
  * or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).
  */
 export type SlotSandbox = {
+  /**
+   * In VMs, but only agents on a Claude account of their bot's: the machine signs in to Claude with its own login,
+   * which never goes into a VM, so a bot with none runs its agents as plain processes there.
+   */
+  accountsOnly?: boolean;
   /** The plain processes are by choice or the machine's design: nothing to fix. */
   expected?: boolean;
   /** The command that fixes it, run on the machine. */

@@ -6,7 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { boatStandIn, daytonaStandIn, e2bStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { frames } from "../../src/sandbox/providers/e2b.ts";
-import { typeFor } from "../../src/sandbox/providers/boat.ts";
+import { TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
+import { DEFAULT_SIZE, SIZES } from "../../src/sandbox/providers/common.ts";
 import { hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
 import { envFile, launcher } from "../../src/sandbox/providers/shell.ts";
 
@@ -267,8 +268,7 @@ describe("each provider's own settings", () => {
     await p.destroy(b.id);
     expect(s.calls.at(-1)!.headers.get("x-ascii-confirm-delete")).toBe(b.id);
     expect(typeFor({ cpu: 2, memGb: 4 })).toBe("small");
-    expect(typeFor({ cpu: 2, memGb: 6 })).toBe("default");
-    expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("largest size");
+    expect(typeFor({ cpu: 16, memGb: 32 })).toBe("xlarge");
   });
 
   test("boat: a build after a failed one gets a fresh box, though boat keeps keys after their box is gone", async () => {
@@ -290,7 +290,7 @@ describe("each provider's own settings", () => {
     const c = s.calls.find((c) => c.path === "/sandbox" && c.method === "POST")!;
     expect(c.body).toMatchObject({ name: "sess-1", snapshot: "fleetd-abc", public: false, autoStopInterval: 0, autoDeleteInterval: 0, ttlMinutes: 120 });
     const e = await p.build(DOCKERFILE, { name: "x", size: { cpu: 8, memGb: 16 } }).catch((e) => e);
-    expect(e.message).toContain("Daytona's largest sandbox is 4 vCPUs and 8 GB");
+    expect(e.message).toBe("Daytona comes in no 8 vCPU / 16 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB");
   });
 
   test("Daytona: a name taken by a box fleetd didn't make is not answered as ours", async () => {
@@ -298,6 +298,54 @@ describe("each provider's own settings", () => {
     s.boxes.set("theirs", { id: "theirs", name: "sess-1", labels: {}, state: "started" });
     const e = await create(p).catch((e) => e);
     expect(e.message).toContain("didn't make");
+  });
+});
+
+describe("exact sizes, never rounded", () => {
+  test("each provider lists exact sizes, the default first; E2B's memory is a whole, even number of GiB", () => {
+    for (const k of ["vm", "boat", "e2b", "daytona"] as const) {
+      expect(SIZES[k][0]).toEqual(DEFAULT_SIZE);
+      expect(SIZES[k].every((s) => Number.isInteger(s.cpu) && Number.isInteger(s.memGb))).toBe(true);
+    }
+    expect(SIZES.e2b.every((s) => s.memGb % 2 === 0 && s.cpu <= 8 && s.memGb <= 8)).toBe(true);
+    expect(SIZES.daytona.every((s) => s.cpu <= 4 && s.memGb <= 8)).toBe(true);
+    // boat's list is exactly its machine types.
+    expect(SIZES.boat).toEqual(TYPES.map(({ cpu, memGb }) => ({ cpu, memGb })));
+  });
+
+  test("boat: each listed size reaches create as its own type, and one boat has no type of is refused, not rounded up", async () => {
+    for (const t of TYPES) {
+      const { s, p } = make("boat");
+      await p.create({ template: "fleetd-abc", key: "k-1", labels: {}, lifetimeMs: 60_000, size: { cpu: t.cpu, memGb: t.memGb } });
+      expect(s.calls.find((c) => c.path === "/api/v1/sandboxes" && c.method === "POST")!.body.type).toBe(t.type);
+    }
+    // 2 vCPU / 6 GB once became "default" (4 vCPU / 8 GB): now no box is made at all.
+    const { s, p } = make("boat");
+    const e = await p.create({ template: "fleetd-abc", key: "k-2", labels: {}, lifetimeMs: 60_000, size: { cpu: 2, memGb: 6 } }).catch((e) => e);
+    expect(e.message).toBe("boat.dev comes in no 2 vCPU / 6 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB");
+    expect(s.calls.some((c) => c.path === "/api/v1/sandboxes" && c.method === "POST")).toBe(false);
+    expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("comes in no 32 vCPU / 64 GB");
+  });
+
+  test("E2B and Daytona: each listed size is the template's or snapshot's own, exactly; another is refused before any call", async () => {
+    for (const size of SIZES.e2b) {
+      const { s, p } = make("e2b");
+      await p.build(DOCKERFILE, { name: "fleetd-abc", size });
+      expect(s.calls.find((c) => c.path === "/v3/templates")!.body).toEqual({ name: "fleetd-abc", cpuCount: size.cpu, memoryMB: size.memGb * 1024 });
+    }
+    for (const size of SIZES.daytona) {
+      const { s, p } = make("daytona");
+      await p.build(DOCKERFILE, { name: "fleetd-abc", size });
+      expect(s.calls.find((c) => c.path === "/snapshots" && c.method === "POST")!.body).toMatchObject({ cpu: size.cpu, memory: size.memGb });
+    }
+    const e2b = make("e2b");
+    const odd = await e2b.p.build(DOCKERFILE, { name: "x", size: { cpu: 3, memGb: 5 } }).catch((e) => e);
+    expect(odd.message).toBe("E2B comes in no 3 vCPU / 5 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 8 GB");
+    expect(e2b.s.calls).toHaveLength(0);
+    const day = make("daytona");
+    const small = await day.p.build(DOCKERFILE, { name: "x", size: { cpu: 1, memGb: 2 } }).catch((e) => e);
+    expect(small.message).toContain("Daytona comes in no 1 vCPU / 2 GB");
+    expect(day.s.calls).toHaveLength(0);
   });
 });
 

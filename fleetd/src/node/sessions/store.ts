@@ -60,6 +60,8 @@ export type SessionLocal = {
   orderId?: string;
   /** The hosted provider the hub's slot board placed its next start in (node/place/hosted.ts); absent: this machine. */
   hosted?: string;
+  /** Its bot's pick of the computer there, exactly (a hosted box's size, or its Local VM's); absent: the default. */
+  size?: { cpu: number; memGb: number };
   setup?: Plan;
   setupPending?: boolean;
   /** The messages of runs whose claude never started because their hosted box didn't come up (the brief, a lead's

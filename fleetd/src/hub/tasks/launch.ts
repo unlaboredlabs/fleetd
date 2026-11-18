@@ -60,6 +60,8 @@ export type LaunchRequest = {
   orderId?: WorkstreamId;
   /** Where the slot board placed it (hub/slots LOCAL, or a hosted provider). */
   place?: string;
+  /** Its bot's pick of the computer there, exactly; absent: the default. */
+  size?: { cpu: number; memGb: number };
 };
 
 export type Worktree = {

@@ -284,6 +284,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
             ...(account ? { claudeAccount: account } : {}),
             ...(onepassword !== undefined ? { onepassword } : {}),
             ...(request.place !== undefined ? { place: request.place } : {}),
+            ...(request.size !== undefined ? { size: request.size } : {}),
           },
         );
       }),

@@ -2,7 +2,7 @@
 // desktop's Computer section lists them), and an image's rows in the desktop's words: Image (Ready, Building…,
 // Failed, Not built yet), Built, Size; Rebuild only while its machine builds images, there are commands and no build
 // runs. A machine that builds none shows no image at all.
-import type { ComputerImage, ProjectSummary, WorktreeSetup } from "../../desktop";
+import type { ComputerChoice, ComputerImage, ComputerPick, ProjectSummary, WorktreeSetup } from "../../desktop";
 import { ago } from "./skillsModel";
 
 export interface SetupTarget {
@@ -73,3 +73,39 @@ export const canRebuild = (image: ComputerImage | undefined, hasCommands: boolea
 /** Whether a hub event is about this bot's setup or image: the hub's project.settings, `data.image` on an image's change. */
 export const touchesComputer = (event: { readonly type: string; readonly machineId?: string; readonly projectId?: string }, p: { readonly machineId: string; readonly projectId: string }): boolean =>
   event.type === "project.settings" && event.machineId === p.machineId && event.projectId === p.projectId;
+
+/** One row of Runs on: Automatic (no pick) or one real machine the bot may have, as the hub words it. */
+export interface RunsOnRow {
+  readonly key: string;
+  readonly title: string;
+  /** What to send: a pick, or null to drop the pick (Automatic). */
+  readonly pick: ComputerPick | null;
+  readonly selected: boolean;
+  /** Why it can't be picked now; it isn't tappable then. */
+  readonly why?: string;
+}
+
+const same = (a: Pick<ComputerChoice, "kind" | "cpu" | "memGb">, b: ComputerPick | undefined): boolean =>
+  b !== undefined && a.kind === b.kind && a.cpu === b.cpu && a.memGb === b.memGb;
+
+/**
+ * Where every agent of the bot runs, as the desktop's Runs on lists it: Automatic, then each of the hub's choices in its
+ * order, provider and exact size together ("E2B · 4 vCPU / 8 GB"), the pick checked. One that can't be used now says
+ * why under it, and isn't tappable (the pick itself stays checked, saying why its agents wait). None when there is
+ * nothing to pick and nothing picked, or the hub is too old to say.
+ */
+export const runsOnRows = (settings: { readonly computer?: ComputerPick; readonly computers?: readonly ComputerChoice[] } | undefined): readonly RunsOnRow[] => {
+  const choices = settings?.computers;
+  if (choices === undefined || (choices.length === 0 && settings?.computer === undefined)) return [];
+  const pick = settings?.computer;
+  return [
+    { key: "auto", title: "Automatic", pick: null, selected: pick === undefined },
+    ...choices.map((c) => ({
+      key: `${c.kind}:${String(c.cpu)}:${String(c.memGb)}`,
+      title: c.label,
+      pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
+      selected: same(c, pick),
+      ...(c.unavailable === undefined ? {} : { why: c.unavailable }),
+    })),
+  ];
+};

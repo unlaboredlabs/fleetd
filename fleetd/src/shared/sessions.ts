@@ -165,6 +165,9 @@ export type SessionLaunch = {
   isolated?: boolean;
   /** Where the hub's slot board placed it: "local", or the hosted provider whose box it runs in (node/place). */
   place?: string;
+  /** Its bot's pick of the computer at `place`, exactly: a hosted box's size, or a Local VM's ("local"). Absent: the
+   * default there. A node too old for it starts the default; a size its place doesn't come in is refused. */
+  size?: { cpu: number; memGb: number };
 };
 
 /** A person's or policy's answer to a tool permission prompt. */
@@ -207,6 +210,8 @@ export type SessionCall =
       skills?: SkillBundle[];
       /** Where the hub's slot board placed the run, for a session whose claude isn't running (SessionLaunch.place). */
       place?: string;
+      /** Its bot's pick of the computer there, exactly (SessionLaunch.size). */
+      size?: { cpu: number; memGb: number };
     }
   | { op: "withdraw"; sessionId: ThreadId; runId: string }
   | { op: "interrupt"; sessionId: ThreadId; runId?: string; reason?: string }

@@ -6,7 +6,7 @@
 // hub_link_remove), its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -185,6 +185,12 @@ export const removeLink = async (hub: Hub, linkId: string): Promise<Result<{ rea
 /** One repo's settings for its Computer: its setup and its image; the bot's own directory's without `repo`. */
 export const readComputer = async (hub: Hub, p: ProjectRef, repo?: string): Promise<Result<ProjectSettings>> => {
   const r = await hub.call("project_settings_get", { ...ref(p), ...(repo === undefined ? {} : { repo }) });
+  return r.ok ? { ok: true, value: r.output.settings } : r;
+};
+
+/** Where every agent of the bot runs from now on: one of its choices, or null for Automatic (no pick). */
+export const pickComputer = async (hub: Hub, p: ProjectRef, pick: ComputerPick | null): Promise<Result<ProjectSettings>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), ...(pick === null ? { computerDefault: true } : { computer: pick }) });
   return r.ok ? { ok: true, value: r.output.settings } : r;
 };
 

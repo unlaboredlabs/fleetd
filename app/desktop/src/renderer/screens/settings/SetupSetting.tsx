@@ -6,13 +6,13 @@
 // setup, as before. Each setup run shows on the agent's thread, a command at a time with the end of its output, each
 // within 10 minutes; when one fails the agent starts anyway and is told what failed.
 import { useCallback, useState } from "react";
-import { Button, Textarea } from "../../ui";
+import { Button, Select, Text, Textarea } from "../../ui";
 import type { ComputerImage, ProjectSettings as Settings, RepoName } from "../../../shared/contracts";
 import { useNow } from "../live";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
-import { changed, draftOf, imageLine, setupFrom, whereOf, type SetupDraft } from "./setupModel";
+import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, setupFrom, whereOf, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
 
 /** One of the project's other repos' computer, read with `repo`, once the hub answers. */
@@ -58,6 +58,7 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
       reveal={reveal}
       hint="What each agent's computer has before it starts. Setup runs once in a clean box, and agents start from the image it leaves."
     >
+      {repo === undefined ? <RunsOnRow settings={settings} /> : null}
       <ImageRow settings={settings} repo={repo} commands={(settings.setup.commands ?? []).length} />
       <SettingsRow
         title="Setup"
@@ -114,6 +115,73 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
         </GroupNote>
       ) : null}
     </SettingsSection>
+  );
+}
+
+/**
+ * Where every agent of the bot runs: one pick, each choice a real machine, provider and exact size together ("E2B · 4
+ * vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. A choice
+ * that can't be used now says why in the list; a pick that can't be had now says so under the row, since its agents
+ * wait for it. No row when there is nothing to pick.
+ */
+function RunsOnRow({ settings }: { settings: Settings }) {
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const options = pickOptions(settings);
+  if (options === null) return null;
+  const value = pickValue(settings.computer);
+  const current = options.find((o) => o.value === value);
+  const pick = (next: string) => {
+    if (next === value) return;
+    const chosen = options.find((o) => o.value === next);
+    if (!chosen) return;
+    setBusy(true);
+    setProblem(null);
+    const input = chosen.pick ? { computer: chosen.pick } : { computerDefault: true };
+    hubCall("project_settings_set", { machineId: settings.machineId, projectId: settings.projectId, ...input }).then(
+      () => {
+        setBusy(false);
+        refetch(["project_settings_get"]);
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setProblem(errorText(e));
+      },
+    );
+  };
+  const waiting = value !== AUTO && current?.why !== undefined ? `Its agents wait: ${current.why}.` : null;
+  return (
+    <SettingsRow
+      title="Runs on"
+      line={problem ?? waiting}
+      lineTone={problem !== null || waiting !== null ? "danger" : "quiet"}
+      data={{ "data-computer": value }}
+      control={
+        <Select
+          aria-label="Runs on"
+          value={value}
+          disabled={busy}
+          onValueChange={pick}
+          options={options.map((o) => ({
+            value: o.value,
+            textValue: o.label,
+            ...(o.why !== undefined && o.value !== value ? { disabled: true } : {}),
+            // The pick's own reason is the row's line: the trigger shows its label alone.
+            label:
+              o.why === undefined || o.value === value ? (
+                o.label
+              ) : (
+                <>
+                  {o.label}
+                  <Text size="xs" tone="quiet">{` · ${o.why}`}</Text>
+                </>
+              ),
+          }))}
+        />
+      }
+    />
   );
 }
 

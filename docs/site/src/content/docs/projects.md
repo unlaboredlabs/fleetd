@@ -221,6 +221,7 @@ on. Its rows:
 
 | Row | Shows |
 |---|---|
+| Runs on | Where every agent of the bot runs: **Automatic**, or one real machine, provider and exact size together. See [Runs on](#runs-on). The bot's own Computer only. |
 | Image | **Built 3 h ago · 1.1 GB**, **Building…**, **Failed** with its **Log**, or **Not built yet**. |
 | Rebuild | Builds the image again now. Hidden while it builds, and with no setup commands. |
 | Setup | The [setup commands](#setup), which are the image's recipe. |
@@ -236,6 +237,7 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
   (each within 10 minutes, the bot's variables, no order's), then its disk is checked and kept. Locally it's a VM
   disk under `~/.fleetd/node/vm/images/`. On the hub's hosted runner it's the provider's snapshot: boat.dev saves one;
   with E2B and Daytona there is no image yet, and agents start from the template and run setup as before.
+- **Size.** The image is the disk only: an agent's CPUs and memory are its bot's [Runs on](#runs-on) pick.
 - **A new agent** whose worktree has the same lockfiles starts from the image, on a disk of its own stacked over it
   (copy-on-write: it never writes into the image), and its setup doesn't run. Its brief says it started from the image.
   When setup writes into the checkout (`node_modules`, say), which no image holds, setup still runs in the worktree,
@@ -249,6 +251,37 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
 - **One image a repo.** When a new one is ready the older one goes; an agent still running keeps the one it started from
   until its task ends.
 
+
+### Runs on {#runs-on}
+
+One pick per bot for where its agents run, each choice a real machine: provider and exact size together, as
+**Local VM · 2 vCPU / 4 GB** or **E2B · 4 vCPU / 8 GB**. Every agent of the bot gets exactly that machine, never another
+size or provider. The choices are:
+
+| Choice | Sizes |
+|---|---|
+| Local VM | 2 vCPU / 4 GB, 4 vCPU / 4 GB (what Automatic gives), 4 vCPU / 8 GB, 8 vCPU / 16 GB: those the bot's machine has the CPUs and twice the memory for. Listed only where it runs [VMs](/docs/machines#vms); while it can't now (no `/dev/kvm`, the last VM failed), each says why. Each VM counts its memory's worth of the machine's [max agents](#max-agents): an 8 vCPU / 16 GB one on a machine of 4 GiB VMs counts as 4. |
+| boat.dev | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB: its machine types. |
+| E2B | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 8 GB: within its plans' 8 vCPUs and 8 GiB, memory a whole, even number of GiB. |
+| Daytona | 2 vCPU / 4 GB, 4 vCPU / 8 GB: within its 4 vCPUs and 8 GB. |
+
+A hosted provider is listed only once the team [connected it](/docs/machines#sandboxes); one whose key failed its last
+test says so. Hosted sandboxes take only agents on a Claude account, and so do the VMs of a machine signed in to Claude
+with its own `claude login`: on a machine where nobody's Claude account is (neither the hub's nor a person's), those
+choices say so and can't be picked. A Local VM size that takes more slots than its machine's max agents says so too,
+with the fix. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
+of that size (a few minutes, once); boat.dev sizes each sandbox as it starts. An agent keeps the size it started at
+until it ends, a pick changed meanwhile included.
+
+**Automatic**, the default, places agents as before: the machine's own slots (in a VM of 4 vCPUs and its
+`vmMemoryGiB`), then each connected provider in order at 2 vCPU / 4 GB ([How placement picks](/docs/machines#sandboxes)).
+
+With a pick, the bot's agents go only there. When it is full they wait in line; when it can't be had (its provider
+disconnected, its machine's VMs off or too small), they wait and the line says why, e.g. "its bot's computer is E2B ·
+4 vCPU / 8 GB, and E2B isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's
+Computer page". The pick stays shown with that reason until it is changed. A pick applies to each agent's next start;
+one already running keeps its computer. The lead isn't an agent and runs as before. Set it with `project_settings_set`
+(`computer: {kind, cpu, memGb}`, one of `project_settings_get`'s `computers`; `computerDefault: true` for Automatic).
 ### Setup commands {#setup}
 
 Each repo's setup, on its **Computer** page: commands that

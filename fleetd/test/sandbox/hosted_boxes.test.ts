@@ -85,6 +85,37 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
   });
 }
 
+for (const id of ["e2b", "boat", "daytona"] as const) {
+  test(`${id}: a bot's picked size is the box's own, exactly, and one ${id} doesn't give is refused before any box`, async () => {
+    const { s, boxes } = await world(id);
+    const size = { cpu: 4, memGb: 8 };
+    const record = await boxes.create(id, "sess-big", [], [], size);
+    // The session's box, not boat's build box (named "fleetd build …").
+    const made = s.calls.filter((c) => c.method === "POST" && /^(\/api\/v1\/sandboxes|\/v2\/sandboxes|\/sandbox)$/.test(c.path) && !String(c.body?.name ?? "").startsWith("fleetd build"));
+    expect(made).toHaveLength(1);
+    if (id === "boat") {
+      // boat sizes at create: the one template, the box of type "default" (4 vCPU / 8 GB).
+      expect(made[0]!.body.type).toBe("default");
+      expect(await boxes.template(id, size)).toBe(await boxes.template(id));
+    } else {
+      // E2B and Daytona: a template of that size of its own, built once, which the box starts from.
+      const sized = await boxes.template(id, size);
+      await boxes.template(id);
+      const built = s.calls.filter((c) => c.method === "POST" && (c.path === "/v3/templates" || c.path === "/snapshots"));
+      expect(built.map((c) => (id === "e2b" ? [c.body.cpuCount, c.body.memoryMB] : [c.body.cpu, c.body.memory]))).toEqual(
+        id === "e2b" ? [[4, 8192], [2, 4096]] : [[4, 8], [2, 4]],
+      );
+      expect(built[0]!.body.name).toBe(`${boxes.templateName()}-4c8g`);
+      expect(made[0]!.body[id === "e2b" ? "templateID" : "snapshot"]).toBe(sized);
+    }
+    await boxes.destroy(record);
+    const before = s.calls.length;
+    const odd = await boxes.create(id, "sess-odd", [], [], { cpu: 3, memGb: 6 }).catch((e) => e);
+    expect(odd.message).toContain("comes in no 3 vCPU / 6 GB");
+    expect(s.calls.length).toBe(before);
+  }, 60_000);
+}
+
 test("a box whose guest doesn't take the secret is never reached; the bootstrap refuses fleetd with a wrong checksum", async () => {
   const { boxes } = await world("e2b");
   const bad = new Boxes(join(root, "bad"), "devbox", { open: (b) => b }, {

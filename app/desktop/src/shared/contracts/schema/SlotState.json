@@ -27,6 +27,10 @@
     "SlotSandbox": {
       "description": "Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
       "properties": {
+        "accountsOnly": {
+          "description": "In VMs, but only agents on a Claude account of their bot's: the machine signs in to Claude with its own login,\nwhich never goes into a VM, so a bot with none runs its agents as plain processes there.",
+          "type": "boolean"
+        },
         "expected": {
           "description": "The plain processes are by choice or the machine's design: nothing to fix.",
           "type": "boolean"

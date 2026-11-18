@@ -11,7 +11,7 @@
 // - A bot's computer image (`snapshot`) is a saved snapshot of a box that ran its setup; `forget` deletes it.
 // - boat builds no images: `build` replays the recipe's steps as root on a fresh box from boat's own Ubuntu 24.04
 //   image, saves it as a saved snapshot, and deletes the box.
-import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, type ProviderAuth, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
+import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, notOffered, type ProviderAuth, sameSize, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
 import { envFile, envPath, launcher, shq } from "./shell.ts";
@@ -33,10 +33,10 @@ const READY = new Set(["ready", "idle", "running"]);
 /** The longest a build's box may take to come up. */
 const BUILD_UP_MS = 10 * 60_000;
 
-/** The smallest boat size that holds `size`. */
+/** The boat type of exactly `size`; a size boat has no type of is refused, never rounded up to a larger one. */
 export function typeFor(size: Size): string {
-  const t = TYPES.find((t) => t.cpu >= size.cpu && t.memGb >= size.memGb);
-  if (!t) throw new ProviderError("failed", `boat's largest size is 16 vCPUs and 32 GB, smaller than ${size.cpu} vCPUs and ${size.memGb} GB`);
+  const t = TYPES.find((t) => sameSize(t, size));
+  if (!t) throw new ProviderError("failed", notOffered("boat", size, "boat.dev")!);
   return t.type;
 }
 

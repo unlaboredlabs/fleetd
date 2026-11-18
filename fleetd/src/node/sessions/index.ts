@@ -773,6 +773,8 @@ export class SessionService {
             const h = hostedOf(c.place);
             if (h) x.row.local.hosted = h;
             else delete x.row.local.hosted;
+            if (c.size) x.row.local.size = { cpu: c.size.cpu, memGb: c.size.memGb };
+            else delete x.row.local.size;
           });
         const mode = c.mode ?? "plain";
         const answered = mode === "now" ? new Promise<string>((resolve) => this.#sendNowWaiters.set(c.runId, resolve)) : undefined;
@@ -1144,6 +1146,7 @@ export class SessionService {
         ...(launch.claudeAccount ? { claudeAccount: launch.claudeAccount } : {}),
         ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
         ...(hostedOf(launch.place) ? { hosted: hostedOf(launch.place) } : {}),
+        ...(launch.size ? { size: { cpu: launch.size.cpu, memGb: launch.size.memGb } } : {}),
         ...(taken ? { scratchOf: scratchOwner(taken) } : {}),
       },
     };
@@ -1347,7 +1350,7 @@ export class SessionService {
     const mark = marker(id);
     let link: HostLink;
     try {
-      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) }).start({
+      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}), ...(row.local.size ? { size: row.local.size } : {}) }).start({
         fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
@@ -1999,7 +2002,7 @@ export class SessionService {
         }),
       );
     };
-    const place = pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}) });
+    const place = pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}), ...(row.local.size ? { size: row.local.size } : {}) });
     // A box starts from its bot's computer image where one is ready for this setup (place/image.ts): its setup ran there.
     const chose = place.kind === "process" || !takesImage(row.local) ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, place.kind === "hosted" ? hostedOf(row.local.hosted) : "vm", row.local.baseRef);
     const image = await startsFrom(place, chose, this.home, id, row.local.cwd, env);

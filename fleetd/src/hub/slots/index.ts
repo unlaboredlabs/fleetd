@@ -7,7 +7,7 @@
 // heartbeats size machines (loops.ts); `cap_set` is `setCaps` in cap.ts.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "../../shared/clock.ts";
-import type { HubEventType, MachineId, ProjectRef, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
+import type { ComputerPick, HubEventType, MachineId, ProjectRef, SlotSandbox, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
@@ -26,7 +26,9 @@ import {
   slotState,
 } from "./board.ts";
 import { withSandbox } from "./board.ts";
-import { autoCap, diskRoom } from "./sizing.ts";
+import { autoCap, diskRoom, type Host, hostOf } from "./sizing.ts";
+import { computers } from "../project_lead/store.ts";
+import type { Size } from "../../sandbox/providers/common.ts";
 import { type Limit, RUNNER_ID } from "../../shared/sandbox.ts";
 
 export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority, withSandbox } from "./board.ts";
@@ -76,11 +78,12 @@ export type SlotRequest = {
   hostable?: boolean;
 };
 
-const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable, size)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT (holder) DO UPDATE SET machine_id = excluded.machine_id, project_id = excluded.project_id,
     priority = excluded.priority, thread_id = excluded.thread_id,
-    state = excluded.state, order_n = excluded.order_n, place = excluded.place, hostable = excluded.hostable`;
+    state = excluded.state, order_n = excluded.order_n, place = excluded.place, hostable = excluded.hostable,
+    size = excluded.size`;
 
 function applyOp(conn: Database, op: Op): void {
   switch (op.op) {
@@ -98,6 +101,7 @@ function applyOp(conn: Database, op: Op): void {
           c.order,
           c.place ?? null,
           c.hostable ? 1 : 0,
+          c.size ? JSON.stringify({ cpu: c.size.cpu, memGb: c.size.memGb }) : null,
         );
       return;
     }
@@ -164,7 +168,20 @@ type ClaimRow = {
   order_n: number;
   place: string | null;
   hostable: number;
+  size: string | null;
 };
+
+/** A claim's kept size, `{"cpu","memGb"}`; undefined for none or one that doesn't read as one. */
+function parseSize(json: string | null): Size | undefined {
+  if (!json) return undefined;
+  try {
+    const v = JSON.parse(json) as Partial<Size>;
+    const whole = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n > 0;
+    return whole(v.cpu) && whole(v.memGb) ? { cpu: v.cpu, memGb: v.memGb } : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The persisted board: caps, max agents, machines and claims as the last hub left them. */
 function load(db: HubDb): Board {
@@ -186,7 +203,7 @@ function load(db: HubDb): Board {
     });
   const claims = db
     .all<ClaimRow>(
-      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable FROM slot_claims",
+      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, place, hostable, size FROM slot_claims",
     )
     .map((r): Claim => {
       const c: Claim = {
@@ -199,11 +216,14 @@ function load(db: HubDb): Board {
       if (r.thread_id !== null) c.threadId = r.thread_id;
       if (r.place !== null) c.place = r.place;
       if (r.hostable) c.hostable = true;
+      const size = parseSize(r.size);
+      if (size) c.size = size;
       return c;
     });
   const sessionsOnly = db.all<{ machine_id: string }>("SELECT machine_id FROM machine_roles WHERE agents = 0");
   const board = new Board(cap, shares, machines, claims);
   for (const { machine_id } of sessionsOnly) board.setRunsAgents(machine_id, false);
+  for (const [r, pick] of computers(db.conn)) board.setComputer(r, pick);
   return board;
 }
 
@@ -301,7 +321,7 @@ export class Slots {
    */
   observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
     // The hub's own runner runs no agent on its machine: its every agent is in a hosted box, counted by provider.
-    const auto = machineId === RUNNER_ID ? { cap: 0, why: "hosted sandboxes only" } : withSandbox(autoCap(load), load.sandbox);
+    const auto = machineId === RUNNER_ID ? { cap: 0, why: "hosted sandboxes only" } : { ...withSandbox(autoCap(load), load.sandbox), host: hostOf(load) };
     const room = diskRoom(load);
     const sandboxes = Array.isArray(load.sandboxes) ? load.sandboxes.filter((p): p is string => typeof p === "string") : [];
     const places: Record<string, string> = {};
@@ -328,6 +348,26 @@ export class Slots {
   /** Where the slot that follows the thread runs; undefined while none is held for it. */
   placeOfThread(r: ThreadRef): string | undefined {
     return this.board.placeOfThread(r.machineId, r.threadId);
+  }
+
+  /** The size the holder's computer starts at: its bot's pick there; undefined: the default. */
+  sizeOf(holder: string): Size | undefined {
+    return this.board.sizeOf(holder);
+  }
+
+  /** The size the computer of the slot that follows the thread starts at (`sizeOf`). */
+  sizeOfThread(r: ThreadRef): Size | undefined {
+    return this.board.sizeOfThread(r.machineId, r.threadId);
+  }
+
+  /** A bot's pick of its agents' computer changed (project_settings_set): its queued agents go where it says now. */
+  setComputer(r: ProjectRef, pick: ComputerPick | undefined): void {
+    this.locked((b) => [undefined, b.setComputer(r, pick)]);
+  }
+
+  /** Machine `m` as a bot's computer choices read it: its name, whether it runs VMs, its CPUs and memory. */
+  machineFacts(m: MachineId): { name: string; sandbox?: SlotSandbox; host?: Host } | undefined {
+    return this.board.machineFacts(m);
   }
 
   /** The holder's slot follows `thread` from now on, taken again whenever it runs, even past the cap. */

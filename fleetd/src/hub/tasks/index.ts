@@ -407,6 +407,7 @@ export class Tasks {
         : {}),
       orderId: task.workstreamId,
       ...(this.placeOf(task) !== undefined ? { place: this.placeOf(task) } : {}),
+      ...(this.sizeOf(task) !== undefined ? { size: this.sizeOf(task) } : {}),
     });
     // Every later message to this thread renders from the texts it starts with. The thread runs either way.
     try {
@@ -655,6 +656,15 @@ export class Tasks {
   private placeOf(task: Task): string | undefined {
     try {
       return slots(this.hub).placeOf(task.taskId);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The size of the task's computer: its bot's pick where its slot is placed; undefined: the default. */
+  private sizeOf(task: Task): { cpu: number; memGb: number } | undefined {
+    try {
+      return slots(this.hub).sizeOf(task.taskId);
     } catch {
       return undefined;
     }

@@ -40,6 +40,7 @@ import { canRunVms, type VmCheck } from "../../sandbox/host/capable.ts";
 import { ensureTools, findTools, vmDir, type VmTools } from "../../sandbox/host/tools.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { SessionRole } from "../../shared/sessions.ts";
+import type { Size } from "../../sandbox/providers/common.ts";
 import { readConfig } from "../config.ts";
 import { nowIso } from "../util.ts";
 import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
@@ -108,6 +109,8 @@ export type PlaceFor = {
   account?: boolean;
   /** An image build's box: this disk is its own (the image it makes), over the bare root image. */
   disk?: string;
+  /** Its bot's pick of a Local VM's size, exactly (shared/computer.ts); absent: this machine's default. */
+  size?: Size;
 };
 
 /** The node's dirs of the tools it installs for agents (./view.ts fleetdOwn), shown to every box that has them. */
@@ -132,6 +135,8 @@ export type BootPlan = {
   scope?: Scope;
   /** The guest's memory, GiB (GUEST_MEM_GIB when absent). */
   memGiB?: number;
+  /** The guest's vCPUs (GUEST_CPUS when absent). */
+  cpus?: number;
   /** The box's own home (./provision.ts), the agent's user's in its /etc/passwd. */
   home?: string;
   /** Its own writable disk (./image.ts), and the bot's image it stacks over, read-only. */
@@ -660,7 +665,8 @@ export class MicroVm {
       tools,
       check,
       blocked,
-      memGiB: this.memGiB(),
+      memGiB: s.size?.memGb ?? this.memGiB(),
+      ...(s.size ? { cpus: s.size.cpu } : {}),
       home: BOX_HOME,
       disk,
       ...(layer && existsSync(layer) ? { layer } : {}),
@@ -823,7 +829,10 @@ function toolsOrThrow(): NetTools {
 /** A heartbeat's word on where this machine's agents run: in VMs of `memGiB` each (memPerAgentBytes, for the hub's cap),
  * or as plain processes and why. */
 export function reportVm(load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes">, status: VmStatus, memGiB = GUEST_MEM_GIB): void {
-  load.sandbox = status.kind === "microvm" ? { kind: "microvm", ...(status.why ? { why: status.why } : {}), ...(status.fix ? { fix: status.fix } : {}) } : status;
+  load.sandbox =
+    status.kind === "microvm"
+      ? { kind: "microvm", ...(status.why ? { why: status.why } : {}), ...(status.fix ? { fix: status.fix } : {}), ...(status.accountsOnly ? { accountsOnly: true } : {}) }
+      : status;
   if (status.kind === "microvm") load.memPerAgentBytes = memPerAgentBytes(memGiB);
 }
 
@@ -1087,7 +1096,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     ...(b.disk ? [`path=${b.disk},image_type=raw`] : []),
     ...(b.disk && b.layer ? [`path=${b.layer},readonly=on,image_type=raw`] : []),
     "--cpus",
-    `boot=${GUEST_CPUS}`,
+    `boot=${b.cpus ?? GUEST_CPUS}`,
     "--memory",
     `size=${(b.memGiB ?? GUEST_MEM_GIB) * 1024}M,shared=on`,
     "--fs",

@@ -1,7 +1,7 @@
 // Settings › Bots › Bot › Computer, the parts with no React: a draft of the setup fields and the setup it saves, and the
 // words for the computer image that setup builds. The hub checks the same rules (WorktreeSetup's schema); these only say
 // so before a call.
-import type { ComputerImage, WorktreeSetup } from "../../../shared/contracts";
+import type { ComputerChoice, ComputerImage, ComputerPick, WorktreeSetup } from "../../../shared/contracts";
 import { age } from "../live/when";
 import { fmtBytes } from "../time/format";
 
@@ -94,3 +94,30 @@ const WHERE: Partial<Record<string, string>> = {
 
 /** Where the image is kept, for the row's hover: "a local VM image". */
 export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : (WHERE[image.where] ?? null));
+
+/** The pick's value in the Runs on select: AUTO for none, else `<kind>:<cpu>:<memGb>`. */
+export const AUTO = "auto";
+export const pickValue = (p: Pick<ComputerChoice, "kind" | "cpu" | "memGb"> | undefined): string => (p ? `${p.kind}:${p.cpu}:${p.memGb}` : AUTO);
+
+/** One option of the Runs on select: each real machine the bot may have, as the hub words it; one that can't be used
+ * now is disabled and says why, never greyed out alone. */
+export type PickOption = { value: string; label: string; why?: string; pick?: ComputerPick };
+
+/**
+ * The Runs on select's options: Automatic (no pick: placed and sized as by default), then the hub's choices in its
+ * order. Null when there is nothing to pick and nothing picked (no VMs on its machine, no provider connected, or a
+ * hub too old to say): no row then.
+ */
+export function pickOptions(settings: { computer?: ComputerPick; computers?: ComputerChoice[] }): PickOption[] | null {
+  const choices = settings.computers;
+  if (choices === undefined || (choices.length === 0 && settings.computer === undefined)) return null;
+  return [
+    { value: AUTO, label: "Automatic" },
+    ...choices.map((c) => ({
+      value: pickValue(c),
+      label: c.label,
+      ...(c.unavailable ? { why: c.unavailable } : {}),
+      pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
+    })),
+  ];
+}

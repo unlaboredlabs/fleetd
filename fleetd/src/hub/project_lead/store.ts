@@ -2,7 +2,7 @@
 // made it, when it was archived, its bot's color and the card it pays with. Every project is everyone's on its hub
 // (D491): `only_me` and `owner_person` are no longer read.
 import type { Database } from "bun:sqlite";
-import type { BotColor, ProjectSite, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
+import type { BotColor, ComputerPick, ProjectSite, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 
 /** What the hub keeps of any project: its maker and archive. */
@@ -54,6 +54,44 @@ export function setChatTags(db: Database, r: ProjectRef, on: boolean): void {
     `INSERT INTO project_settings (machine_id, project_id, chat_tags) VALUES (?1, ?2, ?3)
          ON CONFLICT (machine_id, project_id) DO UPDATE SET chat_tags = excluded.chat_tags`,
   ).run(r.machineId, r.projectId, on ? 1 : null);
+}
+
+/** A kept pick, as `computer` holds it; undefined for none or one that doesn't read as one. */
+export function parseComputer(json: string | null | undefined): ComputerPick | undefined {
+  if (!json) return undefined;
+  try {
+    const v = JSON.parse(json) as Partial<ComputerPick>;
+    const whole = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n > 0;
+    return typeof v.kind === "string" && whole(v.cpu) && whole(v.memGb) ? { kind: v.kind, cpu: v.cpu, memGb: v.memGb } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The bot's pick of its agents' computer; undefined: none. */
+export function computerOf(db: Database, r: ProjectRef): ComputerPick | undefined {
+  const row = db
+    .query<{ v: string | null }, [string, string]>("SELECT computer AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return parseComputer(row?.v);
+}
+
+/** Every bot's pick, for the slot board at the hub's start. */
+export function computers(db: Database): [ProjectRef, ComputerPick][] {
+  const out: [ProjectRef, ComputerPick][] = [];
+  for (const row of db.query<{ machine_id: string; project_id: string; computer: string }, []>("SELECT machine_id, project_id, computer FROM project_settings WHERE computer IS NOT NULL").all()) {
+    const pick = parseComputer(row.computer);
+    if (pick) out.push([{ machineId: row.machine_id, projectId: row.project_id }, pick]);
+  }
+  return out;
+}
+
+/** Keeps the bot's pick; undefined drops it. */
+export function setComputer(db: Database, r: ProjectRef, pick: ComputerPick | undefined): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, computer) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET computer = excluded.computer`,
+  ).run(r.machineId, r.projectId, pick ? JSON.stringify({ kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb }) : null);
 }
 
 /** Gives the project's bot `color`; slate, the default, is kept as none. */

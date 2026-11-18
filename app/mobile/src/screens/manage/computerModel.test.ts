@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRebuild, commandsOf, imageRows, imageSize, setupTargets, touchesComputer } from "./computerModel";
+import { canRebuild, commandsOf, imageRows, imageSize, runsOnRows, setupTargets, touchesComputer } from "./computerModel";
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
 const clock = { nowMs: NOW };
@@ -101,5 +101,35 @@ describe("touchesComputer", () => {
     expect(touchesComputer({ type: "project.settings", machineId: "devbox", projectId: "shop" }, BOT)).toBe(true);
     expect(touchesComputer({ type: "project.settings", machineId: "devbox", projectId: "api" }, BOT)).toBe(false);
     expect(touchesComputer({ type: "project.added", machineId: "devbox", projectId: "shop" }, BOT)).toBe(false);
+  });
+});
+
+describe("Runs on", () => {
+  const choices = [
+    { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
+    { kind: "e2b", cpu: 4, memGb: 8, label: "E2B · 4 vCPU / 8 GB" },
+    { kind: "daytona", cpu: 4, memGb: 8, label: "Daytona · 4 vCPU / 8 GB", unavailable: "Daytona isn't connected: an admin connects it in Settings › Hub › Machines" },
+  ];
+
+  it("is Automatic, then each real machine in the hub's order, provider and size together, the pick checked", () => {
+    const rows = runsOnRows({ computer: { kind: "e2b", cpu: 4, memGb: 8 }, computers: choices });
+    expect(rows.map((r) => [r.title, r.selected])).toEqual([
+      ["Automatic", false],
+      ["Local VM · 2 vCPU / 4 GB", false],
+      ["E2B · 4 vCPU / 8 GB", true],
+      ["Daytona · 4 vCPU / 8 GB", false],
+    ]);
+    expect(rows[0]!.pick).toBeNull();
+    expect(rows[2]!.pick).toEqual({ kind: "e2b", cpu: 4, memGb: 8 });
+    // One that can't be used now says why, never only greyed out.
+    expect(rows[3]!.why).toBe("Daytona isn't connected: an admin connects it in Settings › Hub › Machines");
+    expect(rows.some((r) => /small|medium|large/i.test(r.title))).toBe(false);
+  });
+
+  it("checks Automatic with no pick, and has no rows with nothing to pick or from a hub too old to say", () => {
+    expect(runsOnRows({ computers: choices })[0]!.selected).toBe(true);
+    expect(runsOnRows({ computers: [] })).toEqual([]);
+    expect(runsOnRows({})).toEqual([]);
+    expect(runsOnRows(undefined)).toEqual([]);
   });
 });

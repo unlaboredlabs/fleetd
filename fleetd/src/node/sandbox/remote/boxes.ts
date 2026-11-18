@@ -11,13 +11,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { GUEST_PORT, provider as makeProvider, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Size } from "../../../sandbox/providers/index.ts";
+import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, sameSize, type Size } from "../../../sandbox/providers/index.ts";
 import { hosted as hostedRecipe, templateName } from "../../../sandbox/providers/recipe.ts";
 import base from "../../../sandbox/image/Dockerfile" with { type: "text" };
 import { TESTED } from "../../runner/claude.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
+import { NAMES } from "../../../shared/sandbox.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
@@ -46,7 +47,7 @@ export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; s
 export class Boxes {
   #auth = new Map<ProviderId, ProviderAuth>();
   #clients = new Map<ProviderId, Provider>();
-  #templates = new Map<ProviderId, Promise<string>>();
+  #templates = new Map<string, Promise<string>>();
   #wiring: Wiring | undefined;
   #reaper: ReturnType<typeof setInterval> | undefined;
   /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
@@ -102,7 +103,7 @@ export class Boxes {
       else if (!b64) {
         this.#auth.delete(p);
         this.#clients.delete(p);
-        this.#templates.delete(p);
+        for (const k of [...this.#templates.keys()]) if (k === p || k.startsWith(`${p}-`)) this.#templates.delete(k);
         rmSync(this.#keyFile(p), { force: true });
       }
     }
@@ -147,29 +148,33 @@ export class Boxes {
     return templateName(hostedRecipe(base, { claude: TESTED }));
   }
 
-  /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's needed. */
-  template(p: ProviderId): Promise<string> {
+  /** The template boxes of `size` start from: built in the team's account once per recipe, by itself, the first time
+   * it's needed. E2B and Daytona fix a box's size in its template, so each size other than the default has its own
+   * (`<name>-<cpu>c<mem>g`); boat sizes a box at create, and has one. */
+  template(p: ProviderId, size: Size = DEFAULT_SIZE): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
-    const name = this.templateName();
-    const file = join(this.home, "sandbox", `template-${p}.json`);
+    const sized = p !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
+    const name = `${this.templateName()}${sized}`;
+    const file = join(this.home, "sandbox", `template-${p}${sized}.json`);
+    const key = `${p}${sized}`;
     let kept: { name?: string; id?: string } = {};
     try {
       kept = JSON.parse(readFileSync(file, "utf8"));
     } catch {}
     if (kept.name === name && kept.id) return Promise.resolve(kept.id);
-    let building = this.#templates.get(p);
+    let building = this.#templates.get(key);
     if (!building) {
       console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
       building = this.client(p)
-        .build(recipe, { name, onLog: () => {} })
+        .build(recipe, { name, size, onLog: () => {} })
         .then((id) => {
           mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
           writeFileSync(file, JSON.stringify({ name, id }));
           console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
           return id;
         });
-      building.catch(() => this.#templates.delete(p));
-      this.#templates.set(p, building);
+      building.catch(() => this.#templates.delete(key));
+      this.#templates.set(key, building);
     }
     return building;
   }
@@ -193,7 +198,10 @@ export class Boxes {
    * bootstrap and hands it fleetd. `o.keep`: an image build's box, which the provider may save. */
   async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size, o: { template?: string; keep?: boolean } = {}): Promise<BoxRecord> {
     const client = this.client(p);
-    const template = o.template ?? (await this.template(p));
+    // A size the provider has no exact box of is refused here, before any box or template is made.
+    const not = size ? notOffered(p, size, NAMES[p]) : undefined;
+    if (not) throw new ProviderError("failed", not);
+    const template = o.template ?? (await this.template(p, size));
     // A key per attempt, never the session's: boat and E2B keep a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;
