@@ -18,7 +18,7 @@ import { readBox } from "../../src/node/place/box_record.ts";
 import { MicroVm, SIGN_IN_FIX, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { boxHome, forClaude, keepShown, NoClaudeLogin, provision, transcriptBack } from "../../src/node/place/provision.ts";
+import { BOX_HOME, boxHome, forClaude, keepShown, NoClaudeLogin, provision, transcriptBack } from "../../src/node/place/provision.ts";
 import { guestOwn, mountScript, shows, under, type View } from "../../src/node/place/view.ts";
 import { marker, readRegistration, startOf, type HostLink } from "../../src/node/runner/host.ts";
 import type { VmCheck } from "../../src/sandbox/host/capable.ts";
@@ -203,13 +203,14 @@ test("a VM agent's box shows nothing of the person's home but its worktree and t
   const allowed = [p.wt, join(p.repo, ".git"), join(p.node, "sessions/s1"), join(p.node, "tmp/scratch-1"), join(p.node, "update"), join(p.node, "vm/homes/s1"), join(p.node, "vm/cache"), join(p.node, "vm/env/s1"), join(p.node, "vm/claude"), "/opt/fleetd"];
   for (const s of view.shares) expect([s.path, allowed.some((a) => under(s.path, a))]).toEqual([s.path, true]);
 
-  // What its claude ran with: a home of its own, none of the person's paths, only its own order's token.
+  // What its claude ran with: a home of its own on its disk, its own files here, none of the person's paths, only its
+  // own order's token.
   const env = Object.fromEntries(readFileSync(seen, "utf8").trim().split("\n").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-  expect(env.HOME).toBe(boxHome(p.node, "s1"));
+  expect(env.HOME).toBe(BOX_HOME);
   expect(env.CLAUDE_CONFIG_DIR).toBe(join(boxHome(p.node, "s1"), ".claude"));
   expect(env.CARGO_HOME).toBeUndefined();
   expect(env.PATH).not.toContain(p.h + "/.cargo");
-  expect(env.PATH).toContain(join(boxHome(p.node, "s1"), ".cargo/bin"));
+  expect(env.PATH).toContain(join(BOX_HOME, ".cargo/bin"));
   // agent-browser's socket, which under that home would be past a socket path's limit.
   expect(env.AGENT_BROWSER_SOCKET_DIR).toBe("/tmp/agent-browser");
   const sourced = readFileSync(env.CLAUDE_ENV_FILE!, "utf8");
@@ -219,7 +220,8 @@ test("a VM agent's box shows nothing of the person's home but its worktree and t
   // Claude's own variables from the person's settings, and nothing else of them.
   expect(JSON.parse(readFileSync(join(env.CLAUDE_CONFIG_DIR!, "settings.json"), "utf8"))).toEqual({ env: { ANTHROPIC_BASE_URL: "http://localhost:8317", ANTHROPIC_AUTH_TOKEN: "gateway-token" } });
   // Git's name and email, and nothing else of the person's git config.
-  expect(readFileSync(join(env.HOME!, ".gitconfig"), "utf8")).toBe('[user]\n\tname = "Pat Person"\n\temail = "pat@example.com"\n');
+  expect(env.GIT_CONFIG_GLOBAL).toBe(join(boxHome(p.node, "s1"), ".gitconfig"));
+  expect(readFileSync(env.GIT_CONFIG_GLOBAL!, "utf8")).toBe('[user]\n\tname = "Pat Person"\n\temail = "pat@example.com"\n');
 
   // The transcript comes back to the machine's Claude dir once the box is done: what --resume reads next.
   await vm.bound({ sessionId: "s1", dir, role: "worker" }).end(dir);
@@ -349,7 +351,7 @@ test("a machine's own Claude login never goes into a box: its agent runs as a pl
       const ran = await forSetup.run({ cwd: p.wt, argv: ["sh", "-c", "echo $HOME"], timeoutSec: 10, env: env6 });
       expect(ran.exitCode).toBe(0);
       // A plain process's setup has the machine's home, a VM's its own.
-      expect(ran.outputTail.trim()).toBe(account ? boxHome(p.node, id) : p.h);
+      expect(ran.outputTail.trim()).toBe(account ? BOX_HOME : p.h);
       const forStart = pick({ sessionId: id, dir: d, role: "worker", account });
       expect(forStart.kind).toBe(forSetup.kind);
       const started = await forStart.start({ fleetd: [process.execPath, MAIN], dir: d, sessionId: id, program: claudeBin, args: [], cwd: p.wt, env: env6 });

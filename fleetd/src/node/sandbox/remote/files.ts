@@ -177,6 +177,9 @@ export async function syncIn(box: BoxFs, o: SyncIn): Promise<string> {
       who.email ? `git config --global user.email ${q(who.email)}` : ":",
       `if [ ! -e ${q(bx(join(repo, ".git")))} ]; then`,
       origin ? `  git clone -q --filter=blob:none --no-checkout ${q(origin)} ${q(bx(repo))}` : `  git init -q ${q(bx(repo))}`,
+      // A clone already there is its bot's computer image's, as old as the image: it catches up with origin first, so the
+      // bundle's commits (made against this machine's origin refs) have what they build on.
+      origin ? `else git -C ${q(bx(repo))} fetch -q origin 2>/dev/null || true` : ":",
       "fi",
       `cd ${q(bx(repo))}`,
       worktreeConfig ? "git config extensions.worktreeConfig true" : ":",

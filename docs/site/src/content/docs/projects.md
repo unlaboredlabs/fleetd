@@ -133,7 +133,7 @@ right-click menu. Its **Bot** page has these, in order:
 | Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the bot is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
 | Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the bot. On the phone it's in the bot's info, under **Edit** on its icon. |
 | Name | How fleetd shows the bot. Its folder keeps its own name. |
-| Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Setup**: what runs in its new worktrees. See [Setup commands](#setup). |
+| Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Computer**: its setup commands and the image its agents start from. See [Computer](#computer). |
 | Environment variables | Variables every new agent of the bot gets. See [Environment variables](#env). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
@@ -214,9 +214,43 @@ From an MCP client: `project_settings_get` reads a bot's settings, `project_sett
 take only a human key. Give either settings call a `repo` (a repo's name, such as
 `api`) to read or set that repo's own `setup`; without one, or with the bot's own directory's, it is the bot's.
 
+### Computer {#computer}
+
+Each repo's **Computer**, under the repos (one per repo once the bot has more than one): the machine its agents start
+on. Its rows:
+
+| Row | Shows |
+|---|---|
+| Image | **Built 3 h ago · 1.1 GB**, **Building…**, **Failed** with its **Log**, or **Not built yet**. |
+| Rebuild | Builds the image again now. Hidden while it builds, and with no setup commands. |
+| Setup | The [setup commands](#setup), which are the image's recipe. |
+| Skip when unchanged | The files whose contents decide what setup makes (lockfiles). |
+
+The image is the repo's setup commands run once, kept as the disk new agents start from, so a toolchain setup installs
+(Rust through rustup, Postgres, anything in the home) is there at the start instead of being installed by every agent.
+
+- **When it builds.** In the background on its machine, when the setup commands change, when the files under **Skip
+  when unchanged** change on the base branch, when the VM image fleetd ships moves, and on **Rebuild**. One build runs
+  at a time on a machine. A failed build isn't tried again until one of those changes or a Rebuild.
+- **How.** A fresh box from fleetd's base image, a worktree of the base branch, the setup commands as an agent runs them
+  (each within 10 minutes, the bot's variables, no order's), then its disk is checked and kept. Locally it's a VM
+  disk under `~/.fleetd/node/vm/images/`. On the hub's hosted runner it's the provider's snapshot: boat.dev saves one;
+  with E2B and Daytona there is no image yet, and agents start from the template and run setup as before.
+- **A new agent** whose worktree has the same lockfiles starts from the image, on a disk of its own stacked over it
+  (copy-on-write: it never writes into the image), and its setup doesn't run. Its brief says it started from the image.
+  When setup writes into the checkout (`node_modules`, say), which no image holds, setup still runs in the worktree,
+  over the image's tools and caches.
+- **Never a failed start.** No image yet, one building, a failed build, or one built for other commands or lockfiles:
+  the agent starts clean and runs setup in its worktree, as without images. The image is only a cache of setup.
+- **Never in an image:** Claude's sign-in, the agent's Claude dir and transcript, its git config, the order's variables
+  and GitHub token, and no value of the bot's secret variables. A build that finds a secret's value on its disk fails
+  and names the file: write it where the agent starts (a variable), not to disk in setup.
+- **One image a repo.** When a new one is ready the older one goes; an agent still running keeps the one it started from
+  until its task ends.
+
 ### Setup commands {#setup}
 
-Each repo's **Setup**, under the repos (**Setup: api** and so on once the bot has more than one): commands that
+Each repo's setup, on its **Computer** page: commands that
 run in each new worktree of that repo, before its agent starts: install dependencies, generate code. The bot's
 own directory's is the bot's; a repo without any runs none. One a line, in order; each runs with `sh -c` in the
 worktree, with the bot's variables (and the order's), the machine's build jobs and the agent's own `$TMPDIR`. The

@@ -140,10 +140,15 @@ export class Boxes {
     return c;
   }
 
+  /** The name of the template boxes start from, for this recipe: what a bot's computer image builds on. */
+  templateName(): string {
+    return templateName(hostedRecipe(base, { claude: TESTED }));
+  }
+
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's needed. */
   template(p: ProviderId): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
-    const name = templateName(recipe);
+    const name = this.templateName();
     const file = join(this.home, "sandbox", `template-${p}.json`);
     let kept: { name?: string; id?: string } = {};
     try {
@@ -182,14 +187,15 @@ export class Boxes {
     return { sha256, ...(url ? { url } : {}), bytes: async () => new Uint8Array(await Bun.file(exe).arrayBuffer()) };
   }
 
-  /** Creates a box for `session` from the provider's template, starts its bootstrap and hands it fleetd. */
-  async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size): Promise<BoxRecord> {
+  /** Creates a box for `session` from the provider's template (or `o.template`: a bot's computer image), starts its
+   * bootstrap and hands it fleetd. `o.keep`: an image build's box, which the provider may save. */
+  async create(p: ProviderId, session: string, tcp: number[], dirs: string[] = [], size?: Size, o: { template?: string; keep?: boolean } = {}): Promise<BoxRecord> {
     const client = this.client(p);
-    const template = await this.template(p);
+    const template = o.template ?? (await this.template(p));
     // A key per attempt, never the session's: boat and E2B keep a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;
-    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}) });
+    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });
     const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
     this.#making.add(made.id);
     // Its caller writes the record at once; until a while after, the reaper leaves the box.

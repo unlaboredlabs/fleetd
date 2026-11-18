@@ -1,8 +1,12 @@
 // What a fresh local VM is given before its agent starts, in one place: a box gets nothing of this machine's home or
-// config (D557), only what this provisions, the way a hosted box gets its template and its files. A per-bot image could
-// do this instead later: what it returns (the shares, the environment, the program) is all `microvm.ts` takes from it.
-// - Its own home: `<node home>/vm/homes/<session>`, writable, kept between its boxes (the idle reap) and gone when its
-//   task ends. Its .gitconfig holds the person's git name and email, read here, and nothing else of theirs.
+// config (D557), only what this provisions, the way a hosted box gets its template and its files. What it returns (the
+// shares, the environment, the program) is all `microvm.ts` takes from it.
+// - Its home: BOX_HOME, the guest's own dir on the box's own disk (./image.ts sessionDisk), kept between its boxes (the
+//   idle reap) and gone when its task ends. What setup installs there (rustup, nvm, ~/.local) is in a bot's computer
+//   image (./image.ts) with the rest of its disk, which every later session starts from.
+// - Its own files on this machine: `<node home>/vm/homes/<session>`, writable, also gone when its task ends: its Claude
+//   dir (CLAUDE_CONFIG_DIR) and its .gitconfig (GIT_CONFIG_GLOBAL), which holds the person's git name and email, read
+//   here, and nothing else of theirs. Never in an image.
 // - The VM caches: `<node home>/vm/cache`, writable and shared by this machine's VMs (Bun's and npm's, XDG's).
 // - Its order's variables (GH_TOKEN): copies of only its own order's file in `<node home>/vm/env/<session>`, read-only,
 //   copied again when the node renews them (`refresh`). Never the machine's gh login.
@@ -22,10 +26,15 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { vmDir } from "../../sandbox/host/tools.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
 import { MANAGED_SETTINGS } from "./endpoint.ts";
+import { dropDisk } from "./image.ts";
 import { fleetdOwn, gitCommonDir, guestOwn, under } from "./view.ts";
 
 type Env = Record<string, string | undefined>;
 
+/** The agent's home in a box: the guest's own, on the box's disk, at one path in every box, so what a bot's setup
+ * installs there is where its image's next sessions look. A system dir of the guest, which no share ever covers. */
+export const BOX_HOME = "/var/lib/fleetd/home";
+/** A box's own files on this machine: its Claude dir and its .gitconfig. */
 export const boxHome = (node: string, session: string) => join(vmDir(node), "homes", session);
 export const boxCache = (node: string) => join(vmDir(node), "cache");
 export const boxEnvDir = (node: string, session: string) => join(vmDir(node), "env", session);
@@ -66,8 +75,8 @@ const isThere = (p: string) => {
   }
 };
 
-/** For any command in session `p.session`'s box (its setup commands and its session): its home, the caches, its
- * order's variables and its environment. */
+/** For any command in session `p.session`'s box (its setup commands and its session, or a bot's image build): its own
+ * files, the caches, its order's variables and its environment. */
 export function provision(p: Provision): Provisioned {
   const home = boxHome(p.node, p.session);
   const cache = boxCache(p.node);
@@ -87,12 +96,13 @@ export function provision(p: Provision): Provisioned {
   const orders = orderCopies(p.env.CLAUDE_ENV_FILE, envDir);
   if (orders) env.CLAUDE_ENV_FILE = orders.file;
   else delete env.CLAUDE_ENV_FILE;
-  const bins = [".local/bin", ".cargo/bin", ".bun/bin"].map((b) => join(home, b));
+  const bins = [".local/bin", ".cargo/bin", ".bun/bin"].map((b) => join(BOX_HOME, b));
   const path = (env.PATH ?? "").split(":").filter((d) => d && !bins.includes(d) && !IMAGE_PATH.includes(d));
   Object.assign(env, {
-    HOME: home,
+    HOME: BOX_HOME,
     PATH: [...path, ...bins, ...IMAGE_PATH].join(":"),
     CLAUDE_CONFIG_DIR: join(home, ".claude"),
+    GIT_CONFIG_GLOBAL: join(home, ".gitconfig"),
     XDG_CACHE_HOME: cache,
     BUN_INSTALL_CACHE_DIR: join(cache, "bun"),
     npm_config_cache: join(cache, "npm"),
@@ -294,9 +304,10 @@ export function linkClaude(node: string, program: string): string {
   return at;
 }
 
-/** Session `session`'s home and copies go: its task ended. */
+/** Session `session`'s files, copies and disk go: its task ended. */
 export function unprovision(node: string, session: string): void {
   for (const d of [boxHome(node, session), boxEnvDir(node, session)]) rmSync(d, { recursive: true, force: true });
+  dropDisk(node, session);
 }
 
 function writeAtomic(path: string, text: string): void {

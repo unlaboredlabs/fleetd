@@ -4,7 +4,7 @@
 // and .home), then sets the kernel's limits as this machine has them, and watches for the guest running out of memory.
 // It runs in sandbox-guest's own process, by mount(2) and plain writes, never a program.
 import { dlopen, FFIType, ptr, read } from "bun:ffi";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Marks a guest set up already. */
@@ -97,6 +97,11 @@ export function setUpGuest(env: Record<string, string | undefined> = process.env
     const out = withUser(text("passwd"), text("group"), user);
     writeFileSync(join(etc, "passwd"), out.passwd);
     writeFileSync(join(etc, "group"), out.group);
+    // Its home, on the box's own disk: made the first time, and kept as its bot's image left it.
+    if (etc === "/etc" && !existsSync(user.home)) {
+      mkdirSync(user.home, { recursive: true, mode: 0o755 });
+      chownSync(user.home, user.uid, user.gid);
+    }
   }
   tune(env);
   mkdirSync("/run/fleetd", { recursive: true });

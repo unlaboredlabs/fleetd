@@ -66,6 +66,7 @@ export const SESSION_CALLS = [
   "vault_import_search",
   "claude_models",
   "project_worktrees",
+  "project_image",
   "launch",
   "send",
   "withdraw",

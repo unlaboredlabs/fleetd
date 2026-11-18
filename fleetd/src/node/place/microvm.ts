@@ -21,7 +21,7 @@
 // session for FAILED_MS after a box that couldn't boot or reach Claude (`failed`): a broken VM network costs one start
 // a fallback, never the machine's agents.
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { homedir, userInfo } from "node:os";
@@ -48,7 +48,10 @@ import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxP
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
 import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
-import { boxHome, forClaude, machineSignIn, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
+import { BOX_HOME, forClaude, machineSignIn, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
+import { imagesDir, newDisk, sessionDisk, sessionLayer, type Backend, type Built, type Job } from "./image.ts";
+import { IMAGE } from "../../sandbox/image/recipe.ts";
+import { how, SETUP_TIMEOUT_SEC, type Ran } from "../worktree/setup.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
@@ -95,7 +98,14 @@ export const SHARE_EVERY_MS = 1_000;
 
 /** The session a place is picked for; `account`: it runs on a Claude account of its bot's (actions/accounts.ts), a
  * sign-in of its own a VM can be given wherever the machine's own can't be. */
-export type PlaceFor = { sessionId: string; dir: string; role: SessionRole; account?: boolean };
+export type PlaceFor = {
+  sessionId: string;
+  dir: string;
+  role: SessionRole;
+  account?: boolean;
+  /** An image build's box: this disk is its own (the image it makes), over the bare root image. */
+  disk?: string;
+};
 
 /** The node's dirs of the tools it installs for agents (./view.ts fleetdOwn), shown to every box that has them. */
 const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/bin", "revyl/bin", "mac/bin"];
@@ -121,6 +131,9 @@ export type BootPlan = {
   memGiB?: number;
   /** The box's own home (./provision.ts), the agent's user's in its /etc/passwd. */
   home?: string;
+  /** Its own writable disk (./image.ts), and the bot's image it stacks over, read-only. */
+  disk?: string;
+  layer?: string;
 };
 /** What a box's boot leaves: its launcher, its VMM and helpers once they run, virtiofsd among them, and the shell
  * holding its network namespace. */
@@ -169,6 +182,8 @@ export type MicroVmOptions = {
   shareFds?: (r: BoxRecord) => ShareFds | undefined;
   forget?: (box: Box) => Promise<void>;
   shareEveryMs?: number;
+  /** How an image build's box seals its disk (`sealScript`, as root): the stand-ins'. */
+  seal?: (box: Box, script: string, scrub: string[]) => Promise<RunOutcome>;
 };
 
 /** What the share watch knows of one box: its virtiofsd processes, and the lowest count since it last forgot (0
@@ -431,6 +446,62 @@ export class MicroVm {
     return held.box.run({ ...r, env: await this.#inBox(p.env, r.cwd) });
   }
 
+  /** Where this machine's bot images are built and kept (./image.ts), while its agents run in VMs. */
+  backend(): Backend | undefined {
+    if (this.status().kind !== "microvm") return undefined;
+    return {
+      where: "vm",
+      base: IMAGE.key,
+      build: (j) => this.buildImage(j),
+      drop: async (ref) => void rmSync(ref, { force: true }),
+    };
+  }
+
+  /**
+   * A bot's image: a box over the bare root image, with a new disk of its own, runs the setup commands in a worktree of
+   * the bot's base (shared in, so the checkout isn't in the image), as a session would but with none of a session's
+   * own (no Claude, no order). Then, as root in the box, its disk is checked for the values of the bot's secrets and
+   * stripped of what's the box's alone (its /run and /tmp, shell history), and frozen, which leaves it whole on this
+   * machine's disk for the box's end. That disk is the image.
+   */
+  async buildImage(j: Job): Promise<Built> {
+    const file = join(imagesDir(this.o.home), `${j.project}-${j.key.slice(0, 12)}.img`);
+    const part = `${file}.part`;
+    rmSync(part, { force: true });
+    newDisk(part);
+    const session = `image-${j.project}`;
+    const s: PlaceFor = { sessionId: session, dir: join(imagesDir(this.o.home), "build", j.project, "host"), role: "worker", disk: part };
+    mkdirSync(s.dir, { recursive: true, mode: 0o700 });
+    let worktree = false;
+    try {
+      const p = provision({ node: this.o.home, session, cwd: j.cwd, env: j.env });
+      const need = needs({ cwd: j.cwd, env: p.env, argv: ["sh"], node: this.o.home, session, rw: p.rw, ro: [this.o.fleetd[0]!, ...p.ro] });
+      const held = await this.#box(s, need);
+      const env = await this.#inBox(p.env, j.cwd);
+      for (const command of j.setup.commands ?? []) {
+        j.log(`$ ${command}`);
+        const at = Date.now();
+        const out = await held.box.run({ cwd: j.cwd, argv: ["sh", "-c", command], timeoutSec: SETUP_TIMEOUT_SEC, env, scrub: j.secrets });
+        j.log(out.notRun ?? out.outputTail);
+        const ran: Ran = { command, exitCode: out.exitCode, outputTail: out.outputTail, timedOut: out.timedOut, tookMs: Date.now() - at };
+        if (out.notRun || out.exitCode !== 0) throw new Error(`\`${command}\` ${out.notRun ?? how(ran, SETUP_TIMEOUT_SEC)}`);
+      }
+      // What setup left in the checkout (node_modules, say) isn't in the image: its sessions run setup again over it.
+      const st = await held.box.run({ cwd: j.cwd, argv: ["git", "status", "--porcelain", "--ignored", "--untracked-files=normal"], timeoutSec: 60, env });
+      worktree = st.exitCode !== 0 || st.outputTail.trim() !== "";
+      const sealed = await (this.o.seal ?? ((box, script, scrub) => box.run({ root: true, cwd: "/", argv: ["/bin/bash", "-c", script], timeoutSec: SETUP_TIMEOUT_SEC, scrub, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", FLEETD_SECRETS: scrub.join("\n") } })))(held.box, sealScript(BOX_HOME), j.secrets.filter((v) => v.length >= 8));
+      if (sealed.exitCode === 3) throw new Error(`setup wrote the value of one of the bot's secret variables into ${sealed.outputTail.trim().split("\n").join(", ")}: an image never holds one, so write it where the session starts instead (an environment variable)`);
+      if (sealed.notRun || sealed.exitCode !== 0) throw new Error(`the image's disk couldn't be sealed: ${sealed.notRun ?? sealed.outputTail.trim().slice(-500)}`);
+    } finally {
+      await this.#drop(s.dir);
+      unprovision(this.o.home, session);
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+    renameSync(part, file);
+    chmodSync(file, 0o444);
+    return { ref: file, bytes: statSync(file).blocks * 512, worktree };
+  }
+
   async start(s: PlaceFor, l: Launch): Promise<HostLink> {
     const status = this.status();
     if (status.kind !== "microvm") {
@@ -545,7 +616,25 @@ export class MicroVm {
     const at = Date.now();
     this.#net = check.net;
     const blocked = this.#addrs();
-    const plan: BootPlan = { dir: s.dir, sessionId: s.sessionId, view, port: GUEST_PORT, exe: this.o.fleetd[0]!, tools, check, blocked, memGiB: this.memGiB(), home: boxHome(this.o.home, s.sessionId), ...(scope ? { scope } : {}) };
+    // Its own disk, kept between its boxes; over its bot's image when it started from one (./image.ts use).
+    const disk = s.disk ?? sessionDisk(this.o.home, s.sessionId);
+    newDisk(disk);
+    const layer = s.disk ? undefined : sessionLayer(this.o.home, s.sessionId);
+    const plan: BootPlan = {
+      dir: s.dir,
+      sessionId: s.sessionId,
+      view,
+      port: GUEST_PORT,
+      exe: this.o.fleetd[0]!,
+      tools,
+      check,
+      blocked,
+      memGiB: this.memGiB(),
+      home: BOX_HOME,
+      disk,
+      ...(layer && existsSync(layer) ? { layer } : {}),
+      ...(scope ? { scope } : {}),
+    };
     const booted = await (this.o.boot ?? bootCloudHypervisor)(plan);
     const record: BoxRecord = {
       kind: "microvm",
@@ -664,6 +753,29 @@ export class MicroVm {
     for (const held of this.#boxes.values()) void held.then((h) => h.box.close(), () => {});
     this.#boxes.clear();
   }
+}
+
+/**
+ * Run as root in an image build's box, its disk the root's writable layer at /run/fleetd/rw (sandbox/image/init.sh):
+ * what is the box's alone goes (its /run and /tmp, the home's shell history and Claude dir), and the disk is searched for
+ * each value `FLEETD_SECRETS` holds (one a line): one found exits 3, naming the files. Then the disk is frozen: its
+ * journal is written out and it is clean when the box is ended.
+ */
+export function sealScript(home: string): string {
+  const up = "/run/fleetd/rw/up";
+  return [
+    "set -e",
+    `up=${up}`,
+    `rm -rf "$up/run" "$up/tmp" "$up${home}/.bash_history" "$up${home}/.claude" "$up/root/.bash_history"`,
+    'if [ -n "$FLEETD_SECRETS" ]; then',
+    '  printf "%s\\n" "$FLEETD_SECRETS" > /dev/shm/.fleetd-secrets',
+    '  hits=$(grep -rlFa -f /dev/shm/.fleetd-secrets "$up" 2>/dev/null | head -5 | sed "s|^$up||" || true)',
+    "  rm -f /dev/shm/.fleetd-secrets",
+    '  if [ -n "$hits" ]; then echo "$hits"; exit 3; fi',
+    "fi",
+    "sync",
+    "fsfreeze -f /run/fleetd/rw",
+  ].join("\n");
 }
 
 const same = (a: string[] | undefined, b: string[]) => a !== undefined && a.length === b.length && a.every((x, i) => x === b[i]);
@@ -847,7 +959,7 @@ function consoleTail(dir: string): string {
 /** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the
  * user the guest runs the agent as (this machine's user's ids and name, with the box's own home: sandbox-guest's
  * FLEETD_GUEST_UID, _GID, _USER and _HOME). */
-export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; user?: string; home?: string; like?: HostLike; memGiB?: number }): string {
+export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; user?: string; home?: string; like?: HostLike; memGiB?: number; disk?: boolean; layer?: boolean }): string {
   return [
     "console=ttyS0",
     "root=/dev/vda",
@@ -869,6 +981,9 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
     ...(p.home && !/\s/u.test(p.home) ? [`fleetd.home=${p.home}`] : []),
     ...(p.like ? [`fleetd.umask=${p.like.umask}`, `fleetd.watches=${p.like.watches}`, `fleetd.instances=${p.like.instances}`] : []),
     ...(p.memGiB ? [`fleetd.mem=${p.memGiB}`] : []),
+    // The box's own disk is the root's writable layer, over its bot's image when it has one (sandbox/image/init.sh).
+    ...(p.disk ? ["fleetd.upper=/dev/vdb"] : []),
+    ...(p.disk && p.layer ? ["fleetd.layer=/dev/vdc"] : []),
   ].join(" ");
 }
 
@@ -932,9 +1047,11 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--kernel",
     tools.kernel,
     "--cmdline",
-    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, user: userName(), ...(b.home ? { home: b.home } : {}), like: hostLike(), memGiB: b.memGiB ?? GUEST_MEM_GIB }),
+    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, user: userName(), ...(b.home ? { home: b.home } : {}), like: hostLike(), memGiB: b.memGiB ?? GUEST_MEM_GIB, disk: !!b.disk, layer: !!b.layer }),
     "--disk",
     `path=${tools.root},readonly=on,image_type=raw`,
+    ...(b.disk ? [`path=${b.disk},image_type=raw`] : []),
+    ...(b.disk && b.layer ? [`path=${b.layer},readonly=on,image_type=raw`] : []),
     "--cpus",
     `boot=${GUEST_CPUS}`,
     "--memory",

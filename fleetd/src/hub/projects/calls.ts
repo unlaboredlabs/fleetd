@@ -45,7 +45,7 @@ import * as icon from "./icon.ts";
 import { peopleOnly } from "./people_only.ts";
 import * as propose from "./propose.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
-import { announce, projectSettings, rename, repoNamed, setColor, setEnv } from "./settings.ts";
+import { announce, projectSettings, rename, repoNamed, setColor, setEnv, setupChanged } from "./settings.ts";
 
 export const OPS = ["repo_add", "repo_remove", "project_setup"] as const;
 
@@ -420,6 +420,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
       const had = s.setupIn(r, setupRepo?.repoId);
       if (JSON.stringify(had?.commands ?? []) === JSON.stringify(commands)) return undefined;
       s.setSetupIn(r, setupRepo?.repoId, { commands, inputs: had?.inputs ?? [] });
+      setupChanged(hub, r, setupRepo?.repoId);
       announce(hub, r, `${projectOf(hub, r).title}'s setup commands changed`, { setup: true });
       const of = setupRepo ? ` of ${setupRepo.name}` : "";
       const line = commands.length === 0 ? `Turned off the setup commands${of}` : `Set the setup commands${of}`;
@@ -501,7 +502,10 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
         throw new ToolError("failed", `fleetd doesn't know where ${before.repo}'s checkout was.`, "Add it again in the bot's settings.");
       }
       const out = await addTo(hub, { machineId: r.machineId, projectId: r.projectId, name: before.repo, path: before.path }, {});
-      if (before.setup && out.repo) s.setSetupIn(r, out.repo.repoId, before.setup);
+      if (before.setup && out.repo) {
+        s.setSetupIn(r, out.repo.repoId, before.setup);
+        setupChanged(hub, r, out.repo.repoId);
+      }
       return undefined;
     }
     case "title":
@@ -535,6 +539,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
         throw new ToolError("not_found", `${before.repo} is no longer a repo of the bot.`, "Its setup commands went with it.");
       }
       s.setSetupIn(r, repo?.repoId, before.setup ?? { commands: [], inputs: [] });
+      setupChanged(hub, r, repo?.repoId);
       announce(hub, r, `${project.title}'s setup commands changed`, { setup: true });
       return undefined;
     }

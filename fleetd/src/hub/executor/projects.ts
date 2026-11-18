@@ -1,6 +1,6 @@
 // The executor's project calls on a node (`project_folder`,
-// `project_remove`, `project_env`, `project_env_copy`, `order_env_drop`, `project_worktrees`).
-import type { EnvVarName, EnvVarSet, MachineId, ProjectId, ProjectWorktrees, SecretFingerprint, WorkstreamId } from "../../shared/contracts.ts";
+// `project_remove`, `project_env`, `project_env_copy`, `order_env_drop`, `project_worktrees`, `project_image`).
+import type { ComputerImage, EnvVarName, EnvVarSet, MachineId, ProjectId, ProjectWorktrees, SecretFingerprint, WorkstreamId, WorktreeSetup } from "../../shared/contracts.ts";
 import type { EnvSecretSaved } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors, READ_TIMEOUT_MS, REMOVE_TIMEOUT_MS, STOP_TIMEOUT_MS } from "./index.ts";
@@ -80,6 +80,13 @@ export async function projectWorktrees(hub: Hub, m: MachineId, projectId: Projec
   if (out.kind !== "project_worktrees") throw ExecutorError.failed(m, "read", "the node sent no worktrees");
   const { kind: _kind, ...worktrees } = out;
   return worktrees as ProjectWorktrees;
+}
+
+/** The checkout's computer image for `setup` (its repo's), from its node; `rebuild` builds it again. */
+export async function projectImage(hub: Hub, m: MachineId, projectId: ProjectId, setup: WorktreeSetup, rebuild = false): Promise<ComputerImage> {
+  const out = await executors(hub).call(m, rebuild ? "project" : "read", { op: "project_image", projectId, setup, ...(rebuild ? { rebuild } : {}) }, READ_TIMEOUT_MS);
+  if (out.kind !== "project_image") throw ExecutorError.failed(m, "read", "the node sent no image");
+  return out.image;
 }
 
 /** A person's Stop: interrupts whatever run the thread has now. */

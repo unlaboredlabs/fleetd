@@ -18,10 +18,11 @@ import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig 
 import { GatedRuns } from "./gated/index.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity, type NodeBoxKey } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
-import { boxOf, inBox, useRunner, useVm } from "./place/index.ts";
+import { boxOf, inBox, runnerProvider, useRunner, useVm } from "./place/index.ts";
+import { Images, useImages } from "./place/image.ts";
 import { MicroVm, reportVm } from "./place/microvm.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
-import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC } from "./place/hosted.ts";
+import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
@@ -72,7 +73,7 @@ const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, 
 
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.ONEPASSWORD,
@@ -409,6 +410,16 @@ export async function startNode(
   // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
   if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
   const sessions = await SessionService.start(sessionConfig);
+  // Its bots' computer images (place/image.ts): in its VMs, or on the hub's runner in the hosted provider's snapshots.
+  useImages(
+    new Images({
+      home,
+      backend: () => (config.runner ? hostedBackend(home, runnerProvider()) : vm?.backend()),
+      root: (project) => sessions.projectRootOf(project),
+      vars: (project) => sessions.imageVars(project),
+      changed: (project, image) => sessions.imageChanged(project, image),
+    }),
+  );
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
   const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");

@@ -5290,6 +5290,67 @@
       "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "ComputerImage": {
+      "description": "A repo's computer image: its setup commands run once, kept as the disk new agents start from (a local VM's layer, or a\nhosted provider's snapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start\nfrom now, kept through a rebuild and a failed build.",
+      "properties": {
+        "builtAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The image agents start from now; absent when there is none."
+        },
+        "bytes": {
+          "description": "Its size on disk; absent when the provider doesn't say.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the last build failed (`failed`)."
+        },
+        "log": {
+          "description": "The end of the failed build's log (`failed`), at most 4000 characters.",
+          "maxLength": 4000,
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the build under way started (`building`)."
+        },
+        "state": {
+          "$ref": "#/$defs/ComputerImageState"
+        },
+        "where": {
+          "$ref": "#/$defs/ComputerImageWhere",
+          "description": "Where it is kept: this machine's VMs, or a hosted provider's snapshot."
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "ComputerImageState": {
+      "description": "none: no setup commands, or no image yet and none building; building; ready; failed: the last build failed.",
+      "enum": [
+        "none",
+        "building",
+        "ready",
+        "failed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "ComputerImageWhere": {
+      "description": "\"vm\": this machine's local VMs; else the hosted provider.",
+      "enum": [
+        "vm",
+        "e2b",
+        "boat",
+        "daytona"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "Coverage": {
       "properties": {
         "capped": {
@@ -11644,6 +11705,12 @@
         "project_icon_set.output": {
           "$ref": "#/$defs/ProjectIconSetOutput"
         },
+        "project_image_rebuild.input": {
+          "$ref": "#/$defs/ProjectImageRebuildInput"
+        },
+        "project_image_rebuild.output": {
+          "$ref": "#/$defs/ProjectImageRebuildOutput"
+        },
         "project_purchases.input": {
           "$ref": "#/$defs/ProjectPurchasesInput"
         },
@@ -12390,6 +12457,8 @@
         "project_get.output",
         "project_icon_set.input",
         "project_icon_set.output",
+        "project_image_rebuild.input",
+        "project_image_rebuild.output",
         "project_purchases.input",
         "project_purchases.output",
         "project_remove.input",
@@ -16740,6 +16809,43 @@
     "ProjectId": {
       "type": "string"
     },
+    "ProjectImageRebuildInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "repo": {
+          "$ref": "#/$defs/RepoName",
+          "description": "The repo whose image to build again; absent, or the project's own directory: the project's."
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectImageRebuildOutput": {
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/ComputerImage",
+          "description": "The image now, building."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "type": "object"
+    },
     "ProjectInspect": {
       "description": "What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
@@ -17218,6 +17324,10 @@
             "$ref": "#/$defs/ProjectEnvVar"
           },
           "type": "array"
+        },
+        "image": {
+          "$ref": "#/$defs/ComputerImage",
+          "description": "`setup`'s computer image, from the node, now: absent while it is offline or too old to say, and from older hubs."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"

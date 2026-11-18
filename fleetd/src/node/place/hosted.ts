@@ -7,7 +7,9 @@
 //
 // - The box is made at the session's first need of it: setup's `run`, before `start`, which then reuses it.
 // - Secrets reach it only at exec: the bootstrap's own secret at its start, the session's variables at the session
-//   host's start, over the guest's link. A box is never paused or snapshotted; it is destroyed.
+//   host's start, over the guest's link. A box is never paused or snapshotted; it is destroyed. The one exception is a
+//   bot's computer image (`buildSnapshot`): a box that ran only its setup, with its bot's variables and no session's,
+//   checked for their values, then saved by the provider; a session placed in that provider starts from it.
 // - Once the session host in it is gone (the agent idled out, stopped, or the box died), its work comes back to the
 //   machine's worktree and its transcript to the machine's, and the box is destroyed. The next start makes a new one.
 // - A session here has no process on this machine. Its registration names a pid above Linux's PID_MAX_LIMIT (2^22),
@@ -27,6 +29,9 @@ import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
 import { boxArgs, claudeEndpoint, publicEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
 import type { Place } from "./index.ts";
+import { dropChoice, dropDisk, sessionImage, type Backend, type Built, type Job } from "./image.ts";
+import { SETUP_TIMEOUT_SEC } from "../worktree/setup.ts";
+import { keptToken } from "../repos/github.ts";
 
 /** What a hosted agent can't do, in plain words: its files are in its box, not on this machine. */
 export const HOSTED_NO_DESKTOP_LAUNCH =
@@ -157,7 +162,22 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     const PATH = boxPath(env.PATH, home);
     const git = await gitRoot(cwd);
     const dirs = [HOME ?? "", home, dirname(cwd), ...(git ? [dirname(git)] : [])];
-    const record: HostedRecord = { ...(await b.create(provider, session, forwardedPorts(env), dirs)), session, cwd };
+    // From its bot's computer image when it started from one (./image.ts use), else the template: one whose snapshot
+    // went starts from the template and runs the setup it skipped.
+    const choice = sessionImage(home, session);
+    const image = choice?.where === provider ? choice : undefined;
+    let setupAgain: string[] = [];
+    let made: BoxRecord;
+    try {
+      made = await b.create(provider, session, forwardedPorts(env), dirs, undefined, image ? { template: image.ref } : {});
+    } catch (error) {
+      if (!image) throw error;
+      console.warn(`${nowIso()} WARN a session's box couldn't start from its bot's computer image: it starts clean and runs setup {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+      dropChoice(home, session);
+      setupAgain = image.worktree ? [] : (image.commands ?? []);
+      made = await b.create(provider, session, forwardedPorts(env), dirs);
+    }
+    const record: HostedRecord = { ...made, session, cwd };
     record.env = { ...(HOME ? { HOME } : {}), PATH };
     save(dir, record);
     let box: Box | undefined;
@@ -166,6 +186,10 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       await prepare(box, dirs);
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
       save(dir, record);
+      for (const command of setupAgain) {
+        const out = await box.run({ argv: ["sh", "-c", command], cwd, env: { ...env, HOME, PATH }, timeoutSec: SETUP_TIMEOUT_SEC });
+        if (out.exitCode !== 0) console.warn(`${nowIso()} WARN a setup command failed in a session's box {"sessionId":"${session}","exitCode":${out.exitCode}}`);
+      }
       const extender = setInterval(() => void b.extend(record).catch(() => {}), EXTEND_MS);
       extender.unref?.();
       const l: Live = { record, box, extender };
@@ -375,6 +399,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
 
     async end(d) {
       await teardown(session, d);
+      dropDisk(homeOf(d), session);
       return 0;
     },
 
@@ -415,4 +440,80 @@ export async function destroyHosted(dir: string): Promise<void> {
     b = new Boxes(home, "", loadOrCreateBoxKey(home));
   }
   await b.destroy(record).catch(() => {});
+}
+
+/** Where the hub's runner keeps its bots' computer images: snapshots in `provider`, where it saves them (boat); none
+ * where it doesn't (E2B and Daytona, for now), whose boxes start from the template and run setup. */
+export function hostedBackend(home: string, provider: ProviderId | undefined, HOME = process.env.HOME ?? homeDir()): Backend | undefined {
+  const b = boxes();
+  if (!provider || !b) return undefined;
+  let client;
+  try {
+    client = b.client(provider);
+  } catch {
+    return undefined;
+  }
+  if (!client.snapshot) return undefined;
+  return { where: provider, base: b.templateName(), build: (j) => buildSnapshot(home, provider, j, HOME), drop: async (ref) => void (await client.forget?.(ref)) };
+}
+
+/** A snapshot's name in the team's account: the bot's and its key's. */
+export const snapshotName = (project: string, key: string) => `fleetd-${project.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40)}-${key.slice(0, 12)}`;
+
+/**
+ * A bot's computer image in `provider`: a box from the template gets the repo as a session's would (its clone, the
+ * build's worktree), runs the setup commands in it with the bot's variables, is checked for their secret values and
+ * stripped of what the box alone needed (fleetd's own dir, the worktree, shell history), and saved by the provider.
+ * Its sessions then fetch into the clone that is there rather than clone again (../sandbox/remote/files.ts syncIn).
+ */
+export async function buildSnapshot(home: string, provider: ProviderId, j: Job, HOME: string): Promise<Built> {
+  const b = need();
+  const session = `image-${j.project}`;
+  const PATH = boxPath(process.env.PATH, home);
+  const git = await gitRoot(j.cwd);
+  const dirs = [HOME, dirname(j.cwd), ...(git ? [dirname(git)] : [])];
+  const record = await b.create(provider, session, [], dirs, undefined, { keep: true });
+  let box: Box | undefined;
+  try {
+    box = await b.open(record, session);
+    await prepare(box, dirs);
+    // The clone takes the runner's token for the repo, at its call only: setup gets the bot's variables alone.
+    const origin = Bun.spawnSync(["git", "-C", j.cwd, "remote", "get-url", "origin"], { stdout: "pipe", stderr: "ignore" }).stdout.toString().trim();
+    const token = keptToken(origin);
+    await syncIn(box, { cwd: j.cwd, session, env: { HOME, PATH, ...(token ? { GH_TOKEN: token } : {}) } });
+    const env = { ...j.env, HOME, PATH };
+    for (const command of j.setup.commands ?? []) {
+      j.log(`$ ${command}`);
+      const out = await box.run({ argv: ["sh", "-c", command], cwd: j.cwd, env, timeoutSec: SETUP_TIMEOUT_SEC, scrub: j.secrets });
+      j.log(out.notRun ?? out.outputTail);
+      if (out.notRun || out.exitCode !== 0) throw new Error(`\`${command}\` ${out.notRun ?? (out.timedOut ? `passed its ${SETUP_TIMEOUT_SEC} s limit` : `exited ${out.exitCode}`)}`);
+    }
+    const st = await box.run({ argv: ["git", "status", "--porcelain", "--ignored", "--untracked-files=normal"], cwd: j.cwd, env, timeoutSec: 60 });
+    const worktree = st.exitCode !== 0 || st.outputTail.trim() !== "";
+    const secrets = [...j.secrets, ...(token ? [token] : [])].filter((v) => v.length >= 8);
+    const where = [HOME, ...(git ? [git] : [])].map(shq).join(" ");
+    const sealed = await box.run({
+      argv: ["sh", "-c", [
+        `rm -rf ${shq(`${HOME}/.bash_history`)} ${shq(`${HOME}/.claude`)} ${shq(`${BOX_DIR}`)}/in-*.bundle`,
+        git ? `git -C ${shq(git)} worktree remove --force ${shq(j.cwd)} 2>/dev/null; rm -rf ${shq(j.cwd)}` : ":",
+        'if [ -n "$FLEETD_SECRETS" ]; then',
+        '  f=$(mktemp); printf "%s\\n" "$FLEETD_SECRETS" > "$f"',
+        `  hits=$(grep -rlFa -f "$f" ${where} 2>/dev/null | head -5 || true); rm -f "$f"`,
+        '  if [ -n "$hits" ]; then echo "$hits"; exit 3; fi',
+        "fi",
+        "sync",
+      ].join("\n")],
+      cwd: "/",
+      env: { PATH, FLEETD_SECRETS: secrets.join("\n") },
+      timeoutSec: SETUP_TIMEOUT_SEC,
+      scrub: secrets,
+    });
+    if (sealed.exitCode === 3) throw new Error(`setup wrote the value of one of the bot's secret variables into ${sealed.outputTail.trim().split("\n").join(", ")}: an image never holds one, so write it where the session starts instead (an environment variable)`);
+    if (sealed.notRun || sealed.exitCode !== 0) throw new Error(`the box couldn't be readied for its snapshot: ${sealed.notRun ?? sealed.outputTail.trim().slice(-500)}`);
+    const ref = await b.client(provider).snapshot!(record.boxId, snapshotName(j.project, j.key));
+    return { ref, worktree };
+  } finally {
+    box?.close();
+    await b.destroy(record).catch(() => {});
+  }
 }
