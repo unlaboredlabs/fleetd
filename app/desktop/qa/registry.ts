@@ -2778,17 +2778,19 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Connecting this computer|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
-  // Get started (screens/start), fleetd cloud's first run, on its sample views until it reads the hub's state: a new
-  // team's three steps (a computer and its Claude login, GitHub, a project), and a teammate's (the team's projects,
-  // their own GitHub). Shot at the narrow size too: the web app's window can be any width.
+  // Get started (screens/start), fleetd cloud's first run in the web app, on its sample views (the page itself reads the
+  // team's state, which the dom tests cover): a new team's three steps (a computer and its Claude login, GitHub, a
+  // bot), and a teammate's (the team's bots, their own GitHub). Shot at the narrow size too: a browser can be any width.
   ...Object.entries({
     computer: "computer",
     claude: "computer",
     "claude-code": "computer",
     github: "github",
     "github-waiting": "github",
+    "github-failed": "github",
     project: "project",
     "project-skipped": "project",
+    "project-none": "project",
     "project-adding": "project",
     teammate: "project",
     "teammate-open": "project",

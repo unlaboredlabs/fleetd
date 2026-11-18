@@ -74,6 +74,12 @@ export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
 /** fleetd cloud's GitHub App installed on a team (decision hosted.github-app), on the team's own address, with an owner's or admin's device key: POST answers `{ url }`, GitHub's install page to open, whose `state` only that person of that team can finish; 409 while the person's own GitHub isn't connected. */
 export const GITHUB_INSTALL_PATH = "/github/v1/install";
 
+/** The repositories fleetd cloud's GitHub App reaches for a team, newest push first, on the team's own address with any member's device key (and as `/t/<team>/github/v1/repos` with the web app's session): GET answers `{ repos: [{ owner, name, fullName, private, pushedAt?, defaultBranch, cloneUrl }], truncated? }`; 404 while the team has no installation. */
+export const GITHUB_REPOS_PATH = "/github/v1/repos";
+
+/** The web app's GitHub in one trip, as `/t/<team>/github/v1/web/connect` with its session: POST `{ return, install? }` answers `{ url }`, GitHub's sign-in (then its install page, for an owner or admin of a team with none, or with `install: true`) to navigate to; back at `return` with `?github=connected|installed|requested|failed` (and `why` when failed). 409 `already_connected` when there is nothing to do. */
+export const GITHUB_WEB_CONNECT_PATH = "/github/v1/web/connect";
+
 /** Where WorkOS sends the browser back on the desktop: `http://127.0.0.1:<any port>` then this path. */
 export const ACCOUNTS_LOOPBACK_PATH = "/signin/callback";
 

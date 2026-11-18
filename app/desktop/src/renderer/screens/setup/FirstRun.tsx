@@ -1,11 +1,15 @@
 // `#/` on a hub with no projects yet. On a team of fleetd cloud with no machine yet, its owners and admins connect a
 // computer first, unless this device joined the team by an invitation: someone else's team never opens on connecting
 // this computer to it (a machine still joins from Settings › Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's welcome; once
-// none is, and for everyone else, Get started (add a project). Its own chunk, with setup's.
-import { useState } from "react";
+// none is, and for everyone else, Get started (add a project). Its own chunk, with setup's. On a fleetd cloud team in
+// the web app it is Get started's page (screens/start) instead, for everyone, until its Skip for now.
+import { useEffect, useState } from "react";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useHubRole, useServes } from "../admin/role";
 import { GetStarted } from "../onboarding";
+import { navigate } from "../shell/navigation";
+import { startScreen, useKept } from "../start/kept";
+import { onWeb } from "../../src/web";
 import { ConnectComputer } from "./ConnectComputer";
 import { useFreshSetup, Welcome } from "./SetupScreen";
 
@@ -19,11 +23,18 @@ export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   useFreshSetup(steps);
   const setup = useToolQuery("setup_list", noInput, { enabled: steps });
   const hub = useHub();
-  const cloud = hub.cloud === true && hub.invited !== true;
+  // The web app's cloud teams have Get started instead, Skip for now included.
+  const cloud = hub.cloud === true && hub.invited !== true && !onWeb();
   const fresh = useData((d) => d.fresh);
   const machines = useData((d) => Object.keys(d.machines).length);
   // Once shown, Connect a computer stays until the person moves on, so the machine that joins is greeted there.
   const [connecting, setConnecting] = useState(false);
+  const later = useKept(hub.id).later === true;
+  const start = onWeb() && hub.cloud === true && !later;
+  useEffect(() => {
+    if (start) navigate(startScreen(hub.id), { replace: true });
+  }, [start, hub.id]);
+  if (start) return null;
   if (!connecting && cloud && fresh && role.administers && machines === 0) setConnecting(true);
   if (connecting) return <ConnectComputer onAddProject={onAddProject} />;
   // Nothing until it's known which, so the welcome never replaces Get started under the admin's eyes.

@@ -1,5 +1,5 @@
 // Get started (model.ts): one page, the bot and a title where sign-in left them, then the few steps still between the
-// person and a first chat with a lead. The step open now is the page's one soft group; a step done is its title and
+// person and a first chat with a bot's lead. The step open now is the page's one soft group; a step done is its title and
 // what it ended on, one still to come its title alone. Nothing to read at rest but the open step's own words, and a
 // command only where nothing else can do it (a computer joining). Skip for now goes to the app; the You menu keeps a
 // quiet Finish setting up until no step is left.
@@ -14,8 +14,9 @@ export interface StartActions {
   readonly onClaudeLogin?: () => void;
   readonly onClaudeCode?: (code: string) => void;
   readonly onGithub?: () => void;
-  readonly onGithubCancel?: () => void;
   readonly onGithubSkip?: () => void;
+  /** GitHub's install page again, to choose the repositories fleetd's App reaches. */
+  readonly onGithubRepos?: () => void;
   readonly onQuery?: (query: string) => void;
   readonly onRepo?: (owner: string, name: string) => void;
   readonly onEmpty?: () => void;
@@ -23,7 +24,7 @@ export interface StartActions {
   readonly onSkip?: () => void;
 }
 
-const TITLES: Record<StepId, string> = { computer: "Connect a computer", github: "Connect GitHub", project: "Start a project" };
+const TITLES: Record<StepId, string> = { computer: "Connect a computer", github: "Connect GitHub", project: "Start a bot" };
 
 export function StartPage({ view, actions = {} }: { view: StartView; actions?: StartActions }) {
   const open = currentStep(view);
@@ -42,7 +43,7 @@ export function StartPage({ view, actions = {} }: { view: StartView; actions?: S
             <Step key={step} n={i + 1} id={step} view={view} open={step === open} actions={actions} />
           ))}
         </ol>
-        {/* A teammate's way on is a project of the team's; a new team's, the app as it is, set up later. */}
+        {/* A teammate's way on is a bot of the team's; a new team's, the app as it is, set up later. */}
         {view.who === "owner" ? (
           <div className={s.foot}>
             <Button variant="quiet" onClick={actions.onSkip}>
@@ -57,8 +58,8 @@ export function StartPage({ view, actions = {} }: { view: StartView; actions?: S
 
 function Step({ n, id, view, open, actions }: { n: number; id: StepId; view: StartView; open: boolean; actions: StartActions }) {
   // A skipped GitHub lets the steps go on, but it isn't done: it keeps its number, its Connect at its end.
-  const done = stepDone(view, id) && !(id === "github" && view.github.at === "skipped");
-  const title = id === "project" && view.who === "teammate" ? "Open a project" : TITLES[id];
+  const done = stepDone(view, id) && !(id === "github" && (view.github.at === "skipped" || view.github.at === "requested"));
+  const title = id === "project" && view.who === "teammate" ? "Open a bot" : TITLES[id];
   return (
     <li className={cx(s.step, open && s.open)} data-step={id} aria-current={open ? "step" : undefined}>
       <div className={s.stepHead}>
@@ -79,6 +80,8 @@ function Step({ n, id, view, open, actions }: { n: number; id: StepId; view: Sta
 function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: StartActions }) {
   if (id === "computer" && view.who === "owner" && view.computer.at === "ready") return <Text tone="quiet">{view.computer.machine}</Text>;
   if (id === "github" && view.github.at === "done") return <Text tone="quiet">{view.github.login}</Text>;
+  if (id === "project" && view.who === "owner" && view.project.at === "made") return <Text tone="quiet">{view.project.name}</Text>;
+  if (id === "github" && view.github.at === "requested") return <Text tone="quiet">Asked an owner on GitHub</Text>;
   if (id === "github" && view.who === "teammate" && view.github.at === "todo") {
     return (
       <Button icon={<GithubMark />} onClick={actions.onGithub}>
@@ -86,7 +89,7 @@ function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: St
       </Button>
     );
   }
-  if (id === "github" && view.who === "teammate" && view.github.at === "waiting") return <Text tone="quiet">Finish on GitHub</Text>;
+  if (id === "github" && view.who === "teammate" && view.github.at === "waiting") return <Text tone="quiet">Opening GitHub…</Text>;
   if (id === "github" && view.github.at === "skipped") {
     return (
       <Button variant="quiet" className={s.end} onClick={actions.onGithub}>
@@ -100,7 +103,7 @@ function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: St
 function body(id: StepId, view: StartView, actions: StartActions): ReactNode {
   if (id === "computer" && view.who === "owner") return <Computer step={view.computer} actions={actions} />;
   if (id === "github") return <Github step={view.github} actions={actions} />;
-  if (view.who === "owner") return <Project step={view.project} skipped={view.github.at === "skipped"} actions={actions} />;
+  if (view.who === "owner") return <Project step={view.project} skipped={view.github.at !== "done"} actions={actions} />;
   return <Projects projects={view.projects} actions={actions} />;
 }
 
@@ -108,32 +111,45 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
   const [copied, setCopied] = useState(false);
   const [code, setCode] = useState("");
   if (step.at === "line") {
+    const { line } = step;
     return (
       <>
         <Text as="p" tone="quiet">
           Paste this in a terminal on a Mac or Linux computer.
         </Text>
-        <div className={s.line}>
-          {/* Each word whole on its line: the command breaks only between its words, never inside a flag. */}
-          <code className={s.lineText}>
-            {step.line.split(" ").map((word, i) => (
-              <span key={i}>
-                {i === 0 ? null : " "}
-                <span className={s.word}>{word}</span>
-              </span>
-            ))}
-          </code>
-          <Button
-            onClick={() => {
-              actions.onCopy?.(step.line);
-              void copyText(step.line).then(setCopied);
-            }}
-            onBlur={() => setCopied(false)}
-          >
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-        <Waiting>Waiting for it to connect</Waiting>
+        {line !== null ? (
+          <>
+            <div className={s.line}>
+              {/* Each word whole on its line: the command breaks only between its words, never inside a flag. */}
+              <code className={s.lineText}>
+                {line.split(" ").map((word, i) => (
+                  <span key={i}>
+                    {i === 0 ? null : " "}
+                    <span className={s.word}>{word}</span>
+                  </span>
+                ))}
+              </code>
+              <Button
+                onClick={() => {
+                  actions.onCopy?.(line);
+                  void copyText(line).then(setCopied);
+                }}
+                onBlur={() => setCopied(false)}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <Waiting>Waiting for it to connect</Waiting>
+          </>
+        ) : step.error === undefined ? (
+          <Waiting>Making a line</Waiting>
+        ) : (
+          <span role="alert">
+            <Text size="sm" tone="danger">
+              {step.error}
+            </Text>
+          </span>
+        )}
       </>
     );
   }
@@ -144,14 +160,21 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
         <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
         <Text>{`${step.machine} is connected`}</Text>
       </div>
-      {step.login === "start" ? (
+      {step.login === "start" || step.login === "starting" ? (
         <>
           <Text as="p" tone="quiet">
             {`Log in to Claude on ${step.machine}, so its agents can work.`}
           </Text>
+          {step.error === undefined ? null : (
+            <span role="alert">
+              <Text size="sm" tone="danger">
+                {step.error}
+              </Text>
+            </span>
+          )}
           <div className={s.actions}>
-            <Button variant="primary" size="md" onClick={actions.onClaudeLogin}>
-              Log in to Claude
+            <Button variant="primary" size="md" disabled={step.login === "starting"} onClick={actions.onClaudeLogin}>
+              {step.login === "starting" ? "Opening Claude…" : "Log in to Claude"}
             </Button>
           </div>
         </>
@@ -172,13 +195,6 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
               {step.login === "checking" ? "Logging in…" : "Log in"}
             </Button>
           </form>
-          {step.error === undefined ? null : (
-            <span role="alert">
-              <Text size="sm" tone="danger">
-                {step.error}
-              </Text>
-            </span>
-          )}
           <div>
             <Button variant="link" className={s.again} onClick={actions.onClaudeLogin}>
               Open the page again
@@ -191,26 +207,25 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
 }
 
 function Github({ step, actions }: { step: GithubStep; actions: StartActions }) {
-  if (step.at === "waiting") {
-    return (
-      <div className={s.actions}>
-        <Waiting>Finish on GitHub</Waiting>
-        <Button variant="quiet" className={s.end} onClick={actions.onGithubCancel}>
-          Cancel
-        </Button>
-      </div>
-    );
-  }
+  // This tab leaves for GitHub's page and comes back here: the button says so while it goes.
+  const going = step.at === "waiting";
   return (
     <>
       <Text as="p" tone="quiet">
         Choose the repositories fleetd may work on.
       </Text>
+      {step.at === "todo" && step.error !== undefined ? (
+        <span role="alert">
+          <Text size="sm" tone="danger">
+            {step.error}
+          </Text>
+        </span>
+      ) : null}
       <div className={s.actions}>
-        <Button variant="primary" size="md" icon={<GithubMark />} onClick={actions.onGithub}>
-          Connect GitHub
+        <Button variant="primary" size="md" icon={<GithubMark />} disabled={going} onClick={actions.onGithub}>
+          {going ? "Opening GitHub…" : "Connect GitHub"}
         </Button>
-        <Button variant="quiet" size="md" onClick={actions.onGithubSkip}>
+        <Button variant="quiet" size="md" disabled={going} onClick={actions.onGithubSkip}>
           Skip
         </Button>
       </div>
@@ -222,6 +237,7 @@ function Project({ step, skipped, actions }: { step: ProjectStep; skipped: boole
   if (step.at === "adding") {
     return <Waiting glyph="working">{`Adding ${step.what} on ${step.machine}`}</Waiting>;
   }
+  if (step.at === "made") return null;
   const shown = matching(step.repos, step.query).slice(0, 6);
   return (
     <>
@@ -231,6 +247,22 @@ function Project({ step, skipped, actions }: { step: ProjectStep; skipped: boole
           <Input placeholder="Find a repository" aria-label="Find a repository" value={step.query} onChange={(e) => actions.onQuery?.(e.target.value)} autoComplete="off" />
         </label>
       )}
+      {skipped ? null : step.loading === true ? (
+        <Waiting>Reading your repositories</Waiting>
+      ) : step.problem !== undefined ? (
+        <span role="alert">
+          <Text size="sm" tone="danger">
+            {step.problem}
+          </Text>
+        </span>
+      ) : step.none === true ? (
+        <div className={s.none}>
+          <Text tone="quiet">fleetd&apos;s GitHub App reaches no repositories yet.</Text>
+          <Button variant="link" onClick={actions.onGithubRepos}>
+            Choose repositories
+          </Button>
+        </div>
+      ) : null}
       <ul className={s.list}>
         {skipped
           ? null
@@ -251,7 +283,7 @@ function Project({ step, skipped, actions }: { step: ProjectStep; skipped: boole
           <button type="button" className={s.row} onClick={actions.onEmpty}>
             <span className={s.empty}>
               <Plus size={14} aria-hidden />
-              Empty project
+              Empty bot
             </span>
           </button>
         </li>
@@ -263,9 +295,19 @@ function Project({ step, skipped, actions }: { step: ProjectStep; skipped: boole
 function Projects({ projects, actions }: { projects: readonly TeamProject[]; actions: StartActions }) {
   return (
     <ul className={s.list}>
+      {projects.length === 0 ? (
+        <li>
+          <button type="button" className={s.row} onClick={actions.onEmpty}>
+            <span className={s.empty}>
+              <Plus size={14} aria-hidden />
+              New bot
+            </span>
+          </button>
+        </li>
+      ) : null}
       {projects.map((p) => (
-        <li key={p.name}>
-          <button type="button" className={cx(s.row, s.projectRow)} onClick={() => actions.onOpen?.(p.name)}>
+        <li key={p.key}>
+          <button type="button" className={cx(s.row, s.projectRow)} onClick={() => actions.onOpen?.(p.key)}>
             <Bot state={p.busy ? "working" : "idle"} size={24} />
             <span className={s.projectName}>{p.name}</span>
             <Text size="xs" tone="quiet">

@@ -1,5 +1,5 @@
 // Get started with sample data, each step of both paths, for the QA screens (qa/registry.ts, `#/start?sample=<name>`)
-// until the page reads the hub's own state.
+// and the tests: the page itself reads the hub's own state (state.ts).
 import type { StartRepo, StartView } from "./model";
 
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code 7QK4-M2XD";
@@ -25,19 +25,21 @@ export const SAMPLES = {
   // 2. GitHub, one trip: sign in and choose the repositories.
   github: { ...owner, computer: ready, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
   "github-waiting": { ...owner, computer: ready, github: { at: "waiting" }, project: { at: "pick", repos: REPOS, query: "" } },
-  // 3. A project: a repository, or an empty one; then its chat opens.
+  "github-failed": { ...owner, computer: ready, github: { at: "todo", error: "GitHub said the sign-in was cancelled." }, project: { at: "pick", repos: REPOS, query: "" } },
+  // 3. A bot: a repository, or an empty one; then its chat opens.
   project: { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "pick", repos: REPOS, query: "" } },
   "project-skipped": { ...owner, computer: ready, github: { at: "skipped" }, project: { at: "pick", repos: REPOS, query: "" } },
+  "project-none": { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "pick", repos: [], query: "", none: true } },
   "project-adding": { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "adding", what: "notes-api", machine: "devbox" } },
-  // A teammate who joined inkwell: their own GitHub, then the team's projects.
+  // A teammate who joined inkwell: the team's bots, then their own GitHub.
   teammate: {
     who: "teammate",
     team: "inkwell",
     github: { at: "todo" },
     projects: [
-      { name: "billing", line: "3 agents at work", busy: true },
-      { name: "design-system", line: "Quiet since Monday", busy: false },
-      { name: "website", line: "1 agent at work", busy: true },
+      { key: "devbox/billing", name: "billing", line: "3 agents at work", busy: true },
+      { key: "devbox/design-system", name: "design-system", line: "Quiet since Monday", busy: false },
+      { key: "devbox/website", name: "website", line: "1 agent at work", busy: true },
     ],
   },
   "teammate-open": {
@@ -45,9 +47,9 @@ export const SAMPLES = {
     team: "inkwell",
     github: { at: "done", login: "ada-l" },
     projects: [
-      { name: "billing", line: "3 agents at work", busy: true },
-      { name: "design-system", line: "Quiet since Monday", busy: false },
-      { name: "website", line: "1 agent at work", busy: true },
+      { key: "devbox/billing", name: "billing", line: "3 agents at work", busy: true },
+      { key: "devbox/design-system", name: "design-system", line: "Quiet since Monday", busy: false },
+      { key: "devbox/website", name: "website", line: "1 agent at work", busy: true },
     ],
   },
 } satisfies Record<string, StartView>;

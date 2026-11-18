@@ -3,7 +3,7 @@ import type { HubState } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
 import { updateStatus } from "../updates/model";
 import { quietOf, type Quiet } from "../updates/quiet";
-import { appLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
+import { appLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, startLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
 
 const HUB = "https://devbox.example.ts.net:4790";
 const NOW = Date.parse("2026-10-19T09:03:07.195Z");
@@ -145,6 +145,13 @@ describe("machines and setup", () => {
     expect(setupLine(3, true)).toMatchObject({ text: "3 setup steps left" });
     expect(setupLine(0, true)).toBeNull();
     expect(setupLine(3, false)).toBeNull();
+  });
+
+  it("keeps Get started's steps left as one quiet row to come back to, anyone's, and never marks your picture", () => {
+    expect(startLine(2)).toEqual({ key: "start", mark: "quiet", text: "Finish setting up", aside: "2 left", does: { to: "start" } });
+    expect(startLine(0)).toBeNull();
+    expect(read({ startLeft: 1, admin: false })).toEqual(["devbox", "Finish setting up · 1 left"]);
+    expect(workMark([null, null, startLine(2)], null)).toBeNull();
   });
 
   it("orders everything off at once: the hub, the update, machines, setup", () => {

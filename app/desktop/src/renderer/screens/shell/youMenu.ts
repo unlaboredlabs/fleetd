@@ -23,12 +23,13 @@ export type LineDoes =
   | { readonly to: "pair" }
   | { readonly to: "retry" }
   | { readonly to: "setup" }
+  | { readonly to: "start" }
   | { readonly to: "machines"; readonly machineId?: string }
   | { readonly to: "updates" }
   | { readonly to: "update"; readonly act: Act };
 
 export interface MenuLine {
-  readonly key: "hub" | "update" | "machines" | "setup" | "app";
+  readonly key: "hub" | "update" | "machines" | "setup" | "start" | "app";
   readonly mark: LineMark;
   readonly text: string;
   /** The hub's or machine's name in `text`, the one part the row may cut short when it is long; never what is wrong. */
@@ -57,6 +58,8 @@ export interface MenuInput {
   readonly machines: readonly MenuMachine[] | undefined;
   /** Required setup steps left; 0 for a member. */
   readonly setupLeft: number;
+  /** Get started's steps left on a fleetd cloud team in the web app (screens/start); 0 elsewhere. */
+  readonly startLeft?: number;
   readonly now: number;
   /** The clock's zone, for tests; the person's own otherwise. */
   readonly timeZone?: string;
@@ -155,11 +158,18 @@ export const machinesLine = (machines: readonly MenuMachine[] | undefined, admin
 export const setupLine = (left: number, admin: boolean): MenuLine | null =>
   admin && left > 0 ? { key: "setup", mark: "warning", text: `${plural(left, "setup step", "setup steps")} left`, action: "Finish", does: { to: "setup" } } : null;
 
+/**
+ * Get started's steps left, anyone's: a quiet row to come back to, never a warning, and no mark on your picture
+ * (workMark reads only machines and setup).
+ */
+export const startLine = (left: number): MenuLine | null =>
+  left > 0 ? { key: "start", mark: "quiet", text: "Finish setting up", aside: `${String(left)} left`, does: { to: "start" } } : null;
+
 /** One hub's lines, its own first. What the hub alone can say (updates, machines, setup) shows only while it answers. */
-export const menuLines = ({ hub, label, quiet, admin, machines, setupLeft, now, timeZone }: MenuInput): readonly MenuLine[] => {
+export const menuLines = ({ hub, label, quiet, admin, machines, setupLeft, startLeft = 0, now, timeZone }: MenuInput): readonly MenuLine[] => {
   const own = hubLine(hub, label, quiet, now, timeZone);
   if (hub.phase !== "live") return [own];
-  return [own, updateLine(quiet), machinesLine(machines, admin), setupLine(setupLeft, admin)].filter((l) => l !== null);
+  return [own, updateLine(quiet), machinesLine(machines, admin), setupLine(setupLeft, admin), startLine(startLeft)].filter((l) => l !== null);
 };
 
 /** What marks your avatar for one hub: the most pressing thing off, in a few words; null while all is well. */

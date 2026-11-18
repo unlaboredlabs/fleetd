@@ -339,6 +339,23 @@ describe("Hub › Setup › GitHub on a fleetd cloud team", () => {
     expect(installs).toHaveLength(1);
   });
 
+  it("in the web app, Connect GitHub is one trip from this tab: the account, then the install page, back here", async () => {
+    me = undefined;
+    const trips: Array<{ hub: string; request: unknown }> = [];
+    const bridge = (globalThis as unknown as { fleetd: { shell?: string; cloud: Record<string, unknown> } }).fleetd;
+    bridge.shell = "web";
+    bridge.cloud["connectGithub"] = (hub: string, request: unknown) => {
+      trips.push({ hub, request });
+      return Promise.resolve({ ok: true });
+    };
+    await render();
+    await click(button("Connect GitHub"));
+    expect(connects).toHaveLength(0);
+    expect(trips).toHaveLength(1);
+    expect(trips[0]?.request).toMatchObject({ install: true });
+    expect(button("Opening GitHub…")).toBeDefined();
+  });
+
   it("reads the App again when the window gets focus back from GitHub", async () => {
     await render();
     await click(button("Install it on repositories"));

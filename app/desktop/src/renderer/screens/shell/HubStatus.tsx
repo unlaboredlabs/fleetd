@@ -16,6 +16,8 @@ import { OPTIONS, openOption } from "../settings";
 import { useQuiet, useUpdateAct } from "../updates";
 import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
+import { startScreen } from "../start/kept";
+import { useStartLeft } from "../start/state";
 import { appLine, machinesLine, menuLines, offersWhole, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
@@ -139,9 +141,10 @@ export function HubRows({ hub, close, whole }: { hub: HubState; close: () => voi
   const work = useWork();
   // This app's own update is the menu's one row below the hubs, never one of each hub's.
   const quiet = useQuiet(hub, false);
+  const startLeft = useStartLeft();
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
-  const lines = menuLines({ hub, quiet, ...work, now: Date.now() });
+  const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() });
   const layer = useDataLayer();
   const self = useHub();
   const several = work.label !== null;
@@ -160,6 +163,7 @@ export function HubRows({ hub, close, whole }: { hub: HubState; close: () => voi
     if (does.to === "pair" && onWeb()) window.location.assign("/web/sign-in");
     else if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
     else if (does.to === "setup") navigate({ id: "settings", tab: "hub.setup", at: self.id });
+    else if (does.to === "start") navigate(startScreen(self.id));
     else if (does.to === "updates") navigate({ id: "settings", tab: "hub.updates", at: self.id });
     else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
     else if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);

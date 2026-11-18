@@ -71,5 +71,24 @@ export type InviteOutcome = { readonly ok: true; readonly invite: AccountsInvite
  */
 export type InstallGithubOutcome = { readonly ok: true } | { readonly ok: false; readonly connectFirst?: true; readonly failure: PairFailure };
 
+/** A repository fleetd cloud's GitHub App reaches for a team (GITHUB_REPOS_PATH). */
+export interface CloudRepo {
+  readonly owner: string;
+  readonly name: string;
+  readonly fullName: string;
+  readonly private: boolean;
+  /** ISO time of its last push; none for a repository never pushed to. */
+  readonly pushedAt?: string | undefined;
+  readonly cloneUrl: string;
+}
+
+/** The team's repositories, newest push first; `none` while the App isn't installed on any. */
+export type GithubReposOutcome =
+  | { readonly ok: true; readonly repos: readonly CloudRepo[]; readonly truncated: boolean }
+  | { readonly ok: false; readonly none?: true; readonly failure: PairFailure };
+
+/** GitHub in one trip on the web: on its way (this tab navigates to GitHub), or why not; `connected` when there was nothing to do. */
+export type ConnectGithubOutcome = { readonly ok: true } | { readonly ok: false; readonly connected?: true; readonly failure: PairFailure };
+
 /** An invite taken back, or why not. */
 export type RevokeInviteOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

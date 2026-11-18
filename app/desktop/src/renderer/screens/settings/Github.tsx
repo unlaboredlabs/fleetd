@@ -8,7 +8,7 @@ import type { GithubAccount, GithubAppGetOutput } from "../../../shared/contract
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
-import { Button, Text } from "../../ui";
+import { Button } from "../../ui";
 import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -52,6 +52,15 @@ function Account({ info }: { info: GithubAppGetOutput }) {
   const connect = async () => {
     setWaiting(true);
     setProblem(null);
+    if (onWeb()) {
+      // The web app's GitHub in one trip: this tab goes to GitHub and comes back to this page.
+      const out = await window.fleetd.cloud.connectGithub(hub, { back: `${window.location.pathname}${window.location.hash}` });
+      if (out.ok) return;
+      setWaiting(false);
+      if (out.connected === true) refetch(["github_app_get"]);
+      else setProblem(out.failure.fix === undefined ? out.failure.message : `${out.failure.message} ${out.failure.fix}`);
+      return;
+    }
     const out = await window.fleetd.github.connect(hub).catch((e: unknown) => ({ ok: false as const, error: { code: "failed", message: errorText(e) } }));
     setWaiting(false);
     if (!out.ok) {
@@ -77,19 +86,14 @@ function Account({ info }: { info: GithubAppGetOutput }) {
       }
       control={
         <>
-          {waiting ? (
+          {waiting && !onWeb() ? (
             <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
               Cancel
             </Button>
           ) : null}
-          {(me === undefined || lapsed) && onWeb() ? (
-            // GitHub's sign-in comes back to 127.0.0.1, where only the desktop app listens.
-            <Text size="sm" tone="quiet">
-              Connect it in the fleetd desktop app.
-            </Text>
-          ) : me === undefined || lapsed ? (
+          {me === undefined || lapsed ? (
             <Button variant="primary" disabled={waiting} onClick={() => void connect()}>
-              {waiting ? "Waiting for GitHub…" : lapsed ? "Connect again" : "Connect GitHub"}
+              {waiting ? (onWeb() ? "Opening GitHub…" : "Waiting for GitHub…") : lapsed ? "Connect again" : "Connect GitHub"}
             </Button>
           ) : (
             <Button variant="ghost" onClick={() => setRemoving(true)}>

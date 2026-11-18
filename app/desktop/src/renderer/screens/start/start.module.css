@@ -305,3 +305,11 @@
     animation: none;
   }
 }
+
+/* No repository yet: the line and its fix, on one row while they fit. */
+.none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
