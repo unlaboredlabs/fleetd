@@ -78,16 +78,18 @@ function Managing({ tab }: { tab: HubTab }) {
   const hubs = useHubs();
   if (!several) return null;
   return (
-    <div className={a.managing} role="note" aria-label={`Managing ${hub.label}`} data-managing={hub.id}>
-      <Text size="sm" tone="quiet">
-        Managing
-      </Text>
-      <div className={a.hubChoices} role="group" aria-label="Hub to manage">
-        {hubs.map((h) => (
-          <HubScope key={h.id} hub={h}>
-            <HubChoice hub={h} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
-          </HubScope>
-        ))}
+    <div className={a.managing}>
+      <div className={a.managingLine} role="note" aria-label={`Managing ${hub.label}`} data-managing={hub.id}>
+        <Text size="sm" tone="quiet">
+          Managing
+        </Text>
+        <div className={a.hubChoices} role="group" aria-label="Hub to manage">
+          {hubs.map((h) => (
+            <HubScope key={h.id} hub={h}>
+              <HubChoice hub={h} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
+            </HubScope>
+          ))}
+        </div>
       </div>
     </div>
   );

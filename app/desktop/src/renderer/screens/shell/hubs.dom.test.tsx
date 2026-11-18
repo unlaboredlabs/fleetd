@@ -499,3 +499,44 @@ it("opens Settings on another hub over the chat you were in, never that chat in 
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
   expect(window.localStorage.getItem("fleetd.lastProject")).toBe(last);
 });
+
+it("switches the hub a Hub page manages in place: the sheet and the app under it stay, the page's reads go to the other hub", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
+  });
+  act(() => {
+    window.location.hash = "#/project/devbox/storefront?at=hub";
+  });
+  await settle();
+  act(() => {
+    window.location.hash = "#/settings/hub/people?at=hub";
+  });
+  await vi.waitFor(async () => {
+    await settle();
+    expect(document.querySelector("[data-managing='hub'] [data-admin-hub='a1b2']")).not.toBeNull();
+  });
+  const sheet = document.querySelector("[data-sheet='settings']");
+  const frame = host.querySelector("[data-screen='shell']");
+  // Nothing of the sheet leaves the screen meanwhile, not even for a frame: a sheet mounted again plays its entrance
+  // again, the scrim from clear and the sheet from nothing, which flashes the whole window.
+  const removed: Node[] = [];
+  const watch = new MutationObserver((records) => records.forEach((r) => removed.push(...r.removedNodes)));
+  watch.observe(document.body, { childList: true, subtree: true });
+  act(() => document.querySelector<HTMLButtonElement>("[data-admin-hub='a1b2']")?.click());
+  await settle();
+  watch.disconnect();
+  expect(document.querySelector("[data-managing='a1b2']")).not.toBeNull();
+  expect(document.querySelector("[data-sheet='settings']")).toBe(sheet);
+  expect(removed.filter((n) => n === sheet || n === frame || n.contains(sheet))).toEqual([]);
+  // The app under it is still the chat you were in, on its own hub; the page reads Acme's people.
+  expect(host.querySelector("[data-screen='shell']")).toBe(frame);
+  expect(fake.chats.filter(([id, p]) => id === "a1b2" && p !== null)).toEqual([]);
+  expect(hub("a1b2").calls.some((c) => c.tool === "people_list")).toBe(true);
+});

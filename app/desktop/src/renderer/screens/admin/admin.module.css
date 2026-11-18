@@ -93,14 +93,22 @@
   min-width: 0;
 }
 
-/* With several hubs: the hub the Hub group manages, named above every page, in line with its column's groups. */
+/* With several hubs: the hub the Hub group manages, named above every page, on its column's edge: the page's scroll
+   keeps a gutter for its bar, so this keeps the same, and its line the column's measure (settings.module.css). */
 .managing {
   flex: none;
+  overflow: hidden;
+  scrollbar-gutter: stable both-edges;
+}
+.managingLine {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-2) var(--space-6) 0 calc(var(--space-6) + var(--space-4));
+  max-width: 704px;
+  margin: 0 auto;
+  /* Below, room for a focused hub's ring, which the gutter's clip would cut. */
+  padding: var(--space-2) var(--space-10) 3px;
 }
 /* The hubs to manage, as a segmented control: the one managed now raised. */
 .hubChoices {

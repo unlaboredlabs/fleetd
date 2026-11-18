@@ -229,8 +229,9 @@
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
+/* How many agents work: the glyph and the count the same step in from each end, a little apart. */
 .work {
-  padding-left: 4px;
+  gap: 4px;
   background: var(--hover);
   color: var(--quiet);
 }

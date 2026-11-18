@@ -75,10 +75,6 @@
   height: 1px;
   background: var(--hairline);
 }
-.list > .opens + .opens::before {
-  left: var(--space-3);
-  right: var(--space-3);
-}
 /* What a section holds that isn't rows: no fill, its words in line with the label. */
 .bare {
   display: flex;
@@ -230,12 +226,18 @@
 }
 
 /* A row that opens what it names: the name's link covers the row, which lights on hover, deepens while pressed and
-   takes the focus ring. Its controls sit above the link. */
+   takes the focus ring. Its controls sit above the link. Its light fills the group's inside, edge to edge, and rounds
+   with the group's own corners inside its border at the list's ends. */
 .opens {
-  margin-inline: var(--space-1);
-  padding-inline: var(--space-3);
-  border-radius: var(--radius-sm);
   transition: background-color var(--dur-quick);
+}
+.list > .opens:first-child {
+  border-top-left-radius: calc(var(--radius-group) - 1px);
+  border-top-right-radius: calc(var(--radius-group) - 1px);
+}
+.list > .opens:last-child {
+  border-bottom-left-radius: calc(var(--radius-group) - 1px);
+  border-bottom-right-radius: calc(var(--radius-group) - 1px);
 }
 .opens:has(.opener:hover) {
   background: var(--hover);
