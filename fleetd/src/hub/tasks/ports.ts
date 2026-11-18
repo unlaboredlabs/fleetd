@@ -135,6 +135,8 @@ export interface TaskPorts {
   stop(thread: ThreadRef): Promise<void>;
   /** The node deletes the thread's worktree and the build output in it; fine too when it has no such session. */
   removeWorktree(thread: ThreadRef): Promise<void>;
+  /** The task ended: its agent's claude (and a VM's box) goes, unless the node sees it may still go on by itself. */
+  stopIdle(thread: ThreadRef): Promise<void>;
   /** Why the disk guard or the usage brake holds new agents on the machine. */
   paused(machineId: MachineId): string | undefined;
   /** The machine's node runs read and review tasks in worktrees of their own. */
@@ -293,6 +295,8 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
     startedRun: (thread) => executorStartedRun(hub, thread),
     stop: (thread) =>
       call(async () => void (await ex().call(thread.machineId, "stop", { op: "stop", sessionId: thread.threadId, removeWorktree: false }, STOP_TIMEOUT_MS))),
+    stopIdle: (thread) =>
+      call(async () => void (await ex().call(thread.machineId, "stop", { op: "stop", sessionId: thread.threadId, idle: true }, STOP_TIMEOUT_MS))),
     removeWorktree: async (thread) => {
       try {
         await ex().call(thread.machineId, "stop", { op: "stop", sessionId: thread.threadId, removeWorktree: true }, STOP_TIMEOUT_MS);

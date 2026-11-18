@@ -988,6 +988,7 @@ export class Tasks {
     // A review's worktree holds no work, so it goes now. A reader's stays for the lead's next message; a writer's waits
     // for its PR to merge.
     if (task.kind === "review") this.removeWorktree(next);
+    else this.stopIdle(next);
     if (write) this.resolvePr(next.taskId);
   }
 
@@ -1970,6 +1971,17 @@ export class Tasks {
     if (!task || task.kind !== "write" || (task.state !== "done" && task.state !== "failed")) return;
     if (this.asked.has(taskId) || openCiWaits(this.db).has(taskId)) return;
     this.removeWorktree(task);
+  }
+
+  /** Has the node close an ended task's agent, off the lock, unless it may still go on by itself (the node decides):
+   * an agent in a VM otherwise holds its memory until the idle reap. One it can't reach closes then anyway. */
+  private stopIdle(task: Task): void {
+    const thread = task.threadRef;
+    if (!thread) return;
+    spawnInBackground(
+      "closing an ended task's agent",
+      this.ports.stopIdle(thread).catch((error) => console.warn(`ended task's agent not closed (${task.taskId}):`, portError(error).message)),
+    );
   }
 
   /** Has the node stop a task's agent and delete its worktree, off the lock; one it can't is left for the nightly sweep. */
