@@ -9,14 +9,15 @@
   min-height: 28px;
   margin: var(--space-4) 0 var(--space-1);
   padding: 0 var(--space-3);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: var(--text-md);
+  line-height: var(--leading-sm);
 }
 .label {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }

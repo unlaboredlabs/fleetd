@@ -21,7 +21,9 @@
 //
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
-import { ArrowRight, ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Pin, Plus, Search } from "lucide-react";
+import { display } from "../../../shared/shortcuts";
+import { openPalette } from "../palette";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
@@ -76,11 +78,18 @@ const UNREAD = "New message from the lead";
 /** New, at the sidebar's top beside the window's controls: a project on the screen's hub. */
 export function NewButton({ go }: { go: (screen: Screen) => void }) {
   return (
-    <Tooltip content="New bot">
-      <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
-        <Plus aria-hidden />
-      </button>
-    </Tooltip>
+    <>
+      <Tooltip content={`Search · ${display("palette.toggle", window.fleetd.platform)}`}>
+        <button type="button" className={s.round} aria-label="Search" onClick={() => openPalette()}>
+          <Search aria-hidden />
+        </button>
+      </Tooltip>
+      <Tooltip content="New bot">
+        <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
+          <Plus aria-hidden />
+        </button>
+      </Tooltip>
+    </>
   );
 }
 

@@ -109,8 +109,8 @@ describe.each([
 describe("the frame", () => {
   // Its last value: the macOS one, where a platform sets its own.
   const px = (name: string) => Number([...css.matchAll(new RegExp(`--${name}:\\s*(\\d+)px`, "g"))].at(-1)?.[1]);
-  it("the top row is as tall as the traffic lights are centred in", () => {
-    expect(px("top-bar-height")).toBe(TOP_BAR);
+  it("the top row and the sheets' inset round it are as tall as the traffic lights are centred in", () => {
+    expect(px("top-bar-height") + 2 * px("frame-inset")).toBe(TOP_BAR);
   });
   it("the room left for the traffic lights clears all three", () => {
     // Three 14 px buttons 20 px apart, then a gap as wide as their margin. The Mac's rule: the web app's leaves none.

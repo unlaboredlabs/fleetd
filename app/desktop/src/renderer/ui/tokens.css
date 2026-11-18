@@ -20,7 +20,7 @@
   --sheet: #ffffff;
   --sheet-edge: #0f17201a;
   --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #0f17200a, 0 4px 12px -6px #0f172014;
-  --sidebar: var(--frame);
+  --sidebar: #f2f3f5;
   --raised: #ffffff;
   --hover: #0f172009;
   --selected: #0f172011;
@@ -42,7 +42,7 @@
   --danger-fill: #c62f2a;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
-  --control-border: #868c95;
+  --control-border: #757b84;
   --text: #0b0d10;
   --quiet: #5c626b;
   --faint: #9298a1;
@@ -115,7 +115,7 @@
   --sheet: #121316;
   --sheet-edge: #ffffff12;
   --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #00000066, 0 8px 24px -8px #00000099;
-  --sidebar: var(--frame);
+  --sidebar: #09090b;
   --raised: #1a1b1f;
   --hover: #ffffff0b;
   --selected: #ffffff14;
