@@ -7,7 +7,9 @@ import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
 import { Gate, type GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
-import { readSession, signInPath, webCall, type WebFailure, type WebSession } from "./session";
+import { readSession, signInPath, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
+import { startScreen } from "../renderer/screens/start/kept";
+import { toHash } from "../renderer/screens/shell/routes";
 
 /** The build's version (VITE_FLEETD_VERSION, the commit), for an error card's Copy details. */
 const VERSION = (import.meta.env["VITE_FLEETD_VERSION"] as string | undefined) ?? "web";
@@ -22,6 +24,14 @@ let gate: Root | null = null;
 const here = () => `${window.location.pathname}${window.location.search}${window.location.hash}`;
 /** The invitations were answered (Join or Not now) in this tab: they're asked again at the next sign-in, not now. */
 let answered = false;
+/** The team last joined in this tab: the app opens on its Get started, its bots first (screens/start). */
+let joinedTeam: string | null = null;
+
+const teamOf = (body: unknown): string | null => {
+  const team = typeof body === "object" && body !== null ? (body as { team?: unknown }).team : undefined;
+  const id = typeof team === "object" && team !== null ? (team as { id?: unknown }).id : undefined;
+  return typeof id === "string" && id !== "" ? id : null;
+};
 
 const show = (view: GateView) => {
   gate ??= createRoot(element);
@@ -35,7 +45,10 @@ const show = (view: GateView) => {
             retry: () => void boot(),
             join: async (invitation): Promise<WebFailure | null> => {
               const out = await webCall(window.fetch.bind(window), "POST", "/web/accept", { json: { accept: invitation.accept } });
-              if (out.ok) return null;
+              if (out.ok) {
+                joinedTeam = teamOf(out.body) ?? joinedTeam;
+                return null;
+              }
               if (out.signedOut === true) {
                 window.location.assign(signInPath(here()));
                 return null;
@@ -60,6 +73,8 @@ const start = async (session: WebSession) => {
   const { api, hubs } = createWebShell(session, browserDeps(VERSION));
   Object.defineProperty(window, "fleetd", { value: api, configurable: false, writable: false });
   followBrowser(hubs, window);
+  const joined = joinedTeam === null ? undefined : teamHubIds(session.teams.map((t) => t.id)).get(joinedTeam);
+  if (joined !== undefined) window.location.hash = toHash(startScreen(joined));
   // The desktop's renderer, as it starts in the app: it reads window.fleetd as its modules load.
   await import("../renderer/src/main");
 };

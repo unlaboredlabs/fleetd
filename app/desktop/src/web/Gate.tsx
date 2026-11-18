@@ -1,11 +1,13 @@
 // What the web app shows before the app itself: Sign in when no one is (WorkOS's page by a navigation: Google, GitHub
-// or an email code), each invitation to answer, or why there's no team to open. In the onboarding's own look
-// (onboarding/SignIn.tsx's Stage and Invited), so the web's first screen is the desktop's.
-import { useState } from "react";
-import { invitationLine, invitationTitle } from "../shared/accounts";
+// or an email code), each invitation to answer, or why there's no team to open. In Get started's own look
+// (screens/start): the bot and the title where that page has them, and under them one soft box holding the screen's
+// one thing to do, as that page's open step does, so signing in, joining and setting up read as one page.
+import { useState, type ReactNode } from "react";
+import { invitationLine } from "../shared/accounts";
+import type { BotState } from "../shared/bot";
 import { Bot, Button, Text } from "../renderer/ui";
-import { Stage } from "../renderer/screens/onboarding/SignIn";
-import s from "../renderer/screens/onboarding/signin.module.css";
+import st from "../renderer/screens/start/start.module.css";
+import s from "./gate.module.css";
 import type { WebFailure, WebInvitation } from "./session";
 
 export type GateView =
@@ -24,38 +26,45 @@ export interface GateActions {
   readonly signOut: () => void;
 }
 
+/** The page: the bot and its title where Get started has them (under the app's top bar's height), then the box. */
+function Stage({ id, bot, title, children }: { id: string; bot: BotState; title: string; children: ReactNode }) {
+  return (
+    <div className={s.frame}>
+      <div className={st.screen} data-screen={id}>
+        <div className={st.column}>
+          <div className={st.head}>
+            <Bot state={bot} size={64} />
+            <Text as="h1" size="xl" strong className={st.title}>
+              {title}
+            </Text>
+          </div>
+          <div className={s.box}>{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Gate({ view, actions }: { view: GateView; actions: GateActions }) {
   if (view.at === "signed-out") {
     return (
-      <Stage id="web.sign-in">
-        <Bot state="idle" size={64} />
-        <Text as="h1" size="xl" strong className={s.title}>
-          Welcome to fleetd
-        </Text>
-        <div className={s.main}>
-          <Button variant="primary" className={s.signIn} onClick={actions.signIn}>
+      <Stage id="web.sign-in" bot="idle" title="Welcome to fleetd">
+        <Text strong>Sign in, or make an account</Text>
+        <Text tone="quiet">With Google, GitHub or a code by email.</Text>
+        <div className={st.actions}>
+          <Button variant="primary" size="md" onClick={actions.signIn}>
             Sign in
           </Button>
-          <Text as="p" size="sm" tone="quiet">
-            With Google, GitHub or a code by email. Your agents run on your own computers.
-          </Text>
         </div>
       </Stage>
     );
   }
   if (view.at === "failed") {
     return (
-      <Stage id="web.failed">
-        <Bot state="error" size={64} />
-        <Text as="h1" size="xl" strong className={s.title}>
-          {view.failure.message}
-        </Text>
-        {view.failure.fix === undefined ? null : (
-          <Text as="p" tone="quiet" className={s.lede}>
-            {view.failure.fix}
-          </Text>
-        )}
-        <div className={s.waitActions}>
+      <Stage id="web.failed" bot="error" title="Can't open fleetd">
+        <Text strong>{view.failure.message}</Text>
+        {view.failure.fix === undefined ? null : <Text tone="quiet">{view.failure.fix}</Text>}
+        <div className={st.actions}>
           <Button variant="primary" size="md" onClick={actions.retry}>
             Try again
           </Button>
@@ -65,15 +74,10 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
   }
   if (view.at === "no-team") {
     return (
-      <Stage id="web.no-team">
-        <Bot state="idle" size={64} />
-        <Text as="h1" size="xl" strong className={s.title}>
-          No team yet
-        </Text>
-        <Text as="p" tone="quiet" className={s.lede}>
-          {`${view.email} isn't in a fleetd team. Ask a teammate to invite this email, then sign in again.`}
-        </Text>
-        <div className={s.waitActions}>
+      <Stage id="web.no-team" bot="idle" title="No team yet">
+        <Text strong>{`${view.email} isn't in a fleetd team`}</Text>
+        <Text tone="quiet">Ask a teammate to invite this email, then sign in again.</Text>
+        <div className={st.actions}>
           <Button size="md" onClick={actions.signOut}>
             Sign out
           </Button>
@@ -105,14 +109,9 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
     });
   };
   return (
-    <Stage id="web.invited">
-      <Bot state="idle" size={64} />
-      <Text as="h1" size="xl" strong className={s.title}>
-        {invitationTitle(invitation)}
-      </Text>
-      <Text as="p" tone="quiet" className={s.lede}>
-        {invitationLine(invitation)}
-      </Text>
+    <Stage id="web.invited" bot="idle" title={`Join ${invitation.name}`}>
+      <Text strong>{`Invited by ${invitation.invitedBy}`}</Text>
+      <Text tone="quiet">{invitationLine(invitation)}</Text>
       {refused === null ? null : (
         <span role="alert">
           <Text size="sm" tone="danger">
@@ -120,7 +119,7 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
           </Text>
         </span>
       )}
-      <div className={s.waitActions}>
+      <div className={st.actions}>
         <Button variant="primary" size="md" disabled={busy} onClick={join}>
           {busy ? "Joining…" : "Join"}
         </Button>

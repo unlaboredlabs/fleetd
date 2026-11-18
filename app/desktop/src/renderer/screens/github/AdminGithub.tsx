@@ -267,6 +267,15 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
   const connectGithub = async () => {
     setBusy("connect");
     setProblem(null);
+    if (onWeb()) {
+      // The web app's GitHub in one trip: your account, then the install page, and back to this page.
+      const out = await window.fleetd.cloud.connectGithub(hub, { back: `${window.location.pathname}${window.location.hash}`, install: true });
+      if (out.ok) return;
+      setBusy(null);
+      if (out.connected === true) refetch(["github_app_get"]);
+      else setProblem(out.failure.fix === undefined ? out.failure.message : `${out.failure.message} ${out.failure.fix}`);
+      return;
+    }
     const out = await window.fleetd.github.connect(hub).catch((e: unknown) => ({ ok: false as const, error: { code: "failed", message: errorText(e) } }));
     setBusy(null);
     if (!out.ok) {
@@ -290,19 +299,14 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
     >
       {installs.length === 0 ? null : <Installs app={app} />}
       <div className={s.links}>
-        {busy === "connect" ? (
+        {busy === "connect" && !onWeb() ? (
           <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
             Cancel
           </Button>
         ) : null}
-        {connect && onWeb() ? (
-          // GitHub's sign-in comes back to 127.0.0.1, where only the desktop app listens.
-          <Text size="sm" tone="quiet">
-            Connect your GitHub in the fleetd desktop app first, then install it here.
-          </Text>
-        ) : connect ? (
+        {connect ? (
           <Button variant="primary" disabled={busy !== null} onClick={() => void connectGithub()}>
-            {busy === "connect" ? "Waiting for GitHub…" : "Connect GitHub"}
+            {busy === "connect" ? (onWeb() ? "Opening GitHub…" : "Waiting for GitHub…") : "Connect GitHub"}
           </Button>
         ) : (
           <Button variant={installs.length === 0 ? "primary" : "secondary"} icon={<ExternalLink size={14} />} disabled={busy !== null} onClick={() => void install()}>

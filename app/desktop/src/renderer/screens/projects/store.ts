@@ -236,6 +236,16 @@ export const create = (machineId: string | undefined, why?: string, typed?: Repo
   dispatch({ t: "start", draft: { name, machineId, repos } });
 };
 
+/**
+ * A bot from one repository, made at once without the dialog (Get started's picker): named from the repo, on
+ * `machineId`. Its chat opens once the hub lists it, as Create's does; nothing while another is being made.
+ */
+export const startBot = (machineId: string, repo: RepoDraft): void => {
+  if (busy(ui.add)) return;
+  set({ ...fresh(), repos: [repo] });
+  create(machineId);
+};
+
 /** Why Create didn't go, said over its button until the next edit. */
 export const refuseCreate = (why: string): void => set({ ...ui, refused: why });
 

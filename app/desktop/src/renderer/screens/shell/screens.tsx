@@ -12,6 +12,7 @@ const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) 
 const ScreensPage = lazy(() => import("../screensPage/ScreensPage").then((m) => ({ default: m.ScreensPage })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
+const StartScreen = lazy(() => import("../start/StartScreen").then((m) => ({ default: m.StartScreen })));
 const SetupScreen = lazy(() => import("../setup/SetupScreen").then((m) => ({ default: m.SetupScreen })));
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
@@ -36,6 +37,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "onboarding", words: "the connect screen" };
     case "setup":
       return { key: "setup", words: "Setup" };
+    case "start":
+      return { key: "start", words: "Get started" };
     case "home":
       return { key: "home", words: "the home screen" };
     case "session":
@@ -78,5 +81,7 @@ function screenFor(screen: Screen): ReactNode {
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
     case "setup":
       return <SetupScreen view={screen.view} />;
+    case "start":
+      return <StartScreen sample={screen.sample} />;
   }
 }

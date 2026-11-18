@@ -1,0 +1,315 @@
+/* Get started (StartPage.tsx): sign-in's column carried on, the bot and the title where it left them, and the steps
+   under them. The open step is the only filled surface; nothing else on the page has a box. */
+.screen {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  /* Sign-in's own offset (signin.module.css .stage), so the bot doesn't move from that screen to this one. */
+  padding-top: clamp(var(--space-8), 17vh, 200px);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  margin-top: var(--space-4);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-8) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A step at rest: its number and title on one 40 px row, inset as the open step's are, so every title lines up. */
+.step {
+  border-radius: var(--radius-group);
+  padding: 0 var(--space-4);
+}
+
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+}
+
+.stepTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.open {
+  padding-bottom: var(--space-4);
+  background: var(--group);
+}
+
+/* 16 px above the open step's title, as below its last control and beside it. */
+.open .stepHead {
+  min-height: 52px;
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.markOpen {
+  background: var(--accent-fill);
+  box-shadow: none;
+  color: var(--on-accent);
+  font-weight: var(--weight-strong);
+}
+
+.markDone {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+
+.end {
+  margin-inline-end: calc(-1 * var(--space-2));
+}
+
+/* The open step's words and controls, under its title. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-inline-start: 32px;
+}
+
+/* The join line: the one thing to take from the page, on the raised tone of a control. */
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.lineText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.waiting,
+.joined {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.actions > .waiting {
+  flex: 1;
+}
+
+.codeRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.codeRow > input {
+  flex: 1;
+  background: var(--raised);
+}
+
+.again {
+  padding-inline: 0;
+}
+
+.find {
+  position: relative;
+  display: block;
+}
+
+.find > svg {
+  position: absolute;
+  top: 7px;
+  left: var(--space-2);
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.find > input {
+  padding-inline-start: 28px;
+  background: var(--raised);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0;
+  list-style: none;
+}
+
+/* A repository or a project: one row, the whole of it the button, a rounded box under the pointer. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: start;
+  cursor: default;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.repo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner {
+  color: var(--quiet);
+}
+
+.empty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--quiet);
+}
+
+.projectRow {
+  height: 40px;
+}
+
+.projectName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foot {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-6);
+}
+
+@media (max-width: 560px) {
+  .screen {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .column {
+    padding-top: clamp(var(--space-6), 8vh, 80px);
+  }
+
+  .step {
+    padding-inline: var(--space-3);
+  }
+
+  .body {
+    padding-inline-start: 0;
+  }
+
+  .codeRow {
+    flex-direction: column;
+  }
+}
+
+.word {
+  white-space: nowrap;
+}
+
+.ok {
+  flex: none;
+  color: var(--success);
+}
+
+.again {
+  margin-inline-start: -1px;
+}
+
+/* A step opening: its words and controls rise in once, as a list row does; nothing moves after. */
+.body {
+  animation: bodyIn var(--dur-row-in) var(--ease-snap) backwards;
+}
+
+@keyframes bodyIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--row-rise));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body {
+    animation: none;
+  }
+}
+
+/* No repository yet: the line and its fix, on one row while they fit. */
+.none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}

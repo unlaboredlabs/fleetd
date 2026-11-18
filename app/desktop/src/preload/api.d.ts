@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, RevylKeyRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -206,6 +206,14 @@ export interface FleetdApi {
     revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
     /** Opens GitHub's install page for fleetd's App on a cloud team, as the team answers it. Never rejects. */
     installGithub(hub: HubId): Promise<InstallGithubOutcome>;
+    /** The repositories fleetd's GitHub App reaches for a cloud team, for Get started's picker; the web app's alone for now. Never rejects. */
+    githubRepos(hub: HubId): Promise<GithubReposOutcome>;
+    /**
+     * The web app's GitHub in one trip (sign in, then install the App for an owner or admin): this tab goes to GitHub
+     * and comes back to `back` (a path and route of this page). `install` asks for the install page even when the team
+     * has one. The desktop connects through Settings instead. Never rejects.
+     */
+    connectGithub(hub: HubId, request: { readonly back: string; readonly install?: boolean }): Promise<ConnectGithubOutcome>;
   };
   readonly system: {
     /** This computer's host name (without .local). */

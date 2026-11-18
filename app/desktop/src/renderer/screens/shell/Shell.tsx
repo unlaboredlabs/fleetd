@@ -205,7 +205,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     const state = h.id === route.at ? hub : rows.get(h.id)?.state;
     return state === undefined || needsOnboarding(state);
   });
-  const onboarding = blocked || screen.id === "onboarding";
+  // Get started has the window to itself too: sign-in's column carried on, no sidebar or panel around it.
+  const onboarding = blocked || screen.id === "onboarding" || screen.id === "start";
   const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding;
 

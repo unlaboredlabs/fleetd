@@ -83,6 +83,9 @@ In **Settings › Your accounts › GitHub**, press **Connect GitHub** and autho
 answer on this computer (`127.0.0.1`), and the hub keeps your token sealed and renews it. You never see it, and
 nobody else's work uses it.
 
+In the [web app](/docs/web-app#get-started), on fleetd cloud, the same button takes the tab to GitHub and back: one
+trip signs you in and, on a team with no installation yet, lets an owner or admin choose its repositories.
+
 Who an order's agents are on GitHub, on a repository the App reaches:
 
 | The order | Its agents' `gh` |

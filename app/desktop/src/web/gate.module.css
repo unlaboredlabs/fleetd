@@ -1,0 +1,23 @@
+/* The web app's gate (Gate.tsx): Get started's open step, alone under the bot and the title (start.module.css),
+   the same soft box, inset and gap, so the page that follows has it where this one did. */
+/* Under the app's top bar's height, as every screen of the app is (shell.module.css), so the bot and the title stay put
+   from Sign in to Get started. */
+.frame {
+  position: fixed;
+  inset: var(--top-bar-height) 0 0;
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-8);
+  padding: var(--space-4);
+  border-radius: var(--radius-group);
+  background: var(--group);
+}
+
+/* The controls a step's gap below the words, as on Get started. */
+.box > :last-child {
+  margin-top: var(--space-3);
+}

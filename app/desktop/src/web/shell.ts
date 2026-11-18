@@ -22,7 +22,7 @@ import { cleanLabel, HUB_COLORS, type HubColor, type HubEntry, type HubId } from
 import type { CallRequest, FileRequest } from "../shared/ipc";
 import { readFile } from "../shared/transfer";
 import type { UpdatesState } from "../shared/updates";
-import { installGithub } from "../main/cloud/github";
+import { connectGithub, githubRepos, installGithub } from "../main/cloud/github";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
 import { externalUrl } from "../main/external";
 import type { Transport } from "../main/hub/link";
@@ -323,6 +323,15 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         const team = keyed(hub);
         if (team === null) return Promise.resolve(notTeam);
         return installGithub(teamFetch, team, (url) => (deps.open(url) === null ? Promise.reject(new Error("the browser blocked the new tab; allow pop-ups for this site")) : Promise.resolve()));
+      },
+      githubRepos: (hub) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : githubRepos(teamFetch, team);
+      },
+      // GitHub's trip is this tab's: it leaves for GitHub and comes back to `back` (a pop-up would be blocked after the call).
+      connectGithub: (hub, request) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : connectGithub(teamFetch, team, request, deps.go);
       },
     },
     system: { hostName: () => Promise.resolve("") },

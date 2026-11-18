@@ -2778,6 +2778,25 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Connecting this computer|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
+  // Get started (screens/start), fleetd cloud's first run in the web app, on its sample views (the page itself reads the
+  // team's state, which the dom tests cover): a new team's three steps (a computer and its Claude login, GitHub, a
+  // bot), and a teammate's (the team's bots, their own GitHub). Shot at the narrow size too: a browser can be any width.
+  ...Object.entries({
+    computer: "computer",
+    claude: "computer",
+    "claude-code": "computer",
+    "claude-blocked": "computer",
+    unusable: "computer",
+    github: "github",
+    "github-waiting": "github",
+    "github-failed": "github",
+    project: "project",
+    "project-skipped": "project",
+    "project-none": "project",
+    "project-adding": "project",
+    teammate: "project",
+    "teammate-open": "project",
+  }).map(([sample, step]): Screen => ({ id: `start.${step}`, route: `#/start?sample=${sample}`, fixtures: ["cloud-connect"], variant: sample, sizes: [...defaultSizes, "narrow"] })),
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
   // Sign in from Settings: who signed in, then the invitation, each in a dialog before anything connects.
   {
