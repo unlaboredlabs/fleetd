@@ -220,7 +220,8 @@
     position: absolute;
     z-index: 2;
     top: -14px;
-    right: var(--space-2);
+    /* From the bubble's outer edge into the column, so a short bubble's strip never passes the column's edge. */
+    left: var(--space-2);
     padding: 1px 2px;
     border-radius: var(--radius-sm);
     background: var(--raised);
@@ -228,8 +229,8 @@
     pointer-events: none;
   }
   .mine .aside {
-    right: auto;
-    left: var(--space-2);
+    left: auto;
+    right: var(--space-2);
   }
   .line:hover > .aside,
   .line:focus-within > .aside {
