@@ -72,6 +72,18 @@ const realSpawn: Spawn = (args, stdin) => {
   return { pid: child.pid, exited: child.exited, kill: (signal) => child.kill(signal) };
 };
 
+/** One line of the runner's in the hub's log, at the level the node gave it (its own stamp dropped: the hub stamps
+ * its own), else as INFO. */
+export function logLine(line: string, log: Pick<Console, "debug" | "info" | "warn" | "error"> = console): void {
+  const m = /^\S+ (DEBUG|INFO|WARN|ERROR) (.*)$/su.exec(line);
+  const level = m?.[1];
+  const text = `runner: ${m?.[2] ?? line}`;
+  if (level === "ERROR") log.error(text);
+  else if (level === "WARN") log.warn(text);
+  else if (level === "DEBUG") log.debug(text);
+  else log.info(text);
+}
+
 /** The runner's log lines, in the hub's log. */
 async function relay(stream: ReadableStream<Uint8Array>): Promise<void> {
   let rest = "";
@@ -80,7 +92,7 @@ async function relay(stream: ReadableStream<Uint8Array>): Promise<void> {
   for await (const chunk of stream) {
     const lines = (rest + dec.decode(chunk, { stream: true })).split("\n");
     rest = lines.pop() ?? "";
-    for (const line of lines) if (line.trim()) console.error(`runner: ${line}`);
+    for (const line of lines) if (line.trim()) logLine(line);
   }
 }
 
