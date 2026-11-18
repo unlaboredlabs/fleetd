@@ -102,7 +102,7 @@
 .tooltip.prose {
   max-width: min(400px, calc(100vw - 2 * var(--edge-inset)));
   padding: var(--space-2) 10px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--raised);
   color: var(--text);
   box-shadow: var(--float-shadow);

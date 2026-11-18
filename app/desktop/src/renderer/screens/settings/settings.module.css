@@ -32,7 +32,7 @@
 }
 .scroll::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent padding-box;
 }
 .scroll[data-scrolling]::-webkit-scrollbar-thumb,
@@ -321,7 +321,7 @@
 .search > input {
   height: 32px;
   padding-inline: 32px var(--space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: var(--raised) no-repeat 10px 50% / 14px 14px;
   background-image: var(--search-glyph);
 }

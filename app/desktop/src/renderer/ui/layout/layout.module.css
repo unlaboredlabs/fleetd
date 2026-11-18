@@ -33,10 +33,9 @@
   align-self: start;
   position: relative;
   z-index: 2;
-  margin: var(--frame-inset) var(--frame-inset) 0 0;
 }
-/* A sheet: white, set into the frame by --frame-inset on every side but the sidebar's (the sidebar's own padding is
-   the gap there), its corners --radius-sheet, one hairline and a breath of lift. What scrolls in it is clipped to it. */
+/* The main area: flush to the window's edges and the sidebar's, no card and no corners; where it meets the sidebar
+   one hairline inside its own edge, so nothing takes width. What scrolls in it is clipped to it. */
 .main {
   grid-area: main;
   min-width: 0;
@@ -44,34 +43,23 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  margin: var(--frame-inset) var(--frame-inset) var(--frame-inset) 0;
-  border-radius: var(--radius-sheet);
-  background: var(--sheet);
-  box-shadow: var(--sheet-lift);
+  background: var(--bg);
+  box-shadow: inset 1px 0 0 var(--hairline);
 }
-.noSidebar > .main,
-.noSidebar > .topBar {
-  margin-left: var(--frame-inset);
-}
-/* With the panel beside, the chat's sheet leaves the gap to the panel's. */
-.withAside > .main,
-.withAside > .topBar {
-  margin-right: 0;
+.noSidebar > .main {
+  box-shadow: none;
 }
 
-/* A second sheet beside the chat's, the frame's gap between them. Opaque, on the translucent frame too: nothing
-   composites over live content. */
+/* The panel: flush down the window's right edge, its own receding tone, one hairline inside its left edge. Opaque, on
+   the translucent frame too: nothing composites over live content. */
 .aside {
   grid-area: aside;
   display: flex;
   min-width: 0;
   min-height: 0;
-  margin: var(--frame-inset);
   overflow: hidden;
-  border-radius: var(--radius-sheet);
   background: var(--panel);
-  /* It recedes: an edge and no lift, so the chat's sheet is the one that floats. */
-  box-shadow: 0 0 0 1px var(--sheet-edge);
+  box-shadow: inset 1px 0 0 var(--hairline);
 }
 /* Its column, in the panel's own tone from the frame that makes room for it, under the panel as it slides in. The
    translucent frame paints nothing there, so the window's lighter material would show until the panel had covered it:
@@ -109,7 +97,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-1);
-  height: calc(var(--top-bar-height) + 2 * var(--frame-inset));
+  height: var(--top-bar-height);
   padding-inline: max(var(--space-2), var(--traffic-lights-inset)) var(--space-2);
   -webkit-app-region: drag;
   user-select: none;
@@ -144,7 +132,7 @@
     transform: translateX(-100%);
   }
   .aside[data-motion="in"] {
-    transform: translateX(calc(100% + var(--frame-inset)));
+    transform: translateX(100%);
   }
 }
 .side[data-motion="out"],
@@ -164,7 +152,7 @@
 }
 .aside[data-motion="out"] {
   right: 0;
-  transform: translateX(calc(100% + var(--frame-inset)));
+  transform: translateX(100%);
   transition-duration: var(--dur-panel-out);
 }
 
@@ -185,8 +173,8 @@
   content: "";
   position: absolute;
   z-index: -1;
-  inset: 0 0 calc(-1 * var(--space-6));
-  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  /* Clear of the main area's hairline along the sidebar. */
+  inset: 0 0 calc(-1 * var(--space-6)) 1px;
   /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 72 px), so nothing reads under
      or just below it; then 12 px where what scrolls up blurs and dissolves into it. Without a GPU (QA, software
      compositing) the gradient alone hides it. */
@@ -397,7 +385,7 @@ button[aria-pressed="true"] > .pressChevron {
   min-height: 32px;
   padding: var(--space-1) var(--space-2);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -440,7 +428,7 @@ button[aria-pressed="true"] > .pressChevron {
 .tall {
   gap: var(--space-3);
   padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
 }
 
 .empty {

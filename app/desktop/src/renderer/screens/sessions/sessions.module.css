@@ -282,7 +282,7 @@
   flex: none;
   width: min(100cqw, (100cqh - var(--bar) - var(--below, 0px)) * var(--aspect));
   overflow: hidden;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--raised);
   box-shadow:
     0 0 0 1px var(--hairline),

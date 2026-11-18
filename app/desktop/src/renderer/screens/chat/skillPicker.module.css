@@ -10,7 +10,7 @@
   margin: 0;
   padding: var(--space-1);
   list-style: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--raised);
   box-shadow: var(--float-shadow);
   max-height: 240px;
@@ -23,7 +23,7 @@
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-1) var(--space-2);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .option:hover {

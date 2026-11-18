@@ -22,10 +22,10 @@
   column-gap: var(--space-1);
   row-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2);
-  /* One line by default, the clip and Send inline with the words: round ends while it is one line, and the same 24 px
-     corners as it grows, so it reads as the thing everything rests on. */
-  border-radius: 24px;
+  padding: 6px;
+  /* One line by default, the clip and Send inline with the words; it floats, so it takes a floating thing's corners
+     (--radius-lg), the same as it grows, and its keys a control's a gap inside them. */
+  border-radius: var(--radius-lg);
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
@@ -108,7 +108,7 @@
 .lead > button {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   color: var(--quiet);
 }
 .lead > button:hover {

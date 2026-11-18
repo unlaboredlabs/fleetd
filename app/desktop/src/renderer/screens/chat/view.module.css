@@ -212,10 +212,28 @@
     opacity: 0;
   }
 }
-/* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
+/* In a narrow chat (beside the panel, a side window) a bubble's actions and time float over its top corner while it
+   is hovered, a small raised strip: beside it they'd squeeze it to a word, and under it they'd hold an empty line
+   under every bubble at rest. */
 @container (max-width: 480px) {
-  .line {
-    flex-wrap: wrap;
+  .aside {
+    position: absolute;
+    z-index: 2;
+    top: -14px;
+    right: var(--space-2);
+    padding: 1px 2px;
+    border-radius: var(--radius-sm);
+    background: var(--raised);
+    box-shadow: var(--float-shadow);
+    pointer-events: none;
+  }
+  .mine .aside {
+    right: auto;
+    left: var(--space-2);
+  }
+  .line:hover > .aside,
+  .line:focus-within > .aside {
+    pointer-events: auto;
   }
 }
 .wide {
@@ -227,7 +245,7 @@
  * corners, the composer's), and a code card's corners are the controls' (--radius-lg).
  */
 .bubble {
-  --tight: 6px;
+  --tight: var(--radius-xs);
   --prose-size: 14px;
   --prose-leading: 22px;
   --prose-gap: 10px;
@@ -238,14 +256,14 @@
   --code-leading: 20px;
   --code-pad-y: 9px;
   --code-pad-x: 13px;
-  --code-radius: var(--radius-lg);
+  --code-radius: var(--radius-md);
   --code-inline-size: 0.87em;
   --code-inline-pad: 1px 4px;
   position: relative;
   min-width: 0;
   max-width: 100%;
   padding: 9px 14px;
-  border-radius: 18px;
+  border-radius: var(--radius-bubble);
   background: var(--bubble);
 }
 .bubble.wide {
@@ -334,7 +352,7 @@
 }
 /* The ring follows what it rings: a block's card, emoji without a bubble, an approval's card. */
 .blockBubble.waited {
-  border-radius: 14px;
+  border-radius: var(--radius-md);
 }
 .jumbo.waited,
 .waitedBox {
@@ -601,7 +619,7 @@ span.changeUndo {
   gap: 1px;
   padding: 1px 5px;
   border: 2px solid var(--bg);
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   background: var(--bubble);
   font-size: 12px;
   line-height: 18px;
@@ -901,7 +919,7 @@ span.changeUndo {
   min-height: 44px;
   padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--hairline);
   color: var(--text);

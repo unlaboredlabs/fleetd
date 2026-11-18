@@ -162,7 +162,7 @@ button.press:hover::before {
   flex-direction: column;
   max-height: min(420px, 50vh);
   padding: var(--space-1) 0;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--glass) 70%, var(--raised));
   backdrop-filter: var(--glass-blur);
   box-shadow:

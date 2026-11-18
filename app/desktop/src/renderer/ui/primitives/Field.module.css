@@ -110,7 +110,7 @@
   color: var(--on-accent);
 }
 .checkbox {
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
 }
 .radio {
   border-radius: 999px;

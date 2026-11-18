@@ -91,7 +91,7 @@
 .connect {
   height: 36px;
   padding-inline: var(--space-6);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
 /* Any other computer: a quiet label over the line, as a Settings section is, and what to do with it under. */

@@ -234,7 +234,7 @@
 .opens {
   margin-inline: var(--space-1);
   padding-inline: var(--space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   transition: background-color var(--dur-quick);
 }
 .opens:has(.opener:hover) {
@@ -393,7 +393,7 @@
 .ghostRow {
   display: block;
   height: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--settings-field);
   animation: breathe 1.4s ease-in-out infinite;
 }

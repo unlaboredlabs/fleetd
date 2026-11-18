@@ -40,7 +40,7 @@
 }
 /* The bot has no circle: no round scrim behind it, just the upload mark in a small disc at its foot. */
 .target[data-bot] {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 .target[data-bot] .hover {
   inset: auto -4px -4px auto;
@@ -66,7 +66,7 @@
 .stage {
   position: relative;
   overflow: hidden;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: #000000;
   cursor: grab;
   touch-action: none;

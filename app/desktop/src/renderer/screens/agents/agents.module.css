@@ -26,43 +26,33 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  /* In line with the tabs over it. */
+  /* In line with the tabs over it: a row's hover box starts where the first tab's does. */
   padding: 0 var(--space-3);
 }
-/* Each row stands on the panel as a white tile with a gap of its own (VirtualList wraps each in a box). */
-.list [data-index] {
-  padding-bottom: 6px;
-}
 
-/* One agent: its glyph in a gutter and its title; under it what it is doing now. Its role and where its work is are
-   in its hover. Rows stand a step apart; one that has ended (done, failed, paused) steps back a shade so the live
-   ones lead. */
+/* One agent, as a line of a dense list, not a card: its glyph in a gutter, its title and its role on one line, what
+   it is doing now under them in the quiet size. Nothing at rest but the words; under the pointer a soft box. One that
+   has ended (done, failed, paused) steps back a shade so the live ones lead. */
 .row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  column-gap: var(--space-3);
-  row-gap: 2px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 0;
   align-items: center;
   min-width: 0;
   margin-bottom: 0;
-  min-height: 56px;
-  padding: 10px var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--row-on);
-  box-shadow: var(--row-on-lift);
+  min-height: 44px;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
   color: inherit;
   text-decoration: none;
-  transition:
-    box-shadow var(--dur-quick) var(--ease-snap),
-    transform var(--dur-quick) var(--ease-snap);
+  transition: background-color var(--dur-quick) var(--ease-snap);
 }
 .row:hover {
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent),
-    0 2px 8px -2px var(--shadow);
+  background: var(--hover);
 }
 .row:active {
-  transform: scale(0.99);
+  background: var(--selected);
 }
 .row:focus-visible {
   outline: 2px solid var(--focus);
@@ -107,12 +97,12 @@
    spans both lines, centred on the title. */
 .state {
   grid-column: 1;
-  grid-row: 1 / span 2;
-  align-self: start;
+  grid-row: 1;
+  align-self: center;
   justify-self: center;
   display: inline-grid;
   place-items: center;
-  width: 28px;
+  width: 16px;
   height: 18px;
 }
 .state > [data-state] {
@@ -342,18 +332,14 @@
   font-weight: var(--weight-medium);
   line-height: var(--leading-sm);
 }
-/* Its role at the title line's end, as a quiet tag. */
+/* Its role at the title line's end, as a quiet word. */
 .role {
   grid-row: 1;
   grid-column: 3;
   align-self: center;
-  padding: 0 6px;
-  border-radius: 6px;
-  background: var(--hover);
-  color: var(--quiet);
+  color: var(--faint);
   font-family: var(--meta-font);
-  font-size: 11px;
-  font-weight: var(--weight-medium);
-  line-height: 18px;
+  font-size: var(--meta-size);
+  line-height: var(--leading-sm);
   white-space: nowrap;
 }

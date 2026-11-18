@@ -28,7 +28,7 @@
   height: min(920px, 100%);
   min-height: 0;
   overflow: hidden;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--sheet);
   box-shadow: var(--settings-lift);
   animation: sheetIn 240ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
@@ -283,14 +283,14 @@
 /* ---- The controls, as Settings sets them: filled, no dark outline, one height, one focus ring ---- */
 .sheet [role="group"]:has(> button[aria-pressed]) {
   padding: 2px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--settings-fill);
   box-shadow: none;
 }
 .sheet [role="group"] > button[aria-pressed] {
   height: 28px;
   padding: 0 var(--space-3);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-md);
   line-height: 28px;
 }

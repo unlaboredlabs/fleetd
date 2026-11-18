@@ -9,7 +9,7 @@
   height: var(--control);
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: transparent;
   font-size: var(--text-md);
   line-height: var(--leading-md);
@@ -136,7 +136,7 @@
   align-items: center;
   height: 16px;
   padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   border: 1px solid var(--hairline);
   font-family: var(--font-sans);
   font-size: var(--text-xs);

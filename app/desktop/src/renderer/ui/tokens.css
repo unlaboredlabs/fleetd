@@ -13,14 +13,15 @@
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  /* The window is a frame of one cool mineral tone; the sidebar sits flush on it (it is the frame), and what you work
-     in sits on sheets set into it (--sheet, layout.module.css). --bg is a sheet's own white. */
-  --frame: #f2f3f5;
+  /* The window is flush, three columns and no cards: the sidebar in a cool mineral tone, the chat on white, the panel
+     a breath off white; hairlines where they meet (layout.module.css). --frame is what shows before any of them
+     paints. --sheet is a floating sheet's own white (Settings, New bot). */
+  --frame: #f4f5f7;
   --bg: #ffffff;
   --sheet: #ffffff;
   --sheet-edge: #0f17201a;
   --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #0f17200d, 0 12px 32px -16px #0f172024;
-  --sidebar: #f2f3f5;
+  --sidebar: #f4f5f7;
   --raised: #ffffff;
   --hover: #0f172009;
   --selected: #0f172011;
@@ -31,17 +32,14 @@
      the row and the chat it opens read as one material. */
   --row-on: #ffffff;
   --row-on-lift: 0 0 0 1px #0f17200f, 0 1px 2px #0f172012, 0 2px 6px -2px #0f172010;
-  /* The panel recedes: a sheet a step into the frame's tone, with no lift of its own; the chat is the one white
-     surface that floats. */
-  --panel: #f8f9fa;
+  /* The panel recedes: a breath off the chat's white, past a hairline. */
+  --panel: #fbfbfc;
   /* An inset band on a sheet: code, a diff's file head, a track under segments. A step off the sheet, the frame's tone
      in light; in dark a step lighter than the sheet, never the frame's near-black. */
   --inset: #f2f3f5;
   /* A filled field or select (New bot; Settings' fields are the same fill): no outline, the sheet's white on focus. */
   --fill: #eff1f3;
   --fill-hover: #e9ebee;
-  /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
-  --side-edge: transparent;
   --border: #d6dade;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
@@ -123,21 +121,20 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --frame: #09090b;
+  --frame: #0c0d0f;
   --bg: #121316;
   --sheet: #121316;
   --sheet-edge: #ffffff12;
   --sheet-lift: 0 0 0 1px var(--sheet-edge), 0 1px 2px #00000066, 0 8px 24px -8px #00000099;
-  --sidebar: #09090b;
+  --sidebar: #0c0d0f;
   --raised: #1a1b1f;
   --hover: #ffffff0b;
   --selected: #ffffff14;
   --hairline: #24262b;
-  --side-edge: transparent;
   --focus: #5b91f5;
   --row-on: #1d1e22;
   --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
-  --panel: #0e0f11;
+  --panel: #101114;
   --inset: #1a1b1f;
   --fill: #1d1f23;
   --fill-hover: #23252a;
@@ -247,10 +244,6 @@
   /* The window's top row, which floats over the screen (no bar of its own); the main process centres the macOS traffic
      lights in it (shared/frame.ts TOP_BAR). */
   --top-bar-height: 48px;
-  /* How far the sheets sit in from the window's edges and from the sidebar: the frame shows round them. The window's
-     top row (traffic lights, New) is the sheet's top row and its inset together, so all share one centre line. */
-  --frame-inset: 8px;
-  --radius-sheet: 12px;
   /* How far a glass capsule (the chat's pill) sits in from the top row's top and bottom edges. */
   --glass-inset: 8px;
   /* The glass's blur, the same in both themes. */
@@ -269,12 +262,18 @@
   /* Room for the macOS traffic lights in the hiddenInset title bar; 0 elsewhere (<html data-platform>). */
   --traffic-lights-inset: 0px;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  /* A Settings group's corners. */
-  --radius-group: 12px;
+  /* Corners: four steps by what a thing is, never by taste per screen, and nothing rounder than a dialog. A thing set
+     inside another is never rounder than it (inner = outer − the gap between). Pills only for what is a pill by
+     nature: a capsule, a pin, an avatar, a dot, a count. */
+  --radius-xs: 4px; /* marks inside text: a badge, a count chip, kbd, inline code, a checkbox */
+  --radius-sm: 6px; /* what you press or type in: buttons, fields, a row's hover and selected box, tabs, menu items */
+  --radius-md: 8px; /* what holds things: cards and blocks in the chat, a Settings group, menus, popovers, the composer */
+  --radius-lg: 10px; /* what floats over the app: dialogs, the Settings sheet, the palette */
+  --radius-pill: 999px;
+  /* A chat bubble: a step rounder than a card, so a bubble reads as speech and a block as a thing. */
+  --radius-bubble: 12px;
+  /* Old names, kept to their new step. */
+  --radius-group: var(--radius-md);
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
   /* What is selected (a sidebar row, a tab, a segment): a raised chip, its hairline edge and a breath of lift. */

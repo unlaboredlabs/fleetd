@@ -26,7 +26,7 @@
   flex-direction: column;
   width: min(480px, calc(100vw - 4 * var(--edge-inset)));
   max-height: calc(100vh - max(var(--top-bar-height), 20vh) - var(--top-bar-height));
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text);
   box-shadow:
@@ -345,7 +345,7 @@
   align-items: center;
   justify-content: center;
   border: 2px dashed var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   pointer-events: none;
 }
