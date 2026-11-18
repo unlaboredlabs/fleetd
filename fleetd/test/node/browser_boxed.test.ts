@@ -199,6 +199,21 @@ test("the proxy makes each connection through the dial it was given, and says wh
   expect(dialled).toEqual(["localhost:5173", "127.0.0.1:4790"]);
 });
 
+/** The guest's link socket: its file is there a moment before the guest listens on it, so a refusal is tried again. */
+async function dialGuest(sock: string): Promise<Duplex> {
+  for (let i = 0; ; i++) {
+    try {
+      return await new Promise<Duplex>((resolve, reject) => {
+        const s = connect(sock);
+        s.once("connect", () => resolve(s)).once("error", reject);
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code !== "ECONNREFUSED" || i > 100) throw e;
+      await Bun.sleep(10);
+    }
+  }
+}
+
 test("a box dials from inside: its own loopback answers, a closed port is refused in the guest's words", async () => {
   const dir = join(root, "g1");
   mkdirSync(dir);
@@ -209,10 +224,7 @@ test("a box dials from inside: its own loopback answers, a closed port is refuse
     if (i > 500) throw new Error("the guest didn't listen");
     await Bun.sleep(10);
   }
-  const dial = () => new Promise<Duplex>((resolve, reject) => {
-    const s = connect(sock);
-    s.once("connect", () => resolve(s)).once("error", reject);
-  });
+  const dial = () => dialGuest(sock);
   const box = await Box.open({ session: "s-dial", dial, nodeSock: join(dir, "node.sock"), tcp: [], lead: noLead });
   cleanups.push(() => box.close());
   const inside = await server("127.0.0.2", "from the box");
@@ -245,10 +257,7 @@ test("a guest from before dials refuses one plainly, and a channel it opens in t
   });
   await new Promise<void>((r) => srv.listen(sock, () => r()));
   cleanups.push(() => void srv.close());
-  const dial = () => new Promise<Duplex>((resolve, reject) => {
-    const s = connect(sock);
-    s.once("connect", () => resolve(s)).once("error", reject);
-  });
+  const dial = () => dialGuest(sock);
   const box = await Box.open({ session: "s-old", dial, nodeSock: join(dir, "node.sock"), tcp: [7], lead: noLead });
   cleanups.push(() => box.close());
   await expect(box.dial("localhost", 80)).rejects.toThrow("a guest from before dials");

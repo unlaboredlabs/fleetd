@@ -4036,6 +4036,11 @@ export type Machine = {
   machineId: MachineId;
   name: string;
   nodeVersion: string;
+  /**
+   * The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (E2B, boat.dev, Daytona), none on
+   * the hub's machine. It is no computer of the team's. Absent on every other machine.
+   */
+  runner?: boolean;
   status: MachineStatus;
   /** Always empty: machines have no tags. Kept for older apps, which read the list. */
   tags?: string[];

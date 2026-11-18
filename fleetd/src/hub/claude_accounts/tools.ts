@@ -5,6 +5,7 @@
 //
 // A key or token comes sealed to each machine's box key; the hub relays each box to its node and records the
 // fingerprint it answers. The boxes are never stored, logged or returned, and no agent key reaches these tools.
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type { ClaudeAccount, ClaudeSeal, ClaudeSealedOn, ClaudeTest, Person } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
@@ -250,7 +251,9 @@ function holding(hub: Hub, held: ClaudeSealedOn[], asked: string | undefined, no
     }
     m = asked;
   } else {
-    const found = held.map((s) => s.machineId).find((x) => readyOk(hub, x));
+    // A computer of the team's first, which tries it with its own Claude Code; the hub's runner asks its endpoint.
+    const ids = held.map((s) => s.machineId).sort((a, b) => Number(a === RUNNER_ID) - Number(b === RUNNER_ID));
+    const found = ids.find((x) => readyOk(hub, x));
     if (found === undefined) throw new ToolError("machine_offline", none, fix);
     m = found;
   }

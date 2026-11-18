@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { inTurn } from "../util.ts";
+import { withGithubTokens } from "../repos/github.ts";
 
 export class GitError extends Error {}
 
@@ -46,7 +47,7 @@ const serial = <T>(root: string, fn: () => Promise<T>) => inTurn(turns, root, fn
 /** git that talks to a remote, in a process group of its own killed at `timeoutMs`. */
 export async function gitRemote(dir: string, args: string[], timeoutMs: number): Promise<string> {
   const sshSet = process.env.GIT_SSH_COMMAND || process.env.GIT_SSH || (await tryGit(dir, ["config", "--get", "core.sshCommand"]))?.trim();
-  const env = gitEnv(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" });
+  const env = withGithubTokens(gitEnv(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" }));
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", dir, ...args], { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     let stdout = "";

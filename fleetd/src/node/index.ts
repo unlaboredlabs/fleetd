@@ -12,15 +12,16 @@ import { registerAreas, stopAreas } from "./areas.ts";
 import { agentsMac, isAgentsMac, mayJoin } from "./agents_mac/index.ts";
 import { helloCapabilities, refusedOnMac } from "./link/tool_only.ts";
 import { current as currentScope } from "./runner/scope.ts";
-import { runCmdCheck } from "./cmd/index.ts";
+import { REFUSED, runCmdCheck } from "./cmd/index.ts";
+import { notRunResult } from "./cmd/refusal.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
-import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
+import { loadOrCreateBoxKey, loadOrCreateIdentity, type NodeBoxKey } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
-import { boxOf, inBox, useVm } from "./place/index.ts";
+import { boxOf, inBox, useRunner, useVm } from "./place/index.ts";
 import { MicroVm, reportVm } from "./place/microvm.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
-import { hasBox, HOSTED_NO_MAC } from "./place/hosted.ts";
+import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
@@ -37,6 +38,8 @@ import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
 import { RevylScreens } from "./revyl/index.ts";
 import { sandboxesOf } from "./sandbox/hosted.ts";
+import { keepTokens, useGithubTokens } from "./repos/github.ts";
+import { CAP_RUNNER, RUNNER_NAME } from "../shared/sandbox.ts";
 import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
@@ -58,6 +61,14 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
   node run [--home <dir>]
              keep the link up for a machine that has joined
 `;
+
+/** What the hub's runner answers a command the hub asks it to run on its machine. */
+const RUNNER_NO_COMMANDS =
+  "approved commands and checks run on a computer of the team's, and none runs this bot: its agents run in hosted sandboxes. Connect a computer (Settings › Hub › Machines) to run them";
+
+/** What the hub's runner leaves out of the core's capabilities: installing, signing in to or updating a Claude Code or
+ * fleetd of its machine's (its boxes have their own, and it updates with the hub that starts it). */
+const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH];
 
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
@@ -255,7 +266,21 @@ export async function nodeCommand(argv: string[]): Promise<number> {
 }
 
 /** `mac`: `--mac`, the agents' Mac (agents_mac), its own screen on. */
-export type JoinArgs = { hub: string; token: string; machine: string; home?: string; enrollOnly?: boolean; claudeConfigDir?: string; mac?: boolean };
+export type JoinArgs = { hub: string; token: string; machine: string; home?: string; enrollOnly?: boolean; claudeConfigDir?: string; mac?: boolean; runner?: boolean };
+
+/** The config a node joins with, in `home`. The hub's runner keeps a Claude config dir of its own: no machine's
+ * `~/.claude` is any of its sessions'. */
+export function joinConfig(home: string, args: JoinArgs): NodeConfig {
+  return {
+    hub: args.hub,
+    machineId: args.machine,
+    name: args.machine,
+    ...(args.claudeConfigDir ? { claudeConfigDir: args.claudeConfigDir } : {}),
+    ...(args.mac ? { mac: { enabled: true }, agentsMac: true } : {}),
+    ...(args.runner ? { name: RUNNER_NAME, runner: true, claudeConfigDir: join(home, "claude"), browser: { enabled: false } } : {}),
+    enrolled: false,
+  };
+}
 
 /** Creates the node key and config, enrolls with the one-time token, then keeps the link up. */
 export async function join_(args: JoinArgs): Promise<number> {
@@ -269,14 +294,7 @@ export async function join_(args: JoinArgs): Promise<number> {
     return 1;
   }
   const home = args.home ?? defaultNodeHome();
-  const config: NodeConfig = {
-    hub: args.hub,
-    machineId: args.machine,
-    name: args.machine,
-    ...(args.claudeConfigDir ? { claudeConfigDir: args.claudeConfigDir } : {}),
-    ...(args.mac ? { mac: { enabled: true }, agentsMac: true } : {}),
-    enrolled: false,
-  };
+  const config = joinConfig(home, args);
   try {
     writeConfig(home, config);
   } catch {
@@ -306,7 +324,8 @@ export async function run(args: { home?: string }): Promise<number> {
   // Run by hand, it says what's wrong at once; as a service it waits.
   const config = await enrolled(home, !process.stderr.isTTY);
   if (typeof config === "number") return config;
-  refreshOwnUnit();
+  // The hub's runner runs under the hub's unit, which is the hub's to keep.
+  if (!config.runner) refreshOwnUnit();
   return runNodeProcess(home, config, undefined, false);
 }
 
@@ -359,7 +378,14 @@ export const enrolledRetry = (attempt: number) => Math.min(5_000 * 2 ** Math.min
 export type RunningNode = { node: Node; sessions: SessionService; stop: () => Promise<void>; done: Promise<number> };
 
 /** Starts the node: its sessions, its lead socket and its link. */
-export async function startNode(home: string, config: NodeConfig, enrollToken?: string, exitWhenEnrolled = false): Promise<RunningNode> {
+export async function startNode(
+  home: string,
+  config: NodeConfig,
+  enrollToken?: string,
+  exitWhenEnrolled = false,
+  /** Tests: the hosted boxes' maker, with stand-in providers. */
+  o: { boxes?: (home: string, machineId: string, key: NodeBoxKey) => Boxes } = {},
+): Promise<RunningNode> {
   // The hold the node before this one kept for its update ends with it: what it held goes on now.
   clearHold(home);
   startupCleanups(home);
@@ -373,11 +399,15 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   // A task's agent runs in a VM of its own where this machine can run one; its boxes are re-adopted with its sessions,
   // before the node.sock hooks they answer calls with exist.
   let leadHooks: LeadSocketHooks | undefined;
-  const vm = isAgentsMac(config) ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope });
+  const vm = isAgentsMac(config) || config.runner ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope });
   useVm(vm);
   // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
-  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(new Boxes(home, config.machineId, boxKey));
-  const sessions = await SessionService.start(configFor(home, fleetdDir(), fleetd, boxKey));
+  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
+  // The hub's runner reads no claude.env of the machine it runs on: its agents run on the team's Claude account.
+  const sessionConfig = configFor(home, config.runner ? home : fleetdDir(), fleetd, boxKey);
+  // Its sessions' claude is the one their boxes' template installs.
+  if (config.runner) sessionConfig.claudeBin = BOX_CLAUDE.path;
+  const sessions = await SessionService.start(sessionConfig);
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
   const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");
@@ -398,10 +428,15 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     hasProject: (projectId: string) => sessions.store.project(projectId) !== undefined,
   }));
   registerAreas(node);
+  // The hub's own runner: every session in a box of the first connected provider the hub didn't place it elsewhere in.
+  if (config.runner) {
+    useRunner(() => sandboxesOf(node)?.placeable()[0]);
+    useGithubTokens(home);
+  }
   // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).
   sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
   // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
-  if (config.browser?.enabled !== false && !isAgentsMac(config)) broker(node).prepare();
+  if (config.browser?.enabled !== false && !isAgentsMac(config) && !config.runner) broker(node).prepare();
   // A boxed agent's browser sees its box's network and files, not this machine's (browser/egress.ts).
   broker(node).boxed = (thread) => {
     const b = boxOf(thread);
@@ -482,6 +517,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       case "lead_result":
         return relay.resolve(frame as unknown as LeadResultFrame);
       case "cmd_check":
+        // The hub's runner runs nothing on the machine it is on: commands go to a computer of the team's.
+        if (config.runner) return ctx.send({ t: "cmd_result", ...notRunResult(String(frame.id ?? ""), `${REFUSED}${RUNNER_NO_COMMANDS}`) });
         void runCmdCheck(frame as unknown as CmdCheck, roots, home, ctx.signal).then((r) => ctx.send({ t: "cmd_result", ...r }), logFailed("cmd_check"));
         return;
       case "secret_deliver": {
@@ -498,6 +535,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         return ctx.send({ t: "secret_result", ...deliverSecret(deliver, secretsCtx) });
       }
       case "gated_run":
+        if (config.runner) return ctx.send({ t: "gated_result", id: String(frame.id ?? ""), exitCode: null, outputTail: "", timedOut: false, error: RUNNER_NO_COMMANDS });
         // Not the link's: an approved command runs to its end when the link drops, and the hub asks for its result.
         void gated.run(frame as unknown as GatedRun, ctx.hubId, secretsCtx).then((r) => link.send({ t: "gated_result", ...r }), logFailed("gated_run"));
         return;
@@ -511,6 +549,11 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         if (frame.action === "revyl_check") {
           const revyl = screens(node).revyl;
           if (revyl instanceof RevylScreens) return void revyl.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
+        }
+        // The hub's runner: the hub's GitHub tokens for its own clones and fetches.
+        if (frame.action === "github_tokens" && config.runner) {
+          const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);
+          return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `${kept} GitHub tokens kept` });
         }
         // A node where agents never run in sandboxes (macOS, the agents' Mac) answers below that it doesn't know them.
         if (frame.action === "sandbox_check" || frame.action === "sandbox_limits") {
@@ -587,10 +630,11 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   };
 
   const hb = node.area("hb");
+  const own = config.runner ? [...CAPABILITIES.filter((c) => !NOT_ON_RUNNER.includes(c)), CAP_RUNNER] : CAPABILITIES;
   // What the last hello listed: an area's capabilities that changed since go to the hub in a new hello.
   let hello: string[] = [];
   node.area("caps").onChanged(() => {
-    const now = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac);
+    const now = helloCapabilities(own, node.area("caps").list(), mac);
     const current = link.current;
     if (current && JSON.stringify(now) !== JSON.stringify(hello)) current.relink("this machine's capabilities changed");
   });
@@ -601,7 +645,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     machineFingerprint: machineFingerprint(),
     ...(enrollToken ? { enrollToken } : {}),
     ...(enrolled ? { onEnrolled: enrolled } : {}),
-    capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
+    capabilities: () => (hello = helloCapabilities(own, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
       if (parts.load && vm) reportVm(parts.load, vm.status(), vm.memGiB());

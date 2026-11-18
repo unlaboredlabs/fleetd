@@ -14,6 +14,7 @@ import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { NodeLoad } from "../src/shared/node_link.ts";
 import type { MachineId, ProjectRef } from "../src/shared/contracts.ts";
+import { RUNNER_ID } from "../src/shared/sandbox.ts";
 import { key, kit, project } from "./work-kit.ts";
 
 const GIB = 2 ** 30;
@@ -340,6 +341,25 @@ describe("board", () => {
     // A person's number for a machine counts its own slots.
     k.board.setMachine("air", 1);
     expect(k.board.state().perMachine[0]!.cap).toBe(1);
+  });
+
+  test("the hub's runner beside a computer: the computer's bots run as before, the runner's only in hosted boxes", () => {
+    const [mine, hosted] = [project_("pa", "air"), project_("ph", RUNNER_ID)];
+    // The runner's node may report its machine's size: it still has no slots of its own.
+    const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["e2b"] }, { ...machine(RUNNER_ID, 8), sandboxes: ["e2b"] }]);
+    k.board.setHosted([{ provider: "e2b", max: 2 }]);
+    const acquire = (h: string, r: ProjectRef, hostable = true) => k.board.acquire(h, r, "work", hostable);
+    expect(acquire("T1", mine)).toEqual(GRANTED);
+    expect(acquire("T2", hosted)).toEqual(GRANTED);
+    expect(acquire("T3", mine)).toEqual(GRANTED);
+    expect(["T1", "T2", "T3"].map((h) => k.board.placeOf(h))).toEqual([LOCAL, "e2b", "e2b"]);
+    expect(acquire("T4", hosted)).toEqual(queued("hosted sandboxes are full: E2B 2 of 2"));
+    expect(acquire("T5", hosted, false)).toEqual(
+      queued("agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings"),
+    );
+    expect(k.board.ownCap(RUNNER_ID)).toBe(0);
+    k.board.setHosted([]);
+    expect(acquire("T6", hosted)).toEqual(queued(expect.stringContaining("no hosted sandbox provider is connected") as never));
   });
 
   test("hosted: an agent on the machine's own login stays on its slots, and says why", () => {

@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, tryAccount } from "./accounts.ts";
+import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, tryAccount, tryAccountApi } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
@@ -23,7 +23,7 @@ import { applyToken, importedFields, importKind, OnePassword, readToken, TOKEN_E
 import { CallRefusal, invalid, notFound } from "./refusal.ts";
 import { forgetSignins } from "./signins.ts";
 import { repoSkills } from "./skills.ts";
-import { hostDir, placeAt } from "../place/index.ts";
+import { hostDir, isRunner, placeAt } from "../place/index.ts";
 
 /** What these calls need of the node: its home and box key, its claude, and the session service's lookups. */
 export type CallContext = {
@@ -148,7 +148,9 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       const silent = endpoint === undefined ? undefined : await endpointSilent(endpoint);
       if (silent !== undefined) return { kind: "claude_account_tested", ok: false, error: new Masker(account.secrets).text(silent) };
       try {
-        await tryAccount(ctx.claudeBin, env);
+        // The hub's runner has no Claude Code of its own: its agents' is in their boxes.
+        if (isRunner()) await tryAccountApi(account.vars.reduce<Env>((e, [k, v]) => ({ ...e, [k]: v }), {}));
+        else await tryAccount(ctx.claudeBin, env);
         return { kind: "claude_account_tested", ok: true };
       } catch (error) {
         // claude may echo what it was given: the value never leaves the machine.
