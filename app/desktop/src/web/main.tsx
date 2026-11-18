@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { applyTheme, UiProvider } from "../renderer/ui";
 import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
+import { clearWebCache } from "./cache";
 import { Gate, type GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
 import { readSession, signInPath, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
@@ -59,7 +60,10 @@ const show = (view: GateView) => {
               answered = true;
               void boot();
             },
-            signOut: () => void webCall(window.fetch.bind(window), "POST", "/web/sign-out").then(() => window.location.assign("/")),
+            signOut: () => {
+              clearWebCache(window.localStorage);
+              void webCall(window.fetch.bind(window), "POST", "/web/sign-out").then(() => window.location.assign("/"));
+            },
           }}
         />
       </UiProvider>
@@ -84,6 +88,8 @@ const start = async (session: WebSession) => {
 const boot = async () => {
   const read = await readSession(window.fetch.bind(window));
   if (!read.ok) {
+    // Signed out: what the last account's teams left in this browser goes too.
+    if (read.signedOut === true) clearWebCache(window.localStorage);
     show(read.signedOut === true ? { at: "signed-out" } : { at: "failed", failure: read.failure });
     return;
   }
