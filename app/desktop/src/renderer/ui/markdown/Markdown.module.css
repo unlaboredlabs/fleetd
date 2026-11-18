@@ -107,7 +107,7 @@
   margin: 0;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--sidebar);
+  background: var(--inset);
   border: 1px solid var(--hairline);
   font-family: var(--font-mono);
   font-size: var(--text-sm);

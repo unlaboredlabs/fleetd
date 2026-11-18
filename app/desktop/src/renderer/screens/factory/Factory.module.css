@@ -104,7 +104,7 @@
   min-width: 0;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  background: var(--sidebar);
+  background: var(--inset);
 }
 .tileValue {
   display: flex;
@@ -136,7 +136,7 @@
 }
 .sparkNow {
   fill: var(--accent);
-  stroke: var(--sidebar);
+  stroke: var(--inset);
   stroke-width: 2;
 }
 .linkish {

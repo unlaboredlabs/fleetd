@@ -70,7 +70,7 @@ describe.each([
   });
 
   it("syntax colours pass AA on the code surface", () => {
-    for (const token of SYNTAX) expect(contrast(get(token), get("sidebar")), token).toBeGreaterThanOrEqual(4.5);
+    for (const token of SYNTAX) expect(contrast(get(token), get("inset")), token).toBeGreaterThanOrEqual(4.5);
   });
 
   it("control edges and the focus outline reach 3:1 on every surface (WCAG 1.4.11)", () => {

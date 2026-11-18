@@ -3,7 +3,7 @@
   position: relative;
   min-width: 0;
   border-radius: var(--code-radius, var(--radius-md));
-  background: var(--sidebar);
+  background: var(--inset);
   border: 1px solid var(--hairline);
 }
 .head {
@@ -60,7 +60,7 @@
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline);
-  background: var(--sidebar);
+  background: var(--inset);
   color: var(--quiet);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);

@@ -34,6 +34,9 @@
   /* The panel recedes: a sheet a step into the frame's tone, with no lift of its own; the chat is the one white
      surface that floats. */
   --panel: #f8f9fa;
+  /* An inset band on a sheet: code, a diff's file head, a track under segments. A step off the sheet, the frame's tone
+     in light; in dark a step lighter than the sheet, never the frame's near-black. */
+  --inset: #f2f3f5;
   /* The sidebar's edge: one hairline, drawn inside it, so it stays flush. */
   --side-edge: transparent;
   --border: #d6dade;
@@ -132,6 +135,7 @@
   --row-on: #1d1e22;
   --row-on-lift: 0 0 0 1px #ffffff0f, 0 1px 2px #00000080;
   --panel: #0e0f11;
+  --inset: #1a1b1f;
   --border: #33363d;
   --bubble: #1d1e22;
   --group: #0f1013;

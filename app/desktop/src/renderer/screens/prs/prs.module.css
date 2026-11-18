@@ -517,7 +517,7 @@
   border: none;
   border-top: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
-  background: var(--sidebar);
+  background: var(--inset);
   color: var(--text);
   text-align: left;
 }
@@ -599,7 +599,7 @@
 }
 .hunk {
   padding: 2px var(--space-3);
-  background: var(--sidebar);
+  background: var(--inset);
   min-width: 0;
 }
 .note {

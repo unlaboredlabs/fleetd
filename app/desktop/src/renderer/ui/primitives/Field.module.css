@@ -74,7 +74,7 @@
 }
 .input:read-only:not(:disabled),
 .textarea:read-only:not(:disabled) {
-  background: var(--sidebar);
+  background: var(--inset);
 }
 
 /* Checkbox, radio and switch. Inside a <form>, Radix adds a hidden absolutely placed input beside each; the label
