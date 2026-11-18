@@ -518,7 +518,7 @@
    share of the hair and its pin, kept to the place's outer side, twice that, so the pictures still stand 16 px apart
    and nothing reaches into the list's own padding. */
 .pins {
-  --pin-w: 88px;
+  --pin-w: 104px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
   justify-content: center;
