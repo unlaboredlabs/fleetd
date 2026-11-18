@@ -54,7 +54,9 @@ export const RULES: Record<Metric, Rule> = {
   firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
   chatShownMs: { label: "chat shown", unit: "ms", higher: false },
   // What a start costs past first paint (the hub's data, the chat's rows and their markdown), which "app over bare"
-  // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there.
+  // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there. Runners spread
+  // as for app over bare (an EPYC 7763 reads 353 ms on ubuntu-24.04, a Xeon 6975P 267 even on the slower 26.04), so its
+  // baseline sits where app over bare's does: the slowest runner ~30 ms under the limit, not a fast runner's one reading.
   chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
