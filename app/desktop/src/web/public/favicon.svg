@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <!-- The tab's icon, drawn for 16 and 32 px: Pebble whole on its tile, 2 units a pixel at 16 px, its body and eyes on
-       whole pixel columns, no filters or clips. The app icon (app/icon) crops Pebble at its tile's bottom edge, which
-       at tab size reads as a cut-off picture. favicon.ico is this, rendered at 16, 32 and 48 px. -->
+       whole pixel columns, no filters or clips. The app icon (mac-small.svg) crops Pebble at its tile's bottom edge,
+       which at tab size reads as a cut-off picture. The favicon of the web app, fleetd.sh and the docs: npm run icons
+       (app/mobile/scripts/icons.ts) writes it, and the web app's favicon.ico of it. -->
   <defs>
     <linearGradient id="wall" x2="0" y2="1"><stop offset="0" stop-color="#f7f3ec"/><stop offset="1" stop-color="#e3dbd0"/></linearGradient>
     <linearGradient id="body" x2="0" y2="1"><stop offset="0" stop-color="#576d8e"/><stop offset="1" stop-color="#3f587c"/></linearGradient>
