@@ -1,6 +1,7 @@
 // iOS Settings' grouped inset lists: a section is a rounded group of rows with hairlines inset to the text, a quiet
-// label above and a footnote below. A row has an optional colored icon tile, a title and a line under it, a value on
-// the right (with a status dot before it) and a chevron when it opens something.
+// label above and a footnote below. A row has an optional icon tile, a title and a line under it, a value on the right
+// (with a status dot before it) and a chevron when it opens something. A tile is a soft neutral one with the icon in
+// the text's colour, as the desktop keeps colour for what means something; only a service's own mark keeps its brand's.
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { shape, space, type, useTheme } from "../theme";
@@ -60,7 +61,7 @@ export function ListRow({
   icon?: IconName;
   /** In place of `icon`: a service's own mark, drawn white on the tile. */
   mark?: ReactNode;
-  /** The icon tile's color; the deep accent when unset. */
+  /** The tile's colour under a white icon or mark: a service's brand. Unset, the tile is a soft neutral one. */
   tint?: string | undefined;
   onPress?: () => void;
   chevron?: boolean;
@@ -75,7 +76,7 @@ export function ListRow({
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
       {icon === undefined && mark === undefined ? null : (
-        <View style={[styles.tile, { backgroundColor: tint ?? t.accentDeep }]}>{mark ?? (icon === undefined ? null : <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />)}</View>
+        <View style={[styles.tile, { backgroundColor: tint ?? t.fillQuiet }]}>{mark ?? (icon === undefined ? null : <Icon name={icon} size={17} color={tint === undefined ? t.label : "#FFFFFF"} weight="medium" />)}</View>
       )}
       {stacked ? (
         <View style={styles.grow}>

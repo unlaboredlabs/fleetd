@@ -1,4 +1,4 @@
-// The quiet pieces around content: an empty state and a count badge. The link's state is in the title (linkHeader.tsx).
+// The quiet pieces around content: an empty state and a row's dot. The link's state is in the title (linkHeader.tsx).
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { space, type, useTheme } from "../theme";
 import { Button } from "./Button";
@@ -27,25 +27,17 @@ export function EmptyState({ icon, title, body, action }: { icon: IconName; titl
 /** How far down the screen an empty state starts, as a share of its height: about the middle of what the bars leave. */
 const EMPTY_DROP = 0.14;
 
-/** A count, or a dot when there is none to give; grey for a muted chat. */
-export function Badge({ count, muted = false, label, tone = "accent" }: { count?: number; muted?: boolean; label?: string; tone?: "accent" | "warning" }) {
+/** A row's one mark, a dot and never a count (the count is in its label): the accent for what you haven't read, orange
+ * for what waits on you, grey for a muted chat. */
+export function Badge({ muted = false, label, tone = "accent" }: { muted?: boolean; label?: string; tone?: "accent" | "warning" }) {
   const t = useTheme();
   const fill = muted ? t.muted : tone === "warning" ? t.warning : t.accentFill;
-  if (count === undefined) return <View style={[styles.dot, { backgroundColor: fill }]} accessibilityLabel={label ?? "Needs you"} />;
-  return (
-    <View style={[styles.badge, { backgroundColor: fill }]} accessibilityLabel={label ?? `${String(count)} waiting`}>
-      <Text style={[type.footnote, styles.badgeText, { color: fill === t.accentFill ? t.onAccent : "#FFFFFF" }]} maxFontSizeMultiplier={1.4}>
-        {count > 99 ? "99+" : String(count)}
-      </Text>
-    </View>
-  );
+  return <View style={[styles.dot, { backgroundColor: fill }]} accessibilityLabel={label ?? "Needs you"} />;
 }
 
 const styles = StyleSheet.create({
   empty: { alignItems: "center", gap: space.sm, paddingHorizontal: space.xxl, paddingBottom: space.xl },
   disc: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center", marginBottom: space.sm },
   center: { textAlign: "center" },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
-  badgeText: { fontWeight: "600" },
+  dot: { width: 10, height: 10, borderRadius: 5 },
 });

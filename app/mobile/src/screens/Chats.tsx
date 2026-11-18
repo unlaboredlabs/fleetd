@@ -1,6 +1,6 @@
 // Chats, as Messages and other chat apps list them: your pinned chats as Messages' grid of large avatars over the list
 // (Pinned.tsx), then the chats with an approval waiting for you on top with its count, then whatever spoke last, each a full-bleed row with its avatar, its newest message
-// and when, and a count of what you haven't read (grey when muted). Its bars are Messages' on iOS 26: a compact top
+// and when, and a dot for what you haven't read (grey when muted) or what waits on you (orange). Its bars are Messages' on iOS 26: a compact top
 // with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
 // right; at the bottom, a round button whose menu narrows the list to the unread, the chats that need you, the pinned,
 // or the archived, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
@@ -56,7 +56,7 @@ import { SectionLabel, useSectionMenus } from "./Sections";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
-const AVATAR = 56;
+const AVATAR = 52;
 /** How long the line that says why a change to the sections was taken back stays. */
 const REFUSED_MS = 6000;
 /**
@@ -534,12 +534,12 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
       <View style={styles.body}>
         <View style={styles.top}>
           <View style={styles.name}>
-            <Text style={[type.headline, styles.nameText, styles.chatName, { color: t.label }]} numberOfLines={1}>
+            <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
               {row.project.title}
             </Text>
             {row.muted ? <Icon name="mute" size={13} color={t.tertiary} /> : null}
           </View>
-          <Text style={[type.subhead, { color: unread && !row.muted ? t.accent : t.secondary }]} numberOfLines={1}>
+          <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
             {listTime(row.at, now)}
           </Text>
         </View>
@@ -554,12 +554,13 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
             {mine ? text.slice(5) : text}
           </Text>
           <View style={styles.marks}>
-            {row.approvals > 0 ? <Badge count={row.approvals} tone="warning" label={`${String(row.approvals)} waiting for approval`} /> : null}
-            {unread ? (
-              <Badge count={row.unread} muted={row.muted} label={`${String(row.unread)} unread`} />
+            {row.approvals > 0 ? (
+              <Badge tone="warning" label={`${String(row.approvals)} waiting for approval`} />
+            ) : unread ? (
+              <Badge muted={row.muted} label={`${String(row.unread)} unread`} />
             ) : row.markedUnread ? (
               <Badge muted={row.muted} label="Unread" />
-            ) : row.want !== undefined && row.approvals === 0 ? (
+            ) : row.want !== undefined ? (
               <Badge />
             ) : row.pinned ? (
               <Icon name="pinned" size={14} color={t.tertiary} />
@@ -585,7 +586,7 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
           <Avatar name={title} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
             <View style={styles.top}>
-              <Text style={[type.headline, styles.nameText, styles.chatName, { color: t.label }]} numberOfLines={1}>
+              <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
                 {title}
               </Text>
               <Text style={[type.footnote, { color: t.secondary }]}>{listTime(hit.at, now)}</Text>
@@ -617,22 +618,21 @@ const styles = StyleSheet.create({
   filter: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 18, borderCurve: "continuous", paddingHorizontal: 16, minHeight: 36 },
   filterText: { fontWeight: "600" },
   filterCount: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  filterCountText: { fontWeight: "700" },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md, paddingLeft: space.lg, minHeight: 78 },
+  filterCountText: { fontWeight: "600" },
+  row: { flexDirection: "row", alignItems: "center", gap: space.md, paddingLeft: space.lg, minHeight: 72 },
   hitRow: { minHeight: 68 },
-  body: { flex: 1, alignSelf: "stretch", justifyContent: "center", gap: 1, paddingRight: space.lg, paddingVertical: 10 },
+  body: { flex: 1, alignSelf: "stretch", justifyContent: "center", gap: 1, paddingRight: space.lg, paddingVertical: 8 },
   hitBody: { paddingVertical: 8 },
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   name: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
   nameText: { flexShrink: 1 },
-  /** A chat's name, a step over the headline as the pinned names are a step up: the row's one strong line. */
-  chatName: { fontSize: 18, lineHeight: 23 },
   // Two lines kept for every row, as chat apps do, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
   /** The lead's glyph, centred on the preview's first line, as the desktop's sidebar shows a working lead. */
   glyph: { height: 20, justifyContent: "center" },
-  marks: { flexDirection: "row", alignItems: "center", gap: 4, paddingTop: 2 },
+  /** The row's one mark, centred on the preview's first line. */
+  marks: { flexDirection: "row", alignItems: "center", gap: 4, height: 20 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
   me: { width: ME_BOX, height: ME_BOX },

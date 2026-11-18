@@ -10,7 +10,7 @@ import type { VaultParams } from "../../hubContext";
 import type { Session } from "../../session";
 import type { State } from "../../store";
 import { refOf } from "../../store";
-import { useTheme, type Palette } from "../../theme";
+import { useTheme } from "../../theme";
 import { Symbol } from "../manage/parts";
 import { touchesVault, type Whose } from "./api";
 import type { VaultKind } from "./types";
@@ -22,15 +22,13 @@ const GLYPH: Readonly<Record<VaultKind, readonly [SFSymbol, AndroidSymbol]>> = {
   env: ["terminal.fill", "terminal"],
 };
 
-const tileColor = (t: Palette, kind: VaultKind): string =>
-  ({ login: t.tints[0], card: t.tints[1], address: t.tints[2], env: t.tints[6] })[kind] ?? t.accentDeep;
-
+/** A kind's tile, a list row's soft neutral one: its glyph says which. */
 export function KindTile({ kind, size = 29 }: { kind: VaultKind; size?: number }) {
   const t = useTheme();
   const [ios, android] = GLYPH[kind];
   return (
-    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: tileColor(t, kind) }]}>
-      <Symbol ios={ios} android={android} size={size * 0.55} color="#FFFFFF" weight="medium" />
+    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: t.fillQuiet }]}>
+      <Symbol ios={ios} android={android} size={size * 0.55} color={t.label} weight="medium" />
     </View>
   );
 }

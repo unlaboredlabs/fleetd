@@ -192,7 +192,6 @@ export function NewProject({ navigation, route }: Props) {
             <ListRow
               key={repoKey(r)}
               icon={r.kind === "clone" ? "link" : "folder"}
-              tint={r.kind === "clone" ? t.tints[6] : t.tints[2]}
               title={r.kind === "clone" ? r.repo : tilde(r.path)}
               chevron={false}
               accessory={
@@ -203,7 +202,7 @@ export function NewProject({ navigation, route }: Props) {
             />
           )),
           adding === null ? (
-            <ListRow key="add" icon="plus" tint={t.accentDeep} title="Add Repo" chevron={false} onPress={() => setAdding("")} />
+            <ListRow key="add" icon="plus" title="Add Repo" chevron={false} onPress={() => setAdding("")} />
           ) : (
             <FieldRow
               key="field"
@@ -231,7 +230,6 @@ export function NewProject({ navigation, route }: Props) {
             <ListRow
               key={repoKey(r)}
               icon={r.kind === "folder" ? "folder" : "link"}
-              tint={r.kind === "folder" ? t.tints[2] : t.tints[6]}
               title={r.kind === "clone" ? r.repo : (r.path.split("/").pop() ?? r.path)}
               detail={r.detail}
               chevron={false}
@@ -289,7 +287,6 @@ function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef
   return (
     <ListRow
       icon={job.draft.kind === "clone" ? "link" : "folder"}
-      tint={job.draft.kind === "clone" ? t.tints[6] : t.tints[2]}
       title={title}
       detail={detail}
       chevron={false}

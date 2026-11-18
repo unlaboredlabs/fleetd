@@ -1586,7 +1586,7 @@ const styles = StyleSheet.create({
   downButton: { width: 44, height: 44, borderRadius: 22 },
   downHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   downCount: { position: "absolute", top: -6, alignSelf: "center", minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  downCountText: { fontWeight: "700" },
+  downCountText: { fontWeight: "600" },
   sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: space.sm },
   selectable: { flex: 1, paddingHorizontal: space.lg, paddingTop: space.sm },
 });
