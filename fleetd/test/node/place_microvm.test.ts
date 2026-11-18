@@ -15,7 +15,7 @@ import { LeadRelay, leadSocketPath, type LeadSocketHooks } from "../../src/node/
 import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
-import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
+import { inBox, leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
 import { FAILED_MS, fdLimit, forgetAt, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
@@ -777,7 +777,7 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(script).toContain(`fleetd.uid=${uid}`);
 });
 
-test("a box's temp files are in its checkout, out of git: a temp file renames into the checkout, and pnpm copies from its store", async () => {
+test("a box's temp files are in its checkout, out of git: a temp file renames into the checkout, and pnpm's store is the session's", async () => {
   const n = node();
   const repo = join(n.home, "wt-tmp");
   mkdirSync(repo, { recursive: true });
@@ -786,10 +786,10 @@ test("a box's temp files are in its checkout, out of git: a temp file renames in
   const place = n.vm.bound({ sessionId: "s-tmp", dir, role: "worker" });
   // A temp file made in $TMPDIR, then renamed into the checkout (Python's mkstemp and os.replace): in a VM, the home's
   // scratch dir is a share of its own, and the kernel renames within one share only.
-  const script = 'f=$(mktemp) && echo made > "$f" && mv "$f" "$PWD/out.txt" && echo "tmp=$TMPDIR pnpm=$npm_config_package_import_method" && git status --porcelain';
+  const script = 'f=$(mktemp) && echo made > "$f" && mv "$f" "$PWD/out.txt" && echo "tmp=$TMPDIR pnpm=$npm_config_store_dir" && git status --porcelain';
   const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env: envOf(n.home) });
   expect(ran.exitCode).toBe(0);
-  expect(ran.outputTail).toContain(`tmp=${join(repo, ".fleetd/tmp/s-tmp")} pnpm=copy`);
+  expect(ran.outputTail).toContain(`tmp=${join(repo, ".fleetd/tmp/s-tmp")} pnpm=${join(repo, ".fleetd/tmp/s-tmp/pnpm-store")}`);
   // git sees the file renamed in, not the temp dir.
   expect(ran.outputTail.trim().split("\n").slice(-1)[0]).toBe("?? out.txt");
   expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/tmp/\n");
@@ -822,4 +822,20 @@ test("a VM's guest takes this machine's umask and inotify limits, from the kerne
   expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, like: { umask: "0002", watches: 1048576, instances: 1024 } })).toContain(
     "fleetd.umask=0002 fleetd.watches=1048576 fleetd.instances=1024",
   );
+});
+
+test("a VM's agent is in a box: what this machine would run for it (the Linux desktop's launch) is refused", async () => {
+  const n = node();
+  const dir = join(n.home, "hosts", "s-inbox");
+  useVm(n.vm);
+  try {
+    expect(inBox("s-inbox")).toBe(false);
+    await n.vm.bound({ sessionId: "s-inbox", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+    expect(inBox("s-inbox")).toBe(true);
+    expect(inBox("s-other")).toBe(false);
+    await n.vm.end(dir);
+    expect(inBox("s-inbox")).toBe(false);
+  } finally {
+    useVm(undefined);
+  }
 });

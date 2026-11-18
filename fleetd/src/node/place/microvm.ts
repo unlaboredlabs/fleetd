@@ -236,6 +236,12 @@ export class MicroVm {
     }
   }
 
+  /** Whether session `session` runs in a box of this node's now (one booting counts). */
+  holds(session: string): boolean {
+    for (const dir of this.#boxes.keys()) if (dir.split("/").at(-1) === session) return true;
+    return false;
+  }
+
   /** Whether `s` runs in a box when the machine can: a task's agent. A lead or a person's own thread stays a process. */
   wants(s: PlaceFor): boolean {
     return s.role === "worker";
@@ -314,13 +320,17 @@ export class MicroVm {
   }
 
   /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
-   * (the machine's build slots, not ones of the box's own), its temp files in its checkout (boxTmp), and pnpm copying
-   * from its store in the home rather than making one in the checkout (a link across shares can't be made). */
+   * (the machine's build slots, not ones of the box's own), its temp files in its checkout (boxTmp), and pnpm's store
+   * the session's own, beside them. pnpm's shared store in the home is a SQLite index (WAL, its -shm mapped): locks
+   * don't cross a VM's share, so two VMs or a VM and a plain process would write it at once. Its own store costs a
+   * download of the packages once a task (seconds), and links into the checkout, on the same share. */
   async #inBox<E extends Record<string, string | undefined>>(env: E, cwd: string, session: string): Promise<E & Record<string, string>> {
     const out = { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as Record<string, string | undefined>;
-    out.npm_config_package_import_method ??= "copy";
     const tmp = await boxTmp(cwd, session);
-    if (tmp) for (const k of ["TMPDIR", "TMP", "TEMP"]) out[k] = tmp;
+    if (tmp) {
+      for (const k of ["TMPDIR", "TMP", "TEMP"]) out[k] = tmp;
+      out.npm_config_store_dir ??= join(tmp, "pnpm-store");
+    }
     return out as E & Record<string, string>;
   }
 
