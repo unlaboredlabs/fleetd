@@ -76,3 +76,59 @@ test("a session whose Monitor died with the last node is woken after the restart
     home.done();
   }
 }, 20_000);
+
+test("a Monitor whose time ran out while the node was away, with its claude gone, still wakes the session", async () => {
+  const home = tempHome();
+  const repo = join(home.dir, "repo");
+  mkdirSync(repo);
+  spawnSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
+  const config: SessionConfig = {
+    home: join(home.dir, "node"),
+    claudeEnv: join(home.dir, "claude.env"),
+    baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
+    claudeBin: "/bin/true",
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
+    retryScheduleMs: [50, 50, 50],
+    idleReapMs: 60_000,
+  };
+  let service = await SessionService.start(config);
+  try {
+    let n = 0;
+    const ok = async (op: string, args: Record<string, unknown>) => {
+      const reply = await service.handle({ id: `c${++n}`, call: { op, ...args } as never });
+      if (!("ok" in reply.result)) throw new Error(JSON.stringify(reply.result));
+    };
+    await ok("project_upsert", { projectId: "p1", title: "demo", workspaceRoot: repo });
+    await ok("launch", { sessionId: "a-lost", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "monitor: wait for ci", runId: "a-lost-r1" });
+    await until(
+      "the first run",
+      () => service.store.session("a-lost")?.summary.latestRun?.status === "completed" && service.store.session("a-lost")?.local.monitors?.length === 1,
+    );
+    const pid = service.store.session("a-lost")!.local.pid!;
+    // The node goes away and stays away past the Monitor's deadline; its claude dies meanwhile, so no notice of it
+    // ever reached the agent (an OOM, a machine down for an hour).
+    service.update("a-lost", (c) => {
+      for (const m of c.row.local.monitors ?? []) m.untilMs = Date.now() - 1;
+    });
+    await service.shutdown();
+    process.kill(pid, "SIGKILL");
+    await until("the host to be reaped", () => {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    service = await SessionService.start(config);
+    const woken = await until("the wake to complete", () =>
+      service.store.runs("a-lost").find((r) => r.id.startsWith("a-lost-monitor-lost-") && r.status === "completed"),
+    );
+    expect(service.store.message("a-lost", woken.id)?.text).toBe(
+      "Your Monitor \"ci\" was lost when this machine's fleetd node restarted. Check what you were waiting for again.",
+    );
+  } finally {
+    await service.stopAll();
+    home.done();
+  }
+}, 20_000);

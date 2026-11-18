@@ -91,9 +91,12 @@ Bun.listen({
           }
           if (text.includes("spans:"))
             emit({ Spans: [1, 2, 3].map((n) => ({ key: `${run_id}/${n}`, kind: "run", sessionId: session, runId: run_id, startMs: Date.now() + n, endMs: Date.now() + n + 1, status: "ok" })) });
-          if (text.includes("monitor:")) {
+          // `monitor:` arms a Monitor for 10 minutes; `monitor-ms=<n>:` for n ms.
+          const monitorMs = /monitor-ms=(\d+):/.exec(text)?.[1];
+          if (text.includes("monitor:") || monitorMs !== undefined) {
             const at = new Date().toISOString();
-            emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input: { description: "ci", timeout_ms: 600000 } } } });
+            const input = { description: "ci", timeout_ms: monitorMs === undefined ? 600000 : Number(monitorMs) };
+            emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input } } });
           }
           if (text.includes("hang:")) {
             // A turn whose stream went quiet: it ends only when interrupted.

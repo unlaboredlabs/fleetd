@@ -494,6 +494,8 @@ export type SessionSummary = {
   recreatedAt?: Timestamp;
   /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
   watchingUntil?: Timestamp;
+  /** What those Monitors watch: each one's description (`a Monitor` for one with none); absent with none. */
+  watching?: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
