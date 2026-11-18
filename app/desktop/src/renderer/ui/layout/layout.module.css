@@ -11,7 +11,7 @@
   min-height: 0;
   /* A side sliding in or out passes the window's edge: no scrollbar for it. */
   overflow: clip;
-  background: var(--bg);
+  background: var(--frame);
 }
 .noSidebar {
   grid-template-columns: minmax(0, 1fr);
@@ -33,7 +33,10 @@
   align-self: start;
   position: relative;
   z-index: 2;
+  margin: var(--frame-inset) var(--frame-inset) 0 0;
 }
+/* A sheet: white, set into the frame by --frame-inset on every side but the sidebar's (the sidebar's own padding is
+   the gap there), its corners --radius-sheet, one hairline and a breath of lift. What scrolls in it is clipped to it. */
 .main {
   grid-area: main;
   min-width: 0;
@@ -41,17 +44,33 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg);
+  margin: var(--frame-inset) var(--frame-inset) var(--frame-inset) 0;
+  border-radius: var(--radius-sheet);
+  background: var(--sheet);
+  box-shadow: var(--sheet-lift);
+}
+.noSidebar > .main,
+.noSidebar > .topBar {
+  margin-left: var(--frame-inset);
+}
+/* With the panel beside, the chat's sheet leaves the gap to the panel's. */
+.withAside > .main,
+.withAside > .topBar {
+  margin-right: 0;
 }
 
-/* Opaque, on the translucent frame too: nothing composites over live content. */
+/* A second sheet beside the chat's, the frame's gap between them. Opaque, on the translucent frame too: nothing
+   composites over live content. */
 .aside {
   grid-area: aside;
   display: flex;
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--side-edge);
-  background: var(--sidebar);
+  margin: var(--frame-inset);
+  overflow: hidden;
+  border-radius: var(--radius-sheet);
+  background: var(--sheet);
+  box-shadow: var(--sheet-lift);
 }
 /* Its column, in the panel's own tone from the frame that makes room for it, under the panel as it slides in. The
    translucent frame paints nothing there, so the window's lighter material would show until the panel had covered it:
@@ -59,7 +78,7 @@
 .withAside::before {
   content: "";
   grid-area: aside;
-  background: var(--sidebar);
+  background: var(--frame);
 }
 
 /* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat by its own cool tone and
@@ -72,7 +91,6 @@
   min-width: 0;
   min-height: 0;
   background: var(--sidebar);
-  box-shadow: inset -1px 0 0 var(--side-edge);
 }
 /* The sidebar's right edge, a line with no width of its own: what it holds (a resize edge) sits over it. */
 .sideEdge {
@@ -90,7 +108,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-1);
-  height: var(--top-bar-height);
+  height: calc(var(--top-bar-height) + 2 * var(--frame-inset));
   padding-inline: max(var(--space-4), var(--traffic-lights-inset)) var(--space-3);
   -webkit-app-region: drag;
   user-select: none;
@@ -102,6 +120,7 @@
 :root[data-vibrancy] .translucent {
   background: transparent;
 }
+:root[data-vibrancy] .translucent::before,
 :root[data-vibrancy] .translucent > .side:not([data-motion="out"]) {
   background: transparent;
 }
@@ -124,7 +143,7 @@
     transform: translateX(-100%);
   }
   .aside[data-motion="in"] {
-    transform: translateX(100%);
+    transform: translateX(calc(100% + var(--frame-inset)));
   }
 }
 .side[data-motion="out"],
@@ -144,7 +163,7 @@
 }
 .aside[data-motion="out"] {
   right: 0;
-  transform: translateX(100%);
+  transform: translateX(calc(100% + var(--frame-inset)));
   transition-duration: var(--dur-panel-out);
 }
 
@@ -166,6 +185,7 @@
   position: absolute;
   z-index: -1;
   inset: 0 0 calc(-1 * var(--space-4));
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   background: linear-gradient(to bottom, var(--bg) 45%, color-mix(in srgb, var(--bg) 85%, transparent) 70%, transparent);
   backdrop-filter: blur(4px);
   mask-image: linear-gradient(to bottom, #000 60%, transparent);

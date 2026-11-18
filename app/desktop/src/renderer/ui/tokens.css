@@ -67,9 +67,9 @@
      what scrolls under it. Its edge is a hairline drawn inside, a brighter line along its top where light catches the
      rim, and a soft shadow that lifts it off the page. */
   --glass: #ffffffb8;
-  --glass-edge: #0f172014;
+  --glass-edge: #0f172012;
   --glass-rim: #ffffff;
-  --glass-lift: 0 1px 2px #0f17200d, 0 8px 24px -8px #0f172024;
+  --glass-lift: 0 1px 2px #0f17200a, 0 12px 32px -12px #0f172029;
   --glass-pressed: #0e142012;
   /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
      shows, its edge firmer too. Laid over the glass, so the material stays. */

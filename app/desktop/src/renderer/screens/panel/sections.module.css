@@ -17,9 +17,9 @@
   justify-content: center;
   gap: var(--space-1);
   min-width: 0;
-  height: 28px;
+  height: 32px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: var(--quiet);
   font-size: var(--text-md);
   line-height: var(--leading-xs);
@@ -30,12 +30,12 @@
 }
 .bar .section:hover {
   background: var(--hover);
+  color: var(--text);
 }
 /* aria-selected, not data-state: the tooltip around each tab sets data-state to its own. */
 .bar .section[aria-selected="true"] {
-  background: var(--raised);
+  background: var(--selected);
   color: var(--text);
-  box-shadow: var(--chip);
 }
 .bar .section::after {
   display: none;

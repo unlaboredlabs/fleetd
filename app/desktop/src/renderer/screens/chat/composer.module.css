@@ -23,9 +23,8 @@
   row-gap: var(--space-1);
   min-width: 0;
   padding: var(--space-3) var(--space-2) var(--space-2);
-  /* A crisp rounded slab, not a capsule: its corners the bubbles' less nothing, so the island and the words over it
-     share one corner. */
-  border-radius: 16px;
+  /* A soft rounded slab, not a capsule: a step rounder than a bubble, so it reads as the thing everything rests on. */
+  border-radius: 20px;
 }
 /* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
    anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
@@ -71,7 +70,7 @@
    whole pill would weigh more than the words in it, and it has the cursor most of the time. */
 .box:has(> .input:focus-visible)::before {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--control-border) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent),
     inset 0 1px 0 var(--glass-rim);
 }
 /* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
@@ -95,9 +94,9 @@
 }
 .tools > button:disabled {
   border-color: transparent;
-  background: var(--accent-fill);
-  color: var(--on-accent);
-  opacity: 0.28;
+  background: var(--selected);
+  color: var(--faint);
+  opacity: 1;
   box-shadow: none;
 }
 .tools > button > svg,
@@ -108,6 +107,11 @@
 .lead > button {
   width: 32px;
   height: 32px;
+  border-radius: 50%;
+  color: var(--quiet);
+}
+.lead > button:hover {
+  color: var(--text);
 }
 
 .input {
@@ -118,13 +122,13 @@
   field-sizing: content;
   min-height: var(--leading-md);
   max-height: calc(12 * var(--leading-md));
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-2) var(--space-1);
   resize: none;
   border: none;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--text-body);
   line-height: var(--leading-md);
   overflow-wrap: anywhere;
 }

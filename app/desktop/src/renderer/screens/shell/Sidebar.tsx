@@ -46,8 +46,8 @@ import { foldKey, holdRows, shownRows } from "./sidebarState";
 import { You } from "./You";
 import s from "./sidebar.module.css";
 
-/** A chat's picture in its row: big enough to read its face, the row a 48 px rounded box around it. */
-const AVATAR = 32;
+/** A chat's picture in its row: big enough to read its face, the row a 56 px rounded box around it. */
+const AVATAR = 36;
 /** A pinned chat's picture, PIN_COLUMNS to a row 16 px apart, the group centred in the sidebar. */
 const PIN_AVATAR = 72;
 const PIN_COLUMNS = 2;

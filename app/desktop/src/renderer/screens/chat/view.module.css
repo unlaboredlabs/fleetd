@@ -188,7 +188,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  max-width: 76%;
+  max-width: 80%;
   min-width: 0;
 }
 .mine .line {
@@ -226,7 +226,7 @@
  * corners, the composer's), and a code card's corners are the controls' (--radius-lg).
  */
 .bubble {
-  --tight: 4px;
+  --tight: 6px;
   --prose-size: 14px;
   --prose-leading: 22px;
   --prose-gap: 10px;
@@ -243,11 +243,9 @@
   position: relative;
   min-width: 0;
   max-width: 100%;
-  padding: 8px 12px;
-  border-radius: 16px;
+  padding: 9px 14px;
+  border-radius: 18px;
   background: var(--bubble);
-  /* The lead's words sit in a crisp outline on the page's white: a hairline, drawn inside, no shadow. */
-  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 .bubble.wide {
   box-sizing: border-box;
@@ -428,8 +426,9 @@
   min-width: 0;
 }
 .quietRow > .event > span:first-child {
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 .event {
   display: flex;
@@ -442,7 +441,7 @@
   flex: none;
   font-family: var(--meta-font);
   font-size: var(--meta-size);
-  color: var(--quiet);
+  color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
 /* A memory refresh's changes, opened under its line: one row each, left-aligned. */
@@ -528,15 +527,15 @@ span.changeUndo {
 .day {
   display: flex;
   justify-content: center;
-  padding-top: var(--space-8);
+  padding-top: var(--space-6);
   padding-bottom: var(--space-2);
-  font-family: var(--label-font);
+  color: var(--quiet);
   font-weight: var(--weight-medium);
-  letter-spacing: var(--label-tracking);
-  text-transform: uppercase;
 }
 .day > * {
-  font-size: var(--label-size);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
 }
 .clock {
   display: flex;
@@ -851,7 +850,7 @@ span.changeUndo {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding-bottom: var(--island-inset);
@@ -859,17 +858,61 @@ span.changeUndo {
 .emptyBody {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
-  max-width: calc(var(--measure) + 2 * var(--pad));
+  max-width: calc(480px + 2 * var(--pad));
   margin: 0 auto;
-  padding: 0 var(--pad);
+  padding: var(--space-12) var(--pad) 0;
+  text-align: center;
+}
+/* The bot, large and alive, then the question under it, and the starters a clear step below: one centred stack. */
+.emptyBot {
+  margin-bottom: var(--space-5);
+}
+.emptyTitle {
+  font-size: 20px;
+  font-weight: var(--weight-strong);
+  line-height: var(--leading-xl);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 .starters {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-self: stretch;
   gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+/* A starter: a quiet box on the sheet, its words left, filling the composer when pressed. */
+.starter {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
+}
+.starter:hover {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.starter:active {
+  background: var(--selected);
+}
+.starter:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* A PR link in a one-line event, drawn as the messages' links are (ui/markdown Markdown.module.css). */

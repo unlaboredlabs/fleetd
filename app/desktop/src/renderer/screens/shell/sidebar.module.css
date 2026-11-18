@@ -27,7 +27,7 @@
      true. */
   overflow-anchor: none;
   /* The first chat a clear step below the top row, not tucked under it. */
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
 }
 
 /* Nothing in a group counts past the list's own edges (a bot's picture is drawn on a canvas wider than itself, and in
@@ -64,16 +64,16 @@
   background: var(--sidebar);
 }
 
-/* A chat's row: a 48 px rounded box, its 32 px picture 8 px in from its top, its bottom and its end; the far end's
-   words stop a little short of its edge. */
+/* A chat's row: a 56 px rounded box, its 36 px picture 10 px in from its top, its bottom and its start; the far end's
+   words stop 12 px short of its edge. */
 .row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
-  min-height: 48px;
-  padding: 0 var(--space-3) 0 var(--space-2);
+  min-height: 56px;
+  padding: 0 var(--space-3) 0 10px;
   border: none;
   border-radius: var(--row-round);
   background: transparent;
@@ -85,9 +85,11 @@
 .row:hover {
   background: var(--hover);
 }
+.row:active {
+  background: var(--selected);
+}
 .row[aria-current="page"] {
-  background: var(--raised);
-  box-shadow: var(--chip);
+  background: var(--selected);
 }
 .row:focus-visible {
   outline: 2px solid var(--focus);
@@ -102,7 +104,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -120,9 +122,9 @@
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-md);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-strong);
   line-height: var(--leading-sm);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -132,7 +134,7 @@
   flex: none;
   color: var(--faint);
   font-family: var(--meta-font);
-  font-size: var(--meta-size);
+  font-size: var(--text-xs);
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -172,8 +174,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--quiet);
-  font-size: var(--text-sm);
-  line-height: var(--leading-xs);
+  font-size: var(--text-md);
+  line-height: var(--leading-sm);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -183,9 +185,7 @@
 .row[data-unread] .when {
   color: var(--text);
 }
-.row[data-unread] .name {
-  font-weight: var(--weight-strong);
-}
+
 
 .mark {
   display: inline-flex;
@@ -331,16 +331,17 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
   transition:
     background-color var(--dur-quick) var(--ease-snap),
-    color var(--dur-quick) var(--ease-snap);
+    color var(--dur-quick) var(--ease-snap),
+    transform var(--dur-quick) var(--ease-snap);
 }
 .new:hover,
 .round:hover,
@@ -354,9 +355,11 @@
   height: 16px;
 }
 .round {
-  width: 28px;
-  height: 28px;
   color: var(--quiet);
+}
+.new:active,
+.round:active {
+  transform: scale(0.94);
 }
 .new:focus-visible,
 .round:focus-visible,
@@ -381,7 +384,7 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-3);
 }
 
 .me {
@@ -390,8 +393,8 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  min-height: 36px;
-  padding: var(--space-1);
+  min-height: 44px;
+  padding: var(--space-2) 10px;
   border: none;
   border-radius: var(--radius-lg);
   background: transparent;
@@ -454,7 +457,7 @@
 .tools {
   display: flex;
   flex: none;
-  gap: var(--space-2);
+  gap: 2px;
 }
 
 /*

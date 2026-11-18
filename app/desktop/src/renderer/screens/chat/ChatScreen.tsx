@@ -417,7 +417,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
           </div>
         ) : empty ? (
-          <EmptyChat project={project} title={title} />
+          <EmptyChat project={project} title={title} pictured={summary} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
             <ChatList key={lens?.workstreamId ?? ""} rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
