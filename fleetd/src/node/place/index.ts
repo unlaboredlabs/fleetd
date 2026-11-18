@@ -6,7 +6,7 @@
 // - `hosted` (./hosted.ts): the session host in a box of the team's own hosted provider, when the hub's slot board
 //   placed the session there. Its record is `place.json`, which `placeAt` reads first.
 import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { Image } from "../actions/image.ts";
 import { LaunchError, sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
@@ -17,6 +17,7 @@ import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
 import type { Box } from "../sandbox/box.ts";
 import type { View } from "./view.ts";
 import { processPlace } from "./process.ts";
+import { unprovision } from "./provision.ts";
 
 export type PlaceKind = "process" | "microvm" | "hosted";
 
@@ -105,6 +106,8 @@ const strayBox: Place = {
   async end(dir) {
     const ended = (await destroyBox(dir)) + (await processPlace.end(dir));
     rmSync(dir, { recursive: true, force: true });
+    // What the box was given (its home): the node's home is the hosts dir's parent.
+    unprovision(dirname(dirname(dir)), basename(dir));
     return ended;
   },
 };

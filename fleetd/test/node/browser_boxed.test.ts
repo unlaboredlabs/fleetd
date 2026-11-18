@@ -95,11 +95,12 @@ test("a boxed session's paths: only this machine's files its box shows, links re
   writeFileSync(join(work, "a.png"), "x");
   writeFileSync(join(fleetd, "node", "node.json"), "{}");
   symlinkSync(join(fleetd, "node"), join(work, "sneaky"));
-  const view: View = { home, hidden: [fleetd], shares: [{ path: work, rw: true }, { path: join(home, "readonly"), rw: false }] };
+  const view: View = { shares: [{ path: work, rw: true }, { path: join(home, "readonly"), rw: false }] };
   const check = boxPaths(view);
   expect(check(join(work, "a.png"), false)).toBeUndefined();
   expect(check(join(work, "downloads", "new"), true)).toBeUndefined();
-  expect(check(join(home, "elsewhere.txt"), false)).toBeUndefined();
+  // Nothing of the home but what the box was given.
+  expect(check(join(home, "elsewhere.txt"), false)).toContain("refused for uploads");
   expect(check(join(fleetd, "node", "node.json"), false)).toContain("refused for uploads");
   expect(check(join(fleetd, "node"), true)).toContain("refused for downloads");
   expect(check(join(work, "sneaky", "node.json"), false)).toContain("refused");
@@ -378,7 +379,7 @@ test("a boxed agent's session starts on a fresh Chrome through its box, refuses 
   const dialled: string[] = [];
   broker.boxed = (thread) =>
     thread === "boxed"
-      ? { dial: async (host, port) => (dialled.push(`${host}:${port}`), Promise.reject(new Error("ECONNREFUSED"))), view: { home: "/h", hidden: [], shares: [] } }
+      ? { dial: async (host, port) => (dialled.push(`${host}:${port}`), Promise.reject(new Error("ECONNREFUSED"))), view: { shares: [] } }
       : thread === "booting"
         ? "starting"
         : undefined;
