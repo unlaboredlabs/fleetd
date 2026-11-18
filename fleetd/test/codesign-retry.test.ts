@@ -17,7 +17,8 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 /** A codesign whose signing calls answer `answers` in turn (`ok`, or the message it fails with), and whose display and
- * verify calls describe a Developer ID signature. Each signing call is a line in calls.log. */
+ * verify calls describe a Developer ID signature. Each signing call is a line in calls.log. CODESIGN_DVV_LINES: lines
+ * the display call writes after those, as Apple's does (Sealed Resources, Internal requirements...). */
 function standIn(answers: string[]): string {
   writeFileSync(join(dir, "answers"), `${answers.join("\n")}\n`);
   const bin = join(dir, "bin");
@@ -37,7 +38,9 @@ case " $* " in
   [ "$answer" = ok ] && exit 0
   echo "$file: $answer" >&2
   exit 1 ;;
-*" -dvv "*) printf 'Identifier=sh.fleetd.cli\\nflags=0x10000(runtime)\\nTeamIdentifier=ABCDE12345\\n' >&2 ;;
+*" -dvv "*)
+  printf 'Identifier=sh.fleetd.cli\\nflags=0x10000(runtime)\\nTeamIdentifier=ABCDE12345\\n' >&2
+  [ -z "\${CODESIGN_DVV_LINES:-}" ] || printf '%.0sSealed Resources version=2 rules=13 files=0\\n' $(seq "$CODESIGN_DVV_LINES") >&2 ;;
 *" -r- "*) echo 'designated => anchor apple generic and certificate leaf[subject.OU] = ABCDE12345' ;;
 esac
 exit 0
@@ -54,6 +57,8 @@ function run(argv: string[], env: Record<string, string> = {}) {
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 
+/** What the script said, for a failed expectation: its ::error:: lines are on stdout. */
+const said = (r: { out: string; err: string }) => `stdout:\n${r.out}\nstderr:\n${r.err}`;
 const calls = () => readFileSync(join(dir, "calls.log"), "utf8").trim().split("\n").length;
 const shim = (real: string, env: Record<string, string> = {}) =>
   run([join(RELEASE, "codesign/codesign"), "--force", "--timestamp", "--sign", "ID", "app.bin"], { FLEETD_CODESIGN: real, ...env });
@@ -92,8 +97,20 @@ test("macos-sign.sh signs the CLI through it", () => {
   const bin = join(dir, "fleetd-bun-darwin-arm64");
   writeFileSync(bin, "");
   const r = run([join(RELEASE, "macos-sign.sh"), "sign", bin], { FLEETD_CODESIGN: real, MACOS_SIGN_IDENTITY: "ID" });
-  expect(r.code).toBe(0);
+  expect(r.code, said(r)).toBe(0);
   expect(calls()).toBe(2);
   expect(r.err).toContain(`::warning::codesign failed (try 1 of 5)`);
   expect(r.out).toContain("TeamIdentifier=ABCDE12345");
+});
+
+// Apple's codesign goes on writing after the lines verify looks for: a check that stopped reading at its match left it
+// to die of SIGPIPE under pipefail, and failed a good signature now and then (CI, 2026-11-18).
+test("macos-sign.sh verify reads codesign's whole answer, however long", () => {
+  standIn([]);
+  const bin = join(dir, "fleetd-bun-darwin-arm64");
+  writeFileSync(bin, "");
+  const r = run([join(RELEASE, "macos-sign.sh"), "verify", bin], { CODESIGN_DVV_LINES: "20000" });
+  expect(r.code, said(r)).toBe(0);
+  expect(r.out).toContain("TeamIdentifier=ABCDE12345");
+  expect(r.out).toContain("designated => anchor apple generic");
 });

@@ -73,13 +73,18 @@ stapler() {
   [ "$rc" != 0 ] || cat "$tmp/stapler.out" "$tmp/stapler.out.err"
   return "$rc"
 }
+# Each answer is read whole, then searched: `codesign ... | grep -q` stops reading at its match, and under pipefail a
+# codesign still writing then dies of SIGPIPE and fails a good signature.
 verify() {
+  local info req
   codesign --verify --deep --strict --verbose=2 "$1"
-  codesign -dvv "$1" 2>&1 | grep -E '^(Identifier|Format|TeamIdentifier|Runtime Version|Timestamp)='
-  codesign -dvv "$1" 2>&1 | grep -q '^TeamIdentifier=[A-Z0-9]\{10\}$' || die "$1 has no Team ID"
-  codesign -dvv "$1" 2>&1 | grep -q 'flags=0x10000(runtime)' || die "$1 lacks the hardened runtime"
-  codesign -d -r- "$1" 2>&1 | grep '^designated'
-  codesign -d -r- "$1" 2>&1 | grep -q 'certificate leaf\[subject.OU\]' || die "$1 has no team-based designated requirement"
+  info="$(codesign -dvv "$1" 2>&1)"
+  req="$(codesign -d -r- "$1" 2>&1)"
+  grep -E '^(Identifier|Format|TeamIdentifier|Runtime Version|Timestamp)=' <<< "$info"
+  grep -q '^TeamIdentifier=[A-Z0-9]\{10\}$' <<< "$info" || die "$1 has no Team ID"
+  grep -q 'flags=0x10000(runtime)' <<< "$info" || die "$1 lacks the hardened runtime"
+  grep '^designated' <<< "$req"
+  grep -q 'certificate leaf\[subject.OU\]' <<< "$req" || die "$1 has no team-based designated requirement"
 }
 
 case "${1:-}" in
@@ -104,7 +109,7 @@ keychain)
   # This job's search list only: the runner is discarded after it.
   # shellcheck disable=SC2046 # one keychain per word
   security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-  security find-identity -v -p codesigning "$keychain" | grep -q "Developer ID Application" ||
+  grep -q "Developer ID Application" <<< "$(security find-identity -v -p codesigning "$keychain")" ||
     die "the .p12 holds no valid Developer ID Application identity"
   ;;
 
