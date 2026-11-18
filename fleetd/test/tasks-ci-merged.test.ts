@@ -120,6 +120,11 @@ test("merged takes only a PR, and the lead's digest says a done task waits on on
   expect(k.t.digestLines(P, LATER, 10)).toEqual([
     `- T1 done: build on the seam; waits on CI, and wait_ci wakes it as each ends: ${PR} (until it merges)`,
   ]);
+  // Past 10 minutes the line says how long it has waited.
+  k.clock.ms += 12 * 60_000;
+  expect(k.t.digestLines(P, LATER, 10)).toEqual([
+    `- T1 done: build on the seam; waits on CI (12 min so far), and wait_ci wakes it as each ends: ${PR} (until it merges)`,
+  ]);
   k.hub.shutdown.abort();
 });
 

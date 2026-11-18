@@ -440,3 +440,28 @@ test("an ended task's agent is closed when idle (a VM's box with it), a review's
   expect(k.ports.idleStops.map((t) => t.threadId)).toEqual(["s1"]);
   expect(k.ports.removed.map((t) => t.threadId)).toEqual(["s2"]);
 });
+
+test("the lead's digest lists a done task that has waited 10 minutes on its own Monitor, with what and how long", async () => {
+  const k = tasksKit();
+  void k.t.run();
+  await k.spawn("Redesign");
+  const at = (ms: number) => new Date(ms).toISOString();
+  // Its turn ends on a Monitor: its node says what it watches and until when it may still wake it.
+  const deadline = k.clock.ms + 31 * 60_000;
+  const armed = { watchingUntil: at(deadline), watching: ["Final QA subset finishes"] };
+  k.threadRow("s1", "completed", "The QA run's Monitor will wake me.", armed);
+  k.thread("thread.completed", "s1", { runId: "r1", endCause: "completed" });
+  await until(() => k.t.get("T1")?.state === "done");
+  const since = at(k.clock.ms + 1);
+  // Under 10 minutes it is a normal wait: nothing to list since the lead's last wake.
+  k.clock.ms += 9 * 60_000;
+  expect(k.t.digestLines(P, since, 10)).toEqual([]);
+  k.clock.ms += 5 * 60_000;
+  expect(k.t.digestLines(P, since, 10)).toEqual([
+    `- T1 done: Redesign; waits on its Monitor "Final QA subset finishes" (14 min so far): it wakes by itself when that ends or is lost, by ${at(deadline).slice(11, 16)} UTC at the latest`,
+  ]);
+  // Once no Monitor of its own can wake it, it isn't listed as waiting.
+  k.threadRow("s1", "completed", "");
+  expect(k.t.digestLines(P, since, 10)).toEqual([]);
+  k.hub.shutdown.abort();
+});

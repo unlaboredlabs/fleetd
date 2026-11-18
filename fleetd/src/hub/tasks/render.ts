@@ -279,10 +279,17 @@ export const taskPrLines = (taskId: string, prUrl: string) => renderEvent({ kind
 export const taskWaitingLines = (taskId: string, title: string, question: string) =>
   renderEvent({ kind: "agent_waiting", task: taskId, title, question });
 
+/** A done task's armed Monitors, off its thread: their descriptions (none from an older node) and the latest deadline. */
+export type MonitorWait = { watching: string[]; until: string };
+
+/** A done task waiting on a Monitor of its own is listed once it has waited this long; any wait says how long then. */
+export const WAIT_LISTED_MINUTES = 10;
+
 /**
- * One digest line per task: running and idle, then queued with reasons, then those that ended since `since` and done
- * ones still waiting on CI. `offline` says since when a machine is offline (`HH:MM` UTC); `waits` gives a task's open
- * wait_ci URLs.
+ * One digest line per task: running and idle, then queued with reasons, then those that ended since `since`, done ones
+ * still waiting on CI, and done ones that have waited WAIT_LISTED_MINUTES on a Monitor of their own. `offline` says
+ * since when a machine is offline (`HH:MM` UTC); `waits` gives a task's open wait_ci URLs; `monitors` its armed
+ * Monitors.
  */
 export function taskDigestLines(
   tasks: Task[],
@@ -290,6 +297,7 @@ export function taskDigestLines(
   now: string,
   offline: (machine: string) => string | undefined,
   waits: (taskId: string) => string[],
+  monitors: (taskId: string) => MonitorWait | undefined = () => undefined,
 ): string[] {
   const title = (t: Task) => oneLine(t.title, 80);
   const out: string[] = [];
@@ -313,8 +321,18 @@ export function taskDigestLines(
     out.push(`- ${t.taskId} queued (${t.kind}): ${title(t)}; ${t.queuedReason ?? "waiting"}`);
   }
   const endedSince = (t: Task) => since === undefined || (t.endedAt ?? "") > since;
+  // Minutes since its turn ended: how long it has sat waiting.
+  const waited = (t: Task) => {
+    const [ended, at] = [Date.parse(t.endedAt ?? ""), Date.parse(now)];
+    return Number.isFinite(ended) && Number.isFinite(at) ? Math.max(Math.trunc((at - ended) / 60_000), 0) : 0;
+  };
+  const watched = (t: Task) => (t.state === "done" ? monitors(t.taskId) : undefined);
   const shown = tasks.filter((t) =>
-    t.state === "done" ? endedSince(t) || waits(t.taskId).length > 0 : t.state === "failed" || t.state === "cancelled" ? endedSince(t) : false,
+    t.state === "done"
+      ? endedSince(t) || waits(t.taskId).length > 0 || (watched(t) !== undefined && waited(t) >= WAIT_LISTED_MINUTES)
+      : t.state === "failed" || t.state === "cancelled"
+        ? endedSince(t)
+        : false,
   );
   for (const t of shown) {
     // A wake's event lines carry the result of a task that ended since the last one; only a first message has none.
@@ -334,7 +352,15 @@ export function taskDigestLines(
     const pr = t.result?.prUrl !== undefined ? ` [${t.result.prUrl}]` : "";
     const when = endedSince(t) ? " since your last wake" : "";
     const urls = waits(t.taskId);
-    const waiting = urls.length === 0 || t.state !== "done" ? "" : `; waits on CI, and wait_ci wakes it as each ends: ${urls.join(" ")}`;
+    const minutes = waited(t);
+    const so = minutes >= WAIT_LISTED_MINUTES ? ` (${minutes} min so far)` : "";
+    let waiting = urls.length === 0 || t.state !== "done" ? "" : `; waits on CI${so}, and wait_ci wakes it as each ends: ${urls.join(" ")}`;
+    const m = watched(t);
+    if (m !== undefined) {
+      const what = m.watching.length === 0 ? "a Monitor" : m.watching.map((w) => `"${oneLine(w, 80)}"`).join(", ");
+      const by = m.until.length >= 16 ? `, by ${m.until.slice(11, 16)} UTC at the latest` : "";
+      waiting += `; waits on its Monitor ${what}${so}: it wakes by itself when that ends or is lost${by}`;
+    }
     out.push(`- ${t.taskId} ${t.state}${when}: ${title(t)}${pr}${waiting}${arrow}`);
   }
   return out;

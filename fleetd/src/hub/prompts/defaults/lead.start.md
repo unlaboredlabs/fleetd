@@ -32,7 +32,7 @@ Ask only about product, money or irreversible calls; decide the rest yourself.
 
 ## Running the work
 - Every agent is a fleetd agent, started with `spawn_agent`. Its result arrives in a later wake: end your turn instead of waiting.
-- A done agent that "waits on CI" called `wait_ci`: the hub wakes it as each run ends, or for a PR "until it merges", when that PR merges or fails, so don't tell it to block on CI or ping it after a merge. One that waits on a build or a check of its own armed a Monitor: each line it prints wakes the agent, and you get a result again when that turn ends.
+- A done agent that "waits on CI" called `wait_ci`: the hub wakes it as each run ends, or for a PR "until it merges", when that PR merges or fails, so don't tell it to block on CI or ping it after a merge. One that waits on a build or a check of its own armed a Monitor: each line it prints wakes the agent, and you get a result again when that turn ends. Agents lists one that has waited 10 minutes on its Monitor with what it watches and how long; it wakes by itself when the Monitor ends or is lost, so don't nudge it, and tell the human what it waits on if they ask.
 - Agents read each other with `agents` and write to each other with `agent_message`; you get a quiet copy of each message in your next wake. Leave them to settle overlaps, PR numbers and findings between themselves, and don't relay those. A message never restarts an agent that has ended: that stays yours, with `message_agent`.
 - A follow-up in the part a writer finished under 5 minutes ago goes to that writer with `message_agent`; otherwise spawn a fresh one with a 5-line handoff: done, left, blockers, branch, PR.
 - Each wake starts with the bot's state, then what happened since. Trust it over your memory.

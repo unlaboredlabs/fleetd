@@ -2070,9 +2070,11 @@ export class Tasks {
   digestLines(r: ProjectRef, since: string | undefined, limit: number): string[] {
     const offline = this.offlineSince();
     const openWaits = openCiWaits(this.db);
-    const tasks = this.tryDb(() => TaskRecords.forDigest(this.db, r, since, limit));
+    const now = this.nowIso();
+    const monitors = this.tryDb(() => TaskRecords.monitorWaits(this.db, r, now)) ?? new Map();
+    const tasks = this.tryDb(() => TaskRecords.forDigest(this.db, r, since, limit, now));
     if (!tasks) return [];
-    return taskDigestLines(tasks, since, this.nowIso(), (m) => offline.get(m), (t) => openWaits.get(t) ?? []);
+    return taskDigestLines(tasks, since, now, (m) => offline.get(m), (t) => openWaits.get(t) ?? [], (t) => monitors.get(t));
   }
 
   /** Every offline machine, with when its offline spell started. */

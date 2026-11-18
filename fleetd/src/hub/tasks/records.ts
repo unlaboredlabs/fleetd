@@ -3,6 +3,7 @@ import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { ProjectRef, Task, TaskCounts, TaskId, TaskState, ThreadRef, WorkstreamId } from "../../shared/contracts.ts";
 import type { WorktreeBase } from "../../shared/sessions.ts";
 import * as repos from "../repos/store.ts";
+import type { MonitorWait } from "./render.ts";
 
 export type StoredTask = {
   task: Task;
@@ -241,17 +242,42 @@ export const TaskRecords = {
   },
 
   /** The digest's tasks: every queued, running or idle one, and those that ended after `since`. Newest first. */
-  forDigest(db: Database, r: ProjectRef, since: string | undefined, limit: number): Task[] {
+  forDigest(db: Database, r: ProjectRef, since: string | undefined, limit: number, now: string): Task[] {
     return db
-      .query<{ data: string }, [string, string, string | null, number]>(
+      .query<{ data: string }, [string, string, string | null, number, string]>(
         `SELECT data FROM tasks
              WHERE machine_id = ?1 AND project_id = ?2
                AND (state IN ('queued', 'running', 'idle') OR (?3 IS NULL OR ended_at > ?3)
-                    OR (state = 'done' AND 'T' || n IN (SELECT task_id FROM ci_waits)))
+                    OR (state = 'done' AND 'T' || n IN (SELECT task_id FROM ci_waits))
+                    OR (state = 'done' AND EXISTS (SELECT 1 FROM threads th
+                          WHERE th.machine_id = json_extract(tasks.data, '$.threadRef.machineId') AND th.thread_id = tasks.thread_id
+                            AND json_extract(th.data, '$.watchingUntil') > ?5)))
              ORDER BY n DESC LIMIT ?4`,
       )
-      .all(r.machineId, r.projectId, since ?? null, limit)
+      .all(r.machineId, r.projectId, since ?? null, limit, now)
       .map((row) => decode(db, row.data));
+  },
+
+  /** The project's done tasks a Monitor of their own may still wake (their thread's `watchingUntil` is ahead of
+   * `now`), by task id: what it watches and until when. */
+  monitorWaits(db: Database, r: ProjectRef, now: string): Map<string, MonitorWait> {
+    const rows = db
+      .query<{ task_id: string; until: string; watching: string | null }, [string, string, string]>(
+        `SELECT 'T' || t.n AS task_id, json_extract(th.data, '$.watchingUntil') AS until, json_extract(th.data, '$.watching') AS watching
+           FROM tasks t JOIN threads th ON th.machine_id = json_extract(t.data, '$.threadRef.machineId') AND th.thread_id = t.thread_id
+           WHERE t.machine_id = ? AND t.project_id = ? AND t.state = 'done' AND json_extract(th.data, '$.watchingUntil') > ?`,
+      )
+      .all(r.machineId, r.projectId, now);
+    const out = new Map<string, MonitorWait>();
+    for (const row of rows) {
+      let watching: string[] = [];
+      try {
+        const parsed: unknown = row.watching === null ? [] : JSON.parse(row.watching);
+        if (Array.isArray(parsed)) watching = parsed.filter((w): w is string => typeof w === "string");
+      } catch {}
+      out.set(row.task_id, { watching, until: row.until });
+    }
+    return out;
   },
 
   /** The project's queued, running and idle tasks. Newest first. */
