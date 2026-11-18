@@ -301,8 +301,14 @@ export const selectShownProjects = memo(
   },
 );
 
-/** When what is held was last current, while there is no fresh connection; undefined when live or nothing is held. */
-export const selectOfflineAsOf = (s: DataState): number | undefined => (s.fresh ? undefined : s.asOf);
+/**
+ * When what is held was last current, while there is no fresh connection; undefined when live, when nothing is held,
+ * and in the first connect's quiet seconds (DataState.starting), when the cache shows plainly.
+ */
+export const selectOfflineAsOf = (s: DataState): number | undefined => (s.fresh || s.starting ? undefined : s.asOf);
+
+/** A screen's "Not live: reconnecting": no fresh connection, past the first connect's quiet seconds. */
+export const selectNotLive = (s: DataState): boolean => !s.fresh && !s.starting;
 
 /** One project's row: what the sidebar dot, the chat's top bar and the Status row read. */
 export const selectProjectRow = perKey((key) =>

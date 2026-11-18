@@ -5,6 +5,7 @@
 import { useMemo } from "react";
 import type { PrListOutput, PrRow, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
+import { selectNotLive } from "../../src/data/selectors";
 import { Button, Dot, Text } from "../../ui";
 import { PanelEmpty } from "../panel/folds";
 import { navigate } from "../shell/navigation";
@@ -51,6 +52,7 @@ const screenOf = (at: "train" | null, list: "ready" | "loading" | "error", train
 
 export function PrsPane({ project, pr, tab, onTab, at = null }: PrsPaneProps) {
   const fresh = useData((st) => st.fresh);
+  const notLive = useData(selectNotLive);
   const { missing, list } = usePrList(project, true);
   const { rows, more, older } = useOlderPrs(project, list.data);
   const picked = resolvePr(pr, rows);
@@ -74,7 +76,7 @@ export function PrsPane({ project, pr, tab, onTab, at = null }: PrsPaneProps) {
 
   return (
     <div className={s.screen} data-screen={state}>
-      {!fresh ? (
+      {notLive ? (
         <span className={s.liveness} role="status">
           <Dot color="var(--warning)" />
           <Text size="xs">Not live: reconnecting</Text>

@@ -30,7 +30,7 @@ import type { Transport } from "../main/hub/link";
 import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSandboxKey, submitSecret } from "../main/secret";
 import { sessionHash } from "../shared/sessionHash";
 import { saveVaultItem, unlockVault } from "../main/vault";
-import { webCache, type CacheStorage } from "./cache";
+import { clearWebCache, webCache, type CacheStorage } from "./cache";
 import { WebHub } from "./hub";
 import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
@@ -77,6 +77,24 @@ const readNames = (storage: WebDeps["storage"]): Names => {
     return typeof raw === "object" && raw !== null ? (raw as Names) : {};
   } catch {
     return {};
+  }
+};
+
+/**
+ * Keeps the names and colours. They come before the offline caches: with the browser's storage full, the caches go to
+ * make room, and with no room at all the names stay for this page only.
+ */
+const saveNames = (storage: WebDeps["storage"], names: Names): void => {
+  const text = JSON.stringify(names);
+  try {
+    storage.setItem(NAMES_KEY, text);
+  } catch {
+    clearWebCache(storage);
+    try {
+      storage.setItem(NAMES_KEY, text);
+    } catch {
+      // Nothing else of ours to let go.
+    }
   }
 };
 
@@ -267,7 +285,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         if (label === null) return Promise.resolve({ ok: false, message: "Give it a name." });
         if (change.color !== null && !HUB_COLORS.includes(change.color)) return Promise.resolve({ ok: false, message: "Pick one of the colours." });
         names = { ...names, [team.id]: { label, ...(change.color === null ? {} : { color: change.color }) } };
-        deps.storage.setItem(NAMES_KEY, JSON.stringify(names));
+        saveNames(deps.storage, names);
         const list = entries();
         for (const listener of listListeners) listener(list);
         return Promise.resolve({ ok: true });

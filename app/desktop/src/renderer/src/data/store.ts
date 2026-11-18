@@ -86,6 +86,12 @@ export interface DataState {
    * dialled again after a wake for WAKE_QUIET_MS, as a tailnet comes back.
    */
   readonly fresh: boolean;
+  /**
+   * The window's first connect is in its quiet seconds (CONNECT_QUIET_MS, from the layer's start): nothing has failed
+   * and no snapshot has come, so what the cache held shows without its offline word. Over at the first snapshot, at a
+   * failure, and when the seconds are up.
+   */
+  readonly starting: boolean;
   /** The fleetd the hub ran on its last live link (its ready frame), kept through drops. */
   readonly version?: string | undefined;
   /** The last time a link came back on a newer fleetd than the one before it, in this window: epoch ms. */
@@ -171,6 +177,7 @@ export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
   features: [],
   fresh: false,
+  starting: false,
   generation: 0,
   machines: {},
   projects: {},
@@ -234,6 +241,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           hub: frame.state,
           features: frame.state.phase === "live" ? (frame.state.features ?? []) : s.features,
           fresh,
+          // Up but not yet read (live, its snapshot on the way) is still the first connect: only a failure ends it here.
+          starting: s.starting && (frame.state.phase === "connecting" || frame.state.phase === "live"),
           asOf: s.fresh && !fresh ? (restarting ?? waking ?? nowMs) : s.asOf,
           version,
           updated,
@@ -250,6 +259,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           {
             ...s,
             fresh: true,
+            starting: false,
             generation: s.generation + 1,
             machines: byId(snap.machines, (m) => m.machineId),
             projects: byId(snap.projects, projectKey),
@@ -265,6 +275,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
         {
           ...s,
           fresh: true,
+          starting: false,
           generation: s.generation + 1,
           cursor: snap.cursor,
           machines: byId(snap.machines, (m) => m.machineId),

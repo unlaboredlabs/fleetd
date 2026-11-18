@@ -8,7 +8,7 @@ import { Circle, CircleCheck, CircleDot, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TodoItem, TodoState } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { selectLiveAgent } from "../../src/data/selectors";
+import { selectLiveAgent, selectNotLive } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { Button, ContextMenu, ContextMenuItem, ContextMenuSeparator, Dot, Text, Tooltip } from "../../ui";
 import { AskedRows, useAskedWork } from "../asked/AskedRows";
@@ -55,6 +55,7 @@ const screenOf = (at: "asked" | null, list: "ready" | "empty" | "loading" | "err
 
 export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?: "asked" | null }) {
   const { missing, fresh, list, items } = useChecklist(project);
+  const notLive = useData(selectNotLive);
   const remove = useRemove(project);
   const asked = useAskedWork(project, !missing);
   const asks = asked.data?.asks;
@@ -80,7 +81,7 @@ export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?
     );
   }
   const screen = screenOf(at, items === undefined ? (list.isError ? "error" : "loading") : items.length === 0 ? "empty" : "ready", rows !== undefined ? "ready" : asked.isError ? "error" : "loading");
-  const liveness = !fresh ? (
+  const liveness = notLive ? (
     <span className={s.liveness} role="status">
       <Dot color="var(--warning)" />
       <Text size="xs">Not live: reconnecting</Text>

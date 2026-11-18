@@ -51,8 +51,14 @@ export const webCache = (storage: CacheStorage, email: string, teams: readonly s
   if (found === null || found.owner !== email) clearWebCache(storage);
   else for (const team of found.teams.filter((t) => !teams.includes(t))) storage.removeItem(itemKey(team));
   const kept = (found?.owner === email ? found.teams : []).filter((t) => teams.includes(t));
-  storage.setItem(INDEX_KEY, JSON.stringify({ owner: email, teams: kept }));
   let cleared = false;
+  try {
+    storage.setItem(INDEX_KEY, JSON.stringify({ owner: email, teams: kept }));
+  } catch {
+    // The browser's storage is full: this page keeps no cache, and the page itself goes on.
+    clearWebCache(storage);
+    cleared = true;
+  }
   /** This page's account still owns the cache; once it doesn't (signed out, or another account here), never again. */
   const own = (): Index | null => {
     const index = cleared ? null : readIndex(storage);
@@ -69,7 +75,7 @@ export const webCache = (storage: CacheStorage, email: string, teams: readonly s
         if (!index.teams.includes(teamId)) storage.setItem(INDEX_KEY, JSON.stringify({ owner: email, teams: [...index.teams, teamId] }));
         storage.setItem(itemKey(teamId), text);
       } catch {
-        // Over the browser's quota: no cache rather than a cut one.
+        // Over the browser's quota: no cache for this team rather than a cut one, and nothing thrown.
         storage.removeItem(itemKey(teamId));
       }
     },

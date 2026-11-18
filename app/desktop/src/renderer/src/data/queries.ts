@@ -9,7 +9,7 @@ import {
   type ToolName,
   type ToolOutput,
 } from "../../../shared/contracts";
-import type { HubError, HubFrame } from "../../../shared/hub";
+import { CONNECT_QUIET_MS, type HubError, type HubFrame } from "../../../shared/hub";
 import { FIRST_HUB, type HubId } from "../../../shared/hubs";
 import type { ChatScope, OrderFocus } from "../../../shared/ipc";
 import { keepCache, type CacheIo } from "./cache";
@@ -348,6 +348,9 @@ export const createDataLayer = (
     resync: () => void hub.resync(),
     focus: (workstreamId) => void hub.focus(workstreamId),
     start: () => {
+      // The first connect's quiet seconds (DataState.starting), until the hub's first state ends them sooner.
+      if (!store.getState().fresh) store.setState({ starting: true });
+      const quiet = setTimeout(() => store.setState({ starting: false }), CONNECT_QUIET_MS);
       const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));
       const stopKeep = hub.cache === undefined ? () => undefined : keepCache(store, hub.cache, chat.focus, now);
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
@@ -359,6 +362,7 @@ export const createDataLayer = (
         stopKeep();
         stop();
         stopCache();
+        clearTimeout(quiet);
         for (const t of timers.values()) clearTimeout(t);
       };
     },

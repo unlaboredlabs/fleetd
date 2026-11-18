@@ -16,19 +16,6 @@ export const useReaching = (state: HubState): Reaching | null => {
   return reaching(state, last);
 };
 
-/** True for the first `ms` that `on` holds, and again each time it starts to. */
-export const useQuietAtFirst = (on: boolean, ms: number): boolean => {
-  const [phase, setPhase] = useState<"off" | "quiet" | "said">(on ? "quiet" : "off");
-  if (!on && phase !== "off") setPhase("off");
-  if (on && phase === "off") setPhase("quiet");
-  useEffect(() => {
-    if (phase !== "quiet") return;
-    const timer = window.setTimeout(() => setPhase("said"), ms);
-    return () => window.clearTimeout(timer);
-  }, [phase, ms]);
-  return on && phase !== "said";
-};
-
 /**
  * Seconds until `at` (epoch ms), ticking once a second only while there is a deadline and the window is visible:
  * a hidden window has nobody to count for, and catches up when it shows.

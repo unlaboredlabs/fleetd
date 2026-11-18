@@ -55,8 +55,9 @@ does.
 
 Settings › Hubs & devices › fleetd account › **Sign out** ends the browser's session. A session lasts at most seven
 days. The browser keeps no key. It keeps each team's bot list and recent chats, as the desktop app does, so the app
-opens on them while it connects; signing out clears them, as does another account signing in, so nothing stays on a
-shared computer once you have signed out.
+opens on them while it connects (with the same [3 seconds of quiet](/docs/desktop-app#offline) as the desktop app);
+signing out clears them, as does another account signing in, so nothing stays on a shared computer once you have
+signed out. When the browser's storage is full, a team's copy is left out rather than anything failing.
 The web app shows up in [Devices](/docs/mobile#devices) as **Web browser**, where you can sign it out from elsewhere.
 
 ## How it fits together {#contract}

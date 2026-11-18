@@ -11,7 +11,7 @@ import { memo, useEffect, useMemo, useRef, type ComponentProps } from "react";
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
+import { selectLiveAgents, selectNotLive, selectProjects, type LiveAgent } from "../../src/data/selectors";
 import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, IdChip, ROLE_WORD, Text, Tooltip, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
@@ -98,6 +98,7 @@ export function AgentsPane({ project, agent, at = null }: { project: ProjectKey;
 function AgentList({ project: ref, at }: { project: ProjectKey; at: "screens" | null }) {
   const project = projectKey(ref);
   const fresh = useData((st) => st.fresh);
+  const notLive = useData(selectNotLive);
   const query = useToolQuery("agents_list", ALL);
   const all = useData(selectLiveAgents);
   const orders = useData((st) => st.orders);
@@ -159,7 +160,7 @@ function AgentList({ project: ref, at }: { project: ProjectKey; at: "screens" | 
 
   return (
     <div className={s.pane} data-screen={at === "screens" ? "sessions" : "agents"}>
-      {!fresh ? (
+      {notLive ? (
         <span className={s.liveness} role="status">
           <Dot color="var(--warning)" />
           <Text size="xs">Not live: reconnecting</Text>
