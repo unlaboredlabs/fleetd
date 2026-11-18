@@ -94,6 +94,8 @@ export const fixtures = [
   "machines-places",
   "machines-places-vm-off",
   "machines-places-one",
+  // ...and no machine of the team's, its hosted agents with no Claude account (W721).
+  "machines-none",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
