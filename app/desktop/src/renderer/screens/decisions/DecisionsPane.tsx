@@ -5,6 +5,7 @@
 // first line, and the way back is on its own one line, before the search. Read through the data layer (decisions_list, refetched on the hub's decision events); nothing polls.
 import { useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
+import { selectNotLive } from "../../src/data/selectors";
 import { ChevronLeft, ListFilter } from "lucide-react";
 import { Button, Dot, Input, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text, Tooltip } from "../../ui";
 import { FoldLine, GroupLabel, ListNote, PanelEmpty, useFold } from "../panel/folds";
@@ -39,6 +40,7 @@ const WHO: ReadonlyArray<{ value: WhoFilter; label: string }> = [
 
 export function DecisionsPane({ project }: { project: ProjectKey }) {
   const fresh = useData((st) => st.fresh);
+  const notLive = useData(selectNotLive);
   const { missing, list } = useDecisionsList(project);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [open, setOpen] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
 
   return (
     <div className={s.screen} data-screen={state}>
-      {!fresh ? (
+      {notLive ? (
         <span className={s.liveness} role="status">
           <Dot color="var(--warning)" />
           <Text size="xs">Not live: reconnecting</Text>

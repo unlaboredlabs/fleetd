@@ -86,6 +86,12 @@ export interface DataState {
    * dialled again after a wake for WAKE_QUIET_MS, as a tailnet comes back.
    */
   readonly fresh: boolean;
+  /**
+   * The window's first connect is in its quiet seconds (CONNECT_QUIET_MS, from the layer's start): nothing has failed
+   * and no link has been ready, so what the cache held shows without its offline word. Over at `live`, at a failure,
+   * and when the seconds are up.
+   */
+  readonly starting: boolean;
   /** The fleetd the hub ran on its last live link (its ready frame), kept through drops. */
   readonly version?: string | undefined;
   /** The last time a link came back on a newer fleetd than the one before it, in this window: epoch ms. */
@@ -171,6 +177,7 @@ export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
   features: [],
   fresh: false,
+  starting: false,
   generation: 0,
   machines: {},
   projects: {},
@@ -234,6 +241,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           hub: frame.state,
           features: frame.state.phase === "live" ? (frame.state.features ?? []) : s.features,
           fresh,
+          starting: s.starting && frame.state.phase === "connecting",
           asOf: s.fresh && !fresh ? (restarting ?? waking ?? nowMs) : s.asOf,
           version,
           updated,

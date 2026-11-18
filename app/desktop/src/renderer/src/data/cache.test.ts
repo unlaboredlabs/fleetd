@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HubError, HubFrame } from "../../../shared/hub";
+import { CONNECT_QUIET_MS, type HubError, type HubFrame } from "../../../shared/hub";
 import { CACHE_CHATS, decodeCache, encodeCache, restoreCache, toCache, type HubCache } from "./cache";
 import { emptyChat, type ChatSend } from "./chat";
 import type { ChatMessage } from "./chat-contract";
 import { AT, live, snapshot } from "./fixtures.test-util";
 import { createDataLayer, type HubApi } from "./queries";
-import { selectChat, selectOfflineAsOf, selectShownProjects } from "./selectors";
+import { selectChat, selectNotLive, selectOfflineAsOf, selectShownProjects } from "./selectors";
 import { initialState, type DataState } from "./store";
 import { toSidebar } from "../../screens/shell/model";
 
@@ -118,6 +118,59 @@ type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
 
 describe("the layer and the cache", () => {
   afterEach(() => vi.useRealTimers());
+
+  // W715: on a return visit the cached bot list read "Offline, as of …" and the panel "Not live: reconnecting" through
+  // an ordinary first connect, which reads as an outage. In its quiet seconds the cache shows plainly.
+  const cachedLayer = () => {
+    let listener: (frame: HubFrame) => void = () => undefined;
+    const hub: HubApi = {
+      call: () => new Promise(() => undefined),
+      subscribe: (l) => ((listener = l), () => undefined),
+      resync: () => Promise.resolve(),
+      focus: () => Promise.resolve(),
+      chat: () => Promise.resolve(),
+      cache: { read: () => Promise.resolve(JSON.stringify(cache())), write: () => Promise.resolve() },
+    };
+    const layer = createDataLayer(hub, () => Date.parse(AT));
+    layer.start();
+    return { layer, send: (frame: HubFrame) => listener(frame) };
+  };
+
+  it("shows the cache plainly while the first connect is in its quiet seconds, and offline once they are over", async () => {
+    vi.useFakeTimers();
+    const { layer, send: frame } = cachedLayer();
+    frame({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    await vi.waitFor(() => expect(selectShownProjects(layer.store.getState())).toHaveLength(1));
+    expect(selectOfflineAsOf(layer.store.getState())).toBeUndefined();
+    expect(selectNotLive(layer.store.getState())).toBe(false);
+    vi.advanceTimersByTime(CONNECT_QUIET_MS);
+    expect(selectOfflineAsOf(layer.store.getState())).toBe(Date.parse(AS_OF));
+    expect(selectNotLive(layer.store.getState())).toBe(true);
+  });
+
+  it("says offline at once when the first connect fails within its quiet seconds", async () => {
+    vi.useFakeTimers();
+    const { layer, send: frame } = cachedLayer();
+    frame({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    await vi.waitFor(() => expect(selectShownProjects(layer.store.getState())).toHaveLength(1));
+    frame({ t: "state", state: { phase: "retrying", hub: HUB, reason: "closed", retryAt: 1 } });
+    expect(selectOfflineAsOf(layer.store.getState())).toBe(Date.parse(AS_OF));
+    expect(selectNotLive(layer.store.getState())).toBe(true);
+    // The next attempt doesn't make it quiet again.
+    frame({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 1 } });
+    expect(selectOfflineAsOf(layer.store.getState())).toBe(Date.parse(AS_OF));
+  });
+
+  it("a link that drops later is not quiet: it says offline as of the drop at once", () => {
+    vi.useFakeTimers();
+    const { layer, send: frame } = cachedLayer();
+    frame(live());
+    frame(snapshot(1));
+    vi.advanceTimersByTime(1_000);
+    frame({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
+    expect(selectOfflineAsOf(layer.store.getState())).toBeDefined();
+    expect(selectNotLive(layer.store.getState())).toBe(true);
+  });
 
   it("a launch with no hub shows the cache; the first connection sends the queued message and writes the cache back", async () => {
     vi.useFakeTimers();

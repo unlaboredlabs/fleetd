@@ -56,6 +56,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const needsYou = useData(selectNeedsYou(projectKey(project)));
   const view = data.view;
   const asOf = useAsOfWords(view?.asOf);
+  // The first connect's quiet seconds: what the cache held shows plainly, its offline word only after them.
+  const starting = useData((d) => d.starting);
   const workedSince = useData((d) => leadLastTurnSince(d, projectKey(project)));
   const workedUntil = useData((d) => leadLastTurnUntil(d, projectKey(project)));
   const worked = useMemo(
@@ -438,7 +440,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                 <Island project={project} warning={warning} />
               </Boundary>
               <span className={s.say} data-say="">
-                {view?.held === true ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
+                {view?.held === true && !(view.offline && starting) ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
                 <AttentionLine
                   waiting={barWaiting}
                   // As the held chip says: a held chat doesn't say what the project is now.

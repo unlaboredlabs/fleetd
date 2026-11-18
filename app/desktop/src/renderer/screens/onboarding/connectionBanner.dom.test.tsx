@@ -2,12 +2,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { HubFrame } from "../../../shared/hub";
+import { CONNECT_QUIET_MS, type HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { CONNECT_QUIET_MS, ConnectionBanner } from "./ConnectionBanner";
+import { ConnectionBanner } from "./ConnectionBanner";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

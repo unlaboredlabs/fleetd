@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useData } from "../../src/data/react";
+import { selectNotLive } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { Button, Dot, EmptyState, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text, Tooltip, Truncate, VirtualList, cx } from "../../ui";
 import { shortClock } from "../chat/format";
@@ -96,6 +97,7 @@ export function ActivityPane({ project, view }: { project: ProjectKey; view?: Pa
 function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
   const key = projectKey(project);
   const fresh = useData((st) => st.fresh);
+  const notLive = useData(selectNotLive);
   // A hub from before DMs has none to show, and no filter for them.
   const dmsServed = useDmsServed();
   const [chosen, setFilter] = useState<KindFilter>(dms ? ONLY_DMS : ALL);
@@ -168,7 +170,7 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
           </MenuContent>
         </Menu>
       </div>
-      {!fresh ? (
+      {notLive ? (
         <span className={s.liveness} role="status">
           <Dot color="var(--warning)" />
           <Text size="xs">Not live: reconnecting</Text>

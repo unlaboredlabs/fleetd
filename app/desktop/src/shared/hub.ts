@@ -11,6 +11,14 @@ export type Snapshot = FleetStatus;
  */
 export const WAKE_QUIET_MS = 10_000;
 
+/**
+ * A window's (or the web app's page's) first connect, with nothing failed yet, is quiet for this long: no "Connecting
+ * to …" line, and what the offline cache held shows plainly, without its "Offline, as of …" word. Most links are up
+ * well within it; one still running after it, or one that failed, says so. Only the first connect of a window: a link
+ * that drops later says so at once (bar a restart's or a wake's own quiet).
+ */
+export const CONNECT_QUIET_MS = 3_000;
+
 /** The connection as the UI should present it. The key itself never leaves main. */
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }

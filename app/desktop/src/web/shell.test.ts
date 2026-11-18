@@ -31,6 +31,8 @@ const setup = (
   answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 }),
   session: WebSession = SESSION,
   stored = new Map<string, string>(),
+  /** The browser's storage quota, in characters: a write past it throws, as a full localStorage does. */
+  quota = Infinity,
 ) => {
   const calls: Call[] = [];
   const sockets: Array<{ url: string; events: ConnectionEvents; sent: Array<Record<string, unknown>>; headers: Readonly<Record<string, string>> | undefined }> = [];
@@ -65,7 +67,11 @@ const setup = (
     random: (n) => new Uint8Array(n).fill(0xab),
     storage: {
       getItem: (k) => stored.get(k) ?? null,
-      setItem: (k, v) => void stored.set(k, v),
+      setItem: (k, v) => {
+        const used = [...stored].reduce((n, [key, value]) => n + (key === k ? 0 : key.length + value.length), 0);
+        if (used + k.length + v.length > quota) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+        stored.set(k, v);
+      },
       removeItem: (k) => void stored.delete(k),
       key: (i) => [...stored.keys()][i] ?? null,
       get length() {
@@ -158,6 +164,29 @@ describe("the web shell", () => {
     const t = setup(() => new Response(null, { status: 204 }), SESSION, stored);
     expect(await t.api.hub.cache.read(ACME)).toBeNull();
     expect([...stored.values()]).not.toContain("left behind");
+  });
+
+  it("never throws on a full storage: a team's cache that doesn't fit is dropped quietly, and names still save", async () => {
+    const stored = new Map<string, string>();
+    const t = setup(undefined, SESSION, stored, 2_000);
+    await t.api.hub.cache.write(ACME, "a".repeat(1_850));
+    // Side's doesn't fit beside Acme's: dropped, and Acme's stays.
+    await expect(t.api.hub.cache.write("9a8b7c6d00004000", "s".repeat(1_200))).resolves.toBeUndefined();
+    expect(await t.api.hub.cache.read("9a8b7c6d00004000")).toBeNull();
+    expect(await t.api.hub.cache.read(ACME)).toBe("a".repeat(1_850));
+    // A new name doesn't fit either: the caches make room for it.
+    expect(await t.api.hubs.update(ACME, { label: "Acme Inc", color: "green" })).toEqual({ ok: true });
+    const names = JSON.parse(stored.get("fleetd.web.teams") ?? "{}") as Record<string, unknown>;
+    expect(names[SESSION.teams[0]?.id ?? ""]).toMatchObject({ color: "green" });
+    expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
+  });
+
+  it("starts with the storage too full for the cache's own index: no cache, and the page goes on", async () => {
+    const stored = new Map<string, string>([["someone.else", "x".repeat(1_000)]]);
+    const t = setup(undefined, SESSION, stored, 1_000);
+    expect(t.api.hubs.initial).toHaveLength(2);
+    await t.api.hub.cache.write(ACME, "acme's");
+    expect(await t.api.hub.cache.read(ACME)).toBeNull();
   });
 
   it("clears the cache when the page finds itself signed out", async () => {
