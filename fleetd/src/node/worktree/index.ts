@@ -3,8 +3,8 @@
 // credentials or an editor; git that talks to a remote never waits on ssh and is killed at its timeout. Every git runs
 // off the event loop: a worktree add that takes a minute under load never stalls the node's link or its sessions.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { inTurn } from "../util.ts";
 import { withGithubTokens } from "../repos/github.ts";
 
@@ -148,35 +148,61 @@ async function worktreeBranch(root: string, path: string): Promise<string | null
   return undefined;
 }
 
+/** Why a session's worktree is locked, as `git worktree list` shows it. */
+export const LOCK_REASON = "fleetd: a session's worktree; fleetd removes it when the session ends";
+
+/** Removes a worktree of fleetd's, locked or not, with whatever it holds. */
+const REMOVE = ["worktree", "remove", "--force", "--force"];
+
+/**
+ * Locks the worktree at `path` for as long as its session lives, so no `git worktree prune` drops its record in the
+ * repo's git dir. One run where the worktree's folder isn't seen (an agent's VM sees the shared git dir and its own
+ * worktree only) takes every other worktree for deleted and prunes it, and an agent whose record is gone can't use git
+ * at all. A worktree already locked, or none (the repo's own checkout), is left as it is.
+ */
+export async function lock(root: string, path: string): Promise<void> {
+  let admin: string;
+  try {
+    const m = /^gitdir: (.+)$/m.exec(readFileSync(join(path, ".git"), "utf8"));
+    if (!m) return;
+    admin = resolve(path, m[1]!.trim());
+  } catch {
+    return;
+  }
+  if (!existsSync(join(admin, "locked"))) await tryGit(root, ["worktree", "lock", "--reason", LOCK_REASON, path]);
+}
+
 const branchExists = async (root: string, branch: string) => (await tryGit(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])) !== undefined;
 
 /** Makes `path` a worktree of `root` on `branch`: reuses one, checks out an existing branch, else makes it at `start`. */
 export const ensure = (root: string, path: string, branch: string, start: string): Promise<void> =>
   serial(root, async () => {
     const on = await worktreeBranch(root, path);
-    if (on === branch) return;
+    if (on === branch) return lock(root, path);
     if (on !== undefined) throw new GitError(`${path} is already a worktree on ${on ?? "a detached HEAD"}, not ${branch}`);
     if (existsSync(path)) throw new GitError(`${path} exists and is not a worktree of ${root}`);
     mkdirSync(dirname(path), { recursive: true });
     if (await branchExists(root, branch)) await git(root, ["worktree", "add", path, branch]);
     else await git(root, ["worktree", "add", "--no-track", "-b", branch, path, start]);
+    await lock(root, path);
   });
 
 /** A detached worktree at `start`, for a read or review task. */
 export const ensureDetached = (root: string, path: string, start: string): Promise<void> =>
   serial(root, async () => {
     const on = await worktreeBranch(root, path);
-    if (on === null && existsSync(path)) return;
-    if (on === null) await git(root, ["worktree", "remove", "--force", path]);
+    if (on === null && existsSync(path)) return lock(root, path);
+    if (on === null) await git(root, [...REMOVE, path]);
     else if (on !== undefined) throw new GitError(`${path} is already a worktree on ${on}, not detached`);
     if (existsSync(path)) throw new GitError(`${path} exists and is not a worktree of ${root}`);
     mkdirSync(dirname(path), { recursive: true });
     await git(root, ["worktree", "add", "--detach", path, start]);
+    await lock(root, path);
   });
 
 export const removeDetached = (root: string, path: string): Promise<void> =>
   serial(root, async () => {
-    if ((await worktreeBranch(root, path)) !== undefined) await git(root, ["worktree", "remove", "--force", path]);
+    if ((await worktreeBranch(root, path)) !== undefined) await git(root, [...REMOVE, path]);
   });
 
 export const uncommitted = async (path: string) => (await git(path, ["status", "--porcelain"])).trim() !== "";
@@ -211,7 +237,7 @@ export const remove = (root: string, path: string, branch: string, baseRef: stri
       if ((await git(path, ["status", "--porcelain"])).trim()) throw new GitError(`${KEPT}${path}: ${UNCOMMITTED}`);
       const unpushed = (await git(path, ["rev-list", "--count", "HEAD", "--not", "--remotes", baseRef])).trim();
       if (unpushed !== "0") throw new GitError(`${KEPT}${path}: ${unpushed} commit(s) ${UNPUSHED}`);
-      await git(root, ["worktree", "remove", "--force", path]);
+      await git(root, [...REMOVE, path]);
     }
     const merged = (await branchExists(root, branch)) && (await tryGit(root, ["merge-base", "--is-ancestor", branch, baseRef])) !== undefined;
     if (merged) await git(root, ["branch", "-D", branch]);
@@ -229,7 +255,7 @@ export const removeAll = (root: string, dir: string): Promise<number> =>
         if (!line.startsWith("worktree ")) continue;
         const p = line.slice(9);
         if (p.startsWith(`${real}/`) || p.startsWith(`${dir}/`)) {
-          await tryGit(root, ["worktree", "remove", "--force", p]);
+          await tryGit(root, [...REMOVE, p]);
           removed++;
         }
       }
@@ -443,7 +469,7 @@ export async function source(root: string, branch: string, baseRef: string): Pro
 /** Brings back a session's worktree that is gone, at the same path so `claude --resume` still finds its session. */
 export async function restore(root: string, path: string, branch: string, from: Source): Promise<void> {
   // A worktree whose directory was deleted stays registered, holding its path and branch: only this one record goes.
-  if (!existsSync(path)) await serial(root, () => tryGit(root, ["worktree", "remove", "--force", path]));
+  if (!existsSync(path)) await serial(root, () => tryGit(root, [...REMOVE, path]));
   const start = from.kind === "local" ? branch : from.kind === "remote" ? `refs/remotes/${from.remote}/${branch}` : from.sha;
   await ensure(root, path, branch, start);
 }

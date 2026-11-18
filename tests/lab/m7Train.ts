@@ -129,10 +129,11 @@ export const prepareCheckout = (policy = POLICY) => {
   if (spawnSync("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${BASE}`], { cwd: CLONE, env: scrubbedEnv() }).status !== 0) seedBase(false);
   git("fetch", "-q", "--prune", "origin");
   // An earlier run's machine homes, and the task worktrees in them, are gone; git forgets those first.
+  // (The node locks its worktrees, so a prune keeps those and they go by a double-forced remove.)
   git("worktree", "prune");
   for (const entry of git("worktree", "list", "--porcelain").split("\n\n")) {
     const wt = /^worktree (.+)$/mu.exec(entry)?.[1];
-    if (wt !== undefined && entry.includes(`\nbranch refs/heads/${BRANCH_PREFIX}`)) git("worktree", "remove", "--force", wt);
+    if (wt !== undefined && entry.includes(`\nbranch refs/heads/${BRANCH_PREFIX}`)) git("worktree", "remove", "--force", "--force", wt);
   }
   git("worktree", "prune");
   git("checkout", "-q", "--force", "-B", BASE, `origin/${BASE}`);
