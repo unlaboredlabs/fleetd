@@ -3,8 +3,8 @@
 // durations, as Reanimated's:
 // - a bubble that arrives glides in: it rides up from behind the composer with the rows above it on the desktop's
 //   springs (glide.ts), fading in over its first 100 ms, a reply's bubbles 50 ms apart; nothing scales
-// - a list row rises 3 pt in 160 ms; one that leaves fades in place for 140 ms, then the gap closes as rows move up
-// - state changes (a send button, a menu, a banner, a press) take 140 ms on the snap curve
+// - a list row rises 3 pt in 160 ms; one that leaves fades in place for 120 ms, then the gap closes as rows move up
+// - state changes (a send button, a menu, a banner, a press) take 120 ms on the snap curve
 // - the lead's turn line changes its words in place: the new ones rise in 3 pt as the old rise out, over 200 ms
 // - loops (the state glyph's grain and ring) step on the desktop's 120 ms beat, one beat for the whole app, rather than glide
 // With Reduce Motion nothing moves: what arrives fades in place (a bubble 200 ms, your send 140 ms), and loops stand still. iOS's own transitions (a
@@ -23,7 +23,7 @@ export const dur = {
   fast: 120,
   base: 180,
   /** --dur-quick: a state change, a press, a leaving row. */
-  quick: 140,
+  quick: 120,
   /** --dur-enter: a bubble's fade as it glides in. */
   fade: 100,
   /** --dur-enter and --dur-enter-mine with reduced motion: a bubble's fade in place. */

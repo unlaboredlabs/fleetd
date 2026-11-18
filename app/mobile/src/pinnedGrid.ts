@@ -39,7 +39,7 @@ export interface PinFace {
   readonly bubble: PinBubble;
   /** The dot beside the name: unread, grey when muted. */
   readonly dot: "unread" | "muted" | undefined;
-  /** The orange count on the avatar: approvals waiting. */
+  /** The orange dot on the avatar: approvals waiting. */
   readonly approvals: number;
 }
 

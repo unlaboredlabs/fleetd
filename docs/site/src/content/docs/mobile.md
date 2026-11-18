@@ -5,7 +5,7 @@ description: Chat with your bots and answer approvals from your phone. Build and
 
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
 [bots](/docs/projects), with what needs you on top, and their chats, live as the lead writes. A chat with an
-[approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with its count, and **Needs you**
+[approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with an orange dot, and **Needs you**
 shows only those; you answer each from its card in the chat, with everything it would do. While the lead works, the
 send button is **Stop**, which stops its running step and the bot's agents, as on the desktop (a key that may
 not stop it, such as a Read member's, has no Stop). What you were writing in a chat (its words, picked files and the
@@ -60,7 +60,7 @@ other address works over plain HTTP too.
 
 Swipe a chat right and tap the orange pin, or hold it and pick **Pin**. Pinned chats sit above the list as large round
 avatars, three to a row, up to nine. An unread chat's newest message shows in a bubble over its avatar, with a dot by
-its name. While its lead works, a typing bubble shows instead. An approval waiting shows as an orange count. Tap an
+its name. While its lead works, a typing bubble shows instead. An approval waiting shows as an orange dot. Tap an
 avatar to open the chat, or hold it to mark it read or unread, unpin it, mute it or move it to a
 [section](#sections). A filter or a search shows pinned chats as plain rows.
 

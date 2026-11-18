@@ -2,7 +2,7 @@
 // width apart so they read as one group (one to three make a centred row, four are three and one, nine fill three
 // rows), each name under it at medium weight in the text's own colour. Unread, its newest message rises out of the
 // avatar in a bubble, with a dot before the name, which turns semibold; while its lead works, a typing bubble with the
-// working glyph takes the bubble's place; an approval waiting is an orange count on the avatar (pinnedGrid.ts). A tap
+// working glyph takes the bubble's place; an approval waiting is an orange dot on the avatar, as the rows mark it (pinnedGrid.ts). A tap
 // opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute, Move to Section…) in
 // iOS's menu. A pin grows into its place and an unpinned one shrinks away, on the app's snap curve.
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
@@ -60,7 +60,7 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
               <View style={styles.cell}>
                 <View style={{ width: avatar, height: avatar }}>
                   <PinnedAvatar row={row} size={avatar} />
-                  {face.approvals > 0 ? <Approvals count={face.approvals} /> : null}
+                  {face.approvals > 0 ? <Approvals /> : null}
                   {bubble === null ? null : <View style={[styles.slot, slot]}>{bubble}</View>}
                 </View>
                 <View style={styles.name}>
@@ -114,16 +114,10 @@ function Said({ text, muted }: { text: string; muted: boolean }) {
   );
 }
 
-/** Approvals waiting, as an app's badge on its icon. */
-function Approvals({ count }: { count: number }) {
+/** Approvals waiting: an orange dot on the avatar, cut out of the ground; the count is in the pin's label. */
+function Approvals() {
   const t = useTheme();
-  return (
-    <View style={[styles.badge, { backgroundColor: t.warning, borderColor: t.bg }]}>
-      <Text style={[type.footnote, styles.badgeText]} allowFontScaling={false}>
-        {count > 99 ? "99+" : String(count)}
-      </Text>
-    </View>
-  );
+  return <View style={[styles.badge, { backgroundColor: t.warning, borderColor: t.bg }]} />;
 }
 
 /** A held avatar lifts with its name on a card with these corners. */
@@ -141,8 +135,7 @@ const styles = StyleSheet.create({
   dot: { width: 9, height: 9, borderRadius: 4.5 },
   slot: { position: "absolute", alignItems: "center" },
   said: { borderRadius: 15, borderCurve: "continuous", borderWidth: 2, paddingHorizontal: 9, paddingVertical: 5, maxWidth: "100%" },
-  badge: { position: "absolute", top: -3, right: -3, minWidth: 25, height: 25, borderRadius: 12.5, borderWidth: 2.5, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  badgeText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, lineHeight: 16 },
+  badge: { position: "absolute", top: 0, right: 0, width: 20, height: 20, borderRadius: 10, borderWidth: 3 },
   typing: { width: 60, height: 44 },
   typingPill: { position: "absolute", left: 4, top: 0, width: 56, height: 36, borderRadius: 18, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   glyph: { transform: [{ scale: 1.7 }] },

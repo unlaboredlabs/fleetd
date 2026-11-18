@@ -153,16 +153,16 @@ export const useArtifactsChanged = (session: Session, p: ProjectRef | undefined,
   );
 };
 
-/** A format's tile: a page of text for Markdown, a chart page for HTML. */
+/** A format's tile, a list row's soft neutral one: a page of text for Markdown, a chart page for HTML. */
 export function ArtifactTile({ format, size = 29 }: { format: ArtifactFormat; size?: number }) {
   const t = useTheme();
   const glyph = size * 0.58;
   return (
-    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: format === "html" ? (t.tints[6] ?? t.indigo) : t.accentDeep }]}>
+    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: t.fillQuiet }]}>
       {format === "html" ? (
-        <Symbol ios="chart.bar.doc.horizontal.fill" android="insert_chart" size={glyph} color="#FFFFFF" weight="medium" />
+        <Symbol ios="chart.bar.doc.horizontal.fill" android="insert_chart" size={glyph} color={t.label} weight="medium" />
       ) : (
-        <Symbol ios="doc.text.fill" android="description" size={glyph} color="#FFFFFF" weight="medium" />
+        <Symbol ios="doc.text.fill" android="description" size={glyph} color={t.label} weight="medium" />
       )}
     </View>
   );

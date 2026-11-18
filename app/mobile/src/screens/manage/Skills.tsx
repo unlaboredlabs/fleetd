@@ -7,7 +7,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import type { ProjectRef } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import type { Session } from "../../session";
-import { shape, space, type, useTheme, type Palette } from "../../theme";
+import { shape, space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { ListSection } from "../../ui/List";
@@ -82,24 +82,23 @@ export const useSkillsChanged = (session: Session, p: ProjectRef | undefined, re
   );
 };
 
-/** A skill's tile: sparkles on the accent for its own, a box for an installed one, a folder for its folder's. */
+/** A skill's tile, a list row's soft neutral one: sparkles for its own, a box for an installed one, a folder for its
+ * folder's. */
 export function SkillTile({ kind, size = 29 }: { kind: Kind; size?: number }) {
   const t = useTheme();
   const glyph = size * 0.58;
   return (
-    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: tileColor(t, kind) }]}>
+    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: t.fillQuiet }]}>
       {kind === "own" ? (
-        <Icon name="sparkles" size={glyph} color="#FFFFFF" weight="medium" />
+        <Icon name="sparkles" size={glyph} color={t.label} weight="medium" />
       ) : kind === "installed" ? (
-        <Symbol ios="shippingbox.fill" android="inventory_2" size={glyph} color="#FFFFFF" weight="medium" />
+        <Symbol ios="shippingbox.fill" android="inventory_2" size={glyph} color={t.label} weight="medium" />
       ) : (
-        <Icon name="folder" size={glyph} color="#FFFFFF" weight="medium" />
+        <Icon name="folder" size={glyph} color={t.label} weight="medium" />
       )}
     </View>
   );
 }
-
-const tileColor = (t: Palette, kind: Kind): string => (kind === "own" ? t.accentDeep : kind === "installed" ? (t.tints[6] ?? t.indigo) : (t.tints[7] ?? t.secondary));
 
 /** `icon` is ListSection's sign to inset the separator past the tile. */
 function SkillRow({ skill: s, line, onPress }: { skill: Skill; line: string | undefined; icon: true; onPress: () => void }) {

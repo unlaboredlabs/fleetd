@@ -236,7 +236,6 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
             <ListRow
               key={pr.url}
               icon="pr"
-              tint={t.tints[3]}
               title={pr.title}
               detail={`#${String(pr.number)} · ${pr.repo}${pr.mergedAt === undefined ? "" : ` · ${listTime(pr.mergedAt, now)}`}`}
               onPress={() => void Linking.openURL(pr.url)}
@@ -257,12 +256,12 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       </ListSection>
 
       <ListSection>
-        <ListRow title="Approvals" icon="approvals" tint={t.tints[0]} {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} />
-        <ListRow title="Payments" icon="money" tint={t.tints[3]} {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} />
-        {vaultShown(state.hub) ? <ListRow title="Vault" icon="lock" tint={t.tints[1]} onPress={() => navigation.navigate("Vault", { key })} /> : null}
-        <ListRow title="Linked Hubs" icon="link" tint={t.tints[6]} {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} />
-        {skills ? <ListRow title="Skills" icon="sparkles" tint={t.tints[1]} {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
-        {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" tint={t.tints[2]} onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
+        <ListRow title="Approvals" icon="approvals" {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} />
+        <ListRow title="Payments" icon="money" {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} />
+        {vaultShown(state.hub) ? <ListRow title="Vault" icon="lock" onPress={() => navigation.navigate("Vault", { key })} /> : null}
+        <ListRow title="Linked Hubs" icon="link" {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} />
+        {skills ? <ListRow title="Skills" icon="sparkles" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
+        {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
       </ListSection>
 
       {live ? <NamedServers project={p} /> : null}
