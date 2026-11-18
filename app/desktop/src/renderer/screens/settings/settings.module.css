@@ -14,6 +14,8 @@
 
 /* ---- Every page: one readable column of sections (layout A, groups.module.css) ---- */
 .scroll {
+  /* What is placed inside the page (its screen-reader words) scrolls and clips with it, never the sheet around it. */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;

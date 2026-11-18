@@ -150,8 +150,8 @@ export interface YouProps {
   readonly go: (screen: Screen) => void;
 }
 
-/** The menu's layout row: the sidebar's three layouts, the one in use pressed. */
-function LayoutPick() {
+/** The menu's layout row: the sidebar's three layouts, the one in use pressed. A pick applies at once and closes the menu. */
+function LayoutPick({ close }: { close: () => void }) {
   const { layout } = useSidebarView();
   return (
     <div className={cx(h.row, s.layoutRow)} data-line="layout">
@@ -159,7 +159,15 @@ function LayoutPick() {
         <LayoutList aria-hidden />
       </span>
       <span className={h.words}>Sidebar</span>
-      <Segmented label="Sidebar layout" options={LAYOUTS.map((l) => ({ value: l.id, label: l.label }))} value={layout} onChange={setLayout} />
+      <Segmented
+        label="Sidebar layout"
+        options={LAYOUTS.map((l) => ({ value: l.id, label: l.label }))}
+        value={layout}
+        onChange={(next) => {
+          setLayout(next);
+          close();
+        }}
+      />
     </div>
   );
 }
@@ -220,7 +228,7 @@ export function You({ go, compact = false, chevron = true }: Pick<YouProps, "go"
             </HubScope>
           ))}
           <AppRow whole={whole.size > 0} />
-          <LayoutPick />
+          <LayoutPick close={() => setOpen(false)} />
           <MenuRow
             mark={<Settings aria-hidden />}
             end={<Kbd>{display("settings.open", platform)}</Kbd>}

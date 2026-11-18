@@ -115,6 +115,20 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
       timers.forEach((t) => clearTimeout(t));
     };
   }, []);
+  // A modal: the app under it (what comes before the scrim in the shell) is out of reach of Tab, clicks and screen
+  // readers until the sheet closes.
+  useEffect(() => {
+    const under: Element[] = [];
+    for (let el = sheet.current?.parentElement?.previousElementSibling ?? null; el !== null; el = el.previousElementSibling) {
+      if (el instanceof HTMLElement && !el.inert) {
+        el.inert = true;
+        under.push(el);
+      }
+    }
+    return () => {
+      for (const el of under) if (el instanceof HTMLElement) el.inert = false;
+    };
+  }, []);
   // Focus goes into the sheet, on the sheet itself, so the first Tab reaches the search and nothing shows a ring.
   useEffect(() => {
     sheet.current?.focus({ preventScroll: true });

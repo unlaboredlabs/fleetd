@@ -24,6 +24,8 @@
   position: relative;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
+  /* One row, the sheet's height: a long page scrolls inside its column, never the sheet. */
+  grid-template-rows: minmax(0, 1fr);
   width: min(1100px, 100%);
   height: min(920px, 100%);
   min-height: 0;

@@ -270,8 +270,9 @@
   --radius-md: 8px; /* what holds things: cards and blocks in the chat, a Settings group, menus, popovers, the composer */
   --radius-lg: 10px; /* what floats over the app: dialogs, the Settings sheet, the palette */
   --radius-pill: 999px;
-  /* A chat bubble: a step rounder than a card, so a bubble reads as speech and a block as a thing. */
-  --radius-bubble: 12px;
+  /* A chat bubble, the one exception to the scale (the human's call): main's soft 19 px, so a one-line bubble is near
+     a capsule and reads as speech, a block as a thing. */
+  --radius-bubble: 19px;
   /* Old names, kept to their new step. */
   --radius-group: var(--radius-md);
 

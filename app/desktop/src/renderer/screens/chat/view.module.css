@@ -242,11 +242,11 @@
   max-width: 100%;
 }
 /*
- * Bubble type is a step above the app's body, 14 on 21, in the same face: a bubble is a crisp rounded box (14 px
- * corners, the composer's), and a code card's corners are the controls' (--radius-lg).
+ * Bubble type is a step above the app's body, 14 on 22, in the same face: a bubble keeps its soft corners
+ * (--radius-bubble, the scale's one exception), so a one-line bubble is near a capsule; a code card's are a card's.
  */
 .bubble {
-  --tight: var(--radius-xs);
+  --tight: 6px;
   --prose-size: 14px;
   --prose-leading: 22px;
   --prose-gap: 10px;

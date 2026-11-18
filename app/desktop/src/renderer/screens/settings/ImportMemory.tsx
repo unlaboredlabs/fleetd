@@ -98,7 +98,8 @@ export function ImportMemory() {
       <SettingsRow
         title="Import from another assistant"
         hint="Bring what another AI assistant knows about you, so you don't teach it all again."
-        line={done === null ? undefined : importSummary(done)}
+        // Said once: under step 2 while open, here once shut.
+        line={done === null || open ? undefined : importSummary(done)}
         control={
           <Button size="sm" variant={open ? "ghost" : "secondary"} onClick={() => setOpen(!open)}>
             {open ? "Close" : "Import…"}

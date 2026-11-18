@@ -47,7 +47,8 @@ breaks a rule changes this page in the same PR and says why.
 - **Corners come from one scale** (`--radius-*`), by what a thing is, never chosen per screen: `xs` 4 px for marks
   inside text (a count chip, kbd, inline code, a checkbox); `sm` 6 px for what you press or type in, and a row's hover
   and selected box; `md` 8 px for what holds things (a block in the chat, a Settings group, a menu); `lg` 10 px for
-  what floats over the app, and nothing rounder. A chat bubble is `--radius-bubble`, 12 px. A thing inside another is
+  what floats over the app, and nothing rounder. The one exception is a chat bubble (`--radius-bubble`, 19 px, its run's inner corners 6 px): bubbles keep their soft
+  rounding, the human's call, so a one-line bubble is near a capsule and reads as speech. A thing inside another is
   never rounder than it. Pills (`--radius-pill`) only for what is one by nature: a capsule, a pin, an avatar, a dot.
 - **Cards only where they earn it:** one thing that stands apart from the list around it (what merges now, a PR's
   summary, a floating surface). Never a card per row.

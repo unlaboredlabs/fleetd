@@ -433,6 +433,19 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** One of storefront's browser sessions, open in the panel (fixtures/sessions). */
 const SESSION_ROUTE = (id: string) => `${CHAT}/sessions/${id}`;
 
+/**
+ * Shows the sidebar in Hubs (sidebarLayout.ts), whose pinned grid, section labels and hub switcher List doesn't have,
+ * then brings the screen up: the layout is kept on this computer and read at launch, so the window loads again.
+ */
+const inHubs =
+  (open: (page: Page) => Promise<void>) =>
+  async (page: Page): Promise<void> => {
+    await page.evaluate(() => localStorage.setItem("fleetd.sidebarLayout", "hubs"));
+    await page.reload();
+    await expect(page.getByRole("navigation", { name: "Sidebar" })).toHaveAttribute("data-layout", "hubs", { timeout: 10_000 });
+    await open(page);
+  };
+
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
@@ -792,6 +805,8 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
       await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
       await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
+      // The receipts at rest: off the bubbles, whose hover strip floats over the line above in a narrow chat.
+      await page.mouse.move(0, 0);
     },
   },
   {
@@ -1192,20 +1207,20 @@ export const screens: readonly Screen[] = [
   },
   // Your name at the sidebar's foot: the hub's owner's is marked while setup steps are left; a member's never is.
   { id: "shell", route: "#/", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
-  // Several hubs: the screen's hub on show (Hubs, the default layout), your name marked while Acme is offline, which
-  // waits on its own while Personal works on.
+  // Several hubs in List, the default layout: every hub's bots in one list, each saying where it lives, your name
+  // marked while Acme is offline, which waits on its own while Personal works on.
   { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
-  // Hubs, the default layout: one hub at a time, picked from its name at the top, which carries a dot while another hub
+  // Hubs: one hub at a time, picked from its name at the top, which carries a dot while another hub
   // has a bot that wants you; the card lists them all, each with its own dot.
   {
     id: "shell",
     route: "#/",
     fixtures: ["sidebar-hubs"],
     variant: "hub-switcher",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       await page.getByRole("button", { name: "Personal, another hub needs you" }).click();
       await expect(page.getByRole("dialog", { name: "Hubs" }).getByRole("button")).toHaveText(["PPersonal", "AAcme"]);
-    },
+    }),
   },
   {
     id: "chat",
@@ -1514,7 +1529,8 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Save checkout.jpg" })).toBeAttached();
     },
     // The pointer goes back on the picture at each size (the window's resize moved the picture from under it): the
-    // button shows, 28 px round and 6 px in from the picture's top right corner, and the picture stays where it was.
+    // button shows, a field's 32 px round and 8 px in from the picture's top right corner (the 4/8 grid, W694), and the
+    // picture stays where it was.
     check: async (page) => {
       const picture = page.getByRole("img", { name: "The checkout with the code applied" });
       const save = page.getByRole("button", { name: "Save checkout-with-code.jpg" });
@@ -1527,9 +1543,9 @@ export const screens: readonly Screen[] = [
       const [at, button] = [await picture.boundingBox(), await save.boundingBox()];
       if (before === null || at === null || button === null) throw new Error("the picture or its download button has no box");
       expect(at, "the picture moved as its download button showed").toEqual(before);
-      expect([button.width, button.height]).toEqual([28, 28]);
-      expect(button.y - at.y).toBe(6);
-      expect(at.x + at.width - (button.x + button.width)).toBeCloseTo(6, 0);
+      expect([button.width, button.height]).toEqual([32, 32]);
+      expect(button.y - at.y).toBe(8);
+      expect(at.x + at.width - (button.x + button.width)).toBeCloseTo(8, 0);
     },
   },
   // The same picture opened large: the viewer's download button beside its X.
@@ -1637,7 +1653,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pins"],
     variant: "pins",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const pill = page.locator('[data-opens="panel"]');
       if ((await pill.getAttribute("aria-pressed")) === "true") {
         await pill.click();
@@ -1649,7 +1665,7 @@ export const screens: readonly Screen[] = [
       // W572: storefront's open, so its highlight shows; billing's hovered beside it, the same compact shape, quieter.
       await expect(grid.nth(0).getByRole("button")).toHaveAttribute("aria-current", "page");
       await grid.nth(1).getByRole("button").hover();
-    },
+    }),
   },
   // W580: the list's sizes. The pinned names are 13/18 in the text's colour, each in a 24 px capsule: medium at rest,
   // semibold with the dot inside the capsule for inventory, which waits on you, and docs, with its new reply. The
@@ -1661,7 +1677,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-pins"],
     variant: "pin-names",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const pins = nav.locator('[class*="pins"] > [data-reorder-row]').getByRole("button");
       await expect(pins).toHaveCount(3);
@@ -1702,10 +1718,10 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await pins.nth(0).hover();
       await page.getByRole("tooltip").waitFor();
-    },
+    }),
   },
-  // W577, W580, W694: the pins are a compact group, centred in the sidebar at every width: 52 px pictures, their places
-  // touching, a share of the row each, a lone pin (W574) in the middle. One, two and three pins,
+  // W577, W580, W694: the pins are a compact group, centred in the sidebar at every width: 40 px pictures, a step over
+  // a row's, their places touching, a share of the row each, a lone pin (W574) in the middle. One, two and three pins,
   // at the sidebar's narrowest and at its widest.
   ...(["showcase-pin", "showcase-pins-two", "showcase-pins"] as const).flatMap((fixture) =>
     (["Home", "End"] as const).map(
@@ -1714,7 +1730,7 @@ export const screens: readonly Screen[] = [
         route: CHAT,
         fixtures: [fixture],
         variant: `pins-${{ "showcase-pin": "one", "showcase-pins-two": "two", "showcase-pins": "three" }[fixture]}-${end === "Home" ? "narrowest" : "widest"}`,
-        open: async (page) => {
+        open: inHubs(async (page) => {
           const edge = page.getByRole("separator", { name: "Resize the sidebar" });
           await edge.focus();
           await edge.press(end);
@@ -1739,7 +1755,7 @@ export const screens: readonly Screen[] = [
             const pictures = await Promise.all((await slots.all()).map((slot) => slot.locator('[class*="pinCell"] > :first-child').boundingBox()));
             const [p, q] = pictures;
             if (p == null) throw new Error("the pins' pictures aren't on screen");
-            for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([52, 52]);
+            for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([40, 40]);
             // Each in its share of the row (three across): apart, never touching.
             if (q != null) expect(q.x - (p.x + p.width)).toBeGreaterThanOrEqual(8);
             // The list has nowhere to go sideways, a bot's picture (drawn on a canvas wider than itself) in the right
@@ -1747,7 +1763,7 @@ export const screens: readonly Screen[] = [
             const list = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="list"]').first();
             expect(await list.evaluate((el) => [el.scrollWidth, el.scrollLeft])).toEqual([await list.evaluate((el) => el.clientWidth), 0]);
           }).toPass();
-        },
+        }),
       }),
     ),
   ),
@@ -1759,7 +1775,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pin"],
     variant: "pin-drag",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const grid = nav.locator('[class*="pins"]').first();
       const pins = grid.locator("> [data-reorder-row]");
@@ -1812,7 +1828,7 @@ export const screens: readonly Screen[] = [
         el.style.paddingBottom = "";
         el.scrollTop = 0;
       });
-    },
+    }),
   },
   // W577: the same drags in the widest sidebar, where the pins' group sits in its middle: Ada let go just right of
   // billing's lone pin joins after it, Ada dropped on billing's place swaps the two, and billing dragged down out of
@@ -1822,7 +1838,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pin"],
     variant: "pin-drag-widest",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const edge = page.getByRole("separator", { name: "Resize the sidebar" });
       await edge.focus();
       await edge.press("End");
@@ -1849,7 +1865,7 @@ export const screens: readonly Screen[] = [
       const right = await middle(pins.nth(1));
       await drag(right, { x: right.x, y: ada.y + 60 });
       await expect(pins).toHaveText([/Ada/u]);
-    },
+    }),
   },
   // W580: your own sections. Under the pins (billing is one of Clients' too, and shows among the pins only) and the chat
   // in no section, Clients and Later under their labels: 12/16 regular in the quiet colour, in line with the
@@ -1860,7 +1876,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "sections",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
@@ -1879,7 +1895,7 @@ export const screens: readonly Screen[] = [
       expect(at.y - (before.y + before.height)).toBeCloseTo(12, 0);
       expect(after.y - (at.y + at.height)).toBeCloseTo(2, 0);
       expect(text.x).toBeCloseTo(picture.x, 0);
-    },
+    }),
   },
   // ...beside another hub, in Hubs: the hub on show's pins, its chats in no section, then its own sections; another
   // picked at the top brings its own.
@@ -1888,7 +1904,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections-hubs"],
     variant: "sections-hubs",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const groups = nav.locator('[class*="rows"]');
       await expect(groups).toHaveCount(1);
@@ -1899,7 +1915,7 @@ export const screens: readonly Screen[] = [
       await expect(groups.locator("> [data-reorder-row]")).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       await page.mouse.move(600, 400);
-    },
+    }),
   },
   // W694: the sidebar's three layouts, picked in the menu under your name, on one hub with a few bots and on three hubs
   // with sections and nineteen bots. List: every bot newest first, each marked with its hub and section, the pins as
@@ -1917,7 +1933,6 @@ export const screens: readonly Screen[] = [
           const pick = page.getByRole("group", { name: "Sidebar layout" });
           // A pick redraws the sidebar in its layout, and the menu closes with it.
           await pick.getByRole("button", { name: layout === "list" ? "List" : layout === "hubs" ? "Hubs" : "Rail" }).click();
-          if (layout === "hubs") await page.keyboard.press("Escape");
           await expect(page.getByRole("dialog", { name: "You" })).toHaveCount(0);
           const nav = page.getByRole("navigation", { name: "Sidebar" });
           await expect(nav).toHaveAttribute("data-layout", layout);
@@ -1975,10 +1990,10 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-label-menu",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
       await expect(page.getByRole("menuitem")).toHaveText(["Rename…", "Move up", "Remove section"]);
-    },
+    }),
   },
   // ...and a drag into a section. "Rewrite the pricing…" held over Clients' label covers it, so the lifted row says
   // where it would go, where its time was; let go, it is one of Clients'. docs held over checkout, a chat of Clients',
@@ -1988,7 +2003,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-drag",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
       const middle = async (at: Locator) => {
@@ -2014,7 +2029,7 @@ export const screens: readonly Screen[] = [
       await expect(lines.filter({ hasText: "docs" })).toHaveAttribute("data-section", "s1");
       await expect(lines.last()).toHaveText(/^search/u);
       await expect(nav.getByRole("button", { name: "Later" })).toBeVisible();
-    },
+    }),
   },
   // ...and a drag out of one: checkout, of Clients', held over "Rewrite the pricing…", a chat in none, says No section
   // where its time was, and no label takes it; let go, it is in none, on top, and Clients keeps the rest.
@@ -2023,7 +2038,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-drag-out",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
       const middle = async (at: Locator) => {
@@ -2042,7 +2057,7 @@ export const screens: readonly Screen[] = [
       await expect(lines.filter({ hasText: "checkout" })).not.toHaveAttribute("data-section");
       await expect(lines.nth(2)).toHaveText("Clients");
       await expect(lines.filter({ hasText: "inventory" })).toHaveAttribute("data-section", "s1");
-    },
+    }),
   },
   // ...and a label's Rename…: the dialog opens with the focus in the name's box, so the name can be typed right away.
   {
@@ -2050,14 +2065,14 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-rename",
-    open: async (page) => {
+    open: inHubs(async (page) => {
       await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
       await page.getByRole("menuitem", { name: "Rename…" }).click();
       const name = page.getByRole("dialog", { name: "Rename Later" }).getByRole("textbox", { name: "Name" });
       await expect(name).toBeFocused();
       await page.keyboard.type(" on");
       await expect(name).toHaveValue("Later on");
-    },
+    }),
   },
   {
     id: "shell",
@@ -4318,14 +4333,16 @@ export const screens: readonly Screen[] = [
       await list.scrollIntoViewIfNeeded();
     },
   },
-  // Import memory under it: a ChatGPT export pasted, then what Add to Memory added.
+  // Import memory under it, shut at rest as one row: Import… opens its two steps in place, a ChatGPT export pasted,
+  // then what Add to Memory added.
   {
     id: "settings.your-memory",
     route: "#/settings/your-memory",
     fixtures: ["typical"],
     variant: "import-memory",
     open: async (page) => {
-      const part = page.getByRole("region", { name: "Import memory" });
+      const part = page.locator('[data-part="import-memory"]');
+      await part.getByRole("button", { name: "Import…" }).click();
       await part.getByRole("textbox", { name: "The other assistant's answer" }).fill("## Instructions\n[2024-03-02] - Keep answers short and skip the pleasantries.");
       await part.getByRole("button", { name: "Add to Memory" }).click();
       await expect(part.getByText("Added 5 entries to your memory.", { exact: false })).toBeVisible();
@@ -4348,7 +4365,11 @@ export const screens: readonly Screen[] = [
     route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
     variant: "editor",
-    open: (page) => page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Edit" }).click(),
+    // Edit is in the card's "…", with Pause and Delete.
+    open: async (page) => {
+      await page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Weekday dependency check: more" }).click();
+      await page.getByRole("menuitem", { name: "Edit" }).click();
+    },
   },
   // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
   // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to
@@ -4481,7 +4502,7 @@ export const screens: readonly Screen[] = [
     variant: "notifications-test-sent",
     open: async (page, app) => {
       await systemNotifications(app, true);
-      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Send", exact: true }).click();
       await page.getByRole("status").filter({ hasText: /^Sent\./u }).waitFor();
     },
   },
@@ -4492,7 +4513,7 @@ export const screens: readonly Screen[] = [
     variant: "notifications-test-unsupported",
     open: async (page, app) => {
       await systemNotifications(app, false);
-      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Send", exact: true }).click();
       await page.getByRole("status").filter({ hasText: "doesn’t show notifications" }).waitFor();
     },
   },

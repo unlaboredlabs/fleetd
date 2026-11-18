@@ -176,6 +176,8 @@ button.press:hover::before {
 /* The agents' DMs alone: a capsule like the island (its height, glass and words), centred over it, the gap between them
    the island's over the composer. */
 .card[data-only] {
+  /* The band's own gap over the composer (chat/view.module.css .band), so the three stand evenly. */
+  bottom: calc(100% + var(--space-2));
   flex-direction: row;
   width: fit-content;
   max-width: 100%;

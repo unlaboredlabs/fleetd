@@ -594,13 +594,10 @@
   white-space: nowrap;
 }
 
-/* The pinned chats, after the phone's (mobile screens/Pinned.tsx, after Messages): large round pictures, two to a row
-   however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture in a small capsule; a breath below
-   them, no line, and the list goes on. Their places are a fixed width and touch, so two 72 px pictures stand 16 px
-   apart, a pair; the group is centred in the sidebar, and a wide one leaves room either side rather than between
-   them. The narrowest sidebar, once its list scrolls, is a hair short of two places: there each place gives up its
-   share of the hair and its pin, kept to the place's outer side, twice that, so the pictures still stand 16 px apart
-   and nothing reaches into the list's own padding. */
+/* Hubs' pinned chats, after the phone's (mobile screens/Pinned.tsx): round 40 px pictures, a step over a row's, up to
+   three to a row (Sidebar.tsx pinColumns), each name under its picture in a small capsule; a breath below them, no
+   line, and the list goes on. Each place is a share of the row and they touch, so the group is centred in the
+   sidebar at any width. */
 .pins {
   --pin-cols: 3;
   display: flex;
@@ -833,7 +830,8 @@
   line-height: var(--leading-xs);
 }
 .where::after {
-  content: "·";
+  /* Read once, by its word: the dot is for the eye. */
+  content: "·" / "";
   flex: none;
   padding-left: 4px;
   font-weight: var(--weight-regular);
