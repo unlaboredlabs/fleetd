@@ -43,8 +43,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz \
  && echo "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb  /tmp/node.txz" | sha256sum -c - \
  && mkdir -p /opt/node /tmp/pw && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 \
+ && ln -sf /opt/node/bin/node /usr/local/bin/node \
  && /opt/node/bin/npm install -g --prefix /opt/node --no-fund --no-audit pnpm@12.11.2 yarn@1.22.22 \
- && for b in node npm npx corepack pnpm pnpx yarn yarnpkg; do [ ! -e /opt/node/bin/$b ] || ln -sf /opt/node/bin/$b /usr/local/bin/$b; done \
+ && for b in npm npx corepack pnpm pnpx yarn yarnpkg; do [ ! -e /opt/node/bin/$b ] || ln -sf /opt/node/bin/$b /usr/local/bin/$b; done \
  && node --version && npm --version && pnpm --version && yarn --version \
  && cd /tmp/pw && npx --yes playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
  && chmod -R a+rX /opt/ms-playwright /opt/node \
