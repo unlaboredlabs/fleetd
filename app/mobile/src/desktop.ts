@@ -48,6 +48,8 @@ export type {
   PrRow,
   ProfilesListOutput,
   ProjectSettings,
+  ComputerImage,
+  WorktreeSetup,
   TodoItem,
   ApprovalMode,
   ProjectApprovalsOutput as ApprovalsOutput,

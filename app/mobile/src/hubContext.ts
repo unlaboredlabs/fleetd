@@ -108,6 +108,9 @@ export type ChatInfoParams = {
   /** Its agents' DMs to each other, newest first (screens/dms), and one of them with who got it when. */
   Dms: { key: Key };
   Dm: { key: Key; message: AgentMessage };
+  /** Its setup commands and the image its agents' computers start from, each repo's (Computer.tsx), and a failed build's log. */
+  Computer: { key: Key };
+  ComputerLog: { log: string };
 } & VaultParams;
 /**
  * The Vault's screens (screens/vault), in Settings for the team's logins, cards and addresses, and in a project's

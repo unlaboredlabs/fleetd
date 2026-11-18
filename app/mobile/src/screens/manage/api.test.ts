@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, readLinks, rebuildImage, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -334,5 +334,31 @@ describe("Approvals and Linked hubs", () => {
     expect(calls("hub_link_remove").at(-1)?.input).toEqual({ linkId: "hl_1" });
     hub.answer("hub_link_remove", { revokedThere: true });
     await expect(removed).resolves.toEqual({ ok: true, value: { revokedThere: true } });
+  });
+});
+
+describe("Its Computer", () => {
+  it("reads each repo's setup and image, and rebuilds one", async () => {
+    const { hub, session, calls } = setup();
+    const own = readComputer(session, SHOP);
+    expect(calls("project_settings_get").at(-1)?.input).toEqual(REF);
+    hub.answer("project_settings_get", { settings: { title: "storefront", setup: { commands: ["bun install"] }, image: { state: "ready", builtAt: AT, bytes: 1_181_116_006 } } });
+    await expect(own).resolves.toMatchObject({ ok: true, value: { image: { state: "ready", bytes: 1_181_116_006 } } });
+    void readComputer(session, SHOP, "api");
+    expect(calls("project_settings_get").at(-1)?.input).toEqual({ ...REF, repo: "api" });
+
+    const rebuilt = rebuildImage(session, SHOP, "api");
+    expect(calls("project_image_rebuild").at(-1)?.input).toEqual({ ...REF, repo: "api" });
+    hub.answer("project_image_rebuild", { image: { state: "building", startedAt: AT } });
+    await expect(rebuilt).resolves.toEqual({ ok: true, value: { state: "building", startedAt: AT } });
+    void rebuildImage(session, SHOP);
+    expect(calls("project_image_rebuild").at(-1)?.input).toEqual(REF);
+  });
+
+  it("says why a rebuild was refused", async () => {
+    const { hub, session } = setup();
+    const refused = rebuildImage(session, SHOP);
+    hub.fail("project_image_rebuild", "invalid", "storefront has no setup commands.");
+    await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "invalid", message: "storefront has no setup commands." } });
   });
 });
