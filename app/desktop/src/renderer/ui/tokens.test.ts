@@ -116,6 +116,14 @@ describe("the frame", () => {
     // Three 14 px buttons 20 px apart, then a gap as wide as their margin. The Mac's rule: the web app's leaves none.
     const mac = /:root\[data-platform="darwin"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
     expect(Number(/--traffic-lights-inset:\s*(\d+)px/u.exec(mac)?.[1])).toBe(TRAFFIC_LIGHTS.x + 54 + 10);
-    expect(/:root\[data-shell="web"\]\s*\{\s*--traffic-lights-inset:\s*0px;\s*\}/u.test(css)).toBe(true);
+    const web = /:root\[data-shell="web"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
+    expect(web).toMatch(/--traffic-lights-inset:\s*0px;/u);
+  });
+  it("gives the traffic lights a strip of their own, as tall as the top row, over the hub's row; none on the web", () => {
+    const mac = /:root\[data-platform="darwin"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
+    expect(mac).toMatch(/--side-strip:\s*var\(--top-bar-height\);/u);
+    const web = /:root\[data-shell="web"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
+    expect(web).toMatch(/--side-strip:\s*0px;/u);
+    expect(web).toMatch(/--hub-row-height:\s*var\(--top-bar-height\);/u);
   });
 });

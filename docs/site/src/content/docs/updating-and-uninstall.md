@@ -13,9 +13,9 @@ The hub looks for a newer build on its channel every 2 minutes. When it finds on
 against the checksum the release's `release.json` lists for it and keeps it, and its machines fetch it too. Each build
 has its own download that never changes, so a release republished mid-download can't swap in another build. Each
 downloads the build packed, about a third of its size, and checks it once unpacked; a cut-off download goes on from
-where it stopped. Nothing is installed yet. For owners and admins, **Update** then shows under your name at the bottom
-of the sidebar, and the menu there has one more row: **Update available**, with **Update**, which starts it. Members
-see nothing until an update runs.
+where it stopped. Nothing is installed yet. For owners and admins, the hub's name at the top of the sidebar then
+carries a dot, and its menu has one more row under the hub: **Update available**, with **Update**, which starts it.
+Members see nothing until an update runs.
 
 Click **Update**. It starts at once, with nothing more to confirm. Since the build is already downloaded and checked,
 an update only swaps it in and restarts, in order:
@@ -49,7 +49,8 @@ seconds of restart fails, and the agent tries it again. A machine counts as upda
 build.
 
 While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
-goes once the hub is back. For an update, your name at the bottom of the sidebar says **Updating…**; past 10 seconds the
+goes once the hub is back. For an update, a small mark on your picture at the bottom of the sidebar says **Updating…**
+when you point at it; past 10 seconds the
 screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**; past 2
 minutes it is shown as offline. Any other restart or stop says nothing of updates and is shown as offline once it
 passes 10 seconds. Back on the new build, it says **Updated** for 15 minutes. When the hub or a machine didn't take
@@ -151,7 +152,8 @@ in the background; a newer build than one already downloaded replaces it. It dow
 the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
 as it keeps the previous download to compare with). It shows in the same place and the same words as the hub's:
 when the hub and its machines are up to date, Settings › Hub › Machines › Updates and Settings › General say **Update available**
-with **Restart to update**, and **Update** shows under your name for everyone, with the same row in the menu there.
+with **Restart to update**, and a small mark on your picture says **Update** for everyone, with the same row in the
+menu behind your name.
 An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.

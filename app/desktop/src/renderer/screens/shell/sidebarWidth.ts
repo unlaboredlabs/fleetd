@@ -10,7 +10,7 @@ export const SIDEBAR_MAX_PX = 420;
 /** Of the window, at most. */
 export const SIDEBAR_SHARE = 0.4;
 /** As tokens.css has it. */
-export const SIDEBAR_DEFAULT_PX = 280;
+export const SIDEBAR_DEFAULT_PX = 256;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(Math.max(n, lo), hi);
 

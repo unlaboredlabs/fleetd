@@ -1,16 +1,14 @@
-// A hub in the menu under your name (You.tsx; W607): its lines as youMenu.ts words them, each one row. All being
-// well that is a dot and the hub's name, which opens Settings › You › Hubs & devices (its address, Pair again, Restart hub and
-// Disconnect are there). What is off is one more row each, plain words then the one action a click takes: Retry, Pair
-// again, Update, Try again, Open (a machine's page, Hub › Machines › Updates), Finish (Hub › Setup). A row a member can do nothing about ends
-// in who to ask and isn't a button. With several hubs each has its rows, its own under the name the person gave it.
-// This app's own update is no hub's: one row below them all (AppRow).
-// The sidebar has no row for the hub, so the most pressing thing off also marks your avatar (linkMark, useWorkMark).
+// A hub's lines in the hub switcher (Sidebar.tsx HubSwitcher; W607, W714): youMenu.ts words them, each one menu row
+// under the hub's name. All being well there is none. What is off is one row each, plain words then the one action a
+// click takes: Retry, Pair again, Update, Try again, Open (a machine's page, Hub › Machines › Updates), Finish (Hub ›
+// Setup). A row a member can do nothing about ends in who to ask and does nothing. This app's own update is no hub's:
+// one row in the menu under your name (AppItem). The most pressing thing off also marks the switcher (linkMark,
+// useWorkMark).
 import { ArrowUp } from "lucide-react";
-import { useLayoutEffect, type ReactNode } from "react";
-import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
-import { Dot } from "../../ui";
+import { Dot, MenuItem } from "../../ui";
+import { useHubState } from "./hubFeed";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { OPTIONS, openOption } from "../settings";
 import { useQuiet, useUpdateAct } from "../updates";
@@ -18,7 +16,7 @@ import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
 import { startScreen } from "../start/kept";
 import { useStartLeft } from "../start/state";
-import { appLine, machinesLine, menuLines, offersWhole, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
+import { appLine, machinesLine, menuLines, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
 
@@ -54,58 +52,38 @@ function Words({ children, name }: { children: string; name: string | undefined 
   );
 }
 
-/**
- * One row of the menu: a mark under your picture, words in the name's column, and at its end what a click does (or
- * a quiet word). A button when there is something to do, plain text when not.
- */
-export function MenuRow({ mark, end, onClick, name, children, ...rest }: { mark: ReactNode; end?: ReactNode; onClick?: (() => void) | undefined; name?: string | undefined; children: string } & Record<`data-${string}`, string | undefined>) {
-  const body = (
-    <>
-      <span className={h.mark}>{mark}</span>
-      <Words name={name}>{children}</Words>
-      {end}
-    </>
-  );
-  return onClick === undefined ? (
-    <div className={h.row} {...rest}>
-      {body}
-    </div>
-  ) : (
-    <button type="button" className={h.row} onClick={onClick} {...rest}>
-      {body}
-    </button>
-  );
-}
-
-/** A line as its row: its mark, its words, and its action or quiet word at the end; a button when a click does something. */
-function LineRow({ line, act }: { line: MenuLine; act: (does: LineDoes) => void }) {
+/** A line as a menu row: its mark, its words, and its action or quiet word at the end; it does nothing without one. */
+function LineItem({ line, act }: { line: MenuLine; act: (does: LineDoes) => void }) {
   const { does } = line;
   return (
-    <MenuRow
-      mark={<Mark mark={line.mark} />}
+    <MenuItem
+      icon={<span className={h.mark}>{<Mark mark={line.mark} />}</span>}
       data-line={line.key}
       data-mark={line.mark}
-      name={line.name}
-      onClick={does === undefined ? undefined : () => act(does)}
-      end={line.action !== undefined ? <span className={h.action}>{line.action}</span> : line.aside !== undefined ? <span className={h.aside}>{line.aside}</span> : undefined}
+      disabled={does === undefined}
+      className={h.line}
+      hint={line.action !== undefined ? <span className={h.action}>{line.action}</span> : line.aside !== undefined ? <span className={h.aside}>{line.aside}</span> : undefined}
+      onSelect={(e) => {
+        if (does === undefined) return;
+        // Retry and an update's action change the row where it is: the menu stays open on it.
+        if (does.to === "retry" || does.to === "update") e.preventDefault();
+        act(does);
+      }}
     >
-      {line.text}
-    </MenuRow>
+      <Words name={line.name}>{line.text}</Words>
+    </MenuItem>
   );
 }
 
-/**
- * This app's own update, once below the hubs, whichever it is paired with; nothing while there is none to say, or
- * while a hub's row offers its `whole` update, which ends in this app's restart.
- */
-export function AppRow({ whole }: { whole: boolean }) {
-  const line = appLine(useAppUpdate(), whole);
+/** This app's own update, a row in the menu under your name; nothing while there is none to say. */
+export function AppItem() {
+  const line = appLine(useAppUpdate());
   const update = useUpdateAct();
   // Its one action is the update's own, which changes the row where it is.
   const act = (does: LineDoes) => {
     if (does.to === "update") update(does.act);
   };
-  return line === null ? null : <LineRow line={line} act={act} />;
+  return line === null ? null : <LineItem line={line} act={act} />;
 }
 
 /** This hub's machines as the menu reads them; undefined until they are known. */
@@ -135,31 +113,26 @@ export const useWorkMark = (): HubMark | null => {
   return live ? workMark([machinesLine(machines, admin), setupLine(setupLeft, admin)], label) : null;
 };
 
-/** One hub's rows in the menu under your name, in its scope. `close` shuts the menu; `whole` hears whether they offer
- * the hub's whole update (AppRow). */
-export function HubRows({ hub, close, whole }: { hub: HubState; close: () => void; whole: (on: boolean) => void }) {
+/**
+ * The hub in scope's lines under its name in the hub switcher: what is off with it, each with the one thing to do. The
+ * hub's own line shows only when there is something to do (Retry, Pair): all well, connecting or updating, its name
+ * above says enough.
+ */
+export function HubLines() {
+  const hub = useHubState();
   const work = useWork();
-  // This app's own update is the menu's one row below the hubs, never one of each hub's.
   const quiet = useQuiet(hub, false);
   const startLeft = useStartLeft();
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
-  const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() });
+  const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() }).filter((l) => !(l.key === "hub" && l.action === undefined));
   const layer = useDataLayer();
   const self = useHub();
   const several = work.label !== null;
-  const offers = offersWhole(lines);
-  // Before the menu paints, so this app's own row never shows for a frame beside the Update that takes it too.
-  useLayoutEffect(() => {
-    whole(offers);
-    return () => whole(false);
-  }, [whole, offers]);
   const update = useUpdateAct();
   const act = (does: LineDoes) => {
-    // Retry and an update's action change the row where it is; the rest go somewhere.
     if (does.to === "retry") return layer.retryNow();
     if (does.to === "update") return update(does.act);
-    close();
     if (does.to === "pair" && onWeb()) window.location.assign("/web/sign-in");
     else if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
     else if (does.to === "setup") navigate({ id: "settings", tab: "hub.setup", at: self.id });
@@ -168,12 +141,11 @@ export function HubRows({ hub, close, whole }: { hub: HubState; close: () => voi
     else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
     else if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
   };
-
   return (
-    <div role="group" className={h.hub} aria-label={several ? self.label : "Hub"} data-hub-card={hub.phase}>
+    <>
       {lines.map((line) => (
-        <LineRow key={line.key} line={line} act={act} />
+        <LineItem key={line.key} line={line} act={act} />
       ))}
-    </div>
+    </>
   );
 }

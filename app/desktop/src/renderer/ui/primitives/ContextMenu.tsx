@@ -189,13 +189,13 @@ export function ContextMenuRadioGroup(props: ComponentProps<typeof C.RadioGroup>
 export function ContextMenuRadioItem({ className, children, ...rest }: ComponentProps<typeof C.RadioItem>) {
   return (
     <C.RadioItem className={cx(s.item, className)} {...rest}>
+      <span className={s.itemLabel} data-text="wrap">
+        {children}
+      </span>
       <span className={s.indicator}>
         <C.ItemIndicator>
           <Check />
         </C.ItemIndicator>
-      </span>
-      <span className={s.itemLabel} data-text="wrap">
-        {children}
       </span>
     </C.RadioItem>
   );
@@ -211,7 +211,7 @@ export function ContextMenuSub({ label, icon, children }: { label: ReactNode; ic
         <span className={s.itemLabel} data-text="wrap">
           {label}
         </span>
-        <ChevronRight aria-hidden />
+        <ChevronRight className={s.subChevron} aria-hidden />
       </C.SubTrigger>
       {/* Gone the moment it closes, as the menu is. */}
       {open ? (

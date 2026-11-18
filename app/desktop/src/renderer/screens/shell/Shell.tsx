@@ -134,12 +134,11 @@ function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hu
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  // ⌘1–9 open the rows the sidebar numbers: those on show in its layout (sidebarLayout.ts), in its order.
+  // ⌘1–9 open the rows the sidebar numbers: those on show (sidebarLayout.ts), in its order.
   const view = useSidebarView();
   const viewHub = viewedHub(view, hubs, route.at);
-  const heldKeys = useHeldRows();
-  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, heldKeys)), [projects, view, viewHub, heldKeys]);
-  // A bot opened on another hub (the palette, a notification, ⌘1–9 in List) brings its hub on show.
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub)), [projects, view, viewHub]);
+  // A bot opened on another hub (the palette, a notification) brings its hub on show.
   useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();
   const [sidebarPx, setSidebarPx] = useSidebarWidth();
@@ -316,7 +315,7 @@ function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hu
         translucent
         topBar={top}
         under={under}
-        sidebarTop={<SidebarTop go={go} view={view} hub={viewHub} projects={projects} />}
+        sidebarTop={<SidebarTop go={go} hub={viewHub} projects={projects} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={

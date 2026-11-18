@@ -318,13 +318,12 @@
 .search {
   padding: var(--space-2) 0;
 }
-/* Lighter than a form's field: the page's white with a magnifier at its start, its edge the lightest grey that still
-   holds 3:1 on the sidebar (--control-border), corners a row's. */
+/* A field (ui/primitives/Field.module.css) with a magnifier at its start. */
 .search > input {
   height: 32px;
   padding-inline: 32px var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--raised) no-repeat 10px 50% / 14px 14px;
+  background: var(--field-bg) no-repeat 10px 50% / 14px 14px;
   background-image: var(--search-glyph);
 }
 .search > input::placeholder {

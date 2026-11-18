@@ -440,19 +440,6 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** One of storefront's browser sessions, open in the panel (fixtures/sessions). */
 const SESSION_ROUTE = (id: string) => `${CHAT}/sessions/${id}`;
 
-/**
- * Shows the sidebar in Hubs (sidebarLayout.ts), whose pinned grid, section labels and hub switcher List doesn't have,
- * then brings the screen up: the layout is kept on this computer and read at launch, so the window loads again.
- */
-const inHubs =
-  (open: (page: Page) => Promise<void>) =>
-  async (page: Page): Promise<void> => {
-    await page.evaluate(() => localStorage.setItem("fleetd.sidebarLayout", "hubs"));
-    await page.reload();
-    await expect(page.getByRole("navigation", { name: "Sidebar" })).toHaveAttribute("data-layout", "hubs", { timeout: 10_000 });
-    await open(page);
-  };
-
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
@@ -1111,11 +1098,12 @@ export const screens: readonly Screen[] = [
     sizes: ["small", "large"],
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      // The wake comes once the chat is up (fixtures/offline): the You menu's hub line says Reconnecting…, quietly.
-      await page.locator("[data-opens='you']").click();
-      const hub = page.getByRole("dialog", { name: "You" }).locator("[data-line='hub']").first();
-      await expect(hub).toContainText("Reconnecting…", { timeout: 15_000 });
-      await expect(hub).not.toContainText("Can't reach");
+      // The wake comes once the chat is up (fixtures/offline): reconnecting is quiet, so the hub switcher is unmarked and
+      // its menu has no line under the hub.
+      const switcher = page.locator("[data-opens='hubs']");
+      await expect(switcher).not.toHaveAttribute("data-mark", /./u, { timeout: 15_000 });
+      await switcher.click();
+      await expect(page.getByRole("menu")).not.toContainText("Can't reach");
       await page.keyboard.press("Escape");
       await expect(page.locator('[data-banner="reconnecting"]')).toHaveCount(0);
       await expect(page.locator("[data-say]").getByText(/^Offline/u)).toHaveCount(0);
@@ -1212,22 +1200,22 @@ export const screens: readonly Screen[] = [
       for (const c of ["sage", "blue", "coral", "mono", "amber", "lilac", "teal", "slate"]) expect(colors).toContain(c);
     },
   },
-  // Your name at the sidebar's foot: the hub's owner's is marked while setup steps are left; a member's never is.
+  // The hub switcher: the owner's hub marked while setup steps are left; a member's never is.
   { id: "shell", route: "#/", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
-  // Several hubs in List, the default layout: every hub's bots in one list, each saying where it lives, your name
-  // marked while Acme is offline, which waits on its own while Personal works on.
+  // Several hubs: one at a time, the switcher marked while Acme is offline, which waits on its own while Personal
+  // works on.
   { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
-  // Hubs: one hub at a time, picked from its name at the top, which carries a dot while another hub
-  // has a bot that wants you; the card lists them all, each with its own dot.
+  // The hub row's switcher, which carries a dot while another hub has a bot that wants you; its menu lists them all,
+  // the one on show ticked, each other with its own dot, and Add a hub.
   {
     id: "shell",
     route: "#/",
     fixtures: ["sidebar-hubs"],
     variant: "hub-switcher",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       await page.getByRole("button", { name: "Personal, another hub needs you" }).click();
-      await expect(page.getByRole("dialog", { name: "Hubs" }).getByRole("button")).toHaveText(["PPersonal", "AAcme"]);
-    }),
+      await expect(page.getByRole("menuitem")).toHaveText(["PPersonal", "AAcme", "Add a hub…"]);
+    },
   },
   {
     id: "chat",
@@ -1660,7 +1648,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pins"],
     variant: "pins",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const pill = page.locator('[data-opens="panel"]');
       if ((await pill.getAttribute("aria-pressed")) === "true") {
         await pill.click();
@@ -1672,19 +1660,19 @@ export const screens: readonly Screen[] = [
       // W572: storefront's open, so its highlight shows; billing's hovered beside it, the same compact shape, quieter.
       await expect(grid.nth(0).getByRole("button")).toHaveAttribute("aria-current", "page");
       await grid.nth(1).getByRole("button").hover();
-    }),
+    },
   },
-  // W580: the list's sizes. The pinned names are 13/18 in the text's colour, each in a 24 px capsule: medium at rest,
-  // semibold with the dot inside the capsule for inventory, which waits on you, and docs, with its new reply. The
-  // rows are 56 px rounded boxes, never pills (W584: the radius token's 10 px), their names 14/20 semibold, each
-  // 40 px picture as far from the row's top as from its end. "Rewrite the pricing…" is cut short under its picture:
+  // W580, W714: the list's sizes. The pinned names are 12/18 in the text's colour, each in an 18 px capsule, the dot
+  // inside the capsule for inventory, which waits on you, and docs, with its new reply. The rows are 46 px rounded
+  // boxes, never pills (W584), their names 13.5/18 semibold, each 32 px picture 7 px in from the row's top and 8 px
+  // from its start. "Rewrite the pricing…" is cut short under its picture:
   // under the pointer its capsule takes the shade, and its tooltip has the name whole.
   {
     id: "shell",
     route: "#/",
     fixtures: ["sidebar-pins"],
     variant: "pin-names",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const pins = nav.locator('[class*="pins"] > [data-reorder-row]').getByRole("button");
       await expect(pins).toHaveCount(3);
@@ -1710,12 +1698,13 @@ export const screens: readonly Screen[] = [
       const box = await row.boundingBox();
       const picture = await row.locator('[class*="avatar"]').first().boundingBox();
       if (box === null || picture === null) throw new Error("the first row isn't on screen");
-      expect(box.height).toBe(52);
+      expect(box.height).toBe(46);
       expect(await row.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("6px");
-      expect([picture.width, picture.height]).toEqual([36, 36]);
-      expect(picture.x - box.x).toBe(picture.y - box.y);
-      expect(await type(row.locator('[class*="name"]').first())).toEqual({ fontSize: "14px", fontWeight: "600", lineHeight: "18px", color: text });
-      expect(await type(row.locator('[class*="line"]').first())).toMatchObject({ fontSize: "13px", lineHeight: "18px" });
+      expect([picture.width, picture.height]).toEqual([32, 32]);
+      // 7 px from the row's top and bottom, 8 px from its start (W714: the slimmer sidebar's rows).
+      expect([picture.x - box.x, picture.y - box.y]).toEqual([8, 7]);
+      expect(await type(row.locator('[class*="name"]').first())).toEqual({ fontSize: "13.5px", fontWeight: "600", lineHeight: "18px", color: text });
+      expect(await type(row.locator('[class*="line"]').first())).toMatchObject({ fontSize: "12.5px", lineHeight: "17px" });
       await pins.nth(0).hover();
       await expect(page.getByRole("tooltip")).toHaveText(/^Rewrite the pricing .+ both variants$/u);
       // A name that fits has no tooltip. The pointer travels there as a hand moves it: the tooltip is over its way.
@@ -1725,9 +1714,9 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await pins.nth(0).hover();
       await page.getByRole("tooltip").waitFor();
-    }),
+    },
   },
-  // W577, W580, W694: the pins are a compact group, centred in the sidebar at every width: 40 px pictures, a step over
+  // W577, W580, W694: the pins are a compact group, centred in the sidebar at every width: 36 px pictures, a step over
   // a row's, their places touching, a share of the row each, a lone pin (W574) in the middle. One, two and three pins,
   // at the sidebar's narrowest and at its widest.
   ...(["showcase-pin", "showcase-pins-two", "showcase-pins"] as const).flatMap((fixture) =>
@@ -1737,7 +1726,7 @@ export const screens: readonly Screen[] = [
         route: CHAT,
         fixtures: [fixture],
         variant: `pins-${{ "showcase-pin": "one", "showcase-pins-two": "two", "showcase-pins": "three" }[fixture]}-${end === "Home" ? "narrowest" : "widest"}`,
-        open: inHubs(async (page) => {
+        open: async (page) => {
           const edge = page.getByRole("separator", { name: "Resize the sidebar" });
           await edge.focus();
           await edge.press(end);
@@ -1762,7 +1751,7 @@ export const screens: readonly Screen[] = [
             const pictures = await Promise.all((await slots.all()).map((slot) => slot.locator('[class*="pinCell"] > :first-child').boundingBox()));
             const [p, q] = pictures;
             if (p == null) throw new Error("the pins' pictures aren't on screen");
-            for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([40, 40]);
+            for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([36, 36]);
             // Each in its share of the row (three across): apart, never touching.
             if (q != null) expect(q.x - (p.x + p.width)).toBeGreaterThanOrEqual(8);
             // The list has nowhere to go sideways, a bot's picture (drawn on a canvas wider than itself) in the right
@@ -1770,7 +1759,7 @@ export const screens: readonly Screen[] = [
             const list = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="list"]').first();
             expect(await list.evaluate((el) => [el.scrollWidth, el.scrollLeft])).toEqual([await list.evaluate((el) => el.clientWidth), 0]);
           }).toPass();
-        }),
+        },
       }),
     ),
   ),
@@ -1782,7 +1771,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pin"],
     variant: "pin-drag",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const grid = nav.locator('[class*="pins"]').first();
       const pins = grid.locator("> [data-reorder-row]");
@@ -1835,7 +1824,7 @@ export const screens: readonly Screen[] = [
         el.style.paddingBottom = "";
         el.scrollTop = 0;
       });
-    }),
+    },
   },
   // W577: the same drags in the widest sidebar, where the pins' group sits in its middle: Ada let go just right of
   // billing's lone pin joins after it, Ada dropped on billing's place swaps the two, and billing dragged down out of
@@ -1845,7 +1834,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["showcase-pin"],
     variant: "pin-drag-widest",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const edge = page.getByRole("separator", { name: "Resize the sidebar" });
       await edge.focus();
       await edge.press("End");
@@ -1872,7 +1861,7 @@ export const screens: readonly Screen[] = [
       const right = await middle(pins.nth(1));
       await drag(right, { x: right.x, y: ada.y + 60 });
       await expect(pins).toHaveText([/Ada/u]);
-    }),
+    },
   },
   // W580: your own sections. Under the pins (billing is one of Clients' too, and shows among the pins only) and the chat
   // in no section, Clients and Later under their labels: 12/16 regular in the quiet colour, in line with the
@@ -1883,26 +1872,26 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "sections",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
-      await expect(lines).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
-      const label = nav.getByRole("button", { name: "Clients" });
+      await expect(lines).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      const label = nav.getByRole("button", { name: "Clients", exact: true });
       const name = label.locator('[class*="sectionName"]');
-      const quiet = await lines.first().locator('[class*="line"]').first().evaluate((el) => getComputedStyle(el).color);
+      const quiet = await lines.nth(1).locator('[class*="line"]').first().evaluate((el) => getComputedStyle(el).color);
       expect(
         await name.evaluate((el) => {
           const { fontSize, fontWeight, lineHeight, color } = getComputedStyle(el);
           return { fontSize, fontWeight, lineHeight, color };
         }),
       ).toEqual({ fontSize: "12px", fontWeight: "400", lineHeight: "16px", color: quiet });
-      const [before, at, text, after, picture] = await Promise.all([lines.nth(0), label, name, lines.nth(2), lines.nth(2).locator('[class*="avatar"]').first()].map((l) => l.boundingBox()));
+      const [before, at, text, after, picture] = await Promise.all([lines.nth(1), label, name, lines.nth(3), lines.nth(3).locator('[class*="avatar"]').first()].map((l) => l.boundingBox()));
       if (before == null || at == null || text == null || after == null || picture == null) throw new Error("the label isn't on screen");
       expect(at.y - (before.y + before.height)).toBeCloseTo(12, 0);
       expect(after.y - (at.y + at.height)).toBeCloseTo(2, 0);
       expect(text.x).toBeCloseTo(picture.x, 0);
-    }),
+    },
   },
   // ...beside another hub, in Hubs: the hub on show's pins, its chats in no section, then its own sections; another
   // picked at the top brings its own.
@@ -1911,58 +1900,47 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections-hubs"],
     variant: "sections-hubs",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const groups = nav.locator('[class*="rows"]');
       await expect(groups).toHaveCount(1);
-      await expect(groups.locator("> [data-reorder-row]")).toHaveText([/^recipes/u, "Home", /^garden-sensors/u]);
+      await expect(groups.locator("> [data-reorder-row]")).toHaveText(["Bots", /^recipes/u, "Home", /^garden-sensors/u]);
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/blog/u]);
       await page.locator('[data-opens="hubs"]').click();
-      await page.getByRole("dialog", { name: "Hubs" }).getByRole("button", { name: /Acme/u }).click();
-      await expect(groups.locator("> [data-reorder-row]")).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      await page.getByRole("menuitem", { name: /Acme/u }).click();
+      await expect(groups.locator("> [data-reorder-row]")).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       await page.mouse.move(600, 400);
-    }),
+    },
   },
-  // W694: the sidebar's three layouts, picked in the menu under your name, on one hub with a few bots and on three hubs
-  // with sections and nineteen bots. List: every bot newest first, each marked with its hub and section, the pins as
-  // capsules; Hubs: Acme picked at the top, its sections as words; Rail: the hubs down the edge, Acme's sections as
-  // tabs, Clients picked. None folds.
-  ...(["list", "hubs", "rail"] as const).flatMap((layout) =>
-    (["typical", "sidebar-many-hubs"] as const).map(
-      (fixture): Screen => ({
-        id: "shell",
-        route: "#/",
-        fixtures: [fixture],
-        variant: `layout-${layout}`,
-        open: async (page) => {
-          await page.locator('[data-opens="you"]').click();
-          const pick = page.getByRole("group", { name: "Sidebar layout" });
-          // A pick redraws the sidebar in its layout, and the menu closes with it.
-          await pick.getByRole("button", { name: layout === "list" ? "List" : layout === "hubs" ? "Hubs" : "Rail" }).click();
-          await expect(page.getByRole("dialog", { name: "You" })).toHaveCount(0);
-          const nav = page.getByRole("navigation", { name: "Sidebar" });
-          await expect(nav).toHaveAttribute("data-layout", layout);
-          if (fixture === "sidebar-many-hubs") {
-            if (layout === "list") {
-              // Every hub's bots in one list, and none of the three hubs' labels over a group.
-              await expect(nav.locator("[data-where]").first()).toBeVisible();
-              expect(await nav.locator('[class*="rows"] > [data-reorder-row]').count()).toBe(15);
-            } else if (layout === "hubs") {
-              await page.locator('[data-opens="hubs"]').click();
-              await page.getByRole("dialog", { name: "Hubs" }).getByRole("button", { name: /Acme/u }).click();
-              await expect(nav.locator("[data-section-label]")).toHaveText(["Clients", "Later"]);
-            } else {
-              await nav.getByRole("group", { name: "Hubs" }).getByRole("button", { name: /^Acme/u }).click();
-              await nav.getByRole("tab", { name: "Clients" }).click();
-              await expect(nav.locator('[class*="rows"] > [data-reorder-row]')).toHaveText([/^checkout/u, /^inventory/u, /^mobile/u]);
-            }
-          }
-          await page.mouse.move(600, 400);
-        },
-      }),
-    ),
-  ),
+  // W714: the sidebar's ⋯, open: Sort by (Recent, Name, Needs you first), Compact rows and Archived bots; and the list
+  // drawn compact, one line a bot, on one hub with a few bots and on three hubs with sections and nineteen bots.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical", "sidebar-many-hubs"],
+    variant: "view-menu",
+    open: async (page) => {
+      await page.locator('[data-opens="list-menu"]').click();
+      await expect(page.getByRole("menuitemradio")).toHaveText(["Recent", "Name", "Needs you first"]);
+      await expect(page.getByRole("menuitemradio", { name: "Recent" })).toBeChecked();
+      await expect(page.getByRole("menuitemcheckbox", { name: "Compact rows" })).not.toBeChecked();
+    },
+  },
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical", "sidebar-many-hubs"],
+    variant: "compact",
+    open: async (page) => {
+      await page.locator('[data-opens="list-menu"]').click();
+      await page.getByRole("menuitemcheckbox", { name: "Compact rows" }).click();
+      await page.keyboard.press("Escape");
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      await expect(nav).toHaveAttribute("data-compact");
+      await page.mouse.move(600, 400);
+    },
+  },
   // A bot's own menu (right-click its row): Open, pins and sections, Rename, its settings, Copy path, then Archive,
   // which shows an Undo; Delete is only in its settings.
   {
@@ -1997,10 +1975,10 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-label-menu",
-    open: inHubs(async (page) => {
-      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later", exact: true }).click({ button: "right" });
       await expect(page.getByRole("menuitem")).toHaveText(["Rename…", "Move up", "Remove section"]);
-    }),
+    },
   },
   // ...and a drag into a section. "Rewrite the pricing…" held over Clients' label covers it, so the lifted row says
   // where it would go, where its time was; let go, it is one of Clients'. docs held over checkout, a chat of Clients',
@@ -2010,7 +1988,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-drag",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
       const middle = async (at: Locator) => {
@@ -2035,8 +2013,8 @@ export const screens: readonly Screen[] = [
       await page.mouse.up();
       await expect(lines.filter({ hasText: "docs" })).toHaveAttribute("data-section", "s1");
       await expect(lines.last()).toHaveText(/^search/u);
-      await expect(nav.getByRole("button", { name: "Later" })).toBeVisible();
-    }),
+      await expect(nav.getByRole("button", { name: "Later", exact: true })).toBeVisible();
+    },
   },
   // ...and a drag out of one: checkout, of Clients', held over "Rewrite the pricing…", a chat in none, says No section
   // where its time was, and no label takes it; let go, it is in none, on top, and Clients keeps the rest.
@@ -2045,7 +2023,7 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-drag-out",
-    open: inHubs(async (page) => {
+    open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
       const middle = async (at: Locator) => {
@@ -2062,9 +2040,9 @@ export const screens: readonly Screen[] = [
       await expect(nav.locator("[data-taking]")).toHaveCount(0);
       await page.mouse.up();
       await expect(lines.filter({ hasText: "checkout" })).not.toHaveAttribute("data-section");
-      await expect(lines.nth(2)).toHaveText("Clients");
+      await expect(lines.nth(3)).toHaveText("Clients");
       await expect(lines.filter({ hasText: "inventory" })).toHaveAttribute("data-section", "s1");
-    }),
+    },
   },
   // ...and a label's Rename…: the dialog opens with the focus in the name's box, so the name can be typed right away.
   {
@@ -2072,14 +2050,14 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["sidebar-sections"],
     variant: "section-rename",
-    open: inHubs(async (page) => {
-      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later", exact: true }).click({ button: "right" });
       await page.getByRole("menuitem", { name: "Rename…" }).click();
       const name = page.getByRole("dialog", { name: "Rename Later" }).getByRole("textbox", { name: "Name" });
       await expect(name).toBeFocused();
       await page.keyboard.type(" on");
       await expect(name).toHaveValue("Later on");
-    }),
+    },
   },
   {
     id: "shell",
@@ -2498,13 +2476,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-run-hub"],
     variant: "updates",
   },
-  // The menu under your name, open (W607). All being well it is who you are, a dot beside the hub's name and Settings,
-  // for the owner and for a member. What is off is one more row with the one thing to do: a setup step left, a
-  // machine offline, the hub out of reach, a second hub out of reach or refusing this app's key, an update to take
-  // (the hub's, and this app's own to restart into, once beside a self-run hub and a cloud team), going on, just in,
-  // or one that didn't go in (a member is told who to ask, as when no machine is online or every one is degraded),
-  // everything at once, and hubs and a machine with 40-character names, where only the name is cut short. One size:
-  // the menu is as wide in every window.
+  // The hub switcher's menu, open (W607, W714): each hub, the one on show ticked, and under it what is off with it with
+  // the one thing to do: a setup step left, a machine offline, the hub out of reach, a second hub out of reach or
+  // refusing this app's key, an update to take, going on, just in, or one that didn't go in (a member is told who to
+  // ask, as when no machine is online or every one is degraded), everything at once, and hubs and a machine with
+  // 40-character names, where only the name is cut short. One size: the menu is as wide in every window.
   {
     id: "shell",
     route: "#/",
@@ -2517,7 +2493,6 @@ export const screens: readonly Screen[] = [
       "menu-refused",
       "sidebar-hubs-offline",
       "updates-hub-ready",
-      "updates-ready",
       "menu-updating",
       "menu-updated",
       "menu-update-failed",
@@ -2527,23 +2502,39 @@ export const screens: readonly Screen[] = [
       "menu-long-refused",
       "menu-long-offline",
       "menu-everything",
-      "menu-app-update",
     ],
-    variant: "you-menu",
+    variant: "hub-menu",
     sizes: ["small"],
     open: async (page) => {
-      await page.locator("[data-opens='you']").click();
-      const menu = page.getByRole("dialog", { name: "You" });
-      await menu.getByRole("button", { name: /^Settings/u }).waitFor();
-      // One row a hub while all is well, and never a table, an address or a build's name.
-      await expect(menu.locator("[data-line='hub']").first()).toBeVisible();
+      await page.locator("[data-opens='hubs']").click();
+      const menu = page.getByRole("menu");
+      await menu.getByRole("menuitem").first().waitFor();
+      // Never a table, an address or a build's name.
       await expect(menu).not.toContainText(/https?:|:4790|edge|Protocol|\bv\d/iu);
-      // Nothing but a name gives way (the part with its full name on hover): no other part of a row is cut short,
-      // and no row runs past its width, so what is wrong and its action show whole.
+      // Nothing but a name gives way (the part with its full name on hover): no other part of a line is cut short,
+      // and no line runs past its width, so what is wrong and its action show whole.
       const cut = await menu
         .locator("[data-line], [data-line] span:not([title])")
         .evaluateAll((parts) => parts.filter((p) => p.scrollWidth > p.clientWidth + 1).map((p) => p.textContent));
       expect(cut).toEqual([]);
+    },
+  },
+  // The menu under your name, open (W714): who you are, then Settings, Appearance, Keyboard shortcuts and Help, each
+  // shortcut at its row's end, and no hub; this app's own update a row of its own when there is one. Appearance opens
+  // its three beside it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["admin-owner", "admin-member", "updates-ready", "menu-app-update"],
+    variant: "you-menu",
+    sizes: ["small"],
+    open: async (page) => {
+      await page.locator("[data-opens='you']").click();
+      const menu = page.locator("[role='menu'][aria-label='You']");
+      await menu.getByRole("menuitem", { name: /^Settings/u }).waitFor();
+      await expect(menu.locator("[data-line='hub']")).toHaveCount(0);
+      await menu.getByRole("menuitem", { name: /^Appearance/u }).hover();
+      await expect(page.getByRole("menuitemradio")).toHaveText(["Match system", "Light", "Dark"]);
     },
   },
   {
@@ -2683,7 +2674,7 @@ export const screens: readonly Screen[] = [
     variant: "settings-back",
     open: async (page) => {
       await page.locator("[data-opens='you']").click();
-      await page.getByRole("dialog", { name: "You" }).getByRole("button", { name: /^Settings/u }).click();
+      await page.locator("[role='menu'][aria-label='You']").getByRole("menuitem", { name: /^Settings/u }).click();
       await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
       await page.getByRole("button", { name: "Close settings" }).click();
       await expect(page.locator("[data-opens='you']")).toBeFocused();

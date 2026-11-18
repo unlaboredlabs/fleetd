@@ -28,21 +28,25 @@
 .textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-md);
+  background: var(--field-bg);
+  box-shadow: var(--field-shadow);
   color: var(--text);
   font-size: var(--text-md);
   line-height: var(--leading-md);
-  transition: border-color var(--dur-fast) var(--ease-out);
+  transition:
+    border-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
 }
+/* As tall as a button beside it (Button md), its words 12 px in. */
 .input {
   height: var(--field);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
 }
 .textarea {
   display: block;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   resize: none;
   /* Grows with its content between min and max rows (Chromium's field-sizing), so nothing hides behind a scroll. */
   field-sizing: content;
@@ -55,22 +59,31 @@
 }
 .input::placeholder,
 .textarea::placeholder {
-  color: var(--faint);
+  color: var(--quiet);
 }
-.input:focus-visible,
-.textarea:focus-visible {
-  border-color: var(--accent);
-  outline-offset: -1px;
+.input:hover:not(:disabled):not(:focus),
+.textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--field-border-hover);
+}
+/* Focused: the edge darkens and a soft ring of the same neutral grows round it, never the link blue. */
+.input:focus,
+.textarea:focus {
+  border-color: var(--field-border-focus);
+  outline: none;
+  box-shadow: var(--field-shadow), var(--field-ring);
 }
 .input[aria-invalid="true"],
 .textarea[aria-invalid="true"] {
   border-color: var(--danger);
 }
+.input[aria-invalid="true"]:focus,
+.textarea[aria-invalid="true"]:focus {
+  box-shadow: var(--field-shadow), var(--field-danger-ring);
+}
 .input:disabled,
 .textarea:disabled {
-  color: var(--faint);
-  background: transparent;
-  border-color: var(--hairline);
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .input:read-only:not(:disabled),
 .textarea:read-only:not(:disabled) {

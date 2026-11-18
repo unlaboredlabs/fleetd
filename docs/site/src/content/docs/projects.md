@@ -306,11 +306,10 @@ a chat onto a section's label or onto one of its chats to move it there, and ont
 of its own; while you hold it there, the chat says where it would go. A section is made with its first chat and goes
 away with its last.
 
-How sections show depends on the [sidebar's layout](/docs/several-hubs#sidebar). In **List**, a chat's row starts with
-its section's name. In **Hubs**, the chats in no section come first under the pins, with no label, then each section
-under its quiet label, in your order, its chats newest first. In **Rail**, your sections are tabs over the list. None
-of them folds. Right-click a label for **Rename…**, **Move up**, **Move down** and **Remove section**, which puts its
-chats back on top and deletes none of them. A pinned chat shows among the pins only, and keeps its section for when you
+In the sidebar, the chats in no section come first under the pins, under a quiet **Bots** label, then each section
+under its quiet label, in your order, its chats in the list's order. None of them folds. Right-click a label, or
+click its **⋯**, for **Rename…**, **Move up**, **Move down** and **Remove section**, which puts its chats back on top
+and deletes none of them. A pinned chat shows among the pins only, and keeps its section for when you
 unpin it. With several hubs, each hub has its own pins, chats in no section, and sections.
 
 Your sections are yours: the hub keeps them, in your order, for each person, so they're the same on each of your

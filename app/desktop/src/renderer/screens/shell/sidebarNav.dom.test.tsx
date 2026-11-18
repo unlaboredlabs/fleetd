@@ -55,8 +55,6 @@ const mount = (o: { factory?: boolean; screen?: Routed } = {}) =>
   );
 
 beforeEach(() => {
-  // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
-  window.localStorage.setItem("fleetd.sidebarLayout", "hubs");
   resetSidebarView();
   went = [];
   host = document.createElement("div");
@@ -68,21 +66,21 @@ afterEach(() => {
   host.remove();
 });
 
-/** The places under search, by their names. */
-const navRows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>("[class*=places] button")];
+/** The places beside you at the foot, by their names. */
+const navRows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>("[class*=tools] button")];
 const labels = () => navRows().map((b) => b.getAttribute("aria-label") ?? "");
 const row = (label: string): HTMLElement => {
   const found = navRows().find((b) => b.getAttribute("aria-label")?.startsWith(label) === true);
   if (found === undefined) throw new Error(`no ${label} in: ${labels().join(", ")}`);
   return found;
 };
-/** Opens the card under your name and picks Settings. */
+/** Opens the menu under your name (a menu opens from the keys as from a press) and picks Settings. */
 const settings = () => {
-  act(() => host.querySelector<HTMLElement>("[data-opens='you']")?.click());
+  act(() => void host.querySelector<HTMLElement>("[data-opens='you']")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
   act(() => document.querySelector<HTMLElement>("[aria-label='You'] [data-opens='settings']")?.click());
 };
 
-describe("the sidebar's places", () => {
+describe("the sidebar's places, two small icons beside you", () => {
   it("are Screens and Factory, with no Status, Time or Machines", () => {
     mount();
     expect(labels()).toEqual(["Screens", "Factory"]);
@@ -151,13 +149,13 @@ describe("the Screens button", () => {
   it("is marked when one asks for you", async () => {
     await counted({ live: 3, asking: 1 });
     expect(row("Screens").getAttribute("aria-label")).toBe("Screens · 3 live: one needs you");
-    expect(row("Screens").querySelector("[class*=dot]")).not.toBeNull();
+    expect(row("Screens").querySelector("[class*=roundMark]")).not.toBeNull();
   });
 
   it("asks a hub without the count for nothing", async () => {
     const calls = await counted({ live: 3, asking: 1 }, ["browser_sessions"]);
     expect(row("Screens").getAttribute("aria-label")).toBe("Screens");
-    expect(row("Screens").querySelector("[class*=dot]")).toBeNull();
+    expect(row("Screens").querySelector("[class*=roundMark]")).toBeNull();
     expect(calls).not.toContain("screens_count");
     expect(calls).not.toContain("browser_sessions");
   });

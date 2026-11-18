@@ -224,25 +224,29 @@
 }
 .search > input {
   width: 100%;
-  height: 32px;
+  height: var(--field);
   padding: 0 var(--space-2) 0 32px;
-  border: 1px solid transparent;
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-md);
-  background: var(--settings-fill);
+  background: var(--field-bg);
+  box-shadow: var(--field-shadow);
   color: var(--text);
   font: inherit;
   font-size: var(--text-md);
   outline: none;
   transition:
-    background-color var(--dur-quick),
-    border-color var(--dur-quick);
+    border-color var(--dur-quick),
+    box-shadow var(--dur-quick);
 }
 .search > input::placeholder {
   color: var(--quiet);
 }
+.search > input:hover:not(:focus) {
+  border-color: var(--field-border-hover);
+}
 .search > input:focus {
-  background: var(--sheet);
-  box-shadow: var(--settings-ring);
+  border-color: var(--field-border-focus);
+  box-shadow: var(--field-shadow), var(--field-ring);
 }
 .search > input::-webkit-search-cancel-button {
   display: none;
@@ -316,55 +320,66 @@
 .sheet button[role="switch"][data-state="checked"] > span {
   transform: translateX(16px);
 }
-/* A field is filled, with a hairline rim and one firmer bottom edge (3:1 on the card) that says "type here" without
-   a dark outline all round; focus is the one blue ring. Selects alike; a search the same with its magnifier. */
+/* Settings' fields are the app's fields (ui/primitives/Field.module.css), raw ones too: a clear edge on the card, a
+   breath of shadow, a neutral ring on focus, a red one with an error. Selects alike; a search the same with its
+   magnifier. */
 .page button[role="combobox"],
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .page textarea {
-  /* No border: the rim and the bottom edge are the field's outermost pixels, so the edge stands on the card itself. */
-  border: 0;
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-md);
-  background-color: var(--settings-fill);
-  box-shadow: var(--settings-field-edge);
+  background-color: var(--field-bg);
+  box-shadow: var(--field-shadow);
   transition:
-    background-color var(--dur-quick),
-    box-shadow var(--dur-quick);
+    border-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
 }
 .page button[role="combobox"],
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]) {
-  height: 32px;
+  height: var(--field);
   padding: 0 var(--space-3);
 }
 .page button[role="combobox"] {
   padding-right: var(--space-2);
 }
 .page textarea {
-  padding: 6px var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 .page button[role="combobox"]:hover:not(:disabled),
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover:not(:disabled):not(:focus),
 .page textarea:hover:not(:disabled):not(:focus) {
-  background-color: var(--settings-fill-hover);
+  border-color: var(--field-border-hover);
 }
 .page button[role="combobox"]:focus-visible,
 .page button[role="combobox"][data-state="open"],
 .page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 .page textarea:focus {
   outline: none;
-  background-color: var(--sheet);
-  box-shadow: var(--settings-ring);
+  border-color: var(--field-border-focus);
+  box-shadow: var(--field-shadow), var(--field-ring);
 }
 .page input::placeholder,
 .page textarea::placeholder {
   color: var(--quiet);
 }
-.page input[aria-invalid="true"],
-.page textarea[aria-invalid="true"] {
-  box-shadow: 0 0 0 1px var(--danger);
+/* After hover and focus, and as specific as them: an error's edge stays the danger's. */
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"])[aria-invalid="true"],
+.page textarea[aria-invalid="true"]:not(:disabled) {
+  border-color: var(--danger);
+}
+.page input:not([type="checkbox"]):not([type="radio"]):not([type="range"])[aria-invalid="true"]:focus,
+.page textarea[aria-invalid="true"]:focus {
+  box-shadow: var(--field-shadow), var(--field-danger-ring);
+}
+.page input:not([type="checkbox"]):not([type="radio"]):disabled,
+.page textarea:disabled,
+.page button[role="combobox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 /* A search (the Vault's, Memory's): its magnifier at its start, its words clear of it. */
 .page input[type="search"]:not([type="checkbox"]) {
-  height: 32px;
+  height: var(--field);
   padding: 0 var(--space-3) 0 32px;
   background-image: var(--search-glyph);
   background-repeat: no-repeat;
