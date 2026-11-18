@@ -227,7 +227,7 @@ export const create = (machineId: string | undefined, why?: string, typed?: Repo
   const repos = typed === undefined ? ui.repos : withRepo(ui.repos, typed);
   const shown = typed === undefined ? ui : { ...omit(ui, "note"), repos, adding: null };
   const name = botName(ui.name, repos);
-  const refused = why ?? (machineId === undefined ? "No machine is online: start fleetd on one of your machines." : name === "" ? "Name it, or add a repo." : undefined);
+  const refused = why ?? (machineId === undefined ? "Nothing that runs agents is online: start fleetd on one of your computers, or connect a hosted sandbox provider in Settings › Hub › Machines." : name === "" ? "Name it, or add a repo." : undefined);
   if (refused !== undefined || machineId === undefined) {
     set({ ...shown, refused: refused ?? "" });
     return;

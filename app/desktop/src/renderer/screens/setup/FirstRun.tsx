@@ -1,8 +1,9 @@
 // `#/` on a hub with no projects yet. On a team of fleetd cloud with nothing to run agents on yet, its owners and admins
-// pick where agents run first (a computer, or hosted sandboxes: ConnectComputer), unless this device joined the team by an invitation: someone else's team never opens on connecting
-// this computer to it (a machine still joins from Settings › Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's welcome; once
-// none is, and for everyone else, Get started (add a project). Its own chunk, with setup's. On a fleetd cloud team in
-// the web app it is Get started's page (screens/start) instead, for everyone, until its Skip for now.
+// pick where agents run first (a computer, or hosted sandboxes: ConnectComputer), unless this device joined the team by
+// an invitation: someone else's team never opens on connecting this computer to it (a machine still joins from Settings ›
+// Hub › Machines, Add machine). Otherwise, for owners and admins while a required setup step is left, it is setup's
+// welcome; once none is, and for everyone else, Get started (add a project). Its own chunk, with setup's. On a fleetd
+// cloud team in the web app it is Get started's page (screens/start) instead, for everyone, until its Skip for now.
 import { useEffect, useState } from "react";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useHubRole, useServes } from "../admin/role";
