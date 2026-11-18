@@ -48,6 +48,8 @@ export type ComputerStep =
       readonly opened?: boolean;
       readonly error?: string;
     }
+  /** Joined before, and offline now: agents run there once it is back. */
+  | { readonly at: "offline"; readonly machine: string }
   /** Joined, and agents can't run there for another reason (claude not installed, say): the hub's words, its fix in them. */
   | { readonly at: "unusable"; readonly machine: string; readonly reason: string }
   | { readonly at: "ready"; readonly machine: string };
@@ -72,6 +74,8 @@ export type ProjectStep =
       readonly problem?: string;
       /** The App reaches no repository of the team's yet: Choose repositories goes back to GitHub's install page. */
       readonly none?: true;
+      /** The cloud listed only the newest of them: Find searches those alone. */
+      readonly truncated?: true;
     }
   | { readonly at: "adding"; readonly what: string; readonly machine: string }
   /** The team has a bot: its name. */

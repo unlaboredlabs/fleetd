@@ -43,14 +43,12 @@ export function StartPage({ view, actions = {} }: { view: StartView; actions?: S
             <Step key={step} n={i + 1} id={step} view={view} open={step === open} actions={actions} />
           ))}
         </ol>
-        {/* A teammate's way on is a bot of the team's; a new team's, the app as it is, set up later. */}
-        {view.who === "owner" ? (
-          <div className={s.foot}>
-            <Button variant="quiet" onClick={actions.onSkip}>
-              Skip for now
-            </Button>
-          </div>
-        ) : null}
+        {/* Either way on is the app as it is, set up later: the You menu's Finish setting up comes back here. */}
+        <div className={s.foot}>
+          <Button variant="quiet" onClick={actions.onSkip}>
+            Skip for now
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -160,6 +158,17 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
       <Text>{`${step.machine} is connected`}</Text>
     </div>
   );
+  if (step.at === "offline") {
+    // Joined before and off now: nothing to do here but turn it on, or start fleetd there again.
+    return (
+      <>
+        <span role="status">
+          <Text tone="warning">{`${step.machine} is offline. Turn it on, or start fleetd on it.`}</Text>
+        </span>
+        <Waiting>{`Waiting for ${step.machine}`}</Waiting>
+      </>
+    );
+  }
   if (step.at === "unusable") {
     // Agents can't run there yet: the hub's own words, with their fix; the step goes on once the machine is well.
     return (
@@ -303,6 +312,11 @@ function Project({ step, skipped, actions }: { step: ProjectStep; skipped: boole
           </button>
         </li>
       </ul>
+      {skipped || step.truncated !== true ? null : (
+        <Text as="p" size="sm" tone="quiet">
+          Only your most recently pushed repositories are listed.
+        </Text>
+      )}
     </>
   );
 }

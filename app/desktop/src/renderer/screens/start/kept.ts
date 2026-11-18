@@ -1,7 +1,8 @@
 // What only this browser knows of a team's Get started (state.ts): GitHub skipped (or asked of an organization's
 // owner), and Skip for now pressed. Small, for the first run and the You menu to read without the page.
 import { useEffect, useState } from "react";
-import type { Screen } from "../shell/routes";
+import { parseHash, type Screen } from "../shell/routes";
+import { githubReturnOf, withoutGithubReturn, type GithubReturn } from "./model";
 
 /** What this browser keeps for a team: GitHub skipped (or asked of an owner), and Skip for now pressed. */
 export interface Kept {
@@ -55,3 +56,24 @@ export const startScreen = (hub: string): Screen => ({
   sample: null,
   at: hub,
 });
+
+let returned: GithubReturn | null | undefined;
+
+/**
+ * What GitHub's trip ended on, read once per page load from the address it came back to, which is cleaned of it at
+ * once whatever screen that is (Get started, or Settings' Connect GitHub): the web app's boot calls this before the
+ * app starts. Only a trip that came back to Get started is Get started's to show; one back on Settings is read there
+ * from GitHub's state itself.
+ */
+export const takeGithubReturn = (): GithubReturn | null => {
+  if (returned !== undefined) return returned;
+  const said = githubReturnOf(window.location.search);
+  if (said !== null) window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutGithubReturn(window.location.search)}${window.location.hash}`);
+  returned = said !== null && parseHash(window.location.hash).id === "start" ? said : null;
+  return returned;
+};
+
+/** For tests: read the address again. */
+export const resetReturn = (): void => {
+  returned = undefined;
+};

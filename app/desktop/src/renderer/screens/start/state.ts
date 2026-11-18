@@ -17,35 +17,18 @@ import { navigate } from "../shell/navigation";
 import { toHash } from "../shell/routes";
 import {
   claudeLoggedOut,
-  githubReturnOf,
   projectLine,
   pushedWords,
   stepsLeft,
-  withoutGithubReturn,
   type ComputerStep,
-  type GithubReturn,
   type GithubStep,
   type ProjectStep,
   type StartView,
 } from "./model";
-import { startScreen, useKept, writeKept } from "./kept";
+import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
 
 const noInput = {};
-
-/** GitHub's trip, once read from the address it came back to (read once per page: the address is cleaned at once). */
-let returned: GithubReturn | null | undefined;
-const takeReturn = (): GithubReturn | null => {
-  if (returned !== undefined) return returned;
-  returned = githubReturnOf(window.location.search);
-  if (returned !== null) window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutGithubReturn(window.location.search)}${window.location.hash}`);
-  return returned;
-};
-
-/** For tests: read the address again. */
-export const resetReturn = (): void => {
-  returned = undefined;
-};
 
 type Login =
   | {
@@ -106,7 +89,7 @@ export function useStart(
   const listed = Object.values(machines).filter((m) => m.agentsMac !== true);
 
   // GitHub's trip comes back to this page with what it ended on.
-  const [back] = useState(() => (page ? takeReturn() : null));
+  const [back] = useState(() => (page ? takeGithubReturn() : null));
   useEffect(() => {
     if (back === null) return;
     if (back.at === "requested") writeKept(hub.id, { github: "requested" });
@@ -131,20 +114,25 @@ export function useStart(
   useEffect(() => {
     if (!wantLine) return undefined;
     let timer: number | undefined;
+    // Off once the computer joins (or the page goes): a line still being made then makes no next one.
+    let stopped = false;
     const make = () => {
       call("machine_join", {}).then(
         (out) => {
-          if (!mounted.current) return;
+          if (stopped || !mounted.current) return;
           setJoin({ out });
           // The next line a few seconds before this one's code runs out, so the one on show always works.
           const wait = Math.max(5_000, Date.parse(out.expiresAt) - Date.now() - 5_000);
           timer = window.setTimeout(make, wait);
         },
-        (e: unknown) => mounted.current && setJoin({ out: null, error: errorText(e) }),
+        (e: unknown) => !stopped && mounted.current && setJoin({ out: null, error: errorText(e) }),
       );
     };
     make();
-    return () => window.clearTimeout(timer);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
   }, [wantLine, call]);
 
   // Claude's login on the machine that joined: Log in, its page, the code.
@@ -153,7 +141,9 @@ export function useStart(
   const loggedOut = listed.find((m) => claudeLoggedOut(m) && !loggedIn.has(m.machineId));
   // Joined, but degraded for another reason than Claude's login (claude not installed, say): the hub says why and how.
   const unusable = listed.find((m) => m.status === "degraded" && !claudeLoggedOut(m) && !loggedIn.has(m.machineId));
-  const ready = listed.find((m) => m.status === "online" && !claudeLoggedOut(m)) ?? listed.find((m) => loggedIn.has(m.machineId)) ?? listed.find((m) => m.status !== "degraded") ?? null;
+  const ready = listed.find((m) => m.status === "online" && !claudeLoggedOut(m)) ?? listed.find((m) => loggedIn.has(m.machineId) && m.status !== "offline") ?? null;
+  // Joined before, and off now: agents can't run there until it's back.
+  const offline = listed.find((m) => m.status === "offline");
 
   const computer: ComputerStep =
     ready !== null
@@ -169,11 +159,13 @@ export function useStart(
           }
         : unusable !== undefined
           ? { at: "unusable", machine: unusable.name, reason: unusable.degradedReason ?? `Agents can't run on ${unusable.name} yet.` }
-          : {
-            at: "line",
-            line: join.out?.line ?? null,
-            ...(join.error === undefined ? {} : { error: join.error }),
-          };
+          : offline !== undefined
+            ? { at: "offline", machine: offline.name }
+            : {
+                at: "line",
+                line: join.out?.line ?? null,
+                ...(join.error === undefined ? {} : { error: join.error }),
+              };
 
   // GitHub: the person's own connection, and for an owner the App installed on the team.
   const [githubBusy, setGithubBusy] = useState<string | null | true>(null);
@@ -199,13 +191,14 @@ export function useStart(
     readonly list: readonly CloudRepo[] | null;
     readonly problem?: string;
     readonly none?: true;
+    readonly truncated?: true;
   }>({ list: null });
   const [query, setQuery] = useState("");
   useEffect(() => {
     if (!wantRepos) return;
     void window.fleetd.cloud.githubRepos(hub.id).then((out) => {
       if (!mounted.current) return;
-      if (out.ok) setRepos({ list: out.repos });
+      if (out.ok) setRepos({ list: out.repos, ...(out.truncated ? { truncated: true as const } : {}) });
       else setRepos(out.none === true ? { list: [], none: true } : { list: [], problem: out.failure.message });
     });
   }, [wantRepos, hub.id]);
@@ -227,6 +220,7 @@ export function useStart(
             query,
             ...(wantRepos && repos.list === null ? { loading: true } : {}),
             ...(repos.problem === undefined ? {} : { problem: repos.problem }),
+            ...(repos.truncated === true ? { truncated: true as const } : {}),
             ...(repos.none === true || (repos.list !== null && repos.list.length === 0 && repos.problem === undefined) ? { none: true as const } : {}),
           };
 
