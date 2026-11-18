@@ -61,7 +61,8 @@ test("the train's after-merge checks are what mac.yml reports, and besides those
   expect(links).toContain(`github.workflow == '${nightly.name}'`);
   expect(links).toContain("(github.event_name == 'schedule' || inputs.only == 'links')");
   const ci = Object.entries(workflow("ci.yml").jobs);
-  const linux = (check: string) => ci.some(([id, j]) => (j.name ?? id) === check && j["runs-on"] === "ubuntu-latest");
+  // desktop-budgets pins the Ubuntu image its baselines were measured on.
+  const linux = (check: string) => ci.some(([id, j]) => (j.name ?? id) === check && /^ubuntu-/.test(String(j["runs-on"])));
   expect(settings.afterMerge.filter((c) => !linux(c)).sort()).toEqual(mac.sort());
 });
 

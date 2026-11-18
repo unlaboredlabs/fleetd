@@ -334,7 +334,9 @@ jobs:
     # main opens a fix order), not on PRs: measured on a shared runner, they fail now and then on its noise. Run CI by
     # hand on a branch for its numbers. Same scope as desktop.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    # The image perf/baseline-linux.json was measured on. The same app reads ~15 MB more idle memory and ~25 ms more
+    # "app over bare" on ubuntu-26.04 (ubuntu-latest from Nov 18), so a new image means new baselines, not a regression.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
