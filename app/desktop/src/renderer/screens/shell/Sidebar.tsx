@@ -1,16 +1,16 @@
 // The sidebar (W530, W714): one hub at a time, its row of its own under the window's traffic lights (on the web its
-// first line): the hub's mark and name, which pick another hub and say what is off with one, and the list's ⋯; under
-// it search (the palette) and New bot. Then your chats, each a row with its picture, its name and its newest line,
-// newest first, and you at the foot with Screens and the Factory as two small icons beside you (You.tsx). Your pinned
-// chats stay on top in your order (pins.ts), up to three to a line, each a picture over its name in a capsule (a name
-// cut short shows whole in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among
-// them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by its newest line
-// (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While the pointer is
-// over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves, so a row never
-// moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a block: the
-// warning's colour, why in its tooltip) or has a new message (the accent's, its line in full voice), else says a red
-// main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of the
-// times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
+// first line): the hub's mark and name, which pick another hub and say what is off with one, and the list's ⋯; under it
+// search (the palette) and New bot, a plus at the search's end. Then your chats, each a row with its picture, its name
+// and its newest line, newest first, and you at the foot with Screens and the Factory as two small icons beside you
+// (You.tsx). Your pinned chats stay on top in your order (pins.ts), up to three to a line, each a picture over its name
+// in a capsule (a name cut short shows whole in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them;
+// drag a chat up among them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by
+// its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
+// the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
+// so a row never moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a
+// block: the warning's colour, why in its tooltip) or has a new message (the accent's, its line in full voice), else
+// says a red main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
+// the times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
 // it, renames it, copies its path, archives it (Undo in the toast) or deletes it (from its settings, which list its
 // worktrees and ask for its name first). An archived project is in none (the ⋯'s Archived bots, Settings › Projects,
 // brings it back). The ⋯ orders the list (newest first, by name, or the ones that want you first) and makes its rows
@@ -22,7 +22,7 @@
 // takes it out, the held row saying where it would go where its time was. A label never folds; its menu (right-click, or its ⋯ under the pointer)
 // renames the section, moves it up or down, or removes it (its chats go back on top). A pinned chat shows among the pins
 // only, and keeps its section.
-import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search, SquarePen } from "lucide-react";
+import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
@@ -130,7 +130,7 @@ function ListMenu({ go }: { go: (screen: Screen) => void }) {
 
 /**
  * The sidebar's top, a line of its own under the window's traffic lights (on the web, its first line): the hub on show,
- * which picks another, and the list's ⋯; under it search, as a field, and New bot.
+ * which picks another, and the list's ⋯; under it search, as a field, and New bot, a plus at its end.
  */
 export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void; hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   return (
@@ -141,10 +141,11 @@ export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void
       </div>
       <div className={s.topTools}>
         <SearchField />
-        <button type="button" className={s.place} data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
-          <SquarePen aria-hidden />
-          <span className={s.placeLabel}>New bot</span>
-        </button>
+        <Tooltip content="New bot">
+          <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
+            <Plus aria-hidden />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

@@ -809,26 +809,24 @@
 .switcher > .dot[data-tone="danger"] {
   background: var(--danger);
 }
-/* Under the hub row: search, as a field that opens the palette, and New bot, a row like the places'. */
+/* Under the hub row: search, as a field that opens the palette, and New bot as a plain plus at its end, as tall as the
+   field and ending at the rows' own right edge. */
 .topTools {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: var(--space-1);
   padding: 0 0 var(--space-3);
 }
 .topTools > .search {
-  flex: none;
-  margin-bottom: var(--space-1);
+  flex: 1;
 }
-.topTools > .place {
-  min-height: 30px;
-  padding: 0 var(--space-2);
-  font-weight: var(--weight-regular);
-}
-.topTools > .place > svg {
-  width: 15px;
-  height: 15px;
+.topTools > .new {
+  width: 30px;
+  height: 30px;
   color: var(--quiet);
+}
+.topTools > .new:hover {
+  color: var(--text);
 }
 
 /* The hub switcher's menu: each hub, the one on show ticked, and under it what is off with it, its words in line
