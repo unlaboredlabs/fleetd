@@ -130,7 +130,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   box-sizing: border-box;
   min-height: var(--island-band-h);
   padding-bottom: 6px;
@@ -384,7 +384,7 @@
 .worked {
   position: absolute;
   bottom: 9px;
-  left: var(--space-1-5);
+  left: var(--space-2);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   color: var(--faint);
@@ -688,7 +688,7 @@ span.changeUndo {
 .attachment {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   max-width: 280px;
   min-width: 0;
   padding: 2px var(--space-2);
@@ -766,7 +766,7 @@ span.changeUndo {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  padding: var(--space-4) 0 var(--space-1-5);
+  padding: var(--space-4) 0 var(--space-2);
   min-width: 0;
 }
 .sectionLabel {

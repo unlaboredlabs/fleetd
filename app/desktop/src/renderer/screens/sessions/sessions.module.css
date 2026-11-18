@@ -117,7 +117,7 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .headTime .key {
   width: 11px;
@@ -133,7 +133,7 @@
   max-width: 14em;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
@@ -448,7 +448,7 @@
 .words {
   display: flex;
   align-items: baseline;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .words > :first-child {
@@ -647,7 +647,7 @@
   flex: none;
   border-bottom: 1px solid var(--hairline);
   border-radius: 0;
-  padding-block: var(--space-1-5);
+  padding-block: var(--space-2);
 }
 .tree {
   font-family: var(--font-mono);
@@ -657,9 +657,9 @@
 .node {
   display: flex;
   align-items: baseline;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   flex-wrap: wrap;
-  column-gap: var(--space-1-5);
+  column-gap: var(--space-2);
   row-gap: 0;
   min-width: 0;
   padding: 2px var(--space-2) 2px calc(var(--space-2) + var(--depth) * 14px);
@@ -726,7 +726,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: var(--space-1-5);
+  column-gap: var(--space-2);
   min-width: 0;
   row-gap: 0;
 }

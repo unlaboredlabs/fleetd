@@ -18,8 +18,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1-5);
-  padding: var(--space-1-5) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--hairline);
 }
 .chip {
@@ -176,7 +176,7 @@
 .key {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .swatch {
@@ -314,7 +314,7 @@
 .cardRow {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .lineKey {
@@ -389,7 +389,7 @@
 .routeCell {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .routeCell > .swatch {

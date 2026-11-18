@@ -42,7 +42,7 @@
   margin-left: calc(-1 * var(--space-4));
 }
 .root input[type="checkbox"] {
-  margin: 0 var(--space-1-5) 0 0;
+  margin: 0 var(--space-2) 0 0;
   vertical-align: -2px;
   accent-color: var(--accent-fill);
 }

@@ -139,9 +139,9 @@
 .replying {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
-  margin: 0 var(--space-2) var(--space-1-5);
+  margin: 0 var(--space-2) var(--space-2);
   padding: 2px var(--space-1) 2px var(--space-2);
   border-left: 2px solid var(--hairline);
 }
@@ -159,8 +159,8 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1-5);
-  padding: 0 var(--space-1) var(--space-1-5);
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2);
 }
 .chip {
   display: inline-flex;
@@ -200,7 +200,7 @@
 /* Why the last message, file or stop didn't go, over the words: only when there is something to say. */
 .note {
   min-width: 0;
-  padding: 2px var(--space-2) var(--space-1-5);
+  padding: 2px var(--space-2) var(--space-2);
 }
 .note:empty {
   display: none;

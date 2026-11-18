@@ -44,7 +44,7 @@
 .skeletonRow {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .skeletonRow > span {
   height: 10px;
@@ -212,7 +212,7 @@
   margin-inline-start: auto;
 }
 .prCount {
-  margin-inline-start: var(--space-1-5);
+  margin-inline-start: var(--space-2);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -283,7 +283,7 @@
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-6);
-  row-gap: var(--space-1-5);
+  row-gap: var(--space-2);
   margin: 0;
   padding-top: var(--space-3);
   border-top: 1px solid var(--hairline);
@@ -358,7 +358,7 @@
 .review {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 .outdated {
@@ -494,7 +494,7 @@
 .fileStat {
   flex: none;
   display: flex;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
 }

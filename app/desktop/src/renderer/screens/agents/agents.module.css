@@ -96,7 +96,7 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 var(--space-1-5);
+  padding: 0 var(--space-2);
   border-radius: 999px;
   background: color-mix(in srgb, currentColor 10%, transparent);
   font-size: var(--text-xs);
@@ -155,7 +155,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .skeletonLines > span {
   height: var(--space-2);
@@ -174,7 +174,7 @@
 .workHead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
   flex: none;
@@ -209,7 +209,7 @@
   gap: var(--space-2);
   min-width: 0;
   margin-top: var(--space-1);
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--hover);
   font-size: var(--text-xs);
