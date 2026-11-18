@@ -1,5 +1,5 @@
 // fleetd cloud on the phone (decision hosted.first-screen, artifact hosted-signin-design): the first screen's two ways
-// in, a line each, Sign In and Use Your Own Hub; Connect a Computer, the chats list of a team with no computer yet;
+// in, a line each, Sign In and Use Your Own Hub; Where Agents Run, the chats list of a team with nothing to run agents on yet;
 // and in Settings, the hubs this phone keeps with a tap to switch, and the fleetd account with Sign In or Sign Out.
 // Only a build given the cloud's two values (cloud/config.ts) shows any of it; any other is the self-hosted app alone.
 // Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
@@ -138,8 +138,8 @@ export function Ways({ onOwn, onSignedIn }: { onOwn: () => void; onSignedIn: OnS
 }
 
 /**
- * The chats list of a team with no computer: the phone runs no join line, so it says where one joins, the desktop
- * app's words (setup/ConnectComputer.tsx). Refresh reads the hub again, and so does coming back to the app.
+ * The chats list of a team with nothing to run agents on (no computer, no hosted provider): the phone runs no join
+ * line or key's sealed field, so it says where either is set up (the desktop's setup/ConnectComputer.tsx). Refresh reads the hub again, and so does coming back to the app.
  */
 export function ConnectComputer() {
   const { session } = useHub();
@@ -152,8 +152,8 @@ export function ConnectComputer() {
   return (
     <EmptyState
       icon="desktop"
-      title="Connect a Computer"
-      body="Your agents run on it, with its Claude login and your code. fleetd hosts only the hub. Choose Connect this computer in the desktop app, or paste its join line in a terminal on that computer."
+      title="Where Agents Run"
+      body="On a computer of yours, or in hosted sandboxes on your own E2B, boat.dev or Daytona account. Set either up in the desktop app or the web app."
       action={{
         label: "Refresh",
         onPress: () => {

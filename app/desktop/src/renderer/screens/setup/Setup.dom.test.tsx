@@ -214,7 +214,7 @@ describe("setup", () => {
   it("opens the first step not done, with the hub's guide, and Test runs that step's checks on the hub", async () => {
     await render(<SetupScreen view={null} />);
     expect(document.querySelector("[data-screen='setup']")).not.toBeNull();
-    expect(document.body.textContent).toContain("3 of 8 done.");
+    expect(document.body.textContent).toContain("3 of 7 done.");
     // Claude is done with the hub's key; GitHub is next, to do before the first PR (no project yet), not failing.
     expect(rail("claude")).toContain("Done");
     expect(rail("github")).toContain("Before the first PR");
@@ -289,12 +289,12 @@ describe("setup", () => {
     await click(button("Test"));
     expect(rail("github")).toContain("Done");
     const walked: string[] = [];
-    for (const id of ["onepassword", "people", "mac", "sandboxes"]) {
+    for (const id of ["onepassword", "people", "mac"]) {
       await go(button("Continue"));
       expect(pane()?.getAttribute("data-step")).toBe(id);
       walked.push(pane()?.querySelector("h2")?.textContent ?? "");
     }
-    expect(walked).toEqual(["1Password", "Invite people", "A Mac for agents", "Hosted sandboxes"]);
+    expect(walked).toEqual(["1Password", "Invite people", "A Mac for agents"]);
     await go(button("Finish"));
     expect(document.querySelector("[data-screen='setup.done']")).not.toBeNull();
     expect(document.body.textContent).toContain("fleetd is ready");
@@ -325,11 +325,11 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     // Claude is done and stays listed, saying what it uses; the others say when they are needed.
     expect(rows("Accounts")).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubBefore the first PR", "onepassword:1PasswordBefore the first login"]);
-    expect(rows("Steps left")).toEqual(["people:Invite peopleOptional", "mac:A Mac for agentsOptional", "sandboxes:Hosted sandboxesOptional"]);
+    expect(rows("Steps left")).toEqual(["people:Invite peopleOptional", "mac:A Mac for agentsOptional"]);
     expect(rows("Steps done")).toEqual([]);
     // Nothing required is left: no line says so. Titles and rows only: no rail, no guide, no control of an account.
     expect(settings()?.textContent).toBe(
-      "AccountsClaudeUses the hub's API keyGitHubBefore the first PR1PasswordBefore the first loginThis hubInvite peopleOptionalA Mac for agentsOptionalHosted sandboxesOptional2 done.Show steps",
+      "AccountsClaudeUses the hub's API keyGitHubBefore the first PR1PasswordBefore the first loginThis hubInvite peopleOptionalA Mac for agentsOptional2 done.Show steps",
     );
     expect(document.querySelector("nav [data-step]")).toBeNull();
     expect(pane()).toBeNull();
@@ -337,7 +337,7 @@ describe("Settings › Hub › Setup", () => {
 
     // The done steps are still there to change a value or test one.
     await click(button("Show steps"));
-    expect(rows("Steps done")).toEqual(["address:Where the hub listens", "machines:Machines that run agents"]);
+    expect(rows("Steps done")).toEqual(["address:Where the hub listens", "machines:Where agents run"]);
     await click(button("Hide steps"));
     expect(rows("Steps done")).toEqual([]);
   });
@@ -355,7 +355,7 @@ describe("Settings › Hub › Setup", () => {
     scenario = { ...done, requiredLeft: 1, list: { ...done.list, machines: { status: "look", failing: true, said: "devbox is offline." } } };
     await render(page);
     expect([...(settings()?.querySelectorAll("[role='list']") ?? [])].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps left", "Accounts"]);
-    expect(rows("Steps left")[0]).toBe("machines:Machines that run agentsNeeds a look");
+    expect(rows("Steps left")[0]).toBe("machines:Where agents runNeeds a look");
   });
 
   it("keeps every account a row once every step is done, and the rest one quiet line", async () => {
@@ -364,7 +364,7 @@ describe("Settings › Hub › Setup", () => {
     expect(settings()?.textContent).toBe("AccountsClaudeUses the hub's API keyGitHubUses the hub's GitHub App1PasswordDoneEverything is set up.Show steps");
     expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Accounts"]);
     await click(button("Show steps"));
-    expect(rows("Steps done").map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac", "sandboxes"]);
+    expect(rows("Steps done").map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
   });
 
   it("opens an account in place: its controls, then its guide with its paste values and Test, and the way back", async () => {

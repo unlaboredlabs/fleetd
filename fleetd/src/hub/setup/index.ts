@@ -120,10 +120,12 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       test: "Reach the hub at its address",
       ways: [way(undefined, ["hub/reachable", "hub/https"])],
     }),
-    step("machines", "hub", "Machines that run agents", "Agents run on machines; the hub's own machine can be one.", { kind: "required" }, {
+    // Where agents run (D558): a computer of the team's, or a hosted sandbox provider on its own account. Either is
+    // enough; with both, a computer's bots use its own slots first, then the providers.
+    step("machines", "hub", "Where agents run", "A computer of yours, or sandboxes at E2B, boat.dev or Daytona on your own account.", { kind: "required" }, {
       parts: [
         part(
-          "Add a machine",
+          "A computer",
           "The hub's own machine can run agents too. In the app, Settings › Hub › Machines › Add machine does each of these.",
           [],
           [
@@ -137,6 +139,18 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           ],
         ),
         part(
+          "Or hosted sandboxes",
+          "Make an API key at one provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your " +
+            "device. Each agent runs in a sandbox of its own there, billed to your account while it runs. For a self-hosted " +
+            "E2B, give its domain too.",
+          [
+            link("E2B › API keys", "https://console.e2b.dev/?tab=keys"),
+            link("boat.dev › API keys", "https://docs.boat.dev/api-keys"),
+            link("Daytona › API keys", "https://app.daytona.io/dashboard/keys"),
+          ],
+          [value("Key name", name)],
+        ),
+        part(
           "Android screens (optional)",
           "Android emulators need Linux with KVM. Turn them on on the machine's page in Settings › Hub › Machines. " +
             "iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
@@ -145,7 +159,8 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
       ],
       place: "machines",
-      ways: [way(undefined, ["*/online"])],
+      test: "Read each computer's checks, and list fleetd's sandboxes at each connected provider",
+      ways: [way("a computer", ["*/online"]), way("hosted sandboxes", ["hub/sandboxes"])],
     }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
     step("claude", "accounts", "Claude", "Agents think with Claude: the hub's API key, your subscription, or each machine's login.", { kind: "required" }, {
@@ -356,39 +371,6 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         test: "Read the Mac's checks, which its node runs every 30 seconds (its grants every 2 while one is off)",
         // The hub's own too: no other node on the same computer (doctor/checks.rs).
         ways: [{ checks: [...MAC_CHECKS.map((id) => `*/mac_${id}`), "*/mac_one_node"] }],
-      },
-    ),
-    // Hosted sandboxes (W688): optional, the team's own account at each provider, its key sealed in Settings.
-    step(
-      "sandboxes",
-      "hub",
-      "Hosted sandboxes",
-      "Room past your machines' own agent cap: agents run in sandboxes at E2B, boat.dev or Daytona, on your account.",
-      { kind: "optional" },
-      {
-        parts: [
-          part(
-            "Make an API key at the provider",
-            "One account is enough; with more, agents go to E2B, then boat.dev, then Daytona. Each one bills you for its " +
-              "sandboxes while they run.",
-            [
-              link("E2B › API keys", "https://console.e2b.dev/?tab=keys"),
-              link("boat.dev › API keys", "https://docs.boat.dev/api-keys"),
-              link("Daytona › API keys", "https://app.daytona.io/dashboard/keys"),
-            ],
-            [value("Key name", name)],
-          ),
-          part(
-            "Connect it, and set a limit",
-            "Paste it in Settings › Hub › Machines › Providers, with how many agents may run there at once; the app seals " +
-              "it on your device. For a self-hosted E2B, give its domain there too.",
-            [],
-            [],
-          ),
-        ],
-        place: "sandboxes",
-        test: "List fleetd's sandboxes at each connected provider, from one of your Linux machines",
-        ways: [way(undefined, ["hub/sandboxes"])],
       },
     ),
   ];

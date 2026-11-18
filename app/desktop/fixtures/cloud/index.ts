@@ -55,6 +55,12 @@ const team = (base: Fixture, name: string, note: string, cloud: JsonObject): Fix
     line: `curl -fsSL https://fleetd.sh | sh -s -- --join ${TEAM} --code fje_7QmK2xVd9LpR4sNw`,
     next: "Run the line on the computer: it installs fleetd and joins under the computer's own name.",
   });
+  // Where agents run can be hosted sandboxes too: the team's providers, none connected yet.
+  f.answer("sandbox_get", undefined, {
+    boxPubKey: "dGVhbS1ib3gta2V5LWZvci1zYW5kYm94LWtleXMtMDAwMDA=",
+    placing: true,
+    providers: ["e2b", "boat", "daytona"].map((provider) => ({ provider, connected: false, limit: 0 })),
+  });
   return f;
 };
 

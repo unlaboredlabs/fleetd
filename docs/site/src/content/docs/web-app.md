@@ -16,15 +16,17 @@ The web app is for fleetd cloud only. A hub you run yourself is used from the [d
 After your first sign-in, a new team opens on **Get started**: the few steps between you and a first chat with a
 bot's lead. The one step still to do is open; each one done keeps a line saying what it ended on.
 
-1. **Connect a computer.** Agents run on a computer of yours: fleetd cloud hosts only the hub. Copy the line shown and
-   paste it in a terminal on a Mac or Linux computer; it installs fleetd and joins. The line's code works once, for 15
-   minutes, and the page makes a new line by itself when it runs out. If Claude isn't logged in on that computer,
-   **Log in to Claude** opens Claude's sign-in page; paste the code it shows.
+1. **Where agents run.** A computer of yours or hosted sandboxes; either one is enough, and a machine is optional.
+   **A computer**: copy the line shown and paste it in a terminal on a Mac or Linux computer; it installs fleetd and
+   joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out. If
+   Claude isn't logged in on that computer, **Log in to Claude** opens Claude's sign-in page; paste the code it shows.
+   **Hosted sandboxes**: **Connect** beside E2B, boat.dev or Daytona and paste an API key of your own account there
+   ([Hosted sandboxes](/docs/machines#sandboxes)); then **Connect Claude** for the account its agents run on.
 2. **Connect GitHub.** One trip to GitHub: you sign in, then choose the repositories fleetd's GitHub App may work on,
    and GitHub sends you back to the page. An organization member who can't install apps there asks an owner from
    GitHub's page. **Skip** goes on without GitHub; connect later from Settings › Your accounts › GitHub.
-3. **Start a bot.** Pick a repository: fleetd clones it onto the computer and opens the bot's chat. **Empty bot** makes
-   one with no repository.
+3. **Start a bot.** Pick a repository: fleetd clones it onto the computer (or for hosted sandboxes, onto the hub) and
+   opens the bot's chat. **Empty bot** makes one with no repository.
 
 **Skip for now** goes to the app. Until everything is done, the menu under your name has **Finish setting up** with
 the steps left, which opens the page where you left off.

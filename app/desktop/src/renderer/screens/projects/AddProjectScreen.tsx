@@ -140,7 +140,8 @@ function HubPick() {
 /** Why the bot can't be made on `to` as it stands (`typed`: the add field's text, which goes in too), with the fix; null when it can. */
 const blocker = (to: Worker | null, d: Discovery | null, repos: ReadonlyArray<RepoDraft>, typed: string | null): string | null => {
   if (d === null) return null;
-  if (to === null) return `No machine is online to make it on: start fleetd on ${orList(d.workers.map((w) => w.name))}.`;
+  if (to === null && d.workers.length === 0) return "Nothing runs agents yet: connect a computer, or a hosted sandbox provider in Settings › Hub › Machines.";
+  if (to === null) return `Nothing is online to make it on: start fleetd on ${orList(d.workers.map((w) => w.name))}.`;
   return d.workers.some((w) => w.machineId === to.machineId) ? needsUpdate(to, repos, typed) : null;
 };
 

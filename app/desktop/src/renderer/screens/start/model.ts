@@ -5,10 +5,10 @@
 //
 // The real dependencies, in order (fleetd-cloud: accounts, machines, github):
 //   - a team: made at the first sign-in, named from the person (accounts' place); a teammate joins one by its invite;
-//   - a computer of the team's, online: agents and leads run on it (fleetd hosts only the hub, and a hosted sandbox
-//     starts from a machine that makes boxes, so a sandbox account never stands in for the first computer);
-//   - Claude logged in on it (machine_claude_login: its sign-in page, then the code it shows; until then the hub has
-//     the machine degraded, "claude is not logged in");
+//   - where agents run (D558), either one: a computer of the team's, online, with Claude logged in on it
+//     (machine_claude_login: its sign-in page, then the code it shows; until then the hub has the machine degraded,
+//     "claude is not logged in"); or a hosted sandbox provider on the team's own key, whose agents the hub's runner
+//     starts in its boxes on the team's Claude account (Settings › Your accounts › Claude);
 //   - GitHub, for a bot from a repo: the person's own connection through fleetd's App and the App installed on the
 //     repos (D517), one trip to GitHub; an empty bot needs neither;
 //   - a bot: picking a repository clones it onto the computer and opens its chat with the lead.
@@ -52,7 +52,13 @@ export type ComputerStep =
   | { readonly at: "offline"; readonly machine: string }
   /** Joined, and agents can't run there for another reason (claude not installed, say): the hub's words, its fix in them. */
   | { readonly at: "unusable"; readonly machine: string; readonly reason: string }
-  | { readonly at: "ready"; readonly machine: string };
+  | { readonly at: "ready"; readonly machine: string }
+  /** A hosted provider connected, and no computer: its agents wait for a Claude account to reach the sandboxes. */
+  | { readonly at: "hosted_claude"; readonly provider: string }
+  /** A hosted provider connected, its sandboxes not ready yet (the hub's runner coming up). */
+  | { readonly at: "hosted_wait"; readonly provider: string }
+  /** Agents run in the provider's sandboxes. */
+  | { readonly at: "hosted"; readonly provider: string };
 
 export type GithubStep =
   | { readonly at: "todo"; readonly error?: string }
@@ -105,7 +111,7 @@ const githubSettled = (github: GithubStep): boolean => github.at === "done" || g
 export const stepDone = (view: StartView, step: StepId): boolean => {
   if (step === "github") return githubSettled(view.github);
   if (view.who === "teammate") return false;
-  if (step === "computer") return view.computer.at === "ready";
+  if (step === "computer") return view.computer.at === "ready" || view.computer.at === "hosted";
   return view.project.at === "made";
 };
 
@@ -129,7 +135,7 @@ export const botOf = (view: StartView): "idle" | "thinking" | "working" | "done"
   if (view.who === "owner") {
     if (view.project.at === "adding") return "working";
     if (view.computer.at === "line" || (view.computer.at === "claude" && view.computer.login === "checking")) return "thinking";
-    if (view.computer.at === "ready" && view.github.at === "todo") return "done";
+    if ((view.computer.at === "ready" || view.computer.at === "hosted") && view.github.at === "todo") return "done";
   }
   return view.github.at === "waiting" ? "thinking" : "idle";
 };
