@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
-import { buildFirst, compilesNothing, heavy, queuedLine, slotsFit, slotsTaken } from "../../src/node/build_slots.ts";
+import { binDir, buildFirst, compilesNothing, heavy, install, queuedLine, realCargo, slotsFit, slotsTaken } from "../../src/node/build_slots.ts";
 
 const w = (s: string) => s.split(" ").filter(Boolean);
 
@@ -80,5 +80,23 @@ describe("the slots, against another build-slot", () => {
       }
       // Two fleetd processes start cold, one after the other: a loaded machine takes longer than bun's 5 s default.
     }, 30_000);
+  }
+});
+
+test("another fleet's cargo wrapper on the PATH is never the real cargo: two wrappers would run each other without end", () => {
+  const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-wrappers-"));
+  try {
+    const a = join(root, "a");
+    const b = join(root, "b");
+    install(a, ["/x/fleetd"]);
+    install(b, ["/y/fleetd"]);
+    const real = join(root, "real");
+    mkdirSync(real);
+    writeFileSync(join(real, "cargo"), "#!/bin/sh\necho real\n");
+    chmodSync(join(real, "cargo"), 0o755);
+    expect(realCargo(`${binDir(a)}:${binDir(b)}:${real}`, binDir(a))).toBe(join(real, "cargo"));
+    expect(realCargo(`${binDir(a)}:${binDir(b)}`, binDir(a))).toBeUndefined();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

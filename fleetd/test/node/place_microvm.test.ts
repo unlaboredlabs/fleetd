@@ -16,7 +16,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, fdLimit, forgetAt, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { FAILED_MS, fdLimit, forgetAt, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -26,7 +26,7 @@ import type { NodeFrame } from "../../src/node/wire.ts";
 import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
 import { apply, layHostSystem, plan } from "../../src/node/sandbox/system.ts";
-import { mountScript, shows } from "../../src/node/place/view.ts";
+import { mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
 import type { Reach } from "../../src/node/place/endpoint.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
@@ -692,7 +692,7 @@ test("a box shares this machine's system dirs read-only, in a share of their own
     "ln -s 'usr/bin' '/h/bin'",
     "[ ! -d '/h/opt/fleetd' ] || mount -t tmpfs -o mode=0700 fleetd-hidden '/h/opt/fleetd'",
     "mount -t tmpfs -o mode=0700 fleetd-hidden '/v/home/u/.fleetd'",
-    "'/vm/virtiofsd' 'host' &\nexec '/vm/virtiofsd' 'view'",
+    "'/vm/virtiofsd' 'host' &\nh=$!\n'/vm/virtiofsd' 'view' &\nw=$!\nwait -n || true",
   ])
     expect(script).toContain(want);
   // A hidden dir in a system dir is hidden there, never put at `/opt` in the view, which would shadow the guest's /opt.
@@ -703,7 +703,14 @@ test("a box shares this machine's system dirs read-only, in a share of their own
     { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
     0,
   );
-  for (const want of ["'\\''--socket-path=host.sock'\\'' '\\''--shared-dir=/n/hosts/s/host'\\''", "'\\''--cache=always'\\'' '\\''--readonly'\\''", "'tag=host,socket=host.sock'", "[ -S host.sock ]"])
+  for (const want of [
+    "'\\''--socket-path=host.sock'\\'' '\\''--shared-dir=/n/hosts/s/host'\\''",
+    "'\\''--cache=always'\\'' '\\''--readonly'\\'' '\\''--translate-uid=host:65534:0:1'\\''",
+    "'tag=host,socket=host.sock'",
+    "[ -S host.sock ]",
+    // The box ends with the first of its VMM and helpers to end.
+    "wait -n $c $p $v",
+  ])
     expect(launcher).toContain(want);
 });
 
@@ -755,11 +762,11 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(guestUser(env, false)).toBeUndefined();
   expect(guestUser({}, true)).toBeUndefined();
   expect(guestUser({ FLEETD_GUEST_UID: "0", FLEETD_GUEST_GID: "0" }, true)).toBeUndefined();
-  expect(asUser(["bun", "test"], { uid: 1000, gid: 1001 })).toEqual(["/usr/bin/setpriv", "--reuid=1000", "--regid=1001", "--clear-groups", "--", "bun", "test"]);
+  expect(asUser(["bun", "test"], { uid: 1000, gid: 1001 })).toEqual(["/bin/sh", "-c", 'echo 0 > /proc/self/oom_score_adj; exec "$@"', "sh", "/usr/bin/setpriv", "--reuid=1000", "--regid=1001", "--clear-groups", "--", "bun", "test"]);
   expect(asUser(["bun", "test"], undefined)).toEqual(["bun", "test"]);
   // The node's own commands (its pin to Claude's relay, which changes the box's loopback) stay root.
   expect(runArgv(["/bin/sh", "-c", "pin"], true, { uid: 1000, gid: 1001 })).toEqual(["/bin/sh", "-c", "pin"]);
-  expect(runArgv(["make"], false, { uid: 1000, gid: 1001 })[0]).toBe("/usr/bin/setpriv");
+  expect(runArgv(["make"], false, { uid: 1000, gid: 1001 })).toContain("/usr/bin/setpriv");
   expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, uid: 1000, gid: 1001 })).toContain("fleetd.once=1 fleetd.uid=1000 fleetd.gid=1001");
   const script = launcherScript(
     { dir: "/n/hosts/s", sessionId: "s", view: { home: "/home/u", hidden: [], shares: [] }, port: 5000, exe: "/x/fleetd", tools: TOOLS, check: OK as Extract<VmCheck, { ok: true }>, blocked: [] },
@@ -793,3 +800,26 @@ test("a box's temp files are in its checkout, out of git: a temp file renames in
   expect((await next.run({ cwd: repo, argv: ["/bin/sh", "-c", 'ls "$TMPDIR/.."'], timeoutSec: 10, env: envOf(n.home) })).outputTail.trim()).toBe("s-tmp2");
   await next.end(join(n.home, "hosts", "s-tmp2"));
 }, 30_000);
+
+test("a program on PATH that links into a hidden dir (agent-browser's, into its package) is put back where it links to", () => {
+  const home = join(root, "links-home");
+  const node = join(home, ".fleetd/node");
+  const pkg = join(node, "browser/agent-browser/node_modules/agent-browser/bin");
+  const bin = join(node, "browser/agent-browser/bin");
+  mkdirSync(pkg, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(pkg, "agent-browser-linux-x64"), "#!/bin/sh\n");
+  symlinkSync(join(pkg, "agent-browser-linux-x64"), join(bin, "agent-browser"));
+  const view = viewOf(home, [join(home, ".fleetd")], needs({ cwd: join(home, "wt"), env: { PATH: `${bin}:/usr/bin` }, argv: [] }));
+  expect(shows(view, { path: join(pkg, "agent-browser-linux-x64"), rw: false })).toBe(true);
+  expect(shows(view, { path: join(node, "node.json"), rw: false })).toBe(false);
+});
+
+test("a VM's guest takes this machine's umask and inotify limits, from the kernel line", () => {
+  const like = hostLike();
+  expect(like.umask).toMatch(/^0[0-7]{3}$/);
+  expect(like.watches).toBeGreaterThan(0);
+  expect(kernelCmdline({ exe: "/x/fleetd", port: 5000, dns: [], now: 0, like: { umask: "0002", watches: 1048576, instances: 1024 } })).toContain(
+    "fleetd.umask=0002 fleetd.watches=1048576 fleetd.instances=1024",
+  );
+});

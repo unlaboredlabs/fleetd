@@ -465,6 +465,10 @@ export class MicroVm {
           ...(record.relays ? { relays: record.relays } : {}),
           lead: lazyHooks(lead),
           ...(this.o.goneMs !== undefined ? { goneMs: this.o.goneMs } : {}),
+          // A box whose VMM ended ends its link at once; one whose guest stopped answering goes, and says so.
+          alive: () => boxAlive(record),
+          hung: (why) => void this.#hung(dir, session, why),
+          clock: true,
         });
       } catch (error) {
         last = (error as Error).message;
@@ -472,6 +476,13 @@ export class MicroVm {
       if (Date.now() >= until) throw new Error(`the VM's guest didn't answer within ${BOOT_MS / 1000} s: ${last}`);
       await Bun.sleep(DIAL_EVERY_MS);
     }
+  }
+
+  /** A box whose guest stopped answering (frozen, or its kernel panicked): it's destroyed, and its session's host link
+   * ends with it, as when a VM ends. */
+  async #hung(dir: string, session: string, why: string): Promise<void> {
+    console.warn(`${nowIso()} WARN a VM stopped answering: it was ended, and its agent's next turn starts a new one {"sessionId":"${session}","why":${JSON.stringify(why)}}`);
+    await this.#drop(dir);
   }
 
   /** After a node restart: dials the box `dir` recorded again and links to the session host in it. */
@@ -692,7 +703,7 @@ function consoleTail(dir: string): string {
 
 /** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the
  * user the guest runs the agent as (this machine's own, sandbox-guest's FLEETD_GUEST_UID and _GID). */
-export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number }): string {
+export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now: number; uid?: number; gid?: number; like?: HostLike }): string {
   return [
     "console=ttyS0",
     "root=/dev/vda",
@@ -710,7 +721,25 @@ export function kernelCmdline(p: { exe: string; port: number; dns: string[]; now
     ...(p.dns.length ? [`fleetd.dns=${p.dns.join(",")}`] : []),
     "fleetd.once=1",
     ...(p.uid !== undefined && p.gid !== undefined ? [`fleetd.uid=${p.uid}`, `fleetd.gid=${p.gid}`] : []),
+    ...(p.like ? [`fleetd.umask=${p.like.umask}`, `fleetd.watches=${p.like.watches}`, `fleetd.instances=${p.like.instances}`] : []),
   ].join(" ");
+}
+
+/** What the guest takes from this machine so its agent works as a plain process here does: the node's umask (files
+ * group-writable or not), and inotify's limits (a kernel sized for the guest's 4 GiB allows 35k watches, which a dev
+ * server and a test watcher over a large repo outrun). */
+export type HostLike = { umask: string; watches: number; instances: number };
+
+export function hostLike(): HostLike {
+  const sys = (name: string, fallback: number) => {
+    try {
+      const n = Number(readFileSync(`/proc/sys/fs/inotify/${name}`, "utf8").trim());
+      return Number.isInteger(n) && n > 0 ? n : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return { umask: process.umask().toString(8).padStart(4, "0"), watches: sys("max_user_watches", 1_048_576), instances: sys("max_user_instances", 1024) };
 }
 
 /** The flags pasta (passt's binary under that name) links a box's network namespace to this machine's network with:
@@ -743,7 +772,9 @@ export function launcherScript(b: BootPlan, now: number): string {
   ];
   const virtiofsd = share(SOCKS.fs, viewDir, ["--cache=auto"]);
   const hostDir = join(dir, "host");
-  const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly"]);
+  // This machine's root owns most of its system files, which its namespace sees as the overflow id: they show as
+  // root's in the guest, as here (ssh refuses a config file nobody owns).
+  const host = share(SOCKS.host, hostDir, ["--cache=always", "--readonly", "--translate-uid=host:65534:0:1", "--translate-gid=host:65534:0:1"]);
   const passt = [tools.passt, "--vhost-user", "--socket", SOCKS.net, "--foreground", "--one-off", "--quiet", "--no-map-gw", "-a", GUEST_ADDR, "-n", "24", "-g", GUEST_GW, "-t", "none", "-u", "none"];
   // The shell stays, holding the namespace for the node's later route changes (nsenter), and ends with passt.
   const inNamespace = [`cd ${q(dir)} || exit 1`, blockScript(check.net.ip, join(dir, "blocks")), `${passt.map(q).join(" ")} &`, "wait $!"].join("\n");
@@ -755,7 +786,7 @@ export function launcherScript(b: BootPlan, now: number): string {
     "--kernel",
     tools.kernel,
     "--cmdline",
-    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid }),
+    kernelCmdline({ exe: b.exe, port: b.port, dns: check.dns, now, uid, gid, like: hostLike() }),
     "--disk",
     `path=${tools.root},readonly=on,image_type=raw`,
     "--cpus",
@@ -781,16 +812,18 @@ export function launcherScript(b: BootPlan, now: number): string {
     `cd ${q(dir)} || exit 1`,
     `${pasta} 2>>box.log &`,
     "p=$!",
-    `unshare --user --map-root-user --mount --propagation private -- /bin/sh -c ${q(views)} 2>>box.log &`,
+    `unshare --user --map-root-user --mount --propagation private -- /bin/bash -c ${q(views)} 2>>box.log &`,
     "v=$!",
     "i=0",
     'until [ -S net.sock ] && [ -S fs.sock ] && [ -S host.sock ]; do i=$((i+1)); if [ $i -gt 1000 ] || ! kill -0 $p $v 2>/dev/null; then echo "passt or virtiofsd didn\'t start" >>box.log; kill $p $v 2>/dev/null; exit 1; fi; sleep 0.01; done',
     `${vmmLine} 2>>box.log &`,
     "c=$!",
     'echo "$c $p $v" > pids',
-    "wait $c",
+    // The box ends with the first of them to: a VM whose files or network went (its virtiofsd or passt killed, by the
+    // OOM killer say) would otherwise hang on every file, or lose the network without a word.
+    "wait -n $c $p $v",
     "s=$?",
-    "kill $p $v 2>/dev/null",
+    'kill $c $p $v 2>/dev/null && echo "the VM ended because one of its helpers did (virtiofsd or passt)" >>box.log',
     "exit $s",
   ].join("\n");
 }

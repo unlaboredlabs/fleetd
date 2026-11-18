@@ -58,25 +58,46 @@ export function entriesOf(share: string): Entry[] {
   });
 }
 
+const MS_REMOUNT = 32;
 const MS_RDONLY = 1;
 const MS_NOSUID = 2;
 const MS_NODEV = 4;
 
-type Libc = { symbols: { mount: (src: unknown, target: unknown, type: unknown, flags: number, data: unknown) => number; __errno_location: () => number } };
+type Libc = {
+  symbols: {
+    mount: (src: unknown, target: unknown, type: unknown, flags: number, data: unknown) => number;
+    clock_settime: (clock: number, ts: unknown) => number;
+    __errno_location: () => number;
+  };
+};
 let libc: Libc | undefined;
+
+function lib(): Libc {
+  libc ??= dlopen("libc.so.6", {
+    mount: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.i32 },
+    clock_settime: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
+    __errno_location: { args: [], returns: FFIType.ptr },
+  }) as never;
+  return libc!;
+}
+
+const errno = () => read.i32(lib().symbols.__errno_location() as never, 0);
+
+/** The guest's clock (CLOCK_REALTIME) set to `ms`, Unix milliseconds: a local VM has no clock of its own, and its
+ * init sets it from the kernel line in whole seconds, a second or so behind by the time anything runs (make then
+ * calls every file it just wrote "in the future"). */
+export function setClock(ms: number): void {
+  const ts = new BigInt64Array([BigInt(Math.floor(ms / 1000)), BigInt(Math.round((ms % 1000) * 1e6))]);
+  if (lib().symbols.clock_settime(0, ptr(ts)) !== 0) throw new Error(`clock_settime failed (errno ${errno()})`);
+}
 
 /** mount(2), throwing with its errno. */
 function mount(source: string, target: string, type: string, flags: number, data: string): void {
-  libc ??= dlopen("libc.so.6", {
-    mount: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.i32 },
-    __errno_location: { args: [], returns: FFIType.ptr },
-  }) as never;
-  const l = libc!;
+  const l = lib();
   // Held here for the call: a pointer alone doesn't keep its buffer.
   const args = [source, target, type, data].map((s) => Buffer.from(`${s}\0`));
   if (l.symbols.mount(ptr(args[0]!), ptr(args[1]!), ptr(args[2]!), flags, ptr(args[3]!)) === 0) return;
-  const errno = read.i32(l.symbols.__errno_location() as never, 0);
-  throw new Error(`mount ${type} at ${target} failed (errno ${errno})`);
+  throw new Error(`mount ${type} at ${target} failed (errno ${errno()})`);
 }
 
 /** How a step is done: mount(2) on the guest's root, or a test's stand-in. `layers` holds the writable layers,
@@ -163,5 +184,46 @@ export function layHostSystem(env: Record<string, string | undefined> = process.
     }
   });
   apply(steps);
+  tune();
   return `this machine's ${steps.map((s) => `/${s.name}`).join(", ")} over the image's`;
+}
+
+/** What a local VM's guest sets once: ping without a capability (this machine's ping loses its file capability over
+ * the share), this machine's umask and inotify limits, and the guest's own helpers out of its OOM killer's reach, so an agent that runs the VM out of memory
+ * loses its own processes, never the box's link. What it starts goes back to the default (`asUser`). */
+function tune(env: Record<string, string | undefined> = process.env): void {
+  const set = (path: string, value: string) => {
+    try {
+      writeFileSync(path, value);
+    } catch {}
+  };
+  set("/proc/sys/net/ipv4/ping_group_range", "0 2147483647");
+  // This machine's umask and inotify limits (../place/microvm.ts hostLike), from the kernel's command line.
+  const whole = (v: string | undefined) => (v && /^\d+$/u.test(v) ? v : undefined);
+  const watches = whole(env.FLEETD_GUEST_WATCHES);
+  const instances = whole(env.FLEETD_GUEST_INSTANCES);
+  if (watches) set("/proc/sys/fs/inotify/max_user_watches", watches);
+  if (instances) set("/proc/sys/fs/inotify/max_user_instances", instances);
+  if (env.FLEETD_GUEST_UMASK && /^0?[0-7]{3}$/u.test(env.FLEETD_GUEST_UMASK)) process.umask(Number.parseInt(env.FLEETD_GUEST_UMASK, 8));
+  set("/proc/self/oom_score_adj", "-1000");
+  // /tmp and /dev/shm are the guest's memory: the kernel's default (half of it each) let an agent filling both run the
+  // guest out of memory. The agent's own temp files are in its checkout (../place/microvm.ts boxTmp).
+  for (const [at, size] of [["/tmp", "1g"], ["/dev/shm", "512m"]] as const) {
+    try {
+      mount("tmpfs", at, "tmpfs", MS_REMOUNT | MS_NOSUID | MS_NODEV, `size=${size}`);
+    } catch {}
+  }
+  for (const name of ["socat", "tini"]) for (const pid of pidsOf(name)) set(`/proc/${pid}/oom_score_adj`, "-1000");
+}
+
+/** The guest's processes running `name` (its init's helpers, in a VM no agent has started anything in yet). */
+function pidsOf(name: string): number[] {
+  return readdirSync("/proc").flatMap((d) => {
+    if (!/^\d+$/u.test(d)) return [];
+    try {
+      return readFileSync(`/proc/${d}/comm`, "utf8").trim() === name ? [Number(d)] : [];
+    } catch {
+      return [];
+    }
+  });
 }

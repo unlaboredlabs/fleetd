@@ -416,3 +416,39 @@ test.skipIf(process.platform !== "linux")("a relay reaches a host elsewhere thro
   expect(box.relays).toEqual([{ port, addr: "127.0.0.3", to }]);
   box.close();
 }, 30_000);
+
+test("a guest that stops answering (frozen, panicked) ends its box as hung, though its link never drops", async () => {
+  const b = await standIn();
+  let hung: string | undefined;
+  const box = await Box.open({ session: "s-hung", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), pingMs: 100, silentMs: 600, hung: (why) => (hung = why) });
+  // A guest that answers is left alone.
+  await Bun.sleep(500);
+  expect(hung).toBeUndefined();
+  // Frozen: its socket stays open, nothing answers.
+  b.proc.kill("SIGSTOP");
+  try {
+    expect(await within(box.gone, 5_000, "the box gone")).toBe("the box's guest stopped answering for 1 s");
+    expect(hung).toBe("the box's guest stopped answering for 1 s");
+  } finally {
+    b.proc.kill("SIGCONT");
+  }
+}, 20_000);
+
+test("a box whose VMM is gone ends its link at once, without dialling for the guest", async () => {
+  const b = await standIn();
+  let alive = true;
+  const box = await Box.open({ session: "s-dead", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 30_000, alive: () => alive });
+  const at = Date.now();
+  alive = false;
+  b.proc.kill("SIGKILL");
+  expect(await within(box.gone, 5_000, "the box gone")).toStartWith("the box ended");
+  expect(Date.now() - at).toBeLessThan(3_000);
+}, 20_000);
+
+test("a local VM's clock is set from this machine's on each link; a guest that can't set one says so and goes on", async () => {
+  const b = await standIn();
+  // The stand-in isn't a VM's guest (not root, no kernel's user): it leaves its clock alone, and the link is fine.
+  const box = await Box.open({ session: "s-clock", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), clock: true });
+  expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
+  box.close();
+}, 20_000);

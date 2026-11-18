@@ -27,7 +27,8 @@
 // "timeoutSec","scrub","root"?}` (`root`: the node's own command, never run as the agent's user) and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
 // `{"id":n,"op":"write","path","data":base64,"append"?,"mode"?}` and `{"id":n,"op":"read","path","offset","max"}`
 // (answers `{"data":base64,"size"}`), and in a local VM `{"id":n,"op":"forget"}` (its kernel drops the files it
-// caches, and the share's server the fd it keeps for each); guest → node `{"id":n,"ok":{…}}` or
+// caches, and the share's server the fd it keeps for each), `{"id":n,"op":"ping"}` (any answer: it still answers) and
+// `{"id":n,"op":"clock","ms"}` (a local VM's clock set to the node's); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // and `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines.
 import { type ChildProcess, spawn } from "node:child_process";
@@ -42,7 +43,7 @@ import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, type Target } from "./mux.ts";
-import { layHostSystem } from "./system.ts";
+import { layHostSystem, setClock } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
 export const GUEST_PROTOCOL = 1;
@@ -206,6 +207,8 @@ export class Guest {
       else if (m.op === "read") answer = { ok: await read(m) };
       else if (m.op === "cancel") answer = { ok: this.#runs.get(String(m.run))?.abort() ?? null };
       else if (m.op === "forget") answer = { ok: await forget() };
+      else if (m.op === "ping") answer = { ok: null };
+      else if (m.op === "clock") answer = { ok: clock(m) };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
       answer = { error: (error as Error).message };
@@ -332,7 +335,8 @@ export function guestUser(env: Record<string, string | undefined> = process.env,
  * which execs it, so its pid and process group are the command's own. */
 export function asUser(argv: string[], user = guestUser()): string[] {
   if (!user) return argv;
-  return ["/usr/bin/setpriv", `--reuid=${user.uid}`, `--regid=${user.gid}`, "--clear-groups", "--", ...argv];
+  // The guest's own helpers are out of its OOM killer's reach; what it starts goes back to the default first.
+  return ["/bin/sh", "-c", 'echo 0 > /proc/self/oom_score_adj; exec "$@"', "sh", "/usr/bin/setpriv", `--reuid=${user.uid}`, `--regid=${user.gid}`, "--clear-groups", "--", ...argv];
 }
 
 /** A `run`'s argv: as the guest's user, but for the node's own (`root`). */
@@ -471,6 +475,14 @@ export const DROP_CACHES = "/proc/sys/vm/drop_caches";
 async function forget(): Promise<null> {
   await writeFile(DROP_CACHES, "2");
   return null;
+}
+
+/** `clock`: a local VM's clock set to the node's `ms`. Nothing elsewhere (a hosted box keeps its provider's). */
+function clock(m: Record<string, unknown>): boolean {
+  if (typeof m.ms !== "number" || !Number.isFinite(m.ms) || m.ms <= 0) throw new Error("clock needs ms");
+  if (!guestUser()) return false;
+  setClock(m.ms);
+  return true;
 }
 
 /** `read`: up to READ_CHUNK bytes of a file of the box from `offset`, and its size. */
