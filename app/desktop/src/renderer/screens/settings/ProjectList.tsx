@@ -10,12 +10,21 @@ import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectSummary } from "./contracts";
 import { useLive } from "./hub";
-import { EmptyState, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsSection, useProjects } from "./parts";
+import {
+  EmptyState,
+  GroupNote,
+  PageHead,
+  SettingsList,
+  SettingsListRow,
+  SettingsSection,
+  useProjects,
+} from "./parts";
 import { formatRoute } from "./route";
 import s from "./settings.module.css";
 
 /** Where a bot is: its repos, then its machine. */
-const whereLine = (p: ProjectSummary): string => [...(p.repos ?? []).map((r) => r.name), p.machineId].join(" · ");
+const whereLine = (p: ProjectSummary): string =>
+  [...(p.repos ?? []).map((r) => r.name), p.machineId].join(" · ");
 
 const keyOf = (p: ProjectSummary) => `${p.machineId}/${p.projectId}`;
 
@@ -29,7 +38,9 @@ export function ProjectList() {
         <div className={s.column}>
           <PageHead title="Bots" />
           <SettingsSection>
-            <GroupNote>Not connected. Connect to a hub to change its bots&apos; settings.</GroupNote>
+            <GroupNote>
+              Not connected. Connect to a hub to change its bots&apos; settings.
+            </GroupNote>
           </SettingsSection>
         </div>
       </div>
@@ -41,27 +52,35 @@ export function ProjectList() {
     <div className={s.scroll} data-screen="settings.projects.list">
       <div className={s.column}>
         <PageHead title="Bots" />
-        <SettingsSection>
-          {projects === undefined ? (
-            <GroupNote>Loading…</GroupNote>
-          ) : active.length === 0 ? (
-            <EmptyState
-              icon={<Avatar name="Bot" bot="idle" size={40} />}
-              title={archived.length === 0 ? "No bots yet" : "Every bot is archived"}
-              action={
-                <Button variant="primary" onClick={() => navigate({ id: "projects.add" })}>
-                  New bot
-                </Button>
-              }
-            />
-          ) : (
-            <SettingsList label="Bots">
-              {active.map((p) => (
-                <BotRow key={keyOf(p)} p={p} />
-              ))}
-            </SettingsList>
-          )}
-        </SettingsSection>
+        {projects !== undefined && active.length === 0 ? (
+          <EmptyState
+            icon={<Avatar name="Bot" bot="idle" size={48} />}
+            title={
+              archived.length === 0 ? "No bots yet" : "Every bot is archived"
+            }
+            action={
+              <Button
+                variant="primary"
+                onClick={() => navigate({ id: "projects.add" })}
+              >
+                New bot
+              </Button>
+            }
+          />
+        ) : null}
+        {projects !== undefined && active.length === 0 ? null : (
+          <SettingsSection>
+            {projects === undefined ? (
+              <GroupNote>Loading…</GroupNote>
+            ) : (
+              <SettingsList label="Bots">
+                {active.map((p) => (
+                  <BotRow key={keyOf(p)} p={p} />
+                ))}
+              </SettingsList>
+            )}
+          </SettingsSection>
+        )}
         {archived.length === 0 ? null : (
           <SettingsSection title="Archived">
             <SettingsList label="Archived">
@@ -76,7 +95,13 @@ export function ProjectList() {
   );
 }
 
-function BotRow({ p, archived = false }: { p: ProjectSummary; archived?: boolean }) {
+function BotRow({
+  p,
+  archived = false,
+}: {
+  p: ProjectSummary;
+  archived?: boolean;
+}) {
   const key = keyOf(p);
   return (
     <SettingsListRow
@@ -84,7 +109,10 @@ function BotRow({ p, archived = false }: { p: ProjectSummary; archived?: boolean
       label={p.title}
       icon={<ProjectAvatar project={p} size={20} />}
       controls={archived ? <BringBack p={p} /> : undefined}
-      open={{ onClick: () => (window.location.hash = formatRoute({ tab: "projects", for: key })) }}
+      open={{
+        onClick: () =>
+          (window.location.hash = formatRoute({ tab: "projects", for: key })),
+      }}
     >
       <Text size="sm" tone="quiet">
         {whereLine(p)}
@@ -105,7 +133,11 @@ function BringBack({ p }: { p: ProjectSummary }) {
         // The row opens the bot's settings; this button only brings it back.
         e.stopPropagation();
         setBusy(true);
-        void archiveProject(layer, { machineId: p.machineId, projectId: p.projectId, title: p.title }, false).then(() => setBusy(false));
+        void archiveProject(
+          layer,
+          { machineId: p.machineId, projectId: p.projectId, title: p.title },
+          false,
+        ).then(() => setBusy(false));
       }}
     >
       {busy ? "Bringing it back…" : "Bring back"}

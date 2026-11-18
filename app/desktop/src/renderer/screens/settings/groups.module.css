@@ -306,15 +306,17 @@
   height: 16px;
 }
 
-/* Danger: one red pill, white words. */
-.danger {
-  padding-inline: 14px;
-  border-radius: 999px;
-  background: var(--danger-fill);
-  color: #fff;
+/* Danger in a page: its red words, no fill, a faint red box under the pointer. What it does is confirmed in a dialog,
+   whose own button is the filled one. */
+.danger.danger {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--danger);
+  font-weight: var(--weight-medium);
 }
-.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger-fill) 88%, black);
+.danger.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
 /* A block, so its padding holds its room wherever it stands, not only as a flex group's child. */
@@ -418,7 +420,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3);
+  min-height: 440px;
   padding: var(--space-10) var(--space-6);
   text-align: center;
 }

@@ -17,9 +17,27 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--settings-thumb, var(--border)) transparent;
+  /* Its bar's room on both sides, so the column is centred whether it scrolls or not. */
+  scrollbar-gutter: stable both-edges;
+}
+/* The bar: thin, flush to the edge, no arrows, its thumb seen only while the page scrolls or the pointer is on it. */
+.scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll::-webkit-scrollbar-button {
+  display: none;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: transparent padding-box;
+}
+.scroll[data-scrolling]::-webkit-scrollbar-thumb,
+.scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border);
 }
 .column {
   display: flex;
@@ -347,7 +365,8 @@
   color: var(--text);
 }
 .pageTabList .pageTab[data-state="active"] {
-  background: var(--selected);
+  background: var(--settings-current);
+  box-shadow: var(--settings-chip);
   color: var(--text);
   font-weight: var(--weight-medium);
 }
