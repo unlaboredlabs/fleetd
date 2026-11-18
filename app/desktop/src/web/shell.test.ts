@@ -63,7 +63,15 @@ const setup = (
     notify: () => Promise.resolve(true),
     setTitle: () => undefined,
     random: (n) => new Uint8Array(n).fill(0xab),
-    storage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => void stored.set(k, v), removeItem: (k) => void stored.delete(k) },
+    storage: {
+      getItem: (k) => stored.get(k) ?? null,
+      setItem: (k, v) => void stored.set(k, v),
+      removeItem: (k) => void stored.delete(k),
+      key: (i) => [...stored.keys()][i] ?? null,
+      get length() {
+        return stored.size;
+      },
+    },
     platform: "darwin",
     version: "test",
   };
@@ -123,6 +131,33 @@ describe("the web shell", () => {
     await t.api.hub.cache.write(ACME, "acme's, again");
     expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
     expect(await setup(undefined, SESSION, stored).api.hub.cache.read(ACME)).toBeNull();
+  });
+
+  it("keeps nothing from a tab still open after the account signed out in another, nor after another account signed in", async () => {
+    const stored = new Map<string, string>();
+    const cached = () => [...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"));
+    const a = setup(() => new Response(null, { status: 204 }), SESSION, stored);
+    const b = setup(undefined, SESSION, stored);
+    await b.api.hub.cache.write(ACME, "lea's");
+    await a.api.cloud.signOut();
+    expect(cached()).toEqual([]);
+    // B's link drops, then B closes: its writes find the cache no longer Lea's.
+    await b.api.hub.cache.write(ACME, "lea's, again");
+    expect(cached()).toEqual([]);
+    // Sam signs in on this computer, in the same team, while B is still open: B neither writes into Sam's cache nor
+    // reads it.
+    const sam = setup(undefined, { ...SESSION, email: "sam@example.com" }, stored);
+    await sam.api.hub.cache.write(ACME, "sam's");
+    await b.api.hub.cache.write(ACME, "lea's, on the way out");
+    expect(await b.api.hub.cache.read(ACME)).toBeNull();
+    expect(await setup(undefined, { ...SESSION, email: "sam@example.com" }, stored).api.hub.cache.read(ACME)).toBe("sam's");
+  });
+
+  it("clears a cache the index no longer lists", async () => {
+    const stored = new Map<string, string>([["fleetd.web.cache.3f2b9c1e-0000-4000-8000-000000000001", "left behind"]]);
+    const t = setup(() => new Response(null, { status: 204 }), SESSION, stored);
+    expect(await t.api.hub.cache.read(ACME)).toBeNull();
+    expect([...stored.values()]).not.toContain("left behind");
   });
 
   it("clears the cache when the page finds itself signed out", async () => {
