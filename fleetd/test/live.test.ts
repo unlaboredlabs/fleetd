@@ -212,3 +212,44 @@ test("a lead's lane takes its state from hub/leads, parked by the usage layer in
   expect(lane()?.status).toBe("parked");
   area.parkedOf = before;
 });
+
+test("a board lane goes out as its agent moves and as a task starts, not on the board's once-a-second read", async () => {
+  const { events } = await import("../src/hub/store/events.ts");
+  const insert = (n: number) =>
+    hub.db.conn.run(`INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, thread_id, data) VALUES (${n}, 'devbox', 'p1', 'W1', 'running', 't${n}', ?)`, [
+      JSON.stringify({ taskId: `T${n}`, projectRef: { machineId: "devbox", projectId: "p1" }, workstreamId: "W1", state: "running", threadRef: { machineId: "devbox", threadId: `t${n}` } }),
+    ]);
+  insert(3);
+  const at = "2026-11-08T00:00:00.000Z";
+  const feed = (thread: string, id: string, command: string) =>
+    activity(hub).onThreadEvent("devbox", {
+      sessionId: thread,
+      at,
+      event: { type: "item", id, runId: "r1", status: "running", title: "", startedAt: at, updatedAt: at, kind: { type: "command", command } } as ThreadEvent,
+    });
+  activity(hub).onThreadEvent("devbox", {
+    sessionId: "t3",
+    at,
+    event: { type: "snapshot", summary: { sessionId: "t3", projectId: "p1", title: "t", status: "running", activeRunId: "r1" }, messages: [], items: [], runs: [{ id: "r1", status: "running", ordinal: 1 }], truncated: false } as unknown as ThreadEvent,
+  });
+  feed("t3", "i1", "bun test");
+  const key = insertKey(hub.db, [{ role: "read", machines: "*" }], "viewer-3");
+  const app = new FakeApp(`ws://127.0.0.1:${server.port}/app`);
+  await app.send({ t: "auth", key });
+  await app.tag("ready");
+  await app.send({ t: "live", board: true });
+  expect((await app.tag("live")).full).toBe(true);
+  const has = (id: string, text?: string) => (f: Record<string, unknown>) =>
+    f.t === "live" && (f.lanes as { laneId: string; activity?: { activity: { text?: string } } }[]).some((l) => l.laneId === id && (text === undefined || l.activity?.activity.text === text));
+  // The board's own read comes a second after the full frame; these come well before it.
+  let sent = performance.now();
+  feed("t3", "i2", "bun run build");
+  await app.next(has("T3", "bun run build"), 3000);
+  expect(performance.now() - sent).toBeLessThan(400);
+  insert(4);
+  sent = performance.now();
+  events(hub).append({ at, type: "task.started", machineId: "devbox", projectId: "p1", summary: "T4 started", data: { taskId: "T4" } } as never);
+  await app.next(has("T4"), 3000);
+  expect(performance.now() - sent).toBeLessThan(400);
+  app.close();
+});

@@ -157,6 +157,11 @@ export type WaitsOn = { needsYou: boolean; for?: PersonId[] };
  * (`onHub` false) counts as anyone's. History and a reply still streaming don't count.
  */
 export function waitsOn(messages: ChatMessage[], open: ChatMessage[], onHub: (person: PersonId) => boolean): WaitsOn {
+  return waitsFor(waiters(messages, open), onHub);
+}
+
+/** What `waitsOn` waits on before `onHub`: each open item's and unanswered question's person, undefined for anyone. */
+export function waiters(messages: ChatMessage[], open: ChatMessage[]): (PersonId | undefined)[] {
   const waiting: (PersonId | undefined)[] = open.filter((m) => m.item !== undefined && itemOpen(m.item)).map((m) => m.for?.personId);
   messages.forEach((m, i) => {
     if (m.author !== "lead" || m.history !== undefined || m.state !== "final" || m.item !== undefined) return;
@@ -166,6 +171,11 @@ export function waitsOn(messages: ChatMessage[], open: ChatMessage[], onHub: (pe
     const answered = who === undefined ? later.length > 0 : later.some((h) => h.person?.personId === who || h.replyTo?.messageId === m.messageId);
     if (!answered) waiting.push(who);
   });
+  return waiting;
+}
+
+/** `waitsOn` from its `waiters`: a person no longer on the hub counts as anyone. */
+export function waitsFor(waiting: (PersonId | undefined)[], onHub: (person: PersonId) => boolean): WaitsOn {
   if (waiting.length === 0) return { needsYou: false };
   const people = waiting.map((p) => (p !== undefined && onHub(p) ? p : undefined));
   if (people.some((p) => p === undefined)) return { needsYou: true };

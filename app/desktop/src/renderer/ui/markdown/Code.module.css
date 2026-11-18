@@ -40,6 +40,10 @@
 .nowrap {
   white-space: pre;
 }
+/* Highlighted lines: a token in no scope of its own is bare text, in the colour its span had. */
+.tokens {
+  color: var(--shiki-foreground);
+}
 .line {
   display: block;
   min-height: var(--code-leading, var(--leading-sm));

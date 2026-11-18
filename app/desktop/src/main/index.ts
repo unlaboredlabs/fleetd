@@ -391,14 +391,10 @@ void app.whenReady().then(() => {
       if (process.platform === "darwin") app.focus({ steal: true });
     },
   });
-  // The hubs dial once the window shows (or after 3 s, should it never say so): the page and its cached data paint
-  // first, and the connection's start (the OS's CAs, the sockets) is off the way to the window.
-  const first = createWindow(mode);
-  const dial = setTimeout(() => hub.start(), 3_000);
-  first.once("ready-to-show", () => {
-    clearTimeout(dial);
-    hub.start();
-  });
+  // The hubs dial as the window opens: the hub answers while the page loads (its renderer is a process of its own
+  // starting up), and the page's subscribe gets the snapshot main holds, not a round trip after it asks.
+  createWindow(mode);
+  hub.start();
   updater.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);

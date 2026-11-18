@@ -13,6 +13,7 @@ import type {
   ChatOpenItem,
   ChatOpenNudge,
   MemoryRefreshed,
+  PersonId,
   PersonRef,
   ProjectChatState,
   ProjectRef,
@@ -44,7 +45,8 @@ import {
   PENDING_MS,
   serialize,
   textOf,
-  waitsOn,
+  waiters,
+  waitsFor,
 } from "./rules.ts";
 
 /** How many of the latest lead and people's messages a question for one person may still wait in. */
@@ -74,6 +76,25 @@ const WAITING = `SELECT data FROM chat_messages WHERE machine_id = ?1 AND projec
      AND json_extract(data, '$.nudge') IS NOT NULL
      AND json_extract(data, '$.nudge.cleared') IS NULL ORDER BY seq`;
 
+/**
+ * Each project's chat version: a new random value on every write to its messages, by any writer on this connection
+ * (the chat's own, an erase, an import), so a cached chat state is read again exactly when its chat changed. Temporary:
+ * it lives with the connection, as the cache does, and is no part of the database. Random rather than counted, so a
+ * rolled-back write can't bring back a version a state was cached under.
+ */
+const VERSIONS = `CREATE TEMP TABLE IF NOT EXISTS chat_versions (machine_id TEXT NOT NULL, project_id TEXT NOT NULL,
+    v INTEGER NOT NULL, PRIMARY KEY (machine_id, project_id)) WITHOUT ROWID;
+  CREATE TEMP TRIGGER IF NOT EXISTS chat_versions_insert AFTER INSERT ON main.chat_messages BEGIN
+    INSERT OR REPLACE INTO chat_versions VALUES (NEW.machine_id, NEW.project_id, random()); END;
+  CREATE TEMP TRIGGER IF NOT EXISTS chat_versions_update AFTER UPDATE ON main.chat_messages BEGIN
+    INSERT OR REPLACE INTO chat_versions VALUES (OLD.machine_id, OLD.project_id, random());
+    INSERT OR REPLACE INTO chat_versions VALUES (NEW.machine_id, NEW.project_id, random()); END;
+  CREATE TEMP TRIGGER IF NOT EXISTS chat_versions_delete AFTER DELETE ON main.chat_messages BEGIN
+    INSERT OR REPLACE INTO chat_versions VALUES (OLD.machine_id, OLD.project_id, random()); END;`;
+
+/** What a project's chat state takes from its messages, kept until they change (`Chat.state`). */
+type StateParts = { version: number | null | undefined; last?: ChatMessage; openItems: ChatOpenItem[]; waiting: (PersonId | undefined)[] };
+
 /** The hub's chat, `chat(hub)`. */
 export const chat = (hub: Hub) => hub.area("chat", (h) => new Chat(h));
 
@@ -89,9 +110,13 @@ export class Chat {
   private readonly pendingNudges = new Map<string, [string, number]>();
   /** One held message on its way to the lead at a time, per project (`flow`). */
   private readonly sendingLocks = new Map<string, Promise<void>>();
+  /** Per project, what its chat state takes from its messages, under the chat version it was read at. */
+  private readonly states = new Map<string, StateParts>();
 
   constructor(private readonly hub: Hub) {
     this.db = hub.db;
+    // A read-only database (a reader's) has no writes to see, and keeps no cache worth checking.
+    if (!this.db.readonly) this.db.conn.run(VERSIONS);
   }
 
   private now(): number {
@@ -384,7 +409,10 @@ export class Chat {
     return this.one("SELECT data FROM chat_messages WHERE n = ?1", n);
   }
 
-  /** The requests whose inline item still reads open or approved: the ones a missed event could leave stale. */
+  /**
+   * The requests whose inline item still reads open or approved: the ones a missed event could leave stale. By the
+   * partial index `chat_items_unsettled`'s condition.
+   */
   unsettledRequests(): string[] {
     return this.db.conn
       .query<{ id: string | null }, []>(
@@ -656,19 +684,29 @@ export class Chat {
     return { messages: rows.map((row) => parse(row.data)), moreBefore, moreAfter };
   }
 
-  /** The project's chat state; `leadWorking` is the lead's own (the flow reads it off its thread). */
+  /**
+   * The project's chat state; `leadWorking` is the lead's own (the flow reads it off its thread). What it takes from
+   * the messages is read once per change to them: every bot's state is asked for on each status and connect.
+   */
   state(r: ProjectRef, leadWorking: boolean): ProjectChatState {
-    const { messages: recent } = this.page(r, undefined, undefined, 1);
-    const open = this.openItems(r);
-    const openItems: ChatOpenItem[] = open
-      .flatMap((m): ChatOpenItem[] => {
-        if (!m.item || !itemOpen(m.item)) return [];
-        const kind = (m.item as { kind?: string }).kind === "command_approval" ? "command_approval" : "secret_request";
-        return [{ messageId: m.messageId, kind, ...(m.for ? { for: m.for.personId } : {}) } as ChatOpenItem];
-      })
-      .slice(0, CHAT_OPEN_ITEMS_MAX);
-    const waits = waitsOn(this.asked(r), open, (p) => this.onHub(p));
-    const last = recent[recent.length - 1];
+    const k = key(r);
+    const version = this.versionOf(r);
+    let parts = this.states.get(k);
+    if (!parts || parts.version !== version) {
+      const { messages: recent } = this.page(r, undefined, undefined, 1);
+      const open = this.openItems(r);
+      const openItems: ChatOpenItem[] = open
+        .flatMap((m): ChatOpenItem[] => {
+          if (!m.item || !itemOpen(m.item)) return [];
+          const kind = (m.item as { kind?: string }).kind === "command_approval" ? "command_approval" : "secret_request";
+          return [{ messageId: m.messageId, kind, ...(m.for ? { for: m.for.personId } : {}) } as ChatOpenItem];
+        })
+        .slice(0, CHAT_OPEN_ITEMS_MAX);
+      parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting: waiters(this.asked(r), open) };
+      if (version !== undefined) this.states.set(k, parts);
+    }
+    const { last, openItems } = parts;
+    const waits = waitsFor(parts.waiting, (p) => this.onHub(p));
     const nudges = this.nudgesListed(r);
     return {
       projectRef: r,
@@ -680,6 +718,16 @@ export class Chat {
       ...(openItems.length > 0 ? { openItems } : {}),
       ...(nudges.length > 0 ? { nudges } : {}),
     } as ProjectChatState;
+  }
+
+  /** The project's chat version (`VERSIONS`): null before its first write here, undefined on a read-only database. */
+  private versionOf(r: ProjectRef): number | null | undefined {
+    if (this.db.readonly) return undefined;
+    return (
+      this.db.conn
+        .query<{ v: number }, [string, string]>("SELECT v FROM temp.chat_versions WHERE machine_id = ?1 AND project_id = ?2")
+        .get(r.machineId, r.projectId)?.v ?? null
+    );
   }
 
   /**
@@ -723,10 +771,12 @@ export class Chat {
     );
   }
 
+  /** The project's open items, through the partial index `chat_items_unsettled` (its condition, then the state). */
   private openItems(r: ProjectRef): ChatMessage[] {
     return this.many(
       `SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
-       AND json_extract(data, '$.item.state') = 'open' ORDER BY seq LIMIT 20`,
+       AND json_extract(data, '$.item.state') IN ('open', 'approved') AND json_extract(data, '$.item.state') = 'open'
+       ORDER BY seq LIMIT 20`,
       r.machineId,
       r.projectId,
     );

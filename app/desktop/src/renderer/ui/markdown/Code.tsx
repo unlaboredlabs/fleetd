@@ -6,7 +6,7 @@ import { Button } from "../primitives/Button";
 import { ContextMenu, ContextMenuCopy } from "../primitives/ContextMenu";
 import { Tooltip } from "../primitives/Tooltip";
 import { Truncate } from "../text/Truncate";
-import { cachedTokens, canHighlight, highlight, resolveLang, type CodeLang, type Tokens } from "./highlighter";
+import { cachedTokens, canHighlight, highlight, PLAIN, resolveLang, type CodeLang, type Tokens } from "./highlighter";
 import s from "./Code.module.css";
 
 /** Highlighted tokens for a block: plain text first, colours once the grammar is ready (same metrics, no shift). */
@@ -31,12 +31,18 @@ export function useTokens(code: string, lang: CodeLang | null): Tokens | undefin
   return cachedTokens(code, lang);
 }
 
-export function renderTokens(line: Tokens[number]): ReactNode {
-  return line.map((t, i) => (
-    <span key={i} style={{ color: t.color, fontStyle: t.italic ? "italic" : undefined }}>
-      {t.content}
-    </span>
-  ));
+/** A line's tokens, each in its colour; with `plain`, a token in that colour (the text's own, as a code block's is)
+ * shows as bare text, with no element of its own. */
+export function renderTokens(line: Tokens[number], plain?: string): ReactNode {
+  return line.map((t, i) =>
+    t.color === plain && !t.italic ? (
+      t.content
+    ) : (
+      <span key={i} style={{ color: t.color, fontStyle: t.italic ? "italic" : undefined }}>
+        {t.content}
+      </span>
+    ),
+  );
 }
 
 export interface CodeProps {
@@ -97,11 +103,12 @@ export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = 
           </div>
         )}
         <pre className={cx(s.pre, wrap ? s.wrap : s.nowrap)} data-text="code" tabIndex={wrap ? undefined : 0}>
-          <code>
+          {/* Highlighted, the text's own tokens are bare text in this colour (renderTokens' `plain`). */}
+          <code className={children === undefined && tokens !== undefined ? s.tokens : undefined}>
             {children ??
               lines.map((line, i) => (
                 <span key={i} className={s.line}>
-                  {typeof line === "string" ? line : renderTokens(line)}
+                  {typeof line === "string" ? line : renderTokens(line, PLAIN)}
                 </span>
               ))}
           </code>

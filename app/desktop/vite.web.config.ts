@@ -4,12 +4,28 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { preloadChunks } from "./scripts/preloadChunks.ts";
+
+/**
+ * What the first chat draws beyond the entry, each a chunk loaded by import(): the app (once the session is read) and
+ * the messages' markdown, then the panel and its panes. index.html names them all, and the fonts' Latin halves
+ * (scripts/preloadChunks.ts), so the browser fetches them in one wave alongside the entry and the session read, not a
+ * wave per import; the panel's at low priority, behind what the chat needs. Settings, Shiki and the rest load once
+ * the chat has shown (ui/lib/idle.ts).
+ */
+const FIRST_CHAT = ["src/renderer/src/main.tsx", "src/renderer/ui/markdown/MarkdownBody.tsx"];
+const PANEL = [
+  "src/renderer/screens/panel/ProjectPanel.tsx",
+  "src/renderer/screens/panel/panes.tsx",
+  "src/renderer/screens/panel/counts.tsx",
+  "src/renderer/screens/checklist/ChecklistPane.tsx",
+];
 
 export default defineConfig({
   root: resolve(import.meta.dirname, "src/web"),
   // From the origin's root: the cloud answers index.html on any path, so a relative asset path would break on a deep one.
   base: "/",
-  plugins: [react()],
+  plugins: [react(), preloadChunks({ entries: FIRST_CHAT, later: PANEL, fonts: /Geist(-\w+|Mono-Regular)-latin-/u })],
   build: {
     outDir: resolve(import.meta.dirname, "out/web"),
     emptyOutDir: true,
@@ -18,5 +34,8 @@ export default defineConfig({
     target: ["chrome120", "firefox121", "safari17"],
     // libsodium's WebAssembly is inlined in its own chunk, loaded on the first secret only.
     chunkSizeWarningLimit: 4096,
+    // The icons in one chunk: each icon that a lazy screen shares with the first chat is otherwise a file of its own
+    // (~200 bytes) in the first load, a request each.
+    rolldownOptions: { output: { advancedChunks: { groups: [{ name: "icons", test: /lucide-react[\\/]dist[\\/]esm[\\/]icons[\\/]/u }] } } },
   },
 });

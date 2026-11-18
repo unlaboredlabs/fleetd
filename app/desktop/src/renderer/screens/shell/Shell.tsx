@@ -7,7 +7,7 @@
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
 // panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the chat's pill opens
 // the panel too. ⌘K, not a button, opens the palette.
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, TopBar } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
@@ -28,7 +28,7 @@ import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
-import { ScreenHost, screenPart } from "./screens";
+import { preloadScreens, ScreenHost, screenPart, SettingsSheet } from "./screens";
 import { Sidebar, SidebarTop } from "./Sidebar";
 import { useHeldRows, useSidebar } from "./sidebarState";
 import { showHub, shownRows, useSidebarView, viewedHub } from "./sidebarLayout";
@@ -41,8 +41,6 @@ import { onWeb } from "../../src/web";
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
-// Settings opens as a sheet over the app; it ships in Settings' chunk.
-const SettingsSheet = lazy(() => import("../settings/SettingsSheet").then((m) => ({ default: m.SettingsSheet })));
 // The empty home: setup's welcome for an admin while a required step is left, else Get started.
 const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: m.FirstRun })));
 
@@ -64,6 +62,7 @@ export function Shell() {
   const sidebar = useSidebar();
   setRouteHubs(hubs.map((h) => h.id));
   const route = useRoute();
+  useEffect(preloadScreens, []);
   // `#/` opens the last project, which may be on another hub than the route's: the screen goes on that project's hub,
   // so the frame, its chat and every read are that hub's, before the redirect names it and after, if it never lands.
   const placed = usePlaced(hubs, route.at);
@@ -186,7 +185,8 @@ function Frame({ route, away, hubs, sidebar }: { route: Routed; away: Screen; hu
   // (the route alone can still say home). The frame is its hub's, so leaving the hub closes it.
   const layer = useDataLayer();
   const chatKey = open === null ? null : projectId(open);
-  useEffect(() => {
+  // At commit, not after the paint: its first read (chat_history) is on the way to the chat's rows.
+  useLayoutEffect(() => {
     if (chatKey === null) {
       layer.chat.close();
       return;
@@ -393,10 +393,12 @@ function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
  * unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
  */
 function useSettingsBack(inSettings: boolean): () => void {
-  // The last element that had focus: by the time Settings shows, its opener has left the DOM.
+  // The last element outside the sheet that had focus: by the time Settings shows, its opener has left the DOM, and
+  // the sheet, preloaded, may have focused its search in the same commit.
   const last = useRef<Element | null>(null);
   useEffect(() => {
     const on = (e: FocusEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-sheet="settings"]') !== null) return;
       last.current = e.target instanceof Element ? e.target : null;
     };
     document.addEventListener("focusin", on);

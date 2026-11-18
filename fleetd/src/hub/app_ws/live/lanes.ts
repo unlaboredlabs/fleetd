@@ -112,7 +112,11 @@ function threadStatus(hub: Hub, r: ThreadRef): string | undefined {
 function taskLane(hub: Hub, task: Task, focus: boolean): LaneNow {
   const status = taskLaneStatus(task, task.threadRef ? threadStatus(hub, task.threadRef) : undefined);
   const parts = task.threadRef ? activity(hub).live(task.threadRef) : undefined;
-  return { lane: liveLane(task.taskId, status, parts), ...(focus && parts?.text ? { text: parts.text } : {}) };
+  return {
+    lane: liveLane(task.taskId, status, parts),
+    ...(focus && parts?.text ? { text: parts.text } : {}),
+    ...(task.threadRef ? { thread: task.threadRef } : {}),
+  };
 }
 
 function leadLanes(hub: Hub, projects: ProjectRef[], focus: boolean): LaneNow[] {
@@ -124,7 +128,7 @@ function leadLanes(hub: Hub, projects: ProjectRef[], focus: boolean): LaneNow[] 
     const thread = { machineId: r.machineId, threadId: lead.threadId };
     const status = leadLaneStatus(lead.state, lead.parked !== undefined, executors(hub).tracked(thread)?.summary.status);
     const parts = activity(hub).live(thread);
-    out.push({ lane: liveLane(leadLaneId(r), status, parts), ...(focus && parts?.text ? { text: parts.text } : {}) });
+    out.push({ lane: liveLane(leadLaneId(r), status, parts), ...(focus && parts?.text ? { text: parts.text } : {}), thread });
   }
   return out;
 }

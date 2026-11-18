@@ -43,13 +43,19 @@ const STREAM_MS = 4_000;
 
 const REFERENCE = path.join(import.meta.dirname, "reference", "main.mjs");
 
-/** From spawn until the window is shown and has painted its first content: the later of ready-to-show and FCP. */
-const timeLaunch = async (entry?: string): Promise<number> => {
+/**
+ * From spawn until the window is shown and has painted its first content (the later of ready-to-show and FCP), and,
+ * for the app, until the chat it opens on shows its words (FLEETD_PERF's chat line).
+ */
+const timeLaunch = async (entry?: string): Promise<{ paint: number; chat: number }> => {
   const spawned = Date.now();
   const app = launch(entry === undefined ? {} : { entry });
   try {
     const line = await app.waitFor(/^FLEETD_PERF launch .*first_contentful_paint_epoch_ms=([\d.]+).* ready_to_show_epoch_ms=(\d+)/u, 30_000);
-    return Math.max(Number(line[1]), Number(line[2])) - spawned;
+    const paint = Math.max(Number(line[1]), Number(line[2])) - spawned;
+    if (entry !== undefined) return { paint, chat: Number.NaN };
+    const chat = await app.waitFor(/^FLEETD_PERF chat words_epoch_ms=([\d.]+)/u, 30_000);
+    return { paint, chat: Number(chat[1]) - spawned };
   } finally {
     await app.stop();
   }
@@ -60,13 +66,14 @@ const timeLaunch = async (entry?: string): Promise<number> => {
  * first (a fresh runner's first launch fills the OS page cache: 5-8 s on CI), then RUNS of each.
  */
 const firstPaint = async () => {
-  const app: Array<number> = [];
+  const app: Array<{ paint: number; chat: number }> = [];
   const bare: Array<number> = [];
   for (let i = 0; i <= RUNS; i++) {
     app.push(await timeLaunch());
-    bare.push(await timeLaunch(REFERENCE));
+    bare.push((await timeLaunch(REFERENCE)).paint);
   }
-  return { coldApp: app[0] ?? Number.NaN, app: app.slice(1), bare: bare.slice(1) };
+  const timed = app.slice(1);
+  return { coldApp: app[0]?.paint ?? Number.NaN, app: timed.map((t) => t.paint), chat: timed.map((t) => t.chat), bare: bare.slice(1) };
 };
 
 /** rAF timestamps while `during` runs. */
@@ -224,6 +231,8 @@ const main = async () => {
         firstPaintMs,
         firstPaintRefMs,
         firstPaintOverMs: firstPaintMs - firstPaintRefMs,
+        chatShownMs: median(paints.chat),
+        chatOverMs: median(paints.chat) - firstPaintRefMs,
         idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
         idleRssMb: median(samples.map((m) => m.rssMb)),
         scrollFps: scrolled.fps,
@@ -234,6 +243,8 @@ const main = async () => {
         firstPaintMs: `median of ${paints.app.length} warm launches: ${paints.app.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.coldApp.toFixed(0)} ms)`,
         firstPaintRefMs: `the same for a bare Electron window with one line of text, launched alternately: ${paints.bare.map((p) => p.toFixed(0)).join(", ")} ms`,
         firstPaintOverMs: "what the app adds to Electron's own start; CI gates this, not the runner-bound first paint",
+        chatShownMs: `the same launches, until the chat-long fixture's chat shows its words: ${paints.chat.map((p) => p.toFixed(0)).join(", ")} ms`,
+        chatOverMs: "what the app adds before its chat reads, over Electron's own start; CI gates this",
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `the chat-long fixture's chat; median of ${scrolled.rounds.length} rounds of ${SCROLL_MS / 1000} s from a reload, fps (long frames, px): ${scrolled.rounds.map((r) => `${r.fps.toFixed(1)} (${(r.dropped * 100).toFixed(1)}%, ${(r.moved / 1000).toFixed(0)}k)`).join(", ")}; display ${scrolled.rounds[0]?.refreshHz.toFixed(0) ?? "?"} Hz`,
@@ -261,6 +272,7 @@ const main = async () => {
   });
   const definitions = [
     "  first paint: from spawning the app until its window is shown and has painted its first content (the later of ready-to-show and FCP)",
+    "  chat shown: from spawning the app until the chat it opens on shows its words: three rows, none still waiting for the markdown parser, and the composer",
     "  idle memory: deduplicated memory summed over every app process after 10 s idle: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS",
     "  chat scroll: requestAnimationFrame rate while wheel-scrolling back through the chat",
     "  chat streaming: requestAnimationFrame rate while a reply from the lead streams into a long chat",

@@ -1,5 +1,6 @@
-// FLEETD_PERF=1 (perf/run.ts): one stderr line with the wall-clock times of the launch milestones, so the budgets
-// harness can time first paint from its own spawn without a debugger attached during startup.
+// FLEETD_PERF=1 (perf/run.ts): one stderr line with the wall-clock times of the launch milestones, and one when the chat
+// first shows its words, so the budgets harness can time first paint and the chat from its own spawn without a
+// debugger attached during startup.
 import type { BrowserWindow } from "electron";
 import type { Transport } from "../hub/transport";
 
@@ -12,6 +13,24 @@ const PAINTS = `new Promise((resolve) => {
     const now = read();
     if (now["first-contentful-paint"] !== undefined) resolve(now);
   }).observe({ type: "paint", buffered: true });
+})`;
+
+// Runs in the page: when the chat the window opens on first shows its words, as epoch ms. At least three of the lead
+// chat's rows with no markdown placeholder left in them (a row whose parser is still loading is blank), and its
+// composer: what a person reads and types into, not rows that fill in later.
+const CHAT_SHOWN = `new Promise((resolve) => {
+  const shown = () => {
+    const log = document.querySelector('[aria-label="Conversation with the lead"]');
+    const composer = document.querySelector('textarea[aria-label="Message the lead"]');
+    return log !== null && composer !== null && log.querySelectorAll('[role="listitem"]').length >= 3 && log.querySelector('[aria-busy="true"]') === null;
+  };
+  if (shown()) return resolve(performance.timeOrigin + performance.now());
+  const watch = new MutationObserver(() => {
+    if (!shown()) return;
+    watch.disconnect();
+    resolve(performance.timeOrigin + performance.now());
+  });
+  watch.observe(document, { subtree: true, childList: true, attributes: true });
 })`;
 
 export const reportLaunch = (win: BrowserWindow): void => {
@@ -27,6 +46,8 @@ export const reportLaunch = (win: BrowserWindow): void => {
         `FLEETD_PERF launch main_start_epoch_ms=${mainStart.toFixed(1)} first_paint_epoch_ms=${fp?.toFixed(1) ?? "none"} first_contentful_paint_epoch_ms=${fcp?.toFixed(1) ?? "none"} ready_to_show_epoch_ms=${shown} window_created_epoch_ms=${created} load_start_epoch_ms=${paints["navigationStart"]?.toFixed(1) ?? "none"}`,
       );
     });
+    // Then the chat's words, a line of its own: a window that never opens a chat (onboarding) never prints it.
+    void (win.webContents.executeJavaScript(CHAT_SHOWN) as Promise<number>).then((at) => console.error(`FLEETD_PERF chat words_epoch_ms=${at.toFixed(1)}`));
   });
 };
 

@@ -1,9 +1,11 @@
 import type { HighlighterCore } from "shiki/core";
+import { afterFirstPaint } from "../lib/idle";
 
 /**
  * Shiki, loaded on first use and shared. It runs the JavaScript regex engine, so the renderer needs no
  * WebAssembly (the CSP stays strict), and one css-variables theme, so the same tokens serve light and dark.
- * Grammars load per language on demand; tokens are cached so re-renders and remounts never re-highlight.
+ * Grammars load per language on demand; tokens are cached so re-renders and remounts never re-highlight. Shiki loads
+ * once the app has painted: a code block shows plain until its tokens land, so the start never waits on it.
  */
 
 const LANGS = {
@@ -68,6 +70,7 @@ const THEME = "fleetd";
 
 function highlighter(): Promise<HighlighterCore> {
   core ??= (async () => {
+    await afterFirstPaint();
     const [{ createHighlighterCore, createCssVariablesTheme }, { createJavaScriptRegexEngine }] = await Promise.all([
       import("shiki/core"),
       import("shiki/engine/javascript"),
@@ -96,6 +99,39 @@ export interface Token {
   italic: boolean;
 }
 export type Tokens = Token[][];
+
+/** The colour of a token in no scope of its own: the text's, which a block's own colour already is. */
+export const PLAIN = "var(--shiki-foreground)";
+
+/**
+ * A line's tokens with each run that looks alike as one: a token in the colour and style of the one before it, or only
+ * white space, which shows no colour, joins it. A grammar splits a TypeScript line into about 27 tokens, a span each,
+ * and about 19 once joined: the same text in the same colours, in fewer elements.
+ */
+export function joinTokens(line: readonly { content: string; color?: string | undefined; fontStyle?: number | undefined }[]): Token[] {
+  const out: Token[] = [];
+  for (const t of line) {
+    // fontStyle is a bit set; bit 1 is italic.
+    const italic = ((t.fontStyle ?? 0) & 1) === 1;
+    const last = out.at(-1);
+    if (last !== undefined && ((last.color === t.color && last.italic === italic) || t.content.trim() === "")) last.content += t.content;
+    else out.push({ content: t.content, color: t.color, italic });
+  }
+  // A line that starts with white space: it joins the token after it, as nothing before it shows.
+  const [first, second] = out;
+  if (first !== undefined && second !== undefined && first.content.trim() === "") {
+    second.content = first.content + second.content;
+    out.shift();
+  }
+  return out;
+}
+
+/**
+ * Each block's tokens are its own task, one after another: a chat opened with ten code blocks tokenizes them over ten
+ * short tasks, plain text showing meanwhile, rather than in one long one that holds up a scroll or a key.
+ */
+let turn: Promise<unknown> = Promise.resolve();
+const nextTask = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 /*
  * Tokenizing runs on the main thread, and a TextMate grammar on one very long line (minified code, base64, a
@@ -135,10 +171,12 @@ export async function highlight(code: string, lang: CodeLang): Promise<Tokens | 
   if (hit) return hit;
   const h = await highlighter();
   await ensureLang(h, lang);
-  const tokens = h.codeToTokensBase(code, { lang, theme: THEME, tokenizeMaxLineLength: MAX_LINE, tokenizeTimeLimit: 500 }).map((line) =>
-    // fontStyle is a bit set; bit 1 is italic.
-    line.map((t) => ({ content: t.content, color: t.color, italic: ((t.fontStyle ?? 0) & 1) === 1 })),
-  );
+  const mine = turn.then(nextTask);
+  turn = mine;
+  await mine;
+  const again = cachedTokens(code, lang);
+  if (again) return again;
+  const tokens = h.codeToTokensBase(code, { lang, theme: THEME, tokenizeMaxLineLength: MAX_LINE, tokenizeTimeLimit: 500 }).map(joinTokens);
   cache.set(`${lang}\u0000${code}`, tokens);
   if (cache.size > CACHE_MAX) {
     const oldest = cache.keys().next().value;

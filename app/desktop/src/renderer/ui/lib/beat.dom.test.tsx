@@ -138,3 +138,22 @@ it("writes the beat onto an element whose CSS steps on it, and nothing onto :roo
   expect(band?.dataset["step"]).toBe(String((Number(first) + 1) % BEATS));
   expect(document.documentElement.dataset["beat"]).toBe("");
 });
+
+it("draws no beat while the window isn't focused, its loops still, and goes on once it is", () => {
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  act(() => root.render(<Live on />));
+  expect(running()).toBe(true);
+  focus.mockReturnValue(false);
+  window.dispatchEvent(new FocusEvent("blur"));
+  wait(1);
+  expect(running()).toBe(false);
+  const n = steps.length;
+  wait(BEAT_MS * 5);
+  expect(steps).toHaveLength(n);
+  focus.mockReturnValue(true);
+  window.dispatchEvent(new FocusEvent("focus"));
+  expect(running()).toBe(true);
+  wait(BEAT_MS * 2);
+  expect(steps.length).toBeGreaterThan(n);
+  focus.mockRestore();
+});

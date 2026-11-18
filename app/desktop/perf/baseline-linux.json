@@ -2,6 +2,8 @@
   "firstPaintMs": 473,
   "firstPaintRefMs": 286,
   "firstPaintOverMs": 187,
+  "chatShownMs": 519,
+  "chatOverMs": 274,
   "idleMemoryMb": 331,
   "idleRssMb": 589,
   "scrollFps": 58,

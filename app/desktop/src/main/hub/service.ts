@@ -10,6 +10,7 @@ import { clearCredentials, saveCredentials, type CredentialEnv, type Loaded } fr
 import { FixtureSource, type FixtureFile } from "./fixture";
 import type { PresenceFrame } from "../presence";
 import { appUrl } from "./protocol";
+import { systemCAs } from "../trust";
 import type { HubSource } from "./source";
 import type { Transport } from "./transport";
 
@@ -27,6 +28,9 @@ export type HubMode =
       readonly cache: HubCacheFile;
     }
   | { readonly kind: "fixture"; readonly id: HubId; readonly fixture: FixtureFile };
+
+/** At most this many events after the held snapshot are kept for a window still to subscribe; past it, it reads afresh. */
+export const HELD_EVENTS_MAX = 200;
 
 /**
  * One hub as main offers it to windows: one source (a connection or a fixture), fanned out to every subscriber, each
@@ -52,8 +56,16 @@ export class HubService {
   #watching: string | null = null;
   /** The windows showing the Screens page: the hub sends its pictures while one does. */
   readonly #thumbs = new Set<WebContents>();
-  /** Dialling is held until `start`: the app connects once its window shows, not on the way to it. */
+  /** Dialling is held until `start`: main calls it as it creates the first window. */
   #started = false;
+  /**
+   * The connection's newest snapshot and the events since, while it is live: a window that subscribes after them (the
+   * first one, still loading as the hub answers; a reload) starts from these at once, not a round trip later. Null
+   * when there is none to give, or too many events came since (HELD_EVENTS_MAX): that window asks for a snapshot.
+   */
+  #held: HubFrame[] | null = null;
+  /** stop() was called: a dial still waiting on the CAs stays undone. */
+  #stopped = false;
   /** The address and key the connection uses, for a call outside /app (a cloud team's invites by email). */
   #paired: { readonly url: string; readonly key: string } | null = null;
 
@@ -71,11 +83,24 @@ export class HubService {
     if (loaded.saved !== null) this.#use(loaded.saved.url, loaded.saved.key);
   }
 
-  /** Dials the hub, and from now on any it pairs with. */
+  /**
+   * Dials the hub, and from now on any it pairs with. A wss:// hub's first dial waits for the OS's CAs, read off the
+   * main thread (trust.ts): read on it, they held the window's first paint back ~70 ms.
+   */
   start(): void {
     if (this.#started) return;
     this.#started = true;
-    this.#source?.start();
+    const source = this.#source;
+    const url = this.url();
+    const dialled = url === null ? null : appUrl(url);
+    if (this.#mode.kind !== "hub" || source === null || dialled?.ok !== true || !dialled.url.startsWith("wss:")) {
+      source?.start();
+      return;
+    }
+    void systemCAs().then(() => {
+      // Not if it was stopped meanwhile (the app quit) or another pairing replaced it, which dials itself.
+      if (!this.#stopped && this.#source === source) source.start();
+    });
   }
 
   /** The address it is paired with, or null. */
@@ -109,9 +134,16 @@ export class HubService {
       contents.once("destroyed", gone);
       contents.once("did-navigate", gone);
     }
-    this.#awaitingSnapshot.add(contents);
     this.#send(contents, { t: "state", state: this.state() });
-    this.#source?.resync();
+    const held = this.#held;
+    if (held !== null && this.state().phase === "live") {
+      // What a window subscribed all along has had: the snapshot, then the events after it, in order.
+      this.#awaitingSnapshot.delete(contents);
+      for (const frame of held) this.#send(contents, frame);
+    } else {
+      this.#awaitingSnapshot.add(contents);
+      this.#source?.resync();
+    }
     this.#source?.refreshLive();
   }
 
@@ -240,12 +272,14 @@ export class HubService {
   }
 
   stop(): void {
+    this.#stopped = true;
     this.#source?.stop();
   }
 
   #use(hub: string, key: string): void {
     if (this.#mode.kind !== "hub") return;
     this.#source?.stop();
+    this.#held = null;
     this.#paired = { url: hub, key };
     const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
     this.#source = client;
@@ -258,10 +292,22 @@ export class HubService {
   }
 
   #broadcast(frame: HubFrame): void {
+    this.#hold(frame);
     for (const contents of this.#subscribers) {
       if (frame.t === "snapshot") this.#awaitingSnapshot.delete(contents);
       else if ((frame.t === "event" || frame.t === "live") && this.#awaitingSnapshot.has(contents)) continue;
       this.#send(contents, frame);
+    }
+  }
+
+  #hold(frame: HubFrame): void {
+    // A fixture plays its frames again for each window that subscribes (its resync), so it holds none.
+    if (this.#mode.kind !== "hub") return;
+    if (frame.t === "snapshot") this.#held = [frame];
+    else if (frame.t === "state" && frame.state.phase !== "live") this.#held = null;
+    else if (frame.t === "event" && this.#held !== null) {
+      if (this.#held.length > HELD_EVENTS_MAX) this.#held = null;
+      else this.#held.push(frame);
     }
   }
 
