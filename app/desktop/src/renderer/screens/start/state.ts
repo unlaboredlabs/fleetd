@@ -27,6 +27,7 @@ import {
 } from "./model";
 import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
+import { specOf } from "../../../shared/providers";
 
 const noInput = {};
 
@@ -86,7 +87,9 @@ export function useStart(
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
   }, [projects, rows]);
   const teammate = hub.invited === true || !role.administers || bots.length > 0;
-  const listed = Object.values(machines).filter((m) => m.agentsMac !== true);
+  // The team's computers: neither the agents' Mac nor the hub's runner for hosted sandboxes, which is none.
+  const listed = Object.values(machines).filter((m) => m.agentsMac !== true && m.runner !== true);
+  const runnerMachine = Object.values(machines).find((m) => m.runner === true);
 
   // GitHub's trip comes back to this page with what it ended on.
   const [back] = useState(() => (page ? takeGithubReturn() : null));
@@ -99,7 +102,10 @@ export function useStart(
 
   // The join line, made while no computer has joined, and again each time its code runs out.
   const owner = cloudTeam && !teammate && !role.pending;
-  const wantLine = page && owner && live && listed.length === 0;
+  // Where agents run can also be a hosted provider on the team's own key: its connection and last check.
+  const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: owner && live });
+  const hosted = sandboxes.data?.providers.find((p) => p.connected && p.check?.ok === true);
+  const wantLine = page && owner && live && listed.length === 0 && hosted === undefined;
   const [join, setJoin] = useState<{
     readonly out: MachineJoinOutput | null;
     readonly error?: string;
@@ -145,9 +151,16 @@ export function useStart(
   // Joined before, and off now: agents can't run there until it's back.
   const offline = listed.find((m) => m.status === "offline");
 
+  const providerName = hosted === undefined ? "" : specOf(hosted.provider).name;
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }
+      : hosted !== undefined && listed.length === 0
+        ? runnerMachine?.status === "online"
+          ? { at: "hosted", provider: providerName }
+          : runnerMachine?.status === "degraded" && /Claude account/u.test(runnerMachine.degradedReason ?? "")
+            ? { at: "hosted_claude", provider: providerName }
+            : { at: "hosted_wait", provider: providerName }
       : loggedOut !== undefined
         ? {
             at: "claude",
@@ -311,14 +324,20 @@ export function useStart(
     onGithubRepos: () => goGithub(true),
     onGithubSkip: () => writeKept(hub.id, { github: "skipped" }),
     onQuery: setQuery,
+    onClaudeAccount: () => navigate({ id: "settings", tab: "accounts" }),
     onRepo: (owner, name) => {
-      if (ready !== null)
-        startBot(ready.machineId, {
+      // On the computer, else in the hosted sandboxes (the hub's runner).
+      const on = ready?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
+      if (on !== undefined)
+        startBot(on, {
           kind: "clone",
           repo: `${owner}/${name}`,
         });
     },
-    onEmpty: () => openAddProject(ready === null ? undefined : { text: "", machine: ready.machineId }),
+    onEmpty: () => {
+      const on = ready?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
+      openAddProject(on === undefined ? undefined : { text: "", machine: on });
+    },
     onOpen: (key) => {
       const at = key.indexOf("/");
       navigate({

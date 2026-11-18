@@ -1,6 +1,6 @@
 // A hub from before cloud machines were removed: its cloud machines, their rows, the pool's settings with the sealed
 // boat.dev key and the cloud columns all go as it upgrades, its own machines and their work stay, and the setup step
-// "Machines that run agents" no longer fails on a cloud machine that was offline.
+// "Where agents run" no longer fails on a cloud machine that was offline.
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -82,7 +82,7 @@ test("a hub with cloud machines upgrades clean: their rows, the boat.dev key and
     expect(TaskRecords.unswept(c, "9999").map(([t]) => t.taskId)).toEqual(["T3"]);
     expect(left("SELECT data AS v FROM machines").some((d) => d.includes("cloud"))).toBe(false);
 
-    // The hub starts on it: its store reads one machine, and "Machines that run agents" is done, not failing.
+    // The hub starts on it: its store reads one machine, and "Where agents run" is done, not failing.
     const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4790 } }, db, { now: () => Date.parse(AT) });
     expect(store(hub).machinesList().map((m) => m.machineId)).toEqual(["devbox"]);
     // setup_list runs the doctor's first pass: its probes are stand-ins, never this machine's own gh or a hub on 4790.

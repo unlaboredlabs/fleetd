@@ -36,7 +36,8 @@ export function MachineList({ add }: { add?: ReactNode }) {
   const roles = useToolQuery("machine_roles", noInput).data?.machines;
   const slots = useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
   const nowMs = useNow(true, 60_000);
-  const all = views?.map((v) => v.machine);
+  // The team's computers: the hub's runner for hosted sandboxes is none (its providers are listed with them).
+  const all = views?.map((v) => v.machine).filter((m) => m.runner !== true);
   const machines = all === undefined ? undefined : [...all].sort(machineOrder);
   const rolesRef = useReveal<HTMLElement>("hub.roles");
   const screensRef = useReveal<HTMLElement>("hub.screens");

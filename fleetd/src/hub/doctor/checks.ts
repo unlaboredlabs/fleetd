@@ -1,5 +1,6 @@
 // Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix, a
 // command for a person to run, with the same ids and words.
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type {
   ClaudeHubApi,
   ClaudeSealedOn,
@@ -509,7 +510,7 @@ function accountEntry(
   }
   const missing = machines.filter((m) => !sealedOn.some((s) => s.machineId === m));
   if (missing.length > 0) {
-    const list = missing.join(", ");
+    const list = missing.map((m) => (m === RUNNER_ID ? "the hosted sandboxes" : m)).join(", ");
     return hubEntry(
       name,
       "warn",

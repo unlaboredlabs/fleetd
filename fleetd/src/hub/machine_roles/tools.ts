@@ -63,7 +63,7 @@ function machineRoles(hub: Hub, caller: Caller) {
     machines,
     ...(best ? { best } : {}),
     retention: retentionOn(hub.db.conn),
-    ...(machines.length === 0 ? { next: "No machine has joined yet: add one with fleetd machine add." } : {}),
+    ...(machines.length === 0 ? { next: "No computer has joined yet: add one with fleetd machine add, or run agents in hosted sandboxes by connecting a provider (sandbox_connect)." } : {}),
   };
 }
 

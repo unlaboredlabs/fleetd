@@ -74,8 +74,8 @@ export function register(tools: Registry): void {
         console.info(`setup: no 1Password token of the caller's own tested: ${(error as Error).message ?? error}`);
       }
     }
-    // Hosted sandboxes' Test lists fleetd's sandboxes at each connected provider, and keeps it as that key's last check.
-    if (input.step === "sandboxes") {
+    // Where agents run: hosted sandboxes' Test lists fleetd's sandboxes at each connected provider, and keeps it as that key's last check.
+    if (input.step === "machines" || input.step === "sandboxes") {
       for (const { provider } of sandboxLimits(hub)) {
         try {
           await testSandbox(hub, provider);

@@ -68,7 +68,7 @@ export function NewProject({ navigation, route }: Props) {
   const named = botName(name, repos);
   // A machine whose node can't make a bot's folder takes one listed, or typed in the add field.
   const toWorker = d?.workers.find((w) => w.machineId === to?.machineId);
-  const block = to === null ? "No machine is online to make it on: start fleetd on one of your machines." : toWorker === undefined ? undefined : (needsUpdate(toWorker, repos, adding) ?? undefined);
+  const block = to === null ? "Nothing that runs agents is online: start fleetd on one of your computers, or connect a hosted sandbox provider in Settings." : toWorker === undefined ? undefined : (needsUpdate(toWorker, repos, adding) ?? undefined);
   const create = () => {
     if (nameIssue !== undefined) return;
     // A repo typed but not yet added goes in with the rest, or Create says why it can't.

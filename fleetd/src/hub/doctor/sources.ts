@@ -2,6 +2,7 @@
 // from the hub"): each through its area's own exported reads. The few that live in memory in another area (the tasks
 // sweep's recovery breakers and unowned sessions) answer "all clear" until that area's start sets its own
 // (tasks/loops.ts).
+import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type { MachineId } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -66,10 +67,12 @@ function logged<T>(what: string, fallback: T, read: () => T): T {
 
 export function hubSources(hub: Hub): DoctorSources {
   const sources: DoctorSources = {
+    // The hub's own runner is no computer of the team's: hosted sandboxes' own check (hub/sandboxes) speaks for it.
     machines: () =>
       logged("machines", [], () =>
         store(hub)
           .machinesList()
+          .filter((m) => m.runner !== true)
           .map((m) => ({
             machineId: m.machineId,
             status: m.status,
@@ -115,7 +118,7 @@ export function hubSources(hub: Hub): DoctorSources {
         store(hub)
           .machinesList()
           .map((m) => m.machineId as string)
-          .filter((id) => id !== machineId && print(id) === ours)
+          .filter((id) => id !== machineId && id !== RUNNER_ID && print(id) === ours)
           .sort(),
       );
     },

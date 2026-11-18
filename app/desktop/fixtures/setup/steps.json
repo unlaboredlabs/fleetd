@@ -50,7 +50,7 @@
         {
           "links": [],
           "note": "The hub's own machine can run agents too. In the app, Settings › Hub › Machines › Add machine does each of these.",
-          "title": "Add a machine",
+          "title": "A computer",
           "values": [
             {
               "command": true,
@@ -66,6 +66,30 @@
           ]
         },
         {
+          "links": [
+            {
+              "label": "E2B › API keys",
+              "url": "https://console.e2b.dev/?tab=keys"
+            },
+            {
+              "label": "boat.dev › API keys",
+              "url": "https://docs.boat.dev/api-keys"
+            },
+            {
+              "label": "Daytona › API keys",
+              "url": "https://app.daytona.io/dashboard/keys"
+            }
+          ],
+          "note": "Make an API key at one provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, billed to your account while it runs. For a self-hosted E2B, give its domain too.",
+          "title": "Or hosted sandboxes",
+          "values": [
+            {
+              "label": "Key name",
+              "value": "fleetd on devbox"
+            }
+          ]
+        },
+        {
           "links": [],
           "note": "Android emulators need Linux with KVM. Turn them on on the machine's page in Settings › Hub › Machines. iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
           "title": "Android screens (optional)",
@@ -74,15 +98,23 @@
       ],
       "place": "machines",
       "status": "todo",
-      "title": "Machines that run agents",
+      "test": "Read each computer's checks, and list fleetd's sandboxes at each connected provider",
+      "title": "Where agents run",
       "ways": [
         {
           "checks": [
             "*/online"
-          ]
+          ],
+          "label": "a computer"
+        },
+        {
+          "checks": [
+            "hub/sandboxes"
+          ],
+          "label": "hosted sandboxes"
         }
       ],
-      "why": "Agents run on machines; the hub's own machine can be one."
+      "why": "A computer of yours, or sandboxes at E2B, boat.dev or Daytona on your own account."
     },
     {
       "fields": [],
@@ -423,58 +455,6 @@
         }
       ],
       "why": "Agents on every machine build, test and drive iOS simulators on one Mac: a tool, never a runner, joined from the account at its screen."
-    },
-    {
-      "fields": [],
-      "group": "hub",
-      "id": "sandboxes",
-      "need": {
-        "kind": "optional"
-      },
-      "parts": [
-        {
-          "links": [
-            {
-              "label": "E2B › API keys",
-              "url": "https://console.e2b.dev/?tab=keys"
-            },
-            {
-              "label": "boat.dev › API keys",
-              "url": "https://docs.boat.dev/api-keys"
-            },
-            {
-              "label": "Daytona › API keys",
-              "url": "https://app.daytona.io/dashboard/keys"
-            }
-          ],
-          "note": "One account is enough; with more, agents go to E2B, then boat.dev, then Daytona. Each one bills you for its sandboxes while they run.",
-          "title": "Make an API key at the provider",
-          "values": [
-            {
-              "label": "Key name",
-              "value": "fleetd on devbox"
-            }
-          ]
-        },
-        {
-          "links": [],
-          "note": "Paste it in Settings › Hub › Machines › Providers, with how many agents may run there at once; the app seals it on your device. For a self-hosted E2B, give its domain there too.",
-          "title": "Connect it, and set a limit",
-          "values": []
-        }
-      ],
-      "place": "sandboxes",
-      "status": "todo",
-      "test": "List fleetd's sandboxes at each connected provider, from one of your Linux machines",
-      "title": "Hosted sandboxes",
-      "ways": [
-        {
-          "checks": [
-            "hub/sandboxes"
-          ]
-        }
-      ],
-      "why": "Room past your machines' own agent cap: agents run in sandboxes at E2B, boat.dev or Daytona, on your account."
     }
   ],
   "hub": "http://devbox:4790",
@@ -501,7 +481,8 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "said": "Dev's 1Password token reads one vault, fleetd.",
@@ -509,10 +490,6 @@
         },
         "people": {
           "said": "Ada has joined.",
-          "status": "done"
-        },
-        "sandboxes": {
-          "said": "E2B answered for the team's key.",
           "status": "done"
         }
       },
@@ -538,7 +515,8 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "said": "Dev's 1Password token reads one vault, fleetd.",
@@ -546,10 +524,6 @@
         },
         "people": {
           "said": "Ada has joined.",
-          "status": "done"
-        },
-        "sandboxes": {
-          "said": "E2B answered for the team's key.",
           "status": "done"
         }
       }
@@ -580,15 +554,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       },
@@ -618,15 +590,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       }
@@ -652,15 +622,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       },
@@ -685,15 +653,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       }
@@ -725,15 +691,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       },
@@ -764,15 +728,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       }
@@ -803,15 +765,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       },
@@ -836,15 +796,13 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done"
+          "status": "done",
+          "way": "a computer"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "sandboxes": {
           "status": "todo"
         }
       }
@@ -871,7 +829,8 @@
       },
       "machines": {
         "said": "devbox is online.",
-        "status": "done"
+        "status": "done",
+        "way": "a computer"
       },
       "onepassword": {
         "failing": false,
@@ -885,9 +844,6 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
-      },
-      "sandboxes": {
-        "status": "todo"
       }
     },
     "requiredLeft": 0,
@@ -911,7 +867,8 @@
       },
       "machines": {
         "said": "devbox is online.",
-        "status": "done"
+        "status": "done",
+        "way": "a computer"
       },
       "onepassword": {
         "failing": false,
@@ -925,9 +882,6 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
-      },
-      "sandboxes": {
-        "status": "todo"
       }
     }
   }

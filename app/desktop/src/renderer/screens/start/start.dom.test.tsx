@@ -48,6 +48,8 @@ interface Team {
   readonly admin?: boolean;
   readonly me?: { login: string; lapsed?: boolean };
   readonly installations?: number;
+  /** The team's hosted providers as sandbox_get answers: connected ones and their last check. */
+  readonly sandbox?: { provider: string; connected: boolean; ok?: boolean }[];
 }
 
 const shell = {
@@ -131,6 +133,17 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
                         },
                       }),
                 }
+              : tool === "sandbox_get"
+                ? {
+                    boxPubKey: "AAAA",
+                    placing: true,
+                    providers: (team.sandbox ?? [{ provider: "e2b", connected: false }, { provider: "boat", connected: false }, { provider: "daytona", connected: false }]).map((p) => ({
+                      provider: p.provider,
+                      connected: p.connected,
+                      limit: p.connected ? 5 : 0,
+                      ...(p.ok === undefined ? {} : { check: { at: "2026-11-18T00:00:00Z", ok: p.ok } }),
+                    })),
+                  }
               : tool === "machine_claude_login"
                 ? (input as { code?: string }).code === undefined
                   ? {
@@ -227,6 +240,33 @@ it("a fresh team's first run in the web app opens Get started, and Skip for now 
   const again = await render({}, "first-run");
   expect(screen()).not.toBe("setup.machine");
   again();
+});
+
+it("where agents run is a computer or hosted sandboxes: the second lists the providers to connect, with no text under them", async () => {
+  const stop = await render({});
+  expect(host.textContent).toContain("Where agents run");
+  expect(button("A computer")?.getAttribute("aria-pressed")).toBe("true");
+  await click("Hosted sandboxes");
+  expect(host.querySelectorAll("[data-sandbox]").length).toBe(3);
+  expect(host.textContent).not.toContain("--code 7QK4-M2XD");
+  stop();
+});
+
+it("a provider connected and no computer: Connect Claude while its sandboxes have no account, then step 1 is done on the provider", async () => {
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });
+  const sandbox = [{ provider: "e2b", connected: true, ok: true }];
+  let stop = await render({ machines: [runner], sandbox });
+  expect(host.textContent).toContain("E2B is connected");
+  expect(button("Connect Claude")).toBeDefined();
+  expect(calls.some((c) => c.tool === "machine_join")).toBe(false);
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  const { degradedReason: _was, ...online } = runner;
+  stop = await render({ machines: [{ ...online, status: "online" }], sandbox });
+  expect(screen()).toBe("start.github");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("E2B");
+  stop();
 });
 
 it("with no computer, step 1 is open on the team's join line, ready to copy", async () => {
