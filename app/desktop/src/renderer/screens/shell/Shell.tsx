@@ -40,8 +40,8 @@ import { onWeb } from "../../src/web";
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
-// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
-const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
+// Settings opens as a sheet over the app; it ships in Settings' chunk.
+const SettingsSheet = lazy(() => import("../settings/SettingsSheet").then((m) => ({ default: m.SettingsSheet })));
 // The empty home: setup's welcome for an admin while a required step is left, else Get started.
 const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: m.FirstRun })));
 
@@ -143,30 +143,33 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
   // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
-  const homeRow = route.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
+  // Settings is a sheet over the app: under it stays the screen it opened from (the home chat, on a link to it).
+  const away = useRef<Screen>(HOME);
+  const sheet = route.id === "settings";
+  const base = sheet ? { ...away.current, at: route.at } : route;
+  const homeRow = base.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
     () =>
       home !== null
         ? home
         : // A session's own window's route, here: its project, with the session in the panel.
-          route.id === "session"
-          ? { id: "project", project: route.project, message: null, panel: { tab: "sessions", session: route.session }, at: route.at }
-          : route,
+          base.id === "session"
+          ? { id: "project", project: base.project, message: null, panel: { tab: "sessions", session: base.session }, at: route.at }
+          : base,
     // `home` is rebuilt each render; its row's key says when it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [route, homeRow?.key],
   );
   useEffect(() => {
-    if (home !== null) navigate(home, { replace: true });
+    if (home !== null && !sheet) navigate(home, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeRow?.key]);
-  // Where Settings' Back returns: the last screen before it.
-  const away = useRef<Screen>(HOME);
+  // Where closing Settings returns: the last screen before it.
   useEffect(() => {
-    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
-  }, [screen]);
-  const back = useSettingsBack(screen.id === "settings");
+    if (!sheet && screen.id !== "onboarding") away.current = screen;
+  }, [screen, sheet]);
+  const back = useSettingsBack(sheet);
   const administers = useAdministers();
 
   const open = screen.id === "project" ? screen.project : null;
@@ -288,9 +291,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     [],
   );
 
-  // Settings' pages are in its sidebar, so it shows whatever the toggle says.
-  const settings = shown.id === "settings";
-  const showSidebar = chrome && (settings || !sidebar.hidden);
+  const showSidebar = chrome && !sidebar.hidden;
   // Its width is the frame's variable: a drag moves it on the root alone, and only its end renders the frame again.
   const root = useRef<HTMLDivElement>(null);
 
@@ -307,22 +308,11 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         translucent
         topBar={top}
         under={under}
-        sidebarTop={settings ? undefined : <NewButton go={go} />}
+        sidebarTop={<NewButton go={go} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
-          !chrome ? undefined : settings ? (
-            <Boundary key={shown.id} part="the sidebar">
-              <Suspense fallback={null}>
-                <SettingsSidebar
-                  onBack={() => {
-                    back();
-                    go(away.current);
-                  }}
-                />
-              </Suspense>
-            </Boundary>
-          ) : showSidebar ? (
+          !chrome ? undefined : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
               <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} folded={folded} onToggleSection={toggleSection} factory={factory} go={go} />
             </Boundary>
@@ -357,6 +347,18 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         </div>
       </AppFrame>
       </PanelHandleProvider>
+      {chrome && sheet ? (
+        <Boundary key="settings" part="Settings">
+          <Suspense fallback={null}>
+            <SettingsSheet
+              onClose={() => {
+                back();
+                go(away.current);
+              }}
+            />
+          </Suspense>
+        </Boundary>
+      ) : null}
       <PaletteHost />
       <ProjectsHost />
       <UpdatesOf hubs={hubs} on={route.at} />
