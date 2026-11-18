@@ -13,7 +13,7 @@ import type { Duplex } from "node:stream";
 import type { ComputerImage } from "../../src/shared/contracts.ts";
 import { LeadRelay, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
-import { Images, sessionDisk, sessionImage, sessionLayer, type Backend } from "../../src/node/place/image.ts";
+import { Images, sessionDisk, sessionImage, sessionLayer, startsFrom, type Backend } from "../../src/node/place/image.ts";
 import { kernelCmdline, MicroVm, sealScript, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { BOX_HOME } from "../../src/node/place/provision.ts";
 import { guestOwn } from "../../src/node/place/view.ts";
@@ -58,13 +58,23 @@ function fixture(name: string) {
   const boots: BootPlan[] = [];
   const sealed: string[] = [];
   const h = hooks();
+  // What the guest's init would leave: the marker only where it stacked the image; a box can also fail to boot.
+  const marker = join(root, name, "image-mounted");
+  const flags = { mountFails: false, bootFails: false };
   const vm = new MicroVm({
     home: node,
     fleetd: ["/opt/fleetd"],
     lead: () => h,
     check: () => OK,
     tools: () => TOOLS,
-    boot: (b) => (boots.push(b), standInBoot(node, b)),
+    boot: (b) => {
+      boots.push(b);
+      if (flags.bootFails) return Promise.reject(new Error("no VM here"));
+      if (b.layer && !flags.mountFails) writeFileSync(marker, "");
+      else rmSync(marker, { force: true });
+      return standInBoot(node, b);
+    },
+    imageMarker: marker,
     dial: unixDial,
     reach: async () => {},
     goneMs: 1_000,
@@ -88,7 +98,7 @@ function fixture(name: string) {
     vars: () => vars,
     changed: (_p, image) => void changes.push(image),
   });
-  return { node, repo, vm, images, boots, sealed, changes, vars, rw: join(root, name, "rw") };
+  return { node, repo, vm, images, boots, sealed, changes, vars, flags, rw: join(root, name, "rw") };
 }
 
 /** The stand-in VM: sandbox-guest in a group it leads, its listen socket in the box's dir. */
@@ -120,19 +130,20 @@ function hooks(): LeadSocketHooks {
 }
 
 /** A task's worktree of the bot's checkout, as the node makes one. */
-const worktreeOf = (repo: string, at: string) => (git(repo, "worktree", "add", "-q", "--detach", at, "HEAD"), at);
+const worktreeOf = (repo: string, at: string, ref = "HEAD") => (git(repo, "worktree", "add", "-q", "--detach", at, ref), at);
 
 /** Runs a session's setup as the node does (sessions/index.ts #setUp): from its bot's image when it has one. */
-async function sessionSetup(f: ReturnType<typeof fixture>, session: string, plan: setup.Plan, cwd: string) {
+async function sessionSetup(f: ReturnType<typeof fixture>, session: string, plan: setup.Plan, cwd: string, base?: string) {
   const place = f.vm.bound({ sessionId: session, dir: join(f.node, "hosts", session), role: "worker" });
-  const image = f.images.use("p1", plan, cwd, session, "vm");
+  const chose = f.images.use("p1", plan, cwd, session, "vm", base);
   // The build it started, first: a stand-in box's node.sock is this machine's, one box's at a time.
   await f.images.idle();
+  const image = await startsFrom(place, chose, f.node, session, cwd, {});
   const ran: string[] = [];
   const outcome = await setup.run(place, plan, cwd, {}, [], () => {}, (_i, r) => void ran.push(r.command), undefined, image);
   // Its box goes before the next one boots, for the same reason.
   await place.stop(join(f.node, "hosts", session));
-  return { place, image, outcome, ran };
+  return { place, chose, image, outcome, ran };
 }
 
 test("a bot's setup builds its image in the background, and a new session starts from it without running setup again", async () => {
@@ -303,6 +314,59 @@ test("an image build's box is a box of the node's hosts dir, which the node's sh
   // The failed build's disk, with whatever its setup installed, went with it.
   expect(existsSync(part)).toBe(false);
   expect(existsSync(dir)).toBe(false);
+}, 60_000);
+
+test("the image is built from the bot's base branch, which its new worktrees start from, not origin's default", async () => {
+  const f = fixture("e");
+  // The bot's base is `release`, whose lockfile differs from the checkout's own branch's (main).
+  git(f.repo, "checkout", "-q", "-b", "release");
+  writeFileSync(join(f.repo, "bun.lock"), "lock v2\n");
+  git(f.repo, "commit", "-qam", "release lock");
+  git(f.repo, "checkout", "-q", "main");
+  const log = join(root, "e", "ran.log");
+  const plan: setup.Plan = { commands: [`echo ran >> '${log}'`], inputs: ["bun.lock"] };
+  // The Computer page asks with the repo's base branch.
+  f.images.status("p1", plan, "release");
+  await f.images.idle();
+  expect(f.images.status("p1", plan).state).toBe("ready");
+  // A task's worktree starts from release: same lockfile, so it starts from the image.
+  const wt = worktreeOf(f.repo, join(root, "e", "wt-1"), "release");
+  const s1 = await sessionSetup(f, "e1", plan, wt, "release");
+  expect(s1.image).toBeDefined();
+  expect(s1.outcome.kind).toBe("image");
+  // The base was kept: a later look without it builds nothing new.
+  expect(f.images.status("p1", plan).state).toBe("ready");
+  expect(readFileSync(log, "utf8")).toBe("ran\n");
+  f.vm.close();
+}, 60_000);
+
+test("a session whose image didn't mount, or whose box didn't come up, runs its setup: never neither", async () => {
+  const f = fixture("g");
+  const log = join(root, "g", "ran.log");
+  const plan: setup.Plan = { commands: [`echo ran >> '${log}'`], inputs: ["bun.lock"] };
+  f.images.status("p1", plan);
+  await f.images.idle();
+  expect(readFileSync(log, "utf8")).toBe("ran\n");
+  // The image is chosen, but the box's init couldn't mount it: the choice goes and setup runs in the box.
+  f.flags.mountFails = true;
+  const wt1 = worktreeOf(f.repo, join(root, "g", "wt-1"));
+  const s1 = await sessionSetup(f, "g1", plan, wt1);
+  expect(s1.chose).toBeDefined();
+  expect(s1.image).toBeUndefined();
+  expect(s1.outcome.kind).toBe("done");
+  expect(s1.ran).toEqual(plan.commands!);
+  expect(sessionImage(f.node, "g1")).toBeUndefined();
+  expect(existsSync(sessionLayer(f.node, "g1"))).toBe(false);
+  // No VM comes up at all: the session runs as a plain process, and so does its setup.
+  f.flags.mountFails = false;
+  f.flags.bootFails = true;
+  const wt2 = worktreeOf(f.repo, join(root, "g", "wt-2"));
+  const s2 = await sessionSetup(f, "g2", plan, wt2);
+  expect(s2.chose).toBeDefined();
+  expect(s2.image).toBeUndefined();
+  expect(s2.outcome.kind).toBe("done");
+  expect(readFileSync(log, "utf8")).toBe("ran\nran\nran\n");
+  f.vm.close();
 }, 60_000);
 
 test("an image build's seal strips what is the box's alone and refuses a secret's value", () => {

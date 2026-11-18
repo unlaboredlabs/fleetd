@@ -230,7 +230,7 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
 (Rust through rustup, Postgres, anything in the home) is there at the start instead of being installed by every agent.
 
 - **When it builds.** In the background on its machine, when the setup commands change, when the files under **Skip
-  when unchanged** change on the base branch, when the VM image fleetd ships moves, and on **Rebuild**. One build runs
+  when unchanged** change on the repo's base branch (the image is built from it, as new worktrees start from it), when the VM image fleetd ships moves, and on **Rebuild**. One build runs
   at a time on a machine. A failed build isn't tried again until one of those changes or a Rebuild.
 - **How.** A fresh box from fleetd's base image, a worktree of the base branch, the setup commands as an agent runs them
   (each within 10 minutes, the bot's variables, no order's), then its disk is checked and kept. Locally it's a VM
@@ -241,7 +241,8 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
   When setup writes into the checkout (`node_modules`, say), which no image holds, setup still runs in the worktree,
   over the image's tools and caches.
 - **Never a failed start.** No image yet, one building, a failed build, or one built for other commands or lockfiles:
-  the agent starts clean and runs setup in its worktree, as without images. The image is only a cache of setup.
+  the agent starts clean and runs setup in its worktree, as without images. So does one whose VM couldn't stack the
+  image, or that runs as a plain process. The image is only a cache of setup.
 - **Never in an image:** Claude's sign-in, the agent's Claude dir and transcript, its git config, the order's variables
   and GitHub token, and no value of the bot's secret variables. A build that finds a secret's value on its disk fails
   and names the file: write it where the agent starts (a variable), not to disk in setup.

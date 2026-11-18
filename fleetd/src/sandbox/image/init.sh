@@ -51,6 +51,7 @@ if [ "$$" = 1 ] && [ ! -d /run/fleetd/lower/sbin ]; then
     mkdir -p /run/fleetd/layer
     if mount -t ext4 -o ro "$layer" /run/fleetd/layer && [ -d /run/fleetd/layer/up ]; then
       lower=/run/fleetd/layer/up:/run/fleetd/lower
+      export FLEETD_LAYER=1
     else
       say "can't mount the bot's image $layer: the box starts clean"
     fi
@@ -77,6 +78,9 @@ mount -t devpts -o gid=5,mode=0620,ptmxmode=0666 devpts /dev/pts
 mount -t tmpfs -o mode=1777 tmpfs /dev/shm
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 mkdir -p /run/fleetd /run/lock
+# Whether this boot stacked the bot's image: a session that chose it checks before skipping its setup.
+rm -f /run/fleetd/image
+[ "${FLEETD_LAYER:-}" != 1 ] || : >/run/fleetd/image
 hostname "$(cat /etc/hostname 2>/dev/null || echo fleetd-box)"
 
 # fleetd.<name>=<value> from the kernel's command line.

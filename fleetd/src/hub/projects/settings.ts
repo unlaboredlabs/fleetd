@@ -234,8 +234,10 @@ const checkoutOf = (r: ProjectRef, repo: ProjectRepo | undefined): ProjectRef =>
 async function imageOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined, setup: WorktreeSetup, rebuild = false): Promise<ComputerImage | undefined> {
   const c = checkoutOf(r, repo);
   if (!executors(hub).isConnected(c.machineId) || !link(hub).can(c.machineId, CAP_COMPUTER_IMAGE)) return undefined;
+  // Built from the repo's base branch, where its new worktrees start.
+  const base = (repo ?? repos.own(hub.db.conn, r))?.base;
   try {
-    return await projectImage(hub, c.machineId, c.projectId, setup, rebuild);
+    return await projectImage(hub, c.machineId, c.projectId, setup, rebuild, base);
   } catch (error) {
     if (rebuild) throw fromExecutor(error);
     return undefined;

@@ -41,6 +41,8 @@ export interface Place {
   run(r: ConfinedRun): Promise<RunOutcome>;
   /** A piece of the image or chat file at `path` in the session's working directory `root` (actions/image.ts). */
   read(root: string, path: string, offset: number, file: boolean): Promise<Image>;
+  /** A local VM's: whether the session's box, booted now, runs over its bot's computer image (./image.ts). */
+  fromImage?(r: { cwd: string; env: Record<string, string | undefined> }): Promise<boolean>;
 }
 
 /** The dir a session's host keeps its registration and socket in. */

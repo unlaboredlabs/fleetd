@@ -15,7 +15,7 @@ function bot() {
   project(k.hub, r, { title: "App" });
   k.hub.db.conn.run("INSERT INTO machines (machine_id, data) VALUES ('devbox', '{\"machineId\":\"devbox\",\"name\":\"devbox\",\"nodeVersion\":\"1\",\"status\":\"online\",\"lastSeenAt\":\"x\"}')");
   k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'app', 'devbox', 'app')");
-  k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'web', 'devbox', 'web')");
+  k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, base) VALUES ('devbox', 'app', 'web', 'devbox', 'web', 'release')");
   const calls: Record<string, unknown>[] = [];
   let image: ComputerImage = { state: "ready", builtAt: "2026-11-18T10:00:00.000Z", bytes: 1_100_000_000, where: "vm" };
   Object.assign(executors(k.hub), {
@@ -36,7 +36,8 @@ test("a bot's settings show each repo's computer image, as its checkout's node h
   // Setting a repo's setup asks its checkout's node for the image, which builds the one due.
   await k.ok(key("operate"), "project_settings_set", { ...r, repo: "web", setup: { commands: ["curl https://sh.rustup.rs | sh -s -- -y"], inputs: ["rust-toolchain.toml"] } });
   const asked = calls.filter((c) => c.op === "project_image").at(-1)!;
-  expect(asked).toEqual({ op: "project_image", projectId: "web", setup: { commands: ["curl https://sh.rustup.rs | sh -s -- -y"], inputs: ["rust-toolchain.toml"] } });
+  // With the repo's base branch, which its image is built from.
+  expect(asked).toEqual({ op: "project_image", projectId: "web", setup: { commands: ["curl https://sh.rustup.rs | sh -s -- -y"], inputs: ["rust-toolchain.toml"] }, base: "release" });
   const got = await k.ok(key("read"), "project_settings_get", { ...r, repo: "web" });
   expect(got.settings.image).toEqual({ state: "ready", builtAt: "2026-11-18T10:00:00.000Z", bytes: 1_100_000_000, where: "vm" });
 });

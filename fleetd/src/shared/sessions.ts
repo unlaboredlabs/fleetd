@@ -194,7 +194,7 @@ export type SessionCall =
   | { op: "claude_models" }
   | { op: "project_worktrees"; projectId: ProjectId }
   /** The checkout's computer image for `setup` (its repo's): one due starts building, `rebuild` builds it again. */
-  | { op: "project_image"; projectId: ProjectId; setup: WorktreeSetup; rebuild?: boolean }
+  | { op: "project_image"; projectId: ProjectId; setup: WorktreeSetup; rebuild?: boolean; base?: string }
   | ({ op: "launch" } & SessionLaunch)
   | {
       op: "send";

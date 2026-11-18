@@ -55,6 +55,9 @@ import { how, SETUP_TIMEOUT_SEC, type Ran } from "../worktree/setup.ts";
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
+/** What the guest's init leaves when a box stacked its bot's image (sandbox/image/init.sh). */
+export const IMAGE_MARKER = "/run/fleetd/image";
+
 /** A box's guest memory by default, GiB, and its CPUs. 4 GiB, as the cap counts it whole: fleetd's own check peaked at
  * 3 GB, but a real crate's tests didn't link in it (rustc killed at 3.5 GB). A machine that builds such sets its own in
  * node.json (`vmMemoryGiB`, 2 to 256), and an agent that runs out is told so. No compressed swap: the guest kernel has
@@ -182,6 +185,8 @@ export type MicroVmOptions = {
   shareFds?: (r: BoxRecord) => ShareFds | undefined;
   forget?: (box: Box) => Promise<void>;
   shareEveryMs?: number;
+  /** Where a box says it stacked its bot's image (IMAGE_MARKER): the stand-ins'. */
+  imageMarker?: string;
   /** How an image build's box seals its disk (`sealScript`, as root): the stand-ins'. */
   seal?: (box: Box, script: string, scrub: string[]) => Promise<RunOutcome>;
 };
@@ -396,6 +401,7 @@ export class MicroVm {
       end: (dir) => this.end(dir),
       run: (r) => this.run(s, r),
       read: processPlace.read,
+      fromImage: (r) => this.fromImage(s, r),
     };
   }
 
@@ -510,6 +516,21 @@ export class MicroVm {
     renameSync(part, file);
     chmodSync(file, 0o444);
     return { ref: file, bytes: statSync(file).blocks * 512, worktree };
+  }
+
+  /** Whether session `s`'s box, booted for it now, runs over its bot's image: the guest's init says so (IMAGE_MARKER).
+   * No VM (VMs off, or one that didn't boot) or an image that didn't mount: no. */
+  async fromImage(s: PlaceFor, r: { cwd: string; env: Record<string, string | undefined> }): Promise<boolean> {
+    if (this.status().kind !== "microvm") return false;
+    try {
+      const p = this.#provision(s, r.cwd, r.env);
+      const argv = ["test", "-e", this.o.imageMarker ?? IMAGE_MARKER];
+      const held = await this.#box(s, needs({ cwd: r.cwd, env: p.env, argv, node: this.o.home, session: s.sessionId, rw: [this.#update(), ...p.rw], ro: [...this.#base(s), ...p.ro] }), undefined, true);
+      const out = await held.box.run({ cwd: r.cwd, argv, timeoutSec: 30, env: await this.#inBox(p.env, r.cwd) });
+      return out.exitCode === 0;
+    } catch {
+      return false;
+    }
   }
 
   async start(s: PlaceFor, l: Launch): Promise<HostLink> {

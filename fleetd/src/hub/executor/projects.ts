@@ -82,9 +82,10 @@ export async function projectWorktrees(hub: Hub, m: MachineId, projectId: Projec
   return worktrees as ProjectWorktrees;
 }
 
-/** The checkout's computer image for `setup` (its repo's), from its node; `rebuild` builds it again. */
-export async function projectImage(hub: Hub, m: MachineId, projectId: ProjectId, setup: WorktreeSetup, rebuild = false): Promise<ComputerImage> {
-  const out = await executors(hub).call(m, rebuild ? "project" : "read", { op: "project_image", projectId, setup, ...(rebuild ? { rebuild } : {}) }, READ_TIMEOUT_MS);
+/** The checkout's computer image for `setup` (its repo's), from its node; `rebuild` builds it again; `base` is the
+ * repo's base branch, which the image is built from. */
+export async function projectImage(hub: Hub, m: MachineId, projectId: ProjectId, setup: WorktreeSetup, rebuild = false, base?: string): Promise<ComputerImage> {
+  const out = await executors(hub).call(m, rebuild ? "project" : "read", { op: "project_image", projectId, setup, ...(rebuild ? { rebuild } : {}), ...(base ? { base } : {}) }, READ_TIMEOUT_MS);
   if (out.kind !== "project_image") throw ExecutorError.failed(m, "read", "the node sent no image");
   return out.image;
 }

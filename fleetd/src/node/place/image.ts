@@ -22,6 +22,7 @@ import { join } from "node:path";
 import type { ComputerImage, WorktreeSetup } from "../../shared/contracts.ts";
 import { vmDir } from "../../sandbox/host/tools.ts";
 import { nowIso, tailUtf16 } from "../util.ts";
+import type { Place } from "./index.ts";
 
 /** Changes when what an image holds changes, so no image of an older layout is stacked again. */
 const FORMAT = 1;
@@ -76,6 +77,18 @@ export function sessionImage(node: string, session: string): Choice | undefined 
   }
 }
 
+/**
+ * The image session `session` starts from in `place`, `choice` what it chose (`Images.use`): a local box boots now and
+ * says whether it stacked it. One that didn't (its image didn't mount, or no VM came up and it runs as a process) has
+ * its choice dropped, and runs its setup: never a start with setup skipped and no image under it.
+ */
+export async function startsFrom(place: Pick<Place, "fromImage">, choice: Choice | undefined, node: string, session: string, cwd: string, env: Record<string, string | undefined>): Promise<Choice | undefined> {
+  if (!choice || !place.fromImage || (await place.fromImage({ cwd, env }))) return choice;
+  console.warn(`${nowIso()} WARN a session's box isn't over its bot's computer image (it didn't mount, or no VM came up): its setup runs {"sessionId":"${session}"}`);
+  dropChoice(node, session);
+  return undefined;
+}
+
 /** A file's contents for the key, or undefined when it isn't there. */
 type Reader = (path: string) => Uint8Array | undefined;
 
@@ -119,8 +132,14 @@ const git = (root: string, args: string[]) => {
   return r.stdout.toString().trim();
 };
 
-/** The commit new worktrees of the checkout `root` start from: its remote's default branch, else its own HEAD. */
-export function baseRef(root: string): string {
+/**
+ * The commit new worktrees of the checkout `root` start from: the bot's base branch (`base`, as the hub or a task's
+ * worktree names it: `main`), its remote's copy first, as a new worktree takes it; without one, the remote's default
+ * branch, else the checkout's own HEAD.
+ */
+export function baseRef(root: string, base?: string): string {
+  const has = (ref: string) => Bun.spawnSync(["git", "-C", root, "rev-parse", "--verify", "-q", `${ref}^{commit}`], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  if (base) for (const ref of base.startsWith("origin/") ? [base] : [`origin/${base}`, base]) if (has(ref)) return ref;
   const r = Bun.spawnSync(["git", "-C", root, "rev-parse", "--abbrev-ref", "origin/HEAD"], { stdout: "pipe", stderr: "ignore" });
   const ref = r.stdout.toString().trim();
   return r.exitCode === 0 && ref.startsWith("origin/") ? ref : "HEAD";
@@ -153,6 +172,8 @@ export type Backend = {
 };
 
 type Kept = {
+  /** The bot's base branch, as last named (the hub's settings, a task's worktree). */
+  base?: string;
   ready?: { key: string; ref: string; where: Where; builtAt: string; bytes?: number; worktree: boolean };
   failed?: { key: string; at: string; log: string };
 };
@@ -171,7 +192,7 @@ export type ImagesOptions = {
 
 export class Images {
   /** Each bot's build under way or waiting for the machine's one build, and what comes after it. */
-  #running = new Map<string, { key: string; startedAt: string; again?: { setup: WorktreeSetup; force: boolean } }>();
+  #running = new Map<string, { key: string; startedAt: string; again?: { setup: WorktreeSetup; force: boolean; base?: string } }>();
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(readonly o: ImagesOptions) {}
@@ -191,17 +212,18 @@ export class Images {
     renameSync(`${at}.tmp`, at);
   }
 
-  /** The key of the bot's image as its base branch has its inputs now. */
-  #keyAt(project: string, setup: WorktreeSetup, b: Backend): string | undefined {
-    const root = this.o.root(project);
-    if (!root) return undefined;
-    return imageKey(setup, b.base, b.where, atCommit(root, baseRef(root)));
+  /** The commit the bot's image builds from: its base branch's, `base` when named (and kept for later), else the last
+   * one named. */
+  #ref(project: string, root: string, base?: string): string {
+    const k = this.#kept(project);
+    if (base && base !== k.base) this.#save(project, { ...k, base });
+    return baseRef(root, base ?? k.base);
   }
 
-  /** The bot's image as the Computer page shows it. One due (none for its key yet, and none failed for it) starts
-   * building. */
-  status(project: string, setup: WorktreeSetup): ComputerImage {
-    this.ensure(project, setup);
+  /** The bot's image as the Computer page shows it, `base` its base branch. One due (none for its key yet, and none
+   * failed for it) starts building. */
+  status(project: string, setup: WorktreeSetup, base?: string): ComputerImage {
+    this.ensure(project, setup, false, base);
     return this.#view(project, setup);
   }
 
@@ -219,27 +241,28 @@ export class Images {
 
   /** Builds the bot's image when its key has none (or `force`: a Rebuild). A build under way finishes first, and the
    * last request after it then runs. */
-  ensure(project: string, setup: WorktreeSetup, force = false): ComputerImage {
+  ensure(project: string, setup: WorktreeSetup, force = false, base?: string): ComputerImage {
     const b = this.o.backend();
     if (!b || !(setup.commands ?? []).length) return { state: "none" };
+    const root = this.o.root(project);
     const run = this.#running.get(project);
-    if (run) {
-      run.again = { setup, force: force || !!run.again?.force };
+    if (run || !root) {
+      if (run) run.again = { setup, force: force || !!run.again?.force, ...(base ? { base } : {}) };
       return this.#view(project, setup);
     }
-    const key = this.#keyAt(project, setup, b);
-    if (!key) return this.#view(project, setup);
+    const ref = this.#ref(project, root, base);
+    const key = imageKey(setup, b.base, b.where, atCommit(root, ref))!;
     const k = this.#kept(project);
     if (!force && (k.ready?.key === key || k.failed?.key === key)) return this.#view(project, setup);
     this.#running.set(project, { key, startedAt: nowIso() });
     const view = this.#view(project, setup);
     this.o.changed?.(project, view);
-    const next = this.#queue.then(() => this.#build(project, setup, b, key));
+    const next = this.#queue.then(() => this.#build(project, setup, b, key, ref));
     this.#queue = next.catch(() => {});
     return view;
   }
 
-  async #build(project: string, setup: WorktreeSetup, b: Backend, key: string): Promise<void> {
+  async #build(project: string, setup: WorktreeSetup, b: Backend, key: string, ref: string): Promise<void> {
     const root = this.o.root(project);
     const dir = join(imagesDir(this.o.home), "build", project);
     const wt = join(dir, "wt");
@@ -247,7 +270,6 @@ export class Images {
     const { env, secrets } = this.o.vars(project);
     const mask = (t: string) => secrets.reduce((acc, s) => (s ? acc.split(s).join("[secret]") : acc), t);
     const say = (t: string) => void (log = tailUtf16(`${log}${mask(t).trimEnd()}\n`, LOG_MAX * 4));
-    const k = this.#kept(project);
     try {
       if (!root) throw new Error("the bot's checkout isn't on this machine");
       rmSync(dir, { recursive: true, force: true });
@@ -255,10 +277,11 @@ export class Images {
       try {
         git(root, ["worktree", "prune"]);
       } catch {}
-      git(root, ["worktree", "add", "--detach", "-q", wt, baseRef(root)]);
+      git(root, ["worktree", "add", "--detach", "-q", wt, ref]);
       console.log(`${nowIso()} INFO building a bot's computer image {"projectId":"${project}","where":"${b.where}"}`);
       const at = Date.now();
       const built = await b.build({ project, key, cwd: wt, setup, env, secrets, log: say });
+      const k = this.#kept(project);
       const old = k.ready;
       k.ready = { key, ref: built.ref, where: b.where, builtAt: nowIso(), ...(built.bytes !== undefined ? { bytes: built.bytes } : {}), worktree: built.worktree };
       delete k.failed;
@@ -270,6 +293,7 @@ export class Images {
       await this.#prune(project, b, built.ref);
     } catch (error) {
       say(`fleetd: ${(error as Error).message}`);
+      const k = this.#kept(project);
       k.failed = { key, at: nowIso(), log: tailUtf16(log.trimEnd(), LOG_MAX) };
       this.#save(project, k);
       console.warn(`${nowIso()} WARN a bot's computer image didn't build: its agents start clean and run setup {"projectId":"${project}","error":${JSON.stringify(mask((error as Error).message))}}`);
@@ -283,7 +307,7 @@ export class Images {
       const run = this.#running.get(project);
       this.#running.delete(project);
       this.o.changed?.(project, this.#view(project, setup));
-      if (run?.again) this.ensure(project, run.again.setup, run.again.force);
+      if (run?.again) this.ensure(project, run.again.setup, run.again.force, run.again.base);
     }
   }
 
@@ -314,9 +338,10 @@ export class Images {
    * The image session `session` of bot `project` starts from, its worktree `cwd` given: the bot's ready image when the
    * worktree's inputs give its key, recorded as the session's choice (and, for a local VM, linked as its layer) the
    * first time; undefined otherwise, when it starts clean and the image due is built for later sessions. A session
-   * that started without one goes on without one.
+   * that started without one goes on without one. `where`: where the session runs, this machine's VMs or a provider;
+   * `base`: its worktree's base branch, the bot's.
    */
-  use(project: string, setup: WorktreeSetup, cwd: string, session: string, where: Where | undefined): Choice | undefined {
+  use(project: string, setup: WorktreeSetup, cwd: string, session: string, where: Where | undefined, base?: string): Choice | undefined {
     const had = sessionImage(this.o.home, session);
     if (had) return had.where === where ? had : undefined;
     const b = this.o.backend();
@@ -328,7 +353,7 @@ export class Images {
     const ready = this.#kept(project).ready;
     const key = imageKey(setup, b.base, b.where, fromFiles(cwd));
     if (!ready || ready.where !== b.where || ready.key !== key) {
-      this.ensure(project, setup);
+      this.ensure(project, setup, false, base);
       return undefined;
     }
     const choice: Choice = { where: b.where, ref: ready.ref, key: ready.key, builtAt: ready.builtAt, worktree: ready.worktree, commands: setup.commands ?? [] };
