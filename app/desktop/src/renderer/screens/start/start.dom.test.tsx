@@ -263,6 +263,27 @@ it("a computer whose claude isn't logged in: Log in to Claude opens its page, an
   stop();
 });
 
+it("a computer whose claude didn't open its page: the step says so, and the link opens it from the click", async () => {
+  shell.openExternal.mockResolvedValueOnce({ ok: false, message: "The browser blocked the new tab." } as never);
+  const stop = await render({ machines: [machine({ status: "degraded", degradedReason: "claude is not logged in." })] });
+  await click("Log in to Claude");
+  expect(host.textContent).toContain("The browser didn't open Claude's sign-in page");
+  await click("Open the sign-in page");
+  expect(shell.openExternal).toHaveBeenLastCalledWith("https://claude.ai/oauth/authorize?x=1");
+  expect(host.textContent).toContain("Sign in on the page that opened");
+  stop();
+});
+
+it("a computer that joined but can't run agents for another reason: it says so, in the hub's words with their fix", async () => {
+  const stop = await render({ machines: [machine({ status: "degraded", degradedReason: "claude is not installed (claude not found). Fix: install Claude Code on devbox." })] });
+  expect(screen()).toBe("start.computer");
+  expect(host.textContent).toContain("devbox is connected");
+  expect(host.textContent).toContain("claude is not installed (claude not found). Fix: install Claude Code on devbox.");
+  expect(host.textContent).not.toContain("Waiting for it to connect");
+  expect(host.textContent).not.toContain("Making a line");
+  stop();
+});
+
 it("Connect GitHub sends this tab on GitHub's one trip, back to this page; Skip goes on to an empty bot", async () => {
   const stop = await render({ machines: [machine()] });
   expect(screen()).toBe("start.github");

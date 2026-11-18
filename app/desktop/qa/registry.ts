@@ -2785,6 +2785,8 @@ export const screens: readonly Screen[] = [
     computer: "computer",
     claude: "computer",
     "claude-code": "computer",
+    "claude-blocked": "computer",
+    unusable: "computer",
     github: "github",
     "github-waiting": "github",
     "github-failed": "github",

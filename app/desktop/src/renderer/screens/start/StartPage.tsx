@@ -154,12 +154,27 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
     );
   }
   if (step.at === "ready") return null;
+  const joined = (
+    <div className={s.joined}>
+      <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
+      <Text>{`${step.machine} is connected`}</Text>
+    </div>
+  );
+  if (step.at === "unusable") {
+    // Agents can't run there yet: the hub's own words, with their fix; the step goes on once the machine is well.
+    return (
+      <>
+        {joined}
+        <span role="status">
+          <Text tone="warning">{step.reason}</Text>
+        </span>
+        <Waiting>{`Waiting for ${step.machine} to be ready`}</Waiting>
+      </>
+    );
+  }
   return (
     <>
-      <div className={s.joined}>
-        <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
-        <Text>{`${step.machine} is connected`}</Text>
-      </div>
+      {joined}
       {step.login === "start" || step.login === "starting" ? (
         <>
           <Text as="p" tone="quiet">
@@ -181,7 +196,7 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
       ) : (
         <>
           <Text as="p" tone="quiet">
-            Sign in on the page that opened, then paste the code it shows.
+            {step.opened === false ? "The browser didn't open Claude's sign-in page. Open it, sign in, then paste the code it shows." : "Sign in on the page that opened, then paste the code it shows."}
           </Text>
           <form
             className={s.codeRow}
@@ -197,7 +212,7 @@ function Computer({ step, actions }: { step: ComputerStep; actions: StartActions
           </form>
           <div>
             <Button variant="link" className={s.again} onClick={actions.onClaudeLogin}>
-              Open the page again
+              {step.opened === false ? "Open the sign-in page" : "Open the page again"}
             </Button>
           </div>
         </>

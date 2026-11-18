@@ -52,6 +52,7 @@ type Login =
       readonly machineId: string;
       readonly login: "starting" | "code" | "checking";
       readonly url?: string;
+      readonly opened?: boolean;
       readonly error?: string;
     }
   | {
@@ -150,6 +151,8 @@ export function useStart(
   const [login, setLogin] = useState<Login | null>(null);
   const [loggedIn, setLoggedIn] = useState<ReadonlySet<string>>(() => new Set());
   const loggedOut = listed.find((m) => claudeLoggedOut(m) && !loggedIn.has(m.machineId));
+  // Joined, but degraded for another reason than Claude's login (claude not installed, say): the hub says why and how.
+  const unusable = listed.find((m) => m.status === "degraded" && !claudeLoggedOut(m) && !loggedIn.has(m.machineId));
   const ready = listed.find((m) => m.status === "online" && !claudeLoggedOut(m)) ?? listed.find((m) => loggedIn.has(m.machineId)) ?? listed.find((m) => m.status !== "degraded") ?? null;
 
   const computer: ComputerStep =
@@ -161,9 +164,12 @@ export function useStart(
             machine: loggedOut.name,
             login: login?.machineId === loggedOut.machineId ? login.login : "start",
             ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.url !== undefined ? { url: login.url } : {}),
+            ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.opened === false ? { opened: false } : {}),
             ...(login?.machineId === loggedOut.machineId && login.error !== undefined ? { error: login.error } : {}),
           }
-        : {
+        : unusable !== undefined
+          ? { at: "unusable", machine: unusable.name, reason: unusable.degradedReason ?? `Agents can't run on ${unusable.name} yet.` }
+          : {
             at: "line",
             line: join.out?.line ?? null,
             ...(join.error === undefined ? {} : { error: join.error }),
@@ -252,7 +258,8 @@ export function useStart(
     const machineId = loggedOut.machineId;
     // The page that opened: opened again from the click itself, which no browser blocks.
     if (login?.machineId === machineId && login.login === "code" && login.url !== undefined) {
-      void window.fleetd.openExternal(login.url);
+      const { url } = login;
+      void window.fleetd.openExternal(url).then((o) => o.ok && setLogin({ machineId, login: "code", url }));
       return;
     }
     setLogin({ machineId, login: "starting" });
@@ -263,8 +270,13 @@ export function useStart(
           setLogin(null);
           return;
         }
-        setLogin({ machineId, login: "code", url: out.loginUrl });
-        void window.fleetd.openExternal(out.loginUrl);
+        const url = out.loginUrl;
+        setLogin({ machineId, login: "code", url });
+        // Opened after the machine's answer, outside the click: a browser may block it, and then the page says so.
+        void window.fleetd.openExternal(url).then(
+          (o) => !o.ok && setLogin((was) => (was?.machineId === machineId && was.login === "code" ? { machineId, login: "code", url, opened: false } : was)),
+          () => setLogin((was) => (was?.machineId === machineId && was.login === "code" ? { machineId, login: "code", url, opened: false } : was)),
+        );
       },
       (e: unknown) => setLogin({ machineId, login: "start", error: errorText(e) }),
     );

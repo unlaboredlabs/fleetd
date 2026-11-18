@@ -44,8 +44,12 @@ export type ComputerStep =
       readonly machine: string;
       readonly login: "start" | "starting" | "code" | "checking";
       readonly url?: string;
+      /** False when the browser kept Claude's sign-in page from opening (a pop-up blocker): the page says to open it. */
+      readonly opened?: boolean;
       readonly error?: string;
     }
+  /** Joined, and agents can't run there for another reason (claude not installed, say): the hub's words, its fix in them. */
+  | { readonly at: "unusable"; readonly machine: string; readonly reason: string }
   | { readonly at: "ready"; readonly machine: string };
 
 export type GithubStep =

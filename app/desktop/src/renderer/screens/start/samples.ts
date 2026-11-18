@@ -21,6 +21,13 @@ export const SAMPLES = {
   // A new team: 1. a computer, and its Claude login when it isn't logged in.
   computer: { ...owner, computer: { at: "line", line: LINE }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
   claude: { ...owner, computer: { at: "claude", machine: "devbox", login: "start" }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
+  "claude-blocked": { ...owner, computer: { at: "claude", machine: "devbox", login: "code", url: "https://claude.ai/oauth/authorize", opened: false }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
+  unusable: {
+    ...owner,
+    computer: { at: "unusable", machine: "devbox", reason: "claude is not installed (claude not found). Fix: install Claude Code on devbox, then run claude there once." },
+    github: { at: "todo" },
+    project: { at: "pick", repos: REPOS, query: "" },
+  },
   "claude-code": { ...owner, computer: { at: "claude", machine: "devbox", login: "code" }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
   // 2. GitHub, one trip: sign in and choose the repositories.
   github: { ...owner, computer: ready, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
