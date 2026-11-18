@@ -195,12 +195,29 @@ async function gitRoot(cwd: string): Promise<string | undefined> {
   return (await child.exited) === 0 && out.endsWith("/.git") ? dirname(out) : undefined;
 }
 
-/** Why no box came up, in the provider's plain words; a provider that refused is set aside for a while, so the run's
- * retry goes to this machine's slots or waits in line. */
-function failed(provider: ProviderId, error: unknown): LaunchError {
+/** No box came up for the session: its run fails so that fleetd's recovery starts it again (the hub's `sandbox`
+ * failure class), where the slot board then puts it. */
+export class HostedDown extends LaunchError {}
+
+/** Why no box came up, in the provider's plain words (or the box's, for the repo's clone in it). The provider is set
+ * aside for a while either way, so the run's retry goes to this machine's slots or waits in line rather than fail
+ * there again. */
+function failed(provider: ProviderId, error: unknown): HostedDown {
+  if (error instanceof HostedDown) return error;
   const why = (error as Error).message;
-  if (error instanceof ProviderError) boxes()?.setAside(provider, why);
-  return new LaunchError(`no hosted sandbox came up at ${NAMES[provider]}: ${why}`);
+  boxes()?.setAside(provider, error instanceof ProviderError ? why : `a sandbox there didn't come up: ${why}`);
+  return new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: ${why}`);
+}
+
+/** The session's box, made when it has none; a provider set aside isn't asked for another until its time is out. */
+async function boxFor(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>): Promise<Live> {
+  const aside = live.has(session) ? undefined : boxes()?.aside(provider);
+  if (aside) throw new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: it is left out for a few minutes after it failed (${aside})`);
+  try {
+    return await ensure(provider, session, dir, cwd, env);
+  } catch (error) {
+    throw failed(provider, error);
+  }
 }
 
 /** The session's box goes: its work and transcript back here, then the box is destroyed. Idempotent. */
@@ -269,12 +286,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
       const env = launch.env;
       if (!ACCOUNT_CLEARS.slice(0, 2).some((k) => env[k]) && !env.ANTHROPIC_AUTH_TOKEN)
         throw new LaunchError("this agent runs on the machine's own Claude login, which never leaves the machine: give its bot a Claude account to run it in a hosted sandbox");
-      let l: Live;
-      try {
-        l = await ensure(provider, session, dir, launch.cwd, env);
-      } catch (error) {
-        throw failed(provider, error);
-      }
+      const l = await boxFor(provider, session, dir, launch.cwd, env);
       const home = homeOf(dir);
       const box = l.box;
       // Setup's commands may have made the box, with none of the session's ports: the browser's, adb's and a Claude
@@ -367,9 +379,9 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string):
     async run(r) {
       let l: Live;
       try {
-        l = await ensure(provider, session, dir, r.cwd, r.env ?? {});
+        l = await boxFor(provider, session, dir, r.cwd, r.env ?? {});
       } catch (error) {
-        return { exitCode: null, outputTail: "", timedOut: false, notRun: failed(provider, error).message };
+        return { exitCode: null, outputTail: "", timedOut: false, notRun: (error as Error).message };
       }
       const env = { ...(r.env ?? {}), PATH: boxPath(r.env?.PATH, homeOf(dir)) };
       const out = await l.box.run({ argv: r.argv, cwd: r.cwd, env, timeoutSec: r.timeoutSec, ...(r.signal ? { signal: r.signal } : {}) });

@@ -335,3 +335,34 @@ test("a lead's launch tells the screens, and what its browsers filled is masked 
     service.screens = undefined;
   }
 });
+
+test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its message reaches claude at the next start", async () => {
+  // On a Claude account (the machine's own login never goes to a box), on a machine that makes no boxes.
+  const other = await SessionService.start({ ...config(), home: join(home.dir, "node-hosted"), baseEnv: { ...config().baseEnv, ANTHROPIC_AUTH_TOKEN: "tok-x" } });
+  let n = 0;
+  const go = (op: string, args: Record<string, unknown>) => other.handle({ id: `h${++n}`, call: { op, ...args } as never });
+  const failedRun = (session: string, run: string) => until(`${run} to fail`, () => other.store.runs(session).find((r) => r.id === run && r.status === "failed"));
+  const completed = (session: string, run: string) => until(`${run} to complete`, () => other.store.runs(session).find((r) => r.id === run && r.status === "completed"));
+  try {
+    expect((await go("project_upsert", { projectId: "p1", title: "demo", workspaceRoot: repo })).result).toMatchObject({ ok: { kind: "done" } });
+    // The first launch: its brief never reached claude. The recovery's resume, on this machine, brings it.
+    await go("launch", { sessionId: "s-boxed", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "the brief", runId: "rb1", place: "e2b" });
+    const run = await failedRun("s-boxed", "rb1");
+    expect(run.failure?.class).toBe("sandbox");
+    expect(run.failure?.message).toContain("no hosted sandbox came up at E2B");
+    await go("send", { sessionId: "s-boxed", runId: "rb2", text: "the note", place: "local" });
+    await completed("s-boxed", "rb2");
+    expect(other.store.session("s-boxed")?.summary.latestAssistantTail).toBe("ok: the brief\n\nthe note");
+    // A continued run (a lead's message to an agent whose claude has gone) whose box doesn't come up: the message
+    // isn't lost, it goes with the resume in the same thread.
+    await go("stop", { sessionId: "s-boxed" });
+    await go("send", { sessionId: "s-boxed", runId: "rb3", text: "the lead's message", place: "e2b" });
+    expect((await failedRun("s-boxed", "rb3")).failure?.class).toBe("sandbox");
+    await go("send", { sessionId: "s-boxed", runId: "rb4", text: "the note again", place: "local" });
+    await completed("s-boxed", "rb4");
+    expect(other.store.session("s-boxed")?.summary.latestAssistantTail).toBe("ok: the lead's message\n\nthe note again");
+    expect(other.store.session("s-boxed")?.local.unsent).toBeUndefined();
+  } finally {
+    await other.stopAll();
+  }
+});

@@ -406,6 +406,8 @@ export type FailureClass =
   | "network"
   | "invalid_request"
   | "process_exited"
+  /** The agent's hosted sandbox didn't come up, so its claude never started. */
+  | "sandbox"
   | "other";
 
 export type RunFailure = {

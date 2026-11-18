@@ -162,6 +162,29 @@ test("a node stop resumes the task in its thread with the recover note; a second
   k.hub.shutdown.abort();
 });
 
+test("a run whose hosted sandbox didn't come up resumes in its thread, its send placed by the board", async () => {
+  const k = tasksKit();
+  void k.t.run();
+  await k.spawn("Review it");
+  k.ports.runs.set("s1", "r1");
+  // Where the board places the thread when the resume's send goes: what the node starts its claude in.
+  const placed: (string | undefined)[] = [];
+  const send = k.ports.send;
+  k.ports.send = async (thread, message, id) => {
+    placed.push(slots(k.hub).placeOfThread(thread));
+    return send(thread, message, id);
+  };
+  k.thread("thread.failed", "s1", { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "could not start claude: no hosted sandbox came up at boat.dev: cloning the repo failed in the box" } });
+  await until(() => k.t.get("T1")?.state === "queued");
+  expect(k.t.get("T1")?.recovery).toMatchObject({ mode: "resume", count: 1 });
+  await k.t.message(k.lead, "T1", "go on");
+  await until(() => k.t.get("T1")?.state === "running");
+  expect(k.ports.sends.at(-1)?.thread).toEqual({ machineId: "lab-a", threadId: "s1" });
+  expect(k.ports.launches).toHaveLength(1);
+  expect(placed).toEqual(["local"]);
+  k.hub.shutdown.abort();
+});
+
 test("a message continues an ended task in its thread; a running one is steered; a cancelled one refuses", async () => {
   const k = tasksKit();
   void k.t.run();

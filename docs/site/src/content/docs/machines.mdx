@@ -418,7 +418,9 @@ same machine (a second `FLEETD_HOME`) are never touched. `fleetd machine remove`
 
 **Turn it off on a machine.** Add `"sandbox": "process"` to its [`node.json`](/docs/config-and-files#node-json). New
 agents run as plain processes within a minute; an agent in a VM finishes the run it is in there (messages that arrive
-meanwhile join it), and its next one starts as a plain process. Remove the key to turn VMs back on.
+meanwhile join it), and its next one starts as a plain process. Remove the key to turn VMs back on. It turns off local
+VMs only: with a [hosted provider](#sandboxes) connected, agents past the machine's max agents still go there. A
+provider's limit of 0 sends none.
 
 ## Hosted sandboxes {#sandboxes}
 
@@ -479,9 +481,11 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer Â· E2B Â
   iOS simulators, and an agent on the machine's own Claude login.
 - *Machines.* Only an x86_64 Linux machine makes sandboxes (each runs the machine's own fleetd); an arm64 one keeps
   its agents on its own slots.
-- *Failures.* A key the provider refuses, its plan's limit, billing or an outage fail that run with the provider's
-  words on the agent; the machine leaves that provider out for 10 minutes, and fleetd's recovery starts the run again on
-  the machine's own slots or puts it in line.
+- *Failures.* A sandbox that doesn't come up (a key the provider refuses, its plan's limit, billing, an outage, or the
+  repo not cloning in it) fails that run with the provider's or the sandbox's words on the agent. The machine leaves
+  that provider out for 10 minutes, and a minute later fleetd's recovery starts the agent again in its own thread, with
+  the message that run never got (its brief, or its lead's message): on the machine's own slots, another provider with
+  room, or in line. Twice in a row, and the task fails for its lead to decide.
 
 **What the machine does.** The first agent to need a provider builds fleetd's template in the team's account (the
 same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with); it takes a few minutes,

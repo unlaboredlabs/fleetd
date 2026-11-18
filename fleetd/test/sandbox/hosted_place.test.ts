@@ -11,7 +11,7 @@ import { e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, hostedPlace, hostedReach, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, HostedDown, hostedPlace, hostedReach, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { reach } from "../../src/node/place/endpoint.ts";
 import { placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -76,7 +76,7 @@ async function setup() {
   boxes.wire({ lead: { relay: new LeadRelay(), identify: () => ({ kind: "none" }) as never, maskFor: () => new Masker([]) } });
   setBoxes(boxes);
   const env = { HOME, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, FLEETD_NODE_SOCK: join(home, "node.sock"), TMPDIR: join(home, "tmp", "s1") };
-  return { s, home, cwd, env };
+  return { s, home, cwd, env, boxes };
 }
 
 const next = async (link: { next(): Promise<RunnerEvent | undefined> }) =>
@@ -193,4 +193,31 @@ test("a Claude endpoint on another tailnet host, which no hosted box's network r
   expect(readRecord(join(home, "hosts", "s-public"))!.relays).toEqual([]);
   expect(JSON.stringify(await next(direct))).toContain("m1");
   await placeAt(join(home, "hosts", "s-public")).stop(join(home, "hosts", "s-public"));
+}, 60_000);
+
+test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
+  const { s, home, env, boxes } = await setup();
+  // The repo doesn't clone in the box (here: no repo at all), which is no fault of the provider's.
+  const cwd = join(home, "worktrees", "not-a-repo");
+  mkdirSync(cwd, { recursive: true });
+  const start = (id: string) =>
+    hostedPlace("e2b", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
+  const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/v2/sandboxes").length;
+  const first = await start("s-down1").catch((e: Error) => e);
+  expect(first).toBeInstanceOf(HostedDown);
+  expect((first as Error).message).toContain("no hosted sandbox came up at E2B: ");
+  // The box it made went, and so did its record; the provider is out of what the heartbeat offers the slot board.
+  expect(s.boxes.size).toBe(0);
+  expect(readRecord(join(home, "hosts", "s-down1"))).toBeUndefined();
+  expect(boxes.usable()).toEqual([]);
+  expect(made()).toBe(1);
+  // Another session's start (the hub placed it before the heartbeat said so) is refused at once, asking for no box.
+  const second = await start("s-down2").catch((e: Error) => e);
+  expect(second).toBeInstanceOf(HostedDown);
+  expect((second as Error).message).toContain("left out for a few minutes");
+  expect(made()).toBe(1);
+  // So is setup's command, which doesn't run.
+  const ran = await hostedPlace("e2b", "s-down3", join(home, "hosts", "s-down3")).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
+  expect(ran.notRun).toContain("left out for a few minutes");
+  expect(made()).toBe(1);
 }, 60_000);
