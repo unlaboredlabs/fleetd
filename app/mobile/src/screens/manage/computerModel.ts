@@ -1,6 +1,7 @@
 // A bot's Computer, the parts with no React: which setups it has (its own directory's, then each other repo's, as the
 // desktop's Computer section lists them), and an image's rows in the desktop's words: Image (Ready, Building…,
-// Failed, Not built yet), Built, Size; Rebuild only while there are commands and no build runs.
+// Failed, Not built yet), Built, Size; Rebuild only while its machine builds images, there are commands and no build
+// runs. A machine that builds none shows no image at all.
 import type { ComputerImage, ProjectSummary, WorktreeSetup } from "../../desktop";
 import { ago } from "./skillsModel";
 
@@ -32,6 +33,12 @@ const GB = 1_073_741_824;
 /** An image's size as the desktop words it: "640 MB" under a gigabyte, "1.1 GB" from one. */
 export const imageSize = (bytes: number): string => (bytes < GB ? `${String(Math.max(1, Math.round(bytes / MB)))} MB` : `${(bytes / GB).toFixed(1)} GB`);
 
+/**
+ * Whether its machine keeps images at all: one that can build them says where even before the first (`none` with
+ * `where`); a bare `none` is a machine that builds none (no VMs and no hosted provider), whose agents start clean.
+ */
+const imaged = (image: ComputerImage | undefined): image is ComputerImage => image !== undefined && (image.state !== "none" || image.where !== undefined);
+
 export type ImageTone = "plain" | "busy" | "danger";
 
 export interface ImageRow {
@@ -44,10 +51,11 @@ export interface ImageRow {
 
 /**
  * An image's rows: its state, then when the image agents start from now was built and its size (a failed or running
- * build keeps the older one serving, so those show then too). No commands, or a hub that doesn't say: none.
+ * build keeps the older one serving, so those show then too). No commands, a machine that builds none, or a hub that
+ * doesn't say: none.
  */
 export const imageRows = (image: ComputerImage | undefined, hasCommands: boolean, clock: { readonly nowMs: number }): readonly ImageRow[] => {
-  if (image === undefined || !hasCommands) return [];
+  if (!imaged(image) || !hasCommands) return [];
   const rows: ImageRow[] = [];
   const log = image.log?.trim();
   if (image.state === "building") rows.push({ title: "Image", value: "Building…", tone: "busy" });
@@ -59,8 +67,8 @@ export const imageRows = (image: ComputerImage | undefined, hasCommands: boolean
   return rows;
 };
 
-/** Rebuild shows while there are commands and no build runs (one already running would be replaced by it). */
-export const canRebuild = (image: ComputerImage | undefined, hasCommands: boolean): boolean => image !== undefined && hasCommands && image.state !== "building";
+/** Rebuild shows while its machine builds images, there are commands and no build runs (one running would be replaced by it). */
+export const canRebuild = (image: ComputerImage | undefined, hasCommands: boolean): boolean => imaged(image) && hasCommands && image.state !== "building";
 
 /** Whether a hub event is about this bot's setup or image: the hub's project.settings, `data.image` on an image's change. */
 export const touchesComputer = (event: { readonly type: string; readonly machineId?: string; readonly projectId?: string }, p: { readonly machineId: string; readonly projectId: string }): boolean =>

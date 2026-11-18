@@ -52,7 +52,7 @@ describe("imageRows", () => {
   });
 
   it("is not built yet while there are commands and no image", () => {
-    expect(imageRows({ state: "none" }, true, clock)).toEqual([{ title: "Image", value: "Not built yet", tone: "plain" }]);
+    expect(imageRows({ state: "none", where: "vm" }, true, clock)).toEqual([{ title: "Image", value: "Not built yet", tone: "plain" }]);
   });
 
   it("is building, with the older image that still serves", () => {
@@ -72,19 +72,26 @@ describe("imageRows", () => {
     ]);
   });
 
+  it("is nothing on a machine that builds no images", () => {
+    // No VMs and no hosted provider: the node says none, and not where.
+    expect(imageRows({ state: "none" }, true, clock)).toEqual([]);
+  });
+
   it("is nothing without commands, or from a hub that doesn't say", () => {
-    expect(imageRows({ state: "none" }, false, clock)).toEqual([]);
+    expect(imageRows({ state: "none", where: "vm" }, false, clock)).toEqual([]);
     expect(imageRows(undefined, true, clock)).toEqual([]);
   });
 });
 
 describe("canRebuild", () => {
-  it("is while there are commands and no build runs", () => {
+  it("is while its machine builds images, there are commands and no build runs", () => {
     expect(canRebuild({ state: "ready", builtAt: hoursAgo(1) }, true)).toBe(true);
     expect(canRebuild({ state: "failed" }, true)).toBe(true);
-    expect(canRebuild({ state: "none" }, true)).toBe(true);
+    expect(canRebuild({ state: "none", where: "e2b" }, true)).toBe(true);
     expect(canRebuild({ state: "building" }, true)).toBe(false);
-    expect(canRebuild({ state: "none" }, false)).toBe(false);
+    expect(canRebuild({ state: "none", where: "vm" }, false)).toBe(false);
+    // A machine that builds no images: nothing to rebuild.
+    expect(canRebuild({ state: "none" }, true)).toBe(false);
     expect(canRebuild(undefined, true)).toBe(false);
   });
 });
