@@ -116,6 +116,12 @@ export class Boxes {
     return this.connected().filter((p) => (this.#down.get(p)?.until ?? 0) <= now);
   }
 
+  /** Why `p` is set aside now, or undefined. */
+  aside(p: ProviderId, now = Date.now()): string | undefined {
+    const d = this.#down.get(p);
+    return d && d.until > now ? d.why : undefined;
+  }
+
   /** A provider that couldn't make a box is offered to the hub's placement no more for DOWN_MS: the agents it would
    * take run here or wait in line, rather than fail on it again. */
   setAside(p: ProviderId, why: string, now = Date.now()): void {

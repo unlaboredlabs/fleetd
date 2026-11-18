@@ -182,6 +182,10 @@ export async function syncIn(box: BoxFs, o: SyncIn): Promise<string> {
       worktreeConfig ? "git config extensions.worktreeConfig true" : ":",
       `git fetch -q ${q(at)} ${q(`${r}/*:${r}/*`)}`,
       `rm -f ${q(at)}`,
+      // A ref whose commit origin has goes without it in the bundle (a reviewer's worktree at the PR's head, a fresh
+      // branch at main's): each is set from its commit, which the clone or the bundle brought.
+      `git update-ref ${q(`${r}/head`)} ${head}`,
+      `git update-ref ${q(`${r}/wip`)} ${wip}`,
       linked
         ? `[ -e ${q(bx(join(cwd, ".git")))} ] || git worktree add -q -f ${branch ? `-B ${q(branch)}` : "--detach"} ${q(bx(cwd))} ${q(`${r}/head`)}`
         : branch ? `git checkout -q -B ${q(branch)} ${q(`${r}/head`)}` : `git checkout -q --detach ${q(`${r}/head`)}`,

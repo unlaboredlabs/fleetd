@@ -26,7 +26,7 @@ import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { reapLeaked } from "../place/box_record.ts";
 import { hostDir, leavesBox, pick, placeAt, sweep } from "../place/index.ts";
-import { boxPlaces, hasBox } from "../place/hosted.ts";
+import { boxPlaces, hasBox, HostedDown } from "../place/hosted.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
@@ -123,6 +123,8 @@ class Refusal extends Error {
     readonly code: SessionErrorCode,
     message: string,
     readonly fix?: string,
+    /** How a run it fails is classed, when not `other`. */
+    readonly failure?: FailureClass,
   ) {
     super(message);
   }
@@ -131,6 +133,8 @@ class Refusal extends Error {
   }
 }
 const invalid = (m: string) => new Refusal("invalid", m);
+/** The class of a run that `error` failed. */
+const failureOf = (error: unknown): FailureClass => (error instanceof Refusal && error.failure) || "other";
 const notFound = (m: string) => new Refusal("not_found", m);
 const notPorted = (op: string) =>
   new Refusal("runner_unavailable", `${op} is not ported to the Bun node yet`, "run this machine's node on the Rust fleetd for it");
@@ -1158,7 +1162,7 @@ export class SessionService {
     const settingUp = this.#settingUp.get(id);
     if (settingUp) {
       void settingUp.then(async (started) => {
-        if (started) await this.#dispatch(id, { Send: { run_id: runId, text, mode } }).catch((e) => this.#failRun(id, runId, "other", (e as Error).message));
+        if (started) await this.#dispatch(id, { Send: { run_id: runId, text, mode } }).catch((e) => this.#failRun(id, runId, failureOf(e), (e as Error).message));
         else {
           const why = "the session did not start: its worktree setup failed or was stopped";
           this.#failRun(id, runId, "other", why);
@@ -1178,7 +1182,7 @@ export class SessionService {
         await this.#dispatch(id, { Send: { run_id: runId, text, mode } });
       } catch (error) {
         const message = error instanceof Refusal ? error.message : (error as Error).message;
-        this.#failRun(id, runId, "other", message);
+        this.#failRun(id, runId, failureOf(error), message);
         this.#steers.failed(runId, message);
         throw error;
       }
@@ -1295,7 +1299,8 @@ export class SessionService {
     } catch (error) {
       if (error instanceof LaunchError && error.refused?.missing && !existsSync(this.config.claudeBin))
         throw new Refusal("runner_unavailable", `${this.config.claudeBin} was not found on PATH`, `install Claude Code: curl -fsSL https://claude.ai/install.sh | bash`);
-      throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`);
+      // A hosted box that didn't come up: recovery starts the run again, wherever the slot board then puts it.
+      throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`, undefined, error instanceof HostedDown ? "sandbox" : undefined);
     }
     stages.done("session host");
     row.local.started = true;
@@ -1944,7 +1949,7 @@ export class SessionService {
       await this.#dispatch(id, { Send: { run_id: runId, text: message, mode } });
       return true;
     } catch (error) {
-      this.#failRun(id, runId, "other", (error as Error).message);
+      this.#failRun(id, runId, failureOf(error), (error as Error).message);
       return false;
     }
   }
@@ -2020,7 +2025,7 @@ export class SessionService {
         await this.#dispatch(id, { Send: { run_id: uuid, text, mode: "plain" } }, [uuid, runId]);
       } catch (error) {
         this.#retries.delete(runId);
-        this.#failRun(id, runId, "other", (error as Error).message);
+        this.#failRun(id, runId, failureOf(error), (error as Error).message);
         if (unread) this.#steers.failed(runId, (error as Error).message);
       }
     }, delayMs);

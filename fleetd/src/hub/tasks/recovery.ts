@@ -36,6 +36,8 @@ export type Kind =
   | "ContextFull"
   /** The node would not resume its thread. */
   | "Refused"
+  /** Its hosted sandbox didn't come up, so its claude never started: its node set that provider aside. */
+  | "NoSandbox"
   /** Stopped for a steer that then never ran: it goes on at once, using none of the budget. */
   | "Cut"
   /** A failure a resume doesn't fix. */
@@ -89,7 +91,13 @@ export function death(type: HubEventType, data: Data, machine: string, lastTool:
   const stalled = str(data?.reason) === "stalled";
   const node = (how: string) => `the node on ${machine} ${how}`;
   const byClass = (): [Kind, RunEnd] =>
-    klass === "process_exited" ? ["Exited", "exited"] : klass === "network" || klass === "overloaded" ? ["Unreachable", "failed"] : ["Fatal", "failed"];
+    klass === "process_exited"
+      ? ["Exited", "exited"]
+      : klass === "network" || klass === "overloaded"
+        ? ["Unreachable", "failed"]
+        : klass === "sandbox"
+          ? ["NoSandbox", "failed"]
+          : ["Fatal", "failed"];
   // The node's own words for its stop and its restart are the node going away whatever else the event says.
   const nodeEnd =
     reported === "node_stopping" || reported === "node_restarted"
@@ -154,7 +162,8 @@ export function death(type: HubEventType, data: Data, machine: string, lastTool:
     kind,
     ...(stalled ? { reported: "stalled" } : reported !== undefined ? { reported } : {}),
     cause,
-    signature: oneLine(`${kind}: ${same}${tool}`, 400),
+    // However the box's failure is worded: a sandbox that didn't come up twice in a row is the same death.
+    signature: kind === "NoSandbox" ? kind : oneLine(`${kind}: ${same}${tool}`, 400),
     text,
   };
 }
@@ -184,7 +193,9 @@ export function decide(d: Death, prior: TaskRecovery | undefined, stopped: boole
   const streak = prior?.signature !== undefined && prior.signature === d.signature ? prior.streak + 1 : 1;
   // A full context is compacted first; full again since (no fresh thread in between), it starts over in a new one.
   const compacted = prior !== undefined && prior.lastCause === "context_full" && modeOf(prior) !== "fresh";
-  const mode: RecoveryMode = d.kind === "ContextFull" && !compacted ? "compact" : d.kind === "ContextFull" || d.kind === "Refused" ? "fresh" : "resume";
+  // A thread whose claude never started has nothing to resume (its brief never reached claude): a new one takes over.
+  const mode: RecoveryMode =
+    d.kind === "ContextFull" && !compacted ? "compact" : d.kind === "ContextFull" || d.kind === "Refused" || d.kind === "NoSandbox" ? "fresh" : "resume";
   let delay: number;
   switch (d.kind) {
     case "NodeLost":
@@ -197,6 +208,12 @@ export function decide(d: Death, prior: TaskRecovery | undefined, stopped: boole
     case "Refused":
       if (streak !== 1) return { kind: "escalate", why: `${d.text}, again in a fresh thread` };
       delay = 0;
+      break;
+    // After the node's next heartbeat, which leaves the provider out, so the slot board places it anew: this machine's
+    // slots, another provider, or the line.
+    case "NoSandbox":
+      if (streak !== 1) return { kind: "escalate", why: `${d.text}, and again after a retry` };
+      delay = MINUTE_MS;
       break;
     case "Exited":
     case "Stalled":

@@ -92,6 +92,16 @@ describe("recovery", () => {
     expect(decide(r, fresh, false, NOW, 0, 3).kind).toBe("escalate");
   });
 
+  test("a hosted sandbox that didn't come up restarts fresh after a minute; twice in a row escalates", () => {
+    const d = failed({ endCause: "failed", error: { class: "sandbox", message: "could not start claude: no hosted sandbox came up at boat.dev: cloning the repo failed in the box" } });
+    expect([d.kind, d.cause, d.signature]).toEqual(["NoSandbox", "failed", "NoSandbox"]);
+    // Past the node's next heartbeat, which leaves the provider out: the slot board places it anew.
+    const r = resume(decide(d, undefined, false, NOW, 0.5, 3));
+    expect([r.mode, dueIn(r), r.count]).toEqual(["fresh", 60_000, 1]);
+    const again = failed({ endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at E2B: E2B's limit for this team is reached" } });
+    expect(decide(again, r, false, NOW, 0.5, 3)).toEqual({ kind: "escalate", why: `${again.text}, and again after a retry` });
+  });
+
   test("a node cut-off settles from the node's return, and goes at once once it caught up", () => {
     const r = resume(decide(interrupted({ endCause: "node_stopping" }), undefined, false, NOW, 0, 3));
     const at = parseMs(settled(r, NOW + 60_000, undefined, "T7") as string) as number;

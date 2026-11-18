@@ -149,3 +149,35 @@ test("a chat file comes from the box under the machine's rules: inside the worki
   await expect(readChatFile(local, wd, "../secret.png", 0, false)).rejects.toThrow("outside your working directory");
   await expect(readChatFile(local, wd, "nope.png", 0, false)).rejects.toThrow("not readable here");
 });
+
+test("a worktree at a commit origin has goes in too: a reviewer's detached one, a writer's fresh branch", async () => {
+  // The bundle leaves out what origin has, and git leaves a ref out of it with its commit: the box then had no
+  // `…/head` to check out ("fatal: invalid reference").
+  const origin = join(tmp, "origin3.git");
+  sh(tmp, `git init -q --bare -b main ${origin}`);
+  const seed = join(tmp, "seed3");
+  sh(tmp, `git clone -q ${origin} ${seed}`);
+  writeFileSync(join(seed, "a.txt"), "a\n");
+  sh(seed, "git add -A && git commit -qm one && git push -q origin HEAD:main");
+  writeFileSync(join(seed, "pr.txt"), "pr\n");
+  sh(seed, "git checkout -qb pr && git add -A && git commit -qm pr && git push -q origin pr");
+  const repo = join(tmp, "checkout3");
+  sh(tmp, `git clone -q ${origin} ${repo}`);
+  const review = join(tmp, "worktrees3", "review");
+  sh(repo, `git worktree add -q --detach ${review} origin/pr`);
+  const writer = join(tmp, "worktrees3", "T2-fresh");
+  sh(repo, `git worktree add -q -b fleetd/T2-fresh ${writer} origin/main`);
+  const root = join(tmp, "box3");
+  for (const [cwd, session] of [
+    [review, "s-review"],
+    [writer, "s-writer"],
+  ] as const) {
+    const head = sh(cwd, "git rev-parse HEAD");
+    expect(await syncIn(local, { cwd, session, env: ENV, root })).toBe(head);
+    expect(sh(root + cwd, "git rev-parse HEAD")).toBe(head);
+    expect(sh(root + cwd, "git status --porcelain")).toBe("");
+  }
+  expect(sh(root + writer, "git symbolic-ref --short HEAD")).toBe("fleetd/T2-fresh");
+  expect(readFileSync(join(root + review, "pr.txt"), "utf8")).toBe("pr\n");
+  expect(sh(repo, "git for-each-ref refs/fleetd")).toBe("");
+});

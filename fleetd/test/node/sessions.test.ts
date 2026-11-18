@@ -335,3 +335,18 @@ test("a lead's launch tells the screens, and what its browsers filled is masked 
     service.screens = undefined;
   }
 });
+
+test("a run whose hosted sandbox doesn't come up fails as `sandbox`, which the hub's recovery starts again", async () => {
+  // On a Claude account (the machine's own login never goes to a box), on a machine that makes no boxes.
+  const other = await SessionService.start({ ...config(), home: join(home.dir, "node-hosted"), baseEnv: { ...config().baseEnv, ANTHROPIC_AUTH_TOKEN: "tok-x" } });
+  try {
+    const reply = await other.handle({ id: "h1", call: { op: "project_upsert", projectId: "p1", title: "demo", workspaceRoot: repo } as never });
+    expect(reply.result).toMatchObject({ ok: { kind: "done" } });
+    await other.handle({ id: "h2", call: { op: "launch", sessionId: "s-boxed", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "brief", runId: "rb1", place: "e2b" } as never });
+    const run = await until("the run to fail", () => other.store.runs("s-boxed").find((r) => r.id === "rb1" && r.status === "failed"));
+    expect(run.failure?.class).toBe("sandbox");
+    expect(run.failure?.message).toContain("no hosted sandbox came up at E2B");
+  } finally {
+    await other.stopAll();
+  }
+});
