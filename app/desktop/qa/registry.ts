@@ -238,6 +238,7 @@ export const fixtures = [
   "computer-building",
   "computer-failed",
   "computer-new",
+  "computer-nowhere",
   "computer-two",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
@@ -4279,6 +4280,20 @@ export const screens: readonly Screen[] = [
       const part = page.getByRole("region", { name: "Computer", exact: true });
       await expect(part.getByRole("region", { name: "Image" })).toBeVisible();
       await expect(part.getByRole("textbox", { name: "Setup commands" })).toHaveValue(/cargo fetch/u);
+      await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // ...on a machine that builds no images: its setup alone, no image row and no Rebuild.
+  {
+    id: "settings.projects",
+    variant: "computer-nowhere",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-nowhere"],
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Computer", exact: true });
+      await expect(part.getByRole("textbox", { name: "Setup commands" })).toHaveValue(/cargo fetch/u);
+      await expect(part.getByRole("region", { name: "Image" })).toHaveCount(0);
+      await expect(part.getByRole("button", { name: "Rebuild" })).toHaveCount(0);
       await part.scrollIntoViewIfNeeded();
     },
   },

@@ -66,11 +66,12 @@ const ago = (iso: string | undefined, nowMs: number): string | null => {
 };
 
 /**
- * What the Image row says, or null when there is no row: no commands means no image (the hub says "none"), and an
- * older hub sends no image at all. A building or failed image may still have an older one serving, built at `builtAt`.
+ * What the Image row says, or null when there is no row: no commands means no image (the hub says "none"), a machine
+ * that can't build one (no VMs, no provider) says "none" with no `where`, and an older hub sends no image at all. A
+ * building or failed image may still have an older one serving, built at `builtAt`.
  */
 export function imageLine(image: ComputerImage | undefined, commands: number, nowMs: number): ImageLine | null {
-  if (image === undefined || (commands === 0 && image.state === "none")) return null;
+  if (image === undefined || (image.state === "none" && (commands === 0 || image.where === undefined))) return null;
   const built = ago(image.builtAt, nowMs);
   const size = image.bytes === undefined ? null : fmtBytes(image.bytes);
   const last = built === null ? null : `last built ${built}`;

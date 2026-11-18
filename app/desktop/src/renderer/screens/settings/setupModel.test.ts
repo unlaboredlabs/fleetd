@@ -32,13 +32,15 @@ describe("the computer image's line", () => {
   const ago = (ms: number) => new Date(NOW - ms).toISOString();
   const H = 3_600_000;
 
-  it("has no row with no commands, nor from a hub too old to say", () => {
-    expect(imageLine({ state: "none" }, 0, NOW)).toBeNull();
+  it("has no row with no commands, on a machine that can't build one, nor from a hub too old to say", () => {
+    expect(imageLine({ state: "none", where: "vm" }, 0, NOW)).toBeNull();
+    // No VMs and no provider: the hub says none, kept nowhere, and there is nothing to rebuild.
+    expect(imageLine({ state: "none" }, 2, NOW)).toBeNull();
     expect(imageLine(undefined, 2, NOW)).toBeNull();
   });
 
   it("says when it was built and its size, or that it isn't yet", () => {
-    expect(imageLine({ state: "none" }, 2, NOW)).toEqual({ text: "Not built yet", tone: "quiet" });
+    expect(imageLine({ state: "none", where: "vm" }, 2, NOW)).toEqual({ text: "Not built yet", tone: "quiet" });
     expect(imageLine({ state: "ready", builtAt: ago(3 * H), bytes: 1_181_116_006 }, 2, NOW)).toEqual({ text: "Built 3h ago · 1.1 GB", tone: "quiet" });
     expect(imageLine({ state: "ready", builtAt: ago(10_000), bytes: 640 * 1024 * 1024 }, 2, NOW)?.text).toBe("Built just now · 640 MB");
     // A provider that doesn't say its size.

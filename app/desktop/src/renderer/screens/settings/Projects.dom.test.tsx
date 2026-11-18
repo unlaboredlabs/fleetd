@@ -405,6 +405,15 @@ describe("Settings → Bots", () => {
     expect(() => button("Log")).toThrow();
   });
 
+  it("shows only the setup on a machine that builds no images: no image row, no Rebuild", async () => {
+    answers = [{ ...settings, setup: { commands: ["pnpm install"], inputs: [] }, image: { state: "none" } }];
+    await render();
+    const section = document.querySelector<HTMLElement>('section[data-part="projects.computer"]');
+    expect(section?.querySelector("textarea")?.value).toBe("pnpm install");
+    expect(section?.querySelector("[data-image-state]")).toBeNull();
+    expect(() => button("Rebuild")).toThrow();
+  });
+
   it("deletes only once the name is typed, names the worktree with uncommitted changes, and removes the worktrees", async () => {
     repos = [web];
     await render();

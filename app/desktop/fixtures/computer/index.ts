@@ -2,6 +2,7 @@
 // own: its setup commands and the image they build, one fixture a state. computer-ready: built 3 h ago, 1.1 GB.
 // computer-building: a rebuild running while the one before still serves. computer-failed: a build that failed at
 // `cargo fetch`, its log's end behind Log, the older image still serving. computer-new: commands saved, not built yet.
+// computer-nowhere: its machine builds no images (no VMs, no provider), so only its setup shows.
 // computer-two: storefront and its api repo, each its own Computer, api's with no commands and so no image.
 import { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
@@ -99,7 +100,9 @@ export default defineGroup({
       log: LOG,
       ...BUILT(now),
     })),
-    state(base("typical"), "computer-new", "A bot's Computer: commands saved, its image not built yet.", () => ({ state: "none" })),
+    state(base("typical"), "computer-new", "A bot's Computer: commands saved, its image not built yet.", () => ({ state: "none", where: "vm" })),
+    // A machine that can't build one (no VMs, no provider): none, kept nowhere.
+    state(base("typical"), "computer-nowhere", "A bot's Computer on a machine that builds no images: its setup alone, no image row.", () => ({ state: "none" })),
     (() => {
       const f = Fixture.from(base("typical"), "computer-two", "A bot with two repos: each its own Computer; api has no commands, so no image.");
       const ref = storefront(f, true);

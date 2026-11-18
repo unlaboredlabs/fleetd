@@ -119,7 +119,8 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
 
 /**
  * The image this repo's setup builds: when it was built and its size, or that it is building, or that it failed (its
- * log behind Log), and Rebuild. No row while there are no commands (no image), nor from a hub too old to say.
+ * log behind Log), and Rebuild. No row while there are no commands (no image), on a machine that can't build one, nor
+ * from a hub too old to say.
  */
 function ImageRow({ settings, repo, commands }: { settings: Settings; repo: RepoName | undefined; commands: number }) {
   const hubCall = useHubCall();
