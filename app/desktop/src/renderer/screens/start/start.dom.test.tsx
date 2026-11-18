@@ -12,8 +12,7 @@ import { HubScope } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { resetServes } from "../admin/role";
 import { FirstRun } from "../setup/FirstRun";
-import { readKept } from "./kept";
-import { resetReturn } from "./state";
+import { readKept, resetReturn, takeGithubReturn } from "./kept";
 import { StartScreen } from "./StartScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,6 +21,8 @@ let host: HTMLDivElement;
 let root: Root;
 let send: (frame: HubFrame) => void = () => undefined;
 let calls: Array<{ tool: string; input: unknown }> = [];
+/** While set, machine_join answers only once it resolves (a line still being made). */
+let joinHeld: Promise<void> | null = null;
 
 const machine = (over: Partial<Machine> = {}): Machine => ({
   machineId: "devbox",
@@ -143,6 +144,7 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
                       message: "logged in",
                     }
                 : {};
+      if (tool === "machine_join" && joinHeld !== null) return joinHeld.then(() => ({ ok: true, output }) as never);
       return Promise.resolve({ ok: true, output } as never);
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -196,6 +198,7 @@ const click = async (name: string) => {
 beforeEach(() => {
   resetServes();
   resetReturn();
+  joinHeld = null;
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
   vi.stubGlobal("fleetd", {
@@ -263,6 +266,40 @@ it("a computer whose claude isn't logged in: Log in to Claude opens its page, an
   stop();
 });
 
+it("a line still being made when the computer joins makes no next one", async () => {
+  let release: () => void = () => undefined;
+  joinHeld = new Promise<void>((r) => (release = r));
+  const stop = await render({});
+  await act(async () => {
+    send({ t: "snapshot", snapshot: { cursor: 2, attention: [], machines: [machine()], projects: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  const timers = vi.spyOn(window, "setTimeout");
+  await act(async () => {
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  expect(timers.mock.calls.filter(([, ms]) => (ms ?? 0) >= 5_000)).toHaveLength(0);
+  expect(calls.filter((c) => c.tool === "machine_join")).toHaveLength(1);
+  timers.mockRestore();
+  stop();
+});
+
+it("a computer that joined and is offline now: step 1 says so and waits, never done", async () => {
+  const stop = await render({ machines: [machine({ status: "offline" })] });
+  expect(screen()).toBe("start.computer");
+  expect(host.textContent).toContain("devbox is offline");
+  expect(host.textContent).not.toContain("Waiting for it to connect");
+  stop();
+});
+
+it("GitHub's way back to another screen (Settings) is cleaned from the address, and never Get started's to show", () => {
+  window.history.replaceState(null, "", "/?github=failed&why=no#/settings/github");
+  expect(takeGithubReturn()).toBeNull();
+  expect(window.location.search).toBe("");
+  expect(window.location.hash).toBe("#/settings/github");
+});
+
 it("a computer whose claude didn't open its page: the step says so, and the link opens it from the click", async () => {
   shell.openExternal.mockResolvedValueOnce({ ok: false, message: "The browser blocked the new tab." } as never);
   const stop = await render({ machines: [machine({ status: "degraded", degradedReason: "claude is not logged in." })] });
@@ -325,6 +362,7 @@ it("connected and installed: the repositories, newest first, and one starts a bo
   const rows = [...host.querySelectorAll("li button")].map((b) => b.textContent);
   expect(rows[0]).toContain("notes-api");
   expect(rows[1]).toContain("website");
+  expect(host.textContent).not.toContain("Only your most recently pushed repositories");
   await act(async () => {
     [...host.querySelectorAll<HTMLButtonElement>("li button")][0]?.click();
     await Promise.resolve();
@@ -335,6 +373,13 @@ it("connected and installed: the repositories, newest first, and one starts a bo
     machineId: "devbox",
     title: "notes-api",
   });
+  stop();
+});
+
+it("a list the cloud cut short says so", async () => {
+  shell.githubRepos.mockResolvedValueOnce({ ok: true, truncated: true, repos: [{ owner: "sam-dev", name: "notes-api", fullName: "sam-dev/notes-api", private: true, cloneUrl: "x" }] } as never);
+  const stop = await render({ machines: [machine()], me: { login: "sam-dev" }, installations: 1 });
+  expect(host.textContent).toContain("Only your most recently pushed repositories are listed");
   stop();
 });
 
@@ -369,6 +414,7 @@ it("a teammate's page: the team's bots first, their own GitHub one row under the
   expect(names[0]).toContain("billing");
   expect(names[1]).toContain("website");
   expect(button("Connect")).toBeDefined();
+  expect(button("Skip for now")).toBeDefined();
   await act(async () => {
     [...host.querySelectorAll<HTMLButtonElement>("li button")][0]?.click();
     await Promise.resolve();

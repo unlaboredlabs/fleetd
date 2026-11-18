@@ -28,6 +28,7 @@ export const SAMPLES = {
     github: { at: "todo" },
     project: { at: "pick", repos: REPOS, query: "" },
   },
+  offline: { ...owner, computer: { at: "offline", machine: "devbox" }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
   "claude-code": { ...owner, computer: { at: "claude", machine: "devbox", login: "code" }, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
   // 2. GitHub, one trip: sign in and choose the repositories.
   github: { ...owner, computer: ready, github: { at: "todo" }, project: { at: "pick", repos: REPOS, query: "" } },
@@ -36,6 +37,7 @@ export const SAMPLES = {
   // 3. A bot: a repository, or an empty one; then its chat opens.
   project: { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "pick", repos: REPOS, query: "" } },
   "project-skipped": { ...owner, computer: ready, github: { at: "skipped" }, project: { at: "pick", repos: REPOS, query: "" } },
+  "project-truncated": { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "pick", repos: REPOS, query: "", truncated: true } },
   "project-none": { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "pick", repos: [], query: "", none: true } },
   "project-adding": { ...owner, computer: ready, github: { at: "done", login: "sam-dev" }, project: { at: "adding", what: "notes-api", machine: "devbox" } },
   // A teammate who joined inkwell: the team's bots, then their own GitHub.

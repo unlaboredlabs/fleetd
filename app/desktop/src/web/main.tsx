@@ -8,7 +8,7 @@ import { browserDeps } from "./browser";
 import { Gate, type GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
 import { readSession, signInPath, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
-import { startScreen } from "../renderer/screens/start/kept";
+import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
 /** The build's version (VITE_FLEETD_VERSION, the commit), for an error card's Copy details. */
@@ -73,6 +73,8 @@ const start = async (session: WebSession) => {
   const { api, hubs } = createWebShell(session, browserDeps(VERSION));
   Object.defineProperty(window, "fleetd", { value: api, configurable: false, writable: false });
   followBrowser(hubs, window);
+  // GitHub's trip back (`?github=…`): read before the app starts, the address cleaned whichever screen it came back to.
+  takeGithubReturn();
   const joined = joinedTeam === null ? undefined : teamHubIds(session.teams.map((t) => t.id)).get(joinedTeam);
   if (joined !== undefined) window.location.hash = toHash(startScreen(joined));
   // The desktop's renderer, as it starts in the app: it reads window.fleetd as its modules load.
