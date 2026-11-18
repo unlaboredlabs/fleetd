@@ -4,6 +4,8 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { CONNECT_REFUSAL, Setup, type Whose, whoseForLead, whoseForTask } from "../src/hub/claude_accounts/index.ts";
+import { accounts } from "../src/hub/claude_accounts/tools.ts";
+import { claudeKey, claudeOwner } from "../src/hub/doctor/checks.ts";
 import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { forTask as opForTask } from "../src/hub/onepassword/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -191,6 +193,29 @@ test("only admins set the hub's API, and its key reaches the nodes sealed, never
   await call(ann, "claude_hub_api_remove", {});
   expect(link.calls.at(-1)).toEqual(["lab", { op: "claude_account_secret", account: { kind: "hub" } }]);
   expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
+});
+
+test("a removed machine neither holds an account nor stands as its last Test, in Settings or the doctor", async () => {
+  const { hub, call, ann } = setup();
+  // As on the devbox's hub: saved on Nov 9 to a cloud machine removed since and to lab, and last tested on the former.
+  const sealedOn = [
+    { machineId: "boat-1", fingerprint: "ab12cd34" },
+    { machineId: "lab", fingerprint: "ab12cd34" },
+  ];
+  const lastTest = { at: "2026-11-09T12:53:14.000Z", machineId: "boat-1", ok: false, error: "claude did not answer within 90s" };
+  const row = { endpoint: "http://100.100.1.1:8317", sealedOn, updatedAt: "2026-11-09T12:51:42.000Z", lastTest };
+  hub.db.conn.query("INSERT INTO claude_accounts (account, data) VALUES ('hub', ?), ('p_aaaaaaaa', ?)").run(JSON.stringify(row), JSON.stringify({ sealedOn, lastTest, connectedAt: row.updatedAt }));
+  const got = await call(ann, "claude_accounts_get", {});
+  expect(got.hubApi).toEqual({ endpoint: row.endpoint, sealedOn: [sealedOn[1]], updatedAt: row.updatedAt });
+  expect((got.me as { subscription: unknown }).subscription).toEqual({ sealedOn: [sealedOn[1]], connectedAt: row.updatedAt });
+  const view = { configured: true, machines: ["lab", "mac"], hubApi: accounts(hub).hubApi()!, owner: ["Ann", accounts(hub).subscription("p_aaaaaaaa")] as [string, ClaudeSubscription] };
+  expect(claudeKey(view).message).toBe("The hub's Claude API key (through http://100.100.1.1:8317) isn't on mac, so nothing runs on it there.");
+  expect(claudeOwner(view).message).toBe("Ann's Claude subscription isn't on mac, so nothing runs on it there.");
+  // A Test on a machine that is still there stays the current result.
+  hub.db.conn.query("UPDATE claude_accounts SET data = json_set(data, '$.lastTest.machineId', 'lab') WHERE account = 'hub'").run();
+  expect(claudeKey({ ...view, hubApi: accounts(hub).hubApi()! }).message).toBe(
+    "The hub's Claude API key (through http://100.100.1.1:8317) failed its Test on lab: claude did not answer within 90s.",
+  );
 });
 
 test("a Test isn't ok while the machine's claude settings override the account there, and says why", async () => {

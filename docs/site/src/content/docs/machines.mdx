@@ -525,7 +525,8 @@ computers, and it goes by itself once no provider is connected and no bot lives 
   agent does.
 - *Claude.* Its agents run on the team's Claude account: the hub's API key, or a person's subscription, saved in
   Settings › Your accounts › Claude. No machine's Claude login comes into it. An account saved before the first
-  provider was connected is saved again once, so it reaches the sandboxes too; Settings says so.
+  provider was connected reaches the sandboxes by itself: a computer holding it seals it to them as they start, with
+  the key's endpoint, and the hub only passes it through. That computer must be online once for it.
 - *Not there:* browser screens, Android emulators and Linux desktops (they run on a computer), approved commands and
   checks run on a machine, and the agents' Mac.
 - *With a computer too*, nothing changes for the computer's bots: their agents use its slots first, then the

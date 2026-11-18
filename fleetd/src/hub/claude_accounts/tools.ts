@@ -18,6 +18,7 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { accountKey, ClaudeAccountStore } from "./index.ts";
 import { accountRemoved, activePeople, administrator, me as person, refOf } from "./people.ts";
+import { toRunner } from "./runner.ts";
 import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
 export { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
@@ -66,6 +67,7 @@ export function register(tools: Registry): void {
       updatedBy: refOf(by),
     };
     s.putHubApi(api);
+    void toRunner(hub);
     return {
       hubApi: api,
       missingOn: missingOn(hub, api.sealedOn),
@@ -106,6 +108,7 @@ export function register(tools: Registry): void {
     if (held.length === 0) throw noneTook(problems);
     const subscription = { sealedOn: held, connectedAt: isoMs(hub.clock.now()) };
     s.putSubscription(p.personId, subscription);
+    void toRunner(hub);
     return {
       me: s.setup().person(p),
       missingOn: missingOn(hub, subscription.sealedOn),
