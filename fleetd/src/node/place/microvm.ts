@@ -41,6 +41,7 @@ import type { SessionRole } from "../../shared/sessions.ts";
 import { readConfig } from "../config.ts";
 import { homeDir, nowIso } from "../util.ts";
 import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
+import { heldDirOf } from "../hold.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
@@ -48,11 +49,13 @@ import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook,
 import { processPlace } from "./process.ts";
 import { covers, mountScript, needs, viewOf, type Share, type View } from "./view.ts";
 
-/** A box's guest memory by default, GiB, and its CPUs. 8 GiB: in 4, a real crate's tests didn't link (rustc killed at
- * 3.5 GB), and fleetd's own check peaked at 3 GB. A machine sets its own in node.json (`vmMemoryGiB`, 2 to 256). 4 vCPUs,
+/** A box's guest memory by default, GiB, and its CPUs. 4 GiB, as the cap counts it whole: fleetd's own check peaked at
+ * 3 GB, but a real crate's tests didn't link in it (rustc killed at 3.5 GB). A machine that builds such sets its own in
+ * node.json (`vmMemoryGiB`, 2 to 256), and an agent that runs out is told so. No compressed swap: the guest kernel has
+ * no zram, and zswap needs a swap device the guest has nowhere to put. 4 vCPUs,
  * which cost no memory and match the 4 workers an agent's test runners get: with 2, fleetd's own test suite took
  * 317.7 s in a VM, and 238.8 s with 4 beside it. */
-export const GUEST_MEM_GIB = 8;
+export const GUEST_MEM_GIB = 4;
 export const GUEST_CPUS = 4;
 
 /** This machine's VMs' memory, GiB: node.json's `vmMemoryGiB` when it's a whole number from 2 to 256, else the default. */
@@ -337,17 +340,20 @@ export class MicroVm {
     };
   }
 
-  /** What every command of session `s` sees read-only besides what it names: its session's files, the binary. */
+  /** What every command of session `s` sees read-only besides what it names: its session's files, the update hold,
+   * the binary. */
   #base(s: PlaceFor): string[] {
-    return [join(this.o.home, "sessions", s.sessionId), this.o.fleetd[0]!];
+    mkdirSync(join(this.o.home, "update"), { recursive: true });
+    return [join(this.o.home, "sessions", s.sessionId), join(this.o.home, "update"), this.o.fleetd[0]!];
   }
 
-  /** And writable: the update hold, whose waits mark their tool calls held there (`update/held/`, made and removed
-   * whole by the node), or the node's drain waits out its 10 minutes for an agent in a VM. */
+  /** And writable, only where its waits on the update hold mark their tool calls held (`update/held/`): the hold
+   * itself stays read-only, or an agent could hold every agent of the machine. Without the marks, the node's drain
+   * waits out its 10 minutes for an agent in a VM. */
   #update(): string {
-    const update = join(this.o.home, "update");
-    mkdirSync(update, { recursive: true });
-    return update;
+    const held = heldDirOf(this.o.home);
+    mkdirSync(held, { recursive: true });
+    return held;
   }
 
   /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
@@ -864,7 +870,8 @@ export function launcherScript(b: BootPlan, now: number): string {
     // OOM killer say) would otherwise hang on every file, or lose the network without a word.
     "wait -n $c $p $v",
     "s=$?",
-    'kill $c $p $v 2>/dev/null && echo "the VM ended because one of its helpers did (virtiofsd or passt)" >>box.log',
+    'if kill -0 $c 2>/dev/null; then echo "the VM ended because one of its helpers did (virtiofsd or passt)" >>box.log; fi',
+    "kill $c $p $v 2>/dev/null",
     "exit $s",
   ].join("\n");
 }

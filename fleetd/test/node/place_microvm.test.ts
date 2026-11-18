@@ -27,11 +27,14 @@ import type { NodeLoad } from "../../src/shared/node_link.ts";
 import { asUser, guestUser, imageEnv, runArgv } from "../../src/node/sandbox/guest.ts";
 import { apply, layHostSystem, OOM_HOOK, OOM_NOTE, oomLine, plan } from "../../src/node/sandbox/system.ts";
 import { withPostToolHook } from "../../src/node/place/endpoint.ts";
-import { mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
+import { guestOwn, mountScript, needs, shows, viewOf } from "../../src/node/place/view.ts";
+import { homedir } from "node:os";
 import type { Reach } from "../../src/node/place/endpoint.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
-const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-vm-"));
+// Not under /tmp: a box's view never shares the guest's own system dirs, which /tmp is (CI has no TMPDIR).
+const tmpBase = process.env.TMPDIR ?? "/tmp";
+const root = mkdtempSync(join(guestOwn(tmpBase) ? homedir() : tmpBase, "fleetd-vm-"));
 const leaders: number[] = [];
 afterAll(() => {
   // Only the stand-ins this file started, by the groups they lead.
@@ -213,11 +216,11 @@ test("a machine that can't run VMs says why, in plain words, and fetches the VM 
   // A heartbeat sizes the cap on the box's memory only when agents run in VMs, and says why when they don't.
   const load: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(load, { kind: "microvm" });
-  expect(load).toEqual({ sandbox: { kind: "microvm" }, memPerAgentBytes: Math.round(8.1 * 2 ** 30) });
+  expect(load).toEqual({ sandbox: { kind: "microvm" }, memPerAgentBytes: Math.round(4.1 * 2 ** 30) });
   // A machine that sets its VMs' memory is counted at that.
-  reportVm(load, { kind: "microvm" }, guestMemGiB(node({ config: { vmMemoryGiB: 4 } }).home));
-  expect(load.memPerAgentBytes).toBe(Math.round(4.1 * 2 ** 30));
-  expect(guestMemGiB(node({ config: { vmMemoryGiB: 1 } }).home)).toBe(8);
+  reportVm(load, { kind: "microvm" }, guestMemGiB(node({ config: { vmMemoryGiB: 8 } }).home));
+  expect(load.memPerAgentBytes).toBe(Math.round(8.1 * 2 ** 30));
+  expect(guestMemGiB(node({ config: { vmMemoryGiB: 1 } }).home)).toBe(4);
   const plain: Pick<NodeLoad, "memPerAgentBytes" | "sandbox"> = {};
   reportVm(plain, { kind: "process", why: "no KVM" });
   expect(plain).toEqual({ sandbox: { kind: "process", why: "no KVM" } });
@@ -293,8 +296,19 @@ test("a node restart re-adopts the box: the link comes back to the same session 
     expect(readBox(dir)!.view).toMatchObject({ home: root, hidden: [n.home] });
     // Its claude ends and the box with it (the idle close); the next message boots a box that still hides them.
     await again.detach();
+    // A stand-in's session host leads a group of its own, and outlives the box's (a VM's goes with it): ended too.
+    const host = readRegistration(join(dir, "guest", "s-adopt"));
     process.kill(-pid, "SIGKILL");
+    if (host?.hostPid) {
+      try {
+        process.kill(-host.hostPid, "SIGKILL");
+      } catch {}
+      try {
+        process.kill(host.hostPid, "SIGKILL");
+      } catch {}
+    }
     expect(await gone(pid)).toBe(true);
+    if (host?.hostPid) expect(await gone(host.hostPid)).toBe(true);
     const after = await next.bound({ sessionId: "s-adopt", dir, role: "worker" }).start(launch(n.home, "s-adopt", n.cwd, program("claude-adopt2", ECHO_CLAUDE)));
     expect(after.pid).not.toBe(pid);
     const view = readBox(dir)!.view!;
@@ -871,12 +885,15 @@ test("an order's variables dir that isn't there yet is made before the box boots
   expect(shares).toContainEqual({ path: dir, rw: false });
 });
 
-test("a box can mark its tool calls held for an update (the update dir is writable), and nothing else of the node home", async () => {
+test("a box can mark its tool calls held for an update, and nothing else: the hold and the updater's files stay read-only", async () => {
   const n = node();
   const dir = join(n.home, "hosts", "s-held");
   await n.vm.bound({ sessionId: "s-held", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
   const view = readBox(dir)!.view!;
   expect(shows(view, { path: join(n.home, "update/held/tu_1"), rw: true })).toBe(true);
+  // The hold (it stalls every agent's tool calls) and the updater's next binary and its sums: never the box's to write.
+  for (const f of ["update/hold", "update/fleetd.next", "update/fleetd.next.sums.json", "update/fleetd.prev"]) expect(shows(view, { path: join(n.home, f), rw: true })).toBe(false);
+  expect(shows(view, { path: join(n.home, "update/hold"), rw: false })).toBe(true);
   expect(shows(view, { path: join(n.home, "sessions/s-held"), rw: true })).toBe(false);
   expect(shows(view, { path: join(n.home, "node.json"), rw: false })).toBe(false);
   await n.vm.end(dir);
@@ -884,9 +901,9 @@ test("a box can mark its tool calls held for an update (the update dir is writab
 
 test("a VM out of memory tells its agent so, once, at its next tool call: what was killed and the VM's size", () => {
   const dmesg = "[  10.1] Out of memory: Killed process 412 (cc1plus) total-vm:900kB, anon-rss:1048576kB, file-rss:0kB\n[  99.2] Out of memory: Killed process 977 (rustc) total-vm:4100000kB, anon-rss:3670016kB, file-rss:0kB\n";
-  const line = oomLine(dmesg, 8, "12:00:01");
+  const line = oomLine(dmesg, 4, "12:00:01");
   expect(line).toBe(
-    'fleetd: this VM ran out of its 8 GiB of memory at 12:00:01, and its kernel killed rustc (pid 977, 3.5 GB). Run less at once (fewer build jobs or test workers, -j 1), or ask for the machine\'s VMs to be made larger (node.json "vmMemoryGiB").\n',
+    'fleetd: this VM ran out of its 4 GiB of memory at 12:00:01, and its kernel killed rustc (pid 977, 3.5 GB). Run less at once (fewer build jobs or test workers, -j 1), or ask for "vmMemoryGiB" to be raised in this machine\'s node.json (VMs are 4 GiB here).\n',
   );
   // The hook, on a stand-in note: it speaks once (exit 2, which claude shows the agent), then stays quiet.
   const note = join(root, "oom-note");

@@ -208,7 +208,7 @@ function tune(env: Record<string, string | undefined> = process.env): void {
   if (env.FLEETD_GUEST_UMASK && /^0?[0-7]{3}$/u.test(env.FLEETD_GUEST_UMASK)) process.umask(Number.parseInt(env.FLEETD_GUEST_UMASK, 8));
   set("/proc/self/oom_score_adj", "-1000");
   // /tmp and /dev/shm are the guest's memory: the kernel's default (half of it each) let an agent filling both run the
-  // guest out of memory. The agent's own temp files are in its checkout (../place/microvm.ts boxTmp).
+  // guest out of memory. The agent's own temp files ($TMPDIR) are its scratch dir on this machine's disk.
   for (const [at, size] of [["/tmp", "1g"], ["/dev/shm", "512m"]] as const) {
     try {
       mount("tmpfs", at, "tmpfs", MS_REMOUNT | MS_NOSUID | MS_NODEV, `size=${size}`);
@@ -244,7 +244,7 @@ export function oomLine(dmesg: string, memGiB: number, at: string): string {
   const kills = [...dmesg.matchAll(/Killed process (\d+) \(([^)]*)\)[^\n]*?anon-rss:(\d+)kB/gu)];
   const last = kills.at(-1);
   const what = last ? `${last[2]} (pid ${last[1]}, ${(Number(last[3]) / 2 ** 20).toFixed(1)} GB)` : "a process";
-  return `fleetd: this VM ran out of its ${memGiB} GiB of memory at ${at}, and its kernel killed ${what}. Run less at once (fewer build jobs or test workers, -j 1), or ask for the machine's VMs to be made larger (node.json "vmMemoryGiB").\n`;
+  return `fleetd: this VM ran out of its ${memGiB} GiB of memory at ${at}, and its kernel killed ${what}. Run less at once (fewer build jobs or test workers, -j 1), or ask for "vmMemoryGiB" to be raised in this machine's node.json (VMs are ${memGiB} GiB here).\n`;
 }
 
 /** In a local VM: watches the kernel's OOM kills and writes the last one's line to OOM_NOTE, readable by the agent. */
