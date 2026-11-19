@@ -39,7 +39,7 @@ import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
-import { accountSecrets, envFor, held, putOn } from "../actions/accounts.ts";
+import { accountSecrets, accountSettingsEnv, envFor, held, putOn } from "../actions/accounts.ts";
 import { privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
@@ -1406,11 +1406,16 @@ export class SessionService {
     writeAtomic(mcpConfig, sessionMcp.json);
     const env: Env = { ...base };
     // The session's Claude account in place of the machine's own login and gateway, read at each start. One the node
-    // no longer holds fails the start: it never runs on the machine's login instead.
+    // no longer holds fails the start: it never runs on the machine's login instead. The machine's own settings' `env`
+    // would win over the environment, so the account's endpoint, and the other credentials emptied, go in the
+    // session's settings overlay too, which outranks them.
     const account = row.local.claudeAccount as ClaudeAccount | undefined;
+    let accountSettings: Env = {};
     if (account) {
       try {
-        putOn(env, envFor(this.home, account).vars);
+        const vars = envFor(this.home, account).vars;
+        putOn(env, vars);
+        accountSettings = accountSettingsEnv(vars);
       } catch (error) {
         throw new Refusal("runner_unavailable", (error as Error).message);
       }
@@ -1434,7 +1439,7 @@ export class SessionService {
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.fleetd, this.home)));
+    writeAtomic(settings, settingsOverlay({ ...accountSettings, ...roleVars }, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.fleetd, this.home)));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;

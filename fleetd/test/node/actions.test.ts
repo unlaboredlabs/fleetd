@@ -4,12 +4,13 @@
 // progress; `gh repo list` through a stand-in gh; an agent's image; a project's sign-ins forgotten.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseProgress } from "../../src/node/actions/clone.ts";
 import { frontmatter } from "../../src/node/actions/skills.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
 import { oldProfilesDir } from "../../src/node/own_homes.ts";
+import { claudeEndpoint } from "../../src/node/place/endpoint.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { tempHome } from "../helpers.ts";
@@ -251,6 +252,36 @@ test("a session whose Claude account is gone fails to start rather than run on t
   });
   expect(launched.result).toMatchObject({ err: { code: "runner_unavailable", message: expect.stringContaining("p_gone0000's subscription") } });
   expect(service.store.session("s2")?.summary.latestRun?.status).toBe("failed");
+});
+
+test("a session on the hub's API key talks to its endpoint, not the gateway the machine's claude settings name", async () => {
+  // The machine's own login: a gateway on its loopback, in the env of its claude user settings.
+  const user = join(home.dir, ".claude", "settings.json");
+  put(user, JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://localhost:8317", ANTHROPIC_AUTH_TOKEN: "machine-gateway-token" } }));
+  try {
+    await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("hub-key-0123"), endpoint: "http://100.104.249.49:8317" } });
+    await ok("launch", { sessionId: "s3", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", claudeAccount: { kind: "hub" } });
+    await until("the run", () => service.store.session("s3")?.summary.latestRun?.status === "completed");
+    const args = readFileSync(join(nodeHome, "hosts", "s3.argv"), "utf8").split("\n");
+    const env = Object.fromEntries(
+      readFileSync(join(nodeHome, "hosts", "s3.env"), "utf8")
+        .split("\n")
+        .filter((l) => l.includes("="))
+        .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+    );
+    expect(env.ANTHROPIC_API_KEY).toBe("hub-key-0123");
+    // What claude picks, and what a hosted box checks before the agent starts there (place/hosted.ts): the account's.
+    const cwd = service.store.session("s3")!.summary.worktreePath ?? repo;
+    expect(claudeEndpoint({ env, args, cwd })).toEqual({ url: "http://100.104.249.49:8317", source: join(nodeHome, "sessions", "s3", "settings.json") });
+    // The machine's gateway token is emptied over its settings; the key itself stays out of the file.
+    const overlay = readFileSync(join(nodeHome, "sessions", "s3", "settings.json"), "utf8");
+    expect(JSON.parse(overlay).env).toMatchObject({ ANTHROPIC_AUTH_TOKEN: "", CLAUDE_CODE_OAUTH_TOKEN: "", CLAUDE_CODE_USE_BEDROCK: "" });
+    expect(overlay).not.toContain("ANTHROPIC_API_KEY");
+    expect(overlay).not.toContain("hub-key-0123");
+    await ok("stop", { sessionId: "s3" });
+  } finally {
+    rmSync(user, { force: true });
+  }
 });
 
 test("frontmatter reads plain, quoted and block scalars", () => {

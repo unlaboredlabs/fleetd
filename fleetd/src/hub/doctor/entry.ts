@@ -34,7 +34,9 @@ export function machineEntry(machineId: string, name: string, status: DoctorStat
 export const settingsFile = (info: RunnerInfo) => (info.configDir === undefined ? "~/.claude/settings.json" : `${info.configDir}/settings.json`);
 
 
-/** `claude_account_override`: the machine's claude user settings set a credential or gateway in their `env`. */
+/** `claude_account_override`: the machine's claude user settings set a credential in their `env` that wins over the
+ * account's. Its node puts the account's endpoint and its other variables over theirs; the key or token it can't, as
+ * the account's own goes in no file. An older node names every credential and gateway its settings set. */
 export function claudeAccountOverride(machineId: string, info: RunnerInfo, configured: boolean): DoctorCheck | undefined {
   const names = configured ? info.accountOverrides : undefined;
   if (!names) return undefined;
