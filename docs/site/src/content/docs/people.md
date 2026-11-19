@@ -84,6 +84,12 @@ configuration**. They can switch at any time.
 - **A subscription** is connected with the long-lived token that `claude setup-token` prints. Run it on any computer
   signed in to your Claude account and connect it with `claude_subscription_set` (your settings in the app, once its
   screen ships). Agents get it as `CLAUDE_CODE_OAUTH_TOKEN`.
+- **The account wins over the machine's own Claude setup.** A gateway, token or cloud switch in the `env` of the
+  machine's `~/.claude/settings.json` (an `ANTHROPIC_BASE_URL` on its `localhost`, say) is set aside for that agent:
+  the account's endpoint, Anthropic's API when it names none, goes in the agent's own settings, which outrank the
+  machine's. Hosted agents check that endpoint before they start. Only an `ANTHROPIC_API_KEY` or
+  `CLAUDE_CODE_OAUTH_TOKEN` in those settings still wins, since the account's key is never written to a file: the
+  doctor warns of it.
 - **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it. Sealed on the hosted
   sandboxes instead, it asks the endpoint for its models, through the team's Tailscale gateway for an endpoint on the
   tailnet. An endpoint that doesn't answer says what to do.

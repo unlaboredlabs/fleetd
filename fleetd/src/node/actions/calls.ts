@@ -185,7 +185,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       try {
         // The hub's runner has no Claude Code of its own: its agents' is in their boxes.
         if (isRunner()) await tryAccountApi(account.vars.reduce<Env>((e, [k, v]) => ({ ...e, [k]: v }), {}), via.fetcher);
-        else await tryAccount(ctx.claudeBin, env);
+        else await tryAccount(ctx.claudeBin, env, account.vars);
         return { kind: "claude_account_tested", ok: true };
       } catch (error) {
         // claude may echo what it was given: the value never leaves the machine.

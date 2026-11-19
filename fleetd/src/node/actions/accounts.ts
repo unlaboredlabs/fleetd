@@ -166,6 +166,22 @@ export function putOn(env: Env, accountVars: Vars): void {
   for (const [k, v] of accountVars) env[k] = v;
 }
 
+/** What claude talks to when an account names no endpoint. */
+const ANTHROPIC_API = "https://api.anthropic.com";
+
+/** The `env` a session's settings overlay (`--settings`, which claude ranks above the machine's own settings) sets
+ * for an account whose variables are `accountVars`: its endpoint (Anthropic's API when it names none), and every other
+ * credential and gateway of ACCOUNT_CLEARS emptied, so a machine's `~/.claude/settings.json` can't put its own back.
+ * The account's key or token stays out of it: it reaches claude in the environment only, as before. */
+export function accountSettingsEnv(accountVars: Vars): Env {
+  const env: Env = {};
+  for (const k of ACCOUNT_CLEARS) {
+    if (k === BASE_URL_ENV) env[k] = accountVars.find(([n]) => n === k)?.[1] ?? ANTHROPIC_API;
+    else if (!accountVars.some(([n]) => n === k)) env[k] = "";
+  }
+  return env;
+}
+
 /** The models the hub's API key offers: `GET /v1/models` at its endpoint, else at the Anthropic API. Throws why not,
  * with the key masked, when the node holds no key or the endpoint lists none (a gateway without the Models API). */
 export async function hubModels(home: string): Promise<ApiModel[]> {
@@ -230,20 +246,20 @@ const TRY_ARGS = [
   "--strict-mcp-config",
   "--setting-sources",
   "user",
-  "--settings",
-  AUTO_MEMORY_OFF_SETTINGS,
 ];
 const TRY_TIMEOUT_MS = 90_000;
 
-/** One tiny `claude -p` call with exactly `env`: proves the key or token in it works. Throws claude's own words when
- * it doesn't; the caller masks the secret in them. */
-export async function tryAccount(binary: string, env: Env): Promise<void> {
+/** One tiny `claude -p` call with exactly `env`, the account's `accountVars` winning over the machine's settings as in
+ * a session (`accountSettingsEnv`): proves the key or token in it works. Throws claude's own words when it doesn't; the
+ * caller masks the secret in them. */
+export async function tryAccount(binary: string, env: Env, accountVars: Vars): Promise<void> {
   const clean: Env = {};
   for (const [k, v] of Object.entries(env)) if (k !== FLEETD_ENV_SOURCE) clean[k] = v;
   clean[AUTO_MEMORY_OFF_ENV[0]] = AUTO_MEMORY_OFF_ENV[1];
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try {
-    proc = Bun.spawn([binary, ...TRY_ARGS], { env: clean, cwd: tmpdir(), stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
+    const settings = { ...(JSON.parse(AUTO_MEMORY_OFF_SETTINGS) as Record<string, unknown>), env: accountSettingsEnv(accountVars) };
+    proc = Bun.spawn([binary, ...TRY_ARGS, "--settings", JSON.stringify(settings)], { env: clean, cwd: tmpdir(), stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
   } catch (error) {
     throw new Error(`could not run claude: ${(error as Error).message}`);
   }

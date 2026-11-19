@@ -34,6 +34,7 @@ beforeAll(async () => {
   writeFileSync(
     claude,
     `#!/bin/sh
+printf '%s\\n' "$@" > "$0.argv"
 if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$ANTHROPIC_BASE_URL" ]; then echo '{"is_error":true,"result":"machine login leaked"}'; exit 1; fi
 if [ "$CLAUDE_CODE_OAUTH_TOKEN" = "tok-alice" ]; then echo '{"is_error":false,"result":"OK"}'; exit 0; fi
 echo "{\\"is_error\\":true,\\"result\\":\\"Invalid token $CLAUDE_CODE_OAUTH_TOKEN\\"}"; exit 1
@@ -75,6 +76,11 @@ test("a person's subscription is saved sealed, in the Rust node's file, and forg
 
 test("an account's Test runs claude on that account alone, and masks what claude echoes", async () => {
   expect(await ok("claude_account_test", { account: alice })).toEqual({ kind: "claude_account_tested", ok: true });
+  // Its settings put the account over whatever the machine's claude settings name, as a session's do.
+  const argv = readFileSync(`${claude}.argv`, "utf8").split("\n");
+  const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]!);
+  expect(settings).toMatchObject({ autoMemoryEnabled: false, env: { ANTHROPIC_BASE_URL: "https://api.anthropic.com", ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "" } });
+  expect(settings.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
   await ok("claude_account_secret", { account: { kind: "person", personId: "p_bbbbbbbb" }, set: { sealed: sealed("tok-bob-wrong") } });
   const bob = await ok("claude_account_test", { account: { kind: "person", personId: "p_bbbbbbbb" } });
   expect(bob).toEqual({ kind: "claude_account_tested", ok: false, error: "Invalid token ***CLAUDE_CODE_OAUTH_TOKEN***" });

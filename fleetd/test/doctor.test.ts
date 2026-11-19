@@ -339,13 +339,13 @@ test("claude settings that outrank the account warn", () => {
     configDir: "/home/ada/.claude",
     ...(accountOverrides ? { accountOverrides } : {}),
   });
-  const set = info(["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"]);
+  const set = info(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]);
   expect(c.claudeAccountOverride("devbox", set, false)).toBeUndefined();
   expect(c.claudeAccountOverride("devbox", info(), true)).toBeUndefined();
   const warned = c.claudeAccountOverride("devbox", set, true)!;
   expect([warned.id, warned.status]).toEqual(["devbox/claude_account_override", "warn"]);
   expect(warned.message).toBe(
-    '/home/ada/.claude/settings.json on devbox sets ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY in its "env", which claude applies over the Claude account fleetd gives each session there.',
+    '/home/ada/.claude/settings.json on devbox sets ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN in its "env", which claude applies over the Claude account fleetd gives each session there.',
   );
   expect(c.claudeAccountOverride("devbox", info([]), true)!.status).toBe("ok");
 });
