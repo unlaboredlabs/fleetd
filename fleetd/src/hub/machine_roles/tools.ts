@@ -3,6 +3,7 @@
 // `screen_end` are screens.ts's.
 import type { MachineRole, MachineRolesEntry } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { RUNNER_ID, runnerRefused } from "../../shared/sandbox.ts";
 import type { Hub } from "../api/hub.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
@@ -47,6 +48,14 @@ function machineRolesSet(
 ) {
   const m = input.machineId;
   requireRole(caller, "admin", m);
+  // Hosted sandboxes run hosted agents and nothing else: a role off there would only stall them (W743).
+  if (m === RUNNER_ID) {
+    throw new ToolError(
+      "invalid",
+      runnerRefused("they have no roles to change."),
+      "boat.dev's row in Settings › Hub › Machines › Providers sets how many run at once.",
+    );
+  }
   if (!store(hub).machineGet(m)) throw new ToolError("not_found", `No machine ${m}.`, "machine_roles lists the machines.");
   const agentsMac = isAgentsMac(hub, m);
   if (input.macTool !== undefined && !agentsMac) {

@@ -166,7 +166,7 @@ export class Runner {
       child = this.spawn(["node", "run", "--home", home], undefined);
     } else {
       // Joins once, as any machine does, then keeps its link up as that node.
-      const code = this.hub.auth.nodes.createEnrollToken(RUNNER_ID, "the hub's runner").token;
+      const code = this.hub.auth.nodes.createRunnerEnrollToken().token;
       child = this.spawn(["node", "join", "--hub", this.#url!, "--token-file", "-", "--machine", RUNNER_ID, "--home", home, "--runner"], code);
     }
     this.#child = child;

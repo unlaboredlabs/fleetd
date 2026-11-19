@@ -18,6 +18,11 @@ export const CAP_RUNNER = "hosted_runner";
 /** The runner's machine id, and its name where a person reads it. */
 export const RUNNER_ID = "hosted";
 export const RUNNER_NAME = "Hosted sandboxes";
+/**
+ * Why the runner's id takes no join code, no roles and no max of its own (W743), as machine_remove already refuses
+ * it: it is the hub's, not a computer, and its provider's limit is how many run at once. `what` ends the sentence.
+ */
+export const runnerRefused = (what: string) => `Hosted sandboxes are the hub's own, not a computer of the team's: ${what}`;
 
 /**
  * Every provider, in the placement order: the order agents go to the connected ones once a machine's own slots are
