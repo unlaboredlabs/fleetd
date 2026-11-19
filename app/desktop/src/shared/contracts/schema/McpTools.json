@@ -2468,10 +2468,6 @@
         "sessionId": {
           "$ref": "#/$defs/BrowserSessionId"
         },
-        "source": {
-          "$ref": "#/$defs/ScreenSource",
-          "description": "Where the screen runs when it isn't one of the team's machines: `revyl`, a phone in the team's own Revyl account,\ndriven by its agent's node through Revyl's CLI (`machineId` is that node's machine). Absent for the team's own."
-        },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -11915,36 +11911,6 @@
         "requests_list.output": {
           "$ref": "#/$defs/RequestsListOutput"
         },
-        "revyl_connect.input": {
-          "$ref": "#/$defs/RevylConnectInput"
-        },
-        "revyl_connect.output": {
-          "$ref": "#/$defs/RevylState"
-        },
-        "revyl_disconnect.input": {
-          "$ref": "#/$defs/RevylDisconnectInput"
-        },
-        "revyl_disconnect.output": {
-          "$ref": "#/$defs/RevylState"
-        },
-        "revyl_get.input": {
-          "$ref": "#/$defs/RevylGetInput"
-        },
-        "revyl_get.output": {
-          "$ref": "#/$defs/RevylState"
-        },
-        "revyl_route_set.input": {
-          "$ref": "#/$defs/RevylRouteSetInput"
-        },
-        "revyl_route_set.output": {
-          "$ref": "#/$defs/RevylState"
-        },
-        "revyl_test.input": {
-          "$ref": "#/$defs/RevylTestInput"
-        },
-        "revyl_test.output": {
-          "$ref": "#/$defs/RevylState"
-        },
         "sandbox_connect.input": {
           "$ref": "#/$defs/SandboxConnectInput"
         },
@@ -12579,16 +12545,6 @@
         "push_relay_set.output",
         "requests_list.input",
         "requests_list.output",
-        "revyl_connect.input",
-        "revyl_connect.output",
-        "revyl_disconnect.input",
-        "revyl_disconnect.output",
-        "revyl_get.input",
-        "revyl_get.output",
-        "revyl_route_set.input",
-        "revyl_route_set.output",
-        "revyl_test.input",
-        "revyl_test.output",
         "sandbox_connect.input",
         "sandbox_connect.output",
         "sandbox_disconnect.input",
@@ -19132,139 +19088,6 @@
       "type": "string",
       "x-open": true
     },
-    "RevylCheck": {
-      "description": "The last check of the team's Revyl key (`revyl_connect`, `revyl_test`): never the key, nor any part of it.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "fix": {
-          "description": "What to do about a failed check, in plain words.",
-          "type": "string"
-        },
-        "message": {
-          "description": "What failed, in plain words, with the key masked. Absent while it works.",
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "reason": {
-          "$ref": "#/$defs/RevylCheckReason"
-        }
-      },
-      "required": [
-        "at",
-        "ok"
-      ],
-      "type": "object"
-    },
-    "RevylCheckReason": {
-      "description": "Why a Revyl key's last check failed, as a word the app acts on: `invalid_key` (Revyl refused it: wrong, revoked or\nexpired), `no_cli` (no machine could install Revyl's CLI; `message` says why), `failed`\n(anything else: the network, Revyl down).",
-      "enum": [
-        "invalid_key",
-        "no_cli",
-        "failed"
-      ],
-      "type": "string",
-      "x-open": true
-    },
-    "RevylConnectInput": {
-      "properties": {
-        "sealed": {
-          "description": "`{\"key\":\"<the Revyl API key>\"}`, sealed (crypto_box_seal) to `boxPubKey`, base64.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "sealed"
-      ],
-      "type": "object"
-    },
-    "RevylDisconnectInput": {
-      "type": "object"
-    },
-    "RevylGetInput": {
-      "type": "object"
-    },
-    "RevylKind": {
-      "description": "A phone screen kind Revyl can host.",
-      "enum": [
-        "ios",
-        "android"
-      ],
-      "type": "string"
-    },
-    "RevylRoute": {
-      "description": "Where an agent's phone screen of a kind comes from once a Revyl key is connected: the team's own machines until they\nare at their limit, then Revyl (`ours_first`, the default); the team's machines alone (`ours_only`, as with no\nkey); Revyl alone (`revyl_only`). When every place allowed is full the agent waits in line.",
-      "enum": [
-        "ours_first",
-        "ours_only",
-        "revyl_only"
-      ],
-      "type": "string",
-      "x-open": true
-    },
-    "RevylRouteSetInput": {
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/RevylKind"
-        },
-        "route": {
-          "$ref": "#/$defs/RevylRoute"
-        }
-      },
-      "required": [
-        "kind",
-        "route"
-      ],
-      "type": "object"
-    },
-    "RevylRoutes": {
-      "description": "One route per phone screen kind.",
-      "properties": {
-        "android": {
-          "$ref": "#/$defs/RevylRoute"
-        },
-        "ios": {
-          "$ref": "#/$defs/RevylRoute"
-        }
-      },
-      "required": [
-        "android",
-        "ios"
-      ],
-      "type": "object"
-    },
-    "RevylState": {
-      "description": "The team's own Revyl account as the hub keeps it: whether a key is connected, its last check, and the routes.",
-      "properties": {
-        "boxPubKey": {
-          "description": "The hub's own box key (X25519, base64): `revyl_connect`'s `sealed` is sealed to it.",
-          "type": "string"
-        },
-        "check": {
-          "$ref": "#/$defs/RevylCheck",
-          "description": "Absent before the first check."
-        },
-        "connected": {
-          "type": "boolean"
-        },
-        "routes": {
-          "$ref": "#/$defs/RevylRoutes",
-          "description": "Each kind's route in effect: `ours_only` while no key is connected."
-        }
-      },
-      "required": [
-        "boxPubKey",
-        "connected",
-        "routes"
-      ],
-      "type": "object"
-    },
-    "RevylTestInput": {
-      "type": "object"
-    },
     "Role": {
       "enum": [
         "read",
@@ -19572,6 +19395,13 @@
             "$ref": "#/$defs/SandboxProviderState"
           },
           "type": "array"
+        },
+        "removed": {
+          "description": "Each provider fleetd removed that this hub had connected, as one plain line saying so and what runs instead,\nfor 30 days after the update that removed it. Absent when there is none, and from older hubs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -19681,14 +19511,6 @@
         "number"
       ],
       "type": "object"
-    },
-    "ScreenSource": {
-      "description": "Where a screen runs beyond the team's own machines: `revyl`, the team's own Revyl account.",
-      "enum": [
-        "revyl"
-      ],
-      "type": "string",
-      "x-open": true
     },
     "ScreenStage": {
       "description": "Where a person's screen is on its way (`screen_open`, [`ScreenWait`]).",

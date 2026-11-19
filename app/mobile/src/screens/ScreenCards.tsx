@@ -40,9 +40,7 @@ function Card({ card, who, onOpen }: { card: ScreenCard; who: string; onOpen: ()
   const title = cardTitle(card, who);
   const line = card.reason ?? card.purpose;
   const button = asking ? "Open" : yours ? "Open" : "Watch";
-  const now = yours ? "You have control" : card.control === "handing_back" ? "Handed back" : asking ? "Waiting for you" : "Live";
-  // Where it runs, quietly: a Revyl screen says so after its state.
-  const state = card.revyl ? `${now} · Revyl` : now;
+  const state = yours ? "You have control" : card.control === "handing_back" ? "Handed back" : asking ? "Waiting for you" : "Live";
   return (
     <Pressable
       accessibilityRole="button"

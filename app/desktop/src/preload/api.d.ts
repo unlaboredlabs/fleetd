@@ -4,7 +4,7 @@ import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, RevylKeyRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
@@ -52,11 +52,6 @@ export interface FleetdApi {
      * hub_link_add. The output has the link and what it reaches, never the key.
      */
     hubLink(hub: HubId, request: HubLinkRequest): Promise<CallOutcome>;
-    /**
-     * The team's own Revyl key: main seals it to `boxPubKey`, the hub's own key, and calls revyl_connect. The output
-     * has its first test; nothing returns the key.
-     */
-    revylKey(hub: HubId, request: RevylKeyRequest): Promise<CallOutcome>;
     /**
      * The team's own key at a hosted sandbox provider: main seals it to `boxPubKey`, the hub's own key, and calls
      * sandbox_connect. The output has its first test; nothing returns the key.

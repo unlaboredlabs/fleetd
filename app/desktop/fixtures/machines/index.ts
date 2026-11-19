@@ -7,14 +7,13 @@
 // only what needs someone: nothing in `machines-well`, claude logged out with Log in from the app in
 // `machines-logged-out`, and Android's fix to run on it in `machines-warning`. `machines-one` is a hub just set up,
 // devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
-// out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own Revyl
-// in Machines' Providers and What runs where (W676): `machines-revyl-off` with no key yet (each kind on our machines, its Revyl choices
-// off and why), `machines-revyl-on` connected (iOS simulators on Revyl only, Android ours first), and
-// `machines-revyl-failed` with a key Revyl refused. The team's own hosted sandbox accounts in Machines' Sandboxes
-// section (W688): `machines-sandboxes-off` with none connected, `machines-sandboxes-on` with E2B (self-hosted) and
-// Daytona connected, Daytona's key refused at its last test. `machines-none` is a team with no machine of its own, its
-// agents only in E2B through the hub's runner, which has no Claude account yet (W721): the list's empty state with its
-// own Add machine, and the runner's one notice over the providers.
+// out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own hosted
+// sandbox accounts in Machines' Sandboxes section (W688): `machines-sandboxes-off` with none connected,
+// `machines-sandboxes-on` with E2B (self-hosted) and Daytona connected, Daytona's key refused at its last test.
+// `machines-revyl-removed` is a hub that had Revyl connected before fleetd removed it (D576): one line says so.
+// `machines-none` is a team with no machine of its own, its agents only in E2B through the hub's runner, which has no
+// Claude account yet (W721): the list's empty state with its own Add machine, and the runner's one notice over the
+// providers.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -226,24 +225,8 @@ function unwell(from: Fixture, name = "machines-unwell", note = "buildbox offlin
   return f;
 }
 
-/** The hub's own box key, which the app seals a Revyl key to. */
+/** The hub's own box key, which the app seals a provider's key to. */
 const BOX = "q5pJ8nL0v3Yc7hT2mR9wE4kD1sF6gA8uX0zB3cN5eQ8=";
-
-const REVYL_OFF: JsonObject = { boxPubKey: BOX, connected: false, routes: { ios: "ours_only", android: "ours_only" } };
-
-/** The admin's hub with the team's Revyl as `state` has it; Connect, Test and the routes answer as a hub would. */
-function revyl(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
-  const f = hub(from, name, note, () => []);
-  const on: JsonObject = { ...REVYL_OFF, connected: true, check: { ok: true, at: f.now }, routes: { ios: "revyl_only", android: "ours_first" } };
-  f.answer("revyl_get", undefined, state);
-  // Recordings, the part's last row, as a hub that serves Revyl keeps them.
-  f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
-  f.answer("revyl_connect", undefined, on);
-  f.answer("revyl_test", undefined, state["connected"] === true ? state : on);
-  f.answer("revyl_disconnect", undefined, REVYL_OFF);
-  f.answer("revyl_route_set", undefined, state);
-  return f;
-}
 
 const SANDBOX_OFF = (provider: string): JsonObject => ({ provider, connected: false, limit: 0 });
 const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("e2b"), SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] };
@@ -310,8 +293,7 @@ const NO_VM = (why: string) => `; agents run as plain processes: ${why}`;
 /**
  * The page as a team that has grown into it uses it: devbox well and busy, each agent in a VM; laptop with claude
  * logged out, a Mac whose agents run as processes; buildbox offline for three days. E2B (self-hosted) and Daytona
- * connected, Daytona's key refused; Revyl connected, iOS simulators on Revyl only. `places-vm-off` is devbox unable to
- * run VMs, with the command that fixes it.
+ * connected, Daytona's key refused. `places-vm-off` is devbox unable to run VMs, with the command that fixes it.
  */
 function places(from: Fixture, name: string, note: string, devboxWhy: string, devboxSandbox: JsonObject): Fixture {
   const f = unwell(from, name, note);
@@ -320,21 +302,19 @@ function places(from: Fixture, name: string, note: string, devboxWhy: string, de
     { machineId: "laptop", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent${NO_VM(MACOS)}`, sandbox: { kind: "process", why: MACOS, expected: true } },
   ]);
   f.answer("sandbox_get", undefined, SANDBOXES_ON);
-  f.answer("revyl_get", undefined, { ...REVYL_OFF, connected: true, check: { ok: true, at: "2026-10-19T08:55:00.000Z" }, routes: { ios: "revyl_only", android: "ours_first" } });
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
   return f;
 }
 
 /** A hub just set up, as one machine and nothing connected: devbox alone, each agent in a VM. */
 function onePlace(from: Fixture): Fixture {
-  const f = one(from, "machines-places-one", "devbox alone and well, each agent in a VM; no sandbox provider or Revyl connected yet");
+  const f = one(from, "machines-places-one", "devbox alone and well, each agent in a VM; no sandbox provider connected yet");
   withShares(f, [{ machineId: "devbox", cap: 22, auto: 22, running: 3, why: `memory 60 GB, about 2 GB an agent${VM}`, sandbox: { kind: "microvm" } }]);
   // The live feed as the snapshot has it: devbox alone, and well.
   for (const frame of f.live) {
     if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox").map((m) => ({ ...(m as JsonObject), status: "online", running: 3 }));
   }
   f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true });
-  f.answer("revyl_get", undefined, REVYL_OFF);
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
   return f;
 }
@@ -358,7 +338,6 @@ function none(from: Fixture): Fixture {
   }
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, machines: [] } : out));
   f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true, providers: [{ provider: "e2b", connected: true, limit: 20, check: { ok: true, at: f.now } }, SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] });
-  f.answer("revyl_get", undefined, REVYL_OFF);
   return f;
 }
 
@@ -370,23 +349,14 @@ export default defineGroup({
     joinedWith(base("typical"), "machines-logged-out", "laptop joined with claude logged out: the one row, and Log in from the app", laptopChecks({ out: true })),
     joinedWith(base("typical"), "machines-warning", "laptop joined with Android not ready: the one row, and its fix to run on laptop", laptopChecks({ kvm: true })),
     one(base("empty")),
-    revyl(base("typical"), "machines-revyl-off", "No Revyl key yet: each phone kind on our machines, its Revyl choices off with why and Connect", REVYL_OFF),
-    revyl(base("typical"), "machines-revyl-on", "Revyl connected: iOS simulators on Revyl only, Android on our machines first", {
-      ...REVYL_OFF,
-      connected: true,
-      check: { ok: true, at: "2026-10-19T08:55:00.000Z" },
-      routes: { ios: "revyl_only", android: "ours_first" },
-    }),
-    revyl(base("typical"), "machines-revyl-failed", "A Revyl key Revyl refused at its last test: why, under the row", {
-      ...REVYL_OFF,
-      connected: true,
-      check: { ok: false, at: "2026-10-19T08:55:00.000Z", reason: "invalid_key", message: "Revyl refused the key (401): it is wrong, revoked or expired.", fix: "Make a new key in Revyl, then disconnect and connect it." },
-      routes: { ios: "ours_first", android: "ours_first" },
-    }),
     sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
     sandboxes(base("typical"), "machines-sandboxes-on", "E2B (self-hosted) and Daytona connected, in the order agents go to them; Daytona's key refused at its last test", SANDBOXES_ON_PAUSED),
+    sandboxes(base("typical"), "machines-revyl-removed", "A hub that had Revyl connected before fleetd removed it: one plain line above the providers", {
+      ...SANDBOXES_ON,
+      removed: ["Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine."],
+    }),
     unwell(base("typical")),
-    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; E2B and Daytona (refused) connected, Revyl connected", VM, { kind: "microvm" }),
+    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; E2B and Daytona (refused) connected", VM, { kind: "microvm" }),
     places(
       base("typical"),
       "machines-places-vm-off",

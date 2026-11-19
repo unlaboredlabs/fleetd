@@ -60,7 +60,6 @@ export function sessionCall(call: Record<string, unknown>): BrowserSessionCall {
   text(call, "endedAt", 1, 64, true);
   count(call, "credentialsFilled", true);
   text(call, "note", 0, 500, true);
-  oneOf(call, "source", new Set(["revyl"]), true);
   if (call.files !== undefined) {
     if (!Array.isArray(call.files) || call.files.length > 3) throw invalid("files", "a list of at most 3 recording files", call.files);
     for (const [i, entry] of call.files.entries()) {

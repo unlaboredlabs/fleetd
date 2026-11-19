@@ -41,7 +41,6 @@
     "./shared/limit_text": "./fleetd/src/shared/limit_text.ts",
     "./shared/node_link": "./fleetd/src/shared/node_link.ts",
     "./shared/redact": "./fleetd/src/shared/redact.ts",
-    "./shared/revyl": "./fleetd/src/shared/revyl.ts",
     "./shared/sandbox": "./fleetd/src/shared/sandbox.ts",
     "./shared/screens_wire": "./fleetd/src/shared/screens_wire.ts",
     "./shared/sealed_box_core": "./fleetd/src/shared/sealed_box_core.ts",

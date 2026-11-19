@@ -1,9 +1,9 @@
 // Settings › Machines › a provider, for admins (machines.ts): one provider the team connects with its own key (E2B,
-// boat.dev, Daytona, Revyl). Not connected, its API key in a secure field (and E2B a self-hosted domain), sealed here
+// boat.dev, Daytona). Not connected, its API key in a secure field (and E2B a self-hosted domain), sealed here
 // to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
 import { useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import type { RevylState, SandboxState } from "../../../desktop/src/shared/contracts";
+import type { SandboxState } from "../../../desktop/src/shared/contracts";
 import { useHub, type SettingsProps } from "../hubContext";
 import { canWords, limitChoices, limitWords, providerFooter, providerName, providersOf, specOf, takesDomain, type ProviderState } from "../machines";
 import { shape, space, type, useTheme } from "../theme";
@@ -14,21 +14,14 @@ import { sealToHub } from "./vault/api";
 
 /** Connect and Test wait for the provider's answer from one of the team's machines (the hub waits up to 45 s for it). */
 const CHECK_TIMEOUT_MS = 60_000;
-/** Revyl's may first install its CLI on the machine it runs on (the hub waits up to 2.75 minutes). */
-const REVYL_TIMEOUT_MS = 180_000;
 
 export function Provider({ route }: SettingsProps<"Provider">) {
   const t = useTheme();
   const { session } = useHub();
-  const revyl = route.params.id === "revyl";
-  const read = useRead(() => session.call(revyl ? "revyl_get" : "sandbox_get", {}), [session, revyl]);
+  const read = useRead(() => session.call("sandbox_get", {}), [session]);
   const r = read.value;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
-  const state: ProviderState | undefined = !r.ok
-    ? undefined
-    : revyl
-      ? { id: "revyl", ...(r.output as RevylState) }
-      : providersOf(r.output as SandboxState, undefined).find((p) => p.id === route.params.id);
+  const state: ProviderState | undefined = !r.ok ? undefined : providersOf(r.output as SandboxState).find((p) => p.id === route.params.id);
   const boxPubKey = r.ok ? (r.output as { boxPubKey: string }).boxPubKey : "";
   return (
     <ScrollView
@@ -54,7 +47,6 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
   const t = useTheme();
   const { session } = useHub();
   const name = providerName(p.id);
-  const revyl = p.id === "revyl";
   const [key, setKey] = useState("");
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState<"connect" | "test" | "limit" | "disconnect" | null>(null);
@@ -83,9 +75,7 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
     const sealed = sealToHub({ key: typed }, boxPubKey);
     if (sealed === null) return setProblem("The hub's key didn't come through. Try again.");
     const d = takesDomain(p.id) ? domain.trim() : "";
-    const call = revyl
-      ? () => session.call("revyl_connect", { sealed }, REVYL_TIMEOUT_MS)
-      : () => session.call("sandbox_connect", { provider: p.id, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS);
+    const call = () => session.call("sandbox_connect", { provider: p.id, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS);
     void run("connect", call, "Not connected").then(() => setKey(""));
   };
   const pickLimit = () => {
@@ -103,9 +93,9 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
   const disconnect = () =>
     confirmDestructive({
       title: `Disconnect ${name}?`,
-      message: revyl ? `The team's ${name} key goes from the hub, and phone screens run on your machines.` : `The team's ${name} key, its limit and its domain go from the hub.`,
+      message: `The team's ${name} key, its limit and its domain go from the hub.`,
       button: "Disconnect",
-      onConfirm: () => void run("disconnect", () => (revyl ? session.call("revyl_disconnect", {}) : session.call("sandbox_disconnect", { provider: p.id })), "Not disconnected"),
+      onConfirm: () => void run("disconnect", () => session.call("sandbox_disconnect", { provider: p.id }), "Not disconnected"),
     });
 
   const footer = providerFooter(p);
@@ -116,7 +106,7 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
         {p.connected ? (
           <>
             {p.limit === undefined ? null : <ListRow title="At Once" value={limitWords(p.limit)} {...(busy === null ? { onPress: pickLimit } : {})} chevron={false} />}
-            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => (revyl ? session.call("revyl_test", {}, REVYL_TIMEOUT_MS) : session.call("sandbox_test", { provider: p.id }, CHECK_TIMEOUT_MS)), "Not tested") } : {})} chevron={false} />
+            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => session.call("sandbox_test", { provider: p.id }, CHECK_TIMEOUT_MS), "Not tested") } : {})} chevron={false} />
             <ListRow title={busy === "disconnect" ? "Disconnecting…" : "Disconnect"} destructive {...(busy === null ? { onPress: disconnect } : {})} chevron={false} />
           </>
         ) : (

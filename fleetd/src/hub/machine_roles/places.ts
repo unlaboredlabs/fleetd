@@ -102,8 +102,7 @@ export function taskEnded(column: string, now: number): string {
 
 /**
  * The sessions live on `runner` now: its own agents' that run there, those it hosts for agents on other machines, and
- * the starts placed on it that have not reported yet. A session whose task ended counts for nothing, and a Revyl
- * screen (its `source`) takes none of the machine's slots.
+ * the starts placed on it that have not reported yet. A session whose task ended counts for nothing.
  */
 export function liveOn(c: Database, runner: string, now: number): number {
   const since = now - START_MS;
@@ -111,7 +110,6 @@ export function liveOn(c: Database, runner: string, now: number): number {
     c.query<{ n: number }, (string | number)[]>(sql).get(...params)?.n ?? 0;
   const own = count(
     `SELECT COUNT(*) AS n FROM browser_sessions b WHERE b.machine_id = ?1 AND b.state = 'live'
-       AND json_extract(b.data, '$.source') IS NULL
        AND NOT ${taskEnded("json_extract(b.data, '$.taskId')", now)}
        AND NOT EXISTS (SELECT 1 FROM session_places p WHERE p.hosted = 1
          AND (p.session_id = b.session_id

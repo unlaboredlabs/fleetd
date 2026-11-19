@@ -2,7 +2,6 @@
 // both read (D550): each with what it can run (agents, and which kinds of screen), so Providers lists them all, each
 // saying what it runs, and What runs where offers a kind only the connected providers that run it. A provider that
 // gains a kind is one entry here. Pure so it is tested on its own.
-import type { RevylRoute } from "./contracts";
 
 /** What a provider can run: agents, or a kind of agent screen. */
 export type Capability = "agents" | "browser" | "desktop" | "android" | "ios" | "mac";
@@ -10,7 +9,7 @@ export type Capability = "agents" | "browser" | "desktop" | "android" | "ios" | 
 export const SCREEN_KINDS: ReadonlyArray<Capability> = ["browser", "desktop", "android", "ios", "mac"];
 
 export interface ProviderSpec {
-  /** The hub's id for it: a sandbox provider's (`e2b`), or `revyl`. */
+  /** The hub's id for it: a sandbox provider's (`e2b`). */
   readonly id: string;
   readonly name: string;
   readonly can: ReadonlyArray<Capability>;
@@ -21,7 +20,6 @@ export const PROVIDERS: ReadonlyArray<ProviderSpec> = [
   { id: "e2b", name: "E2B", can: ["agents"] },
   { id: "boat", name: "boat.dev", can: ["agents"] },
   { id: "daytona", name: "Daytona", can: ["agents"] },
-  { id: "revyl", name: "Revyl", can: ["ios", "android"] },
 ];
 
 /** A provider by its id; an unknown one runs agents (the hub lists it among its sandbox providers) under its own id. */
@@ -81,32 +79,7 @@ export const noneHow: Readonly<Record<Capability, string>> = {
   agents: "Add a machine with the plus above, or connect a provider.",
   browser: "Turn Browser on in a machine's Screens.",
   desktop: "Turn Linux desktop on in a machine's Screens.",
-  android: "Turn Android on in a machine's Screens, or connect Revyl.",
-  ios: "Add a Mac for agents with the plus above, or connect Revyl.",
+  android: "Turn Android on in a machine's Screens.",
+  ios: "Add a Mac for agents with the plus above.",
   mac: "Add a Mac for agents with the plus above.",
 };
-
-/** Where a phone kind's agent screens run with Revyl in the picture (revyl_route_set), in the words both apps show. */
-export const ROUTE_WORDS: Readonly<Record<string, string>> = {
-  ours_first: "Your machines first, then Revyl",
-  ours_only: "Your machines",
-  revyl_only: "Revyl only",
-};
-
-const ROUTES: ReadonlyArray<RevylRoute> = ["ours_first", "ours_only", "revyl_only"];
-
-/** Whether a route needs a Revyl key. */
-export const usesRevyl = (route: RevylRoute): boolean => route !== "ours_only";
-
-/**
- * A kind's choices: all three while Revyl is connected; else only our machines, and the route in effect when it still
- * names Revyl, so it shows what holds and can be moved back. A route a newer hub has is listed too, as it names it.
- */
-export const routeChoices = (connected: boolean, current: RevylRoute): Array<{ value: RevylRoute; label: string }> => {
-  const offered = connected ? ROUTES : ROUTES.filter((r) => !usesRevyl(r));
-  const known = offered.map((value) => ({ value, label: ROUTE_WORDS[value] ?? value }));
-  return offered.includes(current) ? known : [...known, { value: current, label: ROUTE_WORDS[current] ?? current }];
-};
-
-/** Whether a kind's route is a choice now: Revyl connected, or a route that still names it. Else "Your machines" stands. */
-export const routeChosen = (connected: boolean, current: RevylRoute): boolean => connected || usesRevyl(current);

@@ -1,5 +1,5 @@
 // A provider the team connects with its own key, as Hub › Machines' Providers lists every one of them (E2B, boat.dev,
-// Daytona, Revyl): one row, its state a dot, what it can run quietly beside its name. Not connected, Connect; it opens
+// Daytona): one row, its state a dot, what it can run quietly beside its name. Not connected, Connect; it opens
 // the key's sealed field in the row. Connected, what it has to set (a sandbox provider's limit) and one menu with Test
 // and Disconnect; the line under its name says only what a check found, while a run goes, or a self-hosted domain.
 // The key goes to main, which seals it to the hub's own key and calls the hub's connect: it never reaches the hub in
@@ -10,8 +10,7 @@ import type { TextTone } from "../../ui";
 import { Button, cx, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text } from "../../ui";
 import { errorText } from "./hub";
 import { SettingsRow, type Mark } from "./parts";
-import { keyOf } from "./revylModel";
-import { domainOf } from "./sandboxModel";
+import { domainOf, keyOf } from "./sandboxModel";
 import s from "./settings.module.css";
 
 type Busy = "test" | "disconnect" | "set" | null;

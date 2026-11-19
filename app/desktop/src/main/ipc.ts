@@ -13,7 +13,7 @@ import type { Cloud } from "./cloud";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
-import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitRevylKey, submitSandboxKey, submitSecret } from "./secret";
+import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSandboxKey, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import { authorizer, copyVaultField, revealVaultItem, saveVaultItem, unlockVault } from "./vault";
 import type { Notifier } from "./notify";
@@ -94,7 +94,6 @@ export const registerIpc = (
   handle(IPC.projectEnvSubmit, (_event, id, request) => submitProjectEnv(request, call(id)));
   handle(IPC.mcpServerSubmit, (_event, id, request) => submitMcpServer(request, call(id)));
   handle(IPC.hubLinkSubmit, (_event, id, request) => submitHubLink(request, call(id)));
-  handle(IPC.revylKeySubmit, (_event, id, request) => submitRevylKey(request, call(id)));
   handle(IPC.sandboxKeySubmit, (_event, id, request) => submitSandboxKey(request, call(id)));
   handle(IPC.mcpOauthClientSubmit, (_event, id, request) => submitMcpOauthClient(request, call(id)));
   handle(IPC.githubAppCreate, (_event, id, request) =>

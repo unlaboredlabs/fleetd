@@ -58,8 +58,8 @@ const TMP_VARS = ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"];
 const real = (p: string) => normalize(resolve(p)).replace(/\/+$/u, "") || "/";
 
 /** The dirs of the node's home that hold tools fleetd installed for agents (agent-browser, agent-device and the
- * Android SDK, the build-slot, Revyl and Mac shims): a path the session's launch names there is shared read-only. */
-const TOOL_AREAS = [join("browser", "agent-browser"), "device", join("build-slots", "bin"), join("revyl", "bin"), join("mac", "bin"), "bin"];
+ * Android SDK, the build-slot and Mac shims): a path the session's launch names there is shared read-only. */
+const TOOL_AREAS = [join("browser", "agent-browser"), "device", join("build-slots", "bin"), join("mac", "bin"), "bin"];
 /** And what of them never is: the screens' recordings. */
 const NEVER = [join("device", "recordings")];
 

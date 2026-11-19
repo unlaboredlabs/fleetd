@@ -6,7 +6,7 @@ describe("the providers, as one model", () => {
     const agents = PROVIDERS.filter((p) => serves(p, ["agents"])).map((p) => p.name);
     const screens = PROVIDERS.filter((p) => serves(p, SCREEN_KINDS)).map((p) => p.name);
     expect(agents).toEqual(["E2B", "boat.dev", "Daytona"]);
-    expect(screens).toEqual(["Revyl"]);
+    expect(screens).toEqual([]);
     // One that does both is in each.
     const both = { id: "x", name: "X", can: ["agents", "mac"] as const };
     expect(serves(both, ["agents"]) && serves(both, SCREEN_KINDS)).toBe(true);
@@ -14,7 +14,7 @@ describe("the providers, as one model", () => {
 
   it("names one a newer hub has by its id, as a provider of agents, after the ones it knows", () => {
     expect(specOf("modal")).toEqual({ id: "modal", name: "modal", can: ["agents"] });
-    expect(ordered(["revyl", "modal", "daytona", "e2b"])).toEqual(["e2b", "daytona", "revyl", "modal"]);
+    expect(ordered(["modal", "daytona", "e2b"])).toEqual(["e2b", "daytona", "modal"]);
   });
 });
 
@@ -22,7 +22,6 @@ describe("what runs where", () => {
   it("lists every kind once, and says what each provider runs beside its name", () => {
     expect(KINDS).toEqual(["agents", "browser", "desktop", "android", "ios", "mac"]);
     expect(canWords(specOf("e2b"))).toBe("Agents");
-    expect(canWords(specOf("revyl"))).toBe("iOS simulator · Android");
   });
 
   it("says where agents go: the machines, then each connected provider with room, in order", () => {

@@ -117,8 +117,6 @@ export interface BrowserSession {
   readonly note?: string;
   /** The person who opened it themselves (New screen): theirs to drive, with no agent to hand it back to. */
   readonly openedBy?: string;
-  /** It runs on the team's own Revyl account rather than one of the team's machines. */
-  readonly revyl?: true;
 }
 
 /**
