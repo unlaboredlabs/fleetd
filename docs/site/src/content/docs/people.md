@@ -84,7 +84,9 @@ configuration**. They can switch at any time.
 - **A subscription** is connected with the long-lived token that `claude setup-token` prints. Run it on any computer
   signed in to your Claude account and connect it with `claude_subscription_set` (your settings in the app, once its
   screen ships). Agents get it as `CLAUDE_CODE_OAUTH_TOKEN`.
-- **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it.
+- **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it. Sealed on the hosted
+  sandboxes instead, it asks the endpoint for its models, through the team's Tailscale gateway for an endpoint on the
+  tailnet. An endpoint that doesn't answer says what to do.
 - With no choice made, your subscription is used once you connect one, on each machine that holds it; on a machine
   that doesn't, your work there runs on the hub's API. Choose your subscription to have it refused there instead.
 - **Members may use the hub's API** is on by default. An owner or admin can turn it off on the Hub pages of the app's Settings;

@@ -233,15 +233,21 @@ export async function probe(box: Box, url: string): Promise<void> {
  * internet, and the team's tailnet once Tailscale is connected (`tailnet`), and nothing of a machine's own. */
 export async function unreached(e: Endpoint, why: string, tailnet: boolean, resolve?: (host: string) => Promise<string[]>): Promise<string> {
   const said = `${why} (the endpoint from ${e.source})`;
+  const hint = await hostedHint(e.url, tailnet, resolve);
+  return hint ? `${said}: ${hint}` : said;
+}
+
+/** What to do when the hosted side (a box, the hub's runner) doesn't reach `url`; none for an internet endpoint. */
+export async function hostedHint(url: string, tailnet: boolean, resolve?: (host: string) => Promise<string[]>): Promise<string | undefined> {
   let host: string;
   try {
-    host = parse(e.url).host;
+    host = parse(url).host;
   } catch {
-    return said;
+    return undefined;
   }
   if (isLoopback(host))
-    return `${said}: that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead${tailnet ? "" : ", and connect Tailscale in Settings › Hub › Machines"}`;
-  if (await publicEndpoint(e.url, resolve)) return said;
-  if (!tailnet) return `${said}: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines`;
-  return `${said}: the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it`;
+    return `that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead${tailnet ? "" : ", and connect Tailscale in Settings › Hub › Machines"}`;
+  if (await publicEndpoint(url, resolve)) return undefined;
+  if (!tailnet) return "it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines";
+  return "the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it";
 }

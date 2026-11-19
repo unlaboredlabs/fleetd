@@ -16,6 +16,7 @@ import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { Masker } from "../mask.ts";
 import { AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, FLEETD_ENV_SOURCE } from "../runner/claude.ts";
+import type { Fetcher } from "../sandbox/tailnet_fetch.ts";
 import type { Vars } from "../secrets/env.ts";
 import { fingerprintOf, writeAtomic } from "../secrets/files.ts";
 import type { Env } from "../util.ts";
@@ -196,21 +197,21 @@ export async function hubModels(home: string): Promise<ApiModel[]> {
   return models;
 }
 
-const ENDPOINT_PROBE_MS = 5_000;
+export const ENDPOINT_PROBE_MS = 5_000;
 
-/** Why the hub's endpoint `base` doesn't answer at all, by its host; none when it answers anything, even an error
- * status. Sends no key: a Test says first whether the endpoint is there, before claude's own words about it. */
-export async function endpointSilent(base: string): Promise<string | undefined> {
+/** Why the hub's endpoint `base` doesn't answer at all within `ms`, by its host; none when it answers anything, even an
+ * error status. Sends no key: a Test says first whether the endpoint is there, before claude's own words about it. */
+export async function endpointSilent(base: string, fetcher: Fetcher = fetch, ms = ENDPOINT_PROBE_MS): Promise<string | undefined> {
   let host = base;
   try {
     host = new URL(base).host || base;
   } catch {}
   try {
-    const response = await fetch(base, { signal: AbortSignal.timeout(ENDPOINT_PROBE_MS), redirect: "manual" });
+    const response = await fetcher(base, { signal: AbortSignal.timeout(ms), redirect: "manual" });
     await response.body?.cancel();
     return undefined;
   } catch (error) {
-    const why = (error as Error).name === "TimeoutError" ? `no answer within ${ENDPOINT_PROBE_MS / 1000}s` : (error as Error).message;
+    const why = (error as Error).name === "TimeoutError" ? `no answer within ${ms / 1000}s` : (error as Error).message;
     return `the endpoint ${host} doesn't answer (${why})`;
   }
 }
@@ -262,7 +263,7 @@ export async function tryAccount(binary: string, env: Env): Promise<void> {
 /** An account's Test where no Claude Code runs (the hub's runner, whose agents' Claude Code is in their boxes): the
  * account's endpoint lists its models for the key or token, which costs nothing and runs no model. `env` holds the
  * account's variables; what fails says the endpoint's answer, never the value. */
-export async function tryAccountApi(env: Env, fetcher: typeof fetch = fetch): Promise<void> {
+export async function tryAccountApi(env: Env, fetcher: Fetcher = fetch): Promise<void> {
   const base = (env[BASE_URL_ENV] ?? "https://api.anthropic.com").replace(/\/+$/, "");
   const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
   if (env[API_KEY_ENV]) headers["x-api-key"] = env[API_KEY_ENV]!;
