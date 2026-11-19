@@ -17,7 +17,7 @@ export interface ProviderSpec {
 
 /** Every provider fleetd knows, in the order agents go to the connected ones; one a newer hub has goes last, as named. */
 export const PROVIDERS: ReadonlyArray<ProviderSpec> = [
-  { id: "boat", name: "boat.dev", can: ["agents", "browser", "desktop"] },
+  { id: "boat", name: "boat.dev", can: ["agents", "browser", "desktop", "android"] },
 ];
 
 /** A provider by its id; an unknown one runs agents (the hub lists it among its sandbox providers) under its own id. */

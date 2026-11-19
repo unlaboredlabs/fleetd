@@ -21,7 +21,7 @@ describe("the providers, as one model", () => {
 describe("what runs where", () => {
   it("lists every kind once, and says what each provider runs beside its name", () => {
     expect(KINDS).toEqual(["agents", "browser", "desktop", "android", "ios", "mac"]);
-    expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop");
+    expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop · Android");
   });
 
   it("knows which kinds the team's own machines run now", () => {

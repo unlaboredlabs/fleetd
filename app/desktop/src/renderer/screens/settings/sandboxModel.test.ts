@@ -6,7 +6,7 @@ const at = "2026-11-17T09:00:00.000Z";
 describe("the providers", () => {
   it("names each as people know it, and a newer hub's as it names it", () => {
     expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
-    expect(providerHint("boat")).toContain("browser and Linux desktop");
+    expect(providerHint("boat")).toContain("browser, Linux desktop and Android");
   });
 
   it("says while no agent runs there yet, and nothing once they do", () => {

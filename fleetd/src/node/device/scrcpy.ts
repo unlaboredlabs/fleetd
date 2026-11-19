@@ -294,6 +294,8 @@ export class Stream {
     if (!Number.isInteger(port) || port <= 0 || forwarded.stdout.trim() === "") {
       throw new Error(`adb did not forward a port: ${forwarded.stderr.trim()}`);
     }
+    // The forward is the adb server's: where that runs elsewhere (a hosted box), a port here reaches it.
+    const here = sdk.reach ? await sdk.reach(port) : port;
     const removeForward = () => void adb(sdk, serial, ["forward", "--remove", `tcp:${port}`]).catch(() => undefined);
     let server: Subprocess | undefined;
     let decoder: Subprocess<"pipe", "pipe", "ignore"> | undefined;
@@ -304,7 +306,7 @@ export class Stream {
         stdout: "ignore",
         stderr: "ignore",
       });
-      const { video, control, rest } = await connect(port);
+      const { video, control, rest } = await connect(here);
       try {
         decoder = Bun.spawn([ffmpeg, ...DECODER_ARGS], { stdin: "pipe", stdout: "pipe", stderr: "ignore" });
       } catch (e) {

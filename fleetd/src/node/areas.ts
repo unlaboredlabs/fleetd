@@ -13,13 +13,14 @@ import { start as startSessionRoute } from "./session_route/index.ts";
 
 export function registerAreas(node: Node): void {
   // The hub's own runner runs every agent in a hosted box, and has no screens or tools of its machine's to offer: its
-  // agents' browser and Linux desktop run in their own boxes (place/box_screens.ts), driven, recorded and watched from
-  // here as a machine's are (shared/sandbox.ts CAP_RUNNER).
+  // agents' browser, Linux desktop and Android run in their own boxes (place/box_screens.ts, place/box_android.ts),
+  // driven, recorded and watched from here as a machine's are (shared/sandbox.ts CAP_RUNNER).
   if (node.config.runner) {
     startSandboxes(node);
     startBrowser(node);
     startSessionRoute(node);
     startScreens(node);
+    startDevices(node);
     startDesktop(node);
     return;
   }

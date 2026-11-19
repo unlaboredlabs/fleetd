@@ -179,6 +179,7 @@ export class Session {
     this.controlNow = control;
     if (before === control) return;
     const file = controlPath(this.home, this.thread);
+    this.lent?.control?.(control === "human");
     if (control === "human") {
       try {
         mkdirPrivate(dirname(file));

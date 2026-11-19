@@ -141,8 +141,8 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         part(
           "Or hosted sandboxes",
           "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your " +
-            "device. Each agent runs in a sandbox of its own there, with its browser and Linux desktop, billed to your " +
-            "account while it runs.",
+            "device. Each agent runs in a sandbox of its own there, with its browser, Linux desktop and Android, billed to " +
+            "your account while it runs.",
           [link("boat.dev › API keys", "https://docs.boat.dev/api-keys")],
           [value("Key name", name)],
         ),

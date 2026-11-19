@@ -9,7 +9,7 @@ export const providerName = (p: SandboxProvider): string => specOf(p).name;
 
 /** What each one is, for its row's hover. */
 const HINTS: Readonly<Record<string, string>> = {
-  boat: "Sandboxes on your boat.dev account, each a whole VM, with its own browser and Linux desktop.",
+  boat: "Sandboxes on your boat.dev account, each a whole VM, with its own browser, Linux desktop and Android.",
 };
 export const providerHint = (p: SandboxProvider): string | undefined => HINTS[p];
 
