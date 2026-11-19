@@ -610,6 +610,12 @@
       ],
       "type": "object"
     },
+    "DegradedCause": {
+      "enum": [
+        "claude_login"
+      ],
+      "type": "string"
+    },
     "DesktopBackend": {
       "description": "Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), as the\nnode's user on an Xvfb display of their own with a fresh home directory, or on the agents' Mac's own screen\n(`mac`), where they stay after the session.",
       "enum": [
@@ -1805,6 +1811,10 @@
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
+        },
+        "degradedCause": {
+          "$ref": "#/$defs/DegradedCause",
+          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded."
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",

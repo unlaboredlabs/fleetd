@@ -10,7 +10,7 @@ import { CAP_RUNNER, RUNNER_ID } from "../../shared/sandbox.ts";
 import { hostname } from "node:os";
 import { NODE_TO_HUB, type NodeToHubTag } from "../../shared/wire_tags.ts";
 import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
-import { type HubEvent, type Machine, type MachineStatus, PROTOCOL_VERSION } from "../../shared/contracts.ts";
+import { type DegradedCause, type HubEvent, type Machine, type MachineStatus, PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import { Unauthorized } from "../auth/nodes.ts";
@@ -122,6 +122,15 @@ export function runnerProblem(info: { login?: string; problem?: string }): strin
   return info.problem ?? "claude is not logged in on this machine";
 }
 
+/** The runner's verdict: its problem, and why when a client acts on it (`claude_login`: no Claude login reaches it). */
+type RunnerVerdict = { problem: string; cause?: DegradedCause };
+
+const verdictOf = (info: { login?: string; problem?: string }): RunnerVerdict | undefined => {
+  const problem = runnerProblem(info);
+  if (problem === undefined) return undefined;
+  return info.login === "logged_out" ? { problem, cause: "claude_login" } : { problem };
+};
+
 class Refused extends Error {
   constructor(
     readonly code: number,
@@ -191,8 +200,10 @@ export class Link {
   private readonly unlinkedHooks = new Set<(machineId: string, linkId: number) => void>();
   private readonly readyHooks = new Set<(machineId: string, ready: boolean) => void>();
   private readonly readyBy = new Map<string, boolean>();
-  /** The runner's problem as its link's last check found it (undefined: usable); absent until that check answers. */
-  private readonly runnerBy = new Map<string, string | undefined>();
+  /** The runner's verdict as its link's last check found it (undefined: usable); absent until that check answers. */
+  private readonly runnerBy = new Map<string, RunnerVerdict | undefined>();
+  /** The cause the last machine.degraded carried, while one did. */
+  private readonly causes = new Map<string, DegradedCause>();
   /** Machines git can't reach GitHub from, as the landing scanner last found. */
   private readonly githubDown = new Set<string>();
   /** The socket handler `GET /node/link` upgrades to. */
@@ -680,7 +691,7 @@ export class Link {
       case "machine_event": {
         const event = frame.event as { type?: string } | undefined;
         // The runner the node pushes (a probe, a login that expired or came back) while the link lives.
-        if (event?.type === "runner_info") this.applyRunner(machineId, runnerProblem(event as never));
+        if (event?.type === "runner_info") this.applyRunner(machineId, verdictOf(event as never));
         break;
       }
       case "lead_call":
@@ -862,8 +873,8 @@ export class Link {
     }
   }
 
-  /** Rewrites the stored machine's status; `degradedReason` is kept only while degraded. */
-  private writeStatus(machineId: string, status: MachineStatus, reason?: string): void {
+  /** Rewrites the stored machine's status; `degradedReason` is kept only while degraded, `degradedCause` with the reason it came with. */
+  private writeStatus(machineId: string, status: MachineStatus, reason?: string, cause?: DegradedCause): void {
     const hubStore = store(this.hub);
     let stored: Machine | undefined;
     try {
@@ -872,10 +883,12 @@ export class Link {
       return console.error("node link: machine read failed:", error);
     }
     if (!stored) return;
-    const { degradedReason: previous, ...rest } = stored;
+    const { degradedReason: previous, degradedCause: was, ...rest } = stored;
     // Going offline is silence, not a sighting: keep the last heartbeat's time.
     const machine: Machine = { ...rest, status, lastSeenAt: status === "offline" ? stored.lastSeenAt : this.nowIso() };
     if (status === "degraded") machine.degradedReason = reason ?? previous ?? "its node's runner is unavailable";
+    const kept = reason === undefined ? was : cause;
+    if (status === "degraded" && kept !== undefined) machine.degradedCause = kept;
     try {
       hubStore.machineUpsert(machine);
     } catch (error) {
@@ -883,17 +896,23 @@ export class Link {
     }
   }
 
-  /** Emits machine.online or machine.degraded when the machine's announced status changes. */
-  private announce(machineId: string, status: Announced, reason?: string): void {
-    if (this.announced.get(machineId) === status) return;
+  /**
+   * Emits machine.online or machine.degraded when the machine's announced status changes, or a degraded one's cause
+   * does: the event carries the reason and cause, so a client that read the machine before then words it right.
+   */
+  private announce(machineId: string, status: Announced, reason?: string, cause?: DegradedCause): void {
+    if (this.announced.get(machineId) === status && (status === "online" || this.causes.get(machineId) === cause)) return;
     this.announced.set(machineId, status);
+    if (cause === undefined) this.causes.delete(machineId);
+    else this.causes.set(machineId, cause);
     // A node back after its update links on a new build: a client that read the machine before then learns it here.
     const version = this.versions.get(machineId);
     const nodeVersion = version === undefined ? {} : { nodeVersion: version };
     if (status === "online") this.append("machine.online", machineId, `${machineId} is online`, nodeVersion);
     else {
       const why = reason ?? "";
-      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why, ...nodeVersion });
+      const said = cause === undefined ? {} : { degradedCause: cause };
+      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why, ...said, ...nodeVersion });
     }
   }
 
@@ -920,14 +939,14 @@ export class Link {
     executorsOf(this.hub)
       .call(machineId, "read", { op: "runner_info" }, READ_TIMEOUT_MS)
       .then((output) =>
-        output.kind === "runner_info" ? runnerProblem(output as never) : `${machineId}'s node answered runner_info with something else`,
+        output.kind === "runner_info" ? verdictOf(output as never) : { problem: `${machineId}'s node answered runner_info with something else` },
       )
-      .catch((error: Error) => error.message)
+      .catch((error: Error) => ({ problem: error.message }))
       .then((problem) => this.applyRunner(machineId, problem));
   }
 
-  /** Keeps the runner's verdict (`problem`: undefined when usable) and announces the machine by it. */
-  private applyRunner(machineId: string, problem: string | undefined): void {
+  /** Keeps the runner's verdict (undefined when usable) and announces the machine by it. */
+  private applyRunner(machineId: string, problem: RunnerVerdict | undefined): void {
     // A link that went away meanwhile must not announce anything.
     if (!this.links.has(machineId)) return;
     // The agents' Mac runs no claude: it is online whatever its runner says.
@@ -946,8 +965,8 @@ export class Link {
     const network = this.networkProblem(machineId);
     if (runner !== undefined) {
       this.setReady(machineId, false);
-      this.writeStatus(machineId, "degraded", runner);
-      this.announce(machineId, "degraded", runner);
+      this.writeStatus(machineId, "degraded", runner.problem, runner.cause);
+      this.announce(machineId, "degraded", runner.problem, runner.cause);
     } else if (network !== undefined) {
       this.writeStatus(machineId, "degraded", network);
       this.announce(machineId, "degraded", network);
@@ -966,6 +985,7 @@ export class Link {
     // A timer that fired as a newer link came in: that link has a timer of its own.
     if (live && live.id !== armedFor) return;
     this.announced.delete(machineId);
+    this.causes.delete(machineId);
     this.watchdogs.delete(machineId);
     this.loads.delete(machineId);
     this.busyBy.delete(machineId);

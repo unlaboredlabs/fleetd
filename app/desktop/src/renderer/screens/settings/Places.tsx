@@ -8,7 +8,8 @@
 import type { ReactNode } from "react";
 import type { SlotState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Text } from "../../ui";
+import { Button, Text } from "../../ui";
+import { navigate } from "../shell/navigation";
 import { fleetCapLine } from "./agentsModel";
 import { useLive } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
@@ -24,15 +25,28 @@ const noInput = {};
 /** The hub's slot state for this connection; undefined until it is fresh. */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
 
-/** Providers: every one, in the order agents go to the connected ones; nothing on a hub with none (fleetd cloud). */
+/**
+ * Providers: every one, in the order agents go to the connected ones; nothing on a hub with none (fleetd cloud). Over
+ * them, while the hub's runner has no Claude account for its sandboxes, that, with Connect to Your accounts.
+ */
 export function ProvidersGroup() {
   const live = useLive();
   const read = useToolQuery("sandbox_get", noInput, { enabled: live });
   const rows = useProviderRows(KINDS);
+  const noAccount = useData((d) => Object.values(d.machines).some((m) => m.runner === true && m.status === "degraded" && m.degradedCause === "claude_login"));
   if (rows === null) return null;
   return (
     <SettingsSection title="Providers" reveal="hub.sandboxes" hint={SECTION_HINT} data={{ "data-sandboxes": "" }}>
       {read.data === undefined || read.data.placing ? null : <GroupNote>{notPlacingLine(read.data)}</GroupNote>}
+      {noAccount ? (
+        <SettingsRow
+          mark="needs"
+          markLabel="Needs a Claude account"
+          title="Hosted agents need a Claude account"
+          control={<Button onClick={() => navigate({ id: "settings", tab: "accounts" })}>Connect</Button>}
+          data={{ "data-hosted-account": "" }}
+        />
+      ) : null}
       {rows}
     </SettingsSection>
   );

@@ -13,7 +13,7 @@
   margin-top: calc(-1 * var(--space-1));
 }
 
-/* A view's label and line, and the ways in's Close at their right end, where the page's plus was. */
+/* A view's label and line, and the ways in's Close at their right end, where the page's Add machine was. */
 .top {
   display: flex;
   align-items: flex-start;

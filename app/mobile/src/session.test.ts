@@ -484,13 +484,18 @@ describe("Stale errors", () => {
     const before = session.state;
     hub.link.frame({ t: "event", seq: 3, type: "machine.online", at: AT, machineId: "m1" });
     expect(session.state.machines[0]?.status).toBe("online");
-    hub.link.frame({ t: "event", seq: 4, type: "machine.degraded", at: AT, machineId: "m1" });
-    expect(session.state.machines[0]?.status).toBe("degraded");
-    hub.link.frame({ t: "event", seq: 5, type: "machine.offline", at: AT, machineId: "m1" });
+    hub.link.frame({ t: "event", seq: 4, type: "machine.degraded", at: AT, machineId: "m1", data: { degradedReason: "no Claude account", degradedCause: "claude_login" } });
+    expect(session.state.machines[0]).toMatchObject({ status: "degraded", degradedReason: "no Claude account", degradedCause: "claude_login" });
+    // Degraded again for something else: the reason it gives, and no stale cause.
+    hub.link.frame({ t: "event", seq: 5, type: "machine.degraded", at: AT, machineId: "m1", data: { degradedReason: "no IPv4" } });
+    expect(session.state.machines[0]?.degradedReason).toBe("no IPv4");
+    expect(session.state.machines[0]?.degradedCause).toBeUndefined();
+    hub.link.frame({ t: "event", seq: 6, type: "machine.offline", at: AT, machineId: "m1" });
     expect(session.state.machines[0]?.status).toBe("offline");
+    expect(session.state.machines[0]?.degradedReason).toBeUndefined();
     // One the snapshot doesn't list changes nothing.
     const now = session.state;
-    hub.link.frame({ t: "event", seq: 6, type: "machine.online", at: AT, machineId: "buildbox" });
+    hub.link.frame({ t: "event", seq: 7, type: "machine.online", at: AT, machineId: "buildbox" });
     expect(session.state.machines).toBe(now.machines);
     expect(before.machines[0]?.status).toBe("offline");
   });

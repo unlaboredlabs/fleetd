@@ -15,9 +15,13 @@ export const takesDomain = (p: string): boolean => p === "e2b";
 /** The Settings row shows for an admin. */
 export const machinesShown = (admin: boolean | undefined): boolean => admin === true;
 
-/** A machine's row value: Online, what the hub says is wrong, or Offline; `warn` while it needs someone. */
-export const machineValue = (m: Pick<Machine, "status" | "degradedReason">): { text: string; warn: boolean } => {
+/**
+ * A machine's row value: Online, what the hub says is wrong, or Offline; `warn` while it needs someone. The hub's runner
+ * with no Claude account for its sandboxes says that in a few words, not the hub's whole sentence.
+ */
+export const machineValue = (m: Pick<Machine, "status" | "degradedReason" | "degradedCause" | "runner">): { text: string; warn: boolean } => {
   if (m.status === "online") return { text: "Online", warn: false };
+  if (m.status === "degraded" && m.runner === true && m.degradedCause === "claude_login") return { text: "Needs a Claude account", warn: true };
   if (m.status === "degraded") {
     const why = m.degradedReason?.split(/\s+Fix:/u)[0]?.trim().replace(/[.:]$/u, "");
     return { text: why === undefined || why === "" ? "Needs a look" : why.charAt(0).toUpperCase() + why.slice(1), warn: true };

@@ -259,6 +259,7 @@ export function machineRow(data: string): string {
   const m = JSON.parse(data) as Record<string, unknown>;
   delete m.boxPubKey;
   delete m.degradedReason;
+  delete m.degradedCause;
   return JSON.stringify({ ...m, status: "offline" });
 }
 

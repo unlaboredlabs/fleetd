@@ -5881,6 +5881,12 @@
       ],
       "type": "object"
     },
+    "DegradedCause": {
+      "enum": [
+        "claude_login"
+      ],
+      "type": "string"
+    },
     "DeliveredHow": {
       "description": "How a delivered steer was taken in.",
       "oneOf": [
@@ -9627,6 +9633,10 @@
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
+        },
+        "degradedCause": {
+          "$ref": "#/$defs/DegradedCause",
+          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded."
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",

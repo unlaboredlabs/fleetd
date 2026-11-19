@@ -433,7 +433,12 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
         const status = event.type === "machine.online" ? "online" : event.type === "machine.offline" ? "offline" : event.type === "machine.degraded" ? "degraded" : machine.status;
         // The version its node linked on: a node an update restarted links again on the new build, after the snapshot.
         const nodeVersion = dataField(event, "nodeVersion") ?? machine.nodeVersion;
-        next = { ...next, machines: { ...next.machines, [id]: { ...machine, status, nodeVersion } } };
+        const { degradedReason: _reason, degradedCause: _cause, ...rest } = machine;
+        // Why it is degraded, as the event says it (a runner check that answered after the snapshot); none otherwise.
+        const reason = status === "degraded" ? (dataField(event, "degradedReason") ?? machine.degradedReason) : undefined;
+        const cause = status !== "degraded" ? undefined : event.type === "machine.degraded" ? dataField(event, "degradedCause") : machine.degradedCause;
+        const why = { ...(reason === undefined ? {} : { degradedReason: reason }), ...(cause === "claude_login" ? { degradedCause: cause } : {}) };
+        next = { ...next, machines: { ...next.machines, [id]: { ...rest, status, nodeVersion, ...why } } };
       }
       break;
     }

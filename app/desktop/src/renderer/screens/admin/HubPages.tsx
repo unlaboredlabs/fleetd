@@ -1,7 +1,7 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
-// and every hub link); Machines (the machines, Add machine behind the page's plus, each machine's page with Repair
-// while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
+// and every hub link); Machines (the machines, Add machine at the title's end or in the empty list, each machine's
+// page with Repair while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
 // as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide
 // built-in prompts from its foot) and Vault (the vault key, settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
@@ -18,7 +18,7 @@ import { ProvidersGroup, WhatRunsWhere } from "../settings/Places";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame, Part } from "../settings/Frames";
-import { AddButton, PageHead, SettingsSection } from "../settings/parts";
+import { PageHead, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
@@ -27,7 +27,7 @@ import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
-import { MachineList } from "./MachineList";
+import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
 import { SetupPage } from "./SetupPage";
@@ -138,14 +138,18 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 
 /**
  * One page, in the order a person comes to it (D550): the hub's machines and how each is (a row each, its state a dot,
- * opening its own page with everything about it; the plus adds one, its steps opening above the list); the providers
+ * opening its own page with everything about it; Add machine at the title's end adds one, its steps opening above the
+ * list, and with none yet the empty list holds the button instead); the providers
  * the team connects with its own keys, one list, each with what it can run; what runs where, a row per kind of work
  * with the same choice; then updates, the one status of them and the Update automatically switch (a page of its own
  * once: a link to it lands here).
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
-  // A search for "add machine" lands on the plus.
+  const add = () => setOpen({ view: { kind: "choose" }, at: Date.now() });
+  // With none yet, the empty list holds the one Add machine.
+  const none = useTeamMachines()?.length === 0;
+  // A search for "add machine" lands on the button.
   const addRef = useReveal<HTMLSpanElement>("hub.add-machine");
   return (
     <div className={s.scroll} data-screen="settings.hub.machines">
@@ -153,13 +157,15 @@ function Machines() {
         <PageHead
           title="Machines"
           aside={
-            <span ref={addRef}>
-              <AddButton label="Add machine" onClick={() => setOpen({ view: { kind: "choose" }, at: Date.now() })} />
-            </span>
+            none ? undefined : (
+              <span ref={addRef}>
+                <AddMachineButton onClick={add} />
+              </span>
+            )
           }
         />
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
-        <MachineList />
+        <MachineList onAdd={add} />
         <ProvidersGroup />
         <WhatRunsWhere />
         <Updates />
