@@ -11,7 +11,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { useNow } from "../time";
 import { readDms } from "./api";
 import { OutcomeGlyph, useDmsChanged } from "./Dms";
-import { glyphOf, outcomeWord, type AgentMessage, type DmReceipt } from "./model";
+import { glyphOf, isNote, NOTE_OUTCOME, outcomeWord, type AgentMessage, type DmReceipt } from "./model";
 
 /** When a receipt came: its clock time today, else its day and clock time. */
 const receiptTime = (at: string, clock: Clock): string => {
@@ -48,7 +48,8 @@ export function Dm({ route }: ChatInfoProps<"Dm">) {
           </Text>
         </View>
       </ListSection>
-      <ListSection header={m.to.length === 1 ? "To" : `To ${String(m.to.length)} agents`} footer="Kept as sent: nobody can edit or delete a DM.">
+      <ListSection header={isNote(m) || m.to.length === 1 ? "To" : `To ${String(m.to.length)} agents`} footer="Kept as sent: nobody can edit or delete a DM.">
+        {isNote(m) ? <ListRow title="The bot" detail={NOTE_OUTCOME} /> : null}
         {m.to.map((r) => (
           <ReceiptRow key={r.taskId} receipt={r} when={r.at === undefined ? undefined : receiptTime(r.at, now)} />
         ))}

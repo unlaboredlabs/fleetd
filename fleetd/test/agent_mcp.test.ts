@@ -122,6 +122,9 @@ describe("agent-mcp", () => {
     expect(callOf("worker", "brief_read", {})).toEqual({ op: "brief_read" });
     expect(callOf("worker", "review_read", { pr: "#7" })).toEqual({ op: "review_read", pr: "#7" });
     expect(callOf("worker", "decisions_search", { query: "D152" })).toEqual({ op: "decisions_search", query: "D152" });
+    // A note to the whole bot: to ["bot"].
+    expect(callOf("worker", "agent_message", { to: ["bot"], text: "moving the pin" })).toEqual({ op: "agent_message", to: ["bot"], text: "moving the pin" });
+    expect(refusal(() => callOf("worker", "agent_message", { to: ["everyone"], text: "x" }))).toContain("^(T[1-9][0-9]*|bot)$");
   });
 
   test("arguments are refused in serde's words, field by field, then the struct's rule", () => {
