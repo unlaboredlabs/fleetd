@@ -327,6 +327,66 @@ function linkTo(l: Live, dir: string, registration: Registration): Promise<HostL
 
 /** A hosted place bound to one session; `size`: its bot's pick, exactly (the provider's default when absent). */
 export function hostedPlace(provider: ProviderId, session: string, dir: string, size?: Size): Place {
+  const home = homeOf(dir);
+
+  /** The session host in the box `l`, with what the launch names and Claude checked from inside it. */
+  async function startIn(l: Live, launch: Launch): Promise<HostLink> {
+    const env = launch.env;
+    const box = l.box;
+    // Setup's commands may have made the box, with none of the session's ports: the browser's, adb's and a Claude
+    // gateway's are forwarded now, and kept in the record for a re-adopt.
+    const ports = forwardedPorts(env).filter((p) => !l.record.tcp.includes(p));
+    for (const p of ports) {
+      await box.forward(p);
+      l.record.tcp.push(p);
+    }
+    if (ports.length) save(dir, l.record);
+    const PATH = boxPath(env.PATH, home);
+    // A box's user may be root, where claude skips its prompts only in a sandbox it is told of.
+    const boxEnv = { ...env, PATH, IS_SANDBOX: "1" };
+    // What the launch names under the node's home, but for what has its own way in (the worktree, the scratch dir,
+    // the hosts' dirs) or stays off inside boxes (the build slots).
+    const skip = [join(home, "hosts"), join(home, "tmp"), join(home, "worktrees"), join(home, "build-slots"), launch.cwd];
+    await prepare(box, [env.HOME ?? "", env.TMPDIR ?? "", dirname(env.FLEETD_NODE_SOCK ?? "")]);
+    // The session's MCP config and hooks run this node's fleetd by its path here: in the box, that path is the fleetd
+    // the box was given.
+    const self = launch.fleetd.length === 1 ? launch.fleetd[0] : undefined;
+    if (self) await sh(box, "linking fleetd", `mkdir -p ${shq(dirname(self))} && ln -sf ${shq(`${BOX_DIR}/fleetd`)} ${shq(self)}`);
+    const paths = named(launch.args, env, [home], skip);
+    await mirror(box, paths);
+    // The files among them go again when they change, while the box lives.
+    const seen = new Map(paths.filter((p) => !isDir(p)).map((p) => [p, mtimeOf(p)]));
+    if (l.refresher) clearInterval(l.refresher);
+    l.refresher = setInterval(() => {
+      const changed = [...seen].filter(([p, t]) => mtimeOf(p) !== t).map(([p]) => p);
+      if (changed.length === 0) return;
+      for (const p of changed) seen.set(p, mtimeOf(p));
+      void mirror(box, changed.filter((p) => existsSync(p))).catch(() => {});
+    }, REFRESH_MS);
+    l.refresher.unref?.();
+    const transcript = sessionFile(configDir(env), launch.cwd, session);
+    if (transcript) {
+      l.record.transcript = transcript;
+      if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
+    }
+    // Claude: the box calls the endpoint as set, on the internet or the team's tailnet, checked from inside the box
+    // before the agent starts there.
+    const endpoint = claudeEndpoint(launch);
+    try {
+      await (hostedProbe.probe ?? probe)(box, endpoint.url);
+    } catch (error) {
+      throw new LaunchError(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
+    }
+    const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
+    const pid = nobodyPid(session);
+    const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
+    if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);
+    if (info.protocol !== PROTOCOL) throw new LaunchError(`the box's session host speaks protocol ${info.protocol}, this node ${PROTOCOL}`);
+    l.record.registration = registration;
+    save(dir, l.record);
+    return linkTo(l, dir, registration);
+  }
+
   return {
     kind: "hosted",
 
@@ -335,60 +395,14 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       if (!ACCOUNT_CLEARS.slice(0, 2).some((k) => env[k]) && !env.ANTHROPIC_AUTH_TOKEN)
         throw new LaunchError("this agent runs on the machine's own Claude login, which never leaves the machine: give its bot a Claude account to run it in a hosted sandbox");
       const l = await boxFor(provider, session, dir, launch.cwd, env, size);
-      const home = homeOf(dir);
-      const box = l.box;
-      // Setup's commands may have made the box, with none of the session's ports: the browser's, adb's and a Claude
-      // gateway's are forwarded now, and kept in the record for a re-adopt.
-      const ports = forwardedPorts(env).filter((p) => !l.record.tcp.includes(p));
-      for (const p of ports) {
-        await box.forward(p);
-        l.record.tcp.push(p);
-      }
-      if (ports.length) save(dir, l.record);
-      const PATH = boxPath(env.PATH, home);
-      // A box's user may be root, where claude skips its prompts only in a sandbox it is told of.
-      const boxEnv = { ...env, PATH, IS_SANDBOX: "1" };
-      // What the launch names under the node's home, but for what has its own way in (the worktree, the scratch dir,
-      // the hosts' dirs) or stays off inside boxes (the build slots).
-      const skip = [join(home, "hosts"), join(home, "tmp"), join(home, "worktrees"), join(home, "build-slots"), launch.cwd];
-      await prepare(box, [env.HOME ?? "", env.TMPDIR ?? "", dirname(env.FLEETD_NODE_SOCK ?? "")]);
-      // The session's MCP config and hooks run this node's fleetd by its path here: in the box, that path is the fleetd
-      // the box was given.
-      const self = launch.fleetd.length === 1 ? launch.fleetd[0] : undefined;
-      if (self) await sh(box, "linking fleetd", `mkdir -p ${shq(dirname(self))} && ln -sf ${shq(`${BOX_DIR}/fleetd`)} ${shq(self)}`);
-      const paths = named(launch.args, env, [home], skip);
-      await mirror(box, paths);
-      // The files among them go again when they change, while the box lives.
-      const seen = new Map(paths.filter((p) => !isDir(p)).map((p) => [p, mtimeOf(p)]));
-      if (l.refresher) clearInterval(l.refresher);
-      l.refresher = setInterval(() => {
-        const changed = [...seen].filter(([p, t]) => mtimeOf(p) !== t).map(([p]) => p);
-        if (changed.length === 0) return;
-        for (const p of changed) seen.set(p, mtimeOf(p));
-        void mirror(box, changed.filter((p) => existsSync(p))).catch(() => {});
-      }, REFRESH_MS);
-      l.refresher.unref?.();
-      const transcript = sessionFile(configDir(env), launch.cwd, session);
-      if (transcript) {
-        l.record.transcript = transcript;
-        if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
-      }
-      // Claude: the box calls the endpoint as set, on the internet or the team's tailnet, checked from inside the box
-      // before the agent starts there.
-      const endpoint = claudeEndpoint(launch);
+      // A start that fails once the box exists (Claude out of its reach, a host that didn't come up) ends the box and
+      // its record, or its keep-alive would renew it and the reaper would spare it; the error reaches the task as is.
       try {
-        await (hostedProbe.probe ?? probe)(box, endpoint.url);
+        return await startIn(l, launch);
       } catch (error) {
-        throw new LaunchError(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
+        await teardown(session, dir);
+        throw error;
       }
-      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
-      const pid = nobodyPid(session);
-      const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
-      if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);
-      if (info.protocol !== PROTOCOL) throw new LaunchError(`the box's session host speaks protocol ${info.protocol}, this node ${PROTOCOL}`);
-      l.record.registration = registration;
-      save(dir, l.record);
-      return linkTo(l, dir, registration);
     },
 
     async adopt(d) {

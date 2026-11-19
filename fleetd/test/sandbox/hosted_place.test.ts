@@ -12,7 +12,7 @@ import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, HostedDown, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -224,6 +224,27 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
     setNodeTailnet(undefined);
   }
   await placeAt(join(home, "hosts", "s-on")).stop(join(home, "hosts", "s-on"));
+}, 60_000);
+
+test("a start that fails once its box exists deletes the box and its record, and the task hears the failure as it was", async () => {
+  const { s, home, cwd, env } = await setup();
+  const dir = join(home, "hosts", "s-unreached");
+  const place = hostedPlace("boat", "s-unreached", dir);
+  // Setup made the box, as it does before a session's start.
+  expect(await place.run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] })).toMatchObject({ exitCode: 0 });
+  expect(s.boxes.size).toBe(1);
+  const id = readRecord(dir)!.boxId;
+  hostedProbe.probe = async () => {
+    throw new Error("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
+  };
+  const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
+  expect((failed as Error).message).toContain("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
+  // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.
+  expect(s.calls.filter((c) => c.method === "DELETE" && c.path === `/api/v1/sandboxes/${id}`).length).toBe(1);
+  expect(s.boxes.size).toBe(0);
+  expect(hasBox("s-unreached")).toBe(false);
+  expect(hostedBox("s-unreached")).toBeUndefined();
+  expect(existsSync(join(dir, "place.json"))).toBe(false);
 }, 60_000);
 
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
