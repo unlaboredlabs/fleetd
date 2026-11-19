@@ -67,14 +67,14 @@ const MESSAGES: AgentMessage[] = [
   },
 ];
 
-const mount = async (features: readonly string[] = ["agent_messages"]) => {
+const mount = async (features: readonly string[] = ["agent_messages"], all: AgentMessage[] = MESSAGES) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
       reads.push({ tool, input: input as Record<string, unknown> });
       if (tool === ("agent_messages" as typeof tool)) {
         const only = (input as { taskId?: string }).taskId;
-        const messages = only === undefined ? MESSAGES : MESSAGES.filter((m) => m.from.taskId === only || m.to.some((t) => t.taskId === only));
+        const messages = only === undefined ? all : all.filter((m) => m.from.taskId === only || m.to.some((t) => t.taskId === only));
         return Promise.resolve({ ok: true, output: { messages, more: false, total: messages.length } } as never);
       }
       if (tool === "events_list") return Promise.resolve({ ok: true, output: { events: [], more: false } });
@@ -156,4 +156,15 @@ it("goes back to every event with the filter's Everything", async () => {
   await act(() => vi.advanceTimersByTimeAsync(0));
   expect(reads.some((r) => r.tool === "events_list")).toBe(true);
   expect(rows()).toEqual([]);
+});
+
+it("shows a note to the bot as sent to the bot, with what its agents do with it", async () => {
+  const note: AgentMessage = { id: "M15", from: { taskId: "T2573", title: "Quiet update states on the phone" }, text: "Moving the fleetd-cloud pin in #404", sentAt: at("23:10"), to: [], toBot: true };
+  await mount(["agent_messages"], [note, ...MESSAGES]);
+  expect(rows()[0]?.textContent).toContain("T2573 → the bot");
+  expect(rows()[0]?.textContent).toContain("note");
+  act(() => rows()[0]?.click());
+  const receipts = host.querySelector("[aria-label='What became of it']");
+  expect([...(receipts?.querySelectorAll("dt") ?? [])].map((d) => d.textContent)).toEqual(["T2573", "The bot", "Lead"]);
+  expect(receipts?.textContent).toContain("nobody was woken");
 });

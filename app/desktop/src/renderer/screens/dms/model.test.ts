@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardReceipt, cardReceiptFor, countWords, withoutDm, logReceipt, rowState, route, withDms, type AgentMessage, type AgentMessageTo } from "./model";
+import { cardReceipt, cardReceiptFor, countWords, isNote, withoutDm, logReceipt, rowState, route, withDms, type AgentMessage, type AgentMessageTo } from "./model";
 
 const hhmm = (iso: string) => iso.slice(11, 16);
 
@@ -48,6 +48,11 @@ describe("the log", () => {
     const three = dm("S4", "T2573", [to("T2577", "delivered"), to("T2576", "delivered"), to("T2574", "held")], "2026-11-08T23:02:00Z");
     expect(rowState(three)).toEqual({ text: "2 delivered, 1 held", strong: false });
     expect(route(three)).toBe("T2573 → T2577, T2576, T2574");
+    // A note to the bot has no recipients: it is labelled as sent to the bot.
+    const note = { ...dm("M7", "T2573", [], "2026-11-08T23:02:00Z", "Moving the cloud pin in #404"), toBot: true };
+    expect(isNote(note)).toBe(true);
+    expect(route(note)).toBe("T2573 → the bot");
+    expect(rowState(note)).toEqual({ text: "note", strong: false });
   });
 
   it("gives each recipient its own receipt", () => {

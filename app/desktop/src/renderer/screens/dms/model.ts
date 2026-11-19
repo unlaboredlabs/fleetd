@@ -1,7 +1,8 @@
 // Agent DMs as the person sees and audits them, pure: what became of a DM for each recipient in words (a card's
 // receipt line, the log's receipts, a row's state), which of an agent's DMs it sent or got, and where they stand in
-// its work by time. A DM goes from one agent to one to five others; each recipient has its own outcome. Nobody edits
-// or deletes one: they are the log.
+// its work by time. A DM goes from one agent to one to five others; each recipient has its own outcome. A note goes to
+// the whole bot instead: no recipients, nobody woken, and its agents read it in their agent list. Nobody edits or
+// deletes one: they are the log.
 
 import type { AgentMessage, AgentMessageOutcome, AgentMessageRecipient } from "../../../shared/contracts";
 
@@ -33,6 +34,12 @@ const guardWhy = (t: AgentMessageTo): string | undefined => {
   const first = clause(t.detail?.split(": ")[0]);
   return first?.startsWith(`${t.taskId} `) === true ? `it ${first.slice(t.taskId.length + 1)}` : first;
 };
+
+/** A note to the whole bot (`to: ["bot"]`), not a DM to named agents. */
+export const isNote = (m: AgentMessage): boolean => m.toBot === true;
+
+/** What became of a note, in the log and on its sender's card: there is no recipient to have a receipt. */
+export const NOTE_RECEIPT = "its agents read it at the top of their agent list while its sender runs, a day at most; nobody was woken";
 
 /** The recipient the guard didn't wake: it had finished and wasn't waiting on the sender. */
 export const notWoken = (m: AgentMessage): AgentMessageTo | undefined => m.to.find((t) => t.outcome === "not_woken");
@@ -92,6 +99,7 @@ export function logReceipt(t: AgentMessageTo): string {
  * 1 held". What the person would want to know first (the guard, a failure, a wake) says it alone, strongly.
  */
 export function rowState(m: AgentMessage): { readonly text: string; readonly strong: boolean } {
+  if (isNote(m)) return { text: "note", strong: false };
   const no = notWoken(m);
   if (no !== undefined) return { text: `didn’t wake ${no.taskId}`, strong: true };
   const failed = m.to.find((t) => t.outcome === "refused");
@@ -104,8 +112,8 @@ export function rowState(m: AgentMessage): { readonly text: string; readonly str
   return { text: held === 0 ? `delivered to ${String(got)}` : got === 0 ? `held for ${String(held)}` : `${String(got)} delivered, ${String(held)} held`, strong: false };
 }
 
-/** "T2573 → T2577, T2576": who wrote to whom. */
-export const route = (m: AgentMessage): string => `${m.from.taskId} → ${m.to.map((t) => t.taskId).join(", ")}`;
+/** "T2573 → T2577, T2576": who wrote to whom; "T2573 → the bot" for a note. */
+export const route = (m: AgentMessage): string => `${m.from.taskId} → ${isNote(m) ? "the bot" : m.to.map((t) => t.taskId).join(", ")}`;
 
 /** Its opening words on one line. */
 export const opening = (text: string): string => text.replace(/\s+/gu, " ").trim();

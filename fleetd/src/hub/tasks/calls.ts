@@ -6,6 +6,7 @@ import type { Hub } from "../api/hub.ts";
 import { leadCalls } from "../lead_calls/index.ts";
 import { check } from "../lead_calls/policy.ts";
 import type { LeadCall, LeadCaller } from "../lead_calls/types.ts";
+import { notes as botNotes } from "../steer/dm.ts";
 import { line as baseLine } from "./base.ts";
 import { openCiWaits, waitCi, waitsNote } from "./ci_wait.ts";
 import { type SpawnInput, type Tasks, tasks as tasksOf } from "./index.ts";
@@ -31,6 +32,13 @@ function listNext(hub: Hub, t: Tasks, r: ProjectRef, listed: Task[]): string | u
   });
   const parts = [reposLine(t, r), ...waits].filter((p): p is string => p !== undefined);
   return parts.length === 0 ? undefined : parts.join(" ");
+}
+
+/** The bot's notes (`agent_message` to the bot) for a task's `agents`, a review's aside: none for a lead, which has
+ * each one's quiet copy already. */
+function notesFor(hub: Hub, t: Tasks, agent: LeadCaller["agent"], r: ProjectRef): string[] {
+  if (agent.kind !== "task" || t.get(agent.taskId)?.kind === "review") return [];
+  return botNotes(hub.db, r, hub.clock.now());
 }
 
 /** The policy's refusal of a task's own call from no task (the registry checked it already; this is its fallback). */
@@ -118,7 +126,9 @@ export async function leadCall(hub: Hub, t: Tasks, caller: LeadCaller, call: Lea
         const truncated = listed.length > TASK_LIST_LIMIT;
         const shown = listed.slice(0, TASK_LIST_LIMIT);
         const next = listNext(hub, t, r, shown);
-        return { tasks: shown, ...(truncated ? { truncated: true } : {}), ...(next !== undefined ? { next } : {}) };
+        // The bot's notes go first, where an agent reads them before the list.
+        const notes = notesFor(hub, t, agent, r);
+        return { ...(notes.length > 0 ? { notes } : {}), tasks: shown, ...(truncated ? { truncated: true } : {}), ...(next !== undefined ? { next } : {}) };
       } catch (error) {
         throw internal(error);
       }
