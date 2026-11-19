@@ -26,7 +26,7 @@ import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { reapLeaked } from "../place/box_record.ts";
 import { hostDir, isRunner, leavesBox, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
-import { boxPlaces, hasBox, HostedDown } from "../place/hosted.ts";
+import { boxEnd, boxPlaces, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
@@ -115,11 +115,12 @@ export function monitorsLost(lost: { description?: string }[], when: string): st
 }
 
 const exitWords = (exit: state.ExitInfo) =>
-  exit.signal !== null
+  exit.why ??
+  (exit.signal !== null
     ? `your claude process was killed (signal ${exit.signal})`
     : exit.code !== null
       ? `your claude process exited (code ${exit.code})`
-      : "your claude process exited";
+      : "your claude process exited");
 
 class Refusal extends Error {
   constructor(
@@ -1536,7 +1537,9 @@ export class SessionService {
       const raw = await live.link.next();
       if (raw === undefined) {
         if (live.link.detached) break;
-        this.#exited(id, live, { code: null, signal: null, stderr_tail: "the runner stopped reporting on claude" });
+        // A hosted session's box that stopped says so, in place of the link's silence.
+        const why = boxEnd(id);
+        this.#exited(id, live, { code: null, signal: null, stderr_tail: why ?? "the runner stopped reporting on claude", ...(why ? { why } : {}) });
         break;
       }
       const more = this.screens?.filledSince(id, filled.length);
@@ -1735,6 +1738,8 @@ export class SessionService {
   }
 
   #runEnded(id: string, live: Live, runId: string, outcome: state.RunOutcome, usage: unknown): void {
+    // A hosted session's turn ended: its box's work comes back to the machine, while the next turn goes on.
+    if (hasBox(id)) void checkpoint(id);
     // The node cut it after the machine woke: a network failure, which the node's retry resumes.
     if (live.slept === runId) {
       live.slept = undefined;

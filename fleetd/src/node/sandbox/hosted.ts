@@ -10,6 +10,7 @@ import { loadOrCreateBoxKey } from "../identity.ts";
 import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
 import { Boxes, boxes as currentBoxes, hostable, knownBoxes, setBoxes } from "./remote/boxes.ts";
 import { join } from "node:path";
+import { endHosted } from "../place/hosted.ts";
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
@@ -18,12 +19,14 @@ export type Lister = (id: ProviderId, auth: ProviderAuth, o?: ClientOptions) => 
 
 export class Sandboxes {
   #limits: Limit[] = [];
+  /** The keys the hub sent last: a disconnect's waits for its sessions to end, unless newer ones came meanwhile. */
+  #sent = 0;
 
   constructor(
     private readonly box: Opener,
     private readonly provider: Lister = realProvider,
     /** Where the keys go, for the hosted place's boxes. */
-    private readonly boxes?: Pick<Boxes, "setKeys" | "usable">,
+    private readonly boxes?: Pick<Boxes, "setKeys" | "usable" | "connected">,
   ) {}
 
   /** The team's limits the hub sent last, in the order agents go to the providers. */
@@ -47,7 +50,16 @@ export class Sandboxes {
       const max = Number(l?.max);
       return l && Number.isFinite(max) && max >= 0 ? [{ provider: p, max: Math.trunc(max) }] : [];
     });
-    if (frame.keys && typeof frame.keys === "object") this.boxes?.setKeys(frame.keys);
+    if (frame.keys && typeof frame.keys === "object") {
+      const keys = frame.keys;
+      const sent = ++this.#sent;
+      // A provider whose key goes ends its live sessions first, their work brought back, while the key still deletes
+      // their boxes; it takes no new ones meanwhile, being out of the limits.
+      const gone = (this.boxes?.connected() ?? []).filter((p) => !keys[p]);
+      const ending = gone.flatMap((p) => endHosted(p, `the team's ${NAMES[p]} key was disconnected, so its sandbox was ended with its work saved`));
+      if (ending.length === 0) this.boxes?.setKeys(keys);
+      else void Promise.allSettled(ending).then(() => this.#sent === sent && this.boxes?.setKeys(keys));
+    }
     return { id: frame.id, ok: true, message: `${this.#limits.length} hosted providers' limits kept` };
   }
 

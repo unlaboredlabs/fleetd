@@ -494,13 +494,16 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.
   `target/`) don't travel, so the repo's [setup commands](/docs/projects#setup) run again in each new sandbox. On the
   hub's own runner with boat.dev, a bot's sandboxes start from its [computer image](/docs/projects#computer) instead
   (a boat snapshot holding the repo's clone and what setup installed): the clone only fetches what's new, and setup
-  doesn't run. When the
-  sandbox ends, its commits and uncommitted work come back to the worktree on the machine. Until then, the machine's
-  copy shows the work as it was when the sandbox started.
+  doesn't run. After each
+  of the agent's turns, and when the sandbox ends, its commits, uncommitted work and conversation come back to the
+  machine, so the machine's copy is never more than a turn behind.
 - *Life.* A sandbox goes when its agent's Claude does: after 10 minutes idle (unless a Monitor or a screen holds
   it), at a stop, or when the task ends. The next message makes a new one and resumes the conversation. It is never
-  paused or kept at the provider. A sandbox that dies on its own (the provider's 24 hour cap, an outage) loses what
-  wasn't committed and pushed; the agent's next turn starts a new one.
+  paused or kept at the provider. A sandbox that dies on its own (an outage, a stop at boat.dev) loses only the turn
+  under way: the agent's line says its sandbox stopped and since when its work was lost, and it goes on from its last
+  finished turn. While it runs, the machine keeps renewing its time at the provider; when that fails (a revoked key,
+  boat.dev down), the provider's row says so, and the agent is ended with its work brought back before its time runs
+  out. Disconnecting the key ends every running sandbox the same way first.
 - *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
   GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
 - *Screens in the sandbox.* An agent's browser, Linux desktop and Android run in its own sandbox, beside its files and on its

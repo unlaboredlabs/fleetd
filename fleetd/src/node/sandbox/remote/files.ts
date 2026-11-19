@@ -10,9 +10,9 @@
 //   and pre-push gate (worktree/hooks.ts) hold; then the machine's commits and its uncommitted work (untracked files
 //   included, ignored ones not) from a bundle, and the worktree's own fleetd files from its git dir.
 // - `syncOut`: the box's commits and uncommitted work back into the machine's worktree, as a bundle on top of what the
-//   box started from.
+//   box started from: after each of its turns, and when it ends.
 // Each piece travels over the guest's link (`BoxFs`), never through the provider's own file calls.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../../cmd/index.ts";
@@ -24,7 +24,8 @@ import { BOX_DIR } from "./bootstrap.ts";
 export interface BoxFs {
   run(r: ConfinedRun): Promise<RunOutcome>;
   write(path: string, bytes: Uint8Array, mode?: number): Promise<void>;
-  read(path: string, max: number): Promise<Uint8Array>;
+  /** From byte `from` on, where the box kind can (a stand-in may give the whole file). */
+  read(path: string, max: number, from?: number): Promise<Uint8Array>;
 }
 
 /** The largest bundle a box's work comes back in. */
@@ -259,6 +260,29 @@ export async function fetchBack(box: BoxFs, path: string, max: number): Promise<
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, bytes, { mode: 0o600 });
+  return true;
+}
+
+/** How much of a file's end `fetchNew` reads again, to check the box's copy still starts as this one does. */
+const OVERLAP = 4096;
+
+/** `fetchBack` for a file the box only appends to (a transcript): what it added since the copy here, when the box's copy
+ * still matches this one where they meet; else the whole file. */
+export async function fetchNew(box: BoxFs, path: string, max: number): Promise<boolean> {
+  let have: Buffer | undefined;
+  try {
+    have = readFileSync(path);
+  } catch {}
+  if (!have || have.length <= OVERLAP) return fetchBack(box, path, max);
+  const from = have.length - OVERLAP;
+  let more: Uint8Array;
+  try {
+    more = await box.read(path, max, from);
+  } catch {
+    return false;
+  }
+  if (more.length < OVERLAP || Buffer.compare(Buffer.from(more.subarray(0, OVERLAP)), have.subarray(from)) !== 0) return fetchBack(box, path, max);
+  if (more.length > OVERLAP) appendFileSync(path, more.subarray(OVERLAP));
   return true;
 }
 
