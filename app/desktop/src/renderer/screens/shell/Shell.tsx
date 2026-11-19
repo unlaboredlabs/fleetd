@@ -340,14 +340,18 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         asideOpen={panel.open}
       >
         <div className={s.column} data-under={under || undefined}>
-          {/* Fixture data must never pass for a live hub. */}
-          {window.fleetd.fixture !== null ? (
-            <div className={s.fixtureBanner} role="status">
-              Sample data, not connected
-            </div>
-          ) : null}
-          {chrome ? <RestartLine /> : null}
-          {chrome ? <ConnectionBanner /> : null}
+          {/* Over the chat they float under the top row, as it does, rather than push the conversation down as they
+              come and go with the link. */}
+          <div className={s.banners} data-floats="">
+            {/* Fixture data must never pass for a live hub. */}
+            {window.fleetd.fixture !== null ? (
+              <div className={s.fixtureBanner} role="status">
+                Sample data, not connected
+              </div>
+            ) : null}
+            {chrome ? <RestartLine /> : null}
+            {chrome ? <ConnectionBanner /> : null}
+          </div>
           <div className={s.screen} data-held={held || undefined}>
             {shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
