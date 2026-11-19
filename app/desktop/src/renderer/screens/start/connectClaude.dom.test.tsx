@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 // Get started's Connect Claude in the whole app, on a fleetd cloud team in the web app with no computer: boat.dev is
-// connected and the hub's runner waits for a Claude account. The button opens Settings › Accounts over Get started
+// connected and the hub's runner waits for a Claude account. The Claude step's Subscription, then its button, opens
+// Settings › Accounts over Get started
 // (it used to change the address and leave the page as it was), the subscription's token is sealed to the runner, and
-// once the runner is online Get started has step 1 done on boat.dev.
+// once the runner is online Get started has Claude done too.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -166,8 +167,9 @@ it("a cloud team with only a hosted provider: Connect Claude opens Settings over
     send(snapshot(1, [runner("degraded")]));
     await new Promise((r) => setTimeout(r, 0));
   });
-  await until(() => document.body.textContent.includes("boat.dev is connected"), "Get started's Connect Claude");
-
+  await until(() => button("Subscription") !== undefined, "Get started's Claude step");
+  expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  await click("Subscription");
   await click("Connect Claude");
   expect(window.location.hash).toBe("#/settings/accounts");
   // The sheet is on show over Get started, Claude's row offering the subscription.

@@ -1,16 +1,20 @@
-// Tailscale in Hub › Machines (admins only, as the whole Hub group): the team's tailnet for its hosted sandboxes, as a
-// named connection. Connect asks the hub to start its gateway (tailnet_connect) and opens Tailscale's sign-in page it
-// answers with; the person signs in and approves the device there, and the row reads the hub's state again until it
-// says Connected, with the tailnet's name. Nothing is pasted. Disconnect (tailnet_disconnect) logs the device out of
-// the tailnet and deletes its state on the hub. A hub too old for tailnet_get shows nothing.
+// Tailscale in Hub › Machines and on its own setup step (Settings › Hub › Setup › Tailscale, the first run), admins
+// only, as the whole Hub group: the team's tailnet for its hosted sandboxes, as a named connection. Connect asks the
+// hub to start its gateway (tailnet_connect) and opens Tailscale's sign-in page it answers with; the person signs in
+// and approves the device there, and the row reads the hub's state again until it says Connected, with the tailnet's
+// name. Nothing is pasted. Disconnect (tailnet_disconnect) logs the device out of the tailnet and deletes its state on
+// the hub. A hub too old for tailnet_get shows nothing. The Claude key's endpoint field (TailnetHint) and Get started
+// use the same Connect (useTailnet).
 import { useCallback, useEffect, useState } from "react";
 import type { TailnetState } from "../../../shared/contracts";
+import { tailnetLine } from "../../../shared/claudeEndpoint";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button } from "../../ui";
+import { Button, Text } from "../../ui";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive } from "./hub";
 import { RowMenu, SettingsRow, SettingsSection } from "./parts";
 import { canConnect, HINT, lineOf, MACHINES_URL, markLabel, markOf, waiting } from "./tailscaleModel";
+import s from "./settings.module.css";
 
 const noInput = {};
 /** How often the row reads the hub's state while a sign-in is under way. */
@@ -24,47 +28,60 @@ function useReread() {
 
 const open = (url: string) => window.fleetd.openExternal(url);
 
-/** The Network section of Hub › Machines: Tailscale's one row. */
-export function TailscaleSection() {
+/**
+ * The hub's Tailscale state, read again while a sign-in is under way, and its Connect: undefined state from a hub that
+ * doesn't serve it (too old, or one with no gateway), which then shows nothing of it.
+ */
+export function useTailnet(enabled = true) {
   const live = useLive();
-  const read = useToolQuery("tailnet_get", noInput, { enabled: live });
+  const read = useToolQuery("tailnet_get", noInput, { enabled: live && enabled });
   const reread = useReread();
+  const call = useHubCall();
   const state = read.data;
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   // The person signs in on Tailscale's page: the hub's state is read again until it isn't waiting on them.
   useEffect(() => {
     if (!waiting(state)) return;
     const t = setInterval(() => void reread(), WAIT_MS);
     return () => clearInterval(t);
   }, [state, reread]);
-  if (state === undefined) return null;
-  return (
-    <SettingsSection title="Network" reveal="hub.tailscale" data={{ "data-tailscale": state.status }}>
-      <TailscaleRow state={state} reread={reread} />
-    </SettingsSection>
-  );
-}
-
-export function TailscaleRow({ state, reread }: { state: TailnetState; reread: () => Promise<unknown> }) {
-  const call = useHubCall();
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
-  const connect = () => {
+  const connect = useCallback(() => {
     setBusy(true);
     setProblem(null);
     // As long as the hub can take: a first Connect downloads Tailscale (2 min at most), starts it and waits for its page.
     void call("tailnet_connect", noInput, { timeoutMs: 180_000 })
       .then(
-        async (s) => {
-          if (s.loginUrl === undefined) return;
-          const opened = await open(s.loginUrl);
+        async (st) => {
+          if (st.loginUrl === undefined) return;
+          const opened = await open(st.loginUrl);
           if (!opened.ok) setProblem(opened.message);
         },
         (e: unknown) => setProblem(`Not connected: ${errorText(e)}`),
       )
       .then(reread)
       .finally(() => setBusy(false));
-  };
+  }, [call, reread]);
+  return { state, reread, connect, busy, problem };
+}
+
+export type Tailnet = ReturnType<typeof useTailnet>;
+
+/** The Network section of Hub › Machines: Tailscale's one row. `title`: none on its own setup step, which names it. */
+export function TailscaleSection({ title = "Network" }: { title?: string | null }) {
+  const tailnet = useTailnet();
+  if (tailnet.state === undefined) return null;
+  return (
+    <SettingsSection title={title ?? undefined} reveal="hub.tailscale" data={{ "data-tailscale": tailnet.state.status }}>
+      <TailscaleRow state={tailnet.state} tailnet={tailnet} />
+    </SettingsSection>
+  );
+}
+
+export function TailscaleRow({ state, tailnet }: { state: TailnetState; tailnet: Tailnet }) {
+  const call = useHubCall();
+  const { reread, connect, busy, problem } = tailnet;
+  const [removing, setRemoving] = useState(false);
   const line = lineOf(state);
   const loginUrl = state.loginUrl;
   const control =
@@ -115,5 +132,46 @@ export function TailscaleRow({ state, reread }: { state: TailnetState; reread: (
         />
       ) : null}
     </SettingsRow>
+  );
+}
+
+/**
+ * Beside a Claude endpoint on the tailnet while Tailscale isn't connected: one line that says so, and Connect, the fix,
+ * right there (a hub that serves no Tailscale says nothing). Connected, or another endpoint: nothing.
+ */
+export function TailnetHint({ endpoint, tailnet }: { endpoint: string; tailnet: Tailnet }) {
+  const { state, connect, busy, problem } = tailnet;
+  const line = state === undefined ? null : tailnetLine(endpoint, state.status === "connected");
+  if (line === null || state === undefined) return null;
+  const pending = waiting(state);
+  return (
+    <div className={s.stack} data-tailnet-hint={state.status}>
+      <span role="status">
+        <Text size="sm" tone="warning">
+          {pending ? `${line} Finish signing in to Tailscale.` : line}
+        </Text>
+      </span>
+      <span className={s.inline}>
+        {state.status === "login" && state.loginUrl !== undefined ? (
+          <Button size="sm" onClick={() => void open(state.loginUrl ?? "")}>
+            Open sign-in
+          </Button>
+        ) : state.status === "approve" ? (
+          <Button size="sm" onClick={() => void open(MACHINES_URL)}>
+            Open Tailscale
+          </Button>
+        ) : pending ? null : canConnect(state) ? (
+          <Button size="sm" disabled={busy} onClick={connect}>
+            {busy ? "Connecting…" : "Connect Tailscale"}
+          </Button>
+        ) : (
+          // Off where it can't run: why, so the button isn't simply missing.
+          <Text size="sm" tone="quiet">
+            {state.problem ?? ""}
+          </Text>
+        )}
+      </span>
+      <Problem text={problem} />
+    </div>
   );
 }

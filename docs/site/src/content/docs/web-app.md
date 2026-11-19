@@ -19,14 +19,21 @@ bot's lead. The one step still to do is open; each one done keeps a line saying 
 
 1. **Where agents run.** A computer of yours or hosted sandboxes; either one is enough, and a machine is optional.
    **A computer**: copy the line shown and paste it in a terminal on a Mac or Linux computer; it installs fleetd and
-   joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out. If
-   Claude isn't logged in on that computer, **Log in to Claude** opens Claude's sign-in page; paste the code it shows.
+   joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out.
    **Hosted sandboxes**: **Connect** beside boat.dev and paste an API key of your own account there
-   ([Hosted sandboxes](/docs/machines#sandboxes)); then **Connect Claude** for the account its agents run on.
-2. **Connect GitHub.** One trip to GitHub: you sign in, then choose the repositories fleetd's GitHub App may work on,
+   ([Hosted sandboxes](/docs/machines#sandboxes)).
+2. **Tailscale** (optional). **Connect Tailscale** opens Tailscale's sign-in page: sign in and approve, and hosted
+   agents reach your tailnet through [one device the hub runs](/docs/machines#tailscale). **Skip** goes on; it isn't
+   asked again, and the step's row keeps a quiet **Connect**.
+3. **Claude.** **API key**: the endpoint, Anthropic's own filled in (type a gateway's over it), and a key from the
+   Claude Console; **Save** seals it on your device to every machine. An endpoint on your tailnet says so while
+   Tailscale isn't connected, with **Connect Tailscale** beside it. Or, on a computer, **Claude login** (**Log in to
+   Claude** opens Claude's sign-in page; paste the code it shows); for hosted sandboxes, **Subscription**, which opens
+   Settings › Your accounts › Claude.
+4. **Connect GitHub.** One trip to GitHub: you sign in, then choose the repositories fleetd's GitHub App may work on,
    and GitHub sends you back to the page. An organization member who can't install apps there asks an owner from
    GitHub's page. **Skip** goes on without GitHub; connect later from Settings › Your accounts › GitHub.
-3. **Start a bot.** Pick a repository: fleetd clones it onto the computer (or for hosted sandboxes, onto the hub) and
+5. **Start a bot.** Pick a repository: fleetd clones it onto the computer (or for hosted sandboxes, onto the hub) and
    opens the bot's chat. **Empty bot** makes one with no repository.
 
 **Skip for now** goes to the app. Until everything is done, the team's menu at the top of the sidebar has **Finish

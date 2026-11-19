@@ -2789,15 +2789,19 @@ export const screens: readonly Screen[] = [
     },
   },
   // Get started (screens/start), fleetd cloud's first run in the web app, on its sample views (the page itself reads the
-  // team's state, which the dom tests cover): a new team's three steps (a computer and its Claude login, GitHub, a
-  // bot), and a teammate's (the team's bots, their own GitHub). Shot at the narrow size too: a browser can be any width.
+  // team's state, which the dom tests cover): a new team's steps (a computer, Tailscale, Claude with its key and
+  // endpoint or a computer's login, GitHub, a bot), and a teammate's (the team's bots, their own GitHub). Shot at the
+  // narrow size too: a browser can be any width.
   ...Object.entries({
     computer: "computer",
-    claude: "computer",
-    "claude-code": "computer",
-    "claude-blocked": "computer",
     unusable: "computer",
     offline: "computer",
+    tailscale: "tailscale",
+    "tailscale-signin": "tailscale",
+    "claude-key": "claude",
+    claude: "claude",
+    "claude-code": "claude",
+    "claude-blocked": "claude",
     github: "github",
     "github-waiting": "github",
     "github-failed": "github",
@@ -2809,6 +2813,18 @@ export const screens: readonly Screen[] = [
     teammate: "project",
     "teammate-open": "project",
   }).map(([sample, step]): Screen => ({ id: `start.${step}`, route: `#/start?sample=${sample}`, fixtures: ["cloud-connect"], variant: sample, sizes: [...defaultSizes, "narrow"] })),
+  // Claude's endpoint on the tailnet while Tailscale is off: the line beside it, with Connect Tailscale.
+  {
+    id: "start.claude",
+    route: "#/start?sample=claude-tailnet",
+    fixtures: ["cloud-connect"],
+    variant: "claude-tailnet",
+    sizes: [...defaultSizes, "narrow"],
+    open: async (page) => {
+      await page.getByLabel("Endpoint").fill("http://100.104.249.49:8317");
+      await page.locator("[data-tailnet-hint]").waitFor();
+    },
+  },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
   // Sign in from Settings: who signed in, then the invitation, each in a dialog before anything connects.
   {
@@ -3067,18 +3083,30 @@ export const screens: readonly Screen[] = [
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // W100: the hub admin's setup: the welcome, a step open beside the list
-  // (Claude to do, the GitHub App), and the end.
+  // (Tailscale's Connect, Claude to do with its key and endpoint, the GitHub App), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
+  { id: "setup", route: "#/setup/tailscale", fixtures: ["setup-fresh", "setup-all"], variant: "tailscale" },
+  // The first run's Claude step holds the key and its endpoint: one on the tailnet says Tailscale isn't connected.
+  {
+    id: "setup",
+    route: "#/setup/claude",
+    fixtures: ["setup-fresh"],
+    variant: "claude-tailnet",
+    open: async (page) => {
+      await page.getByLabel("Endpoint").fill("http://100.104.249.49:8317");
+      await page.locator("[data-tailnet-hint]").waitFor();
+    },
+  },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // A link to the cloud step, which is gone: it opens the first step left to do.
+  // A link to the cloud step, which is gone: it opens the first step left to do, Tailscale (optional, Skip).
   {
     id: "setup",
     route: "#/setup/cloud",
     fixtures: ["setup-fresh"],
     variant: "old-cloud-link",
     open: async (page) => {
-      await page.locator("article[data-step='claude']").waitFor();
+      await page.locator("article[data-step='tailscale']").waitFor();
     },
   },
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).

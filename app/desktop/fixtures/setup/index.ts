@@ -87,6 +87,8 @@ export default defineGroup({
       f.answer("claude_accounts_get", undefined, claude(sc.list["claude"]?.["way"] === "the hub's API key"));
       f.answer("github_app_get", undefined, githubApp(sc.list["github"]?.["way"] === "the hub's GitHub App"));
       f.answer("usage_status", undefined, { machines: [] });
+      // The hub's Tailscale device: connected once its step is done, else off, Connect on its step.
+      f.answer("tailnet_get", undefined, sc.list["tailscale"]?.["status"] === "done" ? { status: "connected", tailnet: "acme.com", device: "fleetd-devbox" } : { status: "off" });
       f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
       f.answer("setup_list", undefined, {
         steps: guides.map((g) => step(g.id, sc.list[g.id])),

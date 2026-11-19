@@ -1,5 +1,6 @@
 // Settings › Hub › Setup › Claude (teams step 8, D200; the Claude step's own page, SetupPage.tsx): the hub's API
-// configuration (its Claude API key, sealed in main to every machine and never shown back, and an optional endpoint),
+// configuration (its Claude API key, sealed in main to every machine and never shown back, and its endpoint, Anthropic's
+// own prefilled; one on the tailnet says beside it when Tailscale isn't connected, with Connect),
 // with Test, and a line under it on what leads and automations run on (the key, else the hub owner's own
 // subscription); whether members may run their work on it (on by default). Each person's account, with any usage
 // pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Your accounts ›
@@ -12,6 +13,8 @@ import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { Button, Field, Input, Text } from "../../ui";
+import { endpointShown, endpointToSave } from "../../../shared/claudeEndpoint";
+import { TailnetHint, useTailnet } from "../settings/Tailscale";
 import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine } from "../settings/claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "../settings/claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -64,22 +67,24 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
   const hubCall = useHubCall();
   const [editing, setEditing] = useState(false);
   const [key, setKey] = useState("");
-  const [endpoint, setEndpoint] = useState(api?.endpoint ?? "");
+  const [endpoint, setEndpoint] = useState(endpointShown(api?.endpoint));
+  const tailnet = useTailnet();
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [tried, setTried] = useState<Tried>();
   const [removing, setRemoving] = useState(false);
   const nowMs = useNow(true, 60_000);
-  const typedEndpoint = endpoint.trim();
-  const changed = key.trim() !== "" || typedEndpoint !== (api?.endpoint ?? "");
+  // Anthropic's own, as prefilled, is kept as none.
+  const typedEndpoint = endpointToSave(endpoint);
+  const changed = key.trim() !== "" || typedEndpoint !== api?.endpoint;
   const submit = () => {
     setBusy(true);
     setProblem(null);
     void save({
       account: "hub_api",
       ...(key.trim() === "" ? {} : { key }),
-      ...(typedEndpoint === "" ? {} : { endpoint: typedEndpoint }),
+      ...(typedEndpoint === undefined ? {} : { endpoint: typedEndpoint }),
       boxes: machines.boxes,
     }).then((out) => {
       setBusy(false);
@@ -111,7 +116,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
           <>
             <TestButton testing={testing} onTest={runTest} />
             {editing ? null : (
-              <Button size="sm" variant="ghost" onClick={() => (setEndpoint(api.endpoint ?? ""), setEditing(true))}>
+              <Button size="sm" variant="ghost" onClick={() => (setEndpoint(endpointShown(api.endpoint)), setEditing(true))}>
                 Change
               </Button>
             )}
@@ -126,6 +131,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
         <>
           <MissingOn sealedOn={api.sealedOn} machines={machines.ids} />
           <TestResult tried={tried ?? (api.lastTest === undefined ? undefined : { test: api.lastTest })} nowMs={nowMs} />
+          {open || api.endpoint === undefined ? null : <TailnetHint endpoint={api.endpoint} tailnet={tailnet} />}
           {pause === null ? null : (
             <Text size="sm" tone="warning">
               <HubText>{pause}</HubText>
@@ -140,11 +146,12 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
               Claude Console › API keys
             </Button>
           </div>
+          <Field label="Endpoint">
+            <Input mono aria-label="Endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} onChange={(e) => setEndpoint(e.target.value)} />
+          </Field>
+          <TailnetHint endpoint={endpoint} tailnet={tailnet} />
           <Field label="API key" description={api === undefined ? undefined : "Leave it empty to keep the saved key."}>
             <Input mono aria-label="API key" className={s.secretValue} data-secret="" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
-          </Field>
-          <Field label="Endpoint (optional)" description="Only for a gateway or proxy.">
-            <Input mono aria-label="Endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} placeholder="https://api.anthropic.com" onChange={(e) => setEndpoint(e.target.value)} />
           </Field>
           <div className={s.inline}>
             <Button variant="primary" disabled={busy || (api === undefined ? key.trim() === "" : !changed)} onClick={submit}>

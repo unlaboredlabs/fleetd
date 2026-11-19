@@ -20358,6 +20358,11 @@
           "const": "sandboxes",
           "description": "Hosted sandboxes from the team's own boat.dev account: optional.",
           "type": "string"
+        },
+        {
+          "const": "tailscale",
+          "description": "The team's tailnet for hosted agents, through one device the hub runs (D573): optional.",
+          "type": "string"
         }
       ],
       "x-open": true

@@ -10,16 +10,15 @@
 // opens the account that holds it, and one for Hub accounts lands on the accounts. A hub too old to serve its steps
 // still lists its own two accounts, which open their controls.
 import { ChevronLeft, Circle, CircleAlert, CircleCheck } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Person } from "../../../shared/contracts";
 import { Text } from "../../ui";
-import { AdminGithub } from "../github/AdminGithub";
 import { Part } from "../settings/Frames";
 import { Notice, PageFrame, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { revealNext, useWanted } from "../settings/reveal";
 import { StepGuide, useSetupSteps } from "../setup/SetupScreen";
 import { doneWords, needWords, requiredLeft, setupLayout, type SetupStep } from "../setup/steps";
-import { ClaudeAdmin } from "./Claude";
+import { stepControls } from "../setup/accounts";
 import s from "../settings/settings.module.css";
 
 /** The hub's own accounts, whose controls their step's page holds: by the step's id, each with its name. */
@@ -137,11 +136,6 @@ function StepRow({ step, account, onOpen }: { step: SetupStep; account: boolean;
   );
 }
 
-/** The controls of one of the hub's own accounts. */
-function account(id: string, me: Person | undefined): ReactNode {
-  return id === "claude" ? <ClaudeAdmin me={me} /> : id === "github" ? <AdminGithub /> : undefined;
-}
-
 /**
  * One step, in place of the list: its name and the way back in the window's top row; the hub's account it sets up,
  * its controls, then its guide. Without the step (a hub too old to serve them), the account alone.
@@ -159,7 +153,7 @@ function StepPage({ id, title, step, me, onBack }: { id: string; title: string; 
     }),
     [title, onBack],
   );
-  const controls = account(id, me);
+  const controls = stepControls(id, me);
   return (
     <PageFrame.Provider value={frame}>
       <div className={s.scroll} data-screen="settings.hub.setup.step">

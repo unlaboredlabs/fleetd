@@ -158,6 +158,22 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       test: "Read each computer's checks, and list fleetd's sandboxes at each connected provider",
       ways: [way("a computer", ["*/online"]), way("hosted sandboxes", ["hub/sandboxes"])],
     }),
+    // Optional (D573), right before Claude: hosted agents reach the team's tailnet (a Claude endpoint, MCP servers)
+    // through one device the hub runs. One click and a sign-in at Tailscale; nothing to paste.
+    step("tailscale", "accounts", "Tailscale", "Hosted agents reach your tailnet's addresses and names through one device the hub runs.", { kind: "optional" }, {
+      parts: [
+        part(
+          "Connect, then sign in to Tailscale",
+          "Connect opens Tailscale's sign-in page: sign in and approve the device. One device for the whole team, never " +
+            "one per agent. Skip it if nothing your agents use is on a tailnet.",
+          [link("Tailscale admin", "https://login.tailscale.com/admin/machines")],
+          [command("Or on the hub, from a terminal", "fleetd init --step tailscale")],
+        ),
+      ],
+      place: "tailscale",
+      test: "Read the hub's Tailscale device",
+      ways: [way(undefined, ["hub/tailnet"])],
+    }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
     step("claude", "accounts", "Claude", "Agents think with Claude: the hub's API key, your subscription, or each machine's login.", { kind: "required" }, {
       parts: [
@@ -170,7 +186,9 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             value("Key name", name),
             plain(
               "Where",
-              "Paste it on Settings › Hub › Setup › Claude, with an endpoint if you use a gateway; the app seals it on your device.",
+              "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init " +
+                "--step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's; one on your " +
+                "tailnet reaches hosted agents once Tailscale is connected.",
             ),
           ],
         ),

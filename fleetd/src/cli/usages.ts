@@ -27,7 +27,7 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              and repairs the rest; --rejoin enrols again with a new code; --mac joins the
              agents' Mac, from Terminal logged in at its screen (no claude there);
              --no-service enrols the node but leaves running it to you, and prints how
-  init --step <address|machines|claude|github|onepassword|people|mac>
+  init --step <address|machines|tailscale|claude|github|onepassword|people|mac>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps

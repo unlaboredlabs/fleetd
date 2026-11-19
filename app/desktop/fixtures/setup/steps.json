@@ -111,6 +111,45 @@
     {
       "fields": [],
       "group": "accounts",
+      "id": "tailscale",
+      "need": {
+        "kind": "optional"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "Tailscale admin",
+              "url": "https://login.tailscale.com/admin/machines"
+            }
+          ],
+          "note": "Connect opens Tailscale's sign-in page: sign in and approve the device. One device for the whole team, never one per agent. Skip it if nothing your agents use is on a tailnet.",
+          "title": "Connect, then sign in to Tailscale",
+          "values": [
+            {
+              "command": true,
+              "label": "Or on the hub, from a terminal",
+              "value": "fleetd init --step tailscale"
+            }
+          ]
+        }
+      ],
+      "place": "tailscale",
+      "status": "todo",
+      "test": "Read the hub's Tailscale device",
+      "title": "Tailscale",
+      "ways": [
+        {
+          "checks": [
+            "hub/tailnet"
+          ]
+        }
+      ],
+      "why": "Hosted agents reach your tailnet's addresses and names through one device the hub runs."
+    },
+    {
+      "fields": [],
+      "group": "accounts",
       "id": "claude",
       "need": {
         "kind": "required"
@@ -133,7 +172,7 @@
             {
               "label": "Where",
               "plain": true,
-              "value": "Paste it on Settings › Hub › Setup › Claude, with an endpoint if you use a gateway; the app seals it on your device."
+              "value": "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init --step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's; one on your tailnet reaches hosted agents once Tailscale is connected."
             }
           ]
         },
@@ -483,6 +522,10 @@
         "people": {
           "said": "Ada has joined.",
           "status": "done"
+        },
+        "tailscale": {
+          "said": "Connected to acme.com as fleetd-devbox.",
+          "status": "done"
         }
       },
       "requiredLeft": 0,
@@ -516,6 +559,10 @@
         },
         "people": {
           "said": "Ada has joined.",
+          "status": "done"
+        },
+        "tailscale": {
+          "said": "Connected to acme.com as fleetd-devbox.",
           "status": "done"
         }
       }
@@ -554,6 +601,9 @@
         },
         "people": {
           "status": "todo"
+        },
+        "tailscale": {
+          "status": "todo"
         }
       },
       "requiredLeft": 0,
@@ -590,6 +640,9 @@
         },
         "people": {
           "status": "todo"
+        },
+        "tailscale": {
+          "status": "todo"
         }
       }
     },
@@ -622,6 +675,9 @@
         },
         "people": {
           "status": "todo"
+        },
+        "tailscale": {
+          "status": "todo"
         }
       },
       "requiredLeft": 0,
@@ -652,6 +708,9 @@
           "status": "todo"
         },
         "people": {
+          "status": "todo"
+        },
+        "tailscale": {
           "status": "todo"
         }
       }
@@ -691,6 +750,9 @@
         },
         "people": {
           "status": "todo"
+        },
+        "tailscale": {
+          "status": "todo"
         }
       },
       "requiredLeft": 1,
@@ -727,6 +789,9 @@
           "status": "todo"
         },
         "people": {
+          "status": "todo"
+        },
+        "tailscale": {
           "status": "todo"
         }
       }
@@ -765,6 +830,9 @@
         },
         "people": {
           "status": "todo"
+        },
+        "tailscale": {
+          "status": "todo"
         }
       },
       "requiredLeft": 0,
@@ -795,6 +863,9 @@
           "status": "todo"
         },
         "people": {
+          "status": "todo"
+        },
+        "tailscale": {
           "status": "todo"
         }
       }
@@ -836,6 +907,9 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
+      },
+      "tailscale": {
+        "status": "todo"
       }
     },
     "requiredLeft": 0,
@@ -874,6 +948,9 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
+      },
+      "tailscale": {
+        "status": "todo"
       }
     }
   }

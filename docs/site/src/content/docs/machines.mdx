@@ -555,7 +555,9 @@ computers, and it goes by itself once no provider is connected and no bot lives 
 Hosted sandboxes reach your [Tailscale](https://tailscale.com) tailnet (its addresses and MagicDNS names, so a Claude
 gateway, an MCP server or a dashboard there) through one device the hub runs for the whole team.
 
-- **Connect.** Settings › Hub › Machines › Network › **Tailscale** › Connect. Tailscale's sign-in page opens: sign in
+- **Connect.** Settings › Hub › Machines › Network › **Tailscale** › Connect (also a step of its own in
+  [setup](/docs/quick-start#setup-steps) and on Get started, right before Claude, and `fleetd init --step tailscale` in a
+  terminal). Tailscale's sign-in page opens: sign in
   and approve. Nothing is pasted. That adds one device, `fleetd`, to your tailnet, owned by whoever approved it, with
   shields up: nothing on the tailnet reaches the hub's machine through it. It is one device however many sandboxes
   run. With device approval on in your tailnet, the row says so until an admin approves `fleetd` in Tailscale's

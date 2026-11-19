@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 // Get started on a fleetd cloud team in the web app, from the team's own state: where a fresh team lands, each step as
-// the hub's state moves it on (a computer, its Claude login, GitHub in one trip, a repository), GitHub's way back, a
-// teammate's page, and that nothing of it shows on the desktop.
+// the hub's state moves it on (a computer, Tailscale's Connect or Skip, Claude's login or the hub's key with its
+// endpoint, GitHub in one trip, a repository), GitHub's way back, a teammate's page, and that nothing of it shows on the
+// desktop.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Machine, ProjectSummary } from "../../../shared/contracts";
+import type { Machine, ProjectSummary, TailnetState } from "../../../shared/contracts";
+import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { HubScope } from "../../src/data/react";
@@ -23,6 +25,9 @@ let send: (frame: HubFrame) => void = () => undefined;
 let calls: Array<{ tool: string; input: unknown }> = [];
 /** While set, machine_join answers only once it resolves (a line still being made). */
 let joinHeld: Promise<void> | null = null;
+/** What the app sealed for the hub's key, and whether the hub has one since. */
+let sealed: ClaudeAccountRequest[] = [];
+let hubKey = false;
 
 const machine = (over: Partial<Machine> = {}): Machine => ({
   machineId: "devbox",
@@ -50,6 +55,8 @@ interface Team {
   readonly installations?: number;
   /** The team's hosted providers as sandbox_get answers: connected ones and their last check. */
   readonly sandbox?: { provider: string; connected: boolean; ok?: boolean }[];
+  /** The hub's Tailscale device; absent, a hub that serves none. */
+  tailnet?: TailnetState;
 }
 
 const shell = {
@@ -156,7 +163,14 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
                       loggedIn: true,
                       message: "logged in",
                     }
-                : {};
+                : tool === "claude_accounts_get"
+                  ? { settings: { membersUseHubApi: true }, leadsRunOn: { kind: "machine_login" }, people: [], ...(hubKey ? { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" } } : {}) }
+                  : tool === "tailnet_connect"
+                    ? (team.tailnet = { status: "login", loginUrl: "https://login.tailscale.com/a/standin" })
+                    : tool === "tailnet_get"
+                      ? team.tailnet
+                      : {};
+      if (output === undefined) return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't served` } } as never);
       if (tool === "machine_join" && joinHeld !== null) return joinHeld.then(() => ({ ok: true, output }) as never);
       return Promise.resolve({ ok: true, output } as never);
     },
@@ -197,6 +211,11 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
 
 const settle = () => act(() => new Promise((r) => setTimeout(r, 0)));
 const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
+/** Waits for the screen the hub's answers lead to: the Tailscale and Claude reads come after the page. */
+const until = async (shown: string) => {
+  for (let i = 0; i < 100 && screen() !== shown; i++) await act(() => new Promise((r) => setTimeout(r, 10)));
+  expect(screen()).toBe(shown);
+};
 const button = (name: string) => [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === name);
 const click = async (name: string) => {
   const b = button(name);
@@ -212,6 +231,8 @@ beforeEach(() => {
   resetServes();
   resetReturn();
   joinHeld = null;
+  sealed = [];
+  hubKey = false;
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
   vi.stubGlobal("fleetd", {
@@ -220,6 +241,13 @@ beforeEach(() => {
     cloud: shell,
     openExternal: shell.openExternal,
     system: { hostName: () => Promise.resolve("") },
+    secret: {
+      claudeAccount: (_hub: string, request: ClaudeAccountRequest) => {
+        sealed.push(request);
+        hubKey = true;
+        return Promise.resolve({ ok: true, output: { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" }, missingOn: [] } });
+      },
+    },
   });
   for (const f of Object.values(shell)) f.mockClear();
 });
@@ -254,11 +282,15 @@ it("where agents run is a computer or hosted sandboxes: the second lists the pro
   stop();
 }, 20_000);
 
-it("a provider connected and no computer: Connect Claude while its sandboxes have no account, then step 1 is done on the provider", async () => {
+it("a provider connected and no computer: step 1 is done on it, and Claude takes the hub's key or your subscription while its sandboxes have no account", async () => {
   const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });
   const sandbox = [{ provider: "boat", connected: true, ok: true }];
   let stop = await render({ machines: [runner], sandbox });
-  expect(host.textContent).toContain("boat.dev is connected");
+  expect(screen()).toBe("start.claude");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  // The key first, Anthropic's endpoint prefilled; the subscription one click over.
+  expect(host.querySelector<HTMLInputElement>("input[aria-label='Endpoint']")?.value).toBe("https://api.anthropic.com");
+  await click("Subscription");
   expect(button("Connect Claude")).toBeDefined();
   expect(calls.some((c) => c.tool === "machine_join")).toBe(false);
   stop();
@@ -289,7 +321,9 @@ it("a computer whose claude isn't logged in: Log in to Claude opens its page, an
       }),
     ],
   });
-  expect(host.textContent).toContain("devbox is connected");
+  // Step 1 is done on it; Claude is open on its own login.
+  expect(screen()).toBe("start.claude");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("devbox");
   await click("Log in to Claude");
   expect(calls.find((c) => c.tool === "machine_claude_login")?.input).toEqual({
     machineId: "devbox",
@@ -480,3 +514,70 @@ it("never on the desktop: the page goes home", async () => {
   expect(window.location.hash).not.toContain("start");
   stop();
 });
+
+it("Tailscale, right before Claude: Connect opens Tailscale's sign-in, and Skip goes on and never asks again", async () => {
+  const stop = await render({ machines: [machine()], tailnet: { status: "off" } });
+  await until("start.tailscale");
+  expect([...host.querySelectorAll("[data-step]")].map((s) => s.getAttribute("data-step"))).toEqual(["computer", "tailscale", "claude", "github", "project"]);
+  await click("Connect Tailscale");
+  expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
+  expect(shell.openExternal).toHaveBeenCalledWith("https://login.tailscale.com/a/standin");
+  expect(host.textContent).toContain("Waiting for you to sign in to Tailscale");
+  // Skip, even half way through the sign-in, goes on: devbox's claude is logged in, so Claude is done and GitHub is
+  // next. The step keeps a quiet Connect.
+  await click("Skip");
+  expect(readKept("sam").tailscale).toBe("skipped");
+  expect(screen()).toBe("start.github");
+  expect(host.querySelector('[data-step="tailscale"]')?.textContent).toContain("Connect");
+  stop();
+});
+
+it("a hub with no Tailscale device leaves the step out", async () => {
+  const stop = await render({ machines: [machine()] });
+  expect(host.querySelector('[data-step="tailscale"]')).toBeNull();
+  expect(screen()).toBe("start.github");
+  stop();
+});
+
+it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with Connect, then seals the key with the endpoint", async () => {
+  window.localStorage.setItem("fleetd.start.sam", JSON.stringify({ tailscale: "skipped" }));
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them.", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
+  const sandbox = [{ provider: "boat", connected: true, ok: true }];
+  const stop = await render({ machines: [runner], sandbox, tailnet: { status: "off" } });
+  await until("start.claude");
+  const type = async (label: string, value: string) => {
+    const field = host.querySelector<HTMLInputElement>(`input[aria-label='${label}']`);
+    if (field === null) throw new Error(`no field ${label}`);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+  };
+  // Saved with nothing pasted: it says what to paste.
+  await click("Save");
+  expect(host.querySelector("[role=alert]")?.textContent).toBe("Paste the API key from the Claude Console.");
+  await type("Endpoint", "http://100.104.249.49:8317");
+  expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
+  await click("Connect Tailscale");
+  expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
+  // Signing in reopens Tailscale's step, where the sign-in page is a click away.
+  expect(screen()).toBe("start.tailscale");
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  const again = await render({ machines: [runner], sandbox, tailnet: { status: "connected", tailnet: "sam-dev.github" } });
+  await until("start.claude");
+  await type("Endpoint", "http://100.104.249.49:8317/");
+  expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
+  await type("API key", "sk-ant-api03-standin");
+  await click("Save");
+  expect(sealed).toEqual([
+    { account: "hub_api", key: "sk-ant-api03-standin", endpoint: "http://100.104.249.49:8317", boxes: [{ machineId: "hosted", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }] },
+  ]);
+  // The hub has the key: Claude is done with it, GitHub is next.
+  await settle();
+  expect(host.querySelector('[data-step="claude"]')?.textContent).toContain("API key");
+  expect(screen()).toBe("start.github");
+  again();
+}, 20_000);
