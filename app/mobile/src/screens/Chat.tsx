@@ -31,7 +31,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -252,12 +252,16 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const newestEnd = () => -Math.max(0, -keyboard.height.value - lift);
   const toNewest = () => list.current?.scrollToOffset({ offset: newestEnd(), animated: !reduce });
 
-  // Scrolled away from the newest: the seq it was at, so the button down counts what came since.
-  // Scrolled away from the newest end at all: the rows hold still (holdFrom).
-  const [away, setAway] = useState(() => reopened !== undefined && reopened.offset > AT_NEWEST);
-  const [awayFrom, setAwayFrom] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AWAY ? items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0) : null));
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
-  const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
+  // Scrolled away from the newest end at all: the seq it was at. The rows hold still there (holdFrom), so a reply lands
+  // under the view, and the button down shows to count it, however close to the end the reader is.
+  const [heldAt, setHeldAt] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AT_NEWEST ? newestSeq : null));
+  // Scrolled away from the newest past AWAY: the seq it was at (where the hold started), so the button down counts what
+  // came since.
+  const [awayFrom, setAwayFrom] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AWAY ? newestSeq : null));
+  const cameSince = arrivedSince(items, awayFrom ?? heldAt);
+  // Nothing new below while near the newest end: no button down, and what came in is read.
+  const atNewest = awayFrom === null && cameSince === 0;
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
   // opened at its newest end never scrolls, and older pages come in without a scroll).
   const scrolled = useRef({ y: 0, length: 0 });
@@ -269,9 +273,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     // How far from the newest end, wherever the keyboard puts it.
     const y = e.nativeEvent.contentOffset.y - newestEnd();
     session.scrolledTo(chatKey, { offset: y < AWAY / 3 ? 0 : Math.round(y) });
-    if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
+    if (y > AWAY && awayFrom === null) setAwayFrom(heldAt ?? newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
-    if (y > AT_NEWEST !== away) setAway(y > AT_NEWEST);
+    if (y > AT_NEWEST && heldAt === null) setHeldAt(newestSeq);
+    else if (y <= AT_NEWEST && heldAt !== null) setHeldAt(null);
   };
   // The status bar's tap goes a screen older, as chat apps' does, never to the newest end.
   const olderByAScreen = () => {
@@ -291,8 +296,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const reading = placed && focused && active;
   const lastSeq = chatState?.lastSeq;
   useEffect(() => {
-    if (reading && awayFrom === null && lastSeq !== undefined && chat.loaded) dispatchPrefs({ t: "read", key: chatKey, seq: lastSeq });
-  }, [reading, awayFrom, lastSeq, chat.loaded, chatKey]);
+    if (reading && atNewest && lastSeq !== undefined && chat.loaded) dispatchPrefs({ t: "read", key: chatKey, seq: lastSeq });
+  }, [reading, atNewest, lastSeq, chat.loaded, chatKey]);
   const onScreen = useRef<readonly ThreadRow[]>([]);
   const seen = useRef({ reading, chatKey });
   seen.current = { reading, chatKey };
@@ -411,7 +416,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   useEffect(() => {
     if (streamAt === undefined) setTall(false);
   }, [streamAt]);
-  const held = holdFrom(away || awayFrom !== null, tall, streamAt);
+  const held = holdFrom(heldAt !== null || awayFrom !== null, tall, streamAt);
   const hold = useMemo(() => (held === undefined ? undefined : { minIndexForVisible: held }), [held]);
   // At the newest end the rows make room for a new bubble, or the reply growing, on its spring, as it rides up with
   // them. Not while held still: the list keeps its place there, and a row moving to its new place would slide.
@@ -425,7 +430,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     const out = outgoing(body, files.length, reply);
     if (out === null) return;
     setAwayFrom(null);
-    setAway(false);
+    setHeldAt(null);
     // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
     requestAnimationFrame(() => {
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
@@ -651,7 +656,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         {/* The composer and what sits on it ride on the keyboard. */}
         <KeyboardStickyView offset={{ closed: 0, opened: lift }} style={styles.dock} pointerEvents="box-none">
           {chat.error === undefined ? null : <Text style={[type.footnote, styles.error, { color: t.danger, bottom: composerHeight + space.xs }]}>{chat.error.message}</Text>}
-          {awayFrom === null ? null : (
+          {atNewest ? null : (
             // Its glass materializes rather than fading in: glass under an opacity below 1 doesn't draw (UIKit).
             <View style={[styles.down, { bottom: composerHeight + space.md }]}>
               <Glass interactive appear style={styles.downButton}>

@@ -469,3 +469,7 @@ export const AT_NEWEST = 1;
  */
 export const holdFrom = (away: boolean, tall: boolean, streamAt: number | undefined): number | undefined =>
   away ? 0 : tall && streamAt !== undefined ? streamAt + 1 : undefined;
+
+/** The lead's messages that came in after `seq` (the button down's count), or none without one. */
+export const arrivedSince = (items: readonly ChatItem[], seq: number | null): number =>
+  seq === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > seq).length;
