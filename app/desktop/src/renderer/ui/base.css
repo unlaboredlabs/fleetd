@@ -295,6 +295,24 @@ ol {
   }
 }
 
+/* The app under a modal that blurs it (Settings, New bot: ui/lib/under.ts), blurred itself, evenly, the see-through
+   sidebar too, fading in with the modal's scrim. Never a backdrop filter on the scrim: over the Mac's sidebar its
+   blurred copy is see-through, and the crisp words show through it. */
+[data-under-modal] {
+  filter: blur(2px);
+  animation: underIn 160ms var(--ease-out) both;
+}
+@keyframes underIn {
+  from {
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-under-modal] {
+    animation: none;
+  }
+}
+
 /* A list you reorder (ui/lib/reorder): the lifted row rides the pointer, raised a step with a small soft shadow, never
    scaled; the rows it passes glide aside over --dur-base to open its gap. Landed, its shadow fades. With reduced
    motion the durations are 0, so they step aside at once. */

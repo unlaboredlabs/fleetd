@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { check, launch, pngSize, resultsDir, setNativeView, setView, type Shot, settle, show } from "./harness.ts";
 import { sizes, themes } from "./registry.ts";
 
@@ -309,6 +309,120 @@ test("a link clicked in an HTML artifact opens in the browser and the report sta
       .toEqual(["https://github.com/acme/storefront/actions/workflows/release.yml"]);
     // The frame never left its page.
     await expect(chart.locator("rect.bar")).toHaveCount(6);
+  } finally {
+    await close();
+  }
+});
+
+// A modal's backdrop over the Mac's see-through sidebar (vibrancy): the page paints nothing there, so a backdrop
+// filter has only the sidebar's own words to blur, and its blurred copy is see-through too, with the crisp words
+// showing through it (F1101, the New bot dialog). The stand-in for that window: the page's data-vibrancy set and its
+// background left out of the shot (omitBackground), composited over a flat material. The same words sit in the
+// sidebar and in the main pane, clear of the modal; the modal must take both to the same blur and the same dim.
+const MODALS = [
+  { name: "New bot", screen: "projects.add", route: "#/projects/add" },
+  { name: "Settings", screen: "settings.general", route: "#/settings/general" },
+];
+const PROBE_WORDS = "Words under a modal blur and dim alike, in the sidebar and in the main pane.";
+// The window's material in each theme, under the clear sidebar.
+const MATERIAL = { light: 226, dark: 44 } as const;
+
+interface Under {
+  // Mean luminance step between neighbouring pixels: how sharp the words are.
+  sharp: number;
+  // Mean luminance.
+  mean: number;
+}
+
+async function seeThroughShot(page: Page, ground: number): Promise<{ side: Under; main: Under; png: Buffer }> {
+  await settle(page);
+  const png = await page.screenshot({ omitBackground: true, animations: "disabled", caret: "hide" });
+  const measured = await page.evaluate(
+    async ({ b64, ground }) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no 2d context");
+      ctx.drawImage(bitmap, 0, 0);
+      const { data, width } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      const k = bitmap.width / window.innerWidth;
+      // Over the material: what the window server shows where the page is clear.
+      const lum = (x: number, y: number) => {
+        const i = (y * width + x) * 4;
+        const a = (data[i + 3] ?? 0) / 255;
+        return (0.2126 * (data[i] ?? 0) + 0.7152 * (data[i + 1] ?? 0) + 0.0722 * (data[i + 2] ?? 0)) * a + ground * (1 - a);
+      };
+      const dialog = document.querySelector("[role=dialog]")?.getBoundingClientRect();
+      const measure = (id: string) => {
+        const r = document.getElementById(id)?.getBoundingClientRect();
+        if (!r) throw new Error(`#${id} is gone`);
+        // The probe and the few pixels a blur spreads it over.
+        const box = { left: r.left - 6, top: r.top - 6, right: r.right + 6, bottom: r.bottom + 6 };
+        if (dialog && box.left < dialog.right + 48 && box.right > dialog.left - 48 && box.top < dialog.bottom + 48 && box.bottom > dialog.top - 48) {
+          throw new Error(`#${id} is under the dialog's shadow, where it measures the dialog`);
+        }
+        const [x0, y0, x1, y1] = [box.left, box.top, box.right, box.bottom].map((v) => Math.round(v * k)) as [number, number, number, number];
+        let sharp = 0;
+        let mean = 0;
+        let n = 0;
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const l = lum(x, y);
+            sharp += Math.abs(lum(x + 1, y) - l) + Math.abs(lum(x, y + 1) - l);
+            mean += l;
+            n++;
+          }
+        }
+        return { sharp: sharp / n, mean: mean / n };
+      };
+      return { side: measure("qa-probe-side"), main: measure("qa-probe-main") };
+    },
+    { b64: png.toString("base64"), ground },
+  );
+  return { ...measured, png };
+}
+
+test("a modal's backdrop blurs and dims the see-through sidebar as it does the main pane", async () => {
+  const { app, page, settled, close } = await launch("empty");
+  try {
+    await settled();
+    const dir = path.join(resultsDir, "png");
+    mkdirSync(dir, { recursive: true });
+    for (const theme of themes) {
+      await setView(app, page, "large", theme);
+      await show(page, "home", "#/");
+      await page.evaluate(() => (document.documentElement.dataset["vibrancy"] = ""));
+      for (const modal of MODALS) {
+        // The same words in the sidebar and at the main pane's far edge, on the line the modal leaves clear.
+        await page.evaluate((words) => {
+          for (const [id, host, edge] of [
+            ["qa-probe-side", "#sidebar", "left"],
+            ["qa-probe-main", "main", "right"],
+          ] as const) {
+            document.getElementById(id)?.remove();
+            const probe = document.createElement("div");
+            probe.id = id;
+            probe.textContent = words;
+            Object.assign(probe.style, { position: "absolute", top: "62%", [edge]: "24px", width: "180px", font: "600 15px/20px var(--font-sans)", color: "var(--text)", pointerEvents: "none" });
+            document.querySelector(host)?.append(probe);
+          }
+        }, PROBE_WORDS);
+        const clear = await seeThroughShot(page, MATERIAL[theme]);
+        await show(page, modal.screen, modal.route);
+        const under = await seeThroughShot(page, MATERIAL[theme]);
+        writeFileSync(path.join(dir, `backdrop--${modal.screen}--${theme}--see-through.png`), under.png);
+        const blur = { side: under.side.sharp / clear.side.sharp, main: under.main.sharp / clear.main.sharp };
+        const dim = { side: under.side.mean / clear.side.mean, main: under.main.mean / clear.main.mean };
+        const said = `${modal.name} (${theme}): the words keep ${blur.side.toFixed(2)} of their sharpness in the sidebar and ${blur.main.toFixed(2)} in the main pane, ${dim.side.toFixed(2)} and ${dim.main.toFixed(2)} of their light`;
+        expect.soft(blur.main, `${said}: the backdrop doesn't blur the main pane`).toBeLessThan(0.8);
+        expect.soft(Math.abs(blur.side - blur.main), `${said}: the sidebar is blurred unlike the main pane`).toBeLessThan(0.1);
+        expect.soft(Math.abs(dim.side - dim.main), `${said}: the sidebar is dimmed unlike the main pane`).toBeLessThan(0.04);
+        await page.keyboard.press("Escape");
+        await page.locator("[role=dialog]").waitFor({ state: "detached" });
+      }
+      await page.evaluate(() => delete document.documentElement.dataset["vibrancy"]);
+    }
   } finally {
     await close();
   }

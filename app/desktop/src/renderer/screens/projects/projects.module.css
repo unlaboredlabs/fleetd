@@ -5,9 +5,9 @@
   position: fixed;
   inset: 0;
   z-index: 40;
-  /* Settings' scrim (screens/settings/sheet.module.css): a light dim and a 2 px blur, so the two floating sheets match. */
+  /* Settings' scrim (screens/settings/sheet.module.css): a light dim, and the app under it blurred 2 px (ui/lib/under.ts),
+     so the two floating sheets match. */
   background: #0b0d1026;
-  backdrop-filter: blur(2px);
   animation: fade var(--dur-base) var(--ease-out);
 }
 /* Black over a dark window barely shows: a deeper dim, so the dialog still reads as in front. */
