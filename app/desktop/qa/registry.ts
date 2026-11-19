@@ -3791,6 +3791,18 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
     },
   },
+  // W743: a link to the hosted sandboxes' old machine page lands on Machines at boat.dev's row, never a machine page.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines/hosted",
+    fixtures: ["machines-sandboxes-on"],
+    variant: "hosted-link",
+    open: async (page) => {
+      await expect(page.locator('[data-sandbox="boat"]')).toBeInViewport();
+      await expect(page.locator("[data-screen='settings.hub.machine']")).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => window.location.hash)).toBe("#/settings/hub/machines");
+    },
+  },
   // The plus opens Add machine's ways in over the list.
   {
     id: "settings.hub.machines",
