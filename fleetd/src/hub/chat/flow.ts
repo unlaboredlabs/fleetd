@@ -11,6 +11,7 @@ import type {
   ChatStopOutput,
   HubEvent,
   HubEventType,
+  LeadText,
   MachineId,
   ProjectChatState,
   ProjectRef,
@@ -255,7 +256,8 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
 
 /**
  * A message one of fleetd's own agents writes to another project's lead, as the agent `by` (the project bridge): stored
- * held and sent as an agent key's message is, idempotent per `request`. Returns it, and why it waits when it does.
+ * held and sent as an agent key's message is, idempotent per `request`. `lead` marks one lead's text to another. Returns
+ * it, and why it waits when it does.
  */
 export async function sendAsAgent(
   hub: Hub,
@@ -263,6 +265,7 @@ export async function sendAsAgent(
   by: string,
   text: string,
   request: string,
+  lead?: LeadText,
 ): Promise<{ message: ChatMessage; leadWaiting?: string }> {
   let message = chat(hub).byRequest(to, request);
   if (!message) {
@@ -270,12 +273,23 @@ export async function sendAsAgent(
       throw new ToolError("invalid", `${by} wrote ${AGENT_PER_MINUTE} chat messages in the last minute.`, "Wait a minute, and put what you have in one message.");
     }
     await ensure(hub, to);
-    message = chat(hub).add(to, { author: "agent", text, request, by, delivery: "queued", held: true }).message;
+    message = chat(hub).add(to, { author: "agent", text, request, by, ...(lead ? { lead } : {}), delivery: "queued", held: true }).message;
   }
   let leadWaiting: string | undefined;
   if (chat(hub).isHeld(message)) ({ message, waiting: leadWaiting } = waits(hub, to, await go(hub, to, message, false)));
   state(hub, to);
   return { message, ...(leadWaiting === undefined ? {} : { leadWaiting }) };
+}
+
+/**
+ * A quiet line in a project's own chat that its lead isn't sent: what its lead texted another bot's lead (the project
+ * bridge), so the person reads both sides there. Idempotent per `request`.
+ */
+export async function noteSent(hub: Hub, r: ProjectRef, by: string, text: string, request: string, lead: LeadText): Promise<ChatMessage> {
+  await ensure(hub, r);
+  const { message } = chat(hub).add(r, { author: "agent", text, request, by, lead });
+  state(hub, r);
+  return message;
 }
 
 type Gone = { message: ChatMessage; waiting?: string };

@@ -224,6 +224,7 @@ export class Chat {
         if (by.length > 0 && !/[\r\n]/.test(by)) message.by = by;
       }
       if (n.person !== undefined) message.person = n.person;
+      if (n.lead !== undefined) message.lead = n.lead;
       if (n.for !== undefined) message.for = n.for;
       if (n.client !== undefined) message.client = n.client;
       if (n.replyTo !== undefined) message.replyTo = n.replyTo;
@@ -896,4 +897,4 @@ export type ChatState = { needsYou(r: ProjectRef): boolean };
 export const chatState = (hub: Hub) =>
   hub.area<ChatState>("chat_state", (h) => ({ needsYou: (r) => chat(h).state(r, false).needsYou }));
 
-export { sendAsAgent } from "./flow.ts";
+export { noteSent, sendAsAgent } from "./flow.ts";

@@ -26,7 +26,7 @@ export function start(hub: Hub): void {
     if (!hub.shutdown.signal.aborted) console.error("chat: the flow stopped:", error);
   });
   // The project bridge's project_message writes to another project's lead as an agent.
-  found.sendAsAgent = (h, to, by, body, requestId) => sendAsAgent(h, to, by, body, requestId);
+  found.sendAsAgent = (h, to, by, body, requestId, lead) => sendAsAgent(h, to, by, body, requestId, lead);
   const ws = appWs(hub);
   ws.on("chat", (conn, message) => {
     // A new `chat` request replaces the running one; none stops it.
