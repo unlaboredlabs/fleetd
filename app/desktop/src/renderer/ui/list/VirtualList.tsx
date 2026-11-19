@@ -52,13 +52,20 @@ const startingBelow = (box: Element, top: number): Element | undefined => {
   return undefined;
 };
 
-/** Marks what sits at the scroller's top, in the row its top cuts through; undefined when no row is cut. */
-export function topMark(scroller: Element, rows: Element): TopMark | undefined {
+/**
+ * Marks what sits at the scroller's top, in the row its top cuts through; undefined when no row is cut. "pending" while
+ * that row's height on screen isn't the one the list holds for it (`known`): a change it hasn't measured yet (a
+ * picture that just loaded, its ResizeObserver still to run in this frame), which a mark taken now would already
+ * count in, so the change would read as nothing having moved.
+ */
+export function topMark(scroller: Element, rows: Element, known: (row: Element) => number | undefined): TopMark | "pending" | undefined {
   const top = scroller.getBoundingClientRect().top;
   for (const row of rows.children) {
     const r = row.getBoundingClientRect();
     if (r.bottom <= top) continue;
     if (r.top >= top) return undefined;
+    const size = known(row);
+    if (size === undefined || Math.abs(size - r.height) >= 1) return "pending";
     const el = startingBelow(row, top);
     return el === undefined ? undefined : { row, el, at: el.getBoundingClientRect().top - r.top };
   }
@@ -159,12 +166,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     scrollPaddingEnd: paddingEnd,
     ...followOptions(followOutput, away),
   });
-  // What sits at the view's top, marked as the reader scrolls and after each change, for keepsPlace.
+  // What sits at the view's top, marked as the reader scrolls and after each change, for keepsPlace. A mark is taken
+  // only from a layout the list has measured: while the row at the top has changed unmeasured, the one before stays.
   const mark = useRef<TopMark>(undefined);
   const remark = useRef(() => {
     const scroller = scrollRef.current;
     const list = rowsRef.current;
-    mark.current = scroller && list ? topMark(scroller, list) : undefined;
+    const next = scroller && list ? topMark(scroller, list, (row) => virtualizer.measurementsCache[Number((row as HTMLElement).dataset["index"])]?.size) : undefined;
+    if (next !== "pending") mark.current = next;
   });
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, v) => {
     const keep = keepsPlace(item, delta, v.scrollOffset ?? 0, movedSince(mark.current, v.elementsCache.get(item.key)));

@@ -25,12 +25,20 @@ describe("topMark: what sits at a list's top", () => {
     const row = box("div", 10, 190, [text, bubble]);
     const rows = box("div", 10, 400, [box("div", -80, 90), row, box("div", 200, 60)]);
     // The view's top at 100 cuts through the row, and through the picture in it: under the top is the caption.
-    const mark = topMark(box("div", 100, 500), rows);
+    const mark = topMark(box("div", 100, 500), rows, () => 190);
     expect(mark).toEqual({ row, el: caption, at: 150 });
   });
 
   it("is nothing when the top falls between rows", () => {
     const rows = box("div", 0, 400, [box("div", 0, 100), box("div", 100, 50)]);
-    expect(topMark(box("div", 100, 500), rows)).toBeUndefined();
+    expect(topMark(box("div", 100, 500), rows, () => 100)).toBeUndefined();
+  });
+
+  it("is pending while the row at the top has changed and the list hasn't measured it yet (a picture just loaded)", () => {
+    const row = box("div", 10, 390, [box("p", 10, 20), box("img", 30, 320), box("p", 350, 20)]);
+    const rows = box("div", 10, 400, [row]);
+    // The list holds it at 190 px: the picture's 200 px are still to be measured, so a mark now would count them in.
+    expect(topMark(box("div", 100, 500), rows, () => 190)).toBe("pending");
+    expect(topMark(box("div", 100, 500), rows, () => undefined)).toBe("pending");
   });
 });

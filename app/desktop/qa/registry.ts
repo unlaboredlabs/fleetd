@@ -2370,6 +2370,53 @@ export const screens: readonly Screen[] = [
       expect(await lineTop(20)).toBe(was);
     },
   },
+  // ...and something growing at the top of the row the view's top cuts through (a picture loading there), with a scroll
+  // landing in the same frame, as one does nearly every frame while the reader scrolls, and without: what sits under
+  // the view's middle moves by the scroll alone.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "grow-at-top",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -6);
+      // A block at the top of the row the view's top cuts through, empty until it grows.
+      const placed = await page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>('[aria-label="Conversation with the lead"]');
+        const top = list?.getBoundingClientRect().top ?? 0;
+        const row = [...(list?.querySelectorAll<HTMLElement>("[data-index]") ?? [])].find((r) => r.getBoundingClientRect().top < top && r.getBoundingClientRect().bottom > top + 1);
+        if (!row) return false;
+        const grow = document.createElement("div");
+        grow.id = "qa-grow";
+        row.prepend(grow);
+        return true;
+      });
+      expect(placed).toBe(true);
+      await page.waitForTimeout(300);
+      // How far what sits under the view's middle moved, two frames after the block grows by 200 px and the list is
+      // scrolled by `by` px in the same task.
+      const grow = (by: number) =>
+        page.evaluate(async (by) => {
+          const list = document.querySelector<HTMLElement>('[aria-label="Conversation with the lead"]');
+          const block = document.getElementById("qa-grow");
+          if (!list || !block) return Number.NaN;
+          const r = list.getBoundingClientRect();
+          const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          const was = under?.getBoundingClientRect().top ?? Number.NaN;
+          block.style.height = `${String(block.offsetHeight + 200)}px`;
+          if (by !== 0) list.scrollTop += by;
+          await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+          return (under?.getBoundingClientRect().top ?? Number.NaN) - was;
+        }, by);
+      // Scrolled up a pixel in that frame: the rows come down that pixel, no more.
+      expect(Math.abs((await grow(-1)) - 1)).toBeLessThan(2);
+      await page.waitForTimeout(300);
+      expect(Math.abs(await grow(0))).toBeLessThan(2);
+    },
+  },
   // ...and scrolled up, the link drops and comes back unable to resume: the offline banner floats over the chat rather
   // than push it down, and the pictures on screen stay (their bytes outlast the reconnect).
   {
