@@ -220,6 +220,18 @@ export const pickMachine = (machine: string, from?: string): void => {
   set({ ...omit(ui, "refused"), machine, repos: ui.repos.filter((r) => r.kind !== "folder"), note });
 };
 
+/** Another hub: the machine picked was the old hub's, and so was each folder, which comes out (`from`, `to`: their names). */
+export const pickHub = (from: string, to: string): void => {
+  const moved = ui.repos.flatMap((r) => (r.kind === "folder" ? [r.path] : []));
+  const rest = omit(ui, "refused", "machine");
+  if (moved.length === 0) {
+    set(rest);
+    return;
+  }
+  const note = { text: `Took out ${moved.map(tilde).join(", ")}: ${moved.length === 1 ? "a folder" : "folders"} on ${from}'s machines, not ${to}'s.`, problem: true };
+  set({ ...rest, repos: ui.repos.filter((r) => r.kind !== "folder"), note });
+};
+
 export const setNote = (note: Note | undefined): void => set(note === undefined ? omit(ui, "note") : { ...ui, note });
 
 /** Create: the bot and its repos, or why not yet. `typed`: a repo left in the add field, which goes in the list first. */

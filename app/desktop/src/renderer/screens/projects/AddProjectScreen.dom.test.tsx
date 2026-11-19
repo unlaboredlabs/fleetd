@@ -7,7 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddProjectScreen } from "./AddProjectScreen";
-import { addUi, closeAddProject, openAddProject, pickMachine, useAddUi } from "./store";
+import { addUi, closeAddProject, openAddProject, pickHub, pickMachine, useAddUi } from "./store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -329,6 +329,19 @@ describe("New bot", () => {
     await addRepo("/home/b/src/ci");
     act(() => pickMachine("buildbox", "buildbox"));
     expect(listed()).toEqual(["acme/shop", "~/src/ci"]);
+  });
+
+  it("takes out the machine picked and the folders when another hub is picked: they were the old hub's", async () => {
+    await render();
+    await addRepo("/home/w/src/docs");
+    await addRepo("acme/shop");
+    act(() => pickMachine("buildbox", "devbox"));
+    await addRepo("/home/b/src/ci");
+    act(() => pickHub("Personal", "Acme"));
+    await settle();
+    expect(listed()).toEqual(["acme/shop"]);
+    expect(addUi().machine).toBeUndefined();
+    expect(document.body.textContent).toContain("Took out ~/src/ci: a folder on Personal's machines, not Acme's.");
   });
 
   it("takes a dropped folder as a repo", async () => {

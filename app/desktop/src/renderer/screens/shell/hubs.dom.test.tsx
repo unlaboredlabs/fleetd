@@ -25,7 +25,8 @@ interface FakeHub {
 }
 
 const fake = vi.hoisted(() => {
-  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }> }>();
+  // `discover`: what project_discover answers, when a test sets it.
+  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown }>();
   const badge: number[] = [];
   // The chat each hub streams, as the page last asked (hub.chat): a project, or null for none.
   const chats: Array<[string, unknown]> = [];
@@ -62,8 +63,10 @@ const fake = vi.hoisted(() => {
       },
       call: (id: string, tool: string, input: unknown) => {
         of(id).calls.push({ tool, input });
-        // The board, which the sidebar's counts read; nothing else is answered.
+        // The board, which the sidebar's counts read, and New bot's discover when a test gives one; nothing else.
         if (tool === "orders_board") return Promise.resolve({ ok: true, output: { orders: [] } });
+        const discover = of(id).discover;
+        if (tool === "project_discover" && discover !== undefined) return Promise.resolve({ ok: true, output: discover });
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
       },
       chat: (id: string, project: unknown) => (chats.push([id, project]), done()),
@@ -108,6 +111,20 @@ const withTwo = (machineId: string, projectId: string, own: string): HubFrame =>
   if (frame.t !== "snapshot") throw new Error("not a snapshot");
   const mine = { machineId, projectId: own, title: own, workspaceRoot: `/srv/${own}`, lastActivityAt: new Date(Date.parse(AT) + 60_000).toISOString(), threads: { running: 0, waiting: 0, idle: 0, failed: 0 } };
   return { t: "snapshot", snapshot: { ...frame.snapshot, projects: [...frame.snapshot.projects, mine] } };
+};
+
+/** A hub with no bot and no machine yet, as a new fleetd cloud team's. */
+const empty: HubFrame = (() => {
+  const frame = snapshot(1);
+  if (frame.t !== "snapshot") throw new Error("not a snapshot");
+  return { t: "snapshot", snapshot: { ...frame.snapshot, machines: [], projects: [], chats: [] } };
+})();
+
+/** A hub with a machine and no bot yet. */
+const machineOnly = (machineId: string): HubFrame => {
+  const frame = project(machineId, "unused");
+  if (frame.t !== "snapshot") throw new Error("not a snapshot");
+  return { t: "snapshot", snapshot: { ...frame.snapshot, projects: [], chats: [] } };
 };
 
 const offline: HubFrame = { t: "state", state: { phase: "retrying", hub: "http://acme-hub:4790", reason: "connection refused", retryAt: Date.parse(AT) + 60_000 } };
@@ -441,6 +458,81 @@ it("says which hub a new bot goes to with several hubs, the hub on screen first,
   await settle();
   expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
   expect(picker()).toBeNull();
+});
+
+/** New bot opened on Personal, whose last bot is the one opened, then Acme (sent `acme`) picked in its Adds to. */
+const pickAcme = async (acme: HubFrame) => {
+  // The last bot opened is on Personal: going to Acme's home must not open it, which took the dialog back.
+  window.localStorage.setItem("fleetd.lastProject", "devbox/storefront");
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(acme);
+  });
+  await settle();
+  act(() => {
+    window.location.hash = "#/projects/add";
+  });
+  await act(() => import("../projects/AddProjectScreen"));
+  await settle();
+  await settle();
+  expect(hubPicker()?.textContent).toContain("Personal");
+  await act(async () => {
+    hubPicker()?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const option = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Acme");
+  await act(async () => {
+    option?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  await settle();
+  await settle();
+};
+
+const hubPicker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+
+it("moves New bot to the hub picked in Adds to, one with no bot and no machine too, and keeps it there", async () => {
+  await pickAcme(empty);
+  expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
+  expect(hubPicker()?.textContent).toContain("Acme");
+  expect(window.location.hash).toBe("#/?at=a1b2");
+  // Behind it, Acme's empty home; and the dialog asks Acme what it can make a bot on.
+  expect(host.querySelector("[data-screen='home.empty']")).not.toBeNull();
+  expect(hub("a1b2").calls.some((c) => c.tool === "project_discover")).toBe(true);
+});
+
+it("makes the bot on the hub picked in Adds to", async () => {
+  fake.of("a1b2").discover = { machines: [{ machineId: "laptop", online: true, cloneRoot: "/home/l/src", projectsRoot: "/home/l/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "laptop" };
+  await pickAcme(machineOnly("laptop"));
+  expect(document.body.textContent).toContain("On laptop");
+  const type = async (label: string, text: string) => {
+    const el = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    if (el === null) throw new Error(`no field ${label}`);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+  };
+  const press = async (button: HTMLElement | null | undefined) => {
+    await act(async () => {
+      button?.click();
+      await Promise.resolve();
+    });
+    await settle();
+  };
+  await type("Name", "Notes");
+  await press([...document.querySelectorAll<HTMLButtonElement>("[data-screen='projects.add'] button")].find((b) => b.textContent === "Create"));
+  expect(hub("a1b2").calls.filter((c) => c.tool === "project_add").map((c) => c.input)).toEqual([expect.objectContaining({ machineId: "laptop", title: "Notes" })]);
+  expect(hub("hub").calls.filter((c) => c.tool === "project_add")).toEqual([]);
 });
 
 it("opens on the one sidebar on a computer that kept the old List or Rail layout", async () => {

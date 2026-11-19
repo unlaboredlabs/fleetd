@@ -48,6 +48,12 @@ export const useRoute = (): Routed => {
 
 export const currentRoute = (): Routed => routed(parseHash(window.location.hash));
 
+/**
+ * Whether the screen on show names its hub (`?at=`). Its home is then that hub's own (New bot's Adds to, Get started's
+ * Later), while a bare `#/` is the last bot opened on any hub.
+ */
+export const useNamesHub = (): boolean => useSyncExternalStore(subscribe, () => parseHash(screenHash()).at !== undefined);
+
 /** The hash for `screen`: on the hub it names or the current one, said only when there are several. */
 export const hashFor = (screen: Screen): string => {
   return toHash(onHub(screen, hubs.length > 1 ? (screen.at ?? currentRoute().at) : undefined));
