@@ -66,13 +66,6 @@ describe("a chat's screen cards", () => {
     const [own] = screenCards([screen("B4", { openedBy: { personId: "p1", name: "Ann" } as NonNullable<BrowserSession["openedBy"]> })]);
     expect(cardTitle(own!, "Nova")).toBe("Your browser");
   });
-
-  it("mark a screen on the team's Revyl account, and no other", () => {
-    const [revyl, ours] = screenCards([screen("B5", { kind: "ios", source: "revyl" }), screen("B6", { kind: "android" })]);
-    expect(revyl!.revyl).toBe(true);
-    expect(cardTitle(revyl!, "Nova")).toBe("Nova's iOS simulator");
-    expect(ours!.revyl).toBe(false);
-  });
 });
 
 describe("who has control", () => {

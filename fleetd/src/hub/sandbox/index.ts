@@ -22,6 +22,7 @@ import { runner } from "../runner/index.ts";
 import { slots } from "../slots/index.ts";
 import { store } from "../store/hub_store.ts";
 import { openRawToHub } from "../vault/items.ts";
+import { removedLines } from "./removed.ts";
 import { vault } from "../vault/index.ts";
 import { keyIdOf, openItem, sealItem } from "../vault/crypto.ts";
 
@@ -55,7 +56,8 @@ function checkOf(r: Row): SandboxCheck | undefined {
 }
 
 export function state(hub: Hub): SandboxState {
-  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers: providerStates(hub) };
+  const removed = removedLines(hub);
+  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers: providerStates(hub), ...(removed.length > 0 ? { removed } : {}) };
 }
 
 /** Every provider as the hub keeps it, in ORDER: what a bot's computer choices list (projects/settings.ts). */

@@ -129,8 +129,6 @@ export const IPC = {
   mcpServerSubmit: "mcp:server-submit",
   /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
   hubLinkSubmit: "hub-link:submit",
-  /** invoke(RevylKeyRequest) → CallOutcome. Main seals the team's Revyl key to the hub's own key, then calls revyl_connect. */
-  revylKeySubmit: "revyl:key-submit",
   /** invoke(SandboxKeyRequest) → CallOutcome. Main seals a hosted sandbox provider's key to the hub's own key, then calls sandbox_connect. */
   sandboxKeySubmit: "sandbox:key-submit",
   /**

@@ -114,7 +114,7 @@ export type PlaceFor = {
 };
 
 /** The node's dirs of the tools it installs for agents (./view.ts fleetdOwn), shown to every box that has them. */
-const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/bin", "revyl/bin", "mac/bin"];
+const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/bin", "mac/bin"];
 
 /** Where this machine's agents run, and why when it's a plain process (or, in VMs, which of them don't and why:
  * `why` and `fix` on `microvm`): `fix` the command that fixes it, `expected` when

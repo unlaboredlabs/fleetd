@@ -68,8 +68,6 @@ const render = async () => {
     call: (tool, input) => {
       calls.push({ tool, input });
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "1", protocol: 1, busy: [], admin: true, me: { personId: "p_aaaaaaaa", name: "Sam", role: "owner" } } });
-      // A hub without Revyl: the phones' rows stand on its machines.
-      if (tool === "revyl_get") return Promise.resolve({ ok: false, error: { code: "not_found", message: "unknown tool revyl_get" } });
       if (tool === "sandbox_get") return Promise.resolve("code" in state ? { ok: false, error: state } : { ok: true, output: state });
       if (tool === "sandbox_test") {
         state = testAnswer;

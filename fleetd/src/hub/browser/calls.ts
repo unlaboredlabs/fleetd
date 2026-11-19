@@ -99,7 +99,6 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
     ...(takeoverReason === undefined ? {} : { takeoverReason }),
     credentialsFilled: call.credentialsFilled ?? 0,
     ...(call.note === undefined ? {} : { note: call.note }),
-    ...(call.source === undefined ? {} : { source: call.source }),
     ...(openedBy === undefined ? {} : { openedBy }),
   };
   // Read, checked and written in one transaction: the node's reports race (its end report and its upload's), and one

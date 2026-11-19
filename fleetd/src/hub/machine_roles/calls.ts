@@ -19,7 +19,7 @@ import { leadCalls } from "../lead_calls/index.ts";
 import { type HubFrame, link } from "../link/index.ts";
 import type { RequestTag } from "../../shared/node_link.ts";
 import { store } from "../store/hub_store.ts";
-import { isAgentsMac } from "./mac.ts";
+import { isAgentsMac, macMachine } from "./mac.ts";
 import {
   able,
   callerOf,
@@ -36,13 +36,17 @@ import {
   runners,
   setSession,
 } from "./places.ts";
-import { routePhone } from "../revyl/route.ts";
 import { hashToken } from "./relay.ts";
 import { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
 
 export { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
 
 export const OPS = ["session_route", "session_step"] as const;
+
+/** `kind ios` while no Mac machine is online for agents: iOS simulators run nowhere else. */
+export const NO_MAC = "iOS simulators run on a Mac machine, and this team has none online for agents.";
+export const NO_MAC_FIX =
+  "do without it and say so in your result: an admin adds a Mac in Settings › Hub › Machines (the plus, then A Mac for agents), or brings the team's Mac back online with Agents may use this Mac on";
 
 export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);
@@ -135,13 +139,11 @@ export async function route(hub: Hub, caller: LeadCaller, call: SessionRouteCall
   const all = runners(hub).map((r) => r.runner);
   // Across machines only from an agent's node that seals its session's secrets to the runner.
   const remote = remoteOn(hub.db.conn) && link(hub).can(origin, CAP_SESSION_SEAL);
-  // A phone screen, once the team connected its own Revyl key: its kind's route says where (hub/revyl/route.ts).
-  if ((host === "android" || host === "ios") && call.sealed === undefined) {
-    const routed = await routePhone(hub, host as "android" | "ios", origin, thread, all, remote);
-    if (routed) return routed;
+  // iOS simulators are a Mac machine's (D298): `mac sim start` there, or how the team gets one while it has none.
+  if (host === "ios") {
+    if (macMachine(hub) === undefined) throw new ToolError("failed", NO_MAC, NO_MAC_FIX);
+    throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
   }
-  // iOS screens are the agents' Mac's (D298): `mac sim start` there.
-  if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
   let runner: string;
   if (call.sealed) {
     // The second step: the runner the first named, if it can still take the session.

@@ -1,10 +1,10 @@
 // Settings › Machines on the phone (admins only), as the desktop's Hub › Machines has it (D550): the machines and how
 // each is, the providers the team connects with its own key (each with what it can run, from the one model in
 // desktop/src/shared/providers), and what runs where. In words the screens show; pure, so it is tested on its own.
-import type { Machine, RevylCheck, RevylState, SandboxCheck, SandboxProviderState, SandboxState } from "../../desktop/src/shared/contracts";
+import type { Machine, SandboxCheck, SandboxProviderState, SandboxState } from "../../desktop/src/shared/contracts";
 import { specOf } from "../../desktop/src/shared/providers";
 
-export { agentsWhere, CAPABILITY_WORDS, canWords, KINDS, machinesRun, NONE, noneHow, ROUTE_WORDS, routeChoices, routeChosen, specOf, YOURS, type Capability } from "../../desktop/src/shared/providers";
+export { agentsWhere, CAPABILITY_WORDS, canWords, KINDS, machinesRun, NONE, noneHow, specOf, YOURS, type Capability } from "../../desktop/src/shared/providers";
 
 /** A provider's name as people know it; one a newer hub has is shown as it names it. */
 export const providerName = (p: string): string => specOf(p).name;
@@ -29,14 +29,12 @@ export const machineValue = (m: Pick<Machine, "status" | "degradedReason" | "deg
   return { text: "Offline", warn: true };
 };
 
-/** A provider as Providers lists it: the hub's own state for it, a sandbox provider's or Revyl's. */
-export type ProviderState = { id: string; connected: boolean; limit?: number; check?: SandboxCheck | RevylCheck | undefined; domain?: string | undefined };
+/** A provider as Providers lists it: the hub's own state for it. */
+export type ProviderState = { id: string; connected: boolean; limit?: number; check?: SandboxCheck | undefined; domain?: string | undefined };
 
-/** Every provider the hub has, sandbox providers then Revyl, in the model's order. */
-export const providersOf = (sandboxes: SandboxState | undefined, revyl: RevylState | undefined): ProviderState[] => [
-  ...(sandboxes?.providers ?? []).map((p: SandboxProviderState) => ({ id: p.provider, connected: p.connected, limit: p.limit, check: p.check, domain: p.domain })),
-  ...(revyl === undefined ? [] : [{ id: "revyl", connected: revyl.connected, check: revyl.check }]),
-];
+/** Every provider the hub has, in the model's order. */
+export const providersOf = (sandboxes: SandboxState | undefined): ProviderState[] =>
+  (sandboxes?.providers ?? []).map((p: SandboxProviderState) => ({ id: p.provider, connected: p.connected, limit: p.limit, check: p.check, domain: p.domain }));
 
 /** A provider's row value: not connected, its key refused, its limit, or Connected; `problem` when its check failed. */
 export const providerValue = (p: ProviderState): { text: string; problem: boolean } => {
@@ -45,10 +43,14 @@ export const providerValue = (p: ProviderState): { text: string; problem: boolea
   return { text: p.limit === undefined ? "Connected" : `${limitWords(p.limit)} at once`, problem: false };
 };
 
-/** Providers' footer: what they cost, the order, and while no machine places agents there, that none runs there yet. */
-export const providersFooter = (sandboxes: Pick<SandboxState, "placing"> | undefined): string => {
+/**
+ * Providers' footer: what they cost, the order, and while no machine places agents there, that none runs there yet;
+ * then a line for each provider fleetd removed that the hub had connected, for a while after the update.
+ */
+export const providersFooter = (sandboxes: Pick<SandboxState, "placing" | "removed"> | undefined): string => {
   const yet = sandboxes === undefined || sandboxes.placing ? "" : " Agents don't run in hosted sandboxes yet: this fleetd keeps the keys and limits for the update that adds them.";
-  return `Your team's own accounts, which bill you. Agents go to the connected ones in this order once your machines are full.${yet}`;
+  const removed = (sandboxes?.removed ?? []).map((line) => `\n\n${line}`).join("");
+  return `Your team's own accounts, which bill you. Agents go to the connected ones in this order once your machines are full.${yet}${removed}`;
 };
 
 /** The limit's choices, as an action sheet lists them: none up to 500, and the one set when it isn't among them. */

@@ -1,5 +1,5 @@
 // Hub › Machines' one model, apart from React: every place agents and screens run (a machine, a hosted sandbox
-// provider, Revyl) is a row with its state as one dot and, at its end, what it is doing or what is wrong in a few words.
+// provider) is a row with its state as one dot and, at its end, what it is doing or what is wrong in a few words.
 // Pure so it is tested on its own.
 import type { SlotSandbox } from "../../../shared/contracts";
 import type { Mark } from "./parts";

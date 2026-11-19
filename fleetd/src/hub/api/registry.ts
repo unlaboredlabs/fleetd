@@ -22,7 +22,10 @@ export type Handler<N extends ToolName> = (
 export type { CallError };
 
 /** Tools a release took out, by name prefix, with what an older app that still calls one is told. */
-const REMOVED: [prefix: string, gone: string][] = [["telegram_", "Telegram was removed from fleetd."]];
+const REMOVED: [prefix: string, gone: string][] = [
+  ["telegram_", "Telegram was removed from fleetd."],
+  ["revyl_", "Revyl was removed from fleetd."],
+];
 
 export class Registry {
   private readonly tools = new Map<string, Handler<ToolName>>();

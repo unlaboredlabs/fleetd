@@ -3,8 +3,8 @@
 // kind (agents, then each kind of screen), each the same pattern: your machines, your machines first then a provider,
 // or a provider only, offering only providers connected that can run the kind (providersModel). Agents' row is the
 // order the hub keeps (the machines, then each connected provider with room, once the machines' own limit is reached),
-// which each provider's limit sets; the phones' rows are Revyl's routes; a kind no connected provider runs is its
-// machines, a plain value, or None yet with how to add one in its hover. Then how long recordings are kept.
+// which each provider's limit sets; a kind no connected provider runs is its machines, a plain value, or None yet with
+// how to add one in its hover. Then how long recordings are kept.
 import type { ReactNode } from "react";
 import type { SlotState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -14,9 +14,7 @@ import { fleetCapLine } from "./agentsModel";
 import { useLive } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { useProviderRows } from "./Providers";
-import { agentsWhere, CAPABILITY_WORDS, KINDS, machinesRun, NONE, noneHow, specOf, YOURS, type Capability } from "../../../shared/providers";
-import { RouteRow } from "./Revyl";
-import { routeChosen } from "./revylModel";
+import { agentsWhere, CAPABILITY_WORDS, KINDS, machinesRun, NONE, noneHow, YOURS, type Capability } from "../../../shared/providers";
 import { notPlacingLine, SECTION_HINT } from "./sandboxModel";
 import { Recordings } from "./Screens";
 
@@ -47,6 +45,8 @@ export function ProvidersGroup() {
           data={{ "data-hosted-account": "" }}
         />
       ) : null}
+      {/* A provider fleetd removed that this hub had connected: one plain line, for a while after the update. */}
+      {read.data?.removed?.map((line) => <GroupNote key={line}>{line}</GroupNote>)}
       {rows}
     </SettingsSection>
   );
@@ -61,7 +61,6 @@ export function WhatRunsWhere() {
   const live = useLive();
   const machines = useToolQuery("machine_roles", noInput).data?.machines;
   const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: live }).data;
-  const revyl = useToolQuery("revyl_get", noInput, { enabled: live }).data;
   const slots = useSlots();
   const team = useData((d) => d.machines);
   const held = slots === undefined ? null : fleetCapLine(slots);
@@ -73,10 +72,6 @@ export function WhatRunsWhere() {
       const where = agentsWhere(sandboxes?.providers ?? [], computers);
       const hint = where === NONE ? noneHow[kind] : undefined;
       return <Plain key={kind} kind={kind} label={label} value={where} hint={hint} line={held === null ? null : <span data-fleet-cap="">{held}</span>} />;
-    }
-    // A phone kind Revyl runs: its route, while Revyl is connected or the route still names it.
-    if (revyl !== undefined && (kind === "ios" || kind === "android") && specOf("revyl").can.includes(kind) && routeChosen(revyl.connected, revyl.routes[kind])) {
-      return <RouteRow key={kind} kind={kind} label={label} state={revyl} />;
     }
     const ours = machines === undefined || machinesRun(kind, machines);
     return <Plain key={kind} kind={kind} label={label} value={ours ? YOURS : NONE} hint={ours ? undefined : noneHow[kind]} />;

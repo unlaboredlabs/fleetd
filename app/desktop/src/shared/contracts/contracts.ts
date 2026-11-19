@@ -1199,11 +1199,6 @@ export type BrowserSession = {
   projectRef: ProjectRef;
   purpose: string;
   sessionId: BrowserSessionId;
-  /**
-   * Where the screen runs when it isn't one of the team's machines: `revyl`, a phone in the team's own Revyl account,
-   * driven by its agent's node through Revyl's CLI (`machineId` is that node's machine). Absent for the team's own.
-   */
-  source?: ScreenSource;
   startedAt: Timestamp;
   state: BrowserSessionState;
   /**
@@ -7110,71 +7105,6 @@ export type KnownReviewVerdictKind = "approved" | "changes_requested" | "comment
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
-/**
- * Why a Revyl key's last check failed, as a word the app acts on: `invalid_key` (Revyl refused it: wrong, revoked or
- * expired), `no_cli` (no machine could install Revyl's CLI; `message` says why), `failed`
- * (anything else: the network, Revyl down).
- */
-export type KnownRevylCheckReason = "invalid_key" | "no_cli" | "failed";
-/** KnownRevylCheckReason, or a value from a newer hub. */
-export type RevylCheckReason = KnownRevylCheckReason | (string & {});
-
-/** The last check of the team's Revyl key (`revyl_connect`, `revyl_test`): never the key, nor any part of it. */
-export type RevylCheck = {
-  at: Timestamp;
-  /** What to do about a failed check, in plain words. */
-  fix?: string;
-  /** What failed, in plain words, with the key masked. Absent while it works. */
-  message?: string;
-  ok: boolean;
-  reason?: RevylCheckReason;
-};
-
-/** A phone screen kind Revyl can host. */
-export type RevylKind = "ios" | "android";
-
-/**
- * Where an agent's phone screen of a kind comes from once a Revyl key is connected: the team's own machines until they
- * are at their limit, then Revyl (`ours_first`, the default); the team's machines alone (`ours_only`, as with no
- * key); Revyl alone (`revyl_only`). When every place allowed is full the agent waits in line.
- */
-export type KnownRevylRoute = "ours_first" | "ours_only" | "revyl_only";
-/** KnownRevylRoute, or a value from a newer hub. */
-export type RevylRoute = KnownRevylRoute | (string & {});
-
-/** One route per phone screen kind. */
-export type RevylRoutes = {
-  android: RevylRoute;
-  ios: RevylRoute;
-};
-
-/** The team's own Revyl account as the hub keeps it: whether a key is connected, its last check, and the routes. */
-export type RevylState = {
-  /** The hub's own box key (X25519, base64): `revyl_connect`'s `sealed` is sealed to it. */
-  boxPubKey: string;
-  /** Absent before the first check. */
-  check?: RevylCheck;
-  connected: boolean;
-  /** Each kind's route in effect: `ours_only` while no key is connected. */
-  routes: RevylRoutes;
-};
-
-export type RevylConnectInput = {
-  /** `{"key":"<the Revyl API key>"}`, sealed (crypto_box_seal) to `boxPubKey`, base64. */
-  sealed: string;
-};
-
-export type RevylDisconnectInput = { [key: string]: unknown };
-
-export type RevylGetInput = { [key: string]: unknown };
-
-export type RevylRouteSetInput = {
-  kind: RevylKind;
-  route: RevylRoute;
-};
-
-export type RevylTestInput = { [key: string]: unknown };
-
 export type Role = "read" | "operate" | "admin";
 
 /** Landed changes per route. */
@@ -7313,6 +7243,11 @@ export type SandboxState = {
    */
   placing: boolean;
   providers: SandboxProviderState[];
+  /**
+   * Each provider fleetd removed that this hub had connected, as one plain line saying so and what runs instead,
+   * for 30 days after the update that removed it. Absent when there is none, and from older hubs.
+   */
+  removed?: string[];
 };
 
 export type SandboxTestInput = {
@@ -7360,11 +7295,6 @@ export type ScreenPr = {
   number: number;
   repo: GitHubRepo;
 };
-
-/** Where a screen runs beyond the team's own machines: `revyl`, the team's own Revyl account. */
-export type KnownScreenSource = "revyl";
-/** KnownScreenSource, or a value from a newer hub. */
-export type ScreenSource = KnownScreenSource | (string & {});
 
 /** Where a person's screen is on its way (`screen_open`, [`ScreenWait`]). */
 export type KnownScreenStage = "waiting" | "starting" | "installing" | "failed";
@@ -10223,11 +10153,6 @@ export interface ToolMap {
   push_devices_list: { input: PushDevicesListInput; output: PushDevicesListOutput };
   push_relay_set: { input: PushRelaySetInput; output: PushRelaySetOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
-  revyl_connect: { input: RevylConnectInput; output: RevylState };
-  revyl_disconnect: { input: RevylDisconnectInput; output: RevylState };
-  revyl_get: { input: RevylGetInput; output: RevylState };
-  revyl_route_set: { input: RevylRouteSetInput; output: RevylState };
-  revyl_test: { input: RevylTestInput; output: RevylState };
   sandbox_connect: { input: SandboxConnectInput; output: SandboxState };
   sandbox_disconnect: { input: SandboxDisconnectInput; output: SandboxState };
   sandbox_get: { input: SandboxGetInput; output: SandboxState };

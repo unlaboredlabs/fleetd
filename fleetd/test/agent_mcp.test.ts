@@ -43,7 +43,7 @@ describe("agent-mcp", () => {
     expect(description("checklist")).toContain("never a status, id or PR number");
   });
 
-  test("session_start offers every kind, ios among them (a Revyl iPhone, or the way to mac sim start)", () => {
+  test("session_start offers every kind, ios among them (the way to mac sim start, or how to add a Mac)", () => {
     const kind = JSON.stringify((toolList("lead").tools.find((t) => t.name === "session_start")!.inputSchema as any).properties.kind);
     for (const offered of ["browser", "android", "ios", "linux_desktop", "mac"]) expect(kind).toContain(`"${offered}"`);
     expect(callOf("lead", "session_start", { purpose: "p", kind: "ios" }).op).toBe("session_start");

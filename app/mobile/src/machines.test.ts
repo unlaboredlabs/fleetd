@@ -12,8 +12,6 @@ import {
   providersFooter,
   providersOf,
   providerValue,
-  routeChoices,
-  routeChosen,
   specOf,
   takesDomain,
 } from "./machines";
@@ -42,26 +40,22 @@ describe("Settings › Machines", () => {
 });
 
 describe("its providers", () => {
-  it("lists the sandbox providers then Revyl, each named, with what it runs", () => {
-    const list = providersOf(
-      { boxPubKey: BOX, placing: true, providers: [sb("e2b", true, 20), sb("boat", false), sb("daytona", false)] },
-      { boxPubKey: BOX, connected: true, routes: { ios: "revyl_only", android: "ours_first" } },
-    );
-    expect(list.map((p) => p.id)).toEqual(["e2b", "boat", "daytona", "revyl"]);
-    expect(["e2b", "boat", "daytona", "revyl", "modal"].map(providerName)).toEqual(["E2B", "boat.dev", "Daytona", "Revyl", "modal"]);
+  it("lists the sandbox providers, each named, with what it runs", () => {
+    const list = providersOf({ boxPubKey: BOX, placing: true, providers: [sb("e2b", true, 20), sb("boat", false), sb("daytona", false)] });
+    expect(list.map((p) => p.id)).toEqual(["e2b", "boat", "daytona"]);
+    expect(["e2b", "boat", "daytona", "modal"].map(providerName)).toEqual(["E2B", "boat.dev", "Daytona", "modal"]);
     expect(canWords(specOf("e2b"))).toBe("Agents");
-    expect(canWords(specOf("revyl"))).toBe("iOS simulator · Android");
-    // A hub without either tool lists none of its providers.
-    expect(providersOf(undefined, undefined)).toEqual([]);
+    // A hub without sandbox_get lists none.
+    expect(providersOf(undefined)).toEqual([]);
     expect(takesDomain("e2b")).toBe(true);
-    expect(takesDomain("revyl")).toBe(false);
+    expect(takesDomain("boat")).toBe(false);
   });
 
   it("says each one's state: not connected, its limit, connected, or a check that failed", () => {
     expect(providerValue({ id: "boat", connected: false, limit: 0 })).toEqual({ text: "Not connected", problem: false });
     expect(providerValue({ id: "e2b", connected: true, limit: 20 })).toEqual({ text: "20 at once", problem: false });
     expect(providerValue({ id: "e2b", connected: true, limit: 0 })).toEqual({ text: "None at once", problem: false });
-    expect(providerValue({ id: "revyl", connected: true })).toEqual({ text: "Connected", problem: false });
+    expect(providerValue({ id: "modal", connected: true })).toEqual({ text: "Connected", problem: false });
     expect(providerValue({ id: "daytona", connected: true, limit: 5, check: { ok: false, at } })).toEqual({ text: "Check failed", problem: true });
   });
 
@@ -69,6 +63,9 @@ describe("its providers", () => {
     expect(providersFooter({ placing: true })).toContain("which bill you");
     expect(providersFooter({ placing: true })).not.toContain("yet");
     expect(providersFooter({ placing: false })).toContain("Agents don't run in hosted sandboxes yet");
+    // A provider fleetd removed that the hub had connected: its line after them, for as long as the hub lists it.
+    const gone = "Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine.";
+    expect(providersFooter({ placing: true, removed: [gone] }).endsWith(`once your machines are full.\n\n${gone}`)).toBe(true);
   });
 
   it("offers none up to 500, keeping one set that isn't a step", () => {
@@ -86,7 +83,7 @@ describe("its providers", () => {
       text: "Daytona refused the key (401). Make a new one.",
       problem: true,
     });
-    expect(providerFooter({ id: "revyl", connected: true, check: { ok: false, at } })).toEqual({ text: "Revyl didn't take the key.", problem: true });
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "boat.dev didn't take the key.", problem: true });
   });
 });
 
@@ -94,13 +91,6 @@ describe("what runs where", () => {
   it("says where agents go: the machines, then each connected provider with room", () => {
     expect(agentsWhere([sb("e2b", false), sb("boat", false)])).toBe("Your machines");
     expect(agentsWhere([sb("daytona", true, 5), sb("e2b", true, 20)])).toBe("Your machines first, then E2B, then Daytona");
-  });
-
-  it("makes a phone kind a choice only while Revyl is connected or its route still names it", () => {
-    expect(routeChosen(false, "ours_only")).toBe(false);
-    expect(routeChosen(true, "ours_only")).toBe(true);
-    expect(routeChoices(true, "ours_only").map((c) => c.label)).toEqual(["Your machines first, then Revyl", "Your machines", "Revyl only"]);
-    expect(routeChoices(false, "revyl_only").map((c) => c.label)).toEqual(["Your machines", "Revyl only"]);
   });
 
   it("keeps recordings for a number of days, the one set among them", () => {

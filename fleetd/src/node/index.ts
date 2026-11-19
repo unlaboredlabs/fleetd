@@ -37,7 +37,6 @@ import { emptyHeld } from "./hold.ts";
 import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
-import { RevylScreens } from "./revyl/index.ts";
 import { sandboxesOf } from "./sandbox/hosted.ts";
 import { keepTokens, useGithubTokens } from "./repos/github.ts";
 import { CAP_RUNNER, RUNNER_NAME } from "../shared/sandbox.ts";
@@ -557,11 +556,6 @@ export async function startNode(
       case "node_action":
         if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
         if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
-        // A node without Revyl screens (the agents' Mac) answers below that it doesn't know the action.
-        if (frame.action === "revyl_check") {
-          const revyl = screens(node).revyl;
-          if (revyl instanceof RevylScreens) return void revyl.check(frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
-        }
         // The hub's runner: the hub's GitHub tokens for its own clones and fetches.
         if (frame.action === "github_tokens" && config.runner) {
           const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);

@@ -196,8 +196,6 @@ export type NodeLoad = {
    * with the command that fixes it where a person has one; `expected` when that's by choice or the machine's design. */
   sandbox?: { kind: "microvm"; why?: string; fix?: string; accountsOnly?: true } | { kind: "process"; why: string; fix?: string; expected?: true };
   mac?: MacHealth;
-  /** The agents' Mac's iOS simulators: held by agents, how many may be at once, and agents waiting in line. */
-  sims?: { inUse: number; budget: number; waiting: number };
 };
 
 /** Hub -> node: run a `cmd` check. argv only, never through a shell. */
@@ -252,7 +250,6 @@ export type NodeActionKind =
   | "claude_login_code"
   | "hold"
   | "screens"
-  | "revyl_check"
   | "sandbox_check"
   | "sandbox_limits"
   | "github_tokens";
@@ -269,8 +266,6 @@ export type NodeAction = {
   claude?: string;
   code?: string;
   screens?: unknown;
-  /** `revyl_check`: the team's Revyl key sealed to this node's box key (base64), for Settings' Test (hub/revyl). */
-  revyl?: string;
   /** `sandbox_check`: `{"provider","key","domain"?}` sealed to this node's box key (base64), for Settings' Test (hub/sandbox). */
   sandbox?: string;
   /** `sandbox_limits`: the team's connected hosted providers and each one's limit, in the order agents go to them. */
@@ -302,10 +297,7 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
-  /**
-   * `revyl_check` that failed: why, as RevylCheck's `reason` (`no_cli` when this machine has no `revyl` and couldn't
-   * install it, `message` saying why). `sandbox_check` that failed: SandboxCheck's `reason`.
-   */
+  /** `sandbox_check` that failed: why, as SandboxCheck's `reason`. */
   reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */
   steps?: number;
