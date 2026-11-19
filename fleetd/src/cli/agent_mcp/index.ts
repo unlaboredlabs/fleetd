@@ -3,12 +3,13 @@
 // through the node's socket with the session's `FLEETD_THREAD_ID`; the hub decides who may make it. The role only
 // picks which tools are listed. Results that take time (a task's result, an answer, an approval) arrive in a later
 // wake, never by polling.
-import { readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../../shared/version.ts";
 import { checkArguments } from "./check.ts";
 import { at, isObject, rustJson } from "./json.ts";
-import { browserResult, errorResult, toolResult } from "./results.ts";
+import { browserResult, errorResult, toolResult, type ToolResult } from "./results.ts";
 import { callerCwd, NODE_RESTARTING, nodeSocketPath, osError, sendToNode } from "./socket.ts";
 import { toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
 
@@ -70,6 +71,8 @@ export interface LeadDeps {
   /** `FLEETD_THREAD_ID`: set inside a fleetd session, so the hub knows which agent is calling. */
   thread: string | undefined;
   cwd: string;
+  /** Where `attachment_read` saves a file: the session's own TMPDIR. */
+  tmp?: string;
   send: (socket: string, frame: Call) => Promise<Record<string, unknown>>;
 }
 
@@ -79,6 +82,7 @@ export const envDeps = (): LeadDeps => ({
   sock: process.env.FLEETD_NODE_SOCK,
   thread: process.env.FLEETD_THREAD_ID,
   cwd: process.cwd(),
+  tmp: process.env.TMPDIR || tmpdir(),
   send: (socket, frame) => sendToNode(socket, frame, NODE_TIMEOUT_MS),
 });
 
@@ -95,6 +99,58 @@ export function sendCall(call: Call, deps: LeadDeps): Promise<Record<string, unk
   return deps.send(nodeSocketPath(deps.sock), frame);
 }
 
+/** Why the node could not be asked, as the tool's error. */
+function unreachableResult(unreachable: unknown): ToolResult {
+  if (String(unreachable).startsWith(NODE_RESTARTING)) return errorResult(String(unreachable));
+  return errorResult(`${unreachable}. Carry on without this call and say so in your result.`);
+}
+
+/** What one `attachment_read` asks the hub for: its ATTACHMENT_READ_PIECE, well inside a node frame. */
+const ATTACHMENT_PIECE = 4 * 1024 * 1024;
+
+/**
+ * `attachment_read`: the file, a piece at a time, saved in this session's own TMPDIR, which is where the agent runs
+ * (a worktree, a VM, a hosted box), and out of its worktree, so git never sees it. Says where, to open with Read.
+ */
+export async function saveAttachment(call: Call, deps: LeadDeps): Promise<ToolResult> {
+  const id = String(call.attachmentId);
+  let file: string | undefined;
+  let name = "";
+  let size = 0;
+  for (let offset = 0; file === undefined || offset < size; ) {
+    let answer: Record<string, unknown>;
+    try {
+      answer = await sendCall({ op: "attachment_read", attachmentId: id, offset, length: ATTACHMENT_PIECE }, deps);
+    } catch (unreachable) {
+      return unreachableResult(unreachable);
+    }
+    if (!("result" in answer)) return toolResult(answer);
+    const result = answer.result;
+    const piece = Buffer.from(String(at(result, "dataB64") ?? ""), "base64");
+    try {
+      if (file === undefined) {
+        name = String(at(result, "name") ?? id);
+        size = Number(at(result, "bytes") ?? 0);
+        const dir = join(deps.tmp ?? tmpdir(), "fleetd-attachments", id);
+        mkdirSync(dir, { recursive: true });
+        // The hub's names are safe ones already; this keeps the file in its folder whatever it says.
+        file = join(dir, name.replace(/[/\\\0]/g, "_").replace(/^\.+/, "") || id);
+        writeFileSync(`${file}.part`, piece);
+      } else appendFileSync(`${file}.part`, piece);
+    } catch (error) {
+      return errorResult(`${id} not saved: ${osError(error)}.`);
+    }
+    if (piece.length === 0) break;
+    offset += piece.length;
+  }
+  try {
+    renameSync(`${file}.part`, file);
+  } catch (error) {
+    return errorResult(`${id} not saved: ${osError(error)}.`);
+  }
+  return { content: [{ type: "text", text: `Saved ${id} (${name}, ${size} bytes) at ${file}: open it with Read.` }], isError: false };
+}
+
 async function toolCall(role: Role, params: unknown, deps: LeadDeps) {
   const name = at(params, "name");
   let call: Call;
@@ -104,12 +160,12 @@ async function toolCall(role: Role, params: unknown, deps: LeadDeps) {
   } catch (why) {
     return errorResult(String(why));
   }
+  if (call.op === "attachment_read") return saveAttachment(call, deps);
   let answer: Record<string, unknown>;
   try {
     answer = await sendCall(call, deps);
   } catch (unreachable) {
-    if (String(unreachable).startsWith(NODE_RESTARTING)) return errorResult(String(unreachable));
-    return errorResult(`${unreachable}. Carry on without this call and say so in your result.`);
+    return unreachableResult(unreachable);
   }
   return isObject(answer.result) && "op" in answer.result ? browserResult(answer) : toolResult(answer);
 }
