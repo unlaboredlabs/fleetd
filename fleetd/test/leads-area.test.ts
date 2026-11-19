@@ -207,6 +207,12 @@ test("a lead cut off by its node is woken every time; one whose own turn hung, o
   // Its hosted sandbox didn't come up, so its claude never started: a line for the person, not a wake.
   const boxless = end(ev("thread.failed", { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at boat.dev: HTTP 402" } }), leadsList)?.end;
   expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", text: expect.stringContaining("The lead couldn't start: no sandbox came up for it at boat.dev.") });
+  // A box that came up but couldn't start it: the node's own sentence, without its wrapper.
+  const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines (cwd /srv/p)" } }), leadsList)?.end;
+  expect(unreached).toMatchObject({
+    kind: "not_started",
+    text: "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines. Your message is kept and goes in with your next one.",
+  });
 });
 
 test("workstream_list and project_set", async () => {

@@ -83,15 +83,16 @@ export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: str
 
 /** The chat's line when the lead's hosted sandbox didn't come up (the node's words: "… no hosted sandbox came up at
  * boat.dev: …"): where, that the message is kept, and when a message starts it again. In the person's words: the
- * provider's own error stays in the run's failure. */
+ * provider's own error stays in the run's failure. A box that came up but couldn't start the lead (Claude out of its
+ * reach) has the node's own sentence, which says what to do, without the node's wrapper (its claude's path, its cwd). */
 export function notStartedLine(message: string): string {
   const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
-  const where = at ? ` at ${at}` : "";
+  if (!at) {
+    const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message).trim().replace(/[.\s]+$/, "");
+    return `The lead couldn't start${own ? `: ${own}` : ""}. Your message is kept and goes in with your next one.`;
+  }
   const minutes = Math.round(ASIDE_MS / 60_000);
-  return (
-    `The lead couldn't start: no sandbox came up for it${where}. Your message is kept and goes in with your next one: send a message in about ${minutes} minutes to try again.` +
-    (at ? ` If it keeps failing, check ${at} in Settings › Hub › Machines.` : "")
-  );
+  return `The lead couldn't start: no sandbox came up for it at ${at}. Your message is kept and goes in with your next one: send a message in about ${minutes} minutes to try again. If it keeps failing, check ${at} in Settings › Hub › Machines.`;
 }
 
 /** The project and how its lead's thread ended; undefined for another thread, or an end that wakes nothing. */

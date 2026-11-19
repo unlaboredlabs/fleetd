@@ -119,15 +119,21 @@ test("a bot with no repo: its plain folder goes into the box as it is here, and 
   expect(readFileSync(join(there, "notes", "n.md"), "utf8")).toBe("n\n");
   expect(existsSync(join(there, ".git"))).toBe(false);
 
-  // The agent works in the box: a change, a new file, a deletion.
+  // The agent works in the box: a change, a new file, a deletion, a folder gone.
   writeFileSync(join(there, "a.txt"), "a changed in the box\n");
   writeFileSync(join(there, "new.txt"), "new\n");
   rmSync(join(there, "gone.txt"));
+  rmSync(join(there, "notes"), { recursive: true });
+  // Meanwhile the machine's folder gets a file the person sent the lead.
+  mkdirSync(join(cwd, ".fleetd", "attachments"), { recursive: true });
+  writeFileSync(join(cwd, ".fleetd", "attachments", "F1.png"), "png\n");
   await syncOut(local, { cwd, session: "s-plain", base: PLAIN, env: ENV, root });
   expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("a changed in the box\n");
   expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("new\n");
   expect(existsSync(join(cwd, "gone.txt"))).toBe(false);
-  expect(readFileSync(join(cwd, "notes", "n.md"), "utf8")).toBe("n\n");
+  expect(existsSync(join(cwd, "notes"))).toBe(false);
+  // What the box never had, it didn't take away.
+  expect(readFileSync(join(cwd, ".fleetd", "attachments", "F1.png"), "utf8")).toBe("png\n");
   // Nothing of the sync is left beside the folder.
   expect(readdirSync(dirname(cwd))).toEqual(["email-client"]);
 });
