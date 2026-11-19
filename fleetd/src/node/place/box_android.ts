@@ -25,7 +25,7 @@ export const BOX_ROOT = "/var/tmp/fleetd-android";
 /** The emulator's console port in the box, and so its serial. */
 export const CONSOLE = 5554;
 export const SERIAL = `emulator-${CONSOLE}`;
-/** How long the box's first boot may take, the download before it included. */
+/** How long the emulator may take to boot once the SDK is in the box (fetching it has its own 900 s, prepareScript). */
 export const timing = { upMs: 300_000 };
 
 const PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
