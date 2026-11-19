@@ -65,6 +65,7 @@ export default defineGroup({
   fixtures: (base) => [
     vault(Fixture.from(base("typical"), "vault-team", "Vault: the team's items, storefront's variables and two of Sam's set aside."), ["vault", "vault_team"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
     vault(Fixture.from(base("typical"), "vault-team-member", "Vault as a member: a team card someone else added, which only its creator or an admin may show or change."), ["vault", "vault_team"], teamItems(base("typical"), false), false),
+    vault(Fixture.from(base("typical"), "vault-empty", "Vault with nothing in it yet: its words and its own add, and the trash under them."), ["vault", "vault_team"], [], true),
     vault(Fixture.from(base("typical"), "vault-old-hub", "Vault on a hub from before the team vault: one list, Sam's own among them, nothing set aside."), ["vault"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
   ],
 });

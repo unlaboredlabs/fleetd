@@ -95,8 +95,10 @@ breaks a rule changes this page in the same PR and says why.
 - **Compact:** segmented controls are 22–28 px tall, `--radius-sm` segments in a `--radius-md` track, the selected
   one `--raised` with a hairline ring and weight 500. The panel's tabs have no track: words, the open one a soft
   `--selected` box.
-- **Aligned:** an icon sits beside its word, never above it, and both are centred in the control. A count is bare
-  figures in `--faint` with tabular numerals, on the word's baseline at the same size. No pill.
+- **Aligned:** an icon sits beside its word, never above it, and both are centred in the control. An icon's middle is
+  on the middle of the line of words beside it (halfway between its x-height and cap height), within 1 px: a row's
+  tile on its name's line, an end control on a one-line row's line. Desktop QA's `align` check measures it on every
+  screen. A count is bare figures in `--faint` with tabular numerals, on the word's baseline at the same size. No pill.
 
 ## Motion
 

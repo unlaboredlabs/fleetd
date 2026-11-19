@@ -370,6 +370,8 @@
   flex: none;
   align-items: center;
   gap: 2px;
+  /* A control's height (over its foot) with or without its actions, so the time alone sits where it does beside them. */
+  min-height: calc(var(--control) + 6px);
   /* On the bubble's last line, its foot: beside a tall card too, the time and actions sit at its bottom edge. */
   padding-bottom: 6px;
   opacity: 0;
@@ -378,6 +380,13 @@
 .line:hover > .aside,
 .line:focus-within > .aside {
   opacity: 1;
+}
+/* Under a captioned picture, the foot is the caption's one line (its 20 px, no bubble under it): the strip's middle on
+   it. */
+.line:has(figcaption) > .aside {
+  min-height: var(--control);
+  padding-bottom: 0;
+  margin-bottom: calc((var(--leading-md) - var(--control)) / 2);
 }
 .time {
   padding: 0 var(--space-1);
@@ -403,7 +412,8 @@
 }
 .worked {
   position: absolute;
-  bottom: 9px;
+  /* Centred on the bubble's last line: its 9 px padding under a 22 px line. */
+  bottom: calc(9px + (22px - var(--leading-xs)) / 2);
   left: var(--space-2);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);

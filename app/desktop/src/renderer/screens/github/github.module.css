@@ -24,3 +24,9 @@
   align-items: baseline;
   gap: var(--space-1);
 }
+/* The tick on the words' first line, centred on it (on the baseline, an icon sits on its own foot). */
+.tested > svg {
+  flex: none;
+  align-self: flex-start;
+  margin-top: calc((1lh - 14px) / 2);
+}

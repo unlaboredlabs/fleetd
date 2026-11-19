@@ -42,10 +42,12 @@
 .chip {
   max-width: 240px;
 }
+/* In the button's words, so on their middle (half the x-height over the baseline), not sat on the baseline. */
 .chev {
   width: 12px;
   height: 12px;
   flex: none;
+  vertical-align: middle;
   color: var(--quiet);
 }
 .menu {
