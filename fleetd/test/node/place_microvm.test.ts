@@ -696,7 +696,7 @@ test("a VM agent on Anthropic's own API calls it exactly as set: the relay takes
   const args = ["-p", "--model", "m"];
   const link = await n.vm.bound({ sessionId: "s-api", dir, role: "worker" }).start({ ...l, args, env: { ...l.env, CLAUDE_CONFIG_DIR: join(root, "cfg-none") } });
   expect(await inits(link, 1)).toEqual(["m0"]);
-  expect(seen).toMatchObject([{ url: "https://api.anthropic.com", boxUrl: "https://api.anthropic.com", relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } } }]);
+  expect(seen).toMatchObject([{ url: "https://api.anthropic.com", relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } } }]);
   await n.vm.bound({ sessionId: "s-api", dir, role: "worker" }).stop(dir);
 }, 30_000);
 

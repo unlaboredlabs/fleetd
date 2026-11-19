@@ -6,6 +6,7 @@ import { existsSync, openSync, readFileSync, writeSync, closeSync } from "node:f
 import { join } from "node:path";
 import { mkdirPrivate } from "./config.ts";
 import { openSealed, publicKeyOf, seal } from "../shared/sealed_box.ts";
+import { isTailnetMessage } from "../shared/tailnet.ts";
 import { isUpgradeProofMessage } from "../shared/upgrade_proof.ts";
 
 const KEY_FILE = "node-key.pem";
@@ -67,12 +68,17 @@ export class NodeIdentity {
   /** Signature over the hub's challenge nonce's UTF-8 bytes, base64. A nonce shaped as an upgrade proof is refused:
    * a hub can't have the hello sign one for it. */
   sign(nonce: string): string {
-    if (isUpgradeProofMessage(nonce)) throw new Error("the hub's challenge is not a nonce");
+    if (isUpgradeProofMessage(nonce) || isTailnetMessage(nonce)) throw new Error("the hub's challenge is not a nonce");
     return this.#sign(nonce);
   }
   /** Signature over an upgrade proof's message (`makeUpgradeProof`), base64. */
   signUpgrade(message: string): string {
     if (!isUpgradeProofMessage(message)) throw new Error("not an upgrade proof");
+    return this.#sign(message);
+  }
+  /** Signature over one call to the team's Tailscale gateway (shared/tailnet.ts `signedMessage`), base64. */
+  signTailnet(message: string): string {
+    if (!isTailnetMessage(message)) throw new Error("not a tailnet call");
     return this.#sign(message);
   }
   #sign(message: string): string {

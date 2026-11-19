@@ -87,6 +87,11 @@ export const fixtures = [
   "machines-sandboxes-on",
   // ...a hub that had Revyl connected before fleetd removed it: one line says so (D576).
   "machines-revyl-removed",
+  // ...the team's tailnet for its hosted sandboxes (W722): none, waiting for the sign-in, connected, and failed.
+  "machines-tailscale-off",
+  "machines-tailscale-login",
+  "machines-tailscale-on",
+  "machines-tailscale-failed",
   // ...and the page as one model (W693): several machines with each one's state and load, both kinds of provider
   // connected or not, and a machine whose agents can't run in VMs, with why.
   "machines-places",
@@ -3677,6 +3682,17 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect" }).click();
       await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
+    },
+  },
+  // W722: Tailscale, the team's tailnet for its hosted sandboxes, a named connection: Connect; waiting for the sign-in
+  // at Tailscale's page; connected with the tailnet's name; the gateway signed out, with why and Connect again.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-tailscale-off", "machines-tailscale-login", "machines-tailscale-on", "machines-tailscale-failed"],
+    variant: "tailscale",
+    open: async (page) => {
+      await page.locator("[data-tailscale-row]").scrollIntoViewIfNeeded();
     },
   },
   { id: "settings.hub.machine", route: "#/settings/hub/machines/devbox", fixtures: ["machines-places", "machines-places-vm-off"], variant: "places" },

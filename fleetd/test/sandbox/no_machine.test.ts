@@ -20,7 +20,7 @@ import { HubDb } from "../../src/hub/store/db.ts";
 import { store } from "../../src/hub/store/hub_store.ts";
 import { readConfig, writeConfig } from "../../src/node/config.ts";
 import { joinConfig, startNode, type RunningNode } from "../../src/node/index.ts";
-import { BOX_CLAUDE, hostedReach } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, hostedProbe } from "../../src/node/place/hosted.ts";
 import { useRunner } from "../../src/node/place/index.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
@@ -51,7 +51,7 @@ afterAll(async () => {
     else process.env[k] = v;
   }
   BOX_CLAUDE.path = claudeBefore;
-  delete hostedReach.reach;
+  delete hostedProbe.probe;
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -90,8 +90,8 @@ test("with no computer connected, a provider's key and a Claude account run a bo
   mkdirSync(lab, { recursive: true });
   writeFileSync(join(lab, "replies.json"), JSON.stringify([["say hello", "Done: said hello and opened https://github.com/acme/demo/pull/1"]]));
   BOX_CLAUDE.path = script(join(tmp, "claude"), `FLEETD_LAB_DIR=${lab} exec ${process.execPath} ${FAKE_CLAUDE} "$@"\n`);
-  // A stand-in box can't be pointed at Claude (endpoint.ts pinScript runs only in a real box).
-  hostedReach.reach = async () => {};
+  // A stand-in box has no curl of a box's: its check of Claude is the test's.
+  hostedProbe.probe = async () => {};
   // GitHub, as far as a PR goes: gh records the PR it was asked for.
   const prs = join(tmp, "prs.txt");
   const gh = script(join(tmp, "gh"), `echo "$PWD $(git rev-parse --abbrev-ref HEAD) $*" >> ${prs}\necho https://github.com/acme/demo/pull/1\n`);

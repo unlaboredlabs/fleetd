@@ -16,6 +16,7 @@ import { HubDb } from "../store/db.ts";
 import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
 import { dialUrl, runner } from "../runner/index.ts";
+import { tailnet } from "../tailnet/index.ts";
 
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
@@ -170,6 +171,10 @@ export async function hubStart(argv: string[]): Promise<number> {
   await link(hub).stop(LEAD_CALLS_GRACE_MS);
   hub.shutdown.abort();
   await stop(server);
+  // The team's Tailscale gateway ends with the hub, its state sealed first.
+  await tailnet(hub)
+    .stop()
+    .catch(() => {});
   hub.db.close();
   return 0;
 }

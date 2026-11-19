@@ -86,7 +86,16 @@ export type HostedPins = {
   fleetd?: { url: string; sha256: string };
 };
 
-/** The hosted template's Dockerfile: the base recipe, then the pinned Claude Code and fleetd, for every user. */
+/** The tunnel that carries a box's tailnet connections to its guest (node/sandbox/tailnet_box.ts): hev-socks5-tunnel
+ * (MIT), its static x86_64 build, pinned. */
+export const TUNNEL = {
+  url: "https://github.com/heiher/hev-socks5-tunnel/releases/download/2.20.0/hev-socks5-tunnel-linux-x86_64",
+  sha256: "e41895a668b2c1d3f80d3e84ea4f1280cd2c54dd8adfadc59d29351d1a76c528",
+  path: "/usr/local/bin/hev-socks5-tunnel",
+} as const;
+
+/** The hosted template's Dockerfile: the base recipe, then the pinned Claude Code, the tailnet's tunnel and fleetd,
+ * for every user. */
 export function hosted(base: string, pins: HostedPins): string {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(pins.claude)) throw new Error(`claude's pin ${JSON.stringify(pins.claude)} isn't a version`);
   const f = pins.fleetd;
@@ -101,13 +110,16 @@ export function hosted(base: string, pins: HostedPins): string {
     : "";
   return `${base.trimEnd()}
 
-# Hosted boxes only: Claude Code${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts). boat runs these steps with sudo, where
+# Hosted boxes only: Claude Code, the tailnet's tunnel${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts). boat runs these steps with sudo, where
 # the installer wants to be told that a system-wide install is meant.
 RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \\
  && HOME=/opt/claude CLAUDE_INSTALL_ALLOW_SUDO=1 bash /tmp/claude-install.sh ${pins.claude} \\
  && ln -sf "$(readlink -f /opt/claude/.local/bin/claude)" /usr/local/bin/claude \\
  && chmod -R a+rX /opt/claude && rm -f /tmp/claude-install.sh \\
  && claude --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
+RUN curl -fsSL ${TUNNEL.url} -o ${TUNNEL.path} \\
+ && echo '${TUNNEL.sha256}  ${TUNNEL.path}' | sha256sum -c - \\
+ && chmod 755 ${TUNNEL.path}
 ${fleetd}ENV DISABLE_AUTOUPDATER=1
 `;
 }

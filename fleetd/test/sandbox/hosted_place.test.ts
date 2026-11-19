@@ -1,7 +1,8 @@
 // The hosted place (src/node/place/hosted.ts) end to end against E2B's stand-in server, its box running here as the
 // provider would run it: setup's command boots the box and runs in it, the session host starts there with a stand-in
 // claude and its lines come over the box's link, a node that lets go re-adopts it, a session on the machine's own
-// login is refused, the session's ports reach the machine though setup made the box, and stop brings the work back and deletes the box. A box on this machine shares its paths, so
+// login is refused, the session's ports reach the machine though setup made the box, Claude's endpoint is the box's
+// to reach (the team's tailnet, never a relay), and stop brings the work back and deletes the box. A box on this machine shares its paths, so
 // the worktree's sync is a no-op here (hosted_files.test.ts tests it apart).
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,8 +12,8 @@ import { e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, HostedDown, hostedPlace, hostedReach, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
-import { reach } from "../../src/node/place/endpoint.ts";
+import { BOX_CLAUDE, HostedDown, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
@@ -57,8 +58,8 @@ async function setup() {
   writeFileSync(claude, CLAUDE);
   chmodSync(claude, 0o755);
   BOX_CLAUDE.path = claude;
-  // A stand-in box can't be pointed at Claude (endpoint.ts pinScript runs only in a real box).
-  hostedReach.reach = async () => {};
+  // A stand-in box has no curl of a box's: its check of Claude is the test's.
+  hostedProbe.probe = async () => {};
   const repo = join(base, "repo");
   sh(base, `git init -q -b main ${repo} && cd ${repo} && echo a > a.txt && git add -A && git commit -qm one && git config extensions.worktreeConfig true`);
   const cwd = join(home, "worktrees", "T1");
@@ -152,22 +153,16 @@ test("a session whose bot picked E2B · 4 vCPU / 8 GB gets a box of exactly that
   expect(s.boxes.size).toBe(0);
 });
 
-test("a Claude endpoint on another tailnet host, which no hosted box's network reaches, is relayed through the node and checked first", async () => {
+test("a box calls Claude's endpoint as set, with nothing relayed; a private one it can't reach says to connect Tailscale", async () => {
   const { home, cwd, env } = await setup();
-  // The gateway, as this machine reaches it (127.0.0.5 here), and a config naming it by its tailnet name.
-  const gw = Bun.serve({ hostname: "127.0.0.5", port: 0, fetch: () => new Response("no", { status: 404 }) });
-  const port = gw.port!;
   const cfg = join(tmp, "cfg-tailnet");
   mkdirSync(cfg, { recursive: true });
-  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: `https://gateway.tail1234.ts.net:${port}` } }));
-  const asked: { url: string; to: unknown; boxUrl: string }[] = [];
-  // In a real box the name is pinned to its loopback; the stand-in's own address for it is 127.0.0.3, and the node's
-  // name for the gateway is 127.0.0.5. The check goes through the relay.
-  // Each box beside this node takes an address of its own (a real one has its own loopback).
-  let addr = "127.0.0.3";
-  hostedReach.reach = async (box, r) => {
-    asked.push({ url: r.url, to: r.relay?.to, boxUrl: r.boxUrl });
-    await reach(box, { label: r.label, relay: { port: r.relay!.port, addr, to: { host: "127.0.0.5", port } }, url: r.url, boxUrl: `http://${addr}:${port}` });
+  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://100.104.249.49:8317" } }));
+  const checked: string[] = [];
+  let reaches = true;
+  hostedProbe.probe = async (_box, url) => {
+    checked.push(url);
+    if (!reaches) throw new Error("the box can't reach Claude at 100.104.249.49:8317: curl: (28) Connection timed out");
   };
   const start = (id: string) =>
     hostedPlace("e2b", id, join(home, "hosts", id)).start({
@@ -175,37 +170,48 @@ test("a Claude endpoint on another tailnet host, which no hosted box's network r
       dir: join(home, "hosts", id),
       sessionId: id,
       program: "claude",
-      args: [],
+      args: ["-p"],
       cwd,
       env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
     });
   const link = await start("s-tail");
-  expect(asked).toEqual([{ url: `https://gateway.tail1234.ts.net:${port}`, to: { host: "gateway.tail1234.ts.net", port }, boxUrl: `https://gateway.tail1234.ts.net:${port}` }]);
-  expect(readRecord(join(home, "hosts", "s-tail"))!.relays).toEqual([{ port, addr: "127.0.0.3", to: { host: "127.0.0.5", port } }]);
+  expect(checked).toEqual(["http://100.104.249.49:8317"]);
+  expect(Object.keys(readRecord(join(home, "hosts", "s-tail"))!)).not.toContain("relays");
   expect(JSON.stringify(await next(link))).toContain("m1");
   await placeAt(join(home, "hosts", "s-tail")).stop(join(home, "hosts", "s-tail"));
-  // The gateway down: the start refuses in plain words, naming the endpoint and where it was set, before claude runs.
-  gw.stop(true);
-  // A box beside its node shares its paths: the last one's node.sock is this machine's file.
+  // Unreached with the team's tailnet off: the start refuses before claude runs, and says what to do.
+  reaches = false;
   rmSync(join(home, "node.sock"), { force: true });
-  addr = "127.0.0.4";
-  const refused = await start("s-down").then(
+  const refused = await start("s-off").then(
     () => "started",
     (e: Error) => e.message,
   );
-  expect(refused).toContain(`the box can't reach Claude at gateway.tail1234.ts.net:${port}`);
+  expect(refused).toContain("the box can't reach Claude at 100.104.249.49:8317");
   expect(refused).toContain(`(the endpoint from ${join(cfg, "settings.json")})`);
-  await placeAt(join(home, "hosts", "s-down")).stop(join(home, "hosts", "s-down"));
-  // A public endpoint (Anthropic's API, here by an internet IP, so no DNS is asked): the box's own network, no relay.
-  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://160.79.104.10" } }));
-  const seen: unknown[] = [];
-  hostedReach.reach = async (_box, r) => void seen.push(r);
-  rmSync(join(home, "node.sock"), { force: true });
-  const direct = await start("s-public");
-  expect(seen).toEqual([{ url: "https://160.79.104.10", boxUrl: "https://160.79.104.10", label: "160.79.104.10:443" }]);
-  expect(readRecord(join(home, "hosts", "s-public"))!.relays).toEqual([]);
-  expect(JSON.stringify(await next(direct))).toContain("m1");
-  await placeAt(join(home, "hosts", "s-public")).stop(join(home, "hosts", "s-public"));
+  expect(refused).toContain("Connect Tailscale in Settings › Hub › Machines");
+  await placeAt(join(home, "hosts", "s-off")).stop(join(home, "hosts", "s-off"));
+  // With it on, a new box is told so before its repo comes in (a stand-in box beside its node refuses the TUN: it
+  // carries on without it, and says so), and an endpoint it still can't reach is the tailnet's to fix.
+  const t = new NodeTailnet("http://127.0.0.1:1", "devbox", { signTailnet: () => "sig" });
+  t.set({ suffix: "tail1234.ts.net" });
+  setNodeTailnet(t);
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (m: string) => void warned.push(String(m));
+  try {
+    rmSync(join(home, "node.sock"), { force: true });
+    const still = await start("s-on").then(
+      () => "started",
+      (e: Error) => e.message,
+    );
+    expect(still).toContain("the team's tailnet doesn't reach it either");
+    // Refused here by sudo, or on a machine with sudo by the scripts' own guard: never applied to this machine.
+    expect(warned.some((w) => w.includes("the team's tailnet isn't in a session's box") && w.includes("the tailnet's device couldn't be set up in the box"))).toBe(true);
+  } finally {
+    console.warn = warn;
+    setNodeTailnet(undefined);
+  }
+  await placeAt(join(home, "hosts", "s-on")).stop(join(home, "hosts", "s-on"));
 }, 60_000);
 
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {

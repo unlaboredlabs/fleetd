@@ -33,6 +33,8 @@
 // `{"id":n,"op":"clock","ms"}` (a local VM's clock set to the node's); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines, and `{"op":"dial","channel"[,"error"]}`.
+// In a hosted box, `{"id":n,"op":"tailnet","suffix":s|null}` switches the team's tailnet in the box on or off
+// (./tailnet_box.ts), and the node says how each of its connections' dials went with `{"op":"tailnetDialed","channel"[,"error"]}`.
 import { type ChildProcess, spawn } from "node:child_process";
 import { chownSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
@@ -45,6 +47,7 @@ import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
+import { BoxTailnet } from "./tailnet_box.ts";
 import { setClock, setUpGuest, watchOom } from "./system.ts";
 
 /** Bumped when the link's frames or control messages change incompatibly. */
@@ -89,6 +92,7 @@ export class Guest {
   #busyAt = Date.now();
   #idle: ReturnType<typeof setInterval> | undefined;
   #ws: { stop(close?: boolean): void } | undefined;
+  #tailnet: BoxTailnet | undefined;
 
   constructor(readonly o: Options) {
     const done = o.done;
@@ -202,6 +206,8 @@ export class Guest {
   }
 
   async #control(mux: Mux, m: Record<string, unknown>): Promise<void> {
+    // The node's word on a tailnet connection: no answer.
+    if (m.op === "tailnetDialed") return void this.#tailnet?.dialed(Number(m.channel), typeof m.error === "string" ? m.error : undefined);
     const id = m.id;
     let answer: Record<string, unknown>;
     try {
@@ -214,11 +220,30 @@ export class Guest {
       else if (m.op === "forget") answer = { ok: await forget() };
       else if (m.op === "ping") answer = { ok: null };
       else if (m.op === "clock") answer = { ok: clock(m) };
+      else if (m.op === "tailnet") answer = { ok: await this.#setTailnet(m) };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
       answer = { error: (error as Error).message };
     }
     mux.control({ id, ...answer });
+  }
+
+  /** The team's tailnet in the box, on with its suffix or off (`suffix` null). */
+  #setTailnet(m: Record<string, unknown>): Promise<string> {
+    const suffix = m.suffix === null ? null : typeof m.suffix === "string" ? m.suffix : undefined;
+    if (suffix === undefined) throw new Error("tailnet needs a suffix, or null");
+    if (suffix !== null && !/^[a-z0-9.-]{0,253}$/iu.test(suffix)) throw new Error("tailnet's suffix isn't a domain");
+    this.#tailnet ??= new BoxTailnet({
+      open: (target, local) => {
+        const mux = this.#mux;
+        if (!mux || mux.closed) return undefined;
+        const channel = this.#next++;
+        mux.open(channel, target, local);
+        return channel;
+      },
+      root: asRoot,
+    });
+    return this.#tailnet.set(suffix);
   }
 
   /** Listens where the node asks, once: a node that dials again asks again. */
@@ -606,4 +631,18 @@ export async function main(argv: string[]): Promise<number> {
   await over;
   guest.stop();
   return 0;
+}
+
+/** Runs `script` with sh as root: as the guest itself where it is root (a local VM's, Daytona's), else with sudo (a
+ * hosted box's user has it, with no password). */
+export async function asRoot(script: string, timeoutMs = 30_000): Promise<{ code: number | null; out: string }> {
+  const argv = process.getuid?.() === 0 ? ["sh", "-c", script] : ["sudo", "-n", "sh", "-c", script];
+  const child = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+  const [out, err] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  const code = await child.exited;
+  clearTimeout(timer);
+  // sudo's own grumble in a box with no /etc/hosts entry for its name says nothing of the script.
+  const said = `${out}${err}`.split("\n").filter((l) => !/^sudo: unable to resolve host/u.test(l)).join("\n");
+  return { code, out: said.slice(-2000) };
 }

@@ -3,17 +3,16 @@
 // - The endpoint is the one claude itself picks (`claudeEndpoint`): ANTHROPIC_BASE_URL from its environment, then each
 //   settings file's `env` in claude's own order, the last one setting it winning. The box shares or mirrors those
 //   files, so its claude picks the same one.
-// - A relay (../sandbox/box.ts Relay) carries it through the node, over the box's link: a VM's network can't reach
-//   this machine (net.ts), a hosted box's can't reach a tailnet, and a box's DNS needn't know tailnet names. The URL
-//   keeps its name, so TLS still checks the endpoint's own certificate: a name is pinned to the box's loopback in its
-//   /etc/hosts, an IP is added to its loopback, and the guest listens there on the endpoint's port. A local VM's guest
-//   is root and takes any port, so its claude calls the URL exactly as set (claude counts only api.anthropic.com with
-//   no port as Anthropic's own API). A hosted box's user may not take a port under 1024: there the relay listens on
-//   RELAY_BASE plus it, and the box's claude is pointed at that port (`boxArgs`). The node dials the endpoint as this
-//   machine reaches it.
-// - A hosted box reaches a public endpoint (Anthropic's API) itself, as it reaches the internet: no relay (`direct`).
-// - Before the agent starts there, the box calls the endpoint once (any HTTP answer will do, no key is sent):
-//   `reach` throws, in plain words, when it can't.
+// - A local VM: a relay (../sandbox/box.ts Relay) carries it through the node, over the box's link, as this machine
+//   reaches it: a VM's network can't reach this machine (net.ts), and its DNS needn't know tailnet names. The URL
+//   keeps its name and its port, so TLS still checks the endpoint's own certificate: a name is pinned to the box's
+//   loopback in its /etc/hosts, an IP is added to its loopback, and the guest (root) listens there on the endpoint's
+//   port. The node dials the endpoint as this machine reaches it.
+// - A hosted box calls the endpoint itself, as set: on the internet, or on the team's tailnet through its Tailscale
+//   gateway (../sandbox/tailnet_box.ts). Nothing of this machine is relayed into it, so an endpoint only this machine
+//   reaches (its loopback, its LAN) isn't reached there, and the check says what to do (`unreached`).
+// - Before the agent starts there, the box calls the endpoint once (any HTTP answer will do, no key is sent): `reach`
+//   and `probe` throw, in plain words, when it can't.
 import { readFileSync } from "node:fs";
 import { lookup } from "node:dns/promises";
 import { connect, isIP } from "node:net";
@@ -26,8 +25,6 @@ import type { Box, Relay } from "../sandbox/box.ts";
 export const ANTHROPIC_API = "https://api.anthropic.com";
 /** How long the box's call to the endpoint may take. */
 export const PROBE_SEC = 10;
-/** Where in the box a relay for a port under 1024 listens: this plus the port (443 at 40443). */
-export const RELAY_BASE = 40_000;
 
 /** The endpoint, and where it was set: a file's path, "the environment", or the default. */
 export type Endpoint = { url: string; source: string };
@@ -79,9 +76,9 @@ export function claudeEndpoint(l: Pick<Launch, "env" | "args" | "cwd">, managed 
  * that project's, not every agent's. */
 export const fromProject = (e: Endpoint, cwd: string) => e.source.startsWith(`${join(cwd, ".claude")}/`);
 
-/** How a box reaches the endpoint: the relay (none when the box reaches it itself), what is pointed at the box's
- * loopback first, the URL as set, the one the box's claude calls (`boxUrl`, another port only), and its name. */
-export type Reach = { relay?: Relay; pin?: { name: string } | { ip: string }; url: string; boxUrl: string; label: string };
+/** How a local VM reaches the endpoint: the relay, what is pointed at the box's loopback first, the URL as set, and
+ * its name. */
+export type Reach = { relay: Relay; pin?: { name: string } | { ip: string }; url: string; label: string };
 
 const isLoopback = (host: string) => host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127."));
 
@@ -99,21 +96,14 @@ function parse(url: string): { u: URL; host: string; port: number; label: string
   return { u, host, port, label: `${isIP(host) === 6 ? `[${host}]` : host}:${port}` };
 }
 
-/** How a box reaches `url`: through a relay, or (`direct`) on its own network. `lowPorts`: the box's guest may take a
- * port under 1024 (a local VM's root), so the relay keeps the endpoint's port and the URL stays as set. */
-export function reachOf(url: string, o: { direct?: boolean; lowPorts?: boolean } = {}): Reach {
-  const { u, host, port, label } = parse(url);
-  if (o.direct) return { url, boxUrl: url, label };
-  const inBox = port < 1024 && !o.lowPorts ? RELAY_BASE + port : port;
-  const boxed = new URL(u.href);
-  boxed.port = String(inBox);
-  // The URL as written when the port stays, so a trailing slash or path reads as the person wrote it.
-  const boxUrl = inBox === port ? url : boxed.href.replace(/\/$/u, url.endsWith("/") ? "/" : "");
+/** How a local VM reaches `url`: through a relay at the endpoint's own address and port in the box. */
+export function reachOf(url: string): Reach {
+  const { host, port, label } = parse(url);
   const to = { host, port };
   // On this machine's loopback: the same address in the box's (the guest's own loopback for 127.0.0.1 and localhost).
-  if (isLoopback(host)) return { relay: { port: inBox, ...(host === "::1" || (host !== "localhost" && host !== "127.0.0.1") ? { addr: host } : {}), to }, url, boxUrl, label };
-  if (isIP(host)) return { relay: { port: inBox, addr: host, to }, pin: { ip: host }, url, boxUrl, label };
-  return { relay: { port: inBox, to }, pin: { name: host }, url, boxUrl, label };
+  if (isLoopback(host)) return { relay: { port, ...(host === "::1" || (host !== "localhost" && host !== "127.0.0.1") ? { addr: host } : {}), to }, url, label };
+  if (isIP(host)) return { relay: { port, addr: host, to }, pin: { ip: host }, url, label };
+  return { relay: { port, to }, pin: { name: host }, url, label };
 }
 
 /** Whether `ip` is an internet address: not loopback, private, link-local, CGNAT (a tailnet's 100.64/10) or ULA. */
@@ -142,6 +132,19 @@ export async function publicEndpoint(url: string, resolve: (host: string) => Pro
   }
 }
 
+/** Whether `url` is plainly not on the internet, by its address or name alone (no lookup): a loopback, a private or
+ * tailnet address, or a tailnet, local or single-label name. */
+export function privateByName(url: string): boolean {
+  let host: string;
+  try {
+    host = parse(url).host;
+  } catch {
+    return false;
+  }
+  if (isIP(host)) return !publicIp(host);
+  return isLoopback(host) || !host.includes(".") || host.endsWith(".ts.net") || host.endsWith(".local") || host.endsWith(".internal");
+}
+
 const resolveAll = async (host: string) => (await lookup(host, { all: true })).map((a) => a.address);
 
 /** The loopback address a gateway on `localhost` answers on here, v4 first: one listening only on ::1 or only on
@@ -157,13 +160,6 @@ export async function loopbackFor(port: number, ms = 1_000): Promise<string> {
     if (ok) return host;
   }
   return "127.0.0.1";
-}
-
-/** claude's argv with the box's endpoint (`boxUrl`) in its `--settings`, which claude ranks above the user's and the
- * project's settings: the file's or inline JSON, merged, inline. Unchanged when the box calls the URL as set. */
-export function boxArgs(args: string[], r: Pick<Reach, "url" | "boxUrl">): string[] {
-  if (r.boxUrl === r.url) return args;
-  return withSettings(args, (base) => ({ ...base, env: { ...((base.env as Record<string, unknown>) ?? {}), ANTHROPIC_BASE_URL: r.boxUrl } }));
 }
 
 /** claude's argv with its `--settings` (the file's or inline JSON, or none) changed by `edit`, inline. */
@@ -217,14 +213,35 @@ export async function reach(box: Box, r: Reach): Promise<void> {
     const pinned = await box.run({ argv: ["/bin/sh", "-c", pinScript(r.pin)], cwd: "/", timeoutSec: 15, root: true });
     if (pinned.exitCode !== 0) throw new Error(`the box couldn't point ${r.label} at the node: ${said(pinned)}`);
   }
-  if (r.relay) {
-    const relay = r.relay.to.host === "localhost" ? { ...r.relay, to: { ...r.relay.to, host: await loopbackFor(r.relay.to.port) } } : r.relay;
-    try {
-      await box.relay(relay);
-    } catch (error) {
-      throw new Error(`the box couldn't listen for ${r.label}: ${(error as Error).message}`);
-    }
+  const relay = r.relay.to.host === "localhost" ? { ...r.relay, to: { ...r.relay.to, host: await loopbackFor(r.relay.to.port) } } : r.relay;
+  try {
+    await box.relay(relay);
+  } catch (error) {
+    throw new Error(`the box couldn't listen for ${r.label}: ${(error as Error).message}`);
   }
-  const probed = await box.run({ argv: probeArgv(r.boxUrl), cwd: "/", timeoutSec: PROBE_SEC + 5 });
-  if (probed.exitCode !== 0) throw new Error(`the box can't reach Claude at ${r.label}: ${said(probed)}`);
+  await probe(box, r.url);
+}
+
+/** Checks that `url` answers from inside `box`, as its claude will call it; throws why not, in plain words. */
+export async function probe(box: Box, url: string): Promise<void> {
+  const { label } = parse(url);
+  const probed = await box.run({ argv: probeArgv(url), cwd: "/", timeoutSec: PROBE_SEC + 5 });
+  if (probed.exitCode !== 0) throw new Error(`the box can't reach Claude at ${label}: ${said(probed)}`);
+}
+
+/** Why a hosted box didn't reach the endpoint `e` (`why`, the check's words), with what to do: a hosted box reaches the
+ * internet, and the team's tailnet once Tailscale is connected (`tailnet`), and nothing of a machine's own. */
+export async function unreached(e: Endpoint, why: string, tailnet: boolean, resolve?: (host: string) => Promise<string[]>): Promise<string> {
+  const said = `${why} (the endpoint from ${e.source})`;
+  let host: string;
+  try {
+    host = parse(e.url).host;
+  } catch {
+    return said;
+  }
+  if (isLoopback(host))
+    return `${said}: that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead${tailnet ? "" : ", and connect Tailscale in Settings › Hub › Machines"}`;
+  if (await publicEndpoint(e.url, resolve)) return said;
+  if (!tailnet) return `${said}: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines`;
+  return `${said}: the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it`;
 }

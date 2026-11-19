@@ -15,6 +15,9 @@
 // - A session here has no process on this machine. Its registration names a pid above Linux's PID_MAX_LIMIT (2^22),
 //   which no process has, so the node's pid fallbacks (a kill of the group, the orphan sweep) find nothing to act on.
 // - The machine's own Claude login never leaves the machine: a session without an account's variables is refused.
+// - The team's tailnet (its Tailscale gateway, which the hub runs) is in every box while it is on, from the box's
+//   start, before its repo comes in (../sandbox/tailnet_box.ts): Claude's endpoint, a git host or an MCP server there
+//   is reached as the box reaches the internet. Nothing of this machine's own network is relayed into a box.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
@@ -27,7 +30,8 @@ import { boxes, type BoxRecord, EXTEND_MS } from "../sandbox/remote/boxes.ts";
 import { fetchBack, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
 import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
-import { boxArgs, claudeEndpoint, publicEndpoint, reach, reachOf, type Reach } from "./endpoint.ts";
+import { claudeEndpoint, probe, unreached } from "./endpoint.ts";
+import { nodeTailnet } from "../sandbox/tailnet.ts";
 import type { Place } from "./index.ts";
 import { dropChoice, dropDisk, sessionImage, type Backend, type Built, type Job } from "./image.ts";
 import { SETUP_TIMEOUT_SEC } from "../worktree/setup.ts";
@@ -38,8 +42,8 @@ export const HOSTED_NO_DESKTOP_LAUNCH =
   "This agent runs in a hosted sandbox, so its files aren't on this machine and the Linux desktop can't launch them. Open what it serves in a browser session instead, or say in your result that the desktop check was skipped.";
 export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents' Mac can't build from its files, and iOS simulators aren't available to it.";
 
-/** How a box is pointed at Claude and checked (./endpoint.ts reach); tests set a stand-in. */
-export const hostedReach: { reach?: (box: Box, r: Reach) => Promise<void> } = {};
+/** How a box's reach of Claude is checked (./endpoint.ts probe); tests set a stand-in. */
+export const hostedProbe: { probe?: (box: Box, url: string) => Promise<void> } = {};
 
 /** The Claude Code every hosted template installs, at the version fleetd was tested with (sandbox/providers/recipe.ts):
  * its own install, not /usr/local/bin's, which a provider's image may hold another of (boat's did). Tests set a
@@ -121,8 +125,8 @@ export function nobodyPid(session: string): number {
   return 0x40000000 + (h & 0xfffff);
 }
 
-/** The ports of this machine a session's tools reach at the same numbers: the browser proxy's and adb's. Claude,
- * wherever it is, is the box's relay (./endpoint.ts). */
+/** The ports of this machine a session's tools reach at the same numbers: the browser proxy's and adb's. Claude is
+ * the box's to reach, on the internet or the team's tailnet. */
 export function forwardedPorts(env: Record<string, string | undefined>): number[] {
   const out: number[] = [];
   const cdp = env.AGENT_BROWSER_CDP ? /:\/\/127\.0\.0\.1:(\d+)/.exec(env.AGENT_BROWSER_CDP)?.[1] : undefined;
@@ -183,6 +187,7 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     let box: Box | undefined;
     try {
       box = await b.open(record, session);
+      await withTailnet(box, session, false);
       await prepare(box, dirs);
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
       save(dir, record);
@@ -211,6 +216,25 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     return await made;
   } finally {
     making.delete(session);
+  }
+}
+
+let watching: (() => void) | undefined;
+
+/** The team's tailnet in `box` as the node has it now; `always`: say so to a box when it's off too (a change). A box
+ * that can't take it (one from an older template) carries on without it, and the log says why. Live boxes follow each
+ * change from here on. */
+async function withTailnet(box: Box, session: string, always: boolean): Promise<void> {
+  const t = nodeTailnet();
+  if (!t) return;
+  watching ??= t.onChange(() => {
+    for (const [id, l] of live) void withTailnet(l.box, id, true);
+  });
+  if (!t.on && !always) return;
+  try {
+    await box.tailnet(t.on ? (t.suffix ?? "") : null);
+  } catch (error) {
+    console.warn(`${nowIso()} WARN the team's tailnet isn't in a session's box {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
   }
 }
 
@@ -351,21 +375,15 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
         l.record.transcript = transcript;
         if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
       }
-      // Claude: a public endpoint (Anthropic's API) on the box's own network, any other (a gateway on this machine or
-      // its tailnet, which a hosted box can't reach) through the node; checked from inside the box before the agent
-      // starts there.
+      // Claude: the box calls the endpoint as set, on the internet or the team's tailnet, checked from inside the box
+      // before the agent starts there.
       const endpoint = claudeEndpoint(launch);
-      let args: string[];
       try {
-        const r = reachOf(endpoint.url, { direct: await publicEndpoint(endpoint.url) });
-        await (hostedReach.reach ?? reach)(box, r);
-        args = boxArgs(launch.args, r);
+        await (hostedProbe.probe ?? probe)(box, endpoint.url);
       } catch (error) {
-        throw new LaunchError(`${(error as Error).message} (the endpoint from ${endpoint.source})`);
+        throw new LaunchError(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
       }
-      l.record.relays = box.relays;
-      save(dir, l.record);
-      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args, cwd: launch.cwd, env: boxEnv });
+      const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
       const pid = nobodyPid(session);
       const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
       if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);
@@ -381,6 +399,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       if (!record?.registration || !b) return undefined;
       try {
         const box = await b.open(record, session);
+        await withTailnet(box, session, false);
         const extender = setInterval(() => void b.extend(record).catch(() => {}), EXTEND_MS);
         extender.unref?.();
         const l: Live = { record, box, extender };

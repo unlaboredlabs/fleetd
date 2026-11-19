@@ -15,6 +15,7 @@ import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react"
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { ProvidersGroup, WhatRunsWhere } from "../settings/Places";
+import { TailscaleSection } from "../settings/Tailscale";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame, Part } from "../settings/Frames";
@@ -140,7 +141,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
  * One page, in the order a person comes to it (D550): the hub's machines and how each is (a row each, its state a dot,
  * opening its own page with everything about it; Add machine at the title's end adds one, its steps opening above the
  * list, and with none yet the empty list holds the button instead); the providers
- * the team connects with its own keys, one list, each with what it can run; what runs where, a row per kind of work
+ * the team connects with its own keys, one list, each with what it can run; Tailscale, the team's tailnet
+ * for its hosted sandboxes; what runs where, a row per kind of work
  * with the same choice; then updates, the one status of them and the Update automatically switch (a page of its own
  * once: a link to it lands here).
  */
@@ -167,6 +169,7 @@ function Machines() {
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
         <MachineList onAdd={add} />
         <ProvidersGroup />
+        <TailscaleSection />
         <WhatRunsWhere />
         <Updates />
       </div>

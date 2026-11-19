@@ -7105,6 +7105,33 @@ export type KnownReviewVerdictKind = "approved" | "changes_requested" | "comment
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
+/**
+ * Where the team's Tailscale gateway is: `off` (none), `starting` (the hub is starting it), `login` (waiting for a sign-in at
+ * `loginUrl`), `approve` (signed in; a tailnet admin approves the device), `connected`, or `failed` (`problem` says why).
+ */
+export type KnownTailnetStatus = "off" | "starting" | "login" | "approve" | "connected" | "failed";
+/** KnownTailnetStatus, or a value from a newer hub. */
+export type TailnetStatus = KnownTailnetStatus | (string & {});
+
+/** The team's Tailscale connection: one gateway device the hub runs, through which hosted sandboxes reach the tailnet. */
+export type TailnetState = {
+  /** `connected`: the gateway's name on the tailnet. */
+  device?: string;
+  /** `login`: Tailscale's sign-in page for the gateway; signing in and approving there registers it. */
+  loginUrl?: string;
+  /** `failed`, or why the gateway can't run on this hub at all, in plain words. */
+  problem?: string;
+  status: TailnetStatus;
+  /** `connected`: the tailnet's name, as its admin console shows it. */
+  tailnet?: string;
+};
+
+export type TailnetConnectInput = { [key: string]: unknown };
+
+export type TailnetDisconnectInput = { [key: string]: unknown };
+
+export type TailnetGetInput = { [key: string]: unknown };
+
 export type Role = "read" | "operate" | "admin";
 
 /** Landed changes per route. */
@@ -10178,6 +10205,9 @@ export interface ToolMap {
   status_get: { input: StatusGetInput; output: StatusGetOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
+  tailnet_connect: { input: TailnetConnectInput; output: TailnetState };
+  tailnet_disconnect: { input: TailnetDisconnectInput; output: TailnetState };
+  tailnet_get: { input: TailnetGetInput; output: TailnetState };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
