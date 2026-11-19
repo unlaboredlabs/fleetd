@@ -34,7 +34,7 @@ beforeAll(async () => {
   writeFileSync(
     claude,
     `#!/bin/sh
-printf '%s\\n' "$@" > "$0.argv"
+case "$2" in Reply*) printf '%s\\n' "$@" > "$0.argv" ;; esac
 if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$ANTHROPIC_BASE_URL" ]; then echo '{"is_error":true,"result":"machine login leaked"}'; exit 1; fi
 if [ "$CLAUDE_CODE_OAUTH_TOKEN" = "tok-alice" ]; then echo '{"is_error":false,"result":"OK"}'; exit 0; fi
 echo "{\\"is_error\\":true,\\"result\\":\\"Invalid token $CLAUDE_CODE_OAUTH_TOKEN\\"}"; exit 1
