@@ -116,6 +116,22 @@
   font-weight: var(--weight-medium);
   line-height: var(--leading-xs);
 }
+/* Words under a Select's option, not part of it (why the rows above can't be picked, and their fix): quiet, at the
+   rows' inset, selectable. */
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 2px var(--space-2) 6px;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  user-select: text;
+}
+/* What follows the words (a command) fills its lines rather than leave a short word alone on the first. */
+.note > * + * {
+  word-break: break-all;
+}
 .separator {
   height: 1px;
   margin: var(--space-1) calc(-1 * var(--space-1));

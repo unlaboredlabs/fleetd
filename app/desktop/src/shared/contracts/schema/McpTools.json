@@ -5294,6 +5294,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "fix": {
+          "description": "The command that makes it usable, run on its machine; only with `unavailable`.",
+          "type": "string"
+        },
         "kind": {
           "$ref": "#/$defs/ComputerKind"
         },

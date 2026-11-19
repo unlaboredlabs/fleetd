@@ -121,19 +121,27 @@ export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cp
 
 /**
  * What a bot may pick for its agents' computers, each a real machine at an exact size: its machine's Local VM in each
- * size it runs, where it runs VMs (or would, but can't now: then each says why; off by choice or by design, none), then
+ * size it runs, where it runs VMs (or would, but can't now: then each says why, and the command that fixes it when there is
+ * one; off by choice or by design, none), then
  * each connected provider's sizes in ORDER (a key that failed its last check says so). A pick no longer among them (its
  * provider disconnected, a size its machine no longer runs) stays, saying why, so it is never shown as another.
  */
 export function computerChoices(o: { machine?: ComputerMachine; providers: readonly SandboxProviderState[]; pick?: ComputerPick; account: boolean }): ComputerChoice[] {
   const out: ComputerChoice[] = [];
-  const add = (kind: ComputerKind, size: Size, unavailable?: string) =>
-    out.push({ kind, cpu: size.cpu, memGb: size.memGb, label: computerLabel({ kind, ...size }), ...(unavailable ? { unavailable } : {}) });
+  const add = (kind: ComputerKind, size: Size, unavailable?: string, fix?: string) =>
+    out.push({
+      kind,
+      cpu: size.cpu,
+      memGb: size.memGb,
+      label: computerLabel({ kind, ...size }),
+      ...(unavailable ? { unavailable, ...(fix ? { fix } : {}) } : {}),
+    });
   const m = o.machine;
   const sb = m?.sandbox;
   if (m && sb && (sb.kind === "microvm" || !sb.expected)) {
-    const off = sb.kind !== "microvm" ? `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}` : vmTakes(m, o.account);
-    for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off ?? overCap(m, size));
+    const down = sb.kind !== "microvm";
+    const off = down ? `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}` : vmTakes(m, o.account);
+    for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off ?? overCap(m, size), down ? sb.fix : undefined);
   }
   for (const p of ORDER) {
     const st = o.providers.find((x) => x.provider === p);

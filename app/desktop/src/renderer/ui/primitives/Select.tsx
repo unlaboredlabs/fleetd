@@ -1,6 +1,6 @@
 import { Select as S } from "radix-ui";
 import { Check, ChevronDown } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { cx } from "../lib/cx";
 import s from "./Overlay.module.css";
 
@@ -10,6 +10,8 @@ export interface SelectOption<V extends string> {
   /** The trigger shows this text when the option's label is rich. */
   textValue?: string;
   disabled?: boolean;
+  /** Words under the option, not part of it: why it and the disabled ones above it can't be picked, said once. */
+  note?: ReactNode;
 }
 
 export interface SelectProps<V extends string> {
@@ -51,22 +53,24 @@ export function Select<V extends string>(props: SelectProps<V>) {
         <S.Content className={cx(s.surface, s.selectContent)} position="popper" sideOffset={4} collisionPadding={8}>
           <S.Viewport>
             {options.map((o) => (
-              <S.Item
-                key={o.value}
-                value={o.value}
-                className={s.item}
-                {...(o.textValue ? { textValue: o.textValue } : {})}
-                {...(o.disabled ? { disabled: true } : {})}
-              >
-                <span className={s.indicator}>
-                  <S.ItemIndicator>
-                    <Check />
-                  </S.ItemIndicator>
-                </span>
-                <span className={s.itemLabel} data-text="wrap">
-                  <S.ItemText>{o.label}</S.ItemText>
-                </span>
-              </S.Item>
+              <Fragment key={o.value}>
+                <S.Item
+                  value={o.value}
+                  className={s.item}
+                  {...(o.textValue ? { textValue: o.textValue } : {})}
+                  {...(o.disabled ? { disabled: true } : {})}
+                >
+                  <span className={s.indicator}>
+                    <S.ItemIndicator>
+                      <Check />
+                    </S.ItemIndicator>
+                  </span>
+                  <span className={s.itemLabel} data-text="wrap">
+                    <S.ItemText>{o.label}</S.ItemText>
+                  </span>
+                </S.Item>
+                {o.note === undefined ? null : <div className={s.note}>{o.note}</div>}
+              </Fragment>
             ))}
           </S.Viewport>
         </S.Content>

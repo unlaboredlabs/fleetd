@@ -97,9 +97,13 @@ export const whereOf = (image: ComputerImage | undefined): string | null => (ima
 export const AUTO = "auto";
 export const pickValue = (p: Pick<ComputerChoice, "kind" | "cpu" | "memGb"> | undefined): string => (p ? `${p.kind}:${p.cpu}:${p.memGb}` : AUTO);
 
+/** Why options can't be used now, said once under the last of them, with the command that fixes it when there is one. */
+export type PickNote = { why: string; fix?: string };
+
 /** One option of the Runs on select: each real machine the bot may have, as the hub words it; one that can't be used
- * now is disabled and says why, never greyed out alone. */
-export type PickOption = { value: string; label: string; why?: string; pick?: ComputerPick };
+ * now is disabled and says why, never greyed out alone. Options side by side that can't for the same reason (a
+ * machine's every Local VM size) say it once, as the last one's `note`. */
+export type PickOption = { value: string; label: string; why?: string; pick?: ComputerPick; note?: PickNote };
 
 /**
  * The Runs on select's options: Automatic (no pick: placed and sized as by default), then the hub's choices in its
@@ -111,11 +115,16 @@ export function pickOptions(settings: { computer?: ComputerPick; computers?: Com
   if (choices === undefined || (choices.length === 0 && settings.computer === undefined)) return null;
   return [
     { value: AUTO, label: "Automatic" },
-    ...choices.map((c) => ({
-      value: pickValue(c),
-      label: c.label,
-      ...(c.unavailable ? { why: c.unavailable } : {}),
-      pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
-    })),
+    ...choices.map((c, i) => {
+      const why = c.unavailable;
+      const last = choices[i + 1]?.unavailable !== why;
+      return {
+        value: pickValue(c),
+        label: c.label,
+        ...(why ? { why } : {}),
+        pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
+        ...(why && last ? { note: { why, ...(c.fix ? { fix: c.fix } : {}) } } : {}),
+      };
+    }),
   ];
 }

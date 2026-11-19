@@ -251,6 +251,8 @@ export const fixtures = [
   // Runs on, the bot's one pick of provider and size, and a pick whose provider went (fixtures/computer, W720).
   "computer-runs-on",
   "computer-runs-on-gone",
+  // ...and a machine that can't run VMs: why once under its Local VM sizes, with the fix to copy (W730).
+  "computer-runs-on-no-vms",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
@@ -4372,6 +4374,21 @@ export const screens: readonly Screen[] = [
       await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("boat.dev · 8 vCPU / 16 GB");
       await expect(row).toContainText("Its agents wait: boat.dev isn't connected");
       await row.scrollIntoViewIfNeeded();
+    },
+  },
+  // ...its machine can't run VMs: each Local VM size one greyed row, why said once under them with its command to copy.
+  {
+    id: "settings.projects",
+    variant: "computer-runs-on-no-vms",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["computer-runs-on-no-vms"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
+      await row.scrollIntoViewIfNeeded();
+      await row.getByRole("combobox", { name: "Runs on" }).click();
+      await expect(page.getByRole("option", { name: "Local VM · 2 vCPU / 4 GB", exact: true })).toBeDisabled();
+      await expect(page.getByText(/AppArmor keeps this user/u)).toHaveCount(1);
+      await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
     },
   },
   // ...on a machine that builds no images: its setup alone, no image row and no Rebuild.
