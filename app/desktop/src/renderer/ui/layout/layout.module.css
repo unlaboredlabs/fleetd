@@ -103,12 +103,13 @@
 
 /* The window's own frame on macOS: the sidebar is the window's sidebar vibrancy (main/index.ts), so nothing paints over
    it; the main area and the panel stay opaque. Static: the window server composites it, the page never repaints for
-   it. Everywhere else (Linux, Reduce transparency) it is the plain --sidebar tone. */
-:root[data-vibrancy] .translucent {
+   it. Everywhere else (Linux, Reduce transparency) it is the plain --sidebar tone, and so on macOS too when the person
+   turned the see-through sidebar off (data-solid-sidebar, ui/seeThrough.ts): the page then paints over the material. */
+:root[data-vibrancy]:not([data-solid-sidebar]) .translucent {
   background: transparent;
 }
-:root[data-vibrancy] .translucent::before,
-:root[data-vibrancy] .translucent > .side:not([data-motion="out"]) {
+:root[data-vibrancy]:not([data-solid-sidebar]) .translucent::before,
+:root[data-vibrancy]:not([data-solid-sidebar]) .translucent > .side:not([data-motion="out"]) {
   background: transparent;
 }
 

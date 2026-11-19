@@ -13,7 +13,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   projects: [
     { name: "selftest", testMatch: "selftest/*.spec.ts" },
-    { name: "screens", testMatch: ["screens.spec.ts", "platform.spec.ts"] },
+    { name: "screens", testMatch: ["screens.spec.ts", "platform.spec.ts", "seeThrough.spec.ts"] },
     { name: "site", testMatch: "site.spec.ts" },
     { name: "showcase", testMatch: "showcase.spec.ts" },
   ],

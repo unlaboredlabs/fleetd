@@ -1,8 +1,9 @@
-// Settings › You › General: your name (Name.tsx), Appearance and time in the app, then Notifications
-// (Notifications.tsx) and Version: the one status of updates (updates/model.ts), with this app's own update when it has
-// one. Updating the hub and its machines is its owners' and admins'; a member reads where things stand.
+// Settings › You › General: your name (Name.tsx), Appearance (and on the Mac the see-through sidebar) and time in the
+// app, then Notifications (Notifications.tsx) and Version: the one status of updates (updates/model.ts), with this
+// app's own update when it has one. Updating the hub and its machines is its owners' and admins'; a member reads where
+// things stand.
 import { useEffect, useState } from "react";
-import { Segmented, THEME_MODES, useTheme } from "../../ui";
+import { canSeeThrough, Segmented, THEME_MODES, useSeeThrough, useTheme } from "../../ui";
 import { useUpdateStatus } from "../updates/hooks";
 import { UpdateStatus } from "../updates/UpdateStatus";
 import { YourName } from "./Name";
@@ -24,6 +25,8 @@ export function General() {
             title="Appearance"
             control={<Segmented label="Appearance" options={THEME_MODES} value={mode} onChange={setMode} />}
           />
+          {/* Only where the sidebar can be see-through: the Mac desktop app. */}
+          {canSeeThrough() ? <SeeThroughSetting /> : null}
           {/* App presence is the desktop app's: main reads the OS's idle time. */}
           {onWeb() ? null : <PresenceSetting />}
         </SettingsSection>
@@ -42,6 +45,14 @@ function Versions() {
       <UpdateStatus status={status} />
     </SettingsSection>
   );
+}
+
+/** The see-through sidebar (ui/seeThrough.ts), kept on this device and applied at once. */
+function SeeThroughSetting() {
+  const { on, setOn } = useSeeThrough();
+  // Search finds it by Appearance's words ("see-through sidebar"), and lands beside it: an option of its own would show
+  // on the web too.
+  return <SwitchRow title="See-through sidebar" checked={on} onCheckedChange={setOn} />;
 }
 
 /** App presence (main/presence.ts): main reads and keeps the switch, so it holds before any window loads. */

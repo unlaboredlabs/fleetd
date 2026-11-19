@@ -59,8 +59,10 @@
    which no colour of the page's matches: there the tone was a dark box around every row going up, a whole block of
    them under a section folding (W585). What keeps the words apart there, and everywhere, is the glide's own cut
    (ui/lib/reorder, cuts): of two rows that cross, the one drawn under is masked where the other is, and a section's
-   rows unfolding are clipped under the rows making room for them. */
-:root:not([data-vibrancy]) .rows > [data-gliding="up"] {
+   rows unfolding are clipped under the rows making room for them. With the see-through sidebar off
+   (data-solid-sidebar) the sidebar paints its tone again, and so do the rows. */
+:root:not([data-vibrancy]) .rows > [data-gliding="up"],
+:root[data-solid-sidebar] .rows > [data-gliding="up"] {
   background: var(--sidebar);
 }
 
