@@ -7225,6 +7225,8 @@ export type ComputerPick = {
 /** One computer a bot may pick. */
 export type ComputerChoice = {
   cpu: number;
+  /** The command that makes it usable, run on its machine; only with `unavailable`. */
+  fix?: string;
   kind: ComputerKind;
   /** As a person reads it: "boat.dev · 4 vCPU / 8 GB". */
   label: string;

@@ -83,6 +83,9 @@ export interface RunsOnRow {
   readonly selected: boolean;
   /** Why it can't be picked now; it isn't tappable then. */
   readonly why?: string;
+  /** Said once under the last of the rows side by side that share a `why` (a machine's every Local VM size), with the
+   * command that fixes it when there is one. */
+  readonly note?: { readonly why: string; readonly fix?: string };
 }
 
 const same = (a: Pick<ComputerChoice, "kind" | "cpu" | "memGb">, b: ComputerPick | undefined): boolean =>
@@ -90,9 +93,10 @@ const same = (a: Pick<ComputerChoice, "kind" | "cpu" | "memGb">, b: ComputerPick
 
 /**
  * Where every agent of the bot runs, as the desktop's Runs on lists it: Automatic, then each of the hub's choices in its
- * order, provider and exact size together ("boat.dev · 4 vCPU / 8 GB"), the pick checked. One that can't be used now says
- * why under it, and isn't tappable (the pick itself stays checked, saying why its agents wait). None when there is
- * nothing to pick and nothing picked, or the hub is too old to say.
+ * order, provider and exact size together ("boat.dev · 4 vCPU / 8 GB"), the pick checked. One that can't be used now isn't
+ * tappable (the pick itself stays checked, saying its agents wait), and why is said once, under the last of the rows
+ * beside it that can't for the same reason. None when there is nothing to pick and nothing picked, or the hub is too
+ * old to say.
  */
 export const runsOnRows = (settings: { readonly computer?: ComputerPick; readonly computers?: readonly ComputerChoice[] } | undefined): readonly RunsOnRow[] => {
   const choices = settings?.computers;
@@ -100,12 +104,15 @@ export const runsOnRows = (settings: { readonly computer?: ComputerPick; readonl
   const pick = settings?.computer;
   return [
     { key: "auto", title: "Automatic", pick: null, selected: pick === undefined },
-    ...choices.map((c) => ({
+    ...choices.map((c, i) => ({
       key: `${c.kind}:${String(c.cpu)}:${String(c.memGb)}`,
       title: c.label,
       pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
       selected: same(c, pick),
       ...(c.unavailable === undefined ? {} : { why: c.unavailable }),
+      ...(c.unavailable === undefined || choices[i + 1]?.unavailable === c.unavailable
+        ? {}
+        : { note: { why: c.unavailable, ...(c.fix === undefined ? {} : { fix: c.fix }) } }),
     })),
   ];
 };

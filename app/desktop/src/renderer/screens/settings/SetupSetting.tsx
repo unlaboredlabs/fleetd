@@ -6,11 +6,12 @@
 // setup, as before. Each setup run shows on the agent's thread, a command at a time with the end of its output, each
 // within 10 minutes; when one fails the agent starts anyway and is told what failed.
 import { useCallback, useState } from "react";
-import { Button, Select, Text, Textarea } from "../../ui";
+import { Button, Select, Textarea } from "../../ui";
 import type { ComputerImage, ProjectSettings as Settings, RepoName } from "../../../shared/contracts";
 import { useNow } from "../live";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
+import { CommandLine } from "../onboarding/Prose";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, setupFrom, whereOf, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
@@ -120,9 +121,9 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
 
 /**
  * Where every agent of the bot runs: one pick, each choice a real machine, provider and exact size together ("boat.dev ·
- * 4 vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. A choice
- * that can't be used now says why in the list; a pick that can't be had now says so under the row, since its agents
- * wait for it. No row when there is nothing to pick.
+ * 4 vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. Choices
+ * that can't be used now are greyed, and the list says why once under them, with the command that fixes it; a pick that
+ * can't be had now says so under the row, since its agents wait for it. No row when there is nothing to pick.
  */
 function RunsOnRow({ settings }: { settings: Settings }) {
   const hubCall = useHubCall();
@@ -168,16 +169,18 @@ function RunsOnRow({ settings }: { settings: Settings }) {
             value: o.value,
             textValue: o.label,
             ...(o.why !== undefined && o.value !== value ? { disabled: true } : {}),
-            // The pick's own reason is the row's line: the trigger shows its label alone.
-            label:
-              o.why === undefined || o.value === value ? (
-                o.label
-              ) : (
-                <>
-                  {o.label}
-                  <Text size="xs" tone="quiet">{` · ${o.why}`}</Text>
-                </>
-              ),
+            // Each option its label alone; why the ones that can't be used now can't, once under the last of them.
+            label: o.label,
+            ...(o.note === undefined
+              ? {}
+              : {
+                  note: (
+                    <>
+                      <span>{o.note.why}</span>
+                      {o.note.fix === undefined ? null : <CommandLine command={o.note.fix} />}
+                    </>
+                  ),
+                }),
           }))}
         />
       }

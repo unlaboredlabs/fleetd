@@ -123,7 +123,22 @@ describe("Runs on", () => {
     expect(rows[2]!.pick).toEqual({ kind: "boat", cpu: 4, memGb: 8 });
     // One that can't be used now says why, never only greyed out.
     expect(rows[3]!.why).toBe("boat.dev isn't connected: an admin connects it in Settings › Hub › Machines");
+    expect(rows[3]!.note).toEqual({ why: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" });
     expect(rows.some((r) => /small|medium|large/i.test(r.title))).toBe(false);
+  });
+
+  it("says a reason the rows side by side share once, under the last of them, with its fix", () => {
+    const why = "devbox runs no VMs now: AppArmor keeps this user from making user namespaces.";
+    const fix = "sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0";
+    const vm = (cpu: number, memGb: number) => ({ kind: "vm", cpu, memGb, label: `Local VM · ${String(cpu)} vCPU / ${String(memGb)} GB`, unavailable: why, fix });
+    const rows = runsOnRows({ computers: [vm(2, 4), vm(4, 8), vm(8, 16), { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" }] });
+    expect(rows.map((r) => [r.title, r.why !== undefined, r.note])).toEqual([
+      ["Automatic", false, undefined],
+      ["Local VM · 2 vCPU / 4 GB", true, undefined],
+      ["Local VM · 4 vCPU / 8 GB", true, undefined],
+      ["Local VM · 8 vCPU / 16 GB", true, { why, fix }],
+      ["boat.dev · 2 vCPU / 4 GB", false, undefined],
+    ]);
   });
 
   it("checks Automatic with no pick, and has no rows with nothing to pick or from a hub too old to say", () => {

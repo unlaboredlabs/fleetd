@@ -14,7 +14,7 @@ import { key, kit, project } from "./work-kit.ts";
 const GIB = 2 ** 30;
 
 /** The bot, on devbox; `account`: its agents run on the hub's Claude API account, not devbox's own login. */
-function bot(vms: "on" | "off" | "by choice" | "login only" = "on", account = true) {
+function bot(vms: "on" | "off" | "fixable" | "by choice" | "login only" = "on", account = true) {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -36,7 +36,9 @@ function bot(vms: "on" | "off" | "by choice" | "login only" = "on", account = tr
         ? { kind: "microvm" as const, why: "this machine signs in to Claude with its own login", accountsOnly: true as const }
         : vms === "off"
           ? { kind: "process" as const, why: "no /dev/kvm" }
-          : { kind: "process" as const, why: "turned off", expected: true as const };
+          : vms === "fixable"
+            ? { kind: "process" as const, why: "AppArmor keeps this user from making user namespaces.", fix: "sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0" }
+            : { kind: "process" as const, why: "turned off", expected: true as const };
   slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox, memPerAgentBytes: 4.1 * GIB });
   const connect = (p: string) => k.hub.db.conn.run("INSERT INTO sandbox_providers (provider, sealed, max_agents) VALUES (?1, x'00', 3)", [p]);
   const get = async () => (await k.ok(key("read"), "project_settings_get", r)).settings;
@@ -69,6 +71,13 @@ test("VMs that can't run now say why on each; VMs off by choice aren't offered; 
     { kind: "vm", cpu: 4, memGb: 8, label: "Local VM · 4 vCPU / 8 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
     { kind: "vm", cpu: 8, memGb: 16, label: "Local VM · 8 vCPU / 16 GB", unavailable: "devbox runs no VMs now: no /dev/kvm" },
   ]);
+  // The command that fixes it comes with each, for the app to show once beside the reason.
+  const fixable = (await bot("fixable").get()).computers as { unavailable?: string; fix?: string }[];
+  expect(fixable).toHaveLength(4);
+  for (const c of fixable) {
+    expect(c.unavailable).toBe("devbox runs no VMs now: AppArmor keeps this user from making user namespaces.");
+    expect(c.fix).toBe("sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0");
+  }
   const chosen = bot("by choice");
   expect((await chosen.get()).computers).toEqual([]);
 });
