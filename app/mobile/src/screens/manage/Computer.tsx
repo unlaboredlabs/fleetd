@@ -9,6 +9,7 @@ import type { ComputerImage, ProjectSummary } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { mono, shape, space, type, useTheme } from "../../theme";
+import * as Clipboard from "expo-clipboard";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { PRESSED_OPACITY } from "../../ui/motion";
@@ -89,11 +90,11 @@ function RunsOn({ project: p, gen }: { project: ProjectSummary; gen: number }) {
   };
   return (
     <ListSection header="Runs on">
-      {rows.map((row) => (
+      {rows.flatMap((row) => [
         <ListRow
           key={row.key}
           title={row.title}
-          {...(row.why === undefined ? {} : { detail: row.why })}
+          {...(row.why !== undefined && checked(row) ? { detail: "Its agents wait for it" } : {})}
           chevron={false}
           {...(live && row.why === undefined ? { onPress: () => choose(row) } : {})}
           {...(busy === row.key
@@ -101,9 +102,42 @@ function RunsOn({ project: p, gen }: { project: ProjectSummary; gen: number }) {
             : checked(row)
               ? { accessory: <Icon name="done" size={17} color={t.accent} weight="semibold" /> }
               : {})}
-        />
-      ))}
+        />,
+        ...(row.note === undefined ? [] : [<Note key={`${row.key}:note`} why={row.note.why} {...(row.note.fix === undefined ? {} : { fix: row.note.fix })} />]),
+      ])}
     </ListSection>
+  );
+}
+
+/** Why the rows above it can't be picked, said once, and the command that fixes it, copied with a tap. */
+function Note({ why, fix }: { why: string; fix?: string }) {
+  const t = useTheme();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = () => {
+    if (fix === undefined) return;
+    void Clipboard.setStringAsync(fix);
+    haptics.success();
+    setCopied(true);
+  };
+  return (
+    <View style={styles.note}>
+      <Text style={[type.footnote, { color: t.secondary }]}>{why}</Text>
+      {fix === undefined ? null : (
+        <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel={`Command: ${fix}`} accessibilityHint="Copies the command">
+          {({ pressed }) => (
+            <View style={[styles.fix, { backgroundColor: t.fillQuiet }, pressed && { opacity: PRESSED_OPACITY }]}>
+              <Text style={[styles.code, styles.fill, { color: t.label }]}>{fix}</Text>
+              <Text style={[type.footnote, { color: t.accent }]}>{copied ? "Copied" : "Copy"}</Text>
+            </View>
+          )}
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -223,4 +257,6 @@ const styles = StyleSheet.create({
   code: { fontFamily: mono, fontSize: 13, lineHeight: 18 },
   action: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: shape.row, paddingHorizontal: space.lg, paddingVertical: 11 },
   log: { paddingHorizontal: space.lg, paddingVertical: space.md },
+  note: { gap: space.sm, paddingHorizontal: space.lg, paddingVertical: 11 },
+  fix: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: 10, borderCurve: "continuous" },
 });

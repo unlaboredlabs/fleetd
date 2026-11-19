@@ -7,6 +7,8 @@
 // computer-runs-on: Runs on picked as boat.dev · 4 vCPU / 8 GB, among its machine's Local VM sizes and boat.dev's.
 // computer-runs-on-gone: Runs on picked as boat.dev · 8 vCPU / 16 GB, then boat.dev disconnected: the row says its agents
 // wait.
+// computer-runs-on-no-vms: Runs on Automatic, on a machine AppArmor keeps from running VMs: each Local VM size greyed,
+// the reason said once under them with its command to copy, then boat.dev's.
 import { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -94,13 +96,21 @@ const sized = (kind: string, name: string, sizes: [number, number][]): JsonObjec
   sizes.map(([cpu, memGb]) => ({ kind, cpu, memGb, label: `${name} · ${String(cpu)} vCPU / ${String(memGb)} GB` }));
 const VM = sized("vm", "Local VM", [[2, 4], [4, 4], [4, 8], [8, 16]]);
 
-/** storefront ready, with `computer` picked among `computers`. */
-const runsOn = (base: Fixture, name: string, about: string, computer: JsonObject, computers: JsonObject[]): Fixture => {
+/** storefront ready, with `computer` picked among `computers` (none: Automatic). */
+const runsOn = (base: Fixture, name: string, about: string, computer: JsonObject | undefined, computers: JsonObject[]): Fixture => {
   const f = Fixture.from(base, name, about);
   const ref = storefront(f);
-  f.answer("project_settings_get", ref, settings(ref, { state: "ready", ...BUILT(f.now) }, { computer, computers }));
-  f.answer("project_settings_set", undefined, settings(ref, { state: "ready", ...BUILT(f.now) }, { computer, computers }));
+  const extra = { ...(computer ? { computer } : {}), computers };
+  f.answer("project_settings_get", ref, settings(ref, { state: "ready", ...BUILT(f.now) }, extra));
+  f.answer("project_settings_set", undefined, settings(ref, { state: "ready", ...BUILT(f.now) }, extra));
   return f;
+};
+
+/** Its machine can't run VMs now, as sandbox/host/capable.ts says why and the fix. */
+const NO_VMS = {
+  unavailable:
+    "devbox runs no VMs now: AppArmor keeps this user from making the user namespace virtiofsd shares files from. The command lets unprivileged users make them again, now and after a reboot.",
+  fix: "echo kernel.apparmor_restrict_unprivileged_userns=0 | sudo tee /etc/sysctl.d/60-fleetd-userns.conf && sudo sysctl --system",
 };
 
 export default defineGroup({
@@ -127,6 +137,10 @@ export default defineGroup({
     runsOn(base("typical"), "computer-runs-on-gone", "A bot's Computer: its pick's provider was disconnected, so its agents wait and the row says why.", { kind: "boat", cpu: 8, memGb: 16 }, [
       ...VM,
       { kind: "boat", cpu: 8, memGb: 16, label: "boat.dev · 8 vCPU / 16 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
+    ]),
+    runsOn(base("typical"), "computer-runs-on-no-vms", "A bot's Computer: its machine can't run VMs, said once under the Local VM sizes with the fix.", undefined, [
+      ...VM.map((c) => ({ ...c, ...NO_VMS })),
+      ...sized("boat", "boat.dev", [[2, 4], [4, 8], [8, 16], [16, 32]]),
     ]),
     (() => {
       const f = Fixture.from(base("typical"), "computer-two", "A bot with two repos: each its own Computer; api has no commands, so no image.");
