@@ -31,7 +31,7 @@ export const DISK_GIB = 64;
 /** The longest log a failed build keeps. */
 export const LOG_MAX = 4000;
 
-export type Where = "vm" | "e2b" | "boat" | "daytona";
+export type Where = "vm" | "boat";
 
 export const imagesDir = (node: string) => join(vmDir(node), "images");
 export const disksDir = (node: string) => join(vmDir(node), "disks");

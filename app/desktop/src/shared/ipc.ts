@@ -209,14 +209,13 @@ export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
  * The team's own key at a hosted sandbox provider (Settings › Hub › Machines › Providers): main seals `key` to
- * `boxPubKey`, the hub's own key from sandbox_get, and calls sandbox_connect with `provider` and, for E2B, `domain`.
+ * `boxPubKey`, the hub's own key from sandbox_get, and calls sandbox_connect with `provider`.
  * The hub gets the box, never the key, and nothing returns it.
  */
 export const SandboxKeyRequest = z.strictObject({
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
   provider: z.string().regex(/^[a-z0-9]{1,32}$/u),
   key: z.string().trim().min(1).max(SECRET_MAX_BYTES),
-  domain: z.string().trim().max(253).optional(),
 });
 export type SandboxKeyRequest = z.infer<typeof SandboxKeyRequest>;
 

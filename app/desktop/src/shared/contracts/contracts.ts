@@ -312,7 +312,7 @@ export type AgentLane = {
   /** What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs. */
   profile?: ProfileName;
   role: AgentRole;
-  /** The hosted sandbox provider it runs in ("E2B", "boat.dev", "Daytona"); absent on its machine's own slots. */
+  /** The hosted sandbox provider it runs in ("boat.dev"); absent on its machine's own slots. */
   sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -389,7 +389,7 @@ export type AgentRow = {
   projectRef: ProjectRef;
   projectTitle: string;
   role: AgentRole;
-  /** The hosted sandbox provider it runs in ("E2B", "boat.dev", "Daytona"); absent on its machine's own slots. */
+  /** The hosted sandbox provider it runs in ("boat.dev"); absent on its machine's own slots. */
   sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -2286,7 +2286,7 @@ export type KnownComputerImageState = "none" | "building" | "ready" | "failed";
 export type ComputerImageState = KnownComputerImageState | (string & {});
 
 /** "vm": this machine's local VMs; else the hosted provider. */
-export type KnownComputerImageWhere = "vm" | "e2b" | "boat" | "daytona";
+export type KnownComputerImageWhere = "vm" | "boat";
 /** KnownComputerImageWhere, or a value from a newer hub. */
 export type ComputerImageWhere = KnownComputerImageWhere | (string & {});
 
@@ -4071,7 +4071,7 @@ export type Machine = {
   name: string;
   nodeVersion: string;
   /**
-   * The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (E2B, boat.dev, Daytona), none on
+   * The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (boat.dev), none on
    * the hub's machine. It is no computer of the team's. Absent on every other machine.
    */
   runner?: boolean;
@@ -7179,7 +7179,7 @@ export type SafetyRule = {
 /**
  * Why a hosted sandbox provider's key failed its last check, as a word the app acts on: `invalid_key` (the provider
  * refused it), `limit` (the account is at its plan's limit), `billing` (the account can't pay), `unreachable` (the
- * provider, or a self-hosted E2B's domain, didn't answer), `failed` (anything else, or no machine could test it).
+ * provider didn't answer), `failed` (anything else, or no machine could test it).
  */
 export type KnownSandboxCheckReason = "invalid_key" | "limit" | "billing" | "unreachable" | "failed";
 /** KnownSandboxCheckReason, or a value from a newer hub. */
@@ -7197,8 +7197,6 @@ export type SandboxCheck = {
 };
 
 export type SandboxConnectInput = {
-  /** E2B only: the API domain of a self-hosted E2B (E2B_DOMAIN); absent for E2B's own. */
-  domain?: string;
   /** How many of the team's agents may run there at once; absent keeps the one set, else 5. */
   limit?: number;
   provider: SandboxProvider;
@@ -7213,7 +7211,7 @@ export type SandboxDisconnectInput = {
 export type SandboxGetInput = { [key: string]: unknown };
 
 /** Where an agent's computer is: its machine's own VM (`vm`), or a box of a hosted provider. */
-export type KnownComputerKind = "vm" | "e2b" | "boat" | "daytona";
+export type KnownComputerKind = "vm" | "boat";
 /** KnownComputerKind, or a value from a newer hub. */
 export type ComputerKind = KnownComputerKind | (string & {});
 
@@ -7228,7 +7226,7 @@ export type ComputerPick = {
 export type ComputerChoice = {
   cpu: number;
   kind: ComputerKind;
-  /** As a person reads it: "E2B · 4 vCPU / 8 GB". */
+  /** As a person reads it: "boat.dev · 4 vCPU / 8 GB". */
   label: string;
   memGb: number;
   /** Why it can't be used now; absent while it can. */
@@ -7236,7 +7234,7 @@ export type ComputerChoice = {
 };
 
 /** A hosted sandbox provider a team connects with its own key. */
-export type KnownSandboxProvider = "e2b" | "boat" | "daytona";
+export type KnownSandboxProvider = "boat";
 /** KnownSandboxProvider, or a value from a newer hub. */
 export type SandboxProvider = KnownSandboxProvider | (string & {});
 
@@ -7245,8 +7243,6 @@ export type SandboxProviderState = {
   /** Absent before the first check, and while not connected. */
   check?: SandboxCheck;
   connected: boolean;
-  /** E2B only: the API domain of a self-hosted E2B; absent for E2B's own. */
-  domain?: string;
   /** How many of the team's agents may run there at once, across its machines; 0 while not connected. */
   limit: number;
   provider: SandboxProvider;
@@ -7255,6 +7251,19 @@ export type SandboxProviderState = {
 export type SandboxSetInput = {
   limit: number;
   provider: SandboxProvider;
+};
+
+/**
+ * Where the team's agents and their Linux screens (browser, Linux desktop, Android) run: `ours_first`, the team's
+ * machines, then the connected providers in order once theirs are full; `ours_only`, the team's machines alone; or a
+ * provider's id, that provider alone.
+ */
+export type KnownLinuxPlace = "ours_first" | "ours_only" | "boat";
+/** KnownLinuxPlace, or a value from a newer hub. */
+export type LinuxPlace = KnownLinuxPlace | (string & {});
+
+export type SandboxWhereSetInput = {
+  linux: LinuxPlace;
 };
 
 /**
@@ -7270,6 +7279,8 @@ export type SandboxState = {
    */
   placing: boolean;
   providers: SandboxProviderState[];
+  /** What runs where › Linux machine; absent from a hub before the pick, which places as `ours_first`. */
+  linux?: LinuxPlace;
   /**
    * Each provider fleetd removed that this hub had connected, as one plain line saying so and what runs instead,
    * for 30 days after the update that removed it. Absent when there is none, and from older hubs.
@@ -10185,6 +10196,7 @@ export interface ToolMap {
   sandbox_get: { input: SandboxGetInput; output: SandboxState };
   sandbox_set: { input: SandboxSetInput; output: SandboxState };
   sandbox_test: { input: SandboxTestInput; output: SandboxState };
+  sandbox_where_set: { input: SandboxWhereSetInput; output: SandboxState };
   screen_end: { input: ScreenEndInput; output: ScreenEndOutput };
   screen_open: { input: ScreenOpenInput; output: ScreenOpenOutput };
   screens_count: { input: ScreensCountInput; output: ScreensCountOutput };

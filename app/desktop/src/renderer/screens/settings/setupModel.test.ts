@@ -57,7 +57,7 @@ describe("the computer image's line", () => {
   });
 
   it("names where it is kept", () => {
-    expect(whereOf({ state: "ready", where: "e2b" })).toBe("an E2B snapshot");
+    expect(whereOf({ state: "ready", where: "boat" })).toBe("a boat.dev snapshot");
     expect(whereOf({ state: "ready" })).toBeNull();
   });
 });
@@ -65,14 +65,14 @@ describe("the computer image's line", () => {
 describe("Runs on", () => {
   const choices = [
     { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
-    { kind: "e2b", cpu: 4, memGb: 8, label: "E2B · 4 vCPU / 8 GB", unavailable: "E2B's key failed its last test: refused" },
+    { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev's key failed its last test: refused" },
   ];
 
   it("is Automatic, then each of the hub's choices in its order, provider and size together", () => {
     expect(pickOptions({ computers: choices })).toEqual([
       { value: AUTO, label: "Automatic" },
       { value: "vm:2:4", label: "Local VM · 2 vCPU / 4 GB", pick: { kind: "vm", cpu: 2, memGb: 4 } },
-      { value: "e2b:4:8", label: "E2B · 4 vCPU / 8 GB", why: "E2B's key failed its last test: refused", pick: { kind: "e2b", cpu: 4, memGb: 8 } },
+      { value: "boat:4:8", label: "boat.dev · 4 vCPU / 8 GB", why: "boat.dev's key failed its last test: refused", pick: { kind: "boat", cpu: 4, memGb: 8 } },
     ]);
     expect(pickValue(undefined)).toBe(AUTO);
     expect(pickValue({ kind: "boat", cpu: 16, memGb: 32 })).toBe("boat:16:32");
@@ -81,6 +81,6 @@ describe("Runs on", () => {
   it("has no row with nothing to pick and nothing picked, nor from a hub too old to say", () => {
     expect(pickOptions({})).toBeNull();
     expect(pickOptions({ computers: [] })).toBeNull();
-    expect(pickOptions({ computers: [], computer: { kind: "e2b", cpu: 2, memGb: 4 } })).toEqual([{ value: AUTO, label: "Automatic" }]);
+    expect(pickOptions({ computers: [], computer: { kind: "boat", cpu: 2, memGb: 4 } })).toEqual([{ value: AUTO, label: "Automatic" }]);
   });
 });

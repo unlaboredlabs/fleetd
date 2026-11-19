@@ -367,12 +367,12 @@ test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its mes
   try {
     expect((await go("project_upsert", { projectId: "p1", title: "demo", workspaceRoot: repo })).result).toMatchObject({ ok: { kind: "done" } });
     // The first launch: its brief never reached claude. The recovery's resume, on this machine, brings it.
-    await go("launch", { sessionId: "s-boxed", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "the brief", runId: "rb1", place: "e2b", size: { cpu: 4, memGb: 8 } });
+    await go("launch", { sessionId: "s-boxed", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "the brief", runId: "rb1", place: "boat", size: { cpu: 4, memGb: 8 } });
     const run = await failedRun("s-boxed", "rb1");
     // The bot's picked size goes with its place, kept for the session's next start.
     expect(other.store.session("s-boxed")?.local.size).toEqual({ cpu: 4, memGb: 8 });
     expect(run.failure?.class).toBe("sandbox");
-    expect(run.failure?.message).toContain("no hosted sandbox came up at E2B");
+    expect(run.failure?.message).toContain("no hosted sandbox came up at boat.dev");
     await go("send", { sessionId: "s-boxed", runId: "rb2", text: "the note", place: "local" });
     await completed("s-boxed", "rb2");
     expect(other.store.session("s-boxed")?.local.size).toBeUndefined();
@@ -380,9 +380,9 @@ test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its mes
     // A continued run (a lead's message to an agent whose claude has gone) whose box doesn't come up: the message
     // isn't lost, it goes with the resume in the same thread.
     await go("stop", { sessionId: "s-boxed" });
-    await go("send", { sessionId: "s-boxed", runId: "rb3", text: "the lead's message", place: "e2b", size: { cpu: 8, memGb: 8 } });
+    await go("send", { sessionId: "s-boxed", runId: "rb3", text: "the lead's message", place: "boat", size: { cpu: 8, memGb: 16 } });
     expect((await failedRun("s-boxed", "rb3")).failure?.class).toBe("sandbox");
-    expect(other.store.session("s-boxed")?.local.size).toEqual({ cpu: 8, memGb: 8 });
+    expect(other.store.session("s-boxed")?.local.size).toEqual({ cpu: 8, memGb: 16 });
     await go("send", { sessionId: "s-boxed", runId: "rb4", text: "the note again", place: "local" });
     await completed("s-boxed", "rb4");
     expect(other.store.session("s-boxed")?.summary.latestAssistantTail).toBe("ok: the lead's message\n\nthe note again");

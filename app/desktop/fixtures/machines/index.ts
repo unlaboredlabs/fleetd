@@ -9,9 +9,11 @@
 // devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
 // out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own hosted
 // sandbox accounts in Machines' Sandboxes section (W688): `machines-sandboxes-off` with none connected,
-// `machines-sandboxes-on` with E2B (self-hosted) and Daytona connected, Daytona's key refused at its last test.
-// `machines-revyl-removed` is a hub that had Revyl connected before fleetd removed it (D576): one line says so.
-// `machines-none` is a team with no machine of its own, its agents only in E2B through the hub's runner, which has no
+// `machines-sandboxes-on` with boat.dev connected, its key refused at its last test. `machines-revyl-removed` is a hub
+// that had Revyl connected before fleetd removed it (D576): one line says so; `machines-e2b-removed` one that had E2B
+// and Daytona, a line each. `machines-places` has machines and boat.dev both, so What runs where's Linux machine is a
+// pick; `machines-places-one` a machine alone, a plain value.
+// `machines-none` is a team with no machine of its own, its agents only in boat.dev through the hub's runner, which has no
 // Claude account yet (W721): the list's empty state with its own Add machine, and the runner's one notice over the
 // providers.
 import { defineGroup } from "../kit/group.ts";
@@ -243,23 +245,21 @@ function tailscale(from: Fixture, name: string, note: string, state: JsonObject)
 }
 
 const SANDBOX_OFF = (provider: string): JsonObject => ({ provider, connected: false, limit: 0 });
-const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("e2b"), SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] };
+const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("boat")] };
 
 const SANDBOXES_ON_PAUSED: JsonObject = {
   ...SANDBOXES_OFF,
   providers: [
-    { provider: "e2b", connected: true, limit: 20, domain: "e2b.acme.internal", check: { ok: true, at: "2026-10-19T08:55:00.000Z" } },
-    SANDBOX_OFF("boat"),
     {
-      provider: "daytona",
+      provider: "boat",
       connected: true,
-      limit: 5,
+      limit: 20,
       check: {
         ok: false,
         at: "2026-10-19T08:55:00.000Z",
         reason: "invalid_key",
-        message: "devbox: Daytona refused the key (401).",
-        fix: "Make a new one in Daytona's dashboard and connect it again.",
+        message: "devbox: boat.dev refused the key (401).",
+        fix: "Make a new one in boat.dev's dashboard and connect it again.",
       },
     },
   ],
@@ -270,9 +270,9 @@ const SANDBOXES_ON: JsonObject = { ...SANDBOXES_ON_PAUSED, placing: true };
 /** The admin's hub with the team's sandbox accounts as `state` has them; Connect, the limit, Test and Disconnect answer. */
 function sandboxes(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
   const f = hub(from, name, note, () => []);
-  const e2b: JsonObject = { provider: "e2b", connected: true, limit: 5, check: { ok: true, at: f.now } };
+  const boat: JsonObject = { provider: "boat", connected: true, limit: 5, check: { ok: true, at: f.now } };
   f.answer("sandbox_get", undefined, state);
-  f.answer("sandbox_connect", undefined, { ...SANDBOXES_OFF, providers: [e2b, SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] });
+  f.answer("sandbox_connect", undefined, { ...SANDBOXES_OFF, providers: [boat] });
   f.answer("sandbox_test", undefined, state);
   f.answer("sandbox_set", undefined, state);
   f.answer("sandbox_disconnect", undefined, SANDBOXES_OFF);
@@ -306,8 +306,8 @@ const NO_VM = (why: string) => `; agents run as plain processes: ${why}`;
 
 /**
  * The page as a team that has grown into it uses it: devbox well and busy, each agent in a VM; laptop with claude
- * logged out, a Mac whose agents run as processes; buildbox offline for three days. E2B (self-hosted) and Daytona
- * connected, Daytona's key refused. `places-vm-off` is devbox unable to run VMs, with the command that fixes it.
+ * logged out, a Mac whose agents run as processes; buildbox offline for three days. boat.dev connected, its key
+ * refused. `places-vm-off` is devbox unable to run VMs, with the command that fixes it.
  */
 function places(from: Fixture, name: string, note: string, devboxWhy: string, devboxSandbox: JsonObject): Fixture {
   const f = unwell(from, name, note);
@@ -335,9 +335,9 @@ function onePlace(from: Fixture): Fixture {
   return f;
 }
 
-/** No machine of the team's: E2B connected, the hub's runner for it with no Claude account to run its agents on. */
+/** No machine of the team's: boat.dev connected, the hub's runner for it with no Claude account to run its agents on. */
 function none(from: Fixture): Fixture {
-  const f = one(from, "machines-none", "No machine yet: Add machine in the empty list; E2B connected, its hosted agents with no Claude account");
+  const f = one(from, "machines-none", "No machine yet: Add machine in the empty list; boat.dev connected, its hosted agents with no Claude account");
   const runner: JsonObject = {
     machineId: "hosted",
     name: "Hosted sandboxes",
@@ -353,7 +353,7 @@ function none(from: Fixture): Fixture {
     if (Array.isArray(frame["machines"])) frame["machines"] = [];
   }
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, machines: [] } : out));
-  f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true, providers: [{ provider: "e2b", connected: true, limit: 20, check: { ok: true, at: f.now } }, SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] });
+  f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true, providers: [{ provider: "boat", connected: true, limit: 20, check: { ok: true, at: f.now } }] });
   return f;
 }
 
@@ -366,7 +366,7 @@ export default defineGroup({
     joinedWith(base("typical"), "machines-warning", "laptop joined with Android not ready: the one row, and its fix to run on laptop", laptopChecks({ kvm: true })),
     one(base("empty")),
     sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
-    sandboxes(base("typical"), "machines-sandboxes-on", "E2B (self-hosted) and Daytona connected, in the order agents go to them; Daytona's key refused at its last test", SANDBOXES_ON_PAUSED),
+    sandboxes(base("typical"), "machines-sandboxes-on", "boat.dev connected, its key refused at its last test", SANDBOXES_ON_PAUSED),
     sandboxes(base("typical"), "machines-revyl-removed", "A hub that had Revyl connected before fleetd removed it: one plain line above the providers", {
       ...SANDBOXES_ON,
       removed: ["Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine."],
@@ -378,8 +378,16 @@ export default defineGroup({
       status: "failed",
       problem: "Tailscale signed the gateway out (its key expired, or it was removed from the tailnet): connect it again",
     }),
+    sandboxes(base("typical"), "machines-e2b-removed", "A hub that had E2B and Daytona connected before fleetd removed them: a plain line each above the providers", {
+      ...SANDBOXES_OFF,
+      placing: true,
+      removed: [
+        "Daytona was removed from fleetd, with the key you connected: its boxes can't open /dev/kvm (user-namespaced containers), so they can't run Android's emulator. Agents run on your machines or boat.dev.",
+        "E2B was removed from fleetd, with the key you connected: its boxes have no KVM (Firecracker microVMs), so they can't run Android's emulator. Agents run on your machines or boat.dev.",
+      ],
+    }),
     unwell(base("typical")),
-    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; E2B and Daytona (refused) connected", VM, { kind: "microvm" }),
+    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; boat.dev connected, so Linux machine is a pick", VM, { kind: "microvm" }),
     places(
       base("typical"),
       "machines-places-vm-off",

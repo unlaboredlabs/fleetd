@@ -1,7 +1,7 @@
-// A provider the team connects with its own key, as Hub › Machines' Providers lists every one of them (E2B, boat.dev,
-// Daytona): one row, its state a dot, what it can run quietly beside its name. Not connected, Connect; it opens
+// A provider the team connects with its own key, as Hub › Machines' Providers lists every one of them (boat.dev): one
+// row, its state a dot, what it can run quietly beside its name. Not connected, Connect; it opens
 // the key's sealed field in the row. Connected, what it has to set (a sandbox provider's limit) and one menu with Test
-// and Disconnect; the line under its name says only what a check found, while a run goes, or a self-hosted domain.
+// and Disconnect; the line under its name says only what a check found, or while a run goes.
 // The key goes to main, which seals it to the hub's own key and calls the hub's connect: it never reaches the hub in
 // the clear and is never shown again.
 import { Ellipsis } from "lucide-react";
@@ -10,7 +10,7 @@ import type { TextTone } from "../../ui";
 import { Button, cx, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text } from "../../ui";
 import { errorText } from "./hub";
 import { SettingsRow, type Mark } from "./parts";
-import { domainOf, keyOf } from "./sandboxModel";
+import { keyOf } from "./sandboxModel";
 import s from "./settings.module.css";
 
 type Busy = "test" | "disconnect" | "set" | null;
@@ -45,7 +45,7 @@ export function ProviderRow(props: {
   hint?: string | undefined;
   connected: boolean;
   mark: Mark;
-  /** What its last check found, or its domain: the row's line, null for none. */
+  /** What its last check found: the row's line, null for none. */
   line: { node: ReactNode; tone?: TextTone | undefined } | null;
   /** Connected: what it has to set, before its menu. */
   setting?: ReactNode;
@@ -112,19 +112,16 @@ export function ProviderRow(props: {
 }
 
 /**
- * The key's one field, its characters shown as dots, a self-hosted domain beside it where the provider takes one, with
- * Connect and Cancel. What was typed goes to main only (`seal`).
+ * The key's one field, its characters shown as dots, with Connect and Cancel. What was typed goes to main only (`seal`).
  */
 export function ConnectKey(props: {
   name: string;
-  domain?: boolean;
-  seal: (key: string, domain: string | undefined) => Promise<{ ok: true } | { ok: false; error: { message: string; fix?: string | undefined } }>;
+  seal: (key: string) => Promise<{ ok: true } | { ok: false; error: { message: string; fix?: string | undefined } }>;
   reread: () => Promise<unknown>;
   onCancel: () => void;
   onDone: () => void;
 }) {
   const [key, setKey] = useState("");
-  const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const typed = keyOf(key);
@@ -132,7 +129,7 @@ export function ConnectKey(props: {
     if (typed === null || busy) return;
     setBusy(true);
     setError(null);
-    const out = await props.seal(typed, props.domain === true ? domainOf(domain) : undefined);
+    const out = await props.seal(typed);
     if (!out.ok) {
       setBusy(false);
       setError(out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}`);
@@ -165,18 +162,6 @@ export function ConnectKey(props: {
         disabled={busy}
         onChange={(e) => setKey(e.target.value)}
       />
-      {props.domain === true ? (
-        <Input
-          aria-label={`Self-hosted ${props.name} domain`}
-          className={s.domainField}
-          value={domain}
-          placeholder="Domain, if self-hosted"
-          autoComplete="off"
-          spellCheck={false}
-          disabled={busy}
-          onChange={(e) => setDomain(e.target.value)}
-        />
-      ) : null}
       <Button type="submit" size="sm" variant="primary" disabled={typed === null || busy}>
         {busy ? "Connecting…" : "Connect"}
       </Button>

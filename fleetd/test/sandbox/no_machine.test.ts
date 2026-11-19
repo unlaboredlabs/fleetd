@@ -1,6 +1,6 @@
-// A hub with no computer connected runs a bot's agent (D558): the team connects its own E2B key and the hub's Claude
+// A hub with no computer connected runs a bot's agent (D558): the team connects its own boat.dev key and the hub's Claude
 // API key, nothing else. The hub starts its own runner (hub/runner), a fleetd node that joins it over the hub's own
-// address and runs every agent in a box of the team's provider; a bot cloned there gets a writer, which runs in an E2B
+// address and runs every agent in a box of the team's provider; a bot cloned there gets a writer, which runs in a boat.dev
 // box (the stand-in's, its box running here as the provider would run it) to a result, pushes its branch and opens a
 // PR. No real claude (the factory lab's offline stand-in), no network, and the hub's clock is the test's.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -28,7 +28,7 @@ import { provider } from "../../src/sandbox/providers/index.ts";
 import { RUNNER_ID } from "../../src/shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../src/shared/sealed_box.ts";
 import { seedHubDb } from "../helpers.ts";
-import { e2bStandIn, KEY, localRunner } from "./stand_ins.ts";
+import { boatStandIn, KEY, localRunner } from "./stand_ins.ts";
 
 setDefaultTimeout(180_000);
 
@@ -78,11 +78,11 @@ async function until<T>(what: string, f: () => T | undefined | Promise<T | undef
 }
 
 test("with no computer connected, a provider's key and a Claude account run a bot's writer in a hosted box to a result and a PR", async () => {
-  // The provider: E2B's stand-in, each box run here.
+  // The provider: boat.dev's stand-in, each box run here.
   const local = localRunner(join(tmp, "boxes"), BOX_DIR);
-  const e2b = e2bStandIn(local.runner);
-  local.track(e2b);
-  cleanups.push(() => e2b.stop(), () => local.cleanup());
+  const boat = boatStandIn(local.runner);
+  local.track(boat);
+  cleanups.push(() => boat.stop(), () => local.cleanup());
   const fleetdScript = new TextEncoder().encode(`#!/bin/sh\nexec ${process.execPath} ${MAIN} "$@"\n`);
   const sha = new Bun.CryptoHasher("sha256").update(fleetdScript).digest("hex");
   // Claude in the box: the offline stand-in, which runs a message's `lab-run:` lines and answers with the reply set.
@@ -104,7 +104,7 @@ test("with no computer connected, a provider's key and a Claude account run a bo
   const hub = new Hub({ home, listen: { host: "127.0.0.1", port: 0 } }, HubDb.open(home), clock);
   const tools = new Registry();
   registerAll(tools);
-  // The runner's node, in this process: what `fleetd node join --runner` and `node run` start, with E2B's stand-in.
+  // The runner's node, in this process: what `fleetd node join --runner` and `node run` start, with boat.dev's stand-in.
   let node: RunningNode | undefined;
   let url = "";
   const spawn: Spawn = (args, stdin) => {
@@ -116,7 +116,7 @@ test("with no computer connected, a provider's key and a Claude account run a bo
     const started = startNode(nodeHome, config, joining ? stdin : undefined, false, {
       boxes: (h, m, k) =>
         new Boxes(h, m, k, {
-          provider: (p, auth) => provider(p, auth, { urls: { api: e2b.url, sandbox: (box, port) => `${e2b.url}/box/${box}/${port}` }, pollMs: 5 }),
+          provider: (p, auth) => provider(p, auth, { urls: { api: `${boat.url}/api/v1`, sandbox: (box, port) => `${boat.url}/box/${box}/${port}` }, pollMs: 5 }),
           source: () => ({ sha256: sha, bytes: async () => fleetdScript }),
         }),
     }).then((n) => {
@@ -166,10 +166,10 @@ test("with no computer connected, a provider's key and a Claude account run a bo
     throw new Error(`${tool}: ${r.error.kind === "tool" ? `${r.error.error.message} ${r.error.error.fix ?? ""}` : r.error.kind}`);
   };
 
-  // 1. Where agents run: the team's own E2B key. The hub starts its runner, which joins and checks the key.
+  // 1. Where agents run: the team's own boat.dev key. The hub starts its runner, which joins and checks the key.
   const sealedKey = Buffer.from(seal(publicKeyOf(boxKey(hub)), new TextEncoder().encode(JSON.stringify({ key: KEY })))).toString("base64");
-  const connected = await call("sandbox_connect", { provider: "e2b", sealed: sealedKey, limit: 2 });
-  expect(connected.providers.find((p: { provider: string }) => p.provider === "e2b").check).toMatchObject({ ok: true });
+  const connected = await call("sandbox_connect", { provider: "boat", sealed: sealedKey, limit: 2 });
+  expect(connected.providers.find((p: { provider: string }) => p.provider === "boat").check).toMatchObject({ ok: true });
   expect(runner(hub).running).toBe(true);
   const machine = store(hub).machineGet(RUNNER_ID)!;
   expect(machine).toMatchObject({ machineId: RUNNER_ID, name: "Hosted sandboxes", runner: true });
@@ -206,7 +206,7 @@ test("with no computer connected, a provider's key and a Claude account run a bo
   const spawned = await lead({ op: "task_spawn", workstreamId, title: "say hello", kind: "write", prompt });
   const taskId = spawned.task.taskId as string;
 
-  // It runs in a box of E2B's, made from the team's key, and comes to its result.
+  // It runs in a box of boat.dev's, made from the team's key, and comes to its result.
   const task = await until("the writer's result", async () => {
     const t = (await lead({ op: "task_list", taskId })).tasks[0] as { state: string; threadRef: { machineId: string } } | undefined;
     if (t?.state === "failed" || t?.state === "cancelled") throw new Error(`the writer ended ${t.state}: ${JSON.stringify(t)}`);
@@ -214,13 +214,13 @@ test("with no computer connected, a provider's key and a Claude account run a bo
   });
   expect(task.threadRef.machineId).toBe(RUNNER_ID);
   expect(JSON.stringify(task)).toContain("said hello and opened https://github.com/acme/demo/pull/1");
-  expect(e2b.calls.some((c) => c.method === "POST" && c.path === "/v2/sandboxes")).toBe(true);
+  expect(boat.calls.some((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build"))).toBe(true);
   // Its branch is on origin with its commit, and its PR was opened from its worktree on that branch.
   const branch = sh(origin, "git for-each-ref --format='%(refname:short)' refs/heads/fleetd/");
   expect(branch).toStartWith(`fleetd/${taskId}-`);
   expect(sh(origin, `git log -1 --format=%s ${branch}`)).toBe("say hello");
   expect(readFileSync(prs, "utf8")).toContain(`${branch} pr create --fill`);
-  // The slot board put it in E2B: the runner has no slots of its own, and its agents' worktrees are in its home.
+  // The slot board put it in boat.dev: the runner has no slots of its own, and its agents' worktrees are in its home.
   expect(readFileSync(prs, "utf8")).toStartWith(join(runner(hub).home, "worktrees"));
   const own = slots(hub).state().perMachine?.find((m) => m.machineId === RUNNER_ID);
   expect(own?.auto).toBe(0);

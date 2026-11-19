@@ -1,11 +1,10 @@
-// The hosted sandbox clients (boat.dev, E2B, Daytona) against stand-in servers of each provider (stand_ins.ts): the
-// same behaviour from all three behind the one interface (idempotent create and destroy, the leak sweep's list,
-// lifetime, a detached start whose secrets stay out of the command, the port stream, reading a file, building a
-// template), each provider's own auth header and settings, and refusals in plain words.
+// The hosted sandbox client (boat.dev) against a stand-in server (stand_ins.ts): the one interface's behaviour
+// (idempotent create and destroy, the leak sweep's list, lifetime, a detached start whose secrets stay out of the
+// command, the port stream, reading a file, building a template), its own auth header and settings, and refusals in
+// plain words. A provider added later runs the same tests (the loop below).
 import { afterEach, describe, expect, test } from "bun:test";
-import { boatStandIn, daytonaStandIn, e2bStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
+import { boatStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
-import { frames } from "../../src/sandbox/providers/e2b.ts";
 import { TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
 import { DEFAULT_SIZE, SIZES } from "../../src/sandbox/providers/common.ts";
 import { hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
@@ -17,9 +16,9 @@ afterEach(() => {
 });
 
 function make(id: ProviderId, key = KEY): { s: StandIn; p: Provider } {
-  const s = id === "e2b" ? e2bStandIn() : id === "boat" ? boatStandIn() : daytonaStandIn();
+  const s = boatStandIn();
   running.push(s);
-  const api = id === "boat" ? `${s.url}/api/v1` : s.url;
+  const api = `${s.url}/api/v1`;
   const p = provider(id, { key }, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 });
   return { s, p };
 }
@@ -36,7 +35,7 @@ WORKDIR /work
 RUN echo hi
 `;
 
-for (const id of ["e2b", "boat", "daytona"] as const) {
+for (const id of ["boat"] as const) {
   describe(id, () => {
     test("a create with the same key makes one box; destroy twice is fine; the box leaves the list", async () => {
       const { s, p } = make(id);
@@ -66,10 +65,7 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
       const { s, p } = make(id);
       await create(p);
       const api = s.calls.filter((c) => !c.path.startsWith("/box/") && !c.path.startsWith("/toolbox/"));
-      for (const c of api) {
-        if (id === "e2b") expect(c.headers.get("x-api-key")).toBe(KEY);
-        else expect(c.headers.get("authorization")).toBe(`Bearer ${KEY}`);
-      }
+      for (const c of api) expect(c.headers.get("authorization")).toBe(`Bearer ${KEY}`);
       const wrong = make(id, "wrong-key-987654321").p;
       const e = await wrong.list().catch((e) => e);
       expect(e).toBeInstanceOf(ProviderError);
@@ -81,13 +77,9 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
       const { s, p } = make(id);
       const b = await create(p);
       const got = () => s.boxes.get(b.id);
-      if (id === "e2b") expect(got().timeout).toBe(7200);
-      if (id === "boat") expect(got().ttlSeconds).toBe(7200);
-      if (id === "daytona") expect(got().ttlMinutes).toBe(120);
+      expect(got().ttlSeconds).toBe(7200);
       await p.lifetime(b.id, 5 * 3600_000);
-      if (id === "e2b") expect(got().timeout).toBe(18000);
-      if (id === "boat") expect(got().ttlSeconds).toBe(18000);
-      if (id === "daytona") expect(got().ttlMinutes).toBe(300);
+      expect(got().ttlSeconds).toBe(18000);
     });
 
     test("a detached start: the environment reaches the command, never the command's text", async () => {
@@ -95,22 +87,11 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
       const b = await create(p);
       await p.start(b.id, { argv: ["fleetd", "sandbox-guest", "--listen", "ws"], env: { FLEETD_BOX_SECRET: "s3cret value'x", GH_TOKEN: "ghs_abc" }, cwd: "/home/user/repo" });
       const box = s.boxes.get(b.id);
-      if (id === "e2b") {
-        const msgs = [];
-        for await (const m of frames(new Response(box.started.body).body!)) msgs.push(m.payload);
-        expect(msgs[0].process).toEqual({ cmd: "fleetd", args: ["sandbox-guest", "--listen", "ws"], envs: { FLEETD_BOX_SECRET: "s3cret value'x", GH_TOKEN: "ghs_abc" }, cwd: "/home/user/repo" });
-        expect(msgs[0].stdin).toBe(false);
-        expect(box.started.headers.get("x-access-token")).toBe("envd-token");
-        // The account's key never goes to the box's own host.
-        expect(s.calls.filter((c) => c.path.startsWith("/box/")).every((c) => c.headers.get("x-api-key") === null)).toBe(true);
-        return;
-      }
-      const command = id === "boat" ? box.commands.at(-1).command : box.toolbox.at(-1).body.command;
+      const command = box.commands.at(-1).command;
       expect(command).not.toContain("ghs_abc");
       expect(command).not.toContain("s3cret");
       expect(command).toContain("sandbox-guest");
-      if (id === "boat") expect(box.commands.at(-1).detached).toBe(true);
-      if (id === "daytona") expect(box.toolbox.at(-1).body.runAsync).toBe(true);
+      expect(box.commands.at(-1).detached).toBe(true);
       // The environment went to a file the command reads and removes.
       const at = /\/tmp\/\.fleetd-env-[0-9a-f-]+/.exec(command)![0];
       expect(command).toContain(`. '\\''${at}'\\'' && rm -f '\\''${at}'\\''`);
@@ -150,37 +131,17 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
       const { s, p } = make(id);
       const logs: string[] = [];
       const name = await p.build(DOCKERFILE, { name: "fleetd-abc", onLog: (l) => logs.push(l) });
-      if (id === "e2b") {
-        expect(name).toBe("tpl1");
-        const tpl = s.calls.find((c) => c.path === "/v3/templates")!;
-        expect(tpl.body).toEqual({ name: "fleetd-abc", cpuCount: 2, memoryMB: 4096 });
-        const build = s.calls.find((c) => c.path === "/v2/templates/tpl1/builds/b1")!;
-        expect(build.body.fromImage).toBe(`ubuntu@sha256:${"a".repeat(64)}`);
-        expect(build.body.steps).toEqual([
-          { type: "RUN", args: ["apt-get update  && apt-get install -y git curl", "root"] },
-          { type: "ENV", args: ["BUN_INSTALL", "/opt/bun", "PATH", "/opt/bun/bin:/usr/bin"] },
-          { type: "WORKDIR", args: ["/work"] },
-          { type: "RUN", args: ["echo hi", "root"] },
-        ]);
-      }
-      if (id === "daytona") {
-        expect(name).toBe("fleetd-abc");
-        const snap = s.calls.find((c) => c.path === "/snapshots" && c.method === "POST")!;
-        expect(snap.body).toEqual({ name: "fleetd-abc", buildInfo: { dockerfileContent: DOCKERFILE }, cpu: 2, memory: 4, disk: 10 });
-      }
-      if (id === "boat") {
-        expect(name).toBe("fleetd-abc");
-        const cmds = s.calls.filter((c) => /\/commands$/.test(c.path)).map((c) => c.body.command as string);
-        expect(cmds).toHaveLength(3);
-        expect(cmds[0]).toContain("apt-get install -y git curl");
-        expect(cmds[1]).toContain("cd '\\''/work'\\''");
-        expect(cmds[1]).toContain("export BUN_INSTALL='\\''/opt/bun'\\''");
-        expect(cmds[2]).toContain("/etc/environment");
-        expect(s.calls.some((c) => c.path === "/api/v1/saved-snapshots" && c.body.name === "fleetd-abc")).toBe(true);
-        // The build's box goes once the snapshot is saved.
-        expect(s.boxes.size).toBe(0);
-        expect(logs[0]).toContain("boat's own Ubuntu 24.04");
-      }
+      expect(name).toBe("fleetd-abc");
+      const cmds = s.calls.filter((c) => /\/commands$/.test(c.path)).map((c) => c.body.command as string);
+      expect(cmds).toHaveLength(3);
+      expect(cmds[0]).toContain("apt-get install -y git curl");
+      expect(cmds[1]).toContain("cd '\\''/work'\\''");
+      expect(cmds[1]).toContain("export BUN_INSTALL='\\''/opt/bun'\\''");
+      expect(cmds[2]).toContain("/etc/environment");
+      expect(s.calls.some((c) => c.path === "/api/v1/saved-snapshots" && c.body.name === "fleetd-abc")).toBe(true);
+      // The build's box goes once the snapshot is saved.
+      expect(s.boxes.size).toBe(0);
+      expect(logs[0]).toContain("boat's own Ubuntu 24.04");
     });
 
     test("a provider that can't be reached says so", async () => {
@@ -201,19 +162,10 @@ for (const id of ["e2b", "boat", "daytona"] as const) {
 
 describe("refusals in plain words", () => {
   const cases: [ProviderId, number, unknown, string, RegExp][] = [
-    ["e2b", 429, { code: 429, message: "Rate limit exceeded" }, "limit", /E2B's limit/],
-    ["e2b", 403, { code: 403, message: "team is blocked" }, "billing", /blocked this team's account/],
-    ["e2b", 400, { code: 400, message: "The requested timeout exceeds the sandbox lifetime limit" }, "limit", /caps a sandbox's life/],
-    // E2B's own words on a Hobby account, seen live.
-    ["e2b", 400, { code: 400, message: "Timeout cannot be greater than 1 hours" }, "limit", /caps a sandbox's life/],
-    ["e2b", 503, { code: 503, error_code: "sandbox_capacity_unavailable", message: "not enough capacity" }, "failed", /try again in a minute/],
     ["boat", 402, { ok: false, code: "billing_required", message: "Add a card", error: { code: "billing_required", message: "Add a card", status: 402 } }, "billing", /billing is sorted out/],
     ["boat", 429, { ok: false, code: "limit_reached", message: "100 at once" }, "limit", /sandboxes at once/],
     ["boat", 429, { ok: false, code: "rate_limited", message: "12 per minute", window: "minute" }, "limit", /sandbox starts/],
     ["boat", 403, { ok: false, code: "trial_machine_class_not_allowed", message: "Needs a paid plan" }, "billing", /doesn't include that sandbox size/],
-    ["daytona", 403, { statusCode: 403, message: "Total CPU quota exceeded. Maximum allowed: 10" }, "limit", /Daytona's limit/],
-    ["daytona", 403, { statusCode: 403, message: "Organization is suspended: insufficient credits" }, "billing", /billing is sorted out/],
-    ["daytona", 429, { statusCode: 429, message: "Rate limit exceeded" }, "limit", /Daytona's limit/],
   ];
   for (const [id, status, body, reason, words] of cases) {
     test(`${id} ${status} ${JSON.stringify(body).slice(0, 60)}`, async () => {
@@ -237,27 +189,8 @@ describe("refusals in plain words", () => {
 });
 
 describe("each provider's own settings", () => {
-  test("E2B: a set timeout, no auto-pause, private ports, and the idempotency key", async () => {
-    const { s, p } = make("e2b");
-    await create(p);
-    const c = s.calls.find((c) => c.path === "/v2/sandboxes" && c.method === "POST")!;
-    expect(c.body).toMatchObject({ templateID: "fleetd-abc", timeout: 7200, autoPause: false, network: { allowPublicTraffic: false } });
-    expect(c.headers.get("idempotency-key")).toBe("sess-1");
-  });
 
-  test("E2B: a create still under way on E2B's side is asked again with the same key", async () => {
-    const { s, p } = make("e2b");
-    s.fail({ path: /POST \/v2\/sandboxes$/, status: 409, body: { code: 409, error_code: "idempotency_in_progress", message: "in progress" }, times: 2 });
-    const b = await create(p);
-    expect(s.boxes.has(b.id)).toBe(true);
-  });
 
-  test("E2B: domain points the client at a self-hosted E2B", async () => {
-    const seen: string[] = [];
-    const fake = (async (url: string) => (seen.push(String(url)), Response.json([]))) as unknown as typeof fetch;
-    await provider("e2b", { key: KEY, domain: "e2b.example.internal" }, { fetch: fake }).list();
-    expect(seen[0]).toStartWith("https://api.e2b.example.internal/v2/sandboxes?");
-  });
 
   test("boat: no account secrets, no snapshots, no history, a size that fits, and the delete's confirmation", async () => {
     const { s, p } = make("boat");
@@ -284,31 +217,15 @@ describe("each provider's own settings", () => {
     expect(keys.every((k) => /^build-[0-9a-f]{8}-fleetd-abc$/.test(k!))).toBe(true);
   });
 
-  test("Daytona: ephemeral, no auto-stop, private, and a size past its cap refused", async () => {
-    const { s, p } = make("daytona");
-    await create(p);
-    const c = s.calls.find((c) => c.path === "/sandbox" && c.method === "POST")!;
-    expect(c.body).toMatchObject({ name: "sess-1", snapshot: "fleetd-abc", public: false, autoStopInterval: 0, autoDeleteInterval: 0, ttlMinutes: 120 });
-    const e = await p.build(DOCKERFILE, { name: "x", size: { cpu: 8, memGb: 16 } }).catch((e) => e);
-    expect(e.message).toBe("Daytona comes in no 8 vCPU / 16 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB");
-  });
 
-  test("Daytona: a name taken by a box fleetd didn't make is not answered as ours", async () => {
-    const { s, p } = make("daytona");
-    s.boxes.set("theirs", { id: "theirs", name: "sess-1", labels: {}, state: "started" });
-    const e = await create(p).catch((e) => e);
-    expect(e.message).toContain("didn't make");
-  });
 });
 
 describe("exact sizes, never rounded", () => {
-  test("each provider lists exact sizes, the default first; E2B's memory is a whole, even number of GiB", () => {
-    for (const k of ["vm", "boat", "e2b", "daytona"] as const) {
+  test("each provider lists exact sizes, the default first", () => {
+    for (const k of ["vm", "boat"] as const) {
       expect(SIZES[k][0]).toEqual(DEFAULT_SIZE);
       expect(SIZES[k].every((s) => Number.isInteger(s.cpu) && Number.isInteger(s.memGb))).toBe(true);
     }
-    expect(SIZES.e2b.every((s) => s.memGb % 2 === 0 && s.cpu <= 8 && s.memGb <= 8)).toBe(true);
-    expect(SIZES.daytona.every((s) => s.cpu <= 4 && s.memGb <= 8)).toBe(true);
     // boat's list is exactly its machine types.
     expect(SIZES.boat).toEqual(TYPES.map(({ cpu, memGb }) => ({ cpu, memGb })));
   });
@@ -327,26 +244,6 @@ describe("exact sizes, never rounded", () => {
     expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("comes in no 32 vCPU / 64 GB");
   });
 
-  test("E2B and Daytona: each listed size is the template's or snapshot's own, exactly; another is refused before any call", async () => {
-    for (const size of SIZES.e2b) {
-      const { s, p } = make("e2b");
-      await p.build(DOCKERFILE, { name: "fleetd-abc", size });
-      expect(s.calls.find((c) => c.path === "/v3/templates")!.body).toEqual({ name: "fleetd-abc", cpuCount: size.cpu, memoryMB: size.memGb * 1024 });
-    }
-    for (const size of SIZES.daytona) {
-      const { s, p } = make("daytona");
-      await p.build(DOCKERFILE, { name: "fleetd-abc", size });
-      expect(s.calls.find((c) => c.path === "/snapshots" && c.method === "POST")!.body).toMatchObject({ cpu: size.cpu, memory: size.memGb });
-    }
-    const e2b = make("e2b");
-    const odd = await e2b.p.build(DOCKERFILE, { name: "x", size: { cpu: 3, memGb: 5 } }).catch((e) => e);
-    expect(odd.message).toBe("E2B comes in no 3 vCPU / 5 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 8 GB");
-    expect(e2b.s.calls).toHaveLength(0);
-    const day = make("daytona");
-    const small = await day.p.build(DOCKERFILE, { name: "x", size: { cpu: 1, memGb: 2 } }).catch((e) => e);
-    expect(small.message).toContain("Daytona comes in no 1 vCPU / 2 GB");
-    expect(day.s.calls).toHaveLength(0);
-  });
 });
 
 describe("the recipe", () => {
@@ -354,7 +251,7 @@ describe("the recipe", () => {
     const r = parse(DOCKERFILE);
     expect(r.from).toBe(`ubuntu@sha256:${"a".repeat(64)}`);
     expect(r.steps.map((s) => s.op)).toEqual(["RUN", "ENV", "WORKDIR", "RUN"]);
-    // A RUN continued over lines is one shell line, as Docker joins it: E2B ran each line as a command of its own.
+    // A RUN continued over lines is one shell line, as Docker joins it, not a command a line.
     expect(r.steps[0]!.args[0]).toBe("apt-get update  && apt-get install -y git curl");
     expect(parse("FROM x\nRUN a \\\n  b \\\n  && c\n").steps[0]!.args).toEqual(["a   b   && c"]);
     expect(() => parse("FROM x\nCOPY a b\n")).toThrow("COPY");

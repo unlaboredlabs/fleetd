@@ -13,7 +13,6 @@
 // script shapes), then types the value over the node's own connection and submits, in one step (`fill`). The value
 // never passes the proxy, and every answer to the driver is scrubbed of it.
 import { ToolError } from "../../shared/errors.ts";
-import { writePolicy } from "./agent_browser.ts";
 import type { Broker } from "./index.ts";
 import { Cache, CredError, type Credential, hostOf, isOtp, originAllowed, TOKEN_ENV, type Vault, type VaultFor, vaultFor } from "./onepassword.ts";
 import { PAUSED, type Session } from "./session.ts";
@@ -260,11 +259,7 @@ export function seal(broker: Broker, session: Session, name: string, value: stri
   session.addSecret(name, value);
   broker.credentials.filled(session.threadId, name, value);
   session.credentialsFilled += 1;
-  try {
-    writePolicy(broker.home, session.threadId, true);
-  } catch (e) {
-    console.warn(`browser ${session.id}: agent-browser's sealed policy not written: ${(e as Error).message}`);
-  }
+  void broker.policy(session.threadId, true).catch((e: Error) => console.warn(`browser ${session.id}: agent-browser's sealed policy not written: ${e.message}`));
 }
 
 /** The page the session follows, as its target says. */

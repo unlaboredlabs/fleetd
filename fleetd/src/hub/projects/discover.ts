@@ -185,7 +185,7 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
       problem(
         "no_worker",
         "nothing is connected to run the bot: no computer is online and no hosted sandbox provider is connected",
-        "Connect a computer, or connect E2B, boat.dev or Daytona in Settings › Hub › Machines",
+        "Connect a computer, or connect boat.dev in Settings › Hub › Machines",
       ),
     );
   }

@@ -61,5 +61,6 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
 
 # GTK 3, which Electron links even headless (app/desktop's engine tests start it), with dbus-x11 as the session bus
 # dconf asks for, which keeps systemd out. Its icon themes go: nothing headless draws them, and they're most of its size.
-RUN apt-get update && apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 \
+# Xvfb, openbox and xterm: a hosted agent's Linux desktop runs in its box (fleetd/src/node/place/box_screens.ts).
+RUN apt-get update && apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 openbox xterm xvfb \
  && rm -rf /usr/share/icons/* /var/lib/apt/lists/*

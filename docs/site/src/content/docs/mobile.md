@@ -113,7 +113,7 @@ The **ⓘ** at the top of a chat opens its bot's page:
   always allowed.
 - **Machine** and **Folder**: where it runs, read only.
 - **[Computer](/docs/projects#computer)**: **Runs on**, where every agent of the bot runs (Automatic, or one real
-  machine such as **E2B · 4 vCPU / 8 GB**; tap one to pick it, and one that can't be used now says why under it), each repo's setup commands, and the image its agents' computers start from: **Ready**,
+  machine such as **boat.dev · 4 vCPU / 8 GB**; tap one to pick it, and one that can't be used now says why under it), each repo's setup commands, and the image its agents' computers start from: **Ready**,
   **Building…**, **Failed** (tap it for the build's log) or **Not built yet**, when it was built and its size.
   **Rebuild** builds it again in the background. Edit the commands in the desktop app.
 - **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the bot's
@@ -177,9 +177,10 @@ version, **Versions** picks an older one, which says so over the page with the w
 ## Machines {#machines}
 
 An admin has **Machines** in Settings, the desktop app's [Machines page](/docs/machines#page) in three groups: the
-machines and how each is; the providers the team connects with its own keys (E2B, boat.dev, Daytona), each
+machines and how each is; the providers the team connects with its own keys (boat.dev), each
 with what it can run, a tap opening one to connect it (its key in a secure field, sealed on the phone), set its limit,
-test or disconnect it; and what runs where, a row per kind, then how long recordings are kept. Members don't see it.
+test or disconnect it; and what runs where, **Linux machine** (a pick of the same places as on the desktop, once there is more than one) and
+**Mac machine**, then how long recordings are kept. Members don't see it.
 
 ## Update fleetd {#update}
 

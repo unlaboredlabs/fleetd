@@ -119,8 +119,8 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
 }
 
 /**
- * Where every agent of the bot runs: one pick, each choice a real machine, provider and exact size together ("E2B · 4
- * vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. A choice
+ * Where every agent of the bot runs: one pick, each choice a real machine, provider and exact size together ("boat.dev ·
+ * 4 vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. A choice
  * that can't be used now says why in the list; a pick that can't be had now says so under the row, since its agents
  * wait for it. No row when there is nothing to pick.
  */

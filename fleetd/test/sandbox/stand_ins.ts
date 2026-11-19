@@ -1,17 +1,15 @@
-// Stand-in servers for boat.dev, E2B and Daytona (CI has no accounts): each keeps its boxes in memory, answers the
-// calls fleetd's clients make with the shapes the providers' OpenAPI files give, checks the key's header on every call,
-// and records each call. A box's port is a WebSocket that echoes, after checking the provider's access header and
+// A stand-in server for boat.dev (CI has no account): it keeps its boxes in memory, answers the calls fleetd's client
+// makes with the shapes boat's OpenAPI file gives, checks the key's header on every call, and records each call. A box's port is a WebSocket that echoes, after checking the provider's access header and
 // fleetd's secret. `fail` makes the next matching call answer a refusal.
 //
 // With a `Runner`, a box is more than a record: the command a client starts in it runs on this machine (its
-// environment as the provider would give it, the environment file of boat and Daytona read back from what the client
+// environment as the provider would give it, boat's environment file read back from what the client
 // wrote), and the box's port is carried to the port the runner says, so a test drives a box's whole life.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { stop as stopHost } from "../../src/node/runner/host.ts";
-import { frame } from "../../src/sandbox/providers/e2b.ts";
 
 export const KEY = "test-key-0123456789";
 export const SECRET = "box-secret-abc";
@@ -41,7 +39,7 @@ export type Runner = {
   port(box: string): number | undefined;
 };
 
-/** A boat or Daytona launcher, run here: its environment file (written through the provider's file call) put where
+/** A boat launcher, run here: its environment file (written through the provider's file call) put where
  * this machine keeps scratch files, read and removed by the command as in a box. */
 function launch(runner: Runner, box: string, command: string, files: Map<string, Uint8Array>): void {
   const dir = join(process.env.TMPDIR ?? "/tmp", "stand-in-env");
@@ -133,84 +131,6 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
 let n = 0;
 const nextId = (p: string) => `${p}${(++n).toString().padStart(8, "0")}`;
 
-/** E2B's platform API and each box's envd, on one server: a box's own host is `<url>/box/<id>/<port>`. */
-export function e2bStandIn(runner?: Runner): StandIn {
-  const idem = new Map<string, string>();
-  const builds = new Map<string, number>();
-  return serve(
-    (h) => h.get("x-api-key") === KEY || h.get("x-access-token") === "envd-token",
-    (c, s) => {
-      const p = c.path;
-      if (c.method === "POST" && p === "/v2/sandboxes") {
-        const k = c.headers.get("idempotency-key");
-        let id = k ? idem.get(k) : undefined;
-        if (!id) {
-          id = nextId("e2b");
-          if (k) idem.set(k, id);
-          s.boxes.set(id, { sandboxID: id, metadata: c.body.metadata, timeout: c.body.timeout, req: c.body, state: "running" });
-        }
-        return Response.json({ sandboxID: id, templateID: c.body.templateID, clientID: "x", envdVersion: "0.4.0", envdAccessToken: "envd-token", trafficAccessToken: "traffic-token", domain: null }, { status: 201 });
-      }
-      let m = /^\/sandboxes\/([^/]+)$/.exec(p);
-      if (m && c.method === "DELETE") return s.boxes.delete(m[1]!) ? new Response(null, { status: 204 }) : Response.json({ code: 404, message: "sandbox not found" }, { status: 404 });
-      m = /^\/sandboxes\/([^/]+)\/timeout$/.exec(p);
-      if (m) {
-        const b = s.boxes.get(m[1]!);
-        if (!b) return Response.json({ code: 404, message: "not found" }, { status: 404 });
-        b.timeout = c.body.timeout;
-        return new Response(null, { status: 204 });
-      }
-      m = /^\/v2\/sandboxes\/([^/]+)\/connect$/.exec(p);
-      if (m) return Response.json({ sandboxID: m[1], templateID: "t", clientID: "x", envdVersion: "0.4.0", envdAccessToken: "envd-token", trafficAccessToken: "traffic-token" });
-      if (c.method === "GET" && p === "/v2/sandboxes") {
-        const [k, v] = (c.query.get("metadata") ?? "").split("=");
-        const all = [...s.boxes.values()].filter((b) => !k || b.metadata?.[k!] === v);
-        const start = Number(c.query.get("nextToken") ?? 0);
-        const page = all.slice(start, start + 2);
-        const headers = start + 2 < all.length ? { "X-Next-Token": String(start + 2) } : undefined;
-        return Response.json(
-          page.map((b) => ({ sandboxID: b.sandboxID, metadata: b.metadata, state: b.state })),
-          { headers },
-        );
-      }
-      m = /^\/box\/([^/]+)\/49983\/process\.Process\/Start$/.exec(p);
-      if (m) {
-        s.boxes.get(m[1]!).started = c;
-        if (runner) {
-          const raw = c.body as Uint8Array;
-          const p = JSON.parse(new TextDecoder().decode(raw.subarray(5))).process as { cmd: string; args: string[]; envs: Record<string, string> };
-          const env = Object.fromEntries(Object.entries(p.envs ?? {}).map(([k, v]) => [k, runner.rewrite(m![1]!, v)]));
-          runner.exec(m[1]!, [p.cmd, ...(p.args ?? [])], env);
-        }
-        const stream = new ReadableStream({
-          start(ctl) {
-            ctl.enqueue(frame({ event: { start: { pid: 42 } } }));
-          },
-        });
-        return new Response(stream, { headers: { "content-type": "application/connect+json" } });
-      }
-      m = /^\/box\/([^/]+)\/49983\/files$/.exec(p);
-      if (m) {
-        const f = s.files.get(c.query.get("path")!);
-        if (!f) return Response.json({ message: "file not found" }, { status: 404 });
-        const r = /bytes=0-(\d+)/.exec(c.headers.get("range") ?? "");
-        return new Response(r ? f.slice(0, Number(r[1]) + 1) : f, { status: r ? 206 : 200 });
-      }
-      if (c.method === "POST" && p === "/v3/templates") return Response.json({ templateID: "tpl1", buildID: "b1", public: false, aliases: [], names: [c.body.name], tags: [] }, { status: 202 });
-      m = /^\/v2\/templates\/tpl1\/builds\/b1$/.exec(p);
-      if (m) return new Response(null, { status: 202 });
-      if (p === "/templates/tpl1/builds/b1/status") {
-        const k = (builds.get("b1") ?? 0) + 1;
-        builds.set("b1", k);
-        return Response.json({ templateID: "tpl1", buildID: "b1", status: k < 2 ? "building" : "ready", logs: [], logEntries: [{ message: `step ${k}` }] });
-      }
-      return Response.json({ code: 404, message: `no route ${c.method} ${p}` }, { status: 404 });
-    },
-    (h) => h.get("e2b-traffic-access-token") === "traffic-token",
-    runner,
-  );
-}
-
 /** boat's API. */
 export function boatStandIn(runner?: Runner): StandIn {
   const idem = new Map<string, string>();
@@ -295,81 +215,6 @@ export function boatStandIn(runner?: Runner): StandIn {
       return Response.json({ ok: false, code: "not_found", message: `no route ${c.method} ${p}` }, { status: 404 });
     },
     (_h, url) => url.searchParams.get("_token") === "port-token",
-    runner,
-  );
-  return s;
-}
-
-/** Daytona's API and toolbox, on one server: the toolbox is at `<url>/toolbox/<id>`. */
-export function daytonaStandIn(runner?: Runner): StandIn {
-  const snaps = new Map<string, number>();
-  const s = serve(
-    (h) => h.get("authorization") === `Bearer ${KEY}`,
-    (c, s) => {
-      const p = c.path;
-      if (c.method === "POST" && p === "/sandbox") {
-        if ([...s.boxes.values()].some((b) => b.name === c.body.name)) return Response.json({ statusCode: 409, message: `Sandbox with name ${c.body.name} already exists` }, { status: 409 });
-        const id = nextId("dt");
-        s.boxes.set(id, { id, name: c.body.name, state: "creating", labels: c.body.labels, req: c.body, ttlMinutes: c.body.ttlMinutes, toolboxProxyUrl: `${s.url}/toolbox` });
-        return Response.json(s.boxes.get(id));
-      }
-      if (c.method === "GET" && p === "/sandbox") {
-        const want = JSON.parse(c.query.get("labels") ?? "{}");
-        const all = [...s.boxes.values()].filter((b) => Object.entries(want).every(([k, v]) => b.labels?.[k] === v));
-        const start = Number(c.query.get("cursor") ?? 0);
-        return Response.json({ items: all.slice(start, start + 2), nextCursor: start + 2 < all.length ? String(start + 2) : null });
-      }
-      let m = /^\/sandbox\/([^/]+)$/.exec(p);
-      if (m) {
-        const b = s.boxes.get(m[1]!) ?? [...s.boxes.values()].find((b) => b.name === m![1]);
-        if (!b) return Response.json({ statusCode: 404, message: "Sandbox not found" }, { status: 404 });
-        if (c.method === "DELETE") {
-          s.boxes.delete(b.id);
-          return Response.json({ ...b, state: "destroying" });
-        }
-        if (b.state === "creating") b.state = "started";
-        return Response.json(b);
-      }
-      m = /^\/sandbox\/([^/]+)\/ttl\/(\d+)$/.exec(p);
-      if (m) {
-        const b = s.boxes.get(m[1]!);
-        b.ttlMinutes = Number(m[2]);
-        return Response.json(b);
-      }
-      m = /^\/sandbox\/([^/]+)\/ports\/(\d+)\/preview-url$/.exec(p);
-      if (m) return Response.json({ sandboxId: m[1], url: `${s.url}/ws/${m[1]}`, token: "preview-token" });
-      m = /^\/toolbox\/([^/]+)(\/.*)$/.exec(p);
-      if (m) {
-        const b = s.boxes.get(m[1]!);
-        b.toolbox ??= [];
-        b.toolbox.push({ path: m[2], body: c.body });
-        if (m[2] === "/process/execute") {
-          const at = /\/tmp\/\.fleetd-env-[0-9a-f-]+/.exec(c.body.command)?.[0];
-          if (at) s.files.set(at, new TextEncoder().encode(c.body.envs.FLEETD_ENV));
-          return Response.json({ exitCode: 0, result: "" });
-        }
-        if (m[2] === "/process/session") return new Response(null, { status: 201 });
-        if (/^\/process\/session\/[^/]+\/exec$/.test(m[2]!)) {
-          if (runner) launch(runner, m[1]!, c.body.command, s.files);
-          return Response.json({ cmdId: "c1" }, { status: 202 });
-        }
-        if (m[2] === "/files/download") {
-          const f = s.files.get(c.query.get("path")!);
-          return f ? new Response(f) : Response.json({ statusCode: 404, message: "file not found" }, { status: 404 });
-        }
-      }
-      if (c.method === "POST" && p === "/snapshots") {
-        snaps.set("s1", 0);
-        return Response.json({ id: "s1", name: c.body.name, state: "pending" });
-      }
-      if (p === "/snapshots/s1") {
-        const k = (snaps.get("s1") ?? 0) + 1;
-        snaps.set("s1", k);
-        return Response.json({ id: "s1", state: k < 2 ? "building" : "active" });
-      }
-      return Response.json({ statusCode: 404, message: `no route ${c.method} ${p}` }, { status: 404 });
-    },
-    (h) => h.get("x-daytona-preview-token") === "preview-token",
     runner,
   );
   return s;

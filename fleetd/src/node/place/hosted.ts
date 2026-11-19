@@ -1,4 +1,4 @@
-// The `hosted` place: a session runs in a box of the team's own hosted provider (boat.dev, E2B or Daytona), one box
+// The `hosted` place: a session runs in a box of the team's own hosted provider (boat.dev), one box
 // per session, made by this node (../sandbox/remote/boxes.ts). The box shares nothing with the machine, so it gets
 // what the session reads at the same absolute paths as here (../sandbox/remote/files.ts): its worktree cloned and
 // synced from the machine's, the files its launch names, its transcript to resume. Then everything in the session's
@@ -38,8 +38,6 @@ import { SETUP_TIMEOUT_SEC } from "../worktree/setup.ts";
 import { keptToken } from "../repos/github.ts";
 
 /** What a hosted agent can't do, in plain words: its files are in its box, not on this machine. */
-export const HOSTED_NO_DESKTOP_LAUNCH =
-  "This agent runs in a hosted sandbox, so its files aren't on this machine and the Linux desktop can't launch them. Open what it serves in a browser session instead, or say in your result that the desktop check was skipped.";
 export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents' Mac can't build from its files, and iOS simulators aren't available to it.";
 
 /** How a box's reach of Claude is checked (./endpoint.ts probe); tests set a stand-in. */
@@ -348,7 +346,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       }
       if (ports.length) save(dir, l.record);
       const PATH = boxPath(env.PATH, home);
-      // A box's user may be root (Daytona's is), where claude skips its prompts only in a sandbox it is told of.
+      // A box's user may be root, where claude skips its prompts only in a sandbox it is told of.
       const boxEnv = { ...env, PATH, IS_SANDBOX: "1" };
       // What the launch names under the node's home, but for what has its own way in (the worktree, the scratch dir,
       // the hosts' dirs) or stays off inside boxes (the build slots).
@@ -462,7 +460,7 @@ export async function destroyHosted(dir: string): Promise<void> {
 }
 
 /** Where the hub's runner keeps its bots' computer images: snapshots in `provider`, where it saves them (boat); none
- * where it doesn't (E2B and Daytona, for now), whose boxes start from the template and run setup. */
+ * where a provider doesn't, whose boxes start from the template and run setup. */
 export function hostedBackend(home: string, provider: ProviderId | undefined, HOME = process.env.HOME ?? homeDir()): Backend | undefined {
   const b = boxes();
   if (!provider || !b) return undefined;

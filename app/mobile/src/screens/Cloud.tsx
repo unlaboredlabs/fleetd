@@ -153,7 +153,7 @@ export function ConnectComputer() {
     <EmptyState
       icon="desktop"
       title="Where Agents Run"
-      body="On a computer of yours, or in hosted sandboxes on your own E2B, boat.dev or Daytona account. Set either up in the desktop app or the web app."
+      body="On a computer of yours, or in hosted sandboxes on your own boat.dev account. Set either up in the desktop app or the web app."
       action={{
         label: "Refresh",
         onPress: () => {

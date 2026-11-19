@@ -5,13 +5,11 @@
 import type { Machine, SandboxCheck, SandboxProviderState, SandboxState, TailnetState } from "../../desktop/src/shared/contracts";
 import { specOf } from "../../desktop/src/shared/providers";
 
-export { agentsWhere, CAPABILITY_WORDS, canWords, KINDS, machinesRun, NONE, noneHow, specOf, YOURS, type Capability } from "../../desktop/src/shared/providers";
+export { canWords, LINUX, linuxChoices, linuxValue, MAC, machinesRun, NONE, specOf, YOURS } from "../../desktop/src/shared/providers";
 
 /** A provider's name as people know it; one a newer hub has is shown as it names it. */
 export const providerName = (p: string): string => specOf(p).name;
 
-/** Only E2B takes a domain: a self-hosted E2B's. */
-export const takesDomain = (p: string): boolean => p === "e2b";
 
 /** The Settings row shows for an admin. */
 export const machinesShown = (admin: boolean | undefined): boolean => admin === true;
@@ -31,11 +29,11 @@ export const machineValue = (m: Pick<Machine, "status" | "degradedReason" | "deg
 };
 
 /** A provider as Providers lists it: the hub's own state for it. */
-export type ProviderState = { id: string; connected: boolean; limit?: number; check?: SandboxCheck | undefined; domain?: string | undefined };
+export type ProviderState = { id: string; connected: boolean; limit?: number; check?: SandboxCheck | undefined };
 
 /** Every provider the hub has, in the model's order. */
 export const providersOf = (sandboxes: SandboxState | undefined): ProviderState[] =>
-  (sandboxes?.providers ?? []).map((p: SandboxProviderState) => ({ id: p.provider, connected: p.connected, limit: p.limit, check: p.check, domain: p.domain }));
+  (sandboxes?.providers ?? []).map((p: SandboxProviderState) => ({ id: p.provider, connected: p.connected, limit: p.limit, check: p.check }));
 
 /** A provider's row value: not connected, its key refused, its limit, or Connected; `problem` when its check failed. */
 export const providerValue = (p: ProviderState): { text: string; problem: boolean } => {
@@ -59,8 +57,8 @@ const STEPS = [0, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500];
 export const limitChoices = (current: number): number[] => (STEPS.includes(current) ? STEPS : [...STEPS, current].sort((a, b) => a - b));
 export const limitWords = (n: number): string => (n === 0 ? "None" : String(n));
 
-/** A connected provider's footer on its screen: its last check's failure with the fix, else its self-hosted domain. */
-export const providerFooter = (p: Pick<ProviderState, "id" | "connected" | "check" | "domain">): { text: string; problem: boolean } | undefined => {
+/** A connected provider's footer on its screen: its last check's failure with the fix. */
+export const providerFooter = (p: Pick<ProviderState, "id" | "connected" | "check">): { text: string; problem: boolean } | undefined => {
   if (!p.connected) return undefined;
   const check = p.check;
   if (check !== undefined && !check.ok) {
@@ -68,7 +66,7 @@ export const providerFooter = (p: Pick<ProviderState, "id" | "connected" | "chec
     const fix = check.fix === undefined ? "" : ` ${check.fix.charAt(0).toUpperCase()}${check.fix.slice(1)}${/[.!?]$/.test(check.fix) ? "" : "."}`;
     return { text: `${words}${fix}`, problem: true };
   }
-  return p.domain === undefined ? undefined : { text: `Self-hosted at ${p.domain}`, problem: false };
+  return undefined;
 };
 
 /** How long recordings are kept: its choices, and the one set when it isn't among them. */

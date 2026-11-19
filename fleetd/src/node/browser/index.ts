@@ -32,6 +32,8 @@ import {
   find as findAgentBrowser,
   install as installAgentBrowser,
   pluginDirs as agentBrowserPlugins,
+  policy as agentBrowserPolicy,
+  policyPath,
   VERSION as AGENT_BROWSER_VERSION,
   writePolicy,
 } from "./agent_browser.ts";
@@ -43,6 +45,7 @@ import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
 import { Proxy } from "./proxy.ts";
 import { boxedArgs, boxPaths, type Dial, Egress } from "./egress.ts";
 import type { View } from "../place/view.ts";
+import { boxChrome, type ScreenBox } from "../place/box_screens.ts";
 import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting } from "./secure_input.ts";
 import { HEIGHT, Session, WIDTH } from "./session.ts";
@@ -64,8 +67,8 @@ const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) 
 type Open = { session: Session; browser: Launched; purpose: string; note?: string; egress?: Egress };
 
 /** Where an agent session's box is, for its browser (egress.ts): its dial and what of this machine it shows, or
- * `starting` while it boots. */
-export type BoxedFor = { dial: Dial; view?: View } | "starting";
+ * `starting` while it boots. A hosted box gives `box` too: its browser runs in it (../place/box_screens.ts). */
+export type BoxedFor = { dial: Dial; view?: View; box?: ScreenBox } | "starting";
 
 /** How a session's browser starts: the node's Chrome through its pool, or a test's, on a fresh profile or `kept`, with
  * `extra` flags (a boxed session's proxy). */
@@ -123,8 +126,11 @@ export class Broker {
   /** A session of this node's agent hosted on another machine (session_route): its relay and key. */
   remote: ((thread: string) => { url: string; key: Uint8Array } | undefined) | undefined;
   gone: ((thread: string) => void) | undefined;
-  /** The box an agent session runs in, if it runs in one (the node's places): its browser then goes out through it. */
+  /** The box an agent session runs in, if it runs in one (the node's places): its browser then goes out through it, or
+   * runs in it (a hosted box's). */
   boxed: ((thread: string) => BoxedFor | undefined) | undefined;
+  /** How a hosted box's browser starts in it: the box's Chrome, or a test's. */
+  inBox: (box: ScreenBox) => Promise<Launched> = boxChrome;
   /** 1Password: each session's vault and what it resolved, and each agent session's filled values. */
   readonly credentials: Credentials;
   /** The typed secure inputs sessions wait for, by browser session and request (secure_input.ts). */
@@ -152,7 +158,8 @@ export class Broker {
     this.installer = options.installer ?? PINNED;
     this.install = { kind: "wanted" };
     if (launcher) this.install = { kind: "ready", pool: new Pool((_sandboxed, kept, extra) => launcher(kept, extra), options.warm ?? 0) };
-    this.warmSize = options.warm ?? 1;
+    // The hub's runner launches no Chrome of its own: its agents' browsers run in their boxes.
+    this.warmSize = options.warm ?? (node.config.runner === true ? 0 : 1);
     this.proxy = Proxy.start(node.home, {
       live: (thread) => this.live(thread),
       remote: (thread) => this.remote?.(thread),
@@ -303,6 +310,14 @@ export class Broker {
     }
   }
 
+  /** Writes agent-browser's action policy for `thread` (sealed once a value was filled), and into its hosted box too,
+   * where its agent-browser runs and reads it: the box got the node's files as they were at its launch, before this. */
+  async policy(thread: string, credentials: boolean): Promise<void> {
+    writePolicy(this.home, thread, credentials);
+    const boxed = this.boxed?.(thread);
+    if (boxed && boxed !== "starting" && boxed.box) await boxed.box.write(policyPath(this.home, thread), new TextEncoder().encode(agentBrowserPolicy(credentials)), 0o600);
+  }
+
   /** The agent's `session_start`: a browser for its session, reported live to the hub. */
   async open(thread: string, purpose: string, given?: [string, string][]): Promise<{ sessionId: string; cdp: string; startMs: number }> {
     const secrets = given ?? this.pendingSecrets.get(thread);
@@ -319,9 +334,11 @@ export class Broker {
     if (this.starting.has(thread)) throw new ToolError("invalid", "Your browser session is starting already.", "wait for it");
     this.starting.add(thread);
     try {
-      const pool = await this.pool();
       const boxed = this.boxed?.(thread);
       if (boxed === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
+      // A hosted box's browser runs in the box, with nothing of this machine's: no pool, no egress.
+      const inside = boxed?.box;
+      const pool = inside ? undefined : await this.pool();
       // A boxed agent's browser goes out through its box, on a fresh profile: a project's kept one is a lead's, and a
       // lead never runs in a box.
       const owner = boxed ? undefined : this.owners.get(thread);
@@ -343,8 +360,11 @@ export class Broker {
       let browser: Launched;
       let egress: Egress | undefined;
       try {
-        if (boxed) egress = await Egress.start(boxed.dial);
-        browser = egress ? await pool.takeWith(boxedArgs(egress.url)) : lease ? await pool.takeKept(lease) : await pool.take();
+        if (inside) browser = await this.inBox(inside);
+        else {
+          if (boxed) egress = await Egress.start(boxed.dial);
+          browser = egress ? await pool!.takeWith(boxedArgs(egress.url)) : lease ? await pool!.takeKept(lease) : await pool!.take();
+        }
       } catch (e) {
         egress?.close();
         throw new ToolError(
@@ -366,14 +386,15 @@ export class Broker {
         );
       }
       // The agent's agent-browser may connect to no other browser (agent_browser.rs `write_policy`).
-      writePolicy(this.node.home, thread, false);
+      await this.policy(thread, false);
       const session = new Session(newId(), thread, browser.cdp, own);
       session.onControl = () => {
         session.stepAt("agent_resumed", {}, true, undefined, 0);
         void this.report(session, "live");
       };
       session.outgoingHook = outgoing;
-      if (boxed) session.boxedPaths = boxPaths(boxed.view);
+      // In a hosted box its pages see the box's own files, which are the agent's: nothing to check them against.
+      if (boxed && !inside) session.boxedPaths = boxPaths(boxed.view);
       const dir = join(recordingsDir(this.node.home), session.id);
       writeMeta(dir, { sessionId: session.id, kind: "browser", threadId: thread, cwd: "/", purpose, startedAt: session.startedAt, credentialsFilled: 0 });
       const ffmpeg = findFfmpeg(installDir(this.node.home));
@@ -792,7 +813,10 @@ export function start(node: Node, given?: Broker): Broker {
   // As the Rust node lists them for its sessions (node/link.rs `hello`): live view and takeover, hosting a session for
   // an agent elsewhere (sealed to this node), and ending a screen whose task ended. The agents' Mac lists them too
   // (agents_mac `toolOnly` keeps them): its own screen is a session it hosts for agents on other machines.
-  node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END, CAP_VAULT_FILL]);
+  // The hub's runner hosts no session for an agent elsewhere: its screens are its own agents', in their boxes.
+  node.area("caps").contribute(() =>
+    node.config.runner === true ? [CAP_BROWSER, CAP_SESSION_END, CAP_VAULT_FILL] : [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END, CAP_VAULT_FILL],
+  );
   // An agent's claude drives its browser through agent-browser, at this node's proxy (Rust's `SessionHooks::env`
   // and `plugin_dirs`), through the node core's launch area.
   if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {

@@ -149,7 +149,7 @@ test("setup checks are there only once their step is set up", () => {
     githubApp: { appId: 1, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23", owner: "acme", htmlUrl: "", settingsUrl: "", createdAt: "2026-10-19T09:00:00.000Z" },
     onepassword: [["Sam"]],
     vault: { mode: "file", path: "/home/dev/.config/fleetd/vault.key", locked: false, unsafe: [], recoverySaved: true },
-    sandboxes: [["E2B", { at: "2026-10-19T09:00:00.000Z", ok: true }]],
+    sandboxes: [["boat.dev", { at: "2026-10-19T09:00:00.000Z", ok: true }]],
   });
   expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });

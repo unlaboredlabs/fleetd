@@ -38,6 +38,8 @@ import { type App, type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE
 import { MacScreen } from "./mac/screen.ts";
 import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
+import { BoxDisplay, type ScreenBox } from "../place/box_screens.ts";
+import { hasBox, hostedBox } from "../place/hosted.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
 export const CAP_SESSION_DESKTOP = "session_linux_desktop";
@@ -80,7 +82,8 @@ export function desktopConfig(node: Node): DesktopConfig {
     const v = devOverride(env);
     if (v) config[key] = v;
   }
-  if (node.config.agentsMac === true) config.enabled = false;
+  // The hub's runner lends no display of its machine's: its agents' desktops run in their boxes.
+  if (node.config.agentsMac === true || node.config.runner === true) config.enabled = false;
   return config;
 }
 
@@ -259,6 +262,10 @@ export class Desktops implements Screens {
   macGate: () => Blocked | undefined = macBlocked;
   /** The Mac's own screen, for a session to read and drive (a test's own). */
   openMacScreen: (scratch: string) => Screen = () => MacScreen.open();
+  /** The hosted box an agent session runs in, where its desktop runs (`starting` while it is made); a test's own. */
+  inBox: (thread: string) => ScreenBox | "starting" | undefined = (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined);
+  /** How a display starts in a box: Xvfb there, or a test's. */
+  boxDisplay: (box: ScreenBox) => Promise<BoxDisplay> = (box) => BoxDisplay.start(box);
 
   constructor(
     private readonly node: Node,
@@ -423,6 +430,9 @@ export class Desktops implements Screens {
   }
 
   async sessionStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
+    // A hosted agent's desktop runs in its own box, whatever this machine lends (../place/box_screens.ts).
+    const own = this.inBox(thread);
+    if (own) return this.boxStart(thread, cwd, purpose, own);
     if (!enabled(this.config)) {
       throw new ToolError(
         "failed",
@@ -466,6 +476,43 @@ export class Desktops implements Screens {
         ...(mount ? { worktree: mount } : {}),
         startMs: Math.round(performance.now() - started),
       };
+    } finally {
+      this.starting.delete(thread);
+    }
+  }
+
+  /** `session_start` of an agent in a hosted box: a display of its own in that box, recorded and watched from here as
+   * one of this machine's is. */
+  private async boxStart(thread: string, cwd: string, purpose: string, own: ScreenBox | "starting"): Promise<Record<string, unknown>> {
+    if (own === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
+    const started = performance.now();
+    if (this.starting.has(thread)) throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
+    const open = this.sessions.get(thread);
+    if (open) throw new ToolError("invalid", `Desktop session ${open.id} is open.`, "use it, or end it with session_end before starting another");
+    this.starting.add(thread);
+    try {
+      const secrets = this.secrets(thread);
+      let display: BoxDisplay;
+      let x;
+      try {
+        display = await this.boxDisplay(own);
+      } catch (e) {
+        throw new ToolError("failed", `The desktop did not start: ${(e as Error).message}.`, "try session_start again");
+      }
+      try {
+        x = await display.connect();
+      } catch (e) {
+        await display.drop();
+        throw new ToolError("failed", `The desktop did not start: ${(e as Error).message}.`, "try session_start again");
+      }
+      const id = newId();
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", ...this.recording(id) });
+      this.sessions.set(thread, session);
+      session.open();
+      session.logStep("session_start", { purpose, kind: "linux_desktop", backend: display.backend, worktree: cwd }, true);
+      await this.report(session, "live");
+      // Its apps run in the box, in the agent's own files.
+      return { sessionId: session.id, desktop: display.backend, worktree: cwd, startMs: Math.round(performance.now() - started) };
     } finally {
       this.starting.delete(thread);
     }

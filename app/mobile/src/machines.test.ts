@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   tailnetValue,
   tailnetWaiting,
-  agentsWhere,
   canWords,
   daysChoices,
   limitChoices,
+  LINUX,
+  linuxChoices,
+  linuxValue,
   limitWords,
+  MAC,
   machinesShown,
   machineValue,
   providerFooter,
@@ -15,7 +18,6 @@ import {
   providersOf,
   providerValue,
   specOf,
-  takesDomain,
 } from "./machines";
 
 const at = "2026-11-17T09:00:00.000Z";
@@ -43,22 +45,20 @@ describe("Settings › Machines", () => {
 
 describe("its providers", () => {
   it("lists the sandbox providers, each named, with what it runs", () => {
-    const list = providersOf({ boxPubKey: BOX, placing: true, providers: [sb("e2b", true, 20), sb("boat", false), sb("daytona", false)] });
-    expect(list.map((p) => p.id)).toEqual(["e2b", "boat", "daytona"]);
-    expect(["e2b", "boat", "daytona", "modal"].map(providerName)).toEqual(["E2B", "boat.dev", "Daytona", "modal"]);
-    expect(canWords(specOf("e2b"))).toBe("Agents");
+    const list = providersOf({ boxPubKey: BOX, placing: true, providers: [sb("boat", true, 20)] });
+    expect(list.map((p) => p.id)).toEqual(["boat"]);
+    expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
+    expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop");
     // A hub without sandbox_get lists none.
     expect(providersOf(undefined)).toEqual([]);
-    expect(takesDomain("e2b")).toBe(true);
-    expect(takesDomain("boat")).toBe(false);
   });
 
   it("says each one's state: not connected, its limit, connected, or a check that failed", () => {
     expect(providerValue({ id: "boat", connected: false, limit: 0 })).toEqual({ text: "Not connected", problem: false });
-    expect(providerValue({ id: "e2b", connected: true, limit: 20 })).toEqual({ text: "20 at once", problem: false });
-    expect(providerValue({ id: "e2b", connected: true, limit: 0 })).toEqual({ text: "None at once", problem: false });
+    expect(providerValue({ id: "boat", connected: true, limit: 20 })).toEqual({ text: "20 at once", problem: false });
+    expect(providerValue({ id: "boat", connected: true, limit: 0 })).toEqual({ text: "None at once", problem: false });
     expect(providerValue({ id: "modal", connected: true })).toEqual({ text: "Connected", problem: false });
-    expect(providerValue({ id: "daytona", connected: true, limit: 5, check: { ok: false, at } })).toEqual({ text: "Check failed", problem: true });
+    expect(providerValue({ id: "boat", connected: true, limit: 5, check: { ok: false, at } })).toEqual({ text: "Check failed", problem: true });
   });
 
   it("says what they cost and the order, and that none runs agents yet while none does", () => {
@@ -78,11 +78,11 @@ describe("its providers", () => {
     expect(limitWords(20)).toBe("20");
   });
 
-  it("puts a failed check with its fix on a provider's screen, else its domain", () => {
-    expect(providerFooter({ id: "e2b", connected: false })).toBeUndefined();
-    expect(providerFooter({ id: "e2b", connected: true, domain: "e2b.acme.internal" })).toEqual({ text: "Self-hosted at e2b.acme.internal", problem: false });
-    expect(providerFooter({ id: "daytona", connected: true, check: { ok: false, at, message: "Daytona refused the key (401).", fix: "make a new one" } })).toEqual({
-      text: "Daytona refused the key (401). Make a new one.",
+  it("puts a failed check with its fix on a provider's screen, else nothing", () => {
+    expect(providerFooter({ id: "boat", connected: false })).toBeUndefined();
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: true, at } })).toBeUndefined();
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at, message: "boat.dev refused the key (401).", fix: "make a new one" } })).toEqual({
+      text: "boat.dev refused the key (401). Make a new one.",
       problem: true,
     });
     expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "boat.dev didn't take the key.", problem: true });
@@ -90,9 +90,11 @@ describe("its providers", () => {
 });
 
 describe("what runs where", () => {
-  it("says where agents go: the machines, then each connected provider with room", () => {
-    expect(agentsWhere([sb("e2b", false), sb("boat", false)])).toBe("Your machines");
-    expect(agentsWhere([sb("daytona", true, 5), sb("e2b", true, 20)])).toBe("Your machines first, then E2B, then Daytona");
+  it("is two rows: the Linux machine a pick once there is more than one place, the Mac machine a value", () => {
+    expect(linuxChoices([sb("boat", true)], true).map((c) => c.label)).toEqual(["Your machines", "Your machines first, then boat.dev", "boat.dev only"]);
+    expect(linuxChoices([sb("boat", false)], true)).toHaveLength(1);
+    expect(linuxValue([sb("boat", false)], false)).toBe("None yet");
+    expect([LINUX, MAC]).toEqual(["Linux machine", "Mac machine"]);
   });
 
   it("keeps recordings for a number of days, the one set among them", () => {

@@ -127,7 +127,7 @@ export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
 
 /**
  * What an agent's row leaves to its hover: its role, its profile when it isn't the usual one, the hosted sandbox it
- * runs in when it isn't its machine, and where its work is ("reviewer · #57 in CI", "writer · E2B · receipt-dates").
+ * runs in when it isn't its machine, and where its work is ("reviewer · #57 in CI", "writer · boat.dev · receipt-dates").
  */
 export const agentDetail = (row: Pick<AgentRow, "role" | "profile" | "pr" | "branch" | "sandbox">, roleWord: string): string => {
   const place = workPlace(row);

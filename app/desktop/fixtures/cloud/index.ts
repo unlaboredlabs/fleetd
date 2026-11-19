@@ -59,7 +59,7 @@ const team = (base: Fixture, name: string, note: string, cloud: JsonObject): Fix
   f.answer("sandbox_get", undefined, {
     boxPubKey: "dGVhbS1ib3gta2V5LWZvci1zYW5kYm94LWtleXMtMDAwMDA=",
     placing: true,
-    providers: ["e2b", "boat", "daytona"].map((provider) => ({ provider, connected: false, limit: 0 })),
+    providers: [{ provider: "boat", connected: false, limit: 0 }],
   });
   return f;
 };

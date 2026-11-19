@@ -68,7 +68,7 @@ export const SANDBOX_CONNECT_TIMEOUT_MS = 60_000;
 
 /**
  * The team's own key at a hosted sandbox provider: trimmed, sealed as `{"key":…}` to the hub's own key (sandbox_get's
- * boxPubKey), then sandbox_connect with the provider and E2B's domain, whose answer has the hub's first check of it.
+ * boxPubKey), then sandbox_connect with the provider, whose answer has the hub's first check of it.
  */
 export const submitSandboxKey = async (
   request: SandboxKeyRequest,
@@ -76,8 +76,7 @@ export const submitSandboxKey = async (
 ): Promise<CallOutcome> => {
   const sealed = await seal(request.boxPubKey, JSON.stringify({ key: request.key.trim() }));
   if (!sealed.ok) return sealed;
-  const domain = request.domain?.trim();
-  return call("sandbox_connect", { provider: request.provider, sealed: sealed.sealed, ...(domain ? { domain } : {}) }, SANDBOX_CONNECT_TIMEOUT_MS);
+  return call("sandbox_connect", { provider: request.provider, sealed: sealed.sealed }, SANDBOX_CONNECT_TIMEOUT_MS);
 };
 
 /**

@@ -27,8 +27,7 @@ import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 /** Labels on every box: the machine that made it, and the session it runs. */
 export const MACHINE_LABEL = "fleetd-machine";
 export const SESSION_LABEL = "fleetd-session";
-/** How long a box lives unless extended; a live box is extended every EXTEND_MS. An hour fits every plan (E2B's
- * Hobby takes no more), and a box its node lost goes within it. */
+/** How long a box lives unless extended; a live box is extended every EXTEND_MS. A box its node lost goes within it. */
 export const LIFETIME_MS = 3600_000;
 export const EXTEND_MS = 20 * 60_000;
 /** How long a provider that failed to make a box is left out of placement. */
@@ -150,12 +149,12 @@ export class Boxes {
     return templateName(hostedRecipe(base, { claude: TESTED }));
   }
 
-  /** The template boxes of `size` start from: built in the team's account once per recipe, by itself, the first time
-   * it's needed. E2B and Daytona fix a box's size in its template, so each size other than the default has its own
-   * (`<name>-<cpu>c<mem>g`); boat sizes a box at create, and has one. */
+  /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
+   * needed. boat sizes a box at create, so one serves every size; a provider that fixed a box's size in its template
+   * would build one per size (`<name>-<cpu>c<mem>g`). */
   template(p: ProviderId, size: Size = DEFAULT_SIZE): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
-    const sized = p !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
+    const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
     const name = `${this.templateName()}${sized}`;
     const file = join(this.home, "sandbox", `template-${p}${sized}.json`);
     const key = `${p}${sized}`;
@@ -204,7 +203,7 @@ export class Boxes {
     const not = size ? notOffered(p, size, NAMES[p]) : undefined;
     if (not) throw new ProviderError("failed", not);
     const template = o.template ?? (await this.template(p, size));
-    // A key per attempt, never the session's: boat and E2B keep a key a day after its box is gone, and a session's next
+    // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;
     const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });

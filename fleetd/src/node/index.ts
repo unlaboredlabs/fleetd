@@ -278,7 +278,7 @@ export function joinConfig(home: string, args: JoinArgs): NodeConfig {
     name: args.machine,
     ...(args.claudeConfigDir ? { claudeConfigDir: args.claudeConfigDir } : {}),
     ...(args.mac ? { mac: { enabled: true }, agentsMac: true } : {}),
-    ...(args.runner ? { name: RUNNER_NAME, runner: true, claudeConfigDir: join(home, "claude"), browser: { enabled: false } } : {}),
+    ...(args.runner ? { name: RUNNER_NAME, runner: true, claudeConfigDir: join(home, "claude") } : {}),
     enrolled: false,
   };
 }
@@ -452,11 +452,14 @@ export async function startNode(
   // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).
   sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
   // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
-  if (config.browser?.enabled !== false && !isAgentsMac(config) && !config.runner) broker(node).prepare();
+  // The hub's runner wants agent-browser for its agents and ffmpeg for their recordings, whatever an older join wrote
+  // in its node.json (browser off); it launches no Chrome.
+  if ((config.runner || config.browser?.enabled !== false) && !isAgentsMac(config)) broker(node).prepare();
   // A boxed agent's browser sees its box's network and files, not this machine's (browser/egress.ts).
   broker(node).boxed = (thread) => {
     const b = boxOf(thread);
-    if (b) return { dial: (host, port) => b.box.dial(host, port), ...(b.view ? { view: b.view } : {}) };
+    // A hosted box shows nothing of this machine's: its browser runs in it (place/box_screens.ts).
+    if (b) return { dial: (host, port) => b.box.dial(host, port), ...(b.view ? { view: b.view } : { box: b.box }) };
     return inBox(thread) ? "starting" : undefined;
   };
   // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.

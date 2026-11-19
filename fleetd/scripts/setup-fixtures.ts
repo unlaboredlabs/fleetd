@@ -61,7 +61,7 @@ const factsAt = (p: Point): SetupFacts => ({
   joined: p.rest ? ["Ada"] : [],
   githubApp: p.github ? GITHUB_APP : undefined,
   onepassword: p.rest ? [["Dev", { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] }]] : [],
-  sandboxes: p.rest ? [["E2B", { at: AT, ok: true }]] : [],
+  sandboxes: p.rest ? [["boat.dev", { at: AT, ok: true }]] : [],
 });
 
 /**

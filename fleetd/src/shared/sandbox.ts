@@ -11,7 +11,8 @@ export const CAP_SANDBOX = "sandbox";
 /**
  * The capability of the hub's own runner (hub/runner): a node the hub starts itself, so that a team with no computer
  * connected still runs agents. It runs every session (leads too) in a box of the team's connected providers, none on
- * the machine it runs on: it has no slots of its own, offers no screens and never uses a machine's Claude login.
+ * the machine it runs on: it has no slots of its own, and never uses a machine's Claude login. Its agents' screens run
+ * in their own boxes (node/place/box_screens.ts), as every hosted agent's do.
  */
 export const CAP_RUNNER = "hosted_runner";
 /** The runner's machine id, and its name where a person reads it. */
@@ -22,15 +23,25 @@ export const RUNNER_NAME = "Hosted sandboxes";
  * Every provider, in the placement order: the order agents go to the connected ones once a machine's own slots are
  * full, which Settings shows. (sandbox/providers' own PROVIDERS is only the clients' list, in no such order.)
  */
-export const ORDER: readonly KnownSandboxProvider[] = ["e2b", "boat", "daytona"];
+export const ORDER: readonly KnownSandboxProvider[] = ["boat"];
 
-export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { e2b: "E2B", boat: "boat.dev", daytona: "Daytona" };
+export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { boat: "boat.dev" };
 
 export const isProvider = (p: string): p is KnownSandboxProvider => (ORDER as readonly string[]).includes(p);
 
+/**
+ * The providers fleetd had and removed, and why, in a person's words: a Linux machine runs agents, their browser,
+ * Linux desktop and Android, and a provider whose boxes can't run Android's emulator (it needs KVM in the box) isn't
+ * one (D576). Checked on real boxes on 2026-11-19.
+ */
+export const REMOVED: Readonly<Record<string, { name: string; why: string }>> = {
+  e2b: { name: "E2B", why: "its boxes have no KVM (Firecracker microVMs), so they can't run Android's emulator" },
+  daytona: { name: "Daytona", why: "its boxes can't open /dev/kvm (user-namespaced containers), so they can't run Android's emulator" },
+};
+
 /** A provider's limit when none was set at connect. */
 export const DEFAULT_LIMIT = 5;
-/** The most agents one provider's limit allows: E2B Pro's own ceiling is a little above it. */
+/** The most agents one provider's limit allows. */
 export const MAX_LIMIT = 500;
 
 /** How long Settings' Test of a key may take on a machine (the provider's list). */
@@ -52,9 +63,7 @@ export function checkFix(provider: KnownSandboxProvider, reason: string, machine
     case "billing":
       return `${name} won't run sandboxes on the account until its billing is sorted: check it in ${name}'s dashboard`;
     case "unreachable":
-      return provider === "e2b"
-        ? `test again in a minute; with a self-hosted E2B, check its domain answers from ${machine}`
-        : `test again in a minute; if it keeps failing, check ${machine} reaches ${name}`;
+      return `test again in a minute; if it keeps failing, check ${machine} reaches ${name}`;
     default:
       return `test again in a minute; if it keeps failing, update fleetd on ${machine}`;
   }
@@ -63,19 +72,12 @@ export function checkFix(provider: KnownSandboxProvider, reason: string, machine
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
 
-/** A domain as typed (`https://e2b.example.com/`): its host and port, lower case; null when it isn't one. */
-export function domainOf(typed: string): string | null {
-  const t = typed.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  if (t === "") return null;
-  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$/.test(t) && t.length <= 253 ? t : null;
-}
-
 /** Each kind of computer by name, where a person reads it. */
 export const COMPUTER_NAMES: Readonly<Record<ComputerKind, string>> = { vm: "Local VM", ...NAMES };
 
 const kindOf = (k: string): ComputerKind | undefined => (k === "vm" || isProvider(k) ? k : undefined);
 
-/** A bot's computer as a person reads it: "Local VM · 2 vCPU / 4 GB", "E2B · 4 vCPU / 8 GB". */
+/** A bot's computer as a person reads it: "Local VM · 2 vCPU / 4 GB", "boat.dev · 4 vCPU / 8 GB". */
 export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): string => {
   const k = kindOf(p.kind);
   return `${k ? COMPUTER_NAMES[k] : p.kind} · ${sizeText(p)}`;

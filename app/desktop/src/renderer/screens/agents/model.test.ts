@@ -106,7 +106,7 @@ describe("an agent's state and where its work is", () => {
   it("says in a row's hover its role, an unusual profile and where its work is", () => {
     const pr = { changeId: "X1", number: 57, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/57", state: "ci" } as const;
     expect(agentDetail({ role: "reviewer", pr }, "reviewer")).toBe("reviewer · #57 in CI");
-    expect(agentDetail({ role: "implementer", sandbox: "E2B", branch: "fleetd/T1-receipt-dates" }, "writer")).toContain("writer · E2B · ");
+    expect(agentDetail({ role: "implementer", sandbox: "boat.dev", branch: "fleetd/T1-receipt-dates" }, "writer")).toContain("writer · boat.dev · ");
     expect(agentDetail({ role: "implementer", profile: "medium", branch: "fleetd/T1-receipt-dates" }, "writer")).toBe("writer · medium · receipt-dates");
     expect(agentDetail({ role: "reader" }, "reader")).toBe("reader");
   });

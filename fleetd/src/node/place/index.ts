@@ -80,7 +80,7 @@ export const runnerProvider = (): ProviderId | undefined => runner?.();
 
 /** What the hub's runner says when no provider of the team's takes its agents. */
 export const RUNNER_NO_PROVIDER =
-  "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects E2B, boat.dev or Daytona in Settings › Hub › Machines";
+  "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects boat.dev in Settings › Hub › Machines";
 
 /** A place a session never starts in, saying why: the runner's for a session no provider takes, or a Local VM's
  * picked size on a machine that can't boot one now. */

@@ -122,7 +122,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
     }),
     // Where agents run (D558): a computer of the team's, or a hosted sandbox provider on its own account. Either is
     // enough; with both, a computer's bots use its own slots first, then the providers.
-    step("machines", "hub", "Where agents run", "A computer of yours, or sandboxes at E2B, boat.dev or Daytona on your own account.", { kind: "required" }, {
+    step("machines", "hub", "Where agents run", "A computer of yours, or sandboxes at boat.dev on your own account.", { kind: "required" }, {
       parts: [
         part(
           "A computer",
@@ -140,14 +140,10 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
         part(
           "Or hosted sandboxes",
-          "Make an API key at one provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your " +
-            "device. Each agent runs in a sandbox of its own there, billed to your account while it runs. For a self-hosted " +
-            "E2B, give its domain too.",
-          [
-            link("E2B › API keys", "https://console.e2b.dev/?tab=keys"),
-            link("boat.dev › API keys", "https://docs.boat.dev/api-keys"),
-            link("Daytona › API keys", "https://app.daytona.io/dashboard/keys"),
-          ],
+          "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your " +
+            "device. Each agent runs in a sandbox of its own there, with its browser and Linux desktop, billed to your " +
+            "account while it runs.",
+          [link("boat.dev › API keys", "https://docs.boat.dev/api-keys")],
           [value("Key name", name)],
         ),
         part(

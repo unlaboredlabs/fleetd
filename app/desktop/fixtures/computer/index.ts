@@ -4,8 +4,9 @@
 // `cargo fetch`, its log's end behind Log, the older image still serving. computer-new: commands saved, not built yet.
 // computer-nowhere: its machine builds no images (no VMs, no provider), so only its setup shows.
 // computer-two: storefront and its api repo, each its own Computer, api's with no commands and so no image.
-// computer-runs-on: Runs on picked as E2B · 4 vCPU / 8 GB, among its machine's Local VM sizes and E2B's and boat.dev's.
-// computer-runs-on-gone: Runs on picked as Daytona · 4 vCPU / 8 GB, then Daytona disconnected: the row says its agents wait.
+// computer-runs-on: Runs on picked as boat.dev · 4 vCPU / 8 GB, among its machine's Local VM sizes and boat.dev's.
+// computer-runs-on-gone: Runs on picked as boat.dev · 8 vCPU / 16 GB, then boat.dev disconnected: the row says its agents
+// wait.
 import { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -119,14 +120,13 @@ export default defineGroup({
     state(base("typical"), "computer-new", "A bot's Computer: commands saved, its image not built yet.", () => ({ state: "none", where: "vm" })),
     // A machine that can't build one (no VMs, no provider): none, kept nowhere.
     state(base("typical"), "computer-nowhere", "A bot's Computer on a machine that builds no images: its setup alone, no image row.", () => ({ state: "none" })),
-    runsOn(base("typical"), "computer-runs-on", "A bot's Computer: Runs on is E2B · 4 vCPU / 8 GB, one pick of provider and size.", { kind: "e2b", cpu: 4, memGb: 8 }, [
+    runsOn(base("typical"), "computer-runs-on", "A bot's Computer: Runs on is boat.dev · 4 vCPU / 8 GB, one pick of provider and size.", { kind: "boat", cpu: 4, memGb: 8 }, [
       ...VM,
-      ...sized("e2b", "E2B", [[2, 4], [4, 8], [8, 8]]),
       ...sized("boat", "boat.dev", [[2, 4], [4, 8], [8, 16], [16, 32]]),
     ]),
-    runsOn(base("typical"), "computer-runs-on-gone", "A bot's Computer: its pick's provider was disconnected, so its agents wait and the row says why.", { kind: "daytona", cpu: 4, memGb: 8 }, [
+    runsOn(base("typical"), "computer-runs-on-gone", "A bot's Computer: its pick's provider was disconnected, so its agents wait and the row says why.", { kind: "boat", cpu: 8, memGb: 16 }, [
       ...VM,
-      { kind: "daytona", cpu: 4, memGb: 8, label: "Daytona · 4 vCPU / 8 GB", unavailable: "Daytona isn't connected: an admin connects it in Settings › Hub › Machines" },
+      { kind: "boat", cpu: 8, memGb: 16, label: "boat.dev · 8 vCPU / 16 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
     ]),
     (() => {
       const f = Fixture.from(base("typical"), "computer-two", "A bot with two repos: each its own Computer; api has no commands, so no image.");

@@ -153,6 +153,7 @@ export const TOOLS = {
   sandbox_get: { scope: "read", module: "src/hub/sandbox" },
   sandbox_connect: { scope: "admin", module: "src/hub/sandbox" },
   sandbox_set: { scope: "admin", module: "src/hub/sandbox" },
+  sandbox_where_set: { scope: "admin", module: "src/hub/sandbox" },
   sandbox_test: { scope: "admin", module: "src/hub/sandbox" },
   sandbox_disconnect: { scope: "admin", module: "src/hub/sandbox" },
   machine_add_plan: { scope: "admin", module: "src/hub/machine_setup" },

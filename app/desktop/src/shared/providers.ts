@@ -1,6 +1,6 @@
 // The providers a team connects with its own key, as one model the desktop's Hub › Machines and the phone's Machines
 // both read (D550): each with what it can run (agents, and which kinds of screen), so Providers lists them all, each
-// saying what it runs, and What runs where offers a kind only the connected providers that run it. A provider that
+// saying what it runs; and What runs where's two rows, Linux machine and Mac machine. A provider that
 // gains a kind is one entry here. Pure so it is tested on its own.
 
 /** What a provider can run: agents, or a kind of agent screen. */
@@ -9,7 +9,7 @@ export type Capability = "agents" | "browser" | "desktop" | "android" | "ios" | 
 export const SCREEN_KINDS: ReadonlyArray<Capability> = ["browser", "desktop", "android", "ios", "mac"];
 
 export interface ProviderSpec {
-  /** The hub's id for it: a sandbox provider's (`e2b`). */
+  /** The hub's id for it: a sandbox provider's (`boat`). */
   readonly id: string;
   readonly name: string;
   readonly can: ReadonlyArray<Capability>;
@@ -17,9 +17,7 @@ export interface ProviderSpec {
 
 /** Every provider fleetd knows, in the order agents go to the connected ones; one a newer hub has goes last, as named. */
 export const PROVIDERS: ReadonlyArray<ProviderSpec> = [
-  { id: "e2b", name: "E2B", can: ["agents"] },
-  { id: "boat", name: "boat.dev", can: ["agents"] },
-  { id: "daytona", name: "Daytona", can: ["agents"] },
+  { id: "boat", name: "boat.dev", can: ["agents", "browser", "desktop"] },
 ];
 
 /** A provider by its id; an unknown one runs agents (the hub lists it among its sandbox providers) under its own id. */
@@ -53,16 +51,43 @@ export const KINDS: ReadonlyArray<Capability> = ["agents", "browser", "desktop",
 export const YOURS = "Your machines";
 export const NONE = "None yet";
 
+/** What runs where's two rows: where agents and every Linux screen run, and where the Mac's screens run. */
+export const LINUX = "Linux machine";
+export const MAC = "Mac machine";
+
+/** A choice of the Linux machine (sandbox_where_set): its value and its words. */
+export type Choice = { readonly value: string; readonly label: string };
+
 /**
- * Where agents run, in words: the machines (`machines`: any of the team's computers runs agents), then each connected
- * provider with room (a limit above none) in the order agents go to them once the machines' own limit is reached. With
- * no machine, the providers alone; with neither, none yet. Not a choice: each provider's limit sets it.
+ * The Linux machine's choices: with a machine of the team's, Your machines; with connected providers too, Your machines
+ * first, then them in order; and each connected provider alone. The pick in effect stays listed when it no longer is
+ * (its provider disconnected, the last machine gone), so it shows what holds and can be moved off. One choice or none:
+ * not a choice, a plain value (`linuxValue`).
  */
-export const agentsWhere = (providers: ReadonlyArray<{ provider: string; connected: boolean; limit: number }>, machines = true): string => {
-  const names = ordered(providers.filter((p) => p.connected && p.limit > 0).map((p) => p.provider)).map((id) => specOf(id).name);
-  if (names.length === 0) return machines ? YOURS : NONE;
-  return machines ? `${YOURS} first, then ${names.join(", then ")}` : names.join(", then ");
+export const linuxChoices = (providers: ReadonlyArray<{ provider: string; connected: boolean }>, machines: boolean, current = "ours_first"): Choice[] => {
+  const connected = ordered(providers.filter((p) => p.connected).map((p) => p.provider));
+  const names = connected.map((id) => specOf(id).name);
+  const out: Choice[] = [];
+  if (machines) out.push({ value: "ours_only", label: YOURS });
+  if (machines && connected.length > 0) out.push({ value: "ours_first", label: `${YOURS} first, then ${names.join(", then ")}` });
+  for (const id of connected) out.push({ value: id, label: `${specOf(id).name} only` });
+  // With no machine, machines first is the providers in order: shown as such when there is only one.
+  const only = names.length === 1 ? names[0] : undefined;
+  if (!machines && only !== undefined && current === "ours_first") return [{ value: "ours_first", label: only }];
+  if (current !== "ours_first" && !out.some((c) => c.value === current)) out.push({ value: current, label: current === "ours_only" ? YOURS : `${specOf(current).name} only` });
+  return out;
 };
+
+/** The Linux machine as a plain value, where there is nothing to choose: Your machines, the one provider, or None yet. */
+export const linuxValue = (providers: ReadonlyArray<{ provider: string; connected: boolean }>, machines: boolean): string => {
+  const connected = ordered(providers.filter((p) => p.connected).map((p) => p.provider));
+  if (machines) return YOURS;
+  return connected.length === 0 ? NONE : connected.map((id) => specOf(id).name).join(", then ");
+};
+
+/** How to get a Linux machine, or a Mac machine, when there is none yet: the row's hover. */
+export const LINUX_NONE = "Add a machine with the plus above, or connect a provider.";
+export const MAC_NONE = "Add a Mac for agents with the plus above.";
 
 /** The machines a kind of screen can run on now, as machine_roles has them. */
 type Machine = { roles: ReadonlyArray<string>; mac?: { on: boolean } | undefined; hosts?: ReadonlyArray<{ host: string; on?: boolean; ready: boolean }> | undefined };
@@ -74,12 +99,3 @@ export const machinesRun = (kind: Capability, machines: ReadonlyArray<Machine>):
   return machines.some((m) => (m.roles.includes("sessions") || m.mac !== undefined) && (m.hosts ?? []).some((h) => h.host === kind && (h.on ?? h.ready)));
 };
 
-/** Where a kind with no provider to choose runs, and how to add one when none does. */
-export const noneHow: Readonly<Record<Capability, string>> = {
-  agents: "Add a machine with the plus above, or connect a provider.",
-  browser: "Turn Browser on in a machine's Screens.",
-  desktop: "Turn Linux desktop on in a machine's Screens.",
-  android: "Turn Android on in a machine's Screens.",
-  ios: "Add a Mac for agents with the plus above.",
-  mac: "Add a Mac for agents with the plus above.",
-};

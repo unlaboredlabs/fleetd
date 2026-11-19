@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { domainOf, keyOf, limitChoices, notPlacingLine, providerHint, providerLine, providerName, takesDomain, withFix } from "./sandboxModel";
+import { keyOf, limitChoices, notPlacingLine, providerHint, providerLine, providerName, withFix } from "./sandboxModel";
 
 const at = "2026-11-17T09:00:00.000Z";
 
 describe("the providers", () => {
-  it("names each as people know it, and a newer hub's as it names it; only E2B takes a domain", () => {
-    expect(["e2b", "boat", "daytona", "modal"].map(providerName)).toEqual(["E2B", "boat.dev", "Daytona", "modal"]);
-    expect(takesDomain("e2b")).toBe(true);
-    expect(takesDomain("boat")).toBe(false);
-    expect(providerHint("e2b")).toContain("self-hosted");
+  it("names each as people know it, and a newer hub's as it names it", () => {
+    expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
+    expect(providerHint("boat")).toContain("browser and Linux desktop");
   });
 
   it("says while no agent runs there yet, and nothing once they do", () => {
@@ -29,15 +27,14 @@ describe("the limit", () => {
 });
 
 describe("a provider's row line", () => {
-  it("says nothing at rest while it works or isn't connected, Works just after a check, else its domain", () => {
-    expect(providerLine({ provider: "e2b", connected: false }, true)).toBeNull();
-    expect(providerLine({ provider: "e2b", connected: true, check: { at, ok: true } }, false)).toBeNull();
-    expect(providerLine({ provider: "e2b", connected: true, check: { at, ok: true } }, true)).toEqual({ text: "Works", tone: "quiet" });
-    expect(providerLine({ provider: "e2b", connected: true, domain: "e2b.example.com", check: { at, ok: true } }, false)).toEqual({ text: "e2b.example.com", tone: "quiet", domain: true });
+  it("says nothing at rest while it works or isn't connected, and Works just after a check", () => {
+    expect(providerLine({ provider: "boat", connected: false }, true)).toBeNull();
+    expect(providerLine({ provider: "boat", connected: true, check: { at, ok: true } }, false)).toBeNull();
+    expect(providerLine({ provider: "boat", connected: true, check: { at, ok: true } }, true)).toEqual({ text: "Works", tone: "quiet" });
   });
 
   it("says what a failed check found, in the hub's words else its reason's, with its fix", () => {
-    expect(providerLine({ provider: "daytona", connected: true, check: { at, ok: false, reason: "invalid_key" } }, false)?.text).toBe("Daytona refused the key: it is wrong, revoked or expired.");
+    expect(providerLine({ provider: "boat", connected: true, check: { at, ok: false, reason: "invalid_key" } }, false)?.text).toBe("boat.dev refused the key: it is wrong, revoked or expired.");
     const line = providerLine({ provider: "boat", connected: true, check: { at, ok: false, reason: "billing", message: "devbox: payment required", fix: "check it at boat.dev" } }, false);
     expect(line).toEqual({ text: "devbox: payment required", tone: "danger", fix: "check it at boat.dev" });
     expect(withFix(line ?? { text: "" })).toBe("devbox: payment required Check it at boat.dev.");
@@ -46,10 +43,8 @@ describe("a provider's row line", () => {
 });
 
 describe("what was typed", () => {
-  it("trims a key and a domain, and empty is none", () => {
-    expect(keyOf("  e2b_abc\n")).toBe("e2b_abc");
+  it("trims a key, and empty is none", () => {
+    expect(keyOf("  boat_abc\n")).toBe("boat_abc");
     expect(keyOf("   ")).toBeNull();
-    expect(domainOf(" e2b.example.com ")).toBe("e2b.example.com");
-    expect(domainOf("")).toBeUndefined();
   });
 });

@@ -1,10 +1,11 @@
 // The hub's own runner (D558): nothing in fleetd needs a computer of the team's. A team that connected a hosted sandbox
-// provider (its own E2B, boat.dev or Daytona key) and no computer still runs agents, because the hub starts a fleetd
+// provider (its own boat.dev key) and no computer still runs agents, because the hub starts a fleetd
 // node of its own, the same code every machine runs, under the reserved machine id RUNNER_ID with `node.json`'s
 // `runner` on. That node keeps its bots' checkouts in `<hub home>/runner`, and runs every session of theirs, leads too,
 // in a box of the team's providers, as a machine runs a task placed there (node/place/hosted.ts): its slot board's own
-// slots are none (slots/board.ts), it offers no screens, runs no command on the hub's machine and never uses a
-// machine's Claude login. Its agents run on the team's Claude account, sealed to it as to every machine.
+// slots are none (slots/board.ts), runs no agent's command on the hub's machine and never uses a machine's Claude
+// login; its agents' browser and Linux desktop run in their own boxes too (node/place/box_screens.ts), driven,
+// recorded and watched from it as a machine's screens are. Its agents run on the team's Claude account, sealed to it as to every machine.
 //
 // It is one more machine to everything else (ProjectRef, threads, slots, keys), which the apps show as "Hosted
 // sandboxes", never as a computer. It runs while a provider is connected or a bot lives on it, and only where hosted

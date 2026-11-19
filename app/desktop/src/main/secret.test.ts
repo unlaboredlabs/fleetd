@@ -209,7 +209,7 @@ describe("a pasted hub link key", () => {
 });
 
 describe("the team's own key at a hosted sandbox provider", () => {
-  it("goes to sandbox_connect as {key} sealed to the hub's own key, with its provider and E2B's domain, never in the clear", async () => {
+  it("goes to sandbox_connect as {key} sealed to the hub's own key, with its provider, never in the clear", async () => {
     await sodium.ready;
     const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
     const sent: unknown[] = [];
@@ -217,22 +217,22 @@ describe("the team's own key at a hosted sandbox provider", () => {
       sent.push(tool, input, timeoutMs);
       return Promise.resolve({ ok: true as const, output: {} });
     };
-    const key = "e2b_0123456789abcdef";
-    const request = { boxPubKey: rust.publicKey, provider: "e2b", key: `  ${key}\n`, domain: " e2b.example.com " };
+    const key = "boat_0123456789abcdef";
+    const request = { boxPubKey: rust.publicKey, provider: "boat", key: `  ${key}\n` };
     expect(parseRequest(IPC.sandboxKeySubmit, ["hub", request]).ok).toBe(true);
     expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, key: "   " }]).ok).toBe(false);
-    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, provider: "E2B!" }]).ok).toBe(false);
+    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, provider: "Boat!" }]).ok).toBe(false);
+    // An older app's self-hosted E2B domain is no field any more.
+    expect(parseRequest(IPC.sandboxKeySubmit, ["hub", { ...request, domain: "e2b.example.com" }]).ok).toBe(false);
     expect((await submitSandboxKey(request, call)).ok).toBe(true);
     expect(sent[0]).toBe("sandbox_connect");
-    const input = sent[1] as { provider: string; sealed: string; domain?: string };
-    expect(Object.keys(input).sort()).toEqual(["domain", "provider", "sealed"]);
-    expect(input).toMatchObject({ provider: "e2b", domain: "e2b.example.com" });
+    const input = sent[1] as { provider: string; sealed: string };
+    expect(Object.keys(input).sort()).toEqual(["provider", "sealed"]);
+    expect(input).toMatchObject({ provider: "boat" });
     expect(JSON.stringify(input)).not.toContain(key);
     expect(JSON.parse(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk)))).toEqual({ key });
     expect(sent[2]).toBe(SANDBOX_CONNECT_TIMEOUT_MS);
-    sent.length = 0;
-    await submitSandboxKey({ boxPubKey: rust.publicKey, provider: "boat", key }, call);
-    expect(Object.keys(sent[1] as object).sort()).toEqual(["provider", "sealed"]);
+
   });
 });
 

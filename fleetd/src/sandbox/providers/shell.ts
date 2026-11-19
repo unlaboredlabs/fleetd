@@ -1,7 +1,6 @@
-// A detached command for providers whose command API takes no environment of its own (boat, Daytona's async
-// sessions): the environment goes into a private file in the box first, by a call that keeps it out of the command's
-// text (a file write; Daytona's one-shot command with its own envs), and the command reads and removes it before it
-// runs. The command's text, which a provider may keep in its history, holds no value.
+// A detached command for providers whose command API takes no environment of its own (boat's): the environment goes
+// into a private file in the box first, by a call that keeps it out of the command's text (a file write), and the
+// command reads and removes it before it runs. The command's text, which a provider may keep in its history, holds no value.
 
 /** `s` quoted for sh. */
 export const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
