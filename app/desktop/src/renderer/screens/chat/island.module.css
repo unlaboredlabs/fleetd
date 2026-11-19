@@ -42,8 +42,10 @@ button.press:hover::before {
     inset 0 0 0 1px var(--glass-edge-open),
     inset 0 1px 0 var(--glass-rim);
 }
+/* Hovered too: the hover's glass would otherwise win and, with no blur, show the conversation through the words. */
 @media (prefers-reduced-transparency: reduce) {
-  .press::before {
+  .press::before,
+  button.press:hover::before {
     background: var(--raised);
     backdrop-filter: none;
   }

@@ -27,7 +27,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Button, cx } from "../../ui";
+import { Button, cx, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
 import { useServes, useSettledAdministers } from "../admin/role";
@@ -123,24 +123,8 @@ export function SettingsSheet({ hub: on, onClose }: { hub?: HubView; onClose: ()
       timers.forEach((t) => clearTimeout(t));
     };
   }, []);
-  // A modal: the app under it (what comes before the scrim in the shell) is out of reach of Tab, clicks and screen
-  // readers until the sheet closes, and blurred (sheet.module.css).
-  useEffect(() => {
-    const under: Element[] = [];
-    for (let el = sheet.current?.parentElement?.previousElementSibling ?? null; el !== null; el = el.previousElementSibling) {
-      if (!el.hasAttribute("inert")) {
-        el.setAttribute("inert", "");
-        el.setAttribute("data-under-sheet", "");
-        under.push(el);
-      }
-    }
-    return () => {
-      for (const el of under) {
-        el.removeAttribute("inert");
-        el.removeAttribute("data-under-sheet");
-      }
-    };
-  }, []);
+  // A modal: the app under it (what comes before the scrim) is out of reach and blurred until the sheet closes.
+  useEffect(() => underModal(sheet.current?.parentElement ?? null), []);
   // Focus goes into the sheet, on the sheet itself, so the first Tab reaches the search and nothing shows a ring.
   useEffect(() => {
     sheet.current?.focus({ preventScroll: true });
