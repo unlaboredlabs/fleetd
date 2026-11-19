@@ -126,12 +126,25 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   expect(JSON.stringify(await next(link))).toContain("m1");
   // The record says where it runs: the node finds its place again from the host dir alone.
   expect(placeAt(dir).kind).toBe("hosted");
-  // The node lets go (its restart); the next node re-adopts the session from the record.
+  // The node lets go (its restart); the next node re-adopts the session from the record. A box made before the Claude
+  // endpoint stopped being relayed (W722) keeps the relay its claude is pointed at: the record a node of then wrote.
   await link.detach();
   expect(s.boxes.size).toBe(1);
+  const gateway = createServer((sock) => sock.pipe(sock)).listen(0, "127.0.0.1");
+  await new Promise((r) => gateway.once("listening", r));
+  const gw = (gateway.address() as { port: number }).port;
+  writeFileSync(join(dir, "place.json"), JSON.stringify({ ...readRecord(dir)!, relays: [{ port: gw, to: { host: "127.0.0.1", port: gw } }] }));
   const again = await placeAt(dir).adopt(dir);
   expect(again).toBeDefined();
   expect(again!.pid).toBe(link.pid);
+  // In the box (its loopback here is 127.0.0.2), the relay reaches this machine's gateway again.
+  const relayed = await new Promise<string>((resolve, reject) => {
+    const c = connect({ host: "127.0.0.2", port: gw }, () => c.write("claude"));
+    c.once("data", (d) => (resolve(d.toString()), c.end()));
+    c.once("error", reject);
+  });
+  expect(relayed).toBe("claude");
+  gateway.close();
 
   await placeAt(dir).stop(dir);
   expect(s.boxes.size).toBe(0);

@@ -12,7 +12,7 @@ import { tailnetIp, tailnetName } from "../../src/shared/tailnet.ts";
 import { Box } from "../../src/node/sandbox/box.ts";
 import { GUEST_PROTOCOL } from "../../src/node/sandbox/guest.ts";
 import { Mux, type Target } from "../../src/node/sandbox/mux.ts";
-import { BoxTailnet, downScript, GUARD, nameservers, question, resolvScript, servfail, upScript } from "../../src/node/sandbox/tailnet_box.ts";
+import { BoxTailnet, DNS_ADDR, downScript, GUARD, nameservers, question, resolvScript, servfail, upScript } from "../../src/node/sandbox/tailnet_box.ts";
 import type { LeadSocketHooks } from "../../src/node/lead/index.ts";
 
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-tailnet-box-"));
@@ -70,10 +70,11 @@ test("the capture's root scripts run only in a fleetd box: the TUN and its route
   // Never a default route: public traffic stays on the box's own.
   expect(up).not.toMatch(/route (add|replace) default|0\.0\.0\.0\/0/u);
   expect(resolvScript("tail1234.ts.net").split("\n")[0]).toBe(GUARD);
-  expect(resolvScript("tail1234.ts.net")).toContain('echo "nameserver 127.0.0.53"');
+  expect(resolvScript("tail1234.ts.net")).toContain(`echo "nameserver ${DNS_ADDR}"`);
   expect(resolvScript("tail1234.ts.net")).toContain('echo "search tail1234.ts.net $search"');
   expect(downScript().split("\n")[0]).toBe(GUARD);
-  expect(nameservers("# x\nnameserver 8.8.8.8\nnameserver 127.0.0.53\nnameserver fe80::1%eth0\nsearch a\n")).toEqual(["8.8.8.8", "fe80::1%eth0"]);
+  // systemd-resolved's stub stays one of the box's own nameservers; only the guest's own address is left out.
+  expect(nameservers(`# x\nnameserver 8.8.8.8\nnameserver 127.0.0.53\nnameserver ${DNS_ADDR}\nnameserver fe80::1%eth0\nsearch a\n`)).toEqual(["8.8.8.8", "127.0.0.53", "fe80::1%eth0"]);
 });
 
 test("a DNS question is read as the box asked it, and a SERVFAIL keeps its id and question", () => {
@@ -152,11 +153,12 @@ test("the guest's capture: each tailnet connection through the node, tailnet nam
   const resolv = join(root, "resolv.conf");
   writeFileSync(resolv, "nameserver 127.0.0.9\nsearch corp.example\noptions edns0\n");
   const node = standInNode(echo);
-  const socksPort = 30_000 + Math.floor(Math.random() * 20_000);
-  const dnsPort = socksPort + 1;
   let scripts: string[] = [];
-  const t = node.make({ socksPort, dnsAddr: "127.0.0.8", dnsPort, resolvConf: resolv, upstreamPort: upPort, root: async (s) => (scripts.push(s), Bun.spawnSync(["sh", "-c", s]).exitCode === 0 ? { code: 0, out: "" } : { code: 1, out: "failed" }) });
+  // Ports the OS gives: none taken by anything else.
+  const t = node.make({ socksPort: 0, dnsAddr: "127.0.0.8", dnsPort: 0, resolvConf: resolv, upstreamPort: upPort, root: async (s) => (scripts.push(s), Bun.spawnSync(["sh", "-c", s]).exitCode === 0 ? { code: 0, out: "" } : { code: 1, out: "failed" }) });
   expect(await t.set("tail1234.ts.net")).toBe("on (tail1234.ts.net)");
+  const socksPort = t.socksPort!;
+  const dnsPort = t.dnsPort!;
   // Only the resolver's script ran (no TUN here): the box's own kept beside it.
   expect(scripts).toHaveLength(1);
   expect(readFileSync(resolv, "utf8")).toContain("nameserver 127.0.0.8\nsearch tail1234.ts.net corp.example \noptions edns0");
@@ -211,11 +213,11 @@ test("the guest's capture: each tailnet connection through the node, tailnet nam
 
 test("a connection the node can't make is refused to the program in the box, in SOCKS's words", async () => {
   const node = standInNode("refuse");
-  const socksPort = 30_000 + Math.floor(Math.random() * 20_000);
   const resolv = join(root, "resolv2.conf");
   writeFileSync(resolv, "nameserver 127.0.0.9\n");
-  const t = node.make({ socksPort, dnsAddr: "127.0.0.10", dnsPort: socksPort + 1, resolvConf: resolv });
+  const t = node.make({ socksPort: 0, dnsAddr: "127.0.0.10", dnsPort: 0, resolvConf: resolv });
   await t.set("");
+  const socksPort = t.socksPort!;
   const { code, s } = await socksConnect(socksPort, "100.64.0.9", 22);
   expect(code).toBe(5);
   s.destroy();
@@ -225,6 +227,52 @@ test("a connection the node can't make is refused to the program in the box, in 
   off.s.destroy();
   expect(node.dials).toHaveLength(1);
   await t.set(null);
+});
+
+test("in a box that runs systemd-resolved (127.0.0.53 taken), the box's DNS listens at its own address and asks the stub", async () => {
+  // systemd-resolved's stub, at 127.0.0.53: on a port of the OS's here, as at 53 in a box.
+  const stub = createSocket("udp4");
+  stub.on("message", (m, from) => stub.send(answer(new Uint8Array(m), 5), from.port, from.address));
+  await new Promise<void>((r) => stub.bind(0, "127.0.0.53", () => r()));
+  const port = stub.address().port;
+  const resolv = join(root, "resolv-resolved.conf");
+  writeFileSync(resolv, "# This is /run/systemd/resolve/stub-resolv.conf\nnameserver 127.0.0.53\noptions edns0 trust-ad\nsearch .\n");
+  expect(DNS_ADDR).not.toMatch(/^127\.0\.0\.5[34]$/u);
+  // The box's DNS on the stub's own port (53 in a box): taken at 127.0.0.53, free at the guest's address.
+  // The resolver's own script runs (on a file of the test's, which no guard keeps from it).
+  const asRoot = async (script: string) => (Bun.spawnSync(["sh", "-c", script]).exitCode === 0 ? { code: 0, out: "" } : { code: 1, out: "failed" });
+  const t = standInNode(await echoServer()).make({ socksPort: 0, dnsPort: port, upstreamPort: port, resolvConf: resolv, root: asRoot });
+  expect(await t.set("tail1234.ts.net")).toBe("on (tail1234.ts.net)");
+  expect(t.dnsPort).toBe(port);
+  expect(readFileSync(resolv, "utf8")).toContain(`nameserver ${DNS_ADDR}\n`);
+  const got = await within(
+    new Promise<Uint8Array>((resolve) => {
+      const c = createSocket("udp4");
+      c.on("message", (m) => (c.close(), resolve(new Uint8Array(m))));
+      c.send(query("github.com", 1, 0x3131), port, DNS_ADDR);
+    }),
+    5_000,
+    "the stub's answer",
+  );
+  expect([got[0], got[1], got.at(-1)]).toEqual([0x31, 0x31, 5]);
+  await t.set(null);
+  expect(readFileSync(resolv, "utf8")).toContain("nameserver 127.0.0.53\n");
+  stub.close();
+});
+
+test("a DNS address already taken fails the switch on in plain words, and leaves nothing listening", async () => {
+  const taken = createSocket("udp4");
+  await new Promise<void>((r) => taken.bind(0, "127.0.0.11", () => r()));
+  const port = taken.address().port;
+  const resolv = join(root, "resolv-taken.conf");
+  writeFileSync(resolv, "nameserver 127.0.0.9\n");
+  const t = standInNode(await echoServer()).make({ socksPort: 0, dnsAddr: "127.0.0.11", dnsPort: port, resolvConf: resolv });
+  await expect(t.set("tail1234.ts.net")).rejects.toThrow(`the box's DNS couldn't listen at 127.0.0.11:${port}`);
+  taken.close();
+  // Its UDP socket was let go: the address binds again.
+  const again = createSocket("udp4");
+  await new Promise<void>((r, j) => (again.once("error", j), again.bind(port, "127.0.0.11", () => r())));
+  again.close();
 });
 
 let played = 0;

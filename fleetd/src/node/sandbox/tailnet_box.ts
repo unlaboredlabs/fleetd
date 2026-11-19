@@ -6,7 +6,7 @@
 //   box's loopback (SOCKS_PORT). The guest opens a channel up its link for each (`{"tailnet":{"host","port"}}`), which
 //   the node carries to the team's gateway (./tailnet.ts), and answers the connection once the node says how the dial
 //   went (`{"op":"tailnetDialed","channel"[,"error"]}`). Nothing else is routed there: public traffic goes as before.
-// - Names: the guest answers the box's DNS at 127.0.0.53, the box's only nameserver while the tailnet is on, with the
+// - Names: the guest answers the box's DNS at DNS_ADDR, the box's only nameserver while the tailnet is on, with the
 //   tailnet's MagicDNS suffix first among its search domains. A MagicDNS name (or a reverse lookup of a tailnet
 //   address) goes up the link to the gateway (`{"tailnetDns":{"name","type"}}`); every other name goes to the box's own
 //   nameservers, as before. The box's own resolv.conf is kept beside it and comes back when the tailnet goes.
@@ -21,8 +21,10 @@ import { pair, type Target } from "./mux.ts";
 
 /** Where the TUN's connections come to the guest, on the box's loopback. */
 export const SOCKS_PORT = 41_081;
-/** Where the box's DNS is answered while the tailnet is on. */
-export const DNS_ADDR = "127.0.0.53";
+/** Where the box's DNS is answered while the tailnet is on: a loopback address of the guest's own, never 127.0.0.53
+ * or 127.0.0.54, where systemd-resolved answers in a box that runs it (boat.dev's do). Its stub then stays one of the
+ * box's own nameservers, which every name not on the tailnet goes to. */
+export const DNS_ADDR = "127.77.0.53";
 export const TUN = "tailnet0";
 /** The tunnel the box's template installs (sandbox/providers/recipe.ts). */
 export const TUNNEL = PIN.path;
@@ -241,14 +243,23 @@ export class BoxTailnet {
     if (r.code !== 0) throw new Error(`${what}: ${r.out.trim().split("\n").slice(-3).join(" ") || `exit ${r.code}`}`);
   }
 
-  #listenSocks(): Promise<void> {
-    if (this.#socks) return Promise.resolve();
+  /** Where the TUN's connections come, once it listens: SOCKS_PORT in a box, the OS's pick for a test's 0. */
+  get socksPort(): number | undefined {
+    const a = this.#socks?.address();
+    return a && typeof a === "object" ? a.port : undefined;
+  }
+
+  /** Where the box's DNS is answered, once it listens (UDP and TCP alike). */
+  get dnsPort(): number | undefined {
+    const a = this.#tcp?.address();
+    return a && typeof a === "object" ? a.port : undefined;
+  }
+
+  async #listenSocks(): Promise<void> {
+    if (this.#socks) return;
     const server = createServer({ allowHalfOpen: true }, (c) => void this.#socksConn(c));
+    await listen(server, this.o.socksPort ?? SOCKS_PORT, "127.0.0.1");
     this.#socks = server;
-    return new Promise((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(this.o.socksPort ?? SOCKS_PORT, "127.0.0.1", () => resolve());
-    });
   }
 
   /** One connection from the TUN: SOCKS5's greeting and CONNECT, then a channel to the node for its target. */
@@ -327,41 +338,58 @@ export class BoxTailnet {
     c.on("close", () => here.destroy());
   }
 
+  /** UDP and TCP on one port at the box's DNS address: 53 in a box; a test's 0 takes a port free for both. What one
+   * bind took is let go when the other fails, so nothing is left listening. */
   async #listenDns(): Promise<void> {
     const addr = this.o.dnsAddr ?? DNS_ADDR;
-    const port = this.o.dnsPort ?? 53;
-    const udp = createSocket(isIP(addr) === 6 ? "udp6" : "udp4");
-    udp.on("message", (msg, from) => {
-      void this.#answer(new Uint8Array(msg), "udp").then((a) => a && udp.send(a, from.port, from.address));
-    });
-    await new Promise<void>((resolve, reject) => {
-      udp.once("error", reject);
-      udp.bind(port, addr, () => (udp.off("error", reject), resolve()));
-    });
-    udp.on("error", () => {});
-    this.#udp = udp;
-    const tcp = createServer((c) => {
-      c.on("error", () => {});
-      let buf = Buffer.alloc(0);
-      c.on("data", (d: Buffer) => {
-        buf = Buffer.concat([buf, d]);
-        while (buf.length >= 2 && buf.length >= 2 + buf.readUInt16BE(0)) {
-          const one = new Uint8Array(buf.subarray(2, 2 + buf.readUInt16BE(0)));
-          buf = buf.subarray(2 + one.length);
-          void this.#answer(one, "tcp").then((a) => {
-            if (!a || c.destroyed) return;
-            const len = Buffer.alloc(2);
-            len.writeUInt16BE(a.length);
-            c.write(Buffer.concat([len, a]));
-          });
-        }
+    const want = this.o.dnsPort ?? 53;
+    for (let tries = want === 0 ? 5 : 1; ; tries--) {
+      const udp = createSocket(isIP(addr) === 6 ? "udp6" : "udp4");
+      udp.on("message", (msg, from) => {
+        void this.#answer(new Uint8Array(msg), "udp").then((a) => a && udp.send(a, from.port, from.address));
       });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          udp.once("error", reject);
+          udp.bind(want, addr, () => (udp.off("error", reject), resolve()));
+        });
+      } catch (error) {
+        udp.close();
+        throw new Error(`the box's DNS couldn't listen at ${addr}:${want}: ${(error as Error).message}`);
+      }
+      udp.on("error", () => {});
+      const tcp = createServer((c) => this.#dnsTcp(c));
+      try {
+        await listen(tcp, udp.address().port, addr);
+      } catch (error) {
+        udp.close();
+        // A port the OS gave UDP may be taken for TCP: another try.
+        if (tries > 1) continue;
+        throw new Error(`the box's DNS couldn't listen at ${addr}:${want}: ${(error as Error).message}`);
+      }
+      this.#udp = udp;
+      this.#tcp = tcp;
+      return;
+    }
+  }
+
+  /** One TCP connection to the box's DNS: length-prefixed queries, each answered as it comes. */
+  #dnsTcp(c: Socket): void {
+    c.on("error", () => {});
+    let buf = Buffer.alloc(0);
+    c.on("data", (d: Buffer) => {
+      buf = Buffer.concat([buf, d]);
+      while (buf.length >= 2 && buf.length >= 2 + buf.readUInt16BE(0)) {
+        const one = new Uint8Array(buf.subarray(2, 2 + buf.readUInt16BE(0)));
+        buf = buf.subarray(2 + one.length);
+        void this.#answer(one, "tcp").then((a) => {
+          if (!a || c.destroyed) return;
+          const len = Buffer.alloc(2);
+          len.writeUInt16BE(a.length);
+          c.write(Buffer.concat([len, a]));
+        });
+      }
     });
-    await new Promise<void>((resolve, reject) => {
-      tcp.once("error", reject);
-      tcp.listen(port, addr, () => resolve());
-    });
-    this.#tcp = tcp;
   }
 
   /** The answer to one query: the gateway's for a tailnet name, the box's own nameservers' for any other. */
@@ -413,5 +441,13 @@ function tcpAsk(ns: string, port: number, query: Uint8Array): Promise<Uint8Array
       if (buf.length >= 2 && buf.length >= 2 + buf.readUInt16BE(0)) done(new Uint8Array(buf.subarray(2, 2 + buf.readUInt16BE(0))));
     });
     s.on("error", () => done(undefined));
+  });
+}
+
+/** `server` listening at `host`:`port`, or why not (the server closed). */
+function listen(server: Server, port: number, host: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once("error", (error) => (server.close(), reject(error)));
+    server.listen(port, host, () => resolve());
   });
 }

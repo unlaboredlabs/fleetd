@@ -20,7 +20,7 @@ import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../.
 import { VERSION } from "../../../shared/version.ts";
 import { NAMES } from "../../../shared/sandbox.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
-import { Box } from "../box.ts";
+import { Box, type Relay } from "../box.ts";
 import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
@@ -41,8 +41,10 @@ type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 /** What the node gives every box's link: how node.sock calls are answered. */
 export type Wiring = { lead: LeadSocketHooks };
 
-/** A box as the node keeps it: in `<hostDir>/place.json` (the hosted place). */
-export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[] };
+/** A box as the node keeps it: in `<hostDir>/place.json` (the hosted place). `relays`: a box made before its Claude
+ * endpoint stopped being relayed (W722) has its claude pointed at one; it keeps it until the box goes. No new box gets
+ * one. */
+export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[]; relays?: Relay[] };
 
 export class Boxes {
   #auth = new Map<ProviderId, ProviderAuth>();
@@ -281,7 +283,7 @@ export class Boxes {
         return t ? t.dns(name, type) : Promise.reject(new Error("this machine reaches no tailnet"));
       },
     };
-    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, lead, tailnet, goneMs: 120_000 });
+    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, ...(b.relays?.length ? { relays: b.relays } : {}), lead, tailnet, goneMs: 120_000 });
   }
 
   /** Deletes the box; one already gone is no error. */
