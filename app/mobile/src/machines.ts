@@ -75,8 +75,12 @@ export const daysChoices = (current: number): number[] => [...new Set([7, 14, 30
 /** Tailscale's row: its value, a line under it only when the person needs one, and `problem` when it isn't working. */
 export const tailnetValue = (s: TailnetState): { text: string; detail?: string; problem: boolean } => {
   switch (s.status) {
-    case "connected":
-      return { text: "Connected", ...(s.tailnet === undefined ? {} : { detail: s.device === undefined ? s.tailnet : `${s.tailnet} · as ${s.device}` }), problem: false };
+    case "connected": {
+      const where = s.tailnet === undefined ? undefined : s.device === undefined ? s.tailnet : `${s.tailnet} · as ${s.device}`;
+      // Connected, but not kept across a restart (a locked vault): what to do, under the row.
+      if (s.problem !== undefined) return { text: "Connected", detail: `${where === undefined ? "" : `${where}. `}${s.problem}.`, problem: false };
+      return { text: "Connected", ...(where === undefined ? {} : { detail: where }), problem: false };
+    }
     case "login":
       return { text: "Sign in", detail: "Waiting for you to sign in to Tailscale and approve the device.", problem: false };
     case "approve":
@@ -89,6 +93,10 @@ export const tailnetValue = (s: TailnetState): { text: string; detail?: string; 
       return { text: s.problem === undefined ? "Not connected" : "Not available", ...(s.problem === undefined ? {} : { detail: `${s.problem}.` }), problem: false };
   }
 };
+
+/** How long Connect may take on the hub: a first one downloads Tailscale (2 min at most), starts it (15 s) and waits for
+ * its sign-in page (30 s). */
+export const CONNECT_WAIT_MS = 180_000;
 
 /** Whether the hub waits on a sign-in or an approval: the screen reads its state again meanwhile. */
 export const tailnetWaiting = (s: TailnetState | undefined): boolean => s?.status === "login" || s?.status === "approve" || s?.status === "starting";

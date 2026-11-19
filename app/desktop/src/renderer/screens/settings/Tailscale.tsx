@@ -52,7 +52,8 @@ export function TailscaleRow({ state, reread }: { state: TailnetState; reread: (
   const connect = () => {
     setBusy(true);
     setProblem(null);
-    void call("tailnet_connect", noInput, { timeoutMs: 60_000 })
+    // As long as the hub can take: a first Connect downloads Tailscale (2 min at most), starts it and waits for its page.
+    void call("tailnet_connect", noInput, { timeoutMs: 180_000 })
       .then(
         async (s) => {
           if (s.loginUrl === undefined) return;

@@ -7119,7 +7119,7 @@ export type TailnetState = {
   device?: string;
   /** `login`: Tailscale's sign-in page for the gateway; signing in and approving there registers it. */
   loginUrl?: string;
-  /** `failed`, or why the gateway can't run on this hub at all, in plain words. */
+  /** `failed`, why the gateway can't run on this hub at all, or (`connected`) why it won't last a restart, in plain words. */
   problem?: string;
   status: TailnetStatus;
   /** `connected`: the tailnet's name, as its admin console shows it. */

@@ -22644,7 +22644,7 @@
           "type": "string"
         },
         "problem": {
-          "description": "`failed`, or why the gateway can't run on this hub at all, in plain words.",
+          "description": "`failed`, why the gateway can't run on this hub at all, or (`connected`) why it won't last a restart, in plain words.",
           "type": "string"
         },
         "status": {

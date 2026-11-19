@@ -116,6 +116,11 @@ describe("Tailscale", () => {
     });
   });
 
+  it("says what to do when it's connected but its sign-in can't be kept (a locked vault)", () => {
+    const v = tailnetValue({ status: "connected", tailnet: "example.com", device: "fleetd", problem: "Connected, but its sign-in isn't kept: the vault is locked" });
+    expect(v).toEqual({ text: "Connected", detail: "example.com · as fleetd. Connected, but its sign-in isn't kept: the vault is locked.", problem: false });
+  });
+
   it("reads again only while it waits on a sign-in or an approval", () => {
     expect(tailnetWaiting({ status: "login" })).toBe(true);
     expect(tailnetWaiting({ status: "approve" })).toBe(true);
