@@ -2324,6 +2324,52 @@ export const screens: readonly Screen[] = [
       expect(await scrollMoves(page)).toEqual([]);
     },
   },
+  // ...and a fold the reader opens in a row the view's top cuts through (a long diff's Show all) opens under what they
+  // read: the lines shown before stay where they were on screen, the lines opened below them.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "fold",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -9);
+      const more = page.getByRole("button", { name: /^Show all \d+ lines$/u });
+      await more.waitFor({ timeout: 10_000 });
+      // Scrolled up by the wheel so the button sits a third down the view, the diff's first lines and its message's top
+      // above it, away from the end (where the list follows the end as rows grow).
+      const by = await more.evaluate((b) => {
+        const list = b.closest("[role=list]");
+        return list === null ? 0 : b.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 3;
+      });
+      const log = await page.getByLabel("Conversation with the lead").boundingBox();
+      if (!log) throw new Error("no conversation");
+      await page.mouse.move(log.x + log.width / 2, log.y + log.height / 2);
+      await page.mouse.wheel(0, by);
+      await page.waitForTimeout(500);
+      // A line of the diff shown before, by its words (syntax colour splits a line into pieces).
+      const lineTop = (n: number) =>
+        page.evaluate((words) => {
+          const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          for (let t = walk.nextNode(); t !== null; t = walk.nextNode()) {
+            if (t.textContent?.trim() === words) {
+              const range = document.createRange();
+              range.selectNodeContents(t);
+              return range.getBoundingClientRect().top;
+            }
+          }
+          return null;
+        }, `line${String(n)}`);
+      const was = await lineTop(20);
+      expect(was).not.toBeNull();
+      await more.click();
+      await expect.poll(() => lineTop(120)).not.toBeNull();
+      await page.waitForTimeout(500);
+      expect(await lineTop(20)).toBe(was);
+    },
+  },
   // ...and scrolled up, the link drops and comes back unable to resume: the offline banner floats over the chat rather
   // than push it down, and the pictures on screen stay (their bytes outlast the reconnect).
   {

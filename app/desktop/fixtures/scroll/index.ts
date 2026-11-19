@@ -32,6 +32,9 @@ const DROP_DOWN_MS = 3_000;
 /** An older page's answer time. */
 const OLDER_MS = 300;
 
+/** The long diff's lines: more than a diff block shows before "Show all". */
+const FOLD_LINES = 120;
+
 const block = (id: string, caption: string) => ({ v: 1, kind: "image", attachmentId: id, caption });
 
 /** The history: chat-long's lines, every 9th lead message with a picture and every 13th with an image block. */
@@ -54,6 +57,11 @@ const drafts = (): { drafts: Draft[]; blocks: { id: string; name: string }[] } =
     if (lead % 17 === 0) return { author: "system", text: `Agent T${String(4000 + i)} opened a PR for ${l.text.slice(0, 30)}…` };
     return { author: "lead", text: l.text };
   });
+  // A long diff a dozen messages from the end, its first lines shown and the rest one press away (QA's chat~fold).
+  const intro = "The whole change, for the record:";
+  const diff = { v: 1, kind: "diff", title: "Totals", files: [{ path: "src/receipt/totals.ts", hunks: [`@@ -0,0 +1,${String(FOLD_LINES)} @@\n${Array.from({ length: FOLD_LINES }, (_, i) => `+const line${String(i + 1)} = ${String(i + 1)};`).join("\n")}`] }] };
+  const text = `${intro}\n\n\`\`\`fleetd-block\n${JSON.stringify(diff)}\n\`\`\``;
+  out.splice(out.length - 12, 0, { author: "lead", text, parts: [{ start: 0, end: intro.length }, { start: intro.length + 2, end: text.length, block: diff }] });
   return { drafts: out, blocks };
 };
 

@@ -36,8 +36,9 @@ function list(count: number, follow: boolean, away = false) {
     ...followOptions(follow, away),
   };
   const v = new Virtualizer(options);
-  // As VirtualList sets it.
-  v.shouldAdjustScrollPositionOnItemSizeChange = keepsPlace;
+  // As VirtualList sets it, with how far what sits at the view's top moved within its row given by the test.
+  const top: { moved: number | undefined } = { moved: undefined };
+  v.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, inst) => keepsPlace(item, delta, inst.scrollOffset ?? 0, top.moved);
   v._didMount();
   v._willUpdate();
   const scrollTo = (to: number) => {
@@ -56,7 +57,7 @@ function list(count: number, follow: boolean, away = false) {
     v.setOptions(options);
     v._willUpdate();
   };
-  return { v, scrollTo, wheelTo, bottom, append, offset: () => offset };
+  return { v, top, scrollTo, wheelTo, bottom, append, offset: () => offset };
 }
 
 describe("VirtualList followOutput", () => {
@@ -114,16 +115,33 @@ describe("VirtualList: the reader leaving the end", () => {
 });
 
 describe("VirtualList: a row above the view changing size", () => {
-  it("moves the view with a row the view's top cuts through while the reader scrolls up (a picture loading there)", () => {
-    const { v, scrollTo, wheelTo, offset } = list(50, true, true);
+  it("moves the view with a row the view's top cuts through when the change came above what sits at that top (a picture loading)", () => {
+    const { v, top, scrollTo, wheelTo, offset } = list(50, true, true);
     scrollTo(500);
     // Row 24 (480 to 500) measured once, above the view: the view moves with it.
     v.resizeItem(24, 30);
     expect(offset()).toBe(510);
-    // Scrolling up, the view's top now cuts through it; its picture loads, 200 px more. What is on screen stays.
+    // Scrolling up, the view's top now cuts through it; its picture loads, 200 px more, all of it above what sits at
+    // the view's top. What is on screen stays.
     wheelTo(495);
+    top.moved = 200;
     v.resizeItem(24, 230);
     expect(offset()).toBe(695);
+  });
+
+  it("leaves the view where it is for a fold opened in view in a row the view's top cuts through (a diff's Show all)", () => {
+    const { v, top, scrollTo, wheelTo, offset } = list(50, true, true);
+    scrollTo(500);
+    v.resizeItem(24, 30);
+    wheelTo(495);
+    // What sits at the view's top stayed where it was in its row: the lines opened under it.
+    top.moved = 0;
+    v.resizeItem(24, 430);
+    expect(offset()).toBe(495);
+    // Nothing known of what sits at the top: nothing moves either.
+    top.moved = undefined;
+    v.resizeItem(24, 30);
+    expect(offset()).toBe(495);
   });
 
   it("moves the view with a row wholly above it while the reader scrolls up (an edit, a picture read again)", () => {
@@ -137,10 +155,11 @@ describe("VirtualList: a row above the view changing size", () => {
   });
 
   it("leaves the view where it is for the last row growing at its bottom while it reaches into the view (a reply streaming)", () => {
-    const { v, scrollTo, wheelTo, offset } = list(50, true, true);
+    const { v, top, scrollTo, wheelTo, offset } = list(50, true, true);
     scrollTo(800);
     v.resizeItem(49, 200);
     wheelTo(900);
+    top.moved = 0;
     v.resizeItem(49, 400);
     expect(offset()).toBe(900);
   });
