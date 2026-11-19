@@ -16,6 +16,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CAP_RUNNER, RUNNER_ID } from "../../shared/sandbox.ts";
 import { readConfig } from "../../node/config.ts";
+import { loadOrCreateIdentity } from "../../node/identity.ts";
 import { selfArgv } from "../../node/util.ts";
 import type { Hub } from "../api/hub.ts";
 import { limits } from "../sandbox/index.ts";
@@ -159,7 +160,9 @@ export class Runner {
     endLeft(home);
     let enrolled = false;
     try {
-      enrolled = readConfig(home)?.enrolled === true;
+      // Enrolled, and under the key the hub holds for it: one the hub forgot or another node took joins again by
+      // itself, with a fresh code of the hub's own, rather than being refused at every start.
+      enrolled = readConfig(home)?.enrolled === true && this.hub.auth.nodes.nodePubKey(RUNNER_ID) === loadOrCreateIdentity(home).pubKey();
     } catch {}
     let child: Child;
     if (enrolled) {

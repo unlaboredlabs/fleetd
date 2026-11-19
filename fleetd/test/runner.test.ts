@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { githubApps } from "../src/hub/github_app/index.ts";
 import { RENEW_MS, runnerRepos, sendGithubTokens, TOKEN_LEFT_MS } from "../src/hub/runner/github.ts";
-import { NodeBoxKey } from "../src/node/identity.ts";
+import { loadOrCreateIdentity, NodeBoxKey } from "../src/node/identity.ts";
 import { keepTokens, useGithubTokens, withGithubTokens } from "../src/node/repos/github.ts";
 import { seal } from "../src/shared/sealed_box.ts";
 import { bestWorker } from "../src/hub/projects/inspect.ts";
@@ -45,8 +45,18 @@ test("it runs while a provider is connected, joins once for its own id, links as
   expect(t.hub.auth.nodes.openEnrollTokens().map((c) => c.machineId)).toEqual([RUNNER_ID]);
   // Joined: it starts again as that node when it ends.
   writeConfig(r.home, { hub: "http://127.0.0.1:4790", machineId: RUNNER_ID, name: "Hosted sandboxes", enrolled: true, runner: true });
+  expect(t.hub.auth.nodes.enrollNode(join_!.stdin!, RUNNER_ID, loadOrCreateIdentity(r.home).pubKey())).toBe(RUNNER_ID);
   r.stop();
   expect(join_!.killed).toBe("SIGTERM");
+  r.sync();
+  expect(spawned.at(-1)!.args).toEqual(["node", "run", "--home", r.home]);
+  // The hub holds another key for it (its home's was replaced): it joins again by itself with a fresh code of the hub's.
+  r.stop();
+  t.hub.db.conn.query("UPDATE node_keys SET pub_key = ? WHERE machine_id = ?").run("b".repeat(43), RUNNER_ID);
+  r.sync();
+  expect(spawned.at(-1)!.args).toContain("join");
+  expect(t.hub.auth.nodes.enrollNode(spawned.at(-1)!.stdin!, RUNNER_ID, loadOrCreateIdentity(r.home).pubKey())).toBe(RUNNER_ID);
+  r.stop();
   r.sync();
   expect(spawned.at(-1)!.args).toEqual(["node", "run", "--home", r.home]);
   // Nothing hosted connected any more and no bot on it: it stops.
