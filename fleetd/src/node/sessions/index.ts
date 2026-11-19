@@ -40,6 +40,8 @@ import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
 import { accountSecrets, envFor, held, putOn } from "../actions/accounts.ts";
+import { privateByName } from "../place/endpoint.ts";
+import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
 import * as mcp from "../actions/mcp.ts";
 import { fallback as onepasswordFallback } from "../actions/onepassword.ts";
@@ -274,10 +276,19 @@ const hostedOf = (place: string | undefined): ProviderId | undefined =>
 
 /** What the hub's runner says of its Claude Code: the one every hosted box's template installs, at the version fleetd
  * was tested with, on the Claude account the hub sealed to it. None held: no agent of its starts, and the person reads
- * why. A machine's own login never comes into it (there is none). */
-export function runnerClaude(account: ClaudeAccount | undefined): RunnerInfo {
+ * why. A machine's own login never comes into it (there is none). An account whose `endpoint` is plainly private (a
+ * tailnet or LAN gateway) while the team's tailnet is off (`tailnet`) says what to do: hosted boxes reach no such
+ * endpoint until Tailscale is connected. */
+export function runnerClaude(account: ClaudeAccount | undefined, endpoint?: string, tailnet = false): RunnerInfo {
   const info: RunnerInfo = { runner: "claude", version: `${claude.TESTED} (Claude Code)`, supported: claude.SUPPORTED, versionOk: true, conformanceOk: true, login: "logged_out" };
-  if (account) return { ...info, login: "logged_in", loginKind: account.kind === "hub" ? "api_key" : "subscription" };
+  if (account) {
+    const on = { ...info, login: "logged_in" as const, loginKind: account.kind === "hub" ? ("api_key" as const) : ("subscription" as const) };
+    if (endpoint === undefined || tailnet || !privateByName(endpoint)) return on;
+    return {
+      ...on,
+      problem: `the hub's Claude endpoint ${endpoint} is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Settings › Hub › Machines`,
+    };
+  }
   return {
     ...info,
     problem:
@@ -2310,7 +2321,12 @@ export class SessionService {
   async #probe(): Promise<RunnerInfo> {
     const started = Date.now();
     if (isRunner()) {
-      const info = runnerClaude(held(this.home));
+      const account = held(this.home);
+      let endpoint: string | undefined;
+      try {
+        endpoint = account ? envFor(this.home, account).vars.find(([k]) => k === "ANTHROPIC_BASE_URL")?.[1] : undefined;
+      } catch {}
+      const info = runnerClaude(account, endpoint, nodeTailnet()?.on === true);
       this.#healthChanged((h) => h.probed(info, started));
       return this.#health.info() ?? info;
     }

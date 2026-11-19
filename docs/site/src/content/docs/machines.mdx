@@ -498,11 +498,13 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · E2B �
 - *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
   GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
 - *The same as on the machine:* chat, PRs and pushes (the pre-push gate included), `fleetd` tools, Monitors,
-  `chat_file`, artifacts, resume, browser screens and Android emulators (their ports are carried to the sandbox), and
-  Claude wherever its endpoint is: a public one (Anthropic's API) on the sandbox's own network, any other (a gateway on
-  the machine or on its tailnet, which a sandbox can't reach itself) through the machine, as a local VM's (a port under 1024, which the sandbox's user can't take, is taken there at 40000
-  plus it, and the agent's claude is pointed at that port). Either way
-  it is checked from inside the sandbox before the agent starts, and refused in plain words when it can't be reached.
+  `chat_file`, artifacts, resume, browser screens and Android emulators (their ports are carried to the sandbox).
+- *Claude.* The sandbox calls the endpoint as set: Anthropic's API on the internet, or a gateway on your tailnet once
+  [Tailscale](#tailscale) is connected. Nothing of a machine's own network is carried into a sandbox, so a gateway on a
+  machine's `localhost` or LAN isn't reached there: point the account at the machine's tailnet name instead. The
+  endpoint is checked from inside the sandbox before the agent starts, and refused in plain words when it can't be
+  reached; one on a private network with no Tailscale connection says to connect it, and so does the hosted runner's
+  row in Machines.
 - *Refused, in plain words:* a Linux desktop's `launch` (the agent's files aren't on the machine), the agents' Mac and
   iOS simulators, and an agent on the machine's own Claude login.
 - *Machines.* Only an x86_64 Linux machine makes sandboxes (each runs the machine's own fleetd); an arm64 one keeps
@@ -533,8 +535,37 @@ computers, and it goes by itself once no provider is connected and no bot lives 
   providers, and a new bot goes to a computer.
 - The hub must run on Linux on x86_64 for this, as every machine that makes sandboxes.
 
+### Your tailnet (Tailscale) {#tailscale}
+
+Hosted sandboxes reach your [Tailscale](https://tailscale.com) tailnet (its addresses and MagicDNS names, so a Claude
+gateway, an MCP server or a dashboard there) through one device the hub runs for the whole team.
+
+- **Connect.** Settings › Hub › Machines › Network › **Tailscale** › Connect. Tailscale's sign-in page opens: sign in
+  and approve. Nothing is pasted. That adds one device, `fleetd`, to your tailnet, owned by whoever approved it, with
+  shields up: nothing on the tailnet reaches the hub's machine through it. It is one device however many sandboxes
+  run. With device approval on in your tailnet, the row says so until an admin approves `fleetd` in Tailscale's
+  console.
+- **What sandboxes reach.** Tailnet addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) and MagicDNS names, full and
+  short, from every program with no proxy settings: curl, git, ssh, `fetch` in node, raw TCP. Only that traffic goes
+  through the hub; everything else leaves the sandbox directly, as before. UDP to the tailnet isn't carried (its DNS
+  is). What the device may reach is what your tailnet's access rules let its owner's devices reach.
+- **On the hub.** The hub fetches Tailscale's static build (1.104.7, its checksum checked) the first time and runs
+  it in userspace under its own home, with its own socket: never the host's own Tailscale, routes or DNS. Its login
+  state is sealed in the hub's database under the vault's key, and is in the clear only in a RAM-backed directory
+  while it runs; the hub brings the device back after a restart. Linux hubs only (x86_64 or arm64).
+- **Expiry.** The device's key expires as your tailnet sets it (180 days by default); the row then says to connect
+  again. To avoid that, disable key expiry for `fleetd` in Tailscale's console.
+- **Disconnect** (the row's menu) logs the device out, so it leaves the tailnet, and deletes its state: sandboxes lose
+  the tailnet at once. With no connection, sandboxes reach only the internet.
+- **How.** In each sandbox a TUN device takes the tailnet's routes and hands each connection to fleetd's helper there,
+  which carries it over the sandbox's own link to its machine and on to the hub, signed with the machine's key. The
+  sandbox's resolver points at the same helper, which asks the hub's device for tailnet names and the sandbox's own
+  nameservers for everything else.
+- A local VM uses its machine's own network, tailnet included, as before.
+
 **What the machine does.** The first agent to need a provider builds fleetd's template in the team's account (the
-same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with); it takes a few minutes,
+same recipe as a local VM's image, plus Claude Code at the version fleetd was tested with and the tunnel for your
+tailnet); it takes a few minutes,
 once per Claude Code version. Each sandbox gets the machine's own fleetd at its start: a release build's from GitHub,
 fetched by the sandbox itself, else the machine sends it (about 57 MB). The machine labels each sandbox with its own
 id and deletes, every 10 minutes, any of its own that no agent holds any more.

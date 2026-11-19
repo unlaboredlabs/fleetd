@@ -12061,6 +12061,24 @@
         "steer_withdraw.output": {
           "$ref": "#/$defs/SteerWithdrawOutput"
         },
+        "tailnet_connect.input": {
+          "$ref": "#/$defs/TailnetConnectInput"
+        },
+        "tailnet_connect.output": {
+          "$ref": "#/$defs/TailnetState"
+        },
+        "tailnet_disconnect.input": {
+          "$ref": "#/$defs/TailnetDisconnectInput"
+        },
+        "tailnet_disconnect.output": {
+          "$ref": "#/$defs/TailnetState"
+        },
+        "tailnet_get.input": {
+          "$ref": "#/$defs/TailnetGetInput"
+        },
+        "tailnet_get.output": {
+          "$ref": "#/$defs/TailnetState"
+        },
         "task_get.input": {
           "$ref": "#/$defs/TaskGetInput"
         },
@@ -12595,6 +12613,12 @@
         "steer_send.output",
         "steer_withdraw.input",
         "steer_withdraw.output",
+        "tailnet_connect.input",
+        "tailnet_connect.output",
+        "tailnet_disconnect.input",
+        "tailnet_disconnect.output",
+        "tailnet_get.input",
+        "tailnet_get.output",
         "task_get.input",
         "task_get.output",
         "tasks_list.input",
@@ -22579,6 +22603,56 @@
         "system"
       ],
       "type": "string"
+    },
+    "TailnetConnectInput": {
+      "type": "object"
+    },
+    "TailnetDisconnectInput": {
+      "type": "object"
+    },
+    "TailnetGetInput": {
+      "type": "object"
+    },
+    "TailnetState": {
+      "description": "The team's Tailscale connection: one gateway device the hub runs, through which hosted sandboxes reach the tailnet.",
+      "properties": {
+        "device": {
+          "description": "`connected`: the gateway's name on the tailnet.",
+          "type": "string"
+        },
+        "loginUrl": {
+          "description": "`login`: Tailscale's sign-in page for the gateway; signing in and approving there registers it.",
+          "type": "string"
+        },
+        "problem": {
+          "description": "`failed`, or why the gateway can't run on this hub at all, in plain words.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TailnetStatus"
+        },
+        "tailnet": {
+          "description": "`connected`: the tailnet's name, as its admin console shows it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "TailnetStatus": {
+      "description": "Where the team's Tailscale gateway is: `off` (none), `starting` (the hub is starting it), `login` (waiting for a sign-in at\n`loginUrl`), `approve` (signed in; a tailnet admin approves the device), `connected`, or `failed` (`problem` says why).",
+      "enum": [
+        "off",
+        "starting",
+        "login",
+        "approve",
+        "connected",
+        "failed"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "Task": {
       "properties": {

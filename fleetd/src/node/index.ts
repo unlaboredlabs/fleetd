@@ -22,6 +22,7 @@ import { boxOf, inBox, runnerProvider, useRunner, useVm } from "./place/index.ts
 import { Images, useImages } from "./place/image.ts";
 import { MicroVm, reportVm } from "./place/microvm.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
+import { NodeTailnet, nodeTailnet, setNodeTailnet } from "./sandbox/tailnet.ts";
 import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
@@ -407,7 +408,11 @@ export async function startNode(
     isAgentsMac(config) || config.runner ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope, claudeEnv: () => runnerEnv(sessionConfig) });
   useVm(vm);
   // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
-  if (process.platform === "linux" && !isAgentsMac(config)) setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
+  if (process.platform === "linux" && !isAgentsMac(config)) {
+    setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
+    // The team's tailnet for those boxes, through the hub's gateway: off until the hub says it is on.
+    setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
+  }
   const sessions = await SessionService.start(sessionConfig);
   // Its bots' computer images (place/image.ts): in its VMs, or on the hub's runner in the hosted provider's snapshots.
   useImages(
@@ -560,6 +565,13 @@ export async function startNode(
         if (frame.action === "github_tokens" && config.runner) {
           const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);
           return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `${kept} GitHub tokens kept` });
+        }
+        // The team's Tailscale gateway, on or off, for this node's hosted boxes.
+        if (frame.action === "tailnet" && nodeTailnet()) {
+          nodeTailnet()!.set((frame as unknown as NodeAction).tailnet);
+          // The hub's runner says again whether its Claude endpoint is reached.
+          if (config.runner) void sessions.reprobe().catch(() => {});
+          return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `the tailnet is ${nodeTailnet()!.on ? "on" : "off"} here` });
         }
         // A node where agents never run in sandboxes (macOS, the agents' Mac) answers below that it doesn't know them.
         if (frame.action === "sandbox_check" || frame.action === "sandbox_limits") {

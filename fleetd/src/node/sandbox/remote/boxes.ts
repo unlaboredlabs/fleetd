@@ -20,7 +20,8 @@ import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../.
 import { VERSION } from "../../../shared/version.ts";
 import { NAMES } from "../../../shared/sandbox.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
-import { Box, type Relay } from "../box.ts";
+import { Box } from "../box.ts";
+import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
 /** Labels on every box: the machine that made it, and the session it runs. */
@@ -41,8 +42,7 @@ type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 export type Wiring = { lead: LeadSocketHooks };
 
 /** A box as the node keeps it: in `<hostDir>/place.json` (the hosted place). */
-/** `relays`: where the box reaches what this machine reaches (its Claude endpoint), through the node. */
-export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[]; relays?: Relay[] };
+export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; secret: string; tcp: number[] };
 
 export class Boxes {
   #auth = new Map<ProviderId, ProviderAuth>();
@@ -270,7 +270,18 @@ export class Boxes {
         return hooks[k as keyof LeadSocketHooks];
       },
     });
-    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, ...(b.relays ? { relays: b.relays } : {}), lead, goneMs: 120_000 });
+    // The team's tailnet, as the node has it when a connection or lookup comes (./tailnet.ts).
+    const tailnet = {
+      dial: (host: string, port: number) => {
+        const t = nodeTailnet();
+        return t ? t.dial(host, port) : Promise.reject(new Error("this machine reaches no tailnet"));
+      },
+      dns: (name: string, type: number) => {
+        const t = nodeTailnet();
+        return t ? t.dns(name, type) : Promise.reject(new Error("this machine reaches no tailnet"));
+      },
+    };
+    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, lead, tailnet, goneMs: 120_000 });
   }
 
   /** Deletes the box; one already gone is no error. */

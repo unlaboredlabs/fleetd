@@ -96,6 +96,7 @@ the new hub's own keys. The hub's own keys are never in the file.
 | The hub's own keys | The box key and the vault's root key never leave the hub. | The new hub has its own; secrets are sealed to them on import. Save the new [recovery code](/docs/vault). |
 | Keys given to other hubs | They were this hub's to give. | Link the hubs again. |
 | The team's sandbox keys | They are sealed under the old hub's vault key. | An admin connects each again in Settings › Hub › Machines › Providers, with its limit. |
+| Tailscale | Its device's login state is sealed under the old hub's vault key. | An admin connects it again in Settings › Hub › Machines › Network; remove the old `fleetd` device in Tailscale's console. |
 | Agent slots, session places, waits for a screen | They describe processes on the old hub's machines at that moment. | Agents claim slots again as they run. |
 | Unfinished uploads, recordings still being made | Half a file. | Send or record again. |
 | Builds, update downloads, the log, `setup.json` | Made again, or about this install's address. | `fleetd init` writes the new install's. |

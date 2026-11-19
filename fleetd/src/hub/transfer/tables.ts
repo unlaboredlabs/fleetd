@@ -165,6 +165,7 @@ export const LEFT_OUT: Record<string, string> = {
   screen_waits: "a wait for a screen on one of the old hub's machines, minutes long",
   session_places: "which machine's process hosts each screen session",
   slot_claims: "the agent slots held on the old hub's machines; agents claim again",
+  tailnet_gateway: "the team's Tailscale device's login state, sealed to the old hub's vault key: an admin connects Tailscale again on the new hub",
   vault_keys: "the old hub's root key ids; the new hub records its own",
 };
 

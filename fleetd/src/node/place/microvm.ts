@@ -48,7 +48,7 @@ import { heldDirOf } from "../hold.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
-import { boxArgs, claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
+import { claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
 import { BOX_HOME, forClaude, machineSignIn, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
 import { imagesDir, newDisk, sessionDisk, sessionLayer, type Backend, type Built, type Job } from "./image.ts";
 import { IMAGE } from "../../sandbox/image/recipe.ts";
@@ -578,12 +578,12 @@ export class MicroVm {
     let boxArgv: string[];
     try {
       // The guest helper is root: the relay takes the endpoint's own port, and claude calls the URL as set.
-      const r = reachOf(endpoint.url, { lowPorts: true });
+      const r = reachOf(endpoint.url);
       await (this.o.reach ?? reach)(held.box, r);
       held.record.relays = held.box.relays;
       writeFileSync(boxFile(l.dir), JSON.stringify(held.record));
       // The guest's word that it ran out of memory reaches the agent at its next tool call, not a bare "Killed".
-      boxArgv = withPostToolHook(boxArgs(args, r), OOM_HOOK);
+      boxArgv = withPostToolHook(args, OOM_HOOK);
     } catch (error) {
       const why = `${(error as Error).message} (the endpoint from ${endpoint.source})`;
       console.warn(`${nowIso()} WARN a VM couldn't reach Claude: the session runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify(why)}}`);

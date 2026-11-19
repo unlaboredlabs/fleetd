@@ -1,7 +1,8 @@
 // Settings › Machines on the phone (admins only), as the desktop's Hub › Machines has it (D550): the machines and how
 // each is, the providers the team connects with its own key (each with what it can run, from the one model in
-// desktop/src/shared/providers), and what runs where. In words the screens show; pure, so it is tested on its own.
-import type { Machine, SandboxCheck, SandboxProviderState, SandboxState } from "../../desktop/src/shared/contracts";
+// desktop/src/shared/providers), Tailscale (the team's tailnet for its hosted sandboxes), and what runs where. In words
+// the screens show; pure, so it is tested on its own.
+import type { Machine, SandboxCheck, SandboxProviderState, SandboxState, TailnetState } from "../../desktop/src/shared/contracts";
 import { specOf } from "../../desktop/src/shared/providers";
 
 export { agentsWhere, CAPABILITY_WORDS, canWords, KINDS, machinesRun, NONE, noneHow, specOf, YOURS, type Capability } from "../../desktop/src/shared/providers";
@@ -72,3 +73,24 @@ export const providerFooter = (p: Pick<ProviderState, "id" | "connected" | "chec
 
 /** How long recordings are kept: its choices, and the one set when it isn't among them. */
 export const daysChoices = (current: number): number[] => [...new Set([7, 14, 30, 60, 90, 180, 365, current])].sort((a, b) => a - b);
+
+/** Tailscale's row: its value, a line under it only when the person needs one, and `problem` when it isn't working. */
+export const tailnetValue = (s: TailnetState): { text: string; detail?: string; problem: boolean } => {
+  switch (s.status) {
+    case "connected":
+      return { text: "Connected", ...(s.tailnet === undefined ? {} : { detail: s.device === undefined ? s.tailnet : `${s.tailnet} · as ${s.device}` }), problem: false };
+    case "login":
+      return { text: "Sign in", detail: "Waiting for you to sign in to Tailscale and approve the device.", problem: false };
+    case "approve":
+      return { text: "Approve", detail: "Signed in. An admin of your tailnet approves the device in Tailscale's admin console.", problem: false };
+    case "starting":
+      return { text: "Starting…", problem: false };
+    case "failed":
+      return { text: "Not working", detail: s.problem ?? "Tailscale isn't working on the hub.", problem: true };
+    default:
+      return { text: s.problem === undefined ? "Not connected" : "Not available", ...(s.problem === undefined ? {} : { detail: `${s.problem}.` }), problem: false };
+  }
+};
+
+/** Whether the hub waits on a sign-in or an approval: the screen reads its state again meanwhile. */
+export const tailnetWaiting = (s: TailnetState | undefined): boolean => s?.status === "login" || s?.status === "approve" || s?.status === "starting";

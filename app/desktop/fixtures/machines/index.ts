@@ -110,6 +110,7 @@ const LAPTOP_CHECKS = laptopChecks({ out: true, kvm: true });
 function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => JsonObject[]): Fixture {
   const f = Fixture.from(from, name, note);
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
+  f.answer("tailnet_get", undefined, TAILNET_OFF);
   f.answer("machine_hosts", undefined, HOSTS);
   f.answer("machine_add_status", undefined, { runs: runs(f) });
   f.answer("machine_add_plan", undefined, {
@@ -228,6 +229,19 @@ function unwell(from: Fixture, name = "machines-unwell", note = "buildbox offlin
 /** The hub's own box key, which the app seals a provider's key to. */
 const BOX = "q5pJ8nL0v3Yc7hT2mR9wE4kD1sF6gA8uX0zB3cN5eQ8=";
 
+const TAILNET_OFF: JsonObject = { status: "off" };
+const TAILNET_LOGIN: JsonObject = { status: "login", loginUrl: "https://login.tailscale.com/a/1a2b3c4d5e6f" };
+const TAILNET_ON: JsonObject = { status: "connected", tailnet: "example.com", device: "fleetd" };
+
+/** The team's tailnet for its hosted sandboxes, in `state`: Connect gives the sign-in page, which the row opens. */
+function tailscale(from: Fixture, name: string, note: string, state: JsonObject): Fixture {
+  const f = hub(from, name, note, () => []);
+  f.answer("tailnet_get", undefined, state);
+  f.answer("tailnet_connect", undefined, TAILNET_LOGIN);
+  f.answer("tailnet_disconnect", undefined, TAILNET_OFF);
+  return f;
+}
+
 const SANDBOX_OFF = (provider: string): JsonObject => ({ provider, connected: false, limit: 0 });
 const SANDBOXES_OFF: JsonObject = { boxPubKey: BOX, placing: false, providers: [SANDBOX_OFF("e2b"), SANDBOX_OFF("boat"), SANDBOX_OFF("daytona")] };
 
@@ -302,6 +316,7 @@ function places(from: Fixture, name: string, note: string, devboxWhy: string, de
     { machineId: "laptop", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent${NO_VM(MACOS)}`, sandbox: { kind: "process", why: MACOS, expected: true } },
   ]);
   f.answer("sandbox_get", undefined, SANDBOXES_ON);
+  f.answer("tailnet_get", undefined, TAILNET_ON);
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
   return f;
 }
@@ -315,6 +330,7 @@ function onePlace(from: Fixture): Fixture {
     if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox").map((m) => ({ ...(m as JsonObject), status: "online", running: 3 }));
   }
   f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true });
+  f.answer("tailnet_get", undefined, TAILNET_OFF);
   f.update("machine_roles", (out) => (isObject(out) ? { ...out, retention: { retentionDays: 30, maxGbPerProject: 20 } } : out));
   return f;
 }
@@ -354,6 +370,13 @@ export default defineGroup({
     sandboxes(base("typical"), "machines-revyl-removed", "A hub that had Revyl connected before fleetd removed it: one plain line above the providers", {
       ...SANDBOXES_ON,
       removed: ["Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine."],
+    }),
+    tailscale(base("typical"), "machines-tailscale-off", "No Tailscale connection: its row with Connect, nothing under it", TAILNET_OFF),
+    tailscale(base("typical"), "machines-tailscale-login", "Connect pressed: the hub waits for the sign-in at Tailscale's page, with Open sign-in and Cancel", TAILNET_LOGIN),
+    tailscale(base("typical"), "machines-tailscale-on", "Tailscale connected: the tailnet's name and the gateway device's, Disconnect in its menu", TAILNET_ON),
+    tailscale(base("typical"), "machines-tailscale-failed", "The gateway ended on the hub: why, under the row, and Connect again", {
+      status: "failed",
+      problem: "Tailscale signed the gateway out (its key expired, or it was removed from the tailnet): connect it again",
     }),
     unwell(base("typical")),
     places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; E2B and Daytona (refused) connected", VM, { kind: "microvm" }),

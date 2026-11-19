@@ -123,6 +123,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
   { key: "hub.vm", label: "Each agent in a VM", tab: "hub.machines", keywords: ["vm", "vms", "virtual machine", "microvm", "isolation", "kvm", "process", "sandbox", "apparmor"] },
   { key: "hub.sandboxes", label: "Providers", tab: "hub.machines", keywords: ["providers", "sandbox", "sandboxes", "hosted", "e2b", "boat", "boat.dev", "daytona", "api key", "limit", "at once", "cloud", "capacity", "connect"] },
+  { key: "hub.tailscale", label: "Tailscale", tab: "hub.machines", keywords: ["tailscale", "tailnet", "network", "vpn", "magicdns", "private", "endpoint", "gateway", "connect"] },
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },

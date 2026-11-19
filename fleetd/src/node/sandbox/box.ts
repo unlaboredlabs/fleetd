@@ -11,7 +11,9 @@
 // - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
 //   (../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
 // - each dial the node opens (`dial`): a connection the guest makes from inside the box, the browser's way out
-//   (../browser/egress.ts), so the agent's browser reaches what the box reaches and no more.
+//   (../browser/egress.ts), so the agent's browser reaches what the box reaches and no more;
+// - in a hosted box, each connection to the team's tailnet and each lookup of a tailnet name its capture makes
+//   (./tailnet_box.ts), carried on to the team's gateway by the node (./tailnet.ts `tailnet`).
 // A channel to anywhere else is refused.
 import { connect } from "node:net";
 import { Duplex } from "node:stream";
@@ -20,7 +22,8 @@ import type { HostHandlers, HostSocket } from "../runner/host.ts";
 import { slotChannel } from "../build_slots.ts";
 import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
 import { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./guest.ts";
-import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
+import { HOST, Mux, NODE_CHANNELS, pair, type Target } from "./mux.ts";
+import type { TailnetHooks } from "./tailnet.ts";
 
 const HELLO_MS = 5_000;
 const ANSWER_MS = 15_000;
@@ -62,6 +65,8 @@ export type BoxOptions = {
   /** Set the guest's clock from this machine's, on each link and every CLOCK_MS: a local VM's (it has no clock of
    * its own to keep). */
   clock?: boolean;
+  /** Where the box's tailnet connections and lookups go (a hosted box's): none, and the box opens none. */
+  tailnet?: TailnetHooks;
 };
 
 /** A port in the box (on its loopback, or on `addr`, an address of the guest's own) whose connections the node pipes
@@ -178,6 +183,11 @@ export class Box {
       throw new Error(why);
     }
     return here;
+  }
+
+  /** The team's tailnet in the box: on with its MagicDNS `suffix`, or off (null). What the guest did, in its words. */
+  async tailnet(suffix: string | null): Promise<string> {
+    return String(await this.#request({ op: "tailnet", suffix }, ANSWER_MS * 2));
   }
 
   /** Reaches this machine's `port` from the box, at the same number. */
@@ -308,11 +318,51 @@ export class Box {
     // The target alone says what a channel is; nothing in it names a session.
     if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
     if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return slotChannel(this.o.slots.home);
+    if ("tailnet" in target) return this.#tailnetDial(channel, target.tailnet);
+    if ("tailnetDns" in target) return this.#tailnetDns(target.tailnetDns);
     if (!("tcp" in target)) return undefined;
     const relay = this.#relays.get(relayKey(target.tcp, target.addr));
     if (relay) return connect({ host: relay.to.host, port: relay.to.port });
     if (target.addr === undefined && this.#tcp.has(target.tcp)) return connect({ host: "127.0.0.1", port: target.tcp });
     return undefined;
+  }
+
+  /** A connection the box's capture makes to the tailnet: dialled through the node, the guest told how it went before
+   * any of its bytes. */
+  #tailnetDial(channel: number, to: { host?: unknown; port?: unknown }): Duplex | undefined {
+    const hooks = this.o.tailnet;
+    const port = Number(to.port);
+    if (!hooks || typeof to.host !== "string" || !to.host || !Number.isInteger(port) || port <= 0 || port > 65535) return undefined;
+    const [here, there] = pair();
+    const mux = this.#mux;
+    void hooks.dial(to.host, port).then(
+      (conn) => {
+        if (here.destroyed || mux !== this.#mux) return void conn.destroy();
+        mux?.control({ op: "tailnetDialed", channel });
+        here.pipe(conn).pipe(here);
+        conn.on("error", () => here.destroy());
+        here.on("close", () => conn.destroy());
+      },
+      (error: unknown) => {
+        mux?.control({ op: "tailnetDialed", channel, error: (error as Error).message.slice(0, 300) });
+        here.destroy();
+      },
+    );
+    return there;
+  }
+
+  /** A lookup of a tailnet name from the box: the gateway's answer, then the channel's end (at once, with none). */
+  #tailnetDns(q: { name?: unknown; type?: unknown }): Duplex | undefined {
+    const hooks = this.o.tailnet;
+    const type = Number(q.type);
+    if (!hooks || typeof q.name !== "string" || !q.name || q.name.length > 253 || !Number.isInteger(type)) return undefined;
+    const [here, there] = pair();
+    here.resume();
+    void hooks.dns(q.name, type).then(
+      (bytes) => here.end(Buffer.from(bytes)),
+      () => here.end(),
+    );
+    return there;
   }
 
   #request(m: Record<string, unknown>, ms = ANSWER_MS): Promise<unknown> {
@@ -417,38 +467,6 @@ export class Box {
     this.#mux?.close(why);
     this.#goneResolve(why);
   }
-}
-
-/** One end of an in-memory stream (`pair`): what it writes, the other end reads, its write done once that end read it. */
-class End extends Duplex {
-  other!: End;
-  #waiting: (() => void) | undefined;
-  override _read(): void {
-    const go = this.other.#waiting;
-    this.other.#waiting = undefined;
-    go?.();
-  }
-  override _write(chunk: Buffer, _encoding: BufferEncoding, done: (error?: Error | null) => void): void {
-    if (this.other.push(chunk)) done();
-    else this.#waiting = () => done();
-  }
-  override _final(done: (error?: Error | null) => void): void {
-    this.other.push(null);
-    done();
-  }
-  override _destroy(error: Error | null, done: (error?: Error | null) => void): void {
-    this.other.destroy();
-    done(error);
-  }
-}
-
-/** Two ends of one stream: a dial's, its channel on one and its user on the other. */
-function pair(): [Duplex, Duplex] {
-  const a = new End();
-  const b = new End();
-  a.other = b;
-  b.other = a;
-  return [a, b];
 }
 
 const listenOf = (r: Relay) => ({ op: "listen", tcp: r.port, ...(r.addr ? { addr: r.addr } : {}) });

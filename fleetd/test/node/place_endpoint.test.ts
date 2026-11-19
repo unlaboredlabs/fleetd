@@ -1,14 +1,14 @@
 // How a box reaches Claude (src/node/place/endpoint.ts): the endpoint claude itself picks, from its environment and
-// each settings file in claude's own order, and for every kind of endpoint (this machine's loopback, its LAN or
-// tailnet address, another tailnet host by name or IP, http or https, Anthropic's API) the relay, the pin, the port in
-// the box (never one under 1024) and the check that make it reachable from inside a box, or (a hosted box, a public
-// endpoint) the box's own network.
+// each settings file in claude's own order; for a local VM and every kind of endpoint (this machine's loopback, its
+// LAN or tailnet address, another tailnet host by name or IP, http or https, Anthropic's API) the relay, the pin and
+// the check that make it reachable from inside the VM at its own address and port; for a hosted box, the check alone,
+// and what to do when it fails (connect Tailscale for a private endpoint).
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import type { RunOutcome } from "../../src/node/cmd/index.ts";
-import { ANTHROPIC_API, boxArgs, claudeEndpoint, fromProject, loopbackFor, pinScript, probeArgv, publicEndpoint, publicIp, reach, reachOf } from "../../src/node/place/endpoint.ts";
+import { ANTHROPIC_API, claudeEndpoint, fromProject, loopbackFor, pinScript, privateByName, probe, probeArgv, publicEndpoint, publicIp, reach, reachOf, unreached } from "../../src/node/place/endpoint.ts";
 import type { Box, Relay } from "../../src/node/sandbox/box.ts";
 
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-endpoint-"));
@@ -49,44 +49,28 @@ test("the endpoint is the one claude picks: its environment, then each settings 
   expect(claudeEndpoint(l)).toEqual({ url: "https://inline:4", source: "--settings" });
 });
 
-test("every kind of endpoint gets a relay through the node, its name or IP kept, and a port under 1024 only where the box can take one", () => {
+test("every kind of endpoint gets a relay through the node in a local VM, at its own address and port", () => {
   // This machine's loopback: the box's own loopback at the same port, nothing pinned.
-  expect(reachOf("http://localhost:8317")).toEqual({ relay: { port: 8317, to: { host: "localhost", port: 8317 } }, url: "http://localhost:8317", boxUrl: "http://localhost:8317", label: "localhost:8317" });
+  expect(reachOf("http://localhost:8317")).toEqual({ relay: { port: 8317, to: { host: "localhost", port: 8317 } }, url: "http://localhost:8317", label: "localhost:8317" });
   expect(reachOf("http://127.0.0.1:8317/v1").relay).toEqual({ port: 8317, to: { host: "127.0.0.1", port: 8317 } });
   expect(reachOf("http://[::1]:8317")).toMatchObject({ relay: { port: 8317, addr: "::1", to: { host: "::1", port: 8317 } }, label: "[::1]:8317" });
   // This machine's own tailnet or LAN address, or another tailnet host's, by IP: that IP on the box's loopback.
-  for (const ip of ["100.64.0.10", "192.168.2.10", "100.88.1.2"])
-    expect(reachOf(`http://${ip}:8317`)).toMatchObject({ relay: { port: 8317, addr: ip, to: { host: ip, port: 8317 } }, pin: { ip }, boxUrl: `http://${ip}:8317` });
+  for (const ip of ["100.64.0.10", "192.168.2.10", "100.88.1.2"]) expect(reachOf(`http://${ip}:8317`)).toMatchObject({ relay: { port: 8317, addr: ip, to: { host: ip, port: 8317 } }, pin: { ip } });
   expect(reachOf("https://[fd7a:115c:a1e0::1]:8443")).toMatchObject({ relay: { port: 8443, addr: "fd7a:115c:a1e0::1" }, pin: { ip: "fd7a:115c:a1e0::1" }, label: "[fd7a:115c:a1e0::1]:8443" });
-  // A tailnet host by name over https: the name pinned, the box listening at 40443, its claude pointed there.
+  // A tailnet host by name over https: the name pinned, the VM's root guest listening at 443 itself.
   expect(reachOf("https://gateway.tail1234.ts.net")).toEqual({
-    relay: { port: 40443, to: { host: "gateway.tail1234.ts.net", port: 443 } },
+    relay: { port: 443, to: { host: "gateway.tail1234.ts.net", port: 443 } },
     pin: { name: "gateway.tail1234.ts.net" },
     url: "https://gateway.tail1234.ts.net",
-    boxUrl: "https://gateway.tail1234.ts.net:40443",
     label: "gateway.tail1234.ts.net:443",
   });
-  expect(reachOf("http://devbox/claude/").boxUrl).toBe("http://devbox:40080/claude/");
-  expect(reachOf("http://devbox:8317")).toMatchObject({ relay: { port: 8317, to: { host: "devbox", port: 8317 } }, pin: { name: "devbox" }, boxUrl: "http://devbox:8317" });
-  expect(reachOf(ANTHROPIC_API)).toMatchObject({ relay: { port: 40443, to: { host: "api.anthropic.com", port: 443 } }, pin: { name: "api.anthropic.com" } });
-  // A local VM's root guest takes the endpoint's own port: claude calls Anthropic's API exactly as set, which it
-  // counts as first-party only with no port in the URL.
-  expect(reachOf(ANTHROPIC_API, { lowPorts: true })).toEqual({
-    relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } },
-    pin: { name: "api.anthropic.com" },
-    url: ANTHROPIC_API,
-    boxUrl: ANTHROPIC_API,
-    label: "api.anthropic.com:443",
-  });
-  expect(reachOf("https://gateway.tail1234.ts.net", { lowPorts: true }).boxUrl).toBe("https://gateway.tail1234.ts.net");
-  expect(boxArgs(["-p"], reachOf(ANTHROPIC_API, { lowPorts: true }))).toEqual(["-p"]);
-  // On a hosted box's own network: no relay, no pin, the URL as set.
-  expect(reachOf(ANTHROPIC_API, { direct: true })).toEqual({ url: ANTHROPIC_API, boxUrl: ANTHROPIC_API, label: "api.anthropic.com:443" });
+  expect(reachOf("http://devbox:8317")).toMatchObject({ relay: { port: 8317, to: { host: "devbox", port: 8317 } }, pin: { name: "devbox" } });
+  expect(reachOf(ANTHROPIC_API)).toEqual({ relay: { port: 443, to: { host: "api.anthropic.com", port: 443 } }, pin: { name: "api.anthropic.com" }, url: ANTHROPIC_API, label: "api.anthropic.com:443" });
   expect(() => reachOf("not a url")).toThrow("isn't a URL");
   expect(() => reachOf("ftp://x")).toThrow("isn't http or https");
 });
 
-test("a hosted box reaches public endpoints itself; a tailnet, LAN or loopback one only through the node", async () => {
+test("an endpoint is public by its addresses: a tailnet, LAN or loopback one isn't", async () => {
   for (const ip of ["10.1.2.3", "172.16.0.1", "192.168.2.254", "100.64.0.10", "100.127.255.1", "127.0.0.1", "169.254.1.1", "::1", "fd7a:115c:a1e0::1", "fe80::1", "::ffff:10.0.0.1"]) expect(publicIp(ip)).toBe(false);
   for (const ip of ["160.79.104.10", "100.63.0.1", "172.32.0.1", "2607:6bc0::10", "::ffff:8.8.8.8"]) expect(publicIp(ip)).toBe(true);
   const dns = (map: Record<string, string[]>) => async (h: string) => map[h] ?? Promise.reject(new Error("ENOTFOUND"));
@@ -102,20 +86,24 @@ test("a hosted box reaches public endpoints itself; a tailnet, LAN or loopback o
   expect(await publicEndpoint("https://160.79.104.10", resolve)).toBe(true);
 });
 
-test("a box whose relay moved the port has its claude pointed there in --settings, above the user's and the bot's", () => {
-  const overlay = join(root, "overlay2.json");
-  writeFileSync(overlay, JSON.stringify({ env: { OTHER: "x" }, hooks: { a: 1 } }));
-  const r = reachOf("https://gateway.tail1234.ts.net");
-  const args = boxArgs(["-p", "--settings", overlay, "--model", "m"], r);
-  expect(args.slice(0, 2)).toEqual(["-p", "--settings"]);
-  expect(JSON.parse(args[2]!)).toEqual({ env: { OTHER: "x", ANTHROPIC_BASE_URL: "https://gateway.tail1234.ts.net:40443" }, hooks: { a: 1 } });
-  expect(args.slice(3)).toEqual(["--model", "m"]);
-  expect(JSON.parse(boxArgs(["-p"], r).at(-1)!)).toEqual({ env: { ANTHROPIC_BASE_URL: "https://gateway.tail1234.ts.net:40443" } });
-  // The port kept: claude's argv as it was.
-  const same = ["-p", "--settings", overlay];
-  expect(boxArgs(same, reachOf("http://localhost:8317"))).toBe(same);
-  // What claude in the box then picks is the box's URL.
-  expect(claudeEndpoint({ env: {}, args, cwd: root }).url).toBe("https://gateway.tail1234.ts.net:40443");
+test("a hosted box is only checked, and a failed check says what to do: connect Tailscale for a private endpoint", async () => {
+  const ok: RunOutcome = { exitCode: 0, outputTail: "", timedOut: false };
+  const box = fakeBox([ok, { exitCode: 7, outputTail: "curl: (7) Failed to connect to 100.104.249.49 port 8317\n", timedOut: false }]);
+  await probe(box.box, "http://100.104.249.49:8317");
+  expect(box.runs).toEqual([probeArgv("http://100.104.249.49:8317")]);
+  expect(box.relays).toEqual([]);
+  await expect(probe(box.box, "http://100.104.249.49:8317")).rejects.toThrow("the box can't reach Claude at 100.104.249.49:8317: curl: (7) Failed to connect");
+  const dns = async (h: string) => (h === "api.anthropic.com" ? ["160.79.104.10"] : Promise.reject(new Error("ENOTFOUND")));
+  const e = (url: string) => ({ url, source: "the environment" });
+  const off = await unreached(e("http://100.104.249.49:8317"), "the box can't reach Claude", false, dns);
+  expect(off).toBe("the box can't reach Claude (the endpoint from the environment): it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines");
+  expect(await unreached(e("http://devbox.tail1234.ts.net:8317"), "x", true, dns)).toContain("the team's tailnet doesn't reach it either");
+  expect(await unreached(e("http://localhost:8317"), "x", false, dns)).toContain("a machine's own loopback, which a hosted sandbox never reaches");
+  // A public endpoint's failure is its own: nothing to connect.
+  expect(await unreached(e(ANTHROPIC_API), "x", false, dns)).toBe("x (the endpoint from the environment)");
+  // By its name or address alone, for the runner's word.
+  for (const u of ["http://100.104.249.49:8317", "http://devbox:8317", "https://gw.tail1234.ts.net", "http://localhost:1", "http://10.0.0.5"]) expect(privateByName(u)).toBe(true);
+  for (const u of [ANTHROPIC_API, "https://gw.example.com", "https://160.79.104.10"]) expect(privateByName(u)).toBe(false);
 });
 
 test("the pin runs only in a fleetd box, as root or through sudo, and the check sends no key", () => {
@@ -170,12 +158,12 @@ test("reach pins, relays and checks at the box's URL, and says plainly what fail
   const good = fakeBox([ok, ok]);
   await reach(good.box, r);
   expect(good.runs.map((a) => a[0])).toEqual(["/bin/sh", "curl"]);
-  expect(good.runs[1]!.at(-1)).toBe("https://gateway.tail1234.ts.net:40443");
+  expect(good.runs[1]!.at(-1)).toBe("https://gateway.tail1234.ts.net");
   expect(good.relays).toEqual([r.relay!]);
 
   const noPin = fakeBox([{ exitCode: 1, outputTail: "sudo: a password is required\n", timedOut: false }]);
   await expect(reach(noPin.box, r)).rejects.toThrow("the box couldn't point gateway.tail1234.ts.net:443 at the node: sudo: a password is required");
-  const down = fakeBox([ok, { exitCode: 7, outputTail: "curl: (7) Failed to connect to gateway.tail1234.ts.net port 40443\n", timedOut: false }]);
+  const down = fakeBox([ok, { exitCode: 7, outputTail: "curl: (7) Failed to connect to gateway.tail1234.ts.net port 443\n", timedOut: false }]);
   await expect(reach(down.box, r)).rejects.toThrow("the box can't reach Claude at gateway.tail1234.ts.net:443: curl: (7) Failed to connect");
   // A loopback endpoint pins nothing, and its relay dials the loopback address that answers.
   const v4 = (await listenOn("127.0.0.1"))!;
@@ -183,9 +171,16 @@ test("reach pins, relays and checks at the box's URL, and says plainly what fail
   await reach(local.box, reachOf(`http://localhost:${v4}`));
   expect(local.runs.map((a) => a[0])).toEqual(["curl"]);
   expect(local.relays).toEqual([{ port: v4, to: { host: "127.0.0.1", port: v4 } }]);
-  // A public endpoint on a hosted box's own network: only the check.
-  const direct = fakeBox([ok]);
-  await reach(direct.box, reachOf(ANTHROPIC_API, { direct: true }));
-  expect(direct.runs).toEqual([probeArgv(ANTHROPIC_API)]);
-  expect(direct.relays).toEqual([]);
+});
+
+test("the hub's runner says to connect Tailscale while its Claude endpoint is plainly private and the tailnet is off", async () => {
+  const { runnerClaude } = await import("../../src/node/sessions/index.ts");
+  const hub = { kind: "hub" } as const;
+  expect(runnerClaude(hub, "http://100.104.249.49:8317").problem).toBe(
+    "the hub's Claude endpoint http://100.104.249.49:8317 is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Settings › Hub › Machines",
+  );
+  expect(runnerClaude(hub, "http://100.104.249.49:8317", true).problem).toBeUndefined();
+  expect(runnerClaude(hub, ANTHROPIC_API).problem).toBeUndefined();
+  expect(runnerClaude(hub).login).toBe("logged_in");
+  expect(runnerClaude(undefined).problem).toContain("none reaches them");
 });

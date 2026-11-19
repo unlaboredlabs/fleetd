@@ -8,6 +8,9 @@
 //   channel 1, the session host's lines (`{"host":true}`), and from NODE_CHANNELS up a connection the guest makes from
 //   inside the box (`{"dial":{"host","port"}}`, its browser's: ../browser/egress.ts). The guest says how that dial
 //   went in a control message, `{"op":"dial","channel":n}` or with `"error"`, before any of the channel's bytes.
+//   A hosted box's guest also opens a channel per connection to the team's tailnet (`{"tailnet":{"host","port"}}`), and
+//   the node says how its dial went the same way (`{"op":"tailnetDialed","channel"[,"error"]}`), and one per tailnet
+//   name lookup (`{"tailnetDns":{"name","type"}}`), on which the node sends the answer and ends it.
 // - DATA: bytes of a channel, at most CHUNK of them a frame.
 // - END: the sender sends nothing more on the channel (a half-close). A channel is done once both sides ended it.
 // - CREDIT: a u32: the receiver handed that many more of the channel's bytes on. A sender keeps at most WINDOW bytes
@@ -17,7 +20,7 @@
 //
 // A link that drops ends every channel on it; the node dials again (./box.ts) and the session host's own seq/ack
 // resend (../runner/host.ts) carries its lines across.
-import type { Duplex } from "node:stream";
+import { Duplex } from "node:stream";
 
 export const FRAME = { OPEN: 1, DATA: 2, END: 3, CREDIT: 4 } as const;
 const HEADER = 9;
@@ -33,8 +36,15 @@ export const HOST = 1;
 export const NODE_CHANNELS = 0x8000_0000;
 
 /** A channel's far end: a unix socket, a TCP port (on the guest's loopback, or on `addr` in the guest), the session
- * host, or (`dial`) a host and port the guest connects to from inside the box. */
-export type Target = { unix: string } | { tcp: number; addr?: string } | { host: true } | { dial: { host: string; port: number } };
+ * host, (`dial`) a host and port the guest connects to from inside the box, or the team's tailnet through the node
+ * (`tailnet`, a connection; `tailnetDns`, a lookup: ./tailnet_box.ts). */
+export type Target =
+  | { unix: string }
+  | { tcp: number; addr?: string }
+  | { host: true }
+  | { dial: { host: string; port: number } }
+  | { tailnet: { host: string; port: number } }
+  | { tailnetDns: { name: string; type: number } };
 
 export function frame(type: number, channel: number, payload: Uint8Array = new Uint8Array(0)): Buffer {
   const out = Buffer.allocUnsafe(HEADER + payload.length);
@@ -228,4 +238,36 @@ export class Mux {
     payload.writeUInt32BE(n, 0);
     this.#send(frame(FRAME.CREDIT, id, payload));
   }
+}
+
+/** One end of an in-memory stream (`pair`): what it writes, the other end reads, its write done once that end read it. */
+class End extends Duplex {
+  other!: End;
+  #waiting: (() => void) | undefined;
+  override _read(): void {
+    const go = this.other.#waiting;
+    this.other.#waiting = undefined;
+    go?.();
+  }
+  override _write(chunk: Buffer, _encoding: BufferEncoding, done: (error?: Error | null) => void): void {
+    if (this.other.push(chunk)) done();
+    else this.#waiting = () => done();
+  }
+  override _final(done: (error?: Error | null) => void): void {
+    this.other.push(null);
+    done();
+  }
+  override _destroy(error: Error | null, done: (error?: Error | null) => void): void {
+    this.other.destroy();
+    done(error);
+  }
+}
+
+/** Two ends of one stream: a dial's, its channel on one and its user on the other. */
+export function pair(): [Duplex, Duplex] {
+  const a = new End();
+  const b = new End();
+  a.other = b;
+  b.other = a;
+  return [a, b];
 }
