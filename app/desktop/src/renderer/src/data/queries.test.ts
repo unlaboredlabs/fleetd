@@ -110,6 +110,22 @@ describe("data layer", () => {
     expect(layer.queryClient.getQueryData(key)).toBeUndefined();
   });
 
+  it("keeps a file's bytes through a reconnect that couldn't resume: a picture in the chat doesn't go back to its chip", async () => {
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const input = { projectRef: { machineId: "devbox", projectId: "p1" }, attachmentId: "F1" };
+    const query = layer.queryClient.query(layer.toolQuery("attachment_get", input));
+    fake.answers[0]?.({ attachmentId: "F1", dataB64: "AAAA" });
+    await query;
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    fake.send(live());
+    fake.send(snapshot(500));
+    expect(layer.queryClient.getQueryData(["call", "attachment_get", input])).toEqual({ attachmentId: "F1", dataB64: "AAAA" });
+  });
+
   it("keeps what it read through a resumed reconnect: the missed events refetch what they touch, and failed reads go again", async () => {
     vi.useFakeTimers();
     const fake = fakeHub();

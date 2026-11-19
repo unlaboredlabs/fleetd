@@ -1,6 +1,6 @@
 import { Virtualizer, type VirtualizerOptions } from "@tanstack/react-virtual";
 import { describe, expect, it } from "vitest";
-import { followOptions, readerLeft } from "./VirtualList";
+import { followOptions, keepsPlace, readerLeft } from "./VirtualList";
 
 // A virtualizer over a fake 100 px viewport: TanStack's core with the DOM hooks replaced, so the pinning logic
 // that VirtualList configures runs for real without a browser.
@@ -36,11 +36,18 @@ function list(count: number, follow: boolean, away = false) {
     ...followOptions(follow, away),
   };
   const v = new Virtualizer(options);
+  // As VirtualList sets it.
+  v.shouldAdjustScrollPositionOnItemSizeChange = keepsPlace;
   v._didMount();
   v._willUpdate();
   const scrollTo = (to: number) => {
     offset = to;
     onOffset?.(offset, false);
+  };
+  /** The reader scrolling there, by the wheel: TanStack takes the way they go from it. */
+  const wheelTo = (to: number) => {
+    offset = to;
+    onOffset?.(offset, true);
   };
   const bottom = () => v.getTotalSize() - 100;
   /** `more` rows appended, as a new render hands TanStack its options. */
@@ -49,7 +56,7 @@ function list(count: number, follow: boolean, away = false) {
     v.setOptions(options);
     v._willUpdate();
   };
-  return { v, scrollTo, bottom, append, offset: () => offset };
+  return { v, scrollTo, wheelTo, bottom, append, offset: () => offset };
 }
 
 describe("VirtualList followOutput", () => {
@@ -103,5 +110,46 @@ describe("VirtualList: the reader leaving the end", () => {
     // Moved up because the list changed size (a row above measured, a page landing): not the reader.
     expect(readerLeft(end, { ...end, top: 880, height: 1100 })).toBeUndefined();
     expect(readerLeft(end, { top: 880, height: 1000, view: 120 })).toBe(false);
+  });
+});
+
+describe("VirtualList: a row above the view changing size", () => {
+  it("moves the view with a row the view's top cuts through while the reader scrolls up (a picture loading there)", () => {
+    const { v, scrollTo, wheelTo, offset } = list(50, true, true);
+    scrollTo(500);
+    // Row 24 (480 to 500) measured once, above the view: the view moves with it.
+    v.resizeItem(24, 30);
+    expect(offset()).toBe(510);
+    // Scrolling up, the view's top now cuts through it; its picture loads, 200 px more. What is on screen stays.
+    wheelTo(495);
+    v.resizeItem(24, 230);
+    expect(offset()).toBe(695);
+  });
+
+  it("moves the view with a row wholly above it while the reader scrolls up (an edit, a picture read again)", () => {
+    const { v, scrollTo, wheelTo, offset } = list(50, true, true);
+    scrollTo(500);
+    v.resizeItem(10, 30);
+    expect(offset()).toBe(510);
+    wheelTo(490);
+    v.resizeItem(10, 130);
+    expect(offset()).toBe(590);
+  });
+
+  it("leaves the view where it is for the last row growing at its bottom while it reaches into the view (a reply streaming)", () => {
+    const { v, scrollTo, wheelTo, offset } = list(50, true, true);
+    scrollTo(800);
+    v.resizeItem(49, 200);
+    wheelTo(900);
+    v.resizeItem(49, 400);
+    expect(offset()).toBe(900);
+  });
+
+  it("leaves the view where it is for a row below its top", () => {
+    const { v, scrollTo, offset } = list(50, true, true);
+    scrollTo(500);
+    v.resizeItem(26, 30);
+    v.resizeItem(26, 230);
+    expect(offset()).toBe(500);
   });
 });

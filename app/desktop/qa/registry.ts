@@ -22,6 +22,7 @@ import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/no-repo/ids.ts";
+import { notches, scrollMoves, watchScroll } from "./scroll.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -328,6 +329,9 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // W733: a busy bot's long chat with pictures, read up through, and the link dropping while scrolled up (fixtures/scroll).
+  "scroll-still",
+  "scroll-drop",
   // C1 and W38: the app's own update, the hub's and its machines', and the Update button's run (fixtures/updates).
   "updates-idle",
   "updates-checking",
@@ -2302,6 +2306,44 @@ export const screens: readonly Screen[] = [
     variant: "resilience",
     replay: true,
     realClock: true,
+  },
+  // W733: the conversation moves only by the wheel. Read up through a history of pictures and image blocks, each
+  // loading as it comes near: what is on screen never jumps (a picture growing above it, or in view).
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "read-up",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await watchScroll(page);
+      await notches(page, -40);
+      await page.waitForTimeout(1500);
+      expect(await scrollMoves(page)).toEqual([]);
+    },
+  },
+  // ...and scrolled up, the link drops and comes back unable to resume: the offline banner floats over the chat rather
+  // than push it down, and the pictures on screen stay (their bytes outlast the reconnect).
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-drop"],
+    variant: "drop",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -12);
+      await page.waitForTimeout(1000);
+      await watchScroll(page);
+      const banner = page.locator('[data-banner="reconnecting"]');
+      await expect(banner).toBeVisible({ timeout: 20_000 });
+      await expect(banner).toHaveCount(0, { timeout: 20_000 });
+      await page.waitForTimeout(1500);
+      expect(await scrollMoves(page)).toEqual([]);
+    },
   },
   // The error card itself, in place of the chat (the frame around it still works) and of the sidebar (the chat still
   // works). The QA build's probe makes the part throw.

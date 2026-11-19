@@ -14,10 +14,33 @@
   padding-top: var(--top-bar-height);
 }
 .column[data-under] {
+  position: relative;
   padding-top: 0;
 }
-.column[data-under] > :first-child:not(.screen) {
-  margin-top: var(--top-bar-height);
+
+.banners {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Over the chat, the banners float under the top row on glass: the conversation scrolls on under them, and the link
+   dropping or coming back never moves it. */
+.column[data-under] > .banners {
+  position: absolute;
+  z-index: 1;
+  top: var(--top-bar-height);
+  inset-inline: 0;
+}
+.column[data-under] > .banners:not(:empty) {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .column[data-under] > .banners:not(:empty) {
+    background: var(--bg);
+    backdrop-filter: none;
+  }
 }
 
 /* Each screen owns its own scrolling inside this. */

@@ -1,4 +1,4 @@
-import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { cx } from "../lib/cx";
 import s from "./VirtualList.module.css";
@@ -17,6 +17,19 @@ export function followOptions(followOutput: boolean | undefined, away = false) {
 
 /** Within this of the end, a reader who hasn't scrolled away from it is at it; one who has never is (-1). */
 const endThreshold = (away: boolean): number => (away ? -1 : 24);
+
+/**
+ * Whether a row changing size moves the view by as much, so what is on screen stays where it was: any row that starts
+ * above the view's top, whichever way the reader scrolls, is measured again or for the first time. A picture loading
+ * in a row the view's top cuts through (a reader scrolling up reaches it there) grows upward, out of sight, instead of
+ * pushing every row in view down. TanStack's own rule leaves such a row alone, and any row at all while the reader
+ * scrolls up. The last row is the exception while it reaches into the view: it grows at its bottom (a reply
+ * streaming in), where the reader reads on.
+ */
+export function keepsPlace(item: VirtualItem, _delta: number, v: Virtualizer<HTMLDivElement, Element>): boolean {
+  const offset = v.scrollOffset ?? 0;
+  return item.start < offset && (item.end <= offset || item.index < v.options.count - 1);
+}
 
 /** Where a scroller stood at a scroll event. */
 export interface Scrolled {
@@ -108,6 +121,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     scrollPaddingEnd: paddingEnd,
     ...followOptions(followOutput, away),
   });
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = keepsPlace;
 
   const { virtualizerRef } = props;
   useEffect(() => {
