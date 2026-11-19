@@ -135,6 +135,31 @@
       ],
       "type": "object"
     },
+    "AttachmentReadCall": {
+      "description": "`attachment_read`: a lead or task reads a file attached in its own project (a file a person attached in chat or\nto an order, or one shown in its chat) by id, one piece at a time: `length` bytes from `offset`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The file: `F12`, as the lead's wake or a brief names it."
+        },
+        "length": {
+          "description": "At most this many bytes; absent, ATTACHMENT_READ_PIECE.",
+          "maximum": 4194304,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "description": "The first byte to read; absent, 0.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attachmentId"
+      ],
+      "type": "object"
+    },
     "AskHandle": {
       "pattern": "^N[1-9][0-9]*$",
       "type": "string"
@@ -1937,6 +1962,20 @@
           "properties": {
             "op": {
               "const": "artifact_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentReadCall",
+          "description": "Reads a file of its own project by id, a piece at a time.",
+          "properties": {
+            "op": {
+              "const": "attachment_read",
               "type": "string"
             }
           },

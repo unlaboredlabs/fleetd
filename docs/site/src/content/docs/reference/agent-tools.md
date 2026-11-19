@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents wait for 5 GB of disk each above the free-space floor; load and memory never hold them back. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `agents`, `decisions_search`, `report`, `ask_lead`, `brief_read`, `agent_message`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`, `fill_address`, `vault_items`. Every other call is refused. |
+| Calls a task's agent may make | `agents`, `decisions_search`, `report`, `ask_lead`, `brief_read`, `agent_message`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `attachment_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`, `fill_address`, `vault_items`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -84,6 +84,7 @@ Every lead gets these.
 | [`chat_file`](#chat_file) | Put a file you made in this bot's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`artifact_read`](#artifact_read) | Read a report published in this bot (publish_artifact), yours or another agent's or the lead's: its Markdown or HTML source as published, with its title, who published it and every version kept. | No |
+| [`attachment_read`](#attachment_read) | Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a bot's lead with no repo keeps its bot's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -1077,6 +1078,25 @@ Read a report published in this bot (publish_artifact), yours or another agent's
 }
 ```
 
+### attachment_read
+
+Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a VM, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `attachmentId` | string | yes | The file: `F12`. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "attachment_read",
+  "arguments": {
+    "attachmentId": "F12"
+  }
+}
+```
+
 ### session_start
 
 Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a bot's lead with no repo keeps its bot's profile instead, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator runs on a Mac machine: start one there with `mac sim start` (mac --help); it is your screen, which the person can watch and take over. kind ios answers how, or how the team adds a Mac while it has none. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, shared with other agents, driven with the desktop tool and agent-desktop: agent-desktop's headless commands claim the app they act on for your session (one agent per app), pointer and key input takes the Mac's lease (one agent at a time), reading is open to all, and it ends after 5 idle minutes.
@@ -1401,6 +1421,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`chat_file`](#chat_file-task) | Put a file you made in this bot's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact-task) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`artifact_read`](#artifact_read-task) | Read a report published in this bot (publish_artifact), yours or another agent's or the lead's: its Markdown or HTML source as published, with its title, who published it and every version kept. | No |
+| [`attachment_read`](#attachment_read-task) | Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a bot's lead with no repo keeps its bot's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -1629,6 +1650,25 @@ Read a report published in this bot (publish_artifact), yours or another agent's
   "arguments": {
     "name": "dependency-sweep",
     "version": 2
+  }
+}
+```
+
+### attachment_read (task)
+
+Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a VM, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `attachmentId` | string | yes | The file: `F12`. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "attachment_read",
+  "arguments": {
+    "attachmentId": "F12"
   }
 }
 ```

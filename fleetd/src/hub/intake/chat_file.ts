@@ -14,13 +14,17 @@ import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors } from "../executor/index.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.ts";
-import { dir, safeName, store } from "./attachments.ts";
+import { dir, readPiece, safeName, store } from "./attachments.ts";
 import { fits, isImage, ofImage } from "./mime.ts";
 
-export const OPS = ["chat_file"] as const;
+export const OPS = ["chat_file", "attachment_read"] as const;
 
 export function registerLeadCalls(hub: Hub): void {
   leadCalls(hub).register("chat_file", (caller, call) => chatFile(hub, caller, call));
+  // The other way: a file of the project, a piece at a time, for the agent's own agent-mcp to save where it runs.
+  leadCalls(hub).register("attachment_read", (caller, call) =>
+    readPiece(hub, caller.projectRef, call as unknown as { attachmentId: string; offset?: number; length?: number }),
+  );
 }
 
 /** The session the caller runs in, by the hub's own records: its working directory is the only place its file is read from. */

@@ -22,6 +22,9 @@ import {
   sweepUploads,
 } from "../src/hub/intake/attachments.ts";
 import { start } from "../src/hub/intake/loops.ts";
+import { decodeFrame } from "../src/hub/lead_calls/decode.ts";
+import { checkCall } from "../src/hub/lead_calls/policy.ts";
+import { handle, type LeadDeps } from "../src/cli/agent_mcp/index.ts";
 import { utf8Text } from "../src/hub/intake/mime.ts";
 import { officeText } from "../src/hub/intake/office.ts";
 import { shrink } from "../src/hub/intake/preview.ts";
@@ -421,13 +424,13 @@ test("a person's Word document, workbook and CSV reach the lead in its bot's fol
   const again = (await put(hub, me, { name: "bank.csv", mime: "text/csv", dataB64: b64("date,amount\n1,2\n") })).attachmentId;
   const lines = await place(hub, [lease, empty, bank, again], app, "W7", "W7");
   expect(lines[0]).toMatch(
-    /^ {2}- \.fleetd\/attachments\/W7\/lease\.docx \(a Word document, \d+ B\); its text is in \.fleetd\/attachments\/W7\/lease\.docx\.txt: open that with Read\.$/,
+    /^ {2}- \.fleetd\/attachments\/W7\/lease\.docx \(F\d+, a Word document, \d+ B\); its text is in \.fleetd\/attachments\/W7\/lease\.docx\.txt: open that with Read\.$/,
   );
   expect(lines.slice(2)).toEqual([
-    "  - .fleetd/attachments/W7/bank.csv (a CSV spreadsheet, 12 B); open it with Read.",
-    "  - .fleetd/attachments/W7/2-bank.csv (a CSV spreadsheet, 16 B); open it with Read.",
+    `  - .fleetd/attachments/W7/bank.csv (${bank}, a CSV spreadsheet, 12 B); open it with Read.`,
+    `  - .fleetd/attachments/W7/2-bank.csv (${again}, a CSV spreadsheet, 16 B); open it with Read.`,
   ]);
-  expect(lines[1]).toMatch(/^ {2}- \.fleetd\/attachments\/W7\/empty\.xlsx \(an Excel spreadsheet, \d+ B\); fleetd found no text in it: read it with a tool that opens it\.$/);
+  expect(lines[1]).toMatch(/^ {2}- \.fleetd\/attachments\/W7\/empty\.xlsx \(F\d+, an Excel spreadsheet, \d+ B\); fleetd found no text in it: read it with a tool that opens it\.$/);
   expect(new TextDecoder().decode(node.put[".fleetd/attachments/W7/lease.docx.txt"])).toBe("Lease for 12 Rua Augusta\n");
   expect(Object.keys(node.put).sort()).toEqual([
     ".fleetd/attachments/W7/2-bank.csv",
@@ -438,6 +441,61 @@ test("a person's Word document, workbook and CSV reach the lead in its bot's fol
   ]);
   // Placed: the project's now, read by anyone who reads it.
   expect((await get(hub, them, { projectRef: app, attachmentId: bank })).name).toBe("bank.csv");
+});
+
+test("screenshots a person attaches in chat reach an agent the lead names them to, saved in the agent's own session", async () => {
+  const { hub, home, asTask } = chatRig();
+  const node = fakeNode(hub, {});
+  // Two macOS screenshots dragged into the composer, a narrow no-break space before "AM" as macOS names them.
+  const shots = [png(40, 30, noisy), png(30, 40, noisy)];
+  const ids: string[] = [];
+  for (const [i, bytes] of shots.entries()) {
+    const name = `Screenshot 2026-11-19 at 12.1${8 + i}.34 AM.png`;
+    ids.push((await put(hub, me, { name, mime: "image/png", dataB64: b64(bytes) })).attachmentId);
+  }
+  // The lead's turn: both files in its own folder, each line naming the file's id.
+  const lines = await place(hub, ids, app, "chat");
+  expect(lines).toEqual([
+    `  - .fleetd/attachments/chat/Screenshot 2026-11-19 at 12.18.34_AM.png (${ids[0]}, an image, 3 KB); open it with Read.`,
+    `  - .fleetd/attachments/chat/Screenshot 2026-11-19 at 12.19.34_AM.png (${ids[1]}, an image, 3 KB); open it with Read.`,
+  ]);
+  expect(Object.keys(node.put)).toHaveLength(2);
+
+  // A writer the lead briefed with those ids, in a box of its own: nothing of the lead's folder is there, only its
+  // TMPDIR. Its agent-mcp asks the hub through its node, as a task of the bot, and saves each file where it runs.
+  const box = join(home.dir, "box", "tmp");
+  const agentMcp = (caller: LeadCaller): LeadDeps => ({
+    pwd: "/work/app",
+    sock: "/box/node.sock",
+    thread: "task-1",
+    cwd: "/work/app",
+    tmp: box,
+    send: async (_socket, frame) => {
+      try {
+        const sent = decodeFrame(frame as never);
+        checkCall(caller.agent, sent.call);
+        return { id: sent.id, result: await leadCalls(hub).handler(sent.call.op)!(caller, sent.call) };
+      } catch (error) {
+        return { id: String(frame.id), error: (error as ToolError).toJSON() };
+      }
+    },
+  });
+  const save = async (caller: LeadCaller, attachmentId: string) => {
+    const answer = await handle("worker", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "attachment_read", arguments: { attachmentId } } }, agentMcp(caller));
+    return (answer?.result as { content: { text: string }[]; isError: boolean });
+  };
+  for (const [i, id] of ids.entries()) {
+    const saved = await save(asTask, id);
+    expect(saved.isError).toBe(false);
+    const path = join(box, "fleetd-attachments", id, `Screenshot 2026-11-19 at 12.1${8 + i}.34_AM.png`);
+    expect(saved.content[0]!.text).toBe(`Saved ${id} (Screenshot 2026-11-19 at 12.1${8 + i}.34_AM.png, ${shots[i]!.length} bytes) at ${path}: open it with Read.`);
+    expect(Buffer.from(readFileSync(path)).equals(Buffer.from(shots[i]!))).toBe(true);
+  }
+  // Another bot's agent finds none.
+  const shop: LeadCaller = { projectRef: { machineId: "devbox", projectId: "shop" }, by: leadBy({ machineId: "devbox", projectId: "shop" }), agent: { kind: "task", taskId: "T2" } };
+  const other = await save(shop, ids[0]!);
+  expect(other.isError).toBe(true);
+  expect(other.content[0]!.text).toContain(`No attachment ${ids[0]} in this bot.`);
 });
 
 test("the tools go through the registry: input decoded, a key without operate everywhere refused", async () => {

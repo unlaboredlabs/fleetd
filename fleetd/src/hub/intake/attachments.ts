@@ -477,8 +477,41 @@ export async function get(hub: Hub, caller: Caller, input: AttachmentGetInput): 
   };
 }
 
+/** The most one `attachment_read` returns: a piece well inside a node frame, base64 and all. */
+export const ATTACHMENT_READ_PIECE = 4 * 1024 * 1024;
+
 /**
- * The files sent in `project`'s chat, newest first: the ones a person attached there or to one of its orders, and the
+ * `attachment_read`: a piece of one of the caller's project's files, by id, for its lead or a task, whose agent-mcp
+ * saves it in that agent's own session. A file a person attached reaches any agent the lead names it to this way,
+ * wherever that agent runs (its worktree, a VM, a hosted box), where a path in the lead's checkout does not.
+ */
+export async function readPiece(
+  hub: Hub,
+  project: ProjectRef,
+  input: { attachmentId: string; offset?: number; length?: number },
+): Promise<{ attachmentId: AttachmentId; name: string; mime: KnownAttachmentMime; bytes: number; offset: number; dataB64: string }> {
+  const id = input.attachmentId as AttachmentId;
+  const gone = () => new ToolError("not_found", `No attachment ${id} in this bot.`, "Use the id (F12) your brief or chat names for the file.");
+  const n = numberOf(id);
+  const r = row(hub, id);
+  const own = !!hub.db.conn.query("SELECT 1 FROM attachments WHERE n = ?1 AND project IS NULL AND by = ?2").get(n, leadBy(project));
+  if (!r || !(inProject(hub, n, project) || own)) throw gone();
+  const mime = mimeOf(r.mime);
+  if (!mime) throw internalError();
+  const at = input.offset ?? 0;
+  if (at > r.bytes) {
+    throw new ToolError("invalid", `${id} has ${r.bytes} bytes; offset ${at} is past its end.`, "Ask for an offset within the file's bytes.");
+  }
+  const path = join(dir(hub), r.sha256);
+  if (!existsSync(path)) throw gone();
+  const bytes = await Bun.file(path)
+    .slice(at, at + Math.min(input.length ?? ATTACHMENT_READ_PIECE, ATTACHMENT_READ_PIECE))
+    .bytes();
+  return { attachmentId: id, name: line(r.name), mime, bytes: r.bytes, offset: at, dataB64: b64(bytes) };
+}
+
+/**
+ * The files sent in `project`'s chat, newest first:the ones a person attached there or to one of its orders, and the
  * ones its lead or agents showed in it. The chat's Artifacts tab lists them.
  */
 export function ofChat(hub: Hub, project: ProjectRef): ChatFile[] {
@@ -650,7 +683,8 @@ export async function place(
       throw internalError();
     }
     const mime = mimeOf(r.mime);
-    const what = `${rel} (${mime ? kind(mime) : "a file"}, ${size(r.bytes)})`;
+    // Its id is how the lead hands it on to an agent (attachment_read), which can't read the lead's checkout.
+    const what = `${rel} (${id}, ${mime ? kind(mime) : "a file"}, ${size(r.bytes)})`;
     const office = mime === DOCX || mime === XLSX || mime === PPTX;
     // An Office file's text goes beside it, which Read opens where the file itself it can't.
     const text = office ? await officeText(mime, data).catch(() => undefined) : undefined;

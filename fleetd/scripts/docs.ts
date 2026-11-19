@@ -606,6 +606,7 @@ function example(role: Role, tool: string): Json {
     chat_file: { path: "shots/checkout-after.png" },
     publish_artifact: { name: "dependency-sweep", title: "Dependency sweep, November", path: "reports/sweep.html" },
     artifact_read: { name: "dependency-sweep", version: 2 },
+    attachment_read: { attachmentId: "F12" },
     session_start: { purpose: "Check that signup works on the staging site" },
     session_end: {},
     request_takeover: { reason: "Solve the captcha on the signup page, then hand the browser back" },

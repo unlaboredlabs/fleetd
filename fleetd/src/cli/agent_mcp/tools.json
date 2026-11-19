@@ -1742,6 +1742,27 @@
    }
   },
   {
+   "name": "attachment_read",
+   "op": "attachment_read",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a VM, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.",
+   "inputSchema": {
+    "properties": {
+     "attachmentId": {
+      "description": "The file: `F12`.",
+      "pattern": "^F[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "attachmentId"
+    ],
+    "type": "object"
+   }
+  },
+  {
    "name": "session_start",
    "op": "session_start",
    "lead": true,
@@ -2921,6 +2942,12 @@
     "expected": "a JSON number",
     "fraction": "expected an integer",
     "range": "expected an integer between 1 and 9007199254740991"
+   }
+  },
+  "attachment_read": {
+   "/attachmentId": {
+    "expected": "a string",
+    "pattern": "expected a file id like F12, got {got}"
    }
   },
   "session_start": {
