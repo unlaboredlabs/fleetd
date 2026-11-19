@@ -3,10 +3,18 @@
 // API key with its endpoint (Anthropic's own prefilled), sealed here to each machine's box key as the app seals it on
 // a device, so the key never leaves this terminal in the clear. An endpoint on the tailnet while Tailscale isn't
 // connected says so and offers Connect, the fix.
+//
+// Only an owner or admin, a person, sets the hub's Claude key: the CLI's own key is an agent's. Whoever runs `fleetd
+// init` on the hub's machine holds its database, and so its owner's power (`fleetd hub key create --human` mints the
+// owner a key from there too): the save goes through a key of the owner's made for it, revoked once it is done
+// (`asOwner`).
 import { ANTHROPIC_ENDPOINT, endpointToSave, onTailnet, tailnetLine } from "../../../../app/desktop/src/shared/claudeEndpoint.ts";
 import type { TailnetState } from "../../shared/contracts.ts";
 import { seal } from "../../shared/sealed_box.ts";
+import type { Failure } from "../common.ts";
 import type { McpClient } from "../mcp_client.ts";
+import { createKey, openHub, revokeKey } from "../store.ts";
+import { connectWith } from "./doctor.ts";
 import type { Checklist } from "./checklist.ts";
 import { callFor, isFailure } from "./steps.ts";
 import type { Ui } from "./wizard.ts";
@@ -48,6 +56,37 @@ export const endpointProblem = (typed: string): string | undefined =>
   typed.trim() === "" || /^https?:\/\/\S{1,500}$/u.test(typed.trim()) ? undefined : "an http:// or https:// URL";
 
 const tailnetOf = (client: McpClient): Promise<TailnetState> => callFor(client, "tailnet_get", {}, 30_000);
+
+/** Runs `use` with a client that speaks for a person who administers the hub: in `fleetd init`, its owner (`asOwner`). */
+export type AsAdmin = <T>(use: (client: McpClient) => Promise<T>) => Promise<T>;
+
+/**
+ * `use` with a client on the hub at `home` speaking for its owner: a human key of the owner's, admin everywhere, made
+ * for this and revoked as soon as `use` ends, whatever it ended on. Throws a Failure when the hub can't be reached.
+ */
+export async function asOwner<T>(home: string, use: (client: McpClient) => Promise<T>): Promise<T> {
+  let made: ReturnType<typeof createKey>;
+  try {
+    const db = openHub(home);
+    try {
+      made = createKey(db, "fleetd init", [{ role: "admin", machines: "*" }], "human");
+    } finally {
+      db.conn.close();
+    }
+  } catch (error) {
+    throw { message: `the hub's owner key wasn't made: ${(error as Error).message}`, fix: "run fleetd init on the hub's machine, as the user the hub runs as" } satisfies Failure;
+  }
+  try {
+    return await use(await connectWith(home, undefined, "fleetd-init", made.key));
+  } finally {
+    const again = openHub(home);
+    try {
+      revokeKey(again, made.info.keyId);
+    } finally {
+      again.conn.close();
+    }
+  }
+}
 
 /** Connect: the hub's device, Tailscale's sign-in page, then a wait until it is connected. True once it is. */
 export async function connectTailscale(ui: Ui, list: Checklist, client: McpClient): Promise<boolean> {
@@ -96,8 +135,11 @@ export async function connectTailscale(ui: Ui, list: Checklist, client: McpClien
   return false;
 }
 
-/** The hub's API key: its endpoint (Anthropic's own prefilled) and the key, typed hidden, sealed to each machine here. */
-export async function claudeKey(ui: Ui, list: Checklist, client: McpClient): Promise<boolean> {
+/**
+ * The hub's API key: its endpoint (Anthropic's own prefilled) and the key, typed hidden, sealed to each machine here,
+ * saved as an administrator (`admin`: in `fleetd init`, the owner's key made for it).
+ */
+export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admin: AsAdmin): Promise<boolean> {
   if (!ui.interactive) return false;
   const endpoint = await ui.input(list, "Claude endpoint", ANTHROPIC_ENDPOINT, "", endpointProblem);
   const key = keyOf(await ui.secret(list, "Claude API key (hidden): "));
@@ -114,7 +156,8 @@ export async function claudeKey(ui: Ui, list: Checklist, client: McpClient): Pro
       return false;
     }
     const saved = endpointToSave(endpoint);
-    await callFor(client, "claude_hub_api_set", { sealed: sealTo(boxes, key), ...(saved === undefined ? {} : { endpoint: saved }) }, 120_000);
+    const sealed = sealTo(boxes, key);
+    await admin((owner) => callFor(owner, "claude_hub_api_set", { sealed, ...(saved === undefined ? {} : { endpoint: saved }) }, 120_000));
     list.done("hub API key", `sealed to ${boxes.map((b) => b.machineId).join(", ")}${saved === undefined ? "" : `, through ${saved}`}`);
   } catch (f) {
     if (!isFailure(f)) throw f;

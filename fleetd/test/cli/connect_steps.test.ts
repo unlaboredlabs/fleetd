@@ -55,7 +55,7 @@ test("the key is sealed to each machine's box key, the agents' Mac never; a past
 
 test("Anthropic's own endpoint, as prefilled, is saved as none", async () => {
   const { client, calls } = hub({ fleetd_status: [{ machines }], claude_hub_api_set: [{}] });
-  expect(await claudeKey(ui({ key: "sk-ant-api03-standin" }), new Checklist(), client)).toBe(true);
+  expect(await claudeKey(ui({ key: "sk-ant-api03-standin" }), new Checklist(), client, (use) => use(client))).toBe(true);
   const set = calls.find(([t]) => t === "claude_hub_api_set")?.[1];
   expect(set.endpoint).toBeUndefined();
   expect(set.sealed.map((s: { machineId: string }) => s.machineId)).toEqual(["devbox", "hosted"]);
@@ -77,7 +77,7 @@ test("a tailnet endpoint with Tailscale off says so and offers Connect, which sh
   const orig = Bun.sleep;
   (Bun as { sleep: unknown }).sleep = async () => undefined;
   try {
-    expect(await claudeKey(ui({ endpoint: "http://100.104.249.49:8317/", key: "sk-ant-api03-standin", confirm: true }), list, client)).toBe(true);
+    expect(await claudeKey(ui({ endpoint: "http://100.104.249.49:8317/", key: "sk-ant-api03-standin", confirm: true }), list, client, (use) => use(client))).toBe(true);
   } finally {
     (Bun as { sleep: unknown }).sleep = orig;
   }
@@ -94,6 +94,33 @@ test("Connect on a hub already connected says so at once", async () => {
 
 test("no key typed saves nothing", async () => {
   const { client, calls } = hub({});
-  expect(await claudeKey(ui({ key: "" }), new Checklist(), client)).toBe(false);
+  expect(await claudeKey(ui({ key: "" }), new Checklist(), client, (use) => use(client))).toBe(false);
   expect(calls).toEqual([]);
 });
+
+test("the save speaks for the hub's owner, as only a person who administers it may, through a key revoked after", async () => {
+  const { Fleet } = await import("./golden.ts");
+  const { connect } = await import("../../src/cli/setup/doctor.ts");
+  const { asOwner } = await import("../../src/cli/setup/connect_steps.ts");
+  const { callFor } = await import("../../src/cli/setup/steps.ts");
+  const { listKeys, openHub } = await import("../../src/cli/store.ts");
+  const fleet = new Fleet("connect-steps");
+  try {
+    await fleet.startHub();
+    const set = (c: McpClient) => callFor(c, "claude_hub_api_set", { sealed: [], endpoint: "http://100.104.249.49:8317" }, 30_000);
+    // The CLI's own key is an agent's: the hub refuses it this.
+    await expect(set(await connect(fleet.hubHome))).rejects.toMatchObject({ message: expect.stringContaining("owners and admins") });
+    // As the owner, the hub takes the call: it has no key yet to keep under a new endpoint, so it says that instead.
+    await expect(asOwner(fleet.hubHome, set)).rejects.toMatchObject({ message: "The hub has no API key to keep." });
+    const db = openHub(fleet.hubHome);
+    try {
+      const made = listKeys(db).filter((k) => k.name === "fleetd init");
+      expect(made).toHaveLength(1);
+      expect([made[0]!.kind, made[0]!.revokedAt === undefined]).toEqual(["human", false]);
+    } finally {
+      db.conn.close();
+    }
+  } finally {
+    fleet.stop();
+  }
+}, 60_000);

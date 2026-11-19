@@ -10,7 +10,7 @@ import { type GitIdentity, isMachineId, parseGitIdentity, type SetupState } from
 import { localHostName, machineIdFromHost } from "../project.ts";
 import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
-import { claudeKey, connectTailscale } from "./connect_steps.ts";
+import { asOwner, claudeKey, connectTailscale } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
@@ -510,7 +510,7 @@ export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: i
     } else if (picked === "tailscale") {
       if ((await connectTailscale(ui, list, client)) && (await tested(list, client, step.id)) === "done") return "done";
     } else if (picked === "key") {
-      if ((await claudeKey(ui, list, client)) && (await tested(list, client, step.id)) === "done") return "done";
+      if ((await claudeKey(ui, list, client, (use) => asOwner(opts.home, use))) && (await tested(list, client, step.id)) === "done") return "done";
     } else if (picked === "test") {
       if ((await tested(list, client, step.id)) === "done") return "done";
     } else return step.status;
