@@ -148,7 +148,7 @@ it("lists boat.dev with what it runs and Connect, and says none runs agents yet"
   await render();
   const rows = [...host.querySelectorAll<HTMLElement>("[data-sandbox]")].map((r) => r.getAttribute("data-sandbox"));
   expect(rows).toEqual(["boat"]);
-  expect(row("boat")?.textContent).toContain("boat.devAgents · Browser · Linux desktop");
+  expect(row("boat")?.textContent).toContain("boat.devAgents · Browser · Linux desktop · Android");
   expect(row("boat")?.querySelector("[role='alert'], [role='status']:not(:empty)")).toBeNull();
   expect(row("boat")?.querySelector("[data-mark='off']")).not.toBeNull();
   expect(button("Connect", within(row("boat")))).toBeDefined();

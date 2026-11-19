@@ -1,7 +1,7 @@
 // Hub › Machines' providers and what runs where, each a group in the one model of the page. Providers: every provider
 // the team connects with its own key, one list (Providers.tsx), each with what it can run. What runs where: two rows.
-// Linux machine is where agents run and their Linux screens with them (an agent's browser and Linux desktop run where
-// it runs; Android, on the team's machines): your machines, your machines first then the connected providers, or one provider only,
+// Linux machine is where agents run and their Linux screens with them (an agent's browser, Linux desktop and Android
+// run where it runs): your machines, your machines first then the connected providers, or one provider only,
 // which the hub keeps (sandbox_where_set) and places by. Mac machine is where Mac screens and iOS simulators run: the
 // agents' Mac, a plain value. A row with nothing to choose is a plain value, or None yet with how to add one in its
 // hover. Then how long recordings are kept.
@@ -54,7 +54,7 @@ export function ProvidersGroup() {
 }
 
 const WHERE_HINT =
-  "Linux machine runs agents, and their browser and Linux desktop where each agent runs; Android runs on your machines. " +
+  "Linux machine runs agents, and their browser, Linux desktop and Android where each agent runs. " +
   "Mac machine runs Mac screens and iOS simulators.";
 
 /** What runs where: Linux machine, Mac machine, then recordings. */

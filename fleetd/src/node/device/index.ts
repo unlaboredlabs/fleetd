@@ -22,11 +22,14 @@ import { hubCall, type Node, toHub } from "../browser/node.ts";
 import { router as sessionRoute } from "../session_route/index.ts";
 import { writeAtomic } from "../secrets/files.ts";
 import { agentEnv, binDir, findAgentDevice, install as installAgentDevice, pluginDir, release, writeConfig, VERSION as AGENT_DEVICE_VERSION } from "./agent_device.ts";
-import { killLeftovers, Pool } from "./emulator.ts";
+import { killLeftovers, type Lent, Pool } from "./emulator.ts";
 import { deviceInput, Pump } from "./live.ts";
 import { type Answer, router, type Screens } from "./router.ts";
 import { Stream } from "./scrcpy.ts";
-import { deviceDir, findSdk, install as installSdk, kvm, type KvmCheck, PINS, type Sdk, sdkAt, supported } from "./sdk.ts";
+import { deviceDir, findSdk, install as installSdk, installClient, kvm, type KvmCheck, PINS, type Sdk, sdkAt, supported } from "./sdk.ts";
+import { type AndroidBox, type BoxedEmulator, startInBox } from "../place/box_android.ts";
+import { hasBox, hostedBox } from "../place/hosted.ts";
+import { boxes } from "../sandbox/remote/boxes.ts";
 import { recordingsDir, Session, type StreamStarter } from "./session.ts";
 import { commandLine, type DeviceCall, type DeviceDone, isHostKey, ranDone, ranOutput, RUN_WAIT, Work } from "./work.ts";
 
@@ -108,7 +111,12 @@ export type DevicesOptions = {
   install?: (home: string) => Promise<Sdk>;
   /** The warm pool's size. */
   warm?: number;
+  /** How long a hosted agent's start waits for its box's emulator before it says to come back. */
+  boxWaitMs?: number;
 };
+
+/** How long a hosted agent's `session_start` waits for its box's emulator, within the call's own wait. */
+const BOX_WAIT_MS = 50_000;
 
 /** The node's android sessions. */
 export class Devices implements Screens {
@@ -292,6 +300,9 @@ export class Devices implements Screens {
   }
 
   private async sessionStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
+    // A hosted agent's emulator runs in its own box, whatever this machine runs (../place/box_android.ts).
+    const own = this.inBox(thread);
+    if (own) return this.boxStart(thread, cwd, purpose, own);
     const started = performance.now();
     if (this.starting.has(thread)) {
       throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
@@ -308,37 +319,97 @@ export class Devices implements Screens {
       } catch (e) {
         throw new ToolError("failed", `The Android emulator did not start: ${(e as Error).message}.`, "try session_start again");
       }
-      const serial = lent.emulator.serial;
-      try {
-        writeConfig(this.home, thread, serial);
-      } catch (e) {
-        lent.release();
-        throw new ToolError("failed", `The node could not point agent-device at the emulator: ${(e as Error).message}.`, "try session_start again");
-      }
-      const id = newId();
-      let session: Session;
-      try {
-        // A host key's are what its agent's node sealed to this one; this node's own sessions' are its own.
-        const secrets = sessionRoute(this.node).secretsOf(thread);
-        session = Session.open(
-          lent,
-          pool.sdk,
-          { id, thread, cwd, purpose, dir: join(recordingsDir(this.home), id), home: this.home, secrets, steps: this.steps },
-          this.options.stream ?? Stream.start,
-        );
-      } catch (e) {
-        lent.release();
-        release(this.home, thread);
-        throw new ToolError("failed", `The Android session did not start: ${(e as Error).message}.`, "try session_start again");
-      }
-      this.sessions.set(thread, session);
-      session.step("session_start", { purpose, kind: "android", serial }, true, undefined, 0);
-      void this.report(session, "live");
-      return { sessionId: session.id, serial, startMs: Math.round(performance.now() - started) };
+      return this.openOn(thread, cwd, purpose, lent, pool.sdk, started);
     } finally {
       this.starting.delete(thread);
     }
   }
+
+  /** A session on an emulator lent to it, recorded and streamed from here. */
+  private openOn(thread: string, cwd: string, purpose: string, lent: Lent, sdk: Sdk, started: number): Record<string, unknown> {
+    const serial = lent.emulator.serial;
+    try {
+      writeConfig(this.home, thread, serial);
+    } catch (e) {
+      lent.release();
+      throw new ToolError("failed", `The node could not point agent-device at the emulator: ${(e as Error).message}.`, "try session_start again");
+    }
+    const id = newId();
+    let session: Session;
+    try {
+      // A host key's are what its agent's node sealed to this one; this node's own sessions' are its own.
+      const secrets = sessionRoute(this.node).secretsOf(thread);
+      session = Session.open(
+        lent,
+        sdk,
+        { id, thread, cwd, purpose, dir: join(recordingsDir(this.home), id), home: this.home, secrets, steps: this.steps },
+        this.options.stream ?? Stream.start,
+      );
+    } catch (e) {
+      lent.release();
+      release(this.home, thread);
+      throw new ToolError("failed", `The Android session did not start: ${(e as Error).message}.`, "try session_start again");
+    }
+    this.sessions.set(thread, session);
+    session.step("session_start", { purpose, kind: "android", serial }, true, undefined, 0);
+    void this.report(session, "live");
+    return { sessionId: session.id, serial, startMs: Math.round(performance.now() - started) };
+  }
+
+  /**
+   * `session_start` of an agent in a hosted box: its emulator boots in the box, the first time there after fetching
+   * the pinned SDK (about two minutes in all). That is longer than a call may wait, so the boot goes on by itself and
+   * a start that comes back before it is done says so; the next one, once it booted, opens the session on it.
+   */
+  private async boxStart(thread: string, cwd: string, purpose: string, own: AndroidBox | "starting"): Promise<Record<string, unknown>> {
+    if (own === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
+    const started = performance.now();
+    if (this.starting.has(thread)) throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
+    const open = this.sessions.get(thread);
+    if (open) throw new ToolError("invalid", `Android session ${open.id} is open.`, "use it, or end it with session_end before starting another");
+    this.starting.add(thread);
+    try {
+      let pending = this.booting.get(thread);
+      if (!pending) {
+        pending = (async () => this.boxEmulator(own, { home: this.home, thread, client: await this.boxClient(this.home) }))();
+        pending.catch(() => {});
+        this.booting.set(thread, pending);
+      }
+      const done = await Promise.race([
+        pending.then(
+          (v) => ({ v }),
+          (e: unknown) => ({ e: e as Error }),
+        ),
+        Bun.sleep(this.options.boxWaitMs ?? BOX_WAIT_MS).then(() => undefined),
+      ]);
+      if (!done) {
+        throw new ToolError(
+          "failed",
+          "The Android emulator is starting in your sandbox: the first time there it fetches the emulator and boots it, about two minutes.",
+          "call session_start kind android again in a minute; it carries on meanwhile",
+        );
+      }
+      this.booting.delete(thread);
+      if ("e" in done) throw new ToolError("failed", `The Android emulator did not start in your sandbox: ${done.e.message}.`, "do without it and say so in your result");
+      return this.openOn(thread, cwd, purpose, done.v.lent, done.v.sdk, started);
+    } finally {
+      this.starting.delete(thread);
+    }
+  }
+
+  /** The hosted box an agent session runs in, where its emulator runs (`starting` while it is made); a test's own. */
+  inBox: (thread: string) => AndroidBox | "starting" | undefined = (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined);
+  /** What drives an emulator in a box from here: the pinned adb, scrcpy server and ffmpeg, with agent-device for the
+   * box (a test's own). */
+  boxClient: (home: string) => Promise<Sdk> = async (home) => {
+    const client = await installClient(home);
+    if (!findAgentDevice(home)) await installAgentDevice(home);
+    return client;
+  };
+  /** How an emulator boots in a box: ../place/box_android.ts, or a test's. */
+  boxEmulator: (box: AndroidBox, o: { home: string; thread: string; client: Sdk }) => Promise<BoxedEmulator> = startInBox;
+  /** Boots under way in agents' boxes, by agent session. */
+  private readonly booting = new Map<string, Promise<BoxedEmulator>>();
 
   private async sessionEnd(thread: string): Promise<Record<string, unknown>> {
     const session = this.sessions.get(thread);
@@ -502,9 +573,10 @@ export class Devices implements Screens {
     void this.report(session, "live");
   }
 
-  /** The agent's environment for agent-device: the wrapper first on PATH, where agents get it. */
+  /** The agent's environment for agent-device: the wrapper first on PATH, where agents get it. An agent in a hosted
+   * box gets it wherever this node makes boxes: its emulator, and the wrapper, are in its box. */
   env(thread: string, path?: string): [string, string][] {
-    return this.offered() ? agentEnv(this.home, thread, path) : [];
+    return this.offered() || boxes() !== undefined ? agentEnv(this.home, thread, path) : [];
   }
 
   pluginDirs(): string[] {

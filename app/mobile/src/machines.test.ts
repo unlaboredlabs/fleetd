@@ -48,7 +48,7 @@ describe("its providers", () => {
     const list = providersOf({ boxPubKey: BOX, placing: true, providers: [sb("boat", true, 20)] });
     expect(list.map((p) => p.id)).toEqual(["boat"]);
     expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
-    expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop");
+    expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop · Android");
     // A hub without sandbox_get lists none.
     expect(providersOf(undefined)).toEqual([]);
   });

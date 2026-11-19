@@ -1,7 +1,7 @@
 // Settings › Machines, for admins (machines.ts), as the desktop's Hub › Machines has it (D550): the machines and how
 // each is; the providers the team connects with its own key, one list, each with what it can run, a tap opening its
 // screen (Provider.tsx: connect, its limit, Test, Disconnect); then what runs where: Linux machine (where agents and
-// their browser and Linux desktop run; a choice once there is more than one place), Mac machine, and how long
+// their browser, Linux desktop and Android run; a choice once there is more than one place), Mac machine, and how long
 // recordings are kept. Network holds Tailscale, the team's tailnet for its hosted sandboxes: a tap connects it (the hub
 // answers with Tailscale's sign-in page, which opens), opens the sign-in again while it waits, or disconnects it.
 // Updates stay on Settings itself, with Restart Hub. A hub without sandbox_get lists no providers, and one without

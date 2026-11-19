@@ -27,7 +27,7 @@ it made on your boat.dev account.
 |---|---|
 | **Machines** | Every machine, a dot before its name: grey while it is well, amber while it needs someone. At the row's end, what runs there now ("8 agents · 2 screens", Idle) or what is wrong ("Offline since Fri 09:03", "Claude is not logged in"). A role other than both shows beside the name. A row opens [its page](#checks). The plus adds a machine. |
 | **Providers** | The team's own accounts at [hosted sandbox providers](#sandboxes) (boat.dev), one list, each with what it can run beside its name. Not connected, **Connect**; connected, its limit where it has one and a menu with **Test** and **Disconnect**. Its dot is grey while its key works, red when its last check failed, a ring while it isn't connected. A hub without a provider's tools lists none of them. A hub that had Revyl, E2B or Daytona connected before fleetd removed it says so in one line above them for 30 days; its key was deleted (iOS simulators run on a Mac machine; agents on your machines or boat.dev). |
-| **What runs where** | Two rows. **Linux machine**: where agents run, and their browser and Linux desktop with them (an agent's screens run where it runs). With a machine and a provider both, a pick: **Your machines**, **Your machines first, then boat.dev** (the default, as every hub placed before the pick), or **boat.dev only**; the hub places every agent by it ([How placement picks](#sandboxes)). With one place, that place as a value; with none, **None yet**, with how to add one in its hover. **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
+| **What runs where** | Two rows. **Linux machine**: where agents run, and their browser, Linux desktop and Android with them (an agent's screens run where it runs). With a machine and a provider both, a pick: **Your machines**, **Your machines first, then boat.dev** (the default, as every hub placed before the pick), or **boat.dev only**; the hub places every agent by it ([How placement picks](#sandboxes)). With one place, that place as a value; with none, **None yet**, with how to add one in its hover. **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
 | **Updates** | Where the hub and its machines stand, **Update**, and **Update automatically** ([Updating](/docs/updating-and-uninstall)). |
 
 The phone's **Settings › Machines** has the same groups for an admin: the machines and how each is, the providers
@@ -453,7 +453,7 @@ own [max agents](/docs/projects#max-agents). The provider bills the team directl
 fleetd charges nothing for it and holds no account of its own.
 
 A provider is one whose sandboxes run everything a Linux machine runs: agents, their browser, Linux desktop and
-Android's emulator, which needs KVM inside the sandbox. fleetd checked on real sandboxes and removed the ones that
+Android's emulator, which needs KVM inside the sandbox (boat.dev's do). fleetd checked on real sandboxes and removed the ones that
 can't: **E2B** (its Firecracker microVMs have no KVM) and **Daytona** (its sandboxes have `/dev/kvm`, but it can't be
 opened in their user-namespaced containers). A hub that had either connected lost the key at the update, a bot that
 picked one for [Runs on](/docs/projects#runs-on) is back on the default, and Providers says so for 30 days.
@@ -503,12 +503,15 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.
   wasn't committed and pushed; the agent's next turn starts a new one.
 - *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
   GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
-- *Screens in the sandbox.* An agent's browser and Linux desktop run in its own sandbox, beside its files and on its
+- *Screens in the sandbox.* An agent's browser, Linux desktop and Android run in its own sandbox, beside its files and on its
   network: a fresh Chrome (Playwright's headless shell, in the template) and an X display of its own (Xvfb with
   openbox), driven by the same tools as on a machine (agent-browser, the desktop tool, whose `launch` starts the app in
   the sandbox). The machine (or the hub's runner) drives them over the sandbox's link, records them and serves their
-  live view and takeover as for its own screens; ending one kills it and everything launched on it. Android emulators
-  still run on a computer of the team's: on a hosted agent's machine, its emulator's port is carried to the sandbox.
+  live view and takeover as for its own screens; ending one kills it and everything launched on it. Android is
+  fleetd's pinned emulator (Android 15), booted with KVM in the sandbox: the first time in a sandbox it fetches the
+  emulator and its image (about 1.2 GB) and boots, about two minutes, so `session_start` says it is starting and the
+  agent calls it again. The agent's agent-device runs in the sandbox; the machine drives the emulator's adb and scrcpy
+  over the sandbox's link. A sandbox whose `/dev/kvm` doesn't open says so.
 - *The same as on the machine:* chat, PRs and pushes (the pre-push gate included), `fleetd` tools, Monitors,
   `chat_file`, artifacts and resume.
 - *Claude.* The sandbox calls the endpoint as set: Anthropic's API on the internet, or a gateway on your tailnet once
@@ -540,9 +543,8 @@ computers, and it goes by itself once no provider is connected and no bot lives 
   Settings › Your accounts › Claude. No machine's Claude login comes into it. An account saved before the first
   provider was connected reaches the sandboxes by itself: a computer holding it seals it to them as they start, with
   the key's endpoint, and the hub only passes it through. That computer must be online once for it.
-- *Screens.* Its agents' browser and Linux desktop run in their sandboxes, recorded and watched as a machine's are.
-  Android doesn't run in a hosted sandbox yet: an agent asking for one there is told so, and a Linux machine with KVM
-  gives the team's agents Android.
+- *Screens.* Its agents' browser, Linux desktop and Android run in their sandboxes, recorded and watched as a
+  machine's are.
 - *Not there:* approved commands and checks run on a machine, and the agents' Mac.
 - *With a computer too*, nothing changes for the computer's bots: their agents use its slots first, then the
   providers, and a new bot goes to a computer.

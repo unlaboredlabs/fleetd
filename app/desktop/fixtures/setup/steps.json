@@ -72,7 +72,7 @@
               "url": "https://docs.boat.dev/api-keys"
             }
           ],
-          "note": "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, with its browser and Linux desktop, billed to your account while it runs.",
+          "note": "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, with its browser, Linux desktop and Android, billed to your account while it runs.",
           "title": "Or hosted sandboxes",
           "values": [
             {

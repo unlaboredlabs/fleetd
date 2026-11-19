@@ -178,8 +178,8 @@ answers at once, its screen on its way. `screen_end` with the waitId gives up a 
   are from the VM. The screen stays on the agent's machine, the only one that reaches its VM. It opens only `http`,
   `https`, `data:` and `blob:` pages and refuses `file:`, `chrome:` and the like. Downloads and uploads take only paths
   the VM shows from this machine (your worktree), never the VM's own `/tmp`.
-- **An agent in a hosted sandbox gets a screen in its sandbox.** Its browser (a fresh Chrome on a throwaway profile)
-  and its Linux desktop (an X display of its own) run in the sandbox, beside its files and on its network; the machine
+- **An agent in a hosted sandbox gets a screen in its sandbox.** Its browser (a fresh Chrome on a throwaway profile),
+  its Linux desktop (an X display of its own) and its Android emulator run in the sandbox, beside its files and on its network; the machine
   or the hub's runner drives, records and shows them over the sandbox's link, and takeover works as anywhere
   ([Hosted sandboxes](/docs/machines#sandboxes)). Ending the screen kills it and what was launched on it.
 

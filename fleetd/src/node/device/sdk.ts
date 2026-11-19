@@ -25,9 +25,9 @@ export const ADB_SERVER_PORT = 15037;
 /** The virtual device sessions copy. */
 export const AVD = "fleetd-android-35";
 
-type Package = { url: string; sha1?: string; sha256?: string; dest: string; unpack: "zip" | "tar.xz" | "file" };
+export type Package = { url: string; sha1?: string; sha256?: string; dest: string; unpack: "zip" | "tar.xz" | "file" };
 
-const PACKAGES: Package[] = [
+export const PACKAGES: Package[] = [
   {
     url: "https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip",
     sha1: "477254aa5f903c15cf51001717bdf347fb6b53e0",
@@ -63,7 +63,7 @@ const PACKAGES: Package[] = [
 export const packageUrls = () => PACKAGES.map((p) => p.url);
 
 /** The virtual device's settings: a 720×1600 phone, small enough to stream and record cheaply. */
-const AVD_CONFIG = `avd.ini.encoding=UTF-8
+export const AVD_CONFIG = `avd.ini.encoding=UTF-8
 abi.type=x86_64
 hw.cpu.arch=x86_64
 hw.cpu.ncore=2
@@ -97,6 +97,12 @@ export type Sdk = {
   emulatorHome: string;
   scrcpyServer: string;
   ffmpeg: string;
+  /** The adb server's port, where it isn't the node's own (ADB_SERVER_PORT): one in an agent's hosted box, reached
+   * here through a port of this machine's (../place/box_android.ts). */
+  adbPort?: number;
+  /** A port of this machine's that reaches `port` where the adb server runs, for scrcpy's forward; absent: the same
+   * port here. */
+  reach?: (port: number) => Promise<number>;
 };
 
 export function sdkAt(home: string): Sdk {
@@ -122,7 +128,7 @@ export function sdkEnv(sdk: Sdk): Record<string, string> {
     ANDROID_EMULATOR_HOME: sdk.emulatorHome,
     // The copies' temporary files, which may be large: on disk, not in a /tmp that may be memory.
     ANDROID_TMP: join(sdk.emulatorHome, "tmp"),
-    ANDROID_ADB_SERVER_PORT: String(ADB_SERVER_PORT),
+    ANDROID_ADB_SERVER_PORT: String(sdk.adbPort ?? ADB_SERVER_PORT),
   };
 }
 
@@ -308,6 +314,41 @@ export async function install(home: string, kvmCheck: KvmCheck = kvm): Promise<S
   const found = findSdk(home);
   if (!found) throw new Error("the install left something out");
   return found;
+}
+
+/** What a node needs to drive an emulator that runs elsewhere (in an agent's hosted box): adb, scrcpy's server and the
+ * ffmpeg that decodes its stream, without the emulator or its image. */
+export const CLIENT_PACKAGES = (): Package[] => PACKAGES.filter((p) => p.url.includes("platform-tools") || !(p.dest === "sdk" || p.dest.startsWith("sdk/")));
+/** What the emulator itself needs: the SDK's pieces, platform-tools, the emulator and its image. */
+export const EMULATOR_PACKAGES = (): Package[] => PACKAGES.filter((p) => p.dest === "sdk" || p.dest.startsWith("sdk/"));
+const clientMarker = (home: string) => join(deviceDir(home), "CLIENT");
+
+/** Installs the client's pinned pieces (CLIENT_PACKAGES) unless they are, and answers them. Seconds: about 50 MB. */
+export async function installClient(home: string): Promise<Sdk> {
+  if (!supported()) throw new Error("Android screens run only on Linux x86_64");
+  const sdk = sdkAt(home);
+  let have = false;
+  try {
+    have = readFileSync(marker(home), "utf8").trim() === PINS || readFileSync(clientMarker(home), "utf8").trim() === PINS;
+  } catch {
+    have = false;
+  }
+  if (have && isFile(sdk.adb) && isFile(sdk.scrcpyServer) && isFile(sdk.ffmpeg)) return sdk;
+  const dir = deviceDir(home);
+  const downloads = join(dir, "downloads-client");
+  mkdirSync(downloads, { recursive: true });
+  try {
+    for (const pkg of CLIENT_PACKAGES()) {
+      const file = join(downloads, pkg.url.split("/").at(-1) ?? "download");
+      await download(pkg, file);
+      await unpackTo(file, join(dir, pkg.dest), pkg.unpack);
+      rmSync(file, { force: true });
+    }
+  } finally {
+    rmSync(downloads, { recursive: true, force: true });
+  }
+  writeAtomic(clientMarker(home), PINS);
+  return sdk;
 }
 
 /** Downloads a package to `file`, checking its digest as it comes. */

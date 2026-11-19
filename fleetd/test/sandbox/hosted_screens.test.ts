@@ -8,7 +8,9 @@ import { registerAreas } from "../../src/node/areas.ts";
 import { broker } from "../../src/node/browser/index.ts";
 import { desktops } from "../../src/node/desktop/index.ts";
 import { router } from "../../src/node/device/router.ts";
-import { useRunner } from "../../src/node/place/index.ts";
+import { devices } from "../../src/node/device/index.ts";
+import { sdkAt } from "../../src/node/device/sdk.ts";
+import type { BoxedEmulator } from "../../src/node/place/box_android.ts";
 import { BoxDisplay, boxChrome, type ScreenBox, streamTransport, timing } from "../../src/node/place/box_screens.ts";
 import { testNode } from "../node_helpers.ts";
 
@@ -54,12 +56,33 @@ test("the hub's runner offers its agents a browser and a Linux desktop", () => {
   expect(screens.desktops).toBeDefined();
 });
 
-test("an agent of the hub's runner asking for Android hears plainly that hosted sandboxes don't run it yet", async () => {
+test("a hosted agent's Android starts in its box: it says so while the box boots its emulator, then opens on it", async () => {
   const t = runnerNode();
-  useRunner(() => "boat");
-  cleanups.push(() => useRunner(undefined));
-  await expect(t.local.call("session_start", { kind: "android", purpose: "try the app" }, THREAD)).rejects.toThrow("Android screens don't run in hosted sandboxes yet");
+  const d = devices(t.node)!;
+  const { box } = standInBox();
+  d.inBox = (thread) => (thread === THREAD ? (box as never) : undefined);
+  broker(t.node).boxed = (thread) => (thread === THREAD ? { dial: box.dial, box } : undefined);
+  d.boxClient = async (home) => sdkAt(home);
+  let boot!: (v: BoxedEmulator) => void;
+  const booted: unknown[] = [];
+  d.boxEmulator = (given) => {
+    booted.push(given);
+    return new Promise((resolve) => (boot = resolve));
+  };
+  (d as unknown as { options: { boxWaitMs: number } }).options.boxWaitMs = 50;
+  const start = () => t.local.call("session_start", { kind: "android", purpose: "try the app" }, THREAD);
+  await expect(start()).rejects.toThrow("The Android emulator is starting in your sandbox");
+  // A start that comes back meanwhile waits on the same boot, never a second.
+  await expect(start()).rejects.toThrow("The Android emulator is starting in your sandbox");
+  expect(booted).toEqual([box]);
+  const released: string[] = [];
+  boot({ lent: { emulator: { serial: "emulator-5554", pushed: false }, release: () => released.push("released") }, sdk: { ...sdkAt(t.node.home), adbPort: 1 } });
+  const opened = (await start()) as { sessionId: string; serial: string };
+  expect(opened.serial).toBe("emulator-5554");
+  await t.local.call("session_end", {}, THREAD);
+  expect(released).toEqual(["released"]);
 });
+
 
 test("a hosted agent's browser starts in its box, not on the node's machine", async () => {
   const t = runnerNode();

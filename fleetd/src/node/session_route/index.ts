@@ -40,7 +40,6 @@ import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { notInVault } from "../browser/vault.ts";
 import { hasBox } from "../place/hosted.ts";
-import { isRunner } from "../place/index.ts";
 import { dial, relayUrl } from "./relay.ts";
 
 /** Whether a runner refused a `fill_credential` reference because its vault doesn't hold it (or, a runner from
@@ -53,10 +52,6 @@ const notInVaultThere = (routed: SessionRouteResult) => {
 
 /** A step's output past this goes cut. */
 const STEP_OUTPUT = 64 * 1024;
-
-/** What an agent of the hub's runner hears when it asks for an Android screen. */
-export const HOSTED_NO_ANDROID =
-  "Android screens don't run in hosted sandboxes yet, and this agent runs in one with no computer of the team's behind it: an admin adds a Linux machine with KVM in Settings › Hub › Machines for Android screens.";
 
 /** How long the node waits for the hub to place a session: past the hub's own wait for a runner's start. */
 export const ROUTE_WAIT = 150_000;
@@ -151,14 +146,12 @@ export class Router {
     if (screens(this.node).live(thread)) return this.here(thread, frame);
     const host = hostOf(frame);
     // A lead's runs here, on its project's kept profile: another machine hasn't that profile. So does the browser of
-    // an agent in a box: it goes out through the box (browser/egress.ts), which only this node reaches. And a Linux
-    // desktop of an agent in a hosted box (up, or being made) runs in that box (place/box_screens.ts), as its browser
-    // does: where the agent runs.
+    // an agent in a box: it goes out through the box (browser/egress.ts), which only this node reaches. And every
+    // Linux screen of an agent in a hosted box (up, or being made) runs in that box (place/box_screens.ts,
+    // place/box_android.ts), as its browser does: where the agent runs.
     const boxed = this.broker.boxed?.(thread);
     const hosted = boxed === "starting" ? hasBox(thread) : boxed?.box !== undefined;
-    // The hub's runner has no emulator to lend, and Android doesn't run in a hosted box yet.
-    if (op === "session_start" && host === "android" && isRunner()) throw new ToolError("failed", HOSTED_NO_ANDROID, "do without it and say so in your result");
-    if (this.broker.staysHere(thread) || (host === "browser" && boxed !== undefined) || (hosted && host === "desktop")) return this.here(thread, frame);
+    if (this.broker.staysHere(thread) || (host === "browser" && boxed !== undefined) || (hosted && (host === "desktop" || host === "android"))) return this.here(thread, frame);
     // A fill of a session hosted elsewhere: its runner asks the hub's vault itself. Only a 1Password reference the vault
     // doesn't hold yet (one release) is read here, with this machine's token, and only the value goes, sealed.
     const remote = this.remotes.get(thread);

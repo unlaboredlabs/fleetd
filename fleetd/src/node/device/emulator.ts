@@ -186,8 +186,9 @@ export function killLeftovers(sdk: Sdk): number {
   return killed;
 }
 
-/** A copy a session holds: `release` kills it and gives its port back to the pool. */
-export type Lent = { emulator: Emulator; release(): void };
+/** A copy a session holds: `release` kills it and gives its port back to the pool. One in an agent's hosted box
+ * (../place/box_android.ts) also tells the box whose turn it is (`control`): the agent's agent-device runs there. */
+export type Lent = { emulator: Pick<Emulator, "serial" | "pushed">; release(): void; control?(human: boolean): void };
 
 /** Booted copies waiting for a session: taking one costs no boot, and the pool boots a new one behind it. */
 export class Pool {
