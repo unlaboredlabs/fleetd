@@ -120,14 +120,17 @@ export function lines(
 }
 
 /**
- * The Android line ready only while the node lists `session_android`: node/device lists it once an agent can drive a
- * session here (agent-device on its PATH, the emulator ready), and the hub places Android screens by this line alone.
+ * The Android line as the hub places by it. Where the emulator is installed (`installed`), it is ready only while the
+ * node lists `session_android` (node/device lists it once an agent can drive a session here: agent-device on its
+ * PATH, the emulator ready), and starting meanwhile, which needs no one. Where it isn't installed yet and KVM opens,
+ * the line stays ready: the first start the hub sends here begins the install (node/device `pool`), and its agent is
+ * told to come back once it is done.
  */
-export function listed(checks: HostCheck[], caps: string[]): HostCheck[] {
-  if (caps.includes(CAP_SESSION_ANDROID)) return checks;
+export function listed(checks: HostCheck[], caps: string[], installed = true): HostCheck[] {
+  if (!installed || caps.includes(CAP_SESSION_ANDROID)) return checks;
   return checks.map((c) =>
     c.host === "android" && c.ready
-      ? { ...c, ready: false, off: "missing", detail: "not offered yet: this node lists Android sessions once agents can drive one here" }
+      ? { ...c, ready: false, off: "installing", detail: "starting: this node lists Android sessions once agents can drive one here" }
       : c,
   );
 }
@@ -142,6 +145,7 @@ export function start(node: Node, kvm: KvmCheck = kvmNow): void {
     if (!hb.load) return;
     // The Mac screen's gate as node/desktop checks it at each start (its own test's, where one set it).
     const mine = lines(node.home, node.config, kvm, Date.now(), () => desktopMacScreen(node).blocked());
-    hb.load.hosts = listed([...mine.before, ...(hb.load.hosts ?? []), ...mine.after], node.area("caps").list());
+    const installed = androidHealth(node.home, kvm)?.state === "ready";
+    hb.load.hosts = listed([...mine.before, ...(hb.load.hosts ?? []), ...mine.after], node.area("caps").list(), installed);
   });
 }

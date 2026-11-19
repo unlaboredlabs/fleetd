@@ -73,13 +73,16 @@ test("on the agents' Mac, the Mac screen is ready while nothing stands in the wa
   expect(grant).toMatchObject({ ready: false, off: "missing", fix: "open 'x-apple.systempreferences:…'" });
 });
 
-test("the Android line is ready only while the node lists Android sessions, which agents can then drive", () => {
+test("an installed emulator's line is ready only while the node lists Android sessions; one not installed yet stays placeable", () => {
   const lines = [{ host: "browser", ready: true, detail: "ok" }, { host: "android", ready: true, detail: "ready" }];
   const held = listed(lines, ["browser"]);
   expect(held[0]).toEqual(lines[0]!);
-  expect(held[1]).toMatchObject({ ready: false, off: "missing" });
-  expect(held[1]?.detail).toContain("not offered yet");
+  // Starting, which needs no one: no line on the machine's page.
+  expect(held[1]).toMatchObject({ ready: false, off: "installing" });
+  expect(held[1]?.detail).toContain("starting");
   expect(listed(lines, ["browser", "session_android"])).toEqual(lines);
+  // Not installed yet where KVM opens: the hub sends the first start here, which begins the install.
+  expect(listed(lines, ["browser"], false)).toEqual(lines);
   // One not ready keeps its own reason.
   const off = { host: "android", ready: false, off: "installing", detail: "Installing the Android emulator" };
   expect(listed([off], [])).toEqual([off]);
@@ -118,12 +121,11 @@ test("each heartbeat carries every kind's line, around the desktop's, in Rust's 
   expect(hosts.map((c) => c.host)).toEqual(["browser", "android", "desktop", "mac"]);
   expect(hosts[0]).toMatchObject({ ready: true, idleMinutes: 30 });
   expect(hosts[3]?.ready).toBe(false);
-  // Where KVM opens, with no opt-in, Android still waits for node/device to list its sessions.
+  // A fresh machine where KVM opens, with no opt-in and nothing installed: placeable at once, so the first Android
+  // start the hub sends here begins the install.
   if (linuxX64) {
-    expect(hosts[1]).toMatchObject({ ready: false, off: "missing" });
-    t.node.area("caps").contribute(() => ["session_android"]);
-    forget(t.node.home);
-    expect((await fill())[1]).toMatchObject({ ready: true });
+    expect(hosts[1]).toMatchObject({ ready: true });
+    expect(hosts[1]?.detail).toContain("installs when an agent first asks");
   }
 });
 

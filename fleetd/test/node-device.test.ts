@@ -11,6 +11,7 @@ import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { agentEnv, controlPath, daemonPid, findAgentDevice, homeOf, LENT, makePlugin, PAUSED, release, sessionDir, VERSION, wrapperScript, writeConfig, entry, binDir } from "../src/node/device/agent_device.ts";
 import { emulatorArgs, emulatorCommand, freePort, isLeftover } from "../src/node/device/emulator.ts";
 import { capabilities, health, start as startDevices } from "../src/node/device/index.ts";
+import { forget, start as startHosts } from "../src/node/hosts/index.ts";
 import { deviceInput, Pump } from "../src/node/device/live.ts";
 import { router } from "../src/node/device/router.ts";
 import { Jpegs, keycode, messages, metaState, serverArgs } from "../src/node/device/scrcpy.ts";
@@ -408,9 +409,21 @@ test("a machine where KVM opens installs on the first android start with no opt-
     await broker(t.node).shutdown();
   });
   expect(devices.offered()).toBe(true);
+  // The heartbeat's Android line, as the hub places by it.
+  startHosts(t.node, () => ({ ok: "direct" }));
+  const android = async () => {
+    forget(t.node.home);
+    const hb = { load: { cpus: 4, load1: 0, limits: [] }, steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
+    await t.node.area("hb").fill(hb as never);
+    return ((hb.load as { hosts?: { host: string; ready: boolean; off?: string }[] }).hosts ?? []).find((c) => c.host === "android");
+  };
+  // Nothing installed yet: placeable, so the hub sends the first start here.
+  if (process.platform === "linux" && process.arch === "x64") expect(await android()).toMatchObject({ ready: true });
   const start = { id: "1", cwd: "/w", call: { op: "session_start", purpose: "p", kind: "android" } };
   await expect(router(t.node).handle("t1", start)).rejects.toThrow("still installing its Android emulator");
   expect(installs).toBe(1);
+  // Installing: the hub places elsewhere meanwhile, and the machine's page says nothing (it needs no one).
+  if (process.platform === "linux" && process.arch === "x64") expect(await android()).toMatchObject({ ready: false, off: "installing" });
   expect(health(t.node.home, () => ({ ok: "direct" }))?.state).toBe("installing");
   expect(t.node.area("caps").list()).not.toContain("session_android");
   const off = testNode("devbox", { device: {} });

@@ -268,7 +268,9 @@ test("machine_roles names where a new bot goes: the online machine that takes re
 
 test("no switch per kind: browser, Linux desktop and Android sessions each start on a capable Linux machine, whatever an older node's switches say", async () => {
   setup();
-  // box2's node is older: it still reports a switch per kind, Android's turned off in its node.json.
+  // box2's node is older: it still reports a switch per kind, Android's turned off in its node.json. It lists no
+  // session_android (a fresh machine's emulator isn't installed yet): its ready line alone places the first start
+  // there, which begins the install.
   t.link.deliver("box2", load([
     { host: "browser", ready: true, detail: "Chrome 131", on: true },
     { host: "android", ready: true, detail: "Android screens are ready", on: false },
