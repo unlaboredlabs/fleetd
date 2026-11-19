@@ -141,8 +141,9 @@
   vertical-align: bottom;
 }
 /* Delete shows on the row's hover, or once it has focus: the list stays still until you reach for it. */
+/* On the item's first line: a control taller than the 20 px line, hanging over it evenly. */
 .delete {
-  margin: -2px -4px -2px 0;
+  margin: calc((var(--leading-md) - var(--control)) / 2) -4px calc((var(--leading-md) - var(--control)) / 2) 0;
   opacity: 0;
   transition: opacity var(--dur-quick) var(--ease-snap);
 }

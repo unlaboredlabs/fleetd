@@ -202,7 +202,7 @@ export function SettingsSection(props: {
             )}
             {hinted ? <HintWords id={hintId} hint={props.hint} /> : null}
             {props.intro === undefined || props.intro === null ? null : (
-              <Text size="sm" tone="quiet">
+              <Text size="sm" tone="quiet" className={g.intro}>
                 {props.intro}
               </Text>
             )}
@@ -441,8 +441,12 @@ export function DangerButton({ className, ...rest }: Omit<ButtonProps, "variant"
   return <Button variant="danger" className={cx(g.danger, className)} {...rest} />;
 }
 
-/** Words a group holds that aren't a row, and only state: Loading…, an empty list, an error. Never an explanation. */
-export function GroupNote(props: { tone?: TextTone | undefined; children: ReactNode }) {
+/**
+ * Words a group holds that aren't a row, and only state: Loading…, an empty list, an error. Never an explanation.
+ * An empty list's note holds the one thing that adds its first (`action`) on its own line, rather than pointing at
+ * a plus elsewhere.
+ */
+export function GroupNote(props: { tone?: TextTone | undefined; action?: ReactNode; children: ReactNode }) {
   // Loading is the shape of what comes: two quiet rows that breathe, the words for assistive tech.
   if (props.children === "Loading…") {
     return (
@@ -450,6 +454,14 @@ export function GroupNote(props: { tone?: TextTone | undefined; children: ReactN
         <span className={s.srOnly}>Loading…</span>
         <span className={g.ghostRow} aria-hidden />
         <span className={g.ghostRow} aria-hidden />
+      </div>
+    );
+  }
+  if (props.action !== undefined && props.action !== null) {
+    return (
+      <div className={cx(g.note, g.noteAction)}>
+        <Text tone={props.tone ?? "quiet"}>{props.children}</Text>
+        {props.action}
       </div>
     );
   }

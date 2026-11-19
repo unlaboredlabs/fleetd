@@ -128,10 +128,12 @@
   color: var(--quiet);
   overflow-wrap: anywhere;
 }
+/* Its controls, taller than the title's line, centred on that line. */
 .toastActions {
   display: flex;
   gap: var(--space-1);
   flex: none;
+  margin-top: calc((var(--leading-md) - var(--control)) / 2);
 }
 
 /* Status dot and chips */
