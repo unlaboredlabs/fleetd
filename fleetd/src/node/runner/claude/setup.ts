@@ -57,11 +57,17 @@ export function proxyOf(env: Env): { url: string; source: string } | undefined {
   return url === DEFAULT_BASE_URL ? undefined : { url, source };
 }
 
-/** The account variables (ACCOUNT_CLEARS) the user settings' `env` sets, by name, in that list's order. */
+/** The variables an account signs claude in with. A session's settings overlay replaces every other of ACCOUNT_CLEARS
+ * the user settings set (actions/accounts.ts `accountSettingsEnv`), but not these: their value is the account's secret,
+ * which goes in no file. */
+const ACCOUNT_SECRETS = ACCOUNT_CLEARS.slice(0, 2);
+
+/** The account variables the user settings' `env` sets that win over a session's account (ACCOUNT_SECRETS), by name,
+ * in that list's order. */
 export function accountOverrides(env: Env): string[] {
   const set = settingsEnv(join(configDir(env), "settings.json"));
   if (!set) return [];
-  return ACCOUNT_CLEARS.filter((name) => {
+  return ACCOUNT_SECRETS.filter((name) => {
     const v = set[name];
     return v !== undefined && v !== null && (typeof v !== "string" || v.trim() !== "");
   });

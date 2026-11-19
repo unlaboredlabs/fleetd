@@ -224,16 +224,16 @@ test("a Test isn't ok while the machine's claude settings override the account t
   const node = link.answer;
   link.answer = (m, c) =>
     c.op === "runner_info"
-      ? { kind: "runner_info", claude: { version: "2.0.0" }, accountOverrides: ["ANTHROPIC_BASE_URL"] }
+      ? { kind: "runner_info", claude: { version: "2.0.0" }, accountOverrides: ["ANTHROPIC_API_KEY"] }
       : c.op === "claude_account_test"
         ? { kind: "claude_account_tested", ok: false, error: "the endpoint devbox.example:8317 doesn't answer (Unable to connect)" }
         : node(m, c);
   const tested = (await call(ann, "claude_account_test", { account: "hub_api" })).test as { ok: boolean; error: string };
   expect(tested.ok).toBe(false);
   expect(tested.error).toContain("the endpoint devbox.example:8317 doesn't answer");
-  expect(tested.error).toContain('~/.claude/settings.json on lab sets ANTHROPIC_BASE_URL in its "env"');
+  expect(tested.error).toContain('~/.claude/settings.json on lab sets ANTHROPIC_API_KEY in its "env"');
   // claude worked, but on the machine's settings: still not ok.
-  link.answer = (m, c) => (c.op === "claude_account_test" ? { kind: "claude_account_tested", ok: true } : c.op === "runner_info" ? { kind: "runner_info", accountOverrides: ["ANTHROPIC_BASE_URL"] } : node(m, c));
+  link.answer = (m, c) => (c.op === "claude_account_test" ? { kind: "claude_account_tested", ok: true } : c.op === "runner_info" ? { kind: "runner_info", accountOverrides: ["ANTHROPIC_API_KEY"] } : node(m, c));
   const masked = (await call(ann, "claude_account_test", { account: "hub_api" })).test as { ok: boolean; error: string };
   expect([masked.ok, masked.error.startsWith("~/.claude/settings.json on lab")]).toEqual([false, true]);
   // Settings that override nothing leave the Test as claude said.

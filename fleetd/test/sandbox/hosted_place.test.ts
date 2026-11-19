@@ -18,6 +18,8 @@ import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
 import { stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
+import { accountSettingsEnv } from "../../src/node/actions/accounts.ts";
+import { settingsOverlay } from "../../src/node/sessions/index.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-place-"));
@@ -245,6 +247,35 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(hasBox("s-unreached")).toBe(false);
   expect(hostedBox("s-unreached")).toBeUndefined();
   expect(existsSync(join(dir, "place.json"))).toBe(false);
+}, 60_000);
+
+test("a box checks the Claude account's endpoint, not the gateway on the machine's loopback its claude settings name", async () => {
+  const { home, cwd, env } = await setup();
+  const cfg = join(tmp, "cfg-loopback");
+  mkdirSync(cfg, { recursive: true });
+  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://localhost:8317", ANTHROPIC_AUTH_TOKEN: "machine-gateway-token" } }));
+  // The session's settings overlay, as the node writes it for a session on the hub's API key (sessions #spec).
+  const overlay = join(tmp, "overlay-account.json");
+  writeFileSync(overlay, settingsOverlay(accountSettingsEnv([["ANTHROPIC_API_KEY", "hub-key-0123"], ["ANTHROPIC_BASE_URL", "http://100.104.249.49:8317"]]), {}, "haiku", [], false, false, "true"));
+  const checked: string[] = [];
+  hostedProbe.probe = async (_box, url) => void checked.push(url);
+  try {
+    const id = "s-account";
+    const link = await hostedPlace("boat", id, join(home, "hosts", id)).start({
+      fleetd: [],
+      dir: join(home, "hosts", id),
+      sessionId: id,
+      program: "claude",
+      args: ["-p", "--settings", overlay],
+      cwd,
+      env: { ...env, ANTHROPIC_API_KEY: "hub-key-0123", ANTHROPIC_BASE_URL: "http://100.104.249.49:8317", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
+    });
+    expect(checked).toEqual(["http://100.104.249.49:8317"]);
+    expect(JSON.stringify(await next(link))).toContain("m1");
+    await placeAt(join(home, "hosts", id)).stop(join(home, "hosts", id));
+  } finally {
+    hostedProbe.probe = undefined;
+  }
 }, 60_000);
 
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
