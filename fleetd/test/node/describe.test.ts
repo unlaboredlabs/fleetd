@@ -24,7 +24,8 @@ test("describe() probes the claude sessions would run: its version, its login, t
       configDir: join(home.dir, ".claude"),
     });
     expect(setupLine(setup)).toBe(`claude 2.1.302, logged in (API key), via proxy http://127.0.0.1:8899 from ${tilde(join(home.dir, ".claude/settings.json"))}`);
-    expect(accountOverrides({ HOME: home.dir })).toEqual(["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"]);
+    // The gateway a session on an account gets over its settings; the key it can't.
+    expect(accountOverrides({ HOME: home.dir })).toEqual(["ANTHROPIC_API_KEY"]);
     const missing = await describeSetup(join(home.dir, "no-such-claude"), { HOME: home.dir, PATH: "/usr/bin:/bin" });
     expect(missing.version).toBeUndefined();
     expect(setupLine(missing)).toBe("claude is not usable");
