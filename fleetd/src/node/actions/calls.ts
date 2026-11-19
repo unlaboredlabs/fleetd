@@ -24,6 +24,10 @@ import { CallRefusal, invalid, notFound } from "./refusal.ts";
 import { forgetSignins } from "./signins.ts";
 import { repoSkills } from "./skills.ts";
 import { hostDir, isRunner, placeAt } from "../place/index.ts";
+import { hostedHint, PROBE_SEC, privateByName } from "../place/endpoint.ts";
+import { nodeTailnet } from "../sandbox/tailnet.ts";
+import { dialFetch, type Fetcher } from "../sandbox/tailnet_fetch.ts";
+import { tailnetIp, tailnetName } from "../../shared/tailnet.ts";
 
 /** What these calls need of the node: its home and box key, its claude, and the session service's lookups. */
 export type CallContext = {
@@ -73,6 +77,29 @@ const siteHost = (url: string) => {
     return undefined;
   }
 };
+
+/** How the node calls a Claude endpoint `url` for a Test: the hub's runner isn't on the team's tailnet, so it calls a
+ * tailnet address or name through the team's gateway while it is on, given the box's own check's time; elsewhere as
+ * set. */
+function endpointFetch(url: string): { fetcher: Fetcher; ms?: number } {
+  const t = nodeTailnet();
+  if (!isRunner() || !t?.on) return { fetcher: fetch };
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^\[(.*)\]$/u, "$1").toLowerCase();
+  } catch {
+    return { fetcher: fetch };
+  }
+  if (!tailnetIp(host) && !tailnetName(host, t.suffix)) return { fetcher: fetch };
+  return { fetcher: dialFetch((h, p) => t.dial(h, p)), ms: PROBE_SEC * 1000 };
+}
+
+/** What to do about an endpoint `url` the Test didn't reach: the hosted side's words on the runner, else this machine's
+ * for one that isn't on the internet; none for the rest. */
+async function silentHint(url: string): Promise<string | undefined> {
+  if (isRunner()) return hostedHint(url, nodeTailnet()?.on === true);
+  return privateByName(url) ? "check that it runs and that this machine reaches it" : undefined;
+}
 
 const NO_TOKEN = "this machine holds no 1Password token of yours: save it again while it is online";
 
@@ -149,11 +176,15 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       }
       putOn(env, account.vars);
       const endpoint = account.vars.find(([k]) => k === BASE_URL_ENV)?.[1];
-      const silent = endpoint === undefined ? undefined : await endpointSilent(endpoint);
-      if (silent !== undefined) return { kind: "claude_account_tested", ok: false, error: new Masker(account.secrets).text(silent) };
+      const via: { fetcher: Fetcher; ms?: number } = endpoint === undefined ? { fetcher: fetch } : endpointFetch(endpoint);
+      const silent = endpoint === undefined ? undefined : await endpointSilent(endpoint, via.fetcher, via.ms);
+      if (silent !== undefined) {
+        const hint = await silentHint(endpoint!);
+        return { kind: "claude_account_tested", ok: false, error: new Masker(account.secrets).text(hint ? `${silent}: ${hint}` : silent) };
+      }
       try {
         // The hub's runner has no Claude Code of its own: its agents' is in their boxes.
-        if (isRunner()) await tryAccountApi(account.vars.reduce<Env>((e, [k, v]) => ({ ...e, [k]: v }), {}));
+        if (isRunner()) await tryAccountApi(account.vars.reduce<Env>((e, [k, v]) => ({ ...e, [k]: v }), {}), via.fetcher);
         else await tryAccount(ctx.claudeBin, env);
         return { kind: "claude_account_tested", ok: true };
       } catch (error) {

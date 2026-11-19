@@ -3,10 +3,13 @@
 // `@1password/sdk` (no real login, token or account anywhere), with every secret masked out of what comes back.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { HELPER, installDir, SDK_VERSION } from "../../src/node/actions/onepassword.ts";
 import { endpointSilent, tried } from "../../src/node/actions/accounts.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
+import { useRunner } from "../../src/node/place/index.ts";
+import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import { fingerprintOf } from "../../src/node/secrets/files.ts";
 import { tempHome } from "../helpers.ts";
@@ -118,6 +121,7 @@ test("the hub key's Test says plainly when its endpoint doesn't answer, by host,
     const out = await ok("claude_account_test", { account: { kind: "hub" } });
     expect(out.ok).toBe(false);
     expect(out.error).toStartWith(`the endpoint 127.0.0.1:${port} doesn't answer (`);
+    expect(out.error).toEndWith("): check that it runs and that this machine reaches it");
     expect(out.error).not.toContain("machine login leaked");
     expect(out.error).not.toContain("sk-hub");
     // One that answers anything, even 404, is there: the Test goes on to claude.
@@ -130,6 +134,89 @@ test("the hub key's Test says plainly when its endpoint doesn't answer, by host,
   } finally {
     await ok("claude_account_secret", { account: { kind: "hub" } });
   }
+});
+
+/** The hub's runner with the team's tailnet on (`suffix`), whose gateway `dial` stands in for the hub's; undone after. */
+async function onRunner(dial: NodeTailnet["dial"] | undefined, fn: () => Promise<void>) {
+  const t = new NodeTailnet("http://127.0.0.1:1", "devbox", { signTailnet: () => "sig" });
+  if (dial) {
+    t.set({ suffix: "tail1234.ts.net" });
+    t.dial = dial;
+  }
+  useRunner(() => "boat");
+  setNodeTailnet(t);
+  try {
+    await fn();
+  } finally {
+    useRunner(undefined);
+    setNodeTailnet(undefined);
+    await ok("claude_account_secret", { account: { kind: "hub" } });
+  }
+}
+
+test("on the hub's runner, a tailnet endpoint's Test goes through the team's gateway, its key with it", async () => {
+  let key = null as string | null;
+  const api = Bun.serve({
+    port: 0,
+    fetch(req) {
+      if (new URL(req.url).pathname !== "/v1/models") return new Response("not here", { status: 404 });
+      key = req.headers.get("x-api-key");
+      return key === "sk-hub" ? Response.json({ data: [{ id: "claude-haiku-5-5" }] }) : new Response("no", { status: 401 });
+    },
+  });
+  const dialed: string[] = [];
+  try {
+    // The runner's own network has no route to the tailnet: only the gateway's dial reaches the stand-in.
+    await onRunner(
+      async (host, port) => {
+        dialed.push(`${host}:${port}`);
+        return await new Promise((resolve, reject) => {
+          const s = connect({ host: "127.0.0.1", port: api.port! });
+          s.once("connect", () => resolve(s)).once("error", reject);
+        });
+      },
+      async () => {
+        await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://devbox.tail1234.ts.net:8317" } });
+        expect(await ok("claude_account_test", { account: { kind: "hub" } })).toEqual({ kind: "claude_account_tested", ok: true });
+        expect(dialed).toEqual(["devbox.tail1234.ts.net:8317", "devbox.tail1234.ts.net:8317"]);
+        expect(key).toBe("sk-hub");
+      },
+    );
+  } finally {
+    api.stop(true);
+  }
+});
+
+test("on the hub's runner, an endpoint the Test doesn't reach says what to do", async () => {
+  // Through the gateway: the tailnet's access rules.
+  await onRunner(
+    async () => {
+      throw new Error("the gateway couldn't reach 100.104.249.49:8317");
+    },
+    async () => {
+      await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://100.104.249.49:8317" } });
+      const out = await ok("claude_account_test", { account: { kind: "hub" } });
+      expect(out).toEqual({
+        kind: "claude_account_tested",
+        ok: false,
+        error:
+          "the endpoint 100.104.249.49:8317 doesn't answer (the gateway couldn't reach 100.104.249.49:8317): the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it",
+      });
+    },
+  );
+  // A loopback, with no Tailscale connected: never a hosted sandbox's.
+  const gone = Bun.serve({ port: 0, fetch: () => new Response("") });
+  const port = gone.port;
+  gone.stop(true);
+  await onRunner(undefined, async () => {
+    await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: `http://127.0.0.1:${port}` } });
+    const out = await ok("claude_account_test", { account: { kind: "hub" } });
+    expect(out.error).toStartWith(`the endpoint 127.0.0.1:${port} doesn't answer (`);
+    expect(out.error).toEndWith(
+      "): that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead, and connect Tailscale in Settings › Hub › Machines",
+    );
+    expect(out.error).not.toContain("sk-hub");
+  });
 });
 
 const FAKE_TOKEN = "ops_devbox-fake-service-account";
