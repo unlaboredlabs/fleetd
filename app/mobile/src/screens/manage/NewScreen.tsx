@@ -1,7 +1,7 @@
 // New Screen, a sheet from a project's Info: a screen of the person's own, as the desktop's picker opens one
 // (screen_open). A browser unless they pick another kind; a kind no machine can host says why in its row, and picked,
-// says why in full with its fix: an admin's Turn On where it is only switched off on a machine (machine_screens_set),
-// a member's who to ask. Other fixes are on the desktop (Settings › Hub › Machines, or Updates for an update). The machine, when
+// says why in full with its fix: a member's who to ask, an admin's where on the desktop (Settings › Hub › Machines, or
+// Updates for an update). There is no switch per kind to turn on (D574). The machine, when
 // more than one can (its browser is only its own machine's, on the profile that keeps its sign-ins), each with its
 // slots in words. Open puts them in its live view, in control, with End Screen; a full machine offers Wait for a Slot,
 // which this sheet follows until the screen opens (or Cancel gives it up). A PR's build is the desktop's.
@@ -33,7 +33,6 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const off = whyOff(machines, shownKind, home);
   const people = useRead(() => session.call("people_list", {}), [session]);
   const admins = people.value?.ok === true ? adminNames(people.value.output.people) : [];
-  const [turning, setTurning] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const hosts = hostsFor(machines, shownKind, home);
   const host = pickHost(hosts, picked);
@@ -90,22 +89,6 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     });
   });
 
-  // An admin's Turn On: the kind on, on the machine where it's only switched off; the machines are read again.
-  const turnOn = async (reason: OffReason) => {
-    if (reason.machine === undefined || turning) return;
-    setTurning(true);
-    setError(null);
-    const host = shownKind === "linux_desktop" ? "desktop" : shownKind;
-    const r = await session.call("machine_screens_set", { machineId: reason.machine.machineId, host, on: true });
-    setTurning(false);
-    if (!r.ok) {
-      haptics.warning();
-      return setError(r.error);
-    }
-    haptics.success();
-    roles.reload();
-  };
-
   // Cancel gives a wait up on the hub; else it just closes.
   const cancel = () => {
     if (wait !== null) void session.call("screen_end", { waitId: wait.wait.waitId });
@@ -151,7 +134,6 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
           {off !== null ? (
             <ListSection header="Can't open" {...offFooter(off, state.admin === true, askLine(off, shownKind, admins))}>
               <ListRow title={off.short} detail={off.why} />
-              {state.admin === true && off.fix === "turn_on" ? <ListRow title={turning ? "Turning On…" : "Turn On"} onPress={() => void turnOn(off)} chevron={false} /> : null}
             </ListSection>
           ) : (
             <ListSection header="Machine">
@@ -183,10 +165,10 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   );
 }
 
-/** Under why a kind can't open: a member's who to ask, or where an admin fixes what isn't a switch; none for Turn On. */
+/** Under why a kind can't open: a member's who to ask, or where an admin fixes it. */
 const offFooter = (off: OffReason, admin: boolean, ask: string | null): { footer?: string } => {
   if (!admin) return ask === null ? {} : { footer: ask };
-  if (off.fix === "turn_on" || off.fix === "none") return {};
+  if (off.fix === "none") return {};
   return { footer: `Fix it in the desktop app, under Settings › Hub › ${off.fix === "update" ? "Updates" : "Machines"}.` };
 };
 

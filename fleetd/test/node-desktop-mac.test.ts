@@ -455,7 +455,7 @@ test("a session that ends mid-command keeps its lease and claim until that comma
 });
 
 test("a Mac screen start off a Mac, or with nothing in the way checked, says why", async () => {
-  const t = testNode("devbox", { mac: { enabled: true } });
+  const t = testNode("devbox", { agentsMac: true });
   cleanups.push(t.done);
   const d = desktops(t.node, new Desktops(t.node, { enabled: false }));
   cleanups.push(() => d.shutdown());

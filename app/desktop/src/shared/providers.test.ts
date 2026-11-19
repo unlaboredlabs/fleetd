@@ -25,13 +25,18 @@ describe("what runs where", () => {
   });
 
   it("knows which kinds the team's own machines run now", () => {
-    const linux = { roles: ["agents", "sessions"], hosts: [{ host: "browser", ready: true }, { host: "android", ready: false, on: false }, { host: "desktop", ready: false, on: true }] };
+    const linux = {
+      roles: ["agents", "sessions"],
+      hosts: [{ host: "browser", ready: true }, { host: "android", ready: false, off: "unsupported" }, { host: "desktop", ready: false, off: "missing" }, { host: "mac", ready: false, off: "unsupported" }],
+    };
     const mac = { roles: [], mac: { on: true }, hosts: [{ host: "mac", ready: true }] };
     expect(machinesRun("agents", [linux])).toBe(true);
     expect(machinesRun("agents", [mac])).toBe(false);
     expect(machinesRun("browser", [linux])).toBe(true);
+    // No KVM: it can't run Android at all. A desktop missing Xvfb runs once it is installed.
     expect(machinesRun("android", [linux])).toBe(false);
     expect(machinesRun("desktop", [linux])).toBe(true);
+    expect(machinesRun("mac", [linux])).toBe(false);
     expect(machinesRun("ios", [linux])).toBe(false);
     expect(machinesRun("ios", [linux, mac])).toBe(true);
     expect(machinesRun("mac", [linux, mac])).toBe(true);

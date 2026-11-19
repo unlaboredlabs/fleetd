@@ -133,8 +133,8 @@ export class Router {
           throw new ToolError(
             "failed",
             kind === "mac"
-              ? "This machine lends no Mac screen (its node.json doesn't turn it on)."
-              : "This machine hosts no desktop sessions (node.json turns them off).",
+              ? "This machine lends no Mac screen: only the agents' Mac does."
+              : "This machine hosts no desktop sessions: they run on Linux machines that run agents.",
             "say so in your result",
           );
         }

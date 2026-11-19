@@ -2950,16 +2950,11 @@ export type HostCheck = {
   idleMinutes?: number;
   /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */
   off?: HostOff;
-  /**
-   * Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.
-   * Absent from a node before it.
-   */
-  on?: boolean;
   ready: boolean;
 };
 
 /** Why a machine can't host a kind of screen. */
-export type KnownHostOff = "off" | "restarting" | "unsupported" | "missing" | "installing" | "failed";
+export type KnownHostOff = "off" | "unsupported" | "missing" | "installing" | "failed";
 /** KnownHostOff, or a value from a newer hub. */
 export type HostOff = KnownHostOff | (string & {});
 
@@ -4311,21 +4306,11 @@ export type MachineRolesEntry = {
   /** Where `maxSessions` comes from: "set", "auto: 8 CPUs, 16 GB". */
   maxSessionsWhy: string;
   name: string;
-  /**
-   * The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,
-   * a node that still runs its old build needs it.
-   */
-  nodeRestart?: string;
   /** Its node is linked to the hub now. */
   online: boolean;
   /** The caller may work there (operate): make a project, start agents. Absent from a hub before it. */
   operates?: boolean;
   roles: MachineRole[];
-  /**
-   * Its node takes screen settings from the hub (`machine_screens_set`); false: its linked node's fleetd is too
-   * old for them. Absent while its node isn't linked (restarting, or offline), and from a hub before it.
-   */
-  screenSettings?: boolean;
   /** Its sessions live now, its own agents' and other machines'. */
   sessionsLive: number;
 };
@@ -4357,18 +4342,6 @@ export type MachineRolesSetInput = {
 };
 
 export type MachineRolesSetOutput = {
-  machine: MachineRolesEntry;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type MachineScreensSetInput = {
-  host?: SessionHost;
-  machineId: MachineId;
-  on?: boolean;
-};
-
-export type MachineScreensSetOutput = {
   machine: MachineRolesEntry;
   next?: string;
   truncated?: boolean;
@@ -10123,7 +10096,6 @@ export interface ToolMap {
   machine_remove: { input: MachineRemoveInput; output: MachineRemoveOutput };
   machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
   machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
-  machine_screens_set: { input: MachineScreensSetInput; output: MachineScreensSetOutput };
   mcp_oauth_start: { input: McpOauthStartInput; output: McpOauthStartOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };

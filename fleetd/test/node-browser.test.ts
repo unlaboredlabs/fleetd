@@ -218,20 +218,6 @@ test("the hub's session_end ends the screen of a task that ended, and a person's
   expect(link.calls.at(-1)).toMatchObject({ args: { sessionId: started.sessionId, state: "recorded" } });
 });
 
-test("node_action screens writes node.json, and the agents' Mac takes only its own screen", async () => {
-  const { apply } = await import("../src/node/screens/index.ts");
-  const home = tempHome();
-  cleanups.push(home.done);
-  const file = join(home.dir, "node.json");
-  // An older hub's idle timeout is ignored, and an older node.json's goes.
-  await Bun.write(file, JSON.stringify({ hub: "http://devbox:4790", screenIdleMinutes: 45, browser: { idleMinutes: 9 } }));
-  expect(apply(home.dir, { host: "browser", on: false, idleMinutes: 20 } as never)).toStartWith("Saved.");
-  expect(JSON.parse(await Bun.file(file).text())).toEqual({ hub: "http://devbox:4790", browser: { enabled: false } });
-  expect(() => apply(home.dir, { host: "ios", on: true })).toThrow("iOS screens are gone");
-  await Bun.write(file, JSON.stringify({ agentsMac: true }));
-  expect(() => apply(home.dir, { host: "browser", on: true })).toThrow("offers only its own screen");
-});
-
 test("an agent's agent-browser command is a step of its session: in its action log and the heartbeat", async () => {
   const browser = fakeBrowser();
   const t = testNode();

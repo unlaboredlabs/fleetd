@@ -38,7 +38,6 @@ const canUnshare = process.platform === "linux" && Bun.spawnSync(["unshare", "-r
 // waits out its 10 minutes.
 test.skipIf(!canUnshare)("each way the node ends a hold keeps update/held in place, so a VM's bind of it still marks calls held", async () => {
   const { clearHold } = await import("../../src/node/index.ts");
-  const { holdForScreens, releaseScreens } = await import("../../src/node/restart.ts");
   const home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-held-bind-"));
   try {
     const dir = join(home, "update", "held");
@@ -62,10 +61,6 @@ test.skipIf(!canUnshare)("each way the node ends a hold keeps update/held in pla
       clearHold(home);
       expect(held(home).size).toBe(0);
       await mark("tu_2");
-      // A screens restart's hold, and its release.
-      holdForScreens(home);
-      releaseScreens(home);
-      await mark("tu_3");
       // hold.ts's own clear.
       hold(home);
       clear(home);

@@ -313,7 +313,7 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
     },
   });
   cleanups.push(() => scrcpy.stop(true));
-  const t = testNode("devbox", { device: { enabled: true } });
+  const t = testNode("devbox");
   cleanups.push(t.done);
   const log = join(t.node.home, "adb.log");
   fakeInstall(t.node.home, scrcpy.port, log);
@@ -329,9 +329,8 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
     await devices.shutdown();
     await broker(t.node).shutdown();
   });
-  expect(health(t.node.home, { enabled: true }, kvm)?.state).toBe("ready");
-  expect(capabilities(t.node.home, {}, kvm)).toEqual(["session_android"]);
-  expect(health(t.node.home, { enabled: false }, kvm)).toBeUndefined();
+  expect(health(t.node.home, kvm)?.state).toBe("ready");
+  expect(capabilities(t.node.home, kvm)).toEqual(["session_android"]);
   await until(() => devices.warm() === 1);
   expect(t.node.area("caps").list()).toContain("session_android");
   // An agent's claude launches with agent-device's wrapper first on its PATH, pointed at its own home and control file.
@@ -392,16 +391,27 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   expect(existsSync(join(sessionDir(t.node.home, "t1"), "config.json"))).toBe(false);
 });
 
-test("a machine that isn't set up says so, and one with no KVM says how to fix it", async () => {
-  const t = testNode("devbox", { device: {} });
+test("a machine where KVM opens installs on the first android start with no opt-in, and one with no KVM says how to fix it", async () => {
+  // An older node.json's switch turns nothing off.
+  const t = testNode("devbox", { device: { enabled: false } });
   cleanups.push(t.done);
-  const devices = startDevices(t.node, { kvm: () => ({ ok: "direct" }) })!;
+  // agent-device is there; the emulator's install waits, as a 2 GB download would.
+  mkdirSync(dirname(entry(t.node.home)), { recursive: true });
+  writeFileSync(entry(t.node.home), "");
+  mkdirSync(binDir(t.node.home), { recursive: true });
+  writeFileSync(join(binDir(t.node.home), "agent-device"), "");
+  writeFileSync(join(dirname(binDir(t.node.home)), "VERSION"), VERSION);
+  let installs = 0;
+  const devices = startDevices(t.node, { kvm: () => ({ ok: "direct" }), install: () => (installs++, new Promise(() => {})) })!;
   cleanups.push(async () => {
     await devices.shutdown();
     await broker(t.node).shutdown();
   });
+  expect(devices.offered()).toBe(true);
   const start = { id: "1", cwd: "/w", call: { op: "session_start", purpose: "p", kind: "android" } };
-  await expect(router(t.node).handle("t1", start)).rejects.toThrow("isn't set up for Android sessions");
+  await expect(router(t.node).handle("t1", start)).rejects.toThrow("still installing its Android emulator");
+  expect(installs).toBe(1);
+  expect(health(t.node.home, () => ({ ok: "direct" }))?.state).toBe("installing");
   expect(t.node.area("caps").list()).not.toContain("session_android");
   const off = testNode("devbox", { device: {} });
   cleanups.push(off.done);
@@ -411,14 +421,15 @@ test("a machine that isn't set up says so, and one with no KVM says how to fix i
     await broker(off.node).shutdown();
   });
   await expect(router(off.node).handle("t1", start)).rejects.toThrow("can't run the Android emulator: no /dev/kvm here");
-  expect(health(off.node.home, { enabled: true }, () => ({ err: { why: "no /dev/kvm here" } }))?.state).toBe("unavailable");
-  expect(health(off.node.home, { enabled: true }, () => ({ ok: "direct" }))?.state).toBe("wanted");
+  expect(noKvm.offered()).toBe(false);
+  expect(health(off.node.home, () => ({ err: { why: "no /dev/kvm here" } }))?.state).toBe("unavailable");
+  expect(health(off.node.home, () => ({ ok: "direct" }))?.state).toBe("wanted");
 });
 
 test("an Android screen hosted for another machine runs only sealed device steps, in order, and its recording is scrubbed", async () => {
   const scrcpy = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   cleanups.push(() => scrcpy.stop(true));
-  const t = testNode("box2", { device: { enabled: true } });
+  const t = testNode("box2");
   cleanups.push(t.done);
   fakeInstall(t.node.home, scrcpy.port, join(t.node.home, "adb.log"));
   // The node's agent-device wrapper: what it ran, where, and an install's app copied back out.

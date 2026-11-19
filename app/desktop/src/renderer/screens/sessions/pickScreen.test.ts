@@ -138,10 +138,9 @@ describe("why a kind can't open", () => {
   /** A machine whose node says, for each kind, what it can't host and why. */
   const off = (machineId: string, offs: Partial<Record<string, string>>, more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
     ...machine(machineId, []),
-    screenSettings: true,
     hosts: ["browser", "android", "desktop", "mac"].map((host) => {
       const why = offs[host];
-      return why === undefined ? { host, ready: true, detail: "ready", on: true } : { host, ready: false, detail: `${host} ${why} on the node`, off: why, on: why !== "off" };
+      return why === undefined ? { host, ready: true, detail: "ready" } : { host, ready: false, detail: `${host} ${why} on the node`, off: why };
     }),
     ...more,
   });
@@ -150,31 +149,18 @@ describe("why a kind can't open", () => {
     expect(whyOff([off("devbox", {})], "android")).toBeNull();
   });
 
-  it("offers an admin's Turn on where it is only switched off, on that machine", () => {
-    const reason = whyOff([off("devbox", { android: "off" }), off("lab", { android: "missing" })], "android");
-    expect(reason).toEqual({ why: "Android emulators are turned off on devbox.", short: "Turned off", fix: "turn_on", machine: { machineId: "devbox", name: "devbox" } });
-    expect(fixLabel("turn_on")).toBe("Turn on");
-    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines › devbox.");
-  });
-
-  it("sends an older node's switch to an update, since the hub can't reach it", () => {
-    const reason = whyOff([off("devbox", { linux_desktop: "off", desktop: "off" }, { screenSettings: false })], "linux_desktop");
-    expect(reason?.fix).toBe("update");
-    expect(reason?.why).toBe("Linux desktops are turned off on devbox, and its fleetd is too old to turn them on from here.");
+  it("offers no Turn on: a kind an older node turned off in its node.json comes on with its update", () => {
+    const reason = whyOff([off("devbox", { desktop: "off" }), off("lab", { desktop: "missing" })], "linux_desktop");
+    expect(reason).toEqual({ why: "Linux desktops are off on devbox until its fleetd is updated.", short: "Needs an update", fix: "update", machine: { machineId: "devbox", name: "devbox" } });
+    expect(fixLabel(must(reason).fix)).toBe("Open updates");
     expect(fixPlace("update")).toEqual({ tab: "hub.updates", reveal: null });
     expect(fixPlace("roles")).toEqual({ tab: "hub.machines", reveal: "hub.roles" });
     expect(askLine(must(reason), "linux_desktop", ["Ana", "Bo"])).toBe("Ask Ana or Bo to update fleetd on devbox.");
   });
 
-  it("never calls a node restarting after an update too old", () => {
-    const { screenSettings: _, ...restarting } = off("devbox", { android: "off" });
-    const reason = whyOff([restarting], "android");
-    expect(reason).toEqual({
-      why: "Android emulators are turned off on devbox, and its node is restarting: turn them on once it links again.",
-      short: "Turned off",
-      fix: "none",
-      machine: { machineId: "devbox", name: "devbox" },
-    });
+  it("says what a machine is missing in its node's words, with no switch to turn", () => {
+    const reason = whyOff([off("devbox", { android: "missing" })], "android");
+    expect(reason).toEqual({ why: "devbox: android missing on the node.", short: "Not set up", fix: "none", machine: { machineId: "devbox", name: "devbox" } });
   });
 
   it("says the agents' Mac needs a Mac joined as the agents' Mac, not a Linux machine", () => {
@@ -201,10 +187,6 @@ describe("why a kind can't open", () => {
     expect(whyOff(machines.slice(0, 2), "android")).toMatchObject({ why: "lab-old is offline.", short: "Offline" });
   });
 
-  it("says a kind turned on waits for its node's restart", () => {
-    expect(whyOff([off("devbox", { android: "restarting" })], "android")?.short).toBe("Starting up");
-  });
-
   it("gives the node's own words for what is missing or failed", () => {
     const reason = whyOff([off("devbox", { android: "missing" })], "android");
     expect(reason?.why).toBe("devbox: android missing on the node.");
@@ -219,7 +201,7 @@ describe("why a kind can't open", () => {
   });
 
   it("keeps a bot's browser to its own machine's reason", () => {
-    expect(whyOff([off("devbox", {}), off("home", { browser: "off" })], "browser", "home")?.why).toBe("Browser screens are turned off on home.");
+    expect(whyOff([off("devbox", {}), off("home", { browser: "off" })], "browser", "home")?.why).toBe("Browser screens are off on home until its fleetd is updated.");
   });
 
   it("asks the hub's owners and admins, never members or people removed", () => {

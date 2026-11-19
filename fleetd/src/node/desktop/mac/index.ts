@@ -35,12 +35,12 @@ import { type Console, consoleBlocked, read as readConsole, state } from "./cons
  * goes back after this long without an action that needs it. */
 export const IDLE_MINUTES = 5;
 
-/** node.json's `mac`: the agents' Mac's screen. Off unless `enabled` is true. */
+/** node.json's `mac`: the agents' Mac's screen. `enabled` is the node's own word: true on the agents' Mac only. */
 export type MacConfig = { enabled?: boolean; simulators?: number };
 
 export const macSupported = () => process.platform === "darwin";
 
-/** On where node.json turns it on, on a Mac. */
+/** On on the agents' Mac, on a Mac. */
 export const macEnabled = (config: MacConfig | undefined) => config?.enabled === true && macSupported();
 
 /** What stands in the way of a Mac screen now, in plain words, and the command that clears it where one does. */

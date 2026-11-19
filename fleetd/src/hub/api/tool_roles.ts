@@ -146,7 +146,6 @@ export const TOOLS = {
   browser_retention_set: { scope: "admin", module: "src/hub/browser" },
   machine_roles: { scope: "read", module: "src/hub/machine_roles" },
   machine_roles_set: { scope: "admin", module: "src/hub/machine_roles" },
-  machine_screens_set: { scope: "admin", module: "src/hub/machine_roles" },
   tailnet_get: { scope: "read", module: "src/hub/tailnet" },
   tailnet_connect: { scope: "admin", module: "src/hub/tailnet" },
   tailnet_disconnect: { scope: "admin", module: "src/hub/tailnet" },

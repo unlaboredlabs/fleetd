@@ -4083,8 +4083,8 @@ export const screens: readonly Screen[] = [
       await caps.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
     },
   },
-  // devbox's Screens: a switch per kind (no iOS, D298), the agents' Mac's, on Linux, with the reason it can't turn on
-  // there; how many at once, and when an idle one ends.
+  // devbox's Screens: no switch per kind (D574), only Android's line, which needs KVM, with its fix to run there; how
+  // many at once, and when an idle one ends.
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines/devbox",
@@ -4093,11 +4093,12 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const screens = page.locator("[data-screens]").first();
       await screens.scrollIntoViewIfNeeded();
-      await page.getByRole("switch", { name: /^Agents’ Mac screens on /u }).first().waitFor();
-      await expect(page.getByRole("switch", { name: /^iOS screens on /u })).toHaveCount(0);
+      await screens.locator('[data-screens-needs="android"]').waitFor();
+      await expect(screens.locator("[data-screens-needs]")).toHaveCount(1);
+      await expect(screens.getByRole("switch")).toHaveCount(0);
     },
   },
-  // The agents' Mac's page: its switch for agents, its own screen's switch alone, and how soon an idle one ends (a hint).
+  // The agents' Mac's page: its switch for agents, no switch per screen kind, and how soon an idle one ends (a hint).
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines/buildbox",
@@ -4106,8 +4107,9 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const mac = page.locator("[data-screens]");
       await mac.scrollIntoViewIfNeeded();
-      await mac.getByRole("switch", { name: /^Agents’ Mac screens on /u }).waitFor();
-      await expect(mac.getByRole("switch")).toHaveCount(1);
+      await mac.getByRole("region", { name: "At once" }).waitFor();
+      await expect(mac.getByRole("switch")).toHaveCount(0);
+      await expect(mac.locator("[data-screens-needs]")).toHaveCount(0);
       // How soon an idle one ends is the hint of its At once row.
       await expect(mac.getByRole("region", { name: "At once" })).toContainText("An idle Mac screen ends after 5 minutes");
     },

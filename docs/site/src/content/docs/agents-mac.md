@@ -445,11 +445,10 @@ read the node's own key, as on any worker. Loopback ports are shared between mac
 
 ## node.json {#node-json}
 
-`--mac` writes two keys in the node's `node.json`:
+`--mac` writes one key in the node's `node.json`:
 
 | Key | What it does |
 |---|---|
-| `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs. |
-| `"mac": {"enabled": true}` | Its own screen, which agents share, one per app (one at a time for pointer and keys) ([the Mac's screen](/docs/browser-sessions#mac)), and the only screen it hosts: `browser`, `device` and `desktop` are ignored there. The Screens part of its page in Settings › Hub › Machines turns it off and on; the Mac stays a tool either way. |
+| `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs, and lends its own screen, which agents share, one per app (one at a time for pointer and keys) ([the Mac's screen](/docs/browser-sessions#mac)): the only screen it hosts. An older `"mac": {"enabled": …}` is ignored. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
 | `"ios": {…}` | The [simulators](#sim)' golden and warm clone, by hand only: `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). One clone is kept booted, 1–2 GB of memory. Its `enabled` is ignored on the agents' Mac: simulators are always on there. Not written by `--mac`. |

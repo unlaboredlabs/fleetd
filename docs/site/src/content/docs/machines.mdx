@@ -623,13 +623,13 @@ Screen slots are counted apart from agent slots. A machine hosts at most its scr
 screen per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
 the number you set, 1 to 64.
 
-Each node reports what it can host, and the Screens part of the machine's page shows a switch per kind, with a line
-only while something stands in the way, that turns it on or off there ([Turn screens on in Settings](/docs/browser-sessions#settings)):
+Each node reports what it can host. There's no switch per kind: a machine hosts every kind it can run, and the Screens
+part of its page shows a line only while one needs someone, with the fix ([Screens in Settings](/docs/browser-sessions#settings)):
 
 | Kind | Needs |
 |---|---|
 | Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
-| Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
+| Android emulator | fleetd's own pinned emulator: Linux on x86_64 and a `/dev/kvm` this user can open read-write (the first screen installs it). See [Android screens](/docs/browser-sessions#android-setup). |
 | Desktop | Linux with docker, podman or Xvfb. |
 | Agents' Mac | [The agents' Mac](/docs/agents-mac): the node's account at the Mac's screen (yours is fine), unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. The agents' Mac hosts only this kind. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
 

@@ -3,7 +3,6 @@ import { openDone, sealCall } from "../src/hub/machine_roles/device_steps.ts";
 import { autoSessions, place, type Runner } from "../src/hub/machine_roles/placement.ts";
 import { goneProof, hashToken, isToken } from "../src/hub/machine_roles/relay_rules.ts";
 import { asWait, purpose, unable } from "../src/hub/machine_roles/screen_rules.ts";
-import { macRefuses } from "../src/node/screens/settings.ts";
 
 const runner = (id: string, over: Partial<Runner> = {}): Runner => ({
   machineId: id,
@@ -45,12 +44,10 @@ test("a device step opens only with the screen's key, at its own count", () => {
   expect(openDone(key, 3, { step: "done" })).toBeUndefined();
 });
 
-test("a person's screen: its name, its wait as shown, why a machine can't host it, and the Mac's own refusal", () => {
+test("a person's screen: its name, its wait as shown, and why a machine can't host it", () => {
   expect(purpose("android", { personId: "p", name: "Sam" } as never, { repo: "a/b", number: 9 })).toBe("Android emulator opened by Sam, with PR #9");
   const w = { id: "w1", person: "p", device: "d", project: { machineId: "m", projectId: "p" }, runner: "m", kind: "browser", sinceMs: 0, pr: undefined, stage: "waiting", thread: undefined, error: undefined } as never;
   expect(asWait(w, [w])).toMatchObject({ waitId: "w1", ahead: 0, since: "1970-01-01T00:00:00.000Z" });
   expect(unable(runner("m", { online: false }), "browser")).toBe("m is offline.");
   expect(unable(runner("m"), "browser")).toBeUndefined();
-  expect(macRefuses({ host: "browser" } as never)).toContain("offers only its own screen");
-  expect(macRefuses({ host: "mac" } as never)).toBeUndefined();
 });

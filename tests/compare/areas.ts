@@ -168,13 +168,13 @@ const FROM_SEEDS: Readonly<Record<string, (seeded: ReadonlyArray<{ tool: string;
  * Writes whose work is done on a machine, which no node is here to do, so `machine_offline` is a meaningful answer (and
  * for a secret sealed to machines, the hub's failed "No machine took it."): the ones below, each called on the machine
  * (and project) the team's reads turn up with what else it needs, project_remove (LAST), which the hub refuses so
- * while the project's machine is known and offline, machine_screens_set, which its node takes, lead_start, which
+ * while the project's machine is known and offline, lead_start, which
  * launches the project's lead there, project_files, which its node reads, and project_signins_forget, which forgets
  * the project's browser sign-ins there. A target's seed
  * puts its project on such a machine: one that joined once and is offline now. With no machine to name they aren't
  * called.
  */
-const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove", "claude_subscription_set", "onepassword_set", "machine_screens_set", "lead_start", "project_files", "project_signins_forget"];
+const OFFLINE_ANSWERS = ["project_add", "project_repo_add", "project_remove", "claude_subscription_set", "onepassword_set", "lead_start", "project_files", "project_signins_forget"];
 
 /** A person's secret sealed for the machine the reads turn up, as a real box (to a key of the run's own: no machine opens it). */
 const sealedForMachine = async (ids: Ids, secret: string) => {

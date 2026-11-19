@@ -133,10 +133,6 @@ const mount = async () => {
       if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines } });
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: info });
       if (tool === "people_list") return Promise.resolve({ ok: true, output: { people: PEOPLE, devices: [], invites: [] } });
-      if (tool === "machine_screens_set") {
-        machines = MACHINES;
-        return Promise.resolve({ ok: true, output: { machine: MACHINES[0], next: "Saved. The node restarts now to apply it." } });
-      }
       if (tool === "pr_list") {
         if (prsFail > 0) {
           prsFail -= 1;
@@ -396,29 +392,28 @@ it("offers New screen… in the palette for the bot on screen", async () => {
   expect(picker()).not.toBeNull();
 });
 
-/** devbox with Android switched off in its node.json, and a node that takes screen settings from the hub. */
+/** devbox on an older fleetd, whose node.json turned Android off: on once it is updated (no switch here, D574). */
 const ANDROID_OFF = [
   {
     ...machine("devbox", ["browser", "desktop"]),
-    screenSettings: true,
     hosts: ["browser", "android", "desktop", "mac"].map((host) =>
       host === "android"
-        ? { host, ready: false, detail: "Android screens are off in node.json", off: "off", on: false }
+        ? { host, ready: false, detail: "Android screens are off in node.json", off: "off" }
         : host === "mac"
-          ? { host, ready: false, detail: "the Mac screen is a Mac's own", off: "unsupported", on: false }
-          : { host, ready: true, detail: "as tested", on: true },
+          ? { host, ready: false, detail: "the Mac screen is the agents' Mac's own", off: "unsupported" }
+          : { host, ready: true, detail: "as tested" },
     ),
   },
 ];
 
-it("says why a kind can't open, and an admin turns it on from there", async () => {
+it("says why a kind can't open, with no switch to turn: an admin's one fix is the place that fixes it", async () => {
   machines = ANDROID_OFF;
   await mount();
   act(() => button("New screen")?.click());
   await settle();
   // Each kind that can't open says so in its tile, and stays pickable.
   const tile = (name: string) => button(name);
-  expect(tile("Android")?.textContent).toContain("Turned off");
+  expect(tile("Android")?.textContent).toContain("Needs an update");
   expect(tile("Agents’ Mac")?.textContent).toContain("Needs a Mac");
   expect(tile("Android")?.disabled).toBe(false);
   act(() => tile("Agents’ Mac")?.click());
@@ -427,15 +422,10 @@ it("says why a kind can't open, and an admin turns it on from there", async () =
   expect(button("Add machine")).toBeDefined();
   act(() => tile("Android")?.click());
   await settle();
-  expect(document.querySelector("[data-off-reason='turn_on']")?.textContent).toContain("Android emulators are turned off on devbox.");
+  expect(document.querySelector("[data-off-reason='update']")?.textContent).toContain("Android emulators are off on devbox until its fleetd is updated.");
   expect(button("Open screen")?.disabled).toBe(true);
-  act(() => button("Turn on")?.click());
-  await settle();
-  expect(calls.find((c) => c.tool === "machine_screens_set")?.input).toEqual({ machineId: "devbox", host: "android", on: true });
-  // The machines are read again: devbox hosts Android now, so the picker lists it.
-  await eventSettle();
-  const listed = [...document.querySelectorAll("[role='radiogroup'] label")].map((l) => l.textContent);
-  expect(listed.some((m) => m.startsWith("devbox"))).toBe(true);
+  expect(button("Turn on")).toBeUndefined();
+  expect(button("Open updates")).toBeDefined();
 });
 
 it("tells a member who to ask, with no button", async () => {
@@ -446,8 +436,9 @@ it("tells a member who to ask, with no button", async () => {
   await settle();
   act(() => button("Android")?.click());
   await settle();
-  const reason = document.querySelector("[data-off-reason='turn_on']");
-  expect(reason?.textContent).toContain("Android emulators are turned off on devbox.");
-  expect(reason?.textContent).toContain("Ask Ana to turn them on in Settings › Hub › Machines › devbox.");
-  expect(button("Turn on")).toBeUndefined();
+  const reason = document.querySelector("[data-off-reason='update']");
+  expect(reason?.textContent).toContain("Android emulators are off on devbox until its fleetd is updated.");
+  expect(reason?.textContent).toContain("Ask Ana to update fleetd on devbox.");
+  expect(button("Open updates")).toBeUndefined();
 });
+

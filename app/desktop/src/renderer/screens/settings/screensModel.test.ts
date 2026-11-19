@@ -1,7 +1,7 @@
-// Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
+// Hub › Machines › Screens' words: no switch per kind, a line only for a kind that needs someone, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { blockedLine, daysChoices, elsewhereLine, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { daysChoices, idleLine, needsLines } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -12,74 +12,49 @@ const devbox: MachineRolesEntry = {
   maxSessionsWhy: "set",
   sessionsLive: 0,
   hostsOthers: true,
-  screenSettings: true,
   hosts: [
-    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 45 },
-    { host: "android", ready: false, detail: "Android screens are off in node.json", off: "off", on: false, idleMinutes: 45 },
-    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own", off: "unsupported", on: false },
-    { host: "desktop", ready: false, detail: "turned on: it starts when this machine's node restarts", off: "restarting", on: true },
+    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 45 },
+    { host: "android", ready: false, detail: "Installing the Android emulator for screens", off: "installing", idleMinutes: 45 },
+    { host: "desktop", ready: true, detail: "Desktop screens run on Xvfb" },
+    { host: "mac", ready: false, detail: "the Mac screen is the agents' Mac's own", off: "unsupported" },
   ],
 };
-const check = (host: string) => devbox.hosts?.find((h) => h.host === host);
 
-describe("a kind's switch", () => {
-  it("is on as node.json has it, and says what stands in the way", () => {
-    expect(switchOn(check("browser"))).toBe(true);
-    expect(switchOn(check("android"))).toBe(false);
-    expect(switchOn(check("desktop"))).toBe(true);
-    expect(stateLine(check("browser"))).toBe("Ready");
-    expect(stateLine(check("android"))).toBe("Off");
-    expect(stateLine(check("desktop"))).toBe("Starts after the screens open now end");
-    // The node's own words start as a sentence does.
-    expect(stateLine({ host: "desktop", ready: false, detail: "desktop screens run on Linux", off: "unsupported" })).toBe("Desktop screens run on Linux");
-    expect(stateLine({ host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing" })).toBe("No docker, podman or Xvfb");
-    // At rest, only what stands in the way: a kind ready, or just off, says nothing (its switch does).
-    expect(blockedLine(check("browser"))).toBeNull();
-    expect(blockedLine(check("android"))).toBeNull();
-    expect(blockedLine(check("desktop"))).toBe("Starts after the screens open now end");
-    expect(blockedLine(undefined)).toBe("Not known yet");
-    // A node before switches: on where it can host.
-    expect(switchOn({ host: "browser", ready: true, detail: "Chrome" })).toBe(true);
+describe("a kind that needs someone", () => {
+  it("says nothing while every kind it can run is ready or installing, nor for one it can't run at all", () => {
+    expect(needsLines(devbox)).toEqual([]);
   });
 
-  it("can't move where the machine can't run it, is offline, or its node is too old", () => {
-    expect(lockedWhy(devbox, check("android"))).toBeNull();
-    expect(lockedWhy(devbox, check("mac"))).toBe("the Mac screen is a Mac's own");
-    expect(lockedWhy({ ...devbox, online: false }, check("android"))).toBe("Offline");
-    expect(lockedWhy({ ...devbox, screenSettings: false }, check("android"))).toContain("too old");
-    // Its node between two links, as after an update: restarting, never too old.
-    const { screenSettings: _, ...restarting } = devbox;
-    expect(lockedWhy(restarting, check("android"))).toBe("Restarting…");
-    expect(nodeWait(restarting)).toBe("restarting");
-    expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
-    expect(nodeWait({ ...restarting, online: false })).toBeNull();
-    expect(nodeWait(devbox)).toBeNull();
+  it("says what stands in the way, as a sentence, with the command that fixes it where one does", () => {
+    const hosts = [
+      { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", fix: "sudo apt-get install -y xvfb" },
+      { host: "android", ready: false, detail: "no /dev/kvm: this user can't open it", off: "missing", fix: "sudo usermod -aG kvm $USER" },
+      { host: "browser", ready: false, detail: "Installing the browser failed", off: "failed" },
+    ];
+    expect(needsLines({ ...devbox, hosts })).toEqual([
+      { host: "browser", label: "Browser", line: "Installing the browser failed.", fix: null },
+      { host: "android", label: "Android", line: "No /dev/kvm: this user can't open it.", fix: "sudo usermod -aG kvm $USER" },
+      { host: "desktop", label: "Linux desktop", line: "No docker, podman or Xvfb.", fix: "sudo apt-get install -y xvfb" },
+    ]);
   });
 
-  it("says where the Mac's screen is, and how to get one, on a machine that isn't a Mac", () => {
-    const line = "Only a Mac has this screen. Add one from Machines: the plus, then A Mac for agents.";
-    expect(elsewhereLine(devbox, "mac", check("mac"))).toBe(line);
-    // Any other kind, and the Mac itself, keep the node's words.
-    expect(elsewhereLine(devbox, "android", check("android"))).toBeNull();
-    expect(elsewhereLine(devbox, "desktop", { host: "desktop", ready: false, detail: "desktop screens run on Linux", off: "unsupported" })).toBeNull();
-    expect(elsewhereLine({ mac: { on: false, ready: false } }, "mac", { host: "mac", ready: false, detail: "off", off: "off", on: false })).toBeNull();
-    expect(elsewhereLine(devbox, "mac", undefined)).toBeNull();
+  it("says a kind an older node turned off in its node.json comes on with its update", () => {
+    const hosts = [{ host: "android", ready: false, detail: "Android screens are off in node.json", off: "off" }];
+    expect(needsLines({ ...devbox, hosts })).toEqual([{ host: "android", label: "Android", line: "Off until devbox’s fleetd is updated.", fix: null }]);
   });
-});
 
-describe("a kind that can't run", () => {
-  it("comes with the command that fixes it, only where something is missing or failed", () => {
-    const missing = { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", on: true, fix: "sudo apt-get install -y xvfb" } as const;
-    expect(fixOf(devbox, missing)).toBe("sudo apt-get install -y xvfb");
-    expect(fixOf(devbox, { ...missing, off: "failed" })).toBe("sudo apt-get install -y xvfb");
-    // Off, installing, restarting or unsupported: the switch or the wait is the answer, not a command.
-    expect(fixOf(devbox, { ...missing, off: "off" })).toBeNull();
-    expect(fixOf(devbox, { ...missing, off: "installing" })).toBeNull();
-    expect(fixOf(devbox, { ...missing, off: "unsupported" })).toBeNull();
-    expect(fixOf(devbox, { ...missing, ready: true })).toBeNull();
-    expect(fixOf({ ...devbox, online: false }, missing)).toBeNull();
-    // A node before fixes says none.
-    expect(fixOf(devbox, { host: "desktop", ready: false, detail: "no Xvfb", off: "missing" })).toBeNull();
+  it("says only of its own screen on the agents' Mac, whatever an older node of it reports", () => {
+    const hosts = [
+      { host: "browser", ready: false, detail: "Installing the browser failed", off: "failed" },
+      { host: "mac", ready: false, detail: "the Mac's screen is locked: unlock it at the Mac", off: "missing", fix: "open 'x-apple.systempreferences:…'" },
+    ];
+    expect(needsLines({ ...devbox, mac: { on: true, ready: false }, hosts })).toEqual([
+      { host: "mac", label: "Agents’ Mac", line: "The Mac's screen is locked: unlock it at the Mac.", fix: "open 'x-apple.systempreferences:…'" },
+    ]);
+  });
+
+  it("says nothing while the machine is offline", () => {
+    expect(needsLines({ ...devbox, online: false, hosts: [{ host: "desktop", ready: false, detail: "no Xvfb", off: "missing" }] })).toEqual([]);
   });
 });
 

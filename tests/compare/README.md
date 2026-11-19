@@ -80,7 +80,7 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   `machine_remove`), each only on what the run made: what the target seeded, the phone, the invited person and invite,
   and a spare device key (`areas-spare`: `key` makes the same person more than one), never the caller or the key it
   calls with. A write a machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is
-  known, `machine_screens_set`, `lead_start`, `project_files`, `project_signins_forget`, and `claude_subscription_set`
+  known, `lead_start`, `project_files`, `project_signins_forget`, and `claude_subscription_set`
   and `onepassword_set` with a real sealed box, whose answer may be the hub's failed "No machine took it.") is called
   on the machine the reads turn up and may answer `machine_offline`, or is skipped when there is none; `skill_install`
   is called on a source at a host that never resolves, and must refuse the fetch (`failed` or `invalid`);

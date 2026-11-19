@@ -31,7 +31,6 @@ export const CAP_BROWSER = "browser";
 export const CAP_SESSION_HOST = "session_host";
 export const CAP_SESSION_END = "session_end";
 export const CAP_SESSION_SEAL = "session_seal";
-export const CAP_SCREEN_SETTINGS = "screen_settings";
 export const CAP_PROJECT_SIGNINS = "project_signins";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
@@ -115,8 +114,6 @@ export type MacCallFrame = { id: string; caller: MacCaller; sealed: string; scre
 export type SessionHostResult = { id: string; frame: BrowserResultFrame };
 export type MacResultFrame = { id: string; sealed?: string; error?: McpToolError };
 
-/** `ScreenSettings`: what node_action `screens` changes in a node's node.json. */
-export type ScreenSettings = { host?: SessionHost; on?: boolean };
 
 /** The tagged frames, as they go on the link. */
 export type HubToNodeFrame =

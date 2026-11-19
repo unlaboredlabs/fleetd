@@ -36,11 +36,8 @@ import { commandLine, type DeviceCall, type DeviceDone, isHostKey, ranDone, ranO
 /** A session no tool call touched this long is ended (node.json `screenIdleMinutes`, else 30). */
 const IDLE_MINUTES = 30;
 
-/** node.json's `device`: `enabled` true opts this machine in (the first android start installs), false turns it off. */
-export type DeviceConfig = { enabled?: boolean };
-
-const enabled = (config: DeviceConfig) => config.enabled !== false && supported();
-const optedIn = (config: DeviceConfig) => config.enabled === true;
+// No switch turns them on or off (an older node.json's `device.enabled` is ignored): a Linux x86_64 machine runs
+// them, and the first android start installs the emulator wherever KVM opens.
 
 /** What the install left for the doctor between heartbeats: `<device dir>/state.json`. */
 type InstallState = { installing: boolean; failed?: string };
@@ -71,13 +68,10 @@ export const drivesDevice = (command: string) => command.includes("agent-device"
 
 const cut = (text: string) => [...text].slice(0, 500).join("");
 
-/**
- * Whether android sessions can run here, for the doctor (each heartbeat): undefined where they are off, or neither
- * installed nor opted in.
- */
-export function health(home: string, config: DeviceConfig, kvmCheck: KvmCheck = kvm): AndroidHealth | undefined {
+/** Whether android sessions can run here, for the doctor (each heartbeat): undefined where they can't (not Linux x86_64). */
+export function health(home: string, kvmCheck: KvmCheck = kvm): AndroidHealth | undefined {
+  if (!supported()) return undefined;
   const installed = findSdk(home) !== undefined && findAgentDevice(home) !== undefined;
-  if (!enabled(config) || !(installed || optedIn(config))) return undefined;
   const of = (state: AndroidHealth["state"], message: string, fix?: string): AndroidHealth => ({
     state,
     message: cut(message),
@@ -97,8 +91,8 @@ export function health(home: string, config: DeviceConfig, kvmCheck: KvmCheck = 
 }
 
 /** What the node lists at its link's hello for android sessions. */
-export function capabilities(home: string, config: DeviceConfig, kvmCheck: KvmCheck = kvm): string[] {
-  return health(home, config, kvmCheck)?.state === "ready" ? [CAP_SESSION_ANDROID] : [];
+export function capabilities(home: string, kvmCheck: KvmCheck = kvm): string[] {
+  return health(home, kvmCheck)?.state === "ready" ? [CAP_SESSION_ANDROID] : [];
 }
 
 type Install = { at: "ready"; pool: Pool } | { at: "wanted" } | { at: "installing" } | { at: "missing"; why: string };
@@ -135,7 +129,6 @@ export class Devices implements Screens {
 
   constructor(
     private readonly node: Node,
-    private readonly config: DeviceConfig,
     private readonly options: DevicesOptions = {},
   ) {
     this.kvm = options.kvm ?? kvm;
@@ -174,9 +167,9 @@ export class Devices implements Screens {
     return this.install.at === "ready" && "ok" in this.kvm();
   }
 
-  /** Whether agents get agent-device: where sessions start, or the machine is opted in (an install finishes meanwhile). */
+  /** Whether agents get agent-device: wherever KVM opens, so a session starts or the install finishes meanwhile. */
   offered(): boolean {
-    return optedIn(this.config) || this.usable();
+    return "ok" in this.kvm();
   }
 
   /** Starts installing what is missing, once. */
@@ -209,13 +202,6 @@ export class Devices implements Screens {
       );
     }
     this.readyIfInstalled();
-    if (this.install.at !== "ready" && !optedIn(this.config)) {
-      throw new ToolError(
-        "failed",
-        "This machine isn't set up for Android sessions.",
-        'say so in your result: a person opts a machine in with "device": {"enabled": true} in its node.json (fleetd docs: Android sessions)',
-      );
-    }
     // A failed install is tried again by the next session that asks.
     if (this.install.at === "missing") this.install = { at: "wanted" };
     this.beginInstall();
@@ -606,11 +592,10 @@ export class Devices implements Screens {
   }
 }
 
-/** The node's android sessions, where node.json leaves them on and the machine runs them; else undefined. */
+/** The node's android sessions, where the machine runs them (Linux x86_64); else undefined. */
 export function devices(node: Node, options?: DevicesOptions): Devices | undefined {
-  const config = (node.config.device ?? {}) as DeviceConfig;
-  if (!enabled(config)) return undefined;
-  return node.area("device.android", (n) => new Devices(n, config, options));
+  if (!supported()) return undefined;
+  return node.area("device.android", (n) => new Devices(n, options));
 }
 
 /** Chains a hub frame's handler: an android session's frame comes here, any other goes on to the one before. */
@@ -632,7 +617,6 @@ export function start(node: Node, options?: DevicesOptions): Devices | undefined
   before(node, "browser_input", (f) => ours(f) && (d.input(f as unknown as BrowserInputFrame), true));
   before(node, "browser_control", (f) => ours(f) && (d.control(f as unknown as BrowserControlFrame), true));
   node.area("items").on((thread, item) => d.item(thread, item));
-  const config = (node.config.device ?? {}) as DeviceConfig;
   const kvmCheck = options?.kvm ?? kvm;
   // An agent's claude gets agent-device's wrapper first on its PATH, pointed at its emulator, and its skill.
   node.area("launch").contribute({ env: (thread, path) => d.env(thread, path), pluginDirs: () => d.pluginDirs() });
@@ -644,7 +628,7 @@ export function start(node: Node, options?: DevicesOptions): Devices | undefined
   node.area("hb").contribute((hb) => {
     hb.steps.push(...d.stepsNow());
     hb.busy.screens = (hb.busy.screens ?? 0) + d.count();
-    const android = health(node.home, config, kvmCheck);
+    const android = health(node.home, kvmCheck);
     if (hb.load && android) (hb.load as Record<string, unknown>).android = android;
   });
   return d;
