@@ -27,7 +27,7 @@ function kit(why?: string) {
   };
   const r = new Runner(t.hub, spawn, why);
   const connect = () =>
-    t.hub.db.conn.query("INSERT INTO sandbox_providers (provider, sealed, domain, max_agents, check_json) VALUES ('e2b', x'00', NULL, 2, NULL)").run();
+    t.hub.db.conn.query("INSERT INTO sandbox_providers (provider, sealed, domain, max_agents, check_json) VALUES ('boat', x'00', NULL, 2, NULL)").run();
   return { t, r, spawned, connect };
 }
 

@@ -2,7 +2,7 @@
 // (through a gateway at a tailnet address) was saved while a computer of the team's was the only machine; the hosted
 // sandbox provider came later, and with it the runner, which joined holding no key: it stayed degraded with "agents in
 // hosted sandboxes run on a Claude account, and none reaches them", and no hosted agent could start. Here the same:
-// a computer (`devbox`, its own fleetd node in a process of its own) holds the key, then E2B's stand-in is connected,
+// a computer (`devbox`, its own fleetd node in a process of its own) holds the key, then boat.dev's stand-in is connected,
 // the runner joins, and a machine holding the key seals it to the runner (`claude_account_reseal`), endpoint and all.
 // No real claude, no network beyond loopback, and the hub never sees the key.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -28,7 +28,7 @@ import { provider } from "../../src/sandbox/providers/index.ts";
 import { RUNNER_ID } from "../../src/shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../src/shared/sealed_box.ts";
 import { seedHubDb } from "../helpers.ts";
-import { e2bStandIn, KEY } from "./stand_ins.ts";
+import { boatStandIn, KEY } from "./stand_ins.ts";
 
 setDefaultTimeout(120_000);
 
@@ -62,14 +62,14 @@ async function until<T>(what: string, f: () => T | undefined | Promise<T | undef
 }
 
 test("a hub key saved before the hosted provider reaches the runner, which comes online on it", async () => {
-  const e2b = e2bStandIn();
-  cleanups.push(() => e2b.stop());
+  const boat = boatStandIn();
+  cleanups.push(() => boat.stop());
   const home = join(tmp, "hub");
   seedHubDb(home);
   const hub = new Hub({ home, listen: { host: "127.0.0.1", port: 0 } }, HubDb.open(home), { now: () => Date.now() });
   const tools = new Registry();
   registerAll(tools);
-  // The runner's node, in this process, with E2B's stand-in (as no_machine.test.ts starts it).
+  // The runner's node, in this process, with boat.dev's stand-in (as no_machine.test.ts starts it).
   let node: RunningNode | undefined;
   let url = "";
   const spawn: Spawn = (args, stdin) => {
@@ -78,7 +78,7 @@ test("a hub key saved before the hosted provider reaches the runner, which comes
     const config = joining ? joinConfig(nodeHome, { hub: url, token: stdin!, machine: RUNNER_ID, runner: true }) : readConfig(nodeHome)!;
     if (joining) writeConfig(nodeHome, config);
     const started = startNode(nodeHome, config, joining ? stdin : undefined, false, {
-      boxes: (h, m, k) => new Boxes(h, m, k, { provider: (p, auth) => provider(p, auth, { urls: { api: e2b.url, sandbox: (box, port) => `${e2b.url}/box/${box}/${port}` }, pollMs: 5 }) }),
+      boxes: (h, m, k) => new Boxes(h, m, k, { provider: (p, auth) => provider(p, auth, { urls: { api: `${boat.url}/api/v1`, sandbox: (box, port) => `${boat.url}/box/${box}/${port}` }, pollMs: 5 }) }),
     }).then((n) => (node = n));
     return { exited: started.then((n) => n.done), kill: () => void started.then((n) => n.stop()) };
   };
@@ -133,9 +133,9 @@ test("a hub key saved before the hosted provider reaches the runner, which comes
   await call("claude_hub_api_set", { sealed: [{ machineId: "devbox", sealed }], endpoint: ENDPOINT });
   expect(accounts(hub).hubApi()!.sealedOn.map((s) => s.machineId)).toEqual(["devbox"]);
 
-  // 2. Later, the team's E2B key: the hub starts its runner, which joins holding no Claude account.
+  // 2. Later, the team's boat.dev key: the hub starts its runner, which joins holding no Claude account.
   const sealedKey = Buffer.from(seal(publicKeyOf(boxKey(hub)), new TextEncoder().encode(JSON.stringify({ key: KEY })))).toString("base64");
-  await call("sandbox_connect", { provider: "e2b", sealed: sealedKey, limit: 2 });
+  await call("sandbox_connect", { provider: "boat", sealed: sealedKey, limit: 2 });
   expect(runner(hub).running).toBe(true);
 
   // 3. With nobody saving the key again, the runner holds it, with its endpoint, and comes online on it.

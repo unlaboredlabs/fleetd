@@ -235,8 +235,7 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
   at a time on a machine. A failed build isn't tried again until one of those changes or a Rebuild.
 - **How.** A fresh box from fleetd's base image, a worktree of the base branch, the setup commands as an agent runs them
   (each within 10 minutes, the bot's variables, no order's), then its disk is checked and kept. Locally it's a VM
-  disk under `~/.fleetd/node/vm/images/`. On the hub's hosted runner it's the provider's snapshot: boat.dev saves one;
-  with E2B and Daytona there is no image yet, and agents start from the template and run setup as before.
+  disk under `~/.fleetd/node/vm/images/`. On the hub's hosted runner it's the provider's snapshot, which boat.dev saves.
 - **Size.** The image is the disk only: an agent's CPUs and memory are its bot's [Runs on](#runs-on) pick.
 - **A new agent** whose worktree has the same lockfiles starts from the image, on a disk of its own stacked over it
   (copy-on-write: it never writes into the image), and its setup doesn't run. Its brief says it started from the image.
@@ -255,30 +254,28 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
 ### Runs on {#runs-on}
 
 One pick per bot for where its agents run, each choice a real machine: provider and exact size together, as
-**Local VM · 2 vCPU / 4 GB** or **E2B · 4 vCPU / 8 GB**. Every agent of the bot gets exactly that machine, never another
+**Local VM · 2 vCPU / 4 GB** or **boat.dev · 4 vCPU / 8 GB**. Every agent of the bot gets exactly that machine, never another
 size or provider. The choices are:
 
 | Choice | Sizes |
 |---|---|
 | Local VM | 2 vCPU / 4 GB, 4 vCPU / 4 GB (what Automatic gives), 4 vCPU / 8 GB, 8 vCPU / 16 GB: those the bot's machine has the CPUs and twice the memory for. Listed only where it runs [VMs](/docs/machines#vms); while it can't now (no `/dev/kvm`, the last VM failed), each says why. Each VM counts its memory's worth of the machine's [max agents](#max-agents): an 8 vCPU / 16 GB one on a machine of 4 GiB VMs counts as 4. |
 | boat.dev | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB: its machine types. |
-| E2B | 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 8 GB: within its plans' 8 vCPUs and 8 GiB, memory a whole, even number of GiB. |
-| Daytona | 2 vCPU / 4 GB, 4 vCPU / 8 GB: within its 4 vCPUs and 8 GB. |
 
 A hosted provider is listed only once the team [connected it](/docs/machines#sandboxes); one whose key failed its last
 test says so. Hosted sandboxes take only agents on a Claude account, and so do the VMs of a machine signed in to Claude
 with its own `claude login`: on a machine where nobody's Claude account is (neither the hub's nor a person's), those
 choices say so and can't be picked. A Local VM size that takes more slots than its machine's max agents says so too,
-with the fix. E2B and Daytona fix a sandbox's size in its template, so the first agent at a new size builds a template
-of that size (a few minutes, once); boat.dev sizes each sandbox as it starts. An agent keeps the size it started at
+with the fix. boat.dev sizes each sandbox as it starts. An agent keeps the size it started at
 until it ends, a pick changed meanwhile included.
 
-**Automatic**, the default, places agents as before: the machine's own slots (in a VM of 4 vCPUs and its
-`vmMemoryGiB`), then each connected provider in order at 2 vCPU / 4 GB ([How placement picks](/docs/machines#sandboxes)).
+**Automatic**, the default, places agents where the hub's [Linux machine](/docs/machines#page) says: by default the
+machine's own slots (in a VM of 4 vCPUs and its `vmMemoryGiB`), then each connected provider in order at 2 vCPU / 4 GB
+([How placement picks](/docs/machines#sandboxes)). A bot's own pick holds whatever the Linux machine says.
 
 With a pick, the bot's agents go only there. When it is full they wait in line; when it can't be had (its provider
-disconnected, its machine's VMs off or too small), they wait and the line says why, e.g. "its bot's computer is E2B ·
-4 vCPU / 8 GB, and E2B isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's
+disconnected, its machine's VMs off or too small), they wait and the line says why, e.g. "its bot's computer is boat.dev ·
+4 vCPU / 8 GB, and boat.dev isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's
 Computer page". The pick stays shown with that reason until it is changed. A pick applies to each agent's next start;
 one already running keeps its computer. The lead isn't an agent and runs as before. Set it with `project_settings_set`
 (`computer: {kind, cpu, memGb}`, one of `project_settings_get`'s `computers`; `computerDefault: true` for Automatic).

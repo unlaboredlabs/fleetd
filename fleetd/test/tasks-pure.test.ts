@@ -99,7 +99,7 @@ describe("recovery", () => {
     const r = resume(decide(d, undefined, false, NOW, 0.5, 3));
     // In its own thread: the node sends claude what the run never got, the brief or a lead's message.
     expect([r.mode, dueIn(r), r.count]).toEqual(["resume", 60_000, 1]);
-    const again = failed({ endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at E2B: E2B's limit for this team is reached" } });
+    const again = failed({ endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at boat.dev: boat.dev's limit for this team is reached" } });
     expect(decide(again, r, false, NOW, 0.5, 3)).toEqual({ kind: "escalate", why: `${again.text}, and again after a retry` });
   });
 

@@ -402,14 +402,13 @@
   flex-basis: 100%;
   margin: 0;
 }
-/* A hosted sandbox provider's limit, "500 at once" at most; a self-hosted E2B's domain beside its key. */
+/* A hosted sandbox provider's limit, "500 at once" at most. */
 .sandboxLimit {
   width: 132px;
 }
-.domainField {
-  flex: 0 1 200px;
-  width: auto;
-  min-width: 0;
+/* What runs where's Linux machine: room for its longest, "Your machines first, then boat.dev". */
+.linuxChoice {
+  width: 260px;
 }
 /* Your name, at its row's right end: room for a full name, and no wider than a narrow window. */
 .nameField {

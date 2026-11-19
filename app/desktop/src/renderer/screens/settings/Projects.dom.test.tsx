@@ -340,24 +340,24 @@ describe("Settings → Bots", () => {
   });
 
   it("Runs on is one pick, each a real machine with its exact size; a pick that can't be had says why; none when nothing to pick", async () => {
-    const e2b = { kind: "e2b", cpu: 4, memGb: 8 };
+    const boat = { kind: "boat", cpu: 4, memGb: 8 };
     answers = [
       {
         ...settings,
-        computer: e2b,
+        computer: boat,
         computers: [
           { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
-          { ...e2b, label: "E2B · 4 vCPU / 8 GB", unavailable: "E2B isn't connected: an admin connects it in Settings › Hub › Machines" },
+          { ...boat, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
         ],
       },
     ];
     await render();
     const row = document.querySelector<HTMLElement>('section[aria-label="Runs on"]');
     if (row === null) throw new Error("no Runs on row");
-    expect(row.dataset.computer).toBe("e2b:4:8");
-    expect(row.querySelector('[role="combobox"]')?.textContent).toContain("E2B · 4 vCPU / 8 GB");
+    expect(row.dataset.computer).toBe("boat:4:8");
+    expect(row.querySelector('[role="combobox"]')?.textContent).toContain("boat.dev · 4 vCPU / 8 GB");
     // Its agents wait for it, and the row says why; no small/medium/large anywhere.
-    expect(row.textContent).toContain("Its agents wait: E2B isn't connected: an admin connects it in Settings › Hub › Machines.");
+    expect(row.textContent).toContain("Its agents wait: boat.dev isn't connected: an admin connects it in Settings › Hub › Machines.");
     expect(row.textContent).not.toMatch(/small|medium|large/i);
   });
 

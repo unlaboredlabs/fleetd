@@ -1,11 +1,10 @@
-// Settings › Machines › a provider, for admins (machines.ts): one provider the team connects with its own key (E2B,
-// boat.dev, Daytona). Not connected, its API key in a secure field (and E2B a self-hosted domain), sealed here
-// to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
+// Settings › Machines › a provider, for admins (machines.ts): one provider the team connects with its own key
+// (boat.dev). Not connected, its API key in a secure field, sealed here to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
 import { useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import type { SandboxState } from "../../../desktop/src/shared/contracts";
 import { useHub, type SettingsProps } from "../hubContext";
-import { canWords, limitChoices, limitWords, providerFooter, providerName, providersOf, specOf, takesDomain, type ProviderState } from "../machines";
+import { canWords, limitChoices, limitWords, providerFooter, providerName, providersOf, specOf, type ProviderState } from "../machines";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
@@ -48,7 +47,6 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
   const { session } = useHub();
   const name = providerName(p.id);
   const [key, setKey] = useState("");
-  const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState<"connect" | "test" | "limit" | "disconnect" | null>(null);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [works, setWorks] = useState(false);
@@ -74,8 +72,7 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
     if (typed === "") return;
     const sealed = sealToHub({ key: typed }, boxPubKey);
     if (sealed === null) return setProblem("The hub's key didn't come through. Try again.");
-    const d = takesDomain(p.id) ? domain.trim() : "";
-    const call = () => session.call("sandbox_connect", { provider: p.id, sealed, ...(d === "" ? {} : { domain: d }) }, CHECK_TIMEOUT_MS);
+    const call = () => session.call("sandbox_connect", { provider: p.id, sealed }, CHECK_TIMEOUT_MS);
     void run("connect", call, "Not connected").then(() => setKey(""));
   };
   const pickLimit = () => {
@@ -93,7 +90,7 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
   const disconnect = () =>
     confirmDestructive({
       title: `Disconnect ${name}?`,
-      message: `The team's ${name} key, its limit and its domain go from the hub.`,
+      message: `The team's ${name} key and its limit go from the hub.`,
       button: "Disconnect",
       onConfirm: () => void run("disconnect", () => session.call("sandbox_disconnect", { provider: p.id }), "Not disconnected"),
     });
@@ -128,24 +125,6 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
                 style={[type.body, styles.input, { color: t.label }]}
               />
             </View>
-            {takesDomain(p.id) ? (
-              <View style={styles.field}>
-                <TextInput
-                  value={domain}
-                  onChangeText={setDomain}
-                  placeholder="Domain, if self-hosted"
-                  placeholderTextColor={t.tertiary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  spellCheck={false}
-                  keyboardType="url"
-                  editable={busy === null}
-                  accessibilityLabel="Self-hosted E2B domain"
-                  selectionColor={t.accent}
-                  style={[type.body, styles.input, { color: t.label }]}
-                />
-              </View>
-            ) : null}
             <ListRow title={busy === "connect" ? "Connecting…" : "Connect"} {...(busy === null && key.trim() !== "" ? { onPress: connect } : {})} chevron={false} />
           </>
         )}

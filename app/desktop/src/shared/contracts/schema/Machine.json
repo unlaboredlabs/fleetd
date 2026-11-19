@@ -44,7 +44,7 @@
           "type": "string"
         },
         "runner": {
-          "description": "The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (E2B, boat.dev, Daytona), none on\nthe hub's machine. It is no computer of the team's. Absent on every other machine.",
+          "description": "The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (boat.dev), none on\nthe hub's machine. It is no computer of the team's. Absent on every other machine.",
           "type": "boolean"
         },
         "status": {

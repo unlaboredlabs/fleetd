@@ -90,7 +90,7 @@ const same = (a: Pick<ComputerChoice, "kind" | "cpu" | "memGb">, b: ComputerPick
 
 /**
  * Where every agent of the bot runs, as the desktop's Runs on lists it: Automatic, then each of the hub's choices in its
- * order, provider and exact size together ("E2B · 4 vCPU / 8 GB"), the pick checked. One that can't be used now says
+ * order, provider and exact size together ("boat.dev · 4 vCPU / 8 GB"), the pick checked. One that can't be used now says
  * why under it, and isn't tappable (the pick itself stays checked, saying why its agents wait). None when there is
  * nothing to pick and nothing picked, or the hub is too old to say.
  */

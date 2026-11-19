@@ -1,6 +1,7 @@
 // Settings › Machines, for admins (machines.ts), as the desktop's Hub › Machines has it (D550): the machines and how
 // each is; the providers the team connects with its own key, one list, each with what it can run, a tap opening its
-// screen (Provider.tsx: connect, its limit, Test, Disconnect); then what runs where, a row per kind, and how long
+// screen (Provider.tsx: connect, its limit, Test, Disconnect); then what runs where: Linux machine (where agents and
+// their browser and Linux desktop run; a choice once there is more than one place), Mac machine, and how long
 // recordings are kept. Network holds Tailscale, the team's tailnet for its hosted sandboxes: a tap connects it (the hub
 // answers with Tailscale's sign-in page, which opens), opens the sign-in again while it waits, or disconnects it.
 // Updates stay on Settings itself, with Restart Hub. A hub without sandbox_get lists no providers, and one without
@@ -11,11 +12,12 @@ import { ActionSheetIOS, Alert, Linking, Platform, RefreshControl, ScrollView } 
 import type { MachineRolesOutput, SandboxState, TailnetState } from "../../../desktop/src/shared/contracts";
 import { useHub, type SettingsParams } from "../hubContext";
 import {
-  agentsWhere,
-  CAPABILITY_WORDS,
   canWords,
   daysChoices,
-  KINDS,
+  LINUX,
+  linuxChoices,
+  linuxValue,
+  MAC,
   machinesRun,
   machineValue,
   NONE,
@@ -26,7 +28,6 @@ import {
   tailnetValue,
   tailnetWaiting,
   YOURS,
-  type Capability,
 } from "../machines";
 import { space, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
@@ -119,12 +120,28 @@ export function Machines() {
   };
 
   const retention = mr?.retention;
-  const kindRow = (kind: Capability) => {
-    const title = CAPABILITY_WORDS[kind];
-    if (kind === "agents") return <ListRow key={kind} title={title} value={agentsWhere(sb?.providers ?? [])} chevron={false} />;
-    const ours = mr === undefined || machinesRun(kind, mr.machines);
-    return <ListRow key={kind} title={title} value={ours ? YOURS : NONE} chevron={false} />;
+  // The hub's runner for hosted sandboxes is no machine of the team's.
+  const ours = mr === undefined || machinesRun("agents", mr.machines.filter((m) => state.machines.find((x) => x.machineId === m.machineId)?.runner !== true));
+  const current = sb?.linux ?? "ours_first";
+  const choices = linuxChoices(sb?.providers ?? [], ours, current);
+  const setLinux = () => {
+    pick(LINUX, choices.map((c) => c.label), (i) => {
+      const next = choices[i];
+      if (next === undefined || next.value === current) return;
+      void session.call("sandbox_where_set", { linux: next.value }).then((out) => {
+        if (out.ok) haptics.success();
+        else Alert.alert("Not changed", errorWords(out.error));
+        sandboxes.reload();
+      });
+    });
   };
+  const linuxRow =
+    sb !== undefined && choices.length > 1 ? (
+      <ListRow title={LINUX} value={choices.find((c) => c.value === current)?.label ?? current} onPress={setLinux} />
+    ) : (
+      <ListRow title={LINUX} value={choices[0]?.label ?? linuxValue(sb?.providers ?? [], ours)} chevron={false} />
+    );
+  const mac = mr === undefined || machinesRun("mac", mr.machines);
 
   return (
     <ScrollView
@@ -178,7 +195,8 @@ export function Machines() {
         </ListSection>
       )}
       <ListSection header="What runs where">
-        {KINDS.map(kindRow)}
+        {linuxRow}
+        <ListRow title={MAC} value={mac ? YOURS : NONE} chevron={false} />
         {retention === undefined ? null : <ListRow title="Keep Recordings For" value={`${retention.retentionDays} days`} onPress={() => setDays(retention)} />}
       </ListSection>
     </ScrollView>

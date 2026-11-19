@@ -62,7 +62,7 @@ export function byStatus(name: string, a: Answer, words: string): ProviderError 
 }
 
 export type HttpOptions = {
-  /** The provider's name in messages: "E2B". */
+  /** The provider's name in messages: "boat". */
   name: string;
   base: string;
   /** Sent on every call: the key's header. */

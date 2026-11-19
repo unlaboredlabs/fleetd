@@ -87,7 +87,7 @@ describe("canRebuild", () => {
   it("is while its machine builds images, there are commands and no build runs", () => {
     expect(canRebuild({ state: "ready", builtAt: hoursAgo(1) }, true)).toBe(true);
     expect(canRebuild({ state: "failed" }, true)).toBe(true);
-    expect(canRebuild({ state: "none", where: "e2b" }, true)).toBe(true);
+    expect(canRebuild({ state: "none", where: "boat" }, true)).toBe(true);
     expect(canRebuild({ state: "building" }, true)).toBe(false);
     expect(canRebuild({ state: "none", where: "vm" }, false)).toBe(false);
     // A machine that builds no images: nothing to rebuild.
@@ -107,22 +107,22 @@ describe("touchesComputer", () => {
 describe("Runs on", () => {
   const choices = [
     { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
-    { kind: "e2b", cpu: 4, memGb: 8, label: "E2B · 4 vCPU / 8 GB" },
-    { kind: "daytona", cpu: 4, memGb: 8, label: "Daytona · 4 vCPU / 8 GB", unavailable: "Daytona isn't connected: an admin connects it in Settings › Hub › Machines" },
+    { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB" },
+    { kind: "boat", cpu: 8, memGb: 16, label: "boat.dev · 8 vCPU / 16 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
   ];
 
   it("is Automatic, then each real machine in the hub's order, provider and size together, the pick checked", () => {
-    const rows = runsOnRows({ computer: { kind: "e2b", cpu: 4, memGb: 8 }, computers: choices });
+    const rows = runsOnRows({ computer: { kind: "boat", cpu: 4, memGb: 8 }, computers: choices });
     expect(rows.map((r) => [r.title, r.selected])).toEqual([
       ["Automatic", false],
       ["Local VM · 2 vCPU / 4 GB", false],
-      ["E2B · 4 vCPU / 8 GB", true],
-      ["Daytona · 4 vCPU / 8 GB", false],
+      ["boat.dev · 4 vCPU / 8 GB", true],
+      ["boat.dev · 8 vCPU / 16 GB", false],
     ]);
     expect(rows[0]!.pick).toBeNull();
-    expect(rows[2]!.pick).toEqual({ kind: "e2b", cpu: 4, memGb: 8 });
+    expect(rows[2]!.pick).toEqual({ kind: "boat", cpu: 4, memGb: 8 });
     // One that can't be used now says why, never only greyed out.
-    expect(rows[3]!.why).toBe("Daytona isn't connected: an admin connects it in Settings › Hub › Machines");
+    expect(rows[3]!.why).toBe("boat.dev isn't connected: an admin connects it in Settings › Hub › Machines");
     expect(rows.some((r) => /small|medium|large/i.test(r.title))).toBe(false);
   });
 

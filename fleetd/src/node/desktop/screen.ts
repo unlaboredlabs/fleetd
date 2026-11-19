@@ -84,6 +84,8 @@ export type Launched = { pid: number; exited?: { code: number | null; output: st
 
 /** What a session was lent to put its screen on: a display of its own, thrown away by `drop`, or the Mac's lease. */
 export interface Lent {
+  /** It runs in the agent's own box (../place/box_screens.ts), so what it launches runs beside the agent's files. */
+  readonly inBox?: boolean;
   /** Starts an app on the screen with `sh -c`, in `cwd` where the screen's apps can see it, and looks at it a moment
    * later. */
   launch(command: string, cwd: string): Promise<Launched>;

@@ -88,8 +88,6 @@ export function imageLine(image: ComputerImage | undefined, commands: number, no
 const WHERE: Partial<Record<string, string>> = {
   vm: "a local VM image",
   boat: "a boat.dev snapshot",
-  e2b: "an E2B snapshot",
-  daytona: "a Daytona snapshot",
 };
 
 /** Where the image is kept, for the row's hover: "a local VM image". */

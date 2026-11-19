@@ -1,11 +1,11 @@
 // The provider interface's shared types and constants (index.ts says what it is), apart so the clients can import them.
 import type { Duplex } from "./stream.ts";
 
-export type ProviderId = "boat" | "e2b" | "daytona";
-export const PROVIDERS: readonly ProviderId[] = ["boat", "e2b", "daytona"];
+export type ProviderId = "boat";
+export const PROVIDERS: readonly ProviderId[] = ["boat"];
 
-/** The team's key; `domain` is E2B's only (a self-hosted E2B, `E2B_DOMAIN`), the others ignore it. */
-export type ProviderAuth = { key: string; domain?: string };
+/** The team's key. */
+export type ProviderAuth = { key: string };
 
 /** The label every box fleetd creates carries, and the one `list` keeps. */
 export const LABEL = "fleetd";
@@ -27,8 +27,7 @@ export type ComputerKind = "vm" | ProviderId;
 /**
  * The exact sizes each kind of computer comes in, smallest first: what a bot may pick for its agents, and the only
  * sizes a computer is made at (never rounded to a nearest one). boat's are its machine types (docs.boat.dev/machines).
- * E2B and Daytona fix a box's size in its template or snapshot, which fleetd builds once per size: E2B's within its
- * plans' 8 vCPUs and 8 GiB (memory a whole, even number of GiB), Daytona's within its 4 vCPUs and 8 GB. A Local VM's
+ * A Local VM's
  * are offered where its machine has the CPUs and twice the memory (the hub's `computerChoices`), and each counts its
  * memory's worth of its machine's slots (hub/slots/board.ts slotsOf).
  */
@@ -46,15 +45,6 @@ export const SIZES: Readonly<Record<ComputerKind, readonly Size[]>> = {
     { cpu: 8, memGb: 16 },
     { cpu: 16, memGb: 32 },
   ],
-  e2b: [
-    { cpu: 2, memGb: 4 },
-    { cpu: 4, memGb: 8 },
-    { cpu: 8, memGb: 8 },
-  ],
-  daytona: [
-    { cpu: 2, memGb: 4 },
-    { cpu: 4, memGb: 8 },
-  ],
 };
 
 export const sameSize = (a: Size, b: Size) => a.cpu === b.cpu && a.memGb === b.memGb;
@@ -71,7 +61,7 @@ export function notOffered(kind: ComputerKind, size: Size, name: string = kind =
 export type Box = { id: string; labels: Record<string, string> };
 
 export type CreateOptions = {
-  /** The template (E2B), snapshot (Daytona) or saved snapshot (boat) the box starts from, as `build` named it. */
+  /** The template (a saved snapshot, on boat) the box starts from, as `build` named it. */
   template: string;
   /** Lowercase letters, digits and hyphens, 1 to 63: the same key makes no second box. */
   key: string;
@@ -79,7 +69,7 @@ export type CreateOptions = {
   labels: Record<string, string>;
   /** How long the box may live from now unless extended: the provider deletes it then. */
   lifetimeMs: number;
-  /** boat sizes at create; E2B and Daytona fix the size in the template (`build`). */
+  /** The box's size: boat sizes a box at create. */
   size?: Size;
   /** A bot's image build's box (`snapshot`): made so the provider can save it. */
   keep?: boolean;
@@ -126,7 +116,7 @@ export interface Provider {
 export type ClientOptions = {
   fetch?: typeof fetch;
   signal?: AbortSignal;
-  /** Overrides the provider's base URLs, for stand-in servers (E2B's come from `domain` otherwise). */
+  /** Overrides the provider's base URLs, for stand-in servers. */
   urls?: { api?: string; sandbox?: (id: string, port: number) => string };
   WebSocket?: typeof WebSocket;
   pollMs?: number;

@@ -175,6 +175,8 @@ import m171 from "../hub/store/migrations/202611181400_chat_unsettled_held.sql" 
 import m172 from "../hub/store/migrations/202611182200_project_computer.sql" with { type: "text" };
 import m173 from "../hub/store/migrations/202611190100_revyl_removed.sql" with { type: "text" };
 import m174 from "../hub/store/migrations/202611190200_tailnet_gateway.sql" with { type: "text" };
+import m175 from "../hub/store/migrations/202611190400_sandbox_where.sql" with { type: "text" };
+import m176 from "../hub/store/migrations/202611190500_e2b_daytona_removed.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -352,4 +354,6 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611182200_project_computer", sql: m172 },
   { name: "202611190100_revyl_removed", sql: m173 },
   { name: "202611190200_tailnet_gateway", sql: m174 },
+  { name: "202611190400_sandbox_where", sql: m175 },
+  { name: "202611190500_e2b_daytona_removed", sql: m176 },
 ];

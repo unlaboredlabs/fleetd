@@ -4,9 +4,9 @@
 // template adds the pinned Claude Code and the fleetd binary on top (`hosted`). That template is built in the team's
 // own provider account with the team's key (each client's `build`); fleetd publishes no image holding Claude Code.
 //
-// The recipe holds one FROM, then only RUN, ENV, WORKDIR and USER, so it builds with no context files on each
-// provider: E2B's build API takes those as steps, Daytona takes the Dockerfile's text, and boat (which builds no
-// images) replays them on a fresh box before saving it as a snapshot.
+// The recipe holds one FROM, then only RUN, ENV, WORKDIR and USER, so it builds with no context files on any
+// provider: boat (which builds no images) replays them on a fresh box before saving it as a snapshot, and a provider
+// with a build API would take them as its steps.
 
 export type Step = { op: "RUN" | "ENV" | "WORKDIR" | "USER"; args: string[] };
 export type Recipe = { from: string; steps: Step[] };

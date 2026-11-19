@@ -6,7 +6,6 @@
 // A Mac screen session that holds neither the Mac's lease nor an app's claim only observes: it reads the screen only
 // while a person watches it, and records no video meanwhile.
 import { rmSync } from "node:fs";
-import { hasBox, HOSTED_NO_DESKTOP_LAUNCH } from "../place/hosted.ts";
 import { inBox, VM_NO_DESKTOP_LAUNCH } from "../place/index.ts";
 import { join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
@@ -336,9 +335,9 @@ export class Session {
   private async launchApp(call: DesktopCall): Promise<DesktopDone> {
     const command = call.text;
     if (!command) throw new Error("launch needs text: the command");
-    if (hasBox(this.thread)) throw new Error(HOSTED_NO_DESKTOP_LAUNCH);
-    // A VM's agent: the display is this machine's, so what it launches would run outside the VM.
-    if (inBox(this.thread)) throw new Error(VM_NO_DESKTOP_LAUNCH);
+    // A VM's agent: the display is this machine's, so what it launches would run outside the VM. A hosted agent's
+    // display is in its box (../place/box_screens.ts), where what it launches runs with its files.
+    if (!this.lent?.inBox && inBox(this.thread)) throw new Error(VM_NO_DESKTOP_LAUNCH);
     const launched = await this.launch(command);
     if (!launched.exited) return { message: `Started \`${command}\` (pid ${launched.pid}). Take a screenshot to see its window.` };
     const { code, output } = launched.exited;

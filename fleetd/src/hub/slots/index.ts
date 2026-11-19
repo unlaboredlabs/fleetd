@@ -335,9 +335,9 @@ export class Slots {
     return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority, request.hostable === true), false]);
   }
 
-  /** The team's hosted providers' limits (hub/sandbox), in the order agents go to them. */
-  setHosted(limits: Limit[]): void {
-    this.locked((b) => [undefined, b.setHosted(limits)]);
+  /** The team's hosted providers' limits (hub/sandbox), in the order agents go to them, and its Linux machine. */
+  setHosted(limits: Limit[], linux?: string): void {
+    this.locked((b) => [undefined, b.setHosted(limits, linux)]);
   }
 
   /** Where the holder's slot runs: LOCAL or a hosted provider; undefined while it holds none. */

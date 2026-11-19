@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// The hosted sandbox providers in Hub › Machines' Providers, a row each in the order agents go to them, each saying it
-// runs agents; Connect opens a sealed key field (and for E2B a domain) whose key goes to main only, never shown again;
-// once connected, the limit and a menu with Test and Disconnect. While no machine places agents there yet the section
-// says so. What runs where's Agents row says the order the connected ones make. A hub too old for sandbox_get shows none of them.
+// The hosted sandbox provider in Hub › Machines' Providers (boat.dev), saying what it runs; Connect opens a sealed key
+// field whose key goes to main only, never shown again; once connected, the limit and a menu with Test and Disconnect.
+// While no machine places agents there yet the section says so. What runs where is two rows: Linux machine, a pick once
+// there is more than one place, and Mac machine. A hub too old for sandbox_get shows no provider.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -21,12 +21,12 @@ vi.hoisted(() => {
 
 const AT = "2026-11-17T10:00:00.000Z";
 const BOX = `${"A".repeat(43)}=`;
-const KEY = "e2b_0123456789abcdef";
+const KEY = "boat_0123456789abcdef";
 
 const offRow = (provider: string): SandboxProviderState => ({ provider, connected: false, limit: 0 });
-const off: SandboxState = { boxPubKey: BOX, placing: false, providers: [offRow("e2b"), offRow("boat"), offRow("daytona")] };
+const off: SandboxState = { boxPubKey: BOX, placing: false, providers: [offRow("boat")] };
 const withRow = (s: SandboxState, row: SandboxProviderState): SandboxState => ({ ...s, providers: s.providers.map((p) => (p.provider === row.provider ? row : p)) });
-const e2bOn = withRow(off, { provider: "e2b", connected: true, limit: 5, check: { ok: true, at: AT } });
+const boatOn = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: true, at: AT } });
 
 let host: HTMLDivElement;
 let root: Root;
@@ -42,13 +42,13 @@ beforeEach(() => {
   calls = [];
   sealed = [];
   state = off;
-  testAnswer = e2bOn;
+  testAnswer = boatOn;
   (globalThis as { fleetd?: unknown }).fleetd = {
     platform: "linux",
     secret: {
       sandboxKey: (_hub: string, request: SandboxKeyRequest) => {
         sealed.push(request);
-        state = withRow(off, { provider: request.provider, connected: true, limit: 5, ...(request.domain ? { domain: request.domain } : {}), check: { ok: true, at: AT } });
+        state = withRow(off, { provider: request.provider, connected: true, limit: 5, check: { ok: true, at: AT } });
         return Promise.resolve({ ok: true, output: state });
       },
     },
@@ -142,72 +142,71 @@ const typeInto = async (label: string, text: string) => {
   });
 };
 
-it("lists the providers in the order agents go to them, each its name, what it runs and Connect, and says none runs agents yet", async () => {
+const where = (kind: string) => host.querySelector<HTMLElement>(`[data-where-kind='${kind}']`);
+
+it("lists boat.dev with what it runs and Connect, and says none runs agents yet", async () => {
   await render();
   const rows = [...host.querySelectorAll<HTMLElement>("[data-sandbox]")].map((r) => r.getAttribute("data-sandbox"));
-  expect(rows).toEqual(["e2b", "boat", "daytona"]);
-  expect(row("boat")?.textContent).toContain("boat.devAgents");
-  expect(host.querySelector("[data-where-kind='agents'] [data-where-value]")?.textContent).toBe("Your machines");
-  for (const p of ["e2b", "boat", "daytona"]) {
-    expect(row(p)?.querySelector("[role='alert'], [role='status']:not(:empty)")).toBeNull();
-    expect(row(p)?.querySelector("[data-mark='off']")).not.toBeNull();
-    expect(button("Connect", within(row(p)))).toBeDefined();
-  }
+  expect(rows).toEqual(["boat"]);
+  expect(row("boat")?.textContent).toContain("boat.devAgents · Browser · Linux desktop");
+  expect(row("boat")?.querySelector("[role='alert'], [role='status']:not(:empty)")).toBeNull();
+  expect(row("boat")?.querySelector("[data-mark='off']")).not.toBeNull();
+  expect(button("Connect", within(row("boat")))).toBeDefined();
   expect(host.textContent).toContain("Agents don't run in hosted sandboxes yet");
 });
 
-it("connects E2B through a sealed field with its self-hosted domain, which go to main only, then says it works", async () => {
+it("connects boat.dev through a sealed field whose key goes to main only, then says it works", async () => {
   await render();
-  await click(button("Connect", within(row("e2b"))));
-  expect(host.querySelector("input[aria-label='E2B API key']")?.hasAttribute("data-secret")).toBe(true);
-  expect(host.querySelector("input[aria-label='Self-hosted E2B domain']")).not.toBeNull();
-  expect(button("Connect", within(row("e2b")))?.disabled).toBe(true);
-  await typeInto("E2B API key", `  ${KEY}\n`);
-  await typeInto("Self-hosted E2B domain", " e2b.example.com ");
-  await click(button("Connect", within(row("e2b"))));
-  expect(sealed).toEqual([{ boxPubKey: BOX, provider: "e2b", key: KEY, domain: "e2b.example.com" }]);
+  await click(button("Connect", within(row("boat"))));
+  expect(host.querySelector("input[aria-label='boat.dev API key']")?.hasAttribute("data-secret")).toBe(true);
+  expect(host.querySelector("input[aria-label*='domain']")).toBeNull();
+  expect(button("Connect", within(row("boat")))?.disabled).toBe(true);
+  await typeInto("boat.dev API key", `  ${KEY}\n`);
+  await click(button("Connect", within(row("boat"))));
+  expect(sealed).toEqual([{ boxPubKey: BOX, provider: "boat", key: KEY }]);
   expect(JSON.stringify(calls)).not.toContain(KEY);
   expect(host.textContent).not.toContain(KEY);
-  expect(row("e2b")?.getAttribute("data-sandbox-state")).toBe("connected");
-  expect(row("e2b")?.textContent).toContain("Works");
-  expect(row("e2b")?.querySelector("[data-mark='ready']")).not.toBeNull();
-  expect(row("e2b")?.querySelector("button[aria-haspopup='menu']")).not.toBeNull();
-});
-
-it("gives boat.dev and Daytona no domain field", async () => {
-  await render();
-  await click(button("Connect", within(row("daytona"))));
-  expect(host.querySelector("input[aria-label='Daytona API key']")).not.toBeNull();
-  expect(host.querySelector("input[aria-label='Self-hosted E2B domain']")).toBeNull();
+  expect(row("boat")?.getAttribute("data-sandbox-state")).toBe("connected");
+  expect(row("boat")?.textContent).toContain("Works");
+  expect(row("boat")?.querySelector("[data-mark='ready']")).not.toBeNull();
+  expect(row("boat")?.querySelector("button[aria-haspopup='menu']")).not.toBeNull();
 });
 
 it("says what a failed test found with its fix, and disconnects", async () => {
-  state = e2bOn;
-  testAnswer = withRow(off, { provider: "e2b", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "devbox: E2B refused the key", fix: "make a new one" } });
+  state = boatOn;
+  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "devbox: boat.dev refused the key", fix: "make a new one" } });
   await render();
-  expect(row("e2b")?.textContent).not.toContain("Works");
-  await fromMenu("e2b", "Test");
-  expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "e2b" });
-  expect(row("e2b")?.querySelector("[role='alert']")?.textContent).toBe("devbox: E2B refused the key Make a new one.");
-  expect(row("e2b")?.querySelector("[data-mark='failed']")).not.toBeNull();
-  await fromMenu("e2b", "Disconnect");
-  expect(calls.find((c) => c.tool === "sandbox_disconnect")?.input).toEqual({ provider: "e2b" });
-  expect(row("e2b")?.getAttribute("data-sandbox-state")).toBe("off");
+  expect(row("boat")?.textContent).not.toContain("Works");
+  await fromMenu("boat", "Test");
+  expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
+  expect(row("boat")?.querySelector("[role='alert']")?.textContent).toBe("devbox: boat.dev refused the key Make a new one.");
+  expect(row("boat")?.querySelector("[data-mark='failed']")).not.toBeNull();
+  await fromMenu("boat", "Disconnect");
+  expect(calls.find((c) => c.tool === "sandbox_disconnect")?.input).toEqual({ provider: "boat" });
+  expect(row("boat")?.getAttribute("data-sandbox-state")).toBe("off");
 });
 
-it("shows the limit of each connected one, and the order agents go to them in What runs where", async () => {
-  state = withRow(e2bOn, { provider: "daytona", connected: true, limit: 20 });
+it("What runs where is two rows: the Linux machine a pick once boat.dev is connected, the Mac machine a value", async () => {
   await render();
-  expect(host.querySelector("[data-where-kind='agents'] [data-where-value]")?.textContent).toBe("Your machines first, then E2B, then Daytona");
-  expect(row("e2b")?.querySelector("button[role='combobox']")?.textContent).toContain("5 at once");
-  expect(row("daytona")?.querySelector("button[role='combobox']")?.textContent).toContain("20 at once");
-  expect(row("boat")?.querySelector("button[role='combobox']")).toBeNull();
+  // Your machines alone: nothing to choose.
+  expect(where("linux")?.querySelector("[data-where-value]")?.textContent).toBe("Your machines");
+  expect(where("linux")?.querySelector("button[role='combobox']")).toBeNull();
+  expect(where("mac")?.querySelector("[data-where-value]")?.textContent).toBe("Your machines");
+  expect(host.querySelectorAll("[data-where-kind]").length).toBe(2);
+  act(() => root.unmount());
+  root = createRoot(host);
+  state = { ...withRow(off, { provider: "boat", connected: true, limit: 20 }), linux: "boat" };
+  await render();
+  expect(row("boat")?.querySelector("button[role='combobox']")?.textContent).toContain("20 at once");
+  expect(where("linux")?.querySelector("button[role='combobox']")?.textContent).toContain("boat.dev only");
+  // No explaining line under it at rest.
+  expect((where("linux")?.textContent ?? "").replace("Linux machine", "").replace("boat.dev only", "").trim()).toBe("");
 });
 
-it("shows no sandbox provider on a hub too old for them, and agents on your machines", async () => {
+it("shows no sandbox provider on a hub too old for them, and the Linux machine as your machines", async () => {
   state = { code: "not_found", message: "unknown tool sandbox_get" };
   await render();
-  expect(host.querySelector("[data-where-kind='agents'] [data-where-value]")?.textContent).toBe("Your machines");
+  expect(where("linux")?.querySelector("[data-where-value]")?.textContent).toBe("Your machines");
   expect(host.querySelector("[data-sandbox]")).toBeNull();
   expect(host.querySelector("[role='alert']")).toBeNull();
 });

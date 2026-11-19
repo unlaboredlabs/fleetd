@@ -1,12 +1,12 @@
 // A bot's computer image in a hosted provider (src/node/place/hosted.ts buildSnapshot), against boat's stand-in server,
 // its boxes running here: the build box runs setup, is saved as a snapshot named for the bot and its key, and goes; a
 // session placed in boat starts from the snapshot without running setup; a new image removes the old snapshot; one whose
-// snapshot is gone starts from the template and runs the setup it skipped. A provider that saves no snapshots (E2B,
-// Daytona for now) gives its bots no image: a clean start plus setup.
+// snapshot is gone starts from the template and runs the setup it skipped. A provider that saved no snapshots would give
+// its bots no image: a clean start plus setup.
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { boatStandIn, e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
+import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
@@ -38,7 +38,7 @@ function sh(cwd: string, cmd: string): string {
   return r.stdout.toString().trim();
 }
 
-async function world(id: ProviderId, makingMs?: number) {
+async function world(id: ProviderId, makingMs?: number, snapshots = true) {
   const base = mkdtempSync(join(tmp, "t-"));
   const home = join(base, "node");
   const HOME = join(base, "home");
@@ -48,12 +48,15 @@ async function world(id: ProviderId, makingMs?: number) {
   sh(base, `git init -q -b main ${repo} && cd ${repo} && echo v1 > bun.lock && git add -A && git commit -qm one`);
   const local = localRunner(join(base, "boxes"), BOX_DIR);
   cleanup = local.cleanup;
-  const s = id === "boat" ? boatStandIn(local.runner) : e2bStandIn(local.runner);
+  const s = boatStandIn(local.runner);
   server = s;
   local.track(s);
-  const api = id === "boat" ? `${s.url}/api/v1` : s.url;
+  const api = `${s.url}/api/v1`;
   const boxes = new Boxes(home, "devbox", { open: (b) => b }, {
-    provider: (p, auth) => provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
+    provider: (p, auth) => {
+      const c = provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 });
+      return snapshots ? c : { ...c, snapshot: undefined, forget: undefined };
+    },
     source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
     ...(makingMs !== undefined ? { makingMs } : {}),
   });
@@ -165,10 +168,10 @@ test("boat: the sweep of boxes no session holds leaves a build's box alone until
 }, 60_000);
 
 test("a provider that saves no snapshots gives its bots no image: they start clean and run setup", async () => {
-  const w = await world("e2b");
-  expect(hostedBackend(w.home, "e2b", w.HOME)).toBeUndefined();
+  const w = await world("boat", undefined, false);
+  expect(hostedBackend(w.home, "boat", w.HOME)).toBeUndefined();
   expect(w.images.status("p1", { commands: ["echo"] })).toEqual({ state: "none" });
-  expect(w.images.use("p1", { commands: ["echo"] }, w.repo, "s3", "e2b")).toBeUndefined();
+  expect(w.images.use("p1", { commands: ["echo"] }, w.repo, "s3", "boat")).toBeUndefined();
   expect(existsSync(join(w.home, "vm", "images"))).toBe(false);
   expect(snapshotName("P_1", "a".repeat(64))).toBe("fleetd-p-1-aaaaaaaaaaaa");
 });

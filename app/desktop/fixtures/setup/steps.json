@@ -68,19 +68,11 @@
         {
           "links": [
             {
-              "label": "E2B › API keys",
-              "url": "https://console.e2b.dev/?tab=keys"
-            },
-            {
               "label": "boat.dev › API keys",
               "url": "https://docs.boat.dev/api-keys"
-            },
-            {
-              "label": "Daytona › API keys",
-              "url": "https://app.daytona.io/dashboard/keys"
             }
           ],
-          "note": "Make an API key at one provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, billed to your account while it runs. For a self-hosted E2B, give its domain too.",
+          "note": "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, with its browser and Linux desktop, billed to your account while it runs.",
           "title": "Or hosted sandboxes",
           "values": [
             {
@@ -114,7 +106,7 @@
           "label": "hosted sandboxes"
         }
       ],
-      "why": "A computer of yours, or sandboxes at E2B, boat.dev or Daytona on your own account."
+      "why": "A computer of yours, or sandboxes at boat.dev on your own account."
     },
     {
       "fields": [],

@@ -1,18 +1,19 @@
-// The team's own hosted sandbox accounts (W688): per provider (E2B, boat.dev, Daytona) an API key, which an admin's
-// app seals to the hub's box key and the hub keeps sealed under the vault's root key as it keeps a vault item (table
-// `sandbox_providers`); for E2B an optional domain (a self-hosted E2B); and a limit, how many of the team's agents may
-// run there at once. The key never leaves in the clear: a machine of the team's that creates agents' sandboxes gets it
+// The team's own hosted sandbox accounts (W688): per provider (boat.dev; shared/sandbox.ts REMOVED says which went and
+// why) an API key, which an admin's app seals to the hub's box key and the hub keeps sealed under the vault's root key
+// as it keeps a vault item (table `sandbox_providers`, whose `domain` column, a self-hosted E2B's, is no longer used);
+// and a limit, how many of the team's agents may run there at once. The key never leaves in the clear: a machine of the team's that creates agents' sandboxes gets it
 // sealed to its own box key (`sealedTo`) for a check of it (`test`), never into an agent's session. The hub knows no
 // provider's API: the node's client asks. Every use is logged, without the key.
 //
-// Placement is by count alone: a machine's own slots first, then the connected providers in ORDER up to each
-// one's limit, then the queue. The limits reach the team's machines (`sandbox_limits`), whose nodes report what they
+// Placement is by count alone, where What runs where's Linux machine says (`linux`): by default a machine's own slots
+// first, then the connected providers in ORDER up to each one's limit, then the queue; or the machines only; or one
+// provider only. The limits reach the team's machines (`sandbox_limits`), whose nodes report what they
 // can make boxes in (`load.sandboxes`), and the slot board (hub/slots/board.ts) counts each provider's limit across
 // all of them. With the limits each machine gets the keys, sealed to its own box key: its node makes the boxes.
-import type { KnownSandboxProvider, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
+import type { KnownSandboxProvider, LinuxPlace, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, domainOf, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf, RUNNER_ID } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf, REMOVED, RUNNER_ID } from "../../shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -32,18 +33,20 @@ export const PLACING = true;
 /** A key's envelope is bound to its provider's row, as a vault item's is to its own. */
 const binding = (provider: KnownSandboxProvider) => ({ itemId: `sandbox:${provider}`, kind: "sandbox_key", scopeKey: "hub", version: 1 });
 
-type Row = { provider: string; sealed: Uint8Array; domain: string | null; max_agents: number; check_json: string | null };
+type Row = { provider: string; sealed: Uint8Array; max_agents: number; check_json: string | null };
 
 const b64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
 
 function rows(hub: Hub): Row[] {
-  return hub.db.conn.query<Row, []>("SELECT provider, sealed, domain, max_agents, check_json FROM sandbox_providers").all();
+  return hub.db.conn.query<Row, []>("SELECT provider, sealed, max_agents, check_json FROM sandbox_providers").all();
 }
 
 const rowOf = (hub: Hub, provider: KnownSandboxProvider): Row | undefined => rows(hub).find((r) => r.provider === provider);
 
 function known(provider: string): KnownSandboxProvider {
   if (isProvider(provider)) return provider;
+  const gone = REMOVED[provider];
+  if (gone) throw new ToolError("invalid", `${gone.name} was removed from fleetd: ${gone.why}.`, `connect ${ORDER.map((p) => NAMES[p]).join(" or ")} instead`);
   throw new ToolError("invalid", `provider is ${ORDER.join(", ")}, not ${provider}.`);
 }
 
@@ -57,7 +60,26 @@ function checkOf(r: Row): SandboxCheck | undefined {
 
 export function state(hub: Hub): SandboxState {
   const removed = removedLines(hub);
-  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers: providerStates(hub), ...(removed.length > 0 ? { removed } : {}) };
+  return { boxPubKey: b64(publicKeyOf(boxKey(hub))), placing: PLACING, providers: providerStates(hub), linux: linux(hub), ...(removed.length > 0 ? { removed } : {}) };
+}
+
+/** What runs where's Linux machine as the hub keeps it; `ours_first` (every hub's before the pick) until set. A pick
+ * naming a provider stays while it is disconnected: its agents then wait, saying so, rather than run elsewhere. */
+export function linux(hub: Hub): LinuxPlace {
+  const row = hub.db.conn.query<{ value: string }, []>("SELECT value FROM sandbox_settings WHERE key = 'linux'").get();
+  return row?.value ?? "ours_first";
+}
+
+/** Sets the Linux machine: `ours_first`, `ours_only`, or a provider (that provider only), connected or not. */
+export function setLinux(hub: Hub, input: { linux: string }): SandboxState {
+  const v = input.linux;
+  if (v !== "ours_first" && v !== "ours_only" && !isProvider(v)) {
+    throw new ToolError("invalid", `linux is ours_first, ours_only or a provider (${ORDER.join(", ")}), not ${v}.`);
+  }
+  hub.db.conn.query("INSERT INTO sandbox_settings (key, value) VALUES ('linux', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(v);
+  console.info(`sandbox: the team's Linux machine is now ${v}`);
+  sendLimits(hub);
+  return state(hub);
 }
 
 /** Every provider as the hub keeps it, in ORDER: what a bot's computer choices list (projects/settings.ts). */
@@ -67,7 +89,7 @@ export function providerStates(hub: Hub): SandboxProviderState[] {
     const r = all.find((x) => x.provider === p);
     if (!r) return { provider: p, connected: false, limit: 0 };
     const check = checkOf(r);
-    return { provider: p, connected: true, limit: r.max_agents, ...(r.domain ? { domain: r.domain } : {}), ...(check ? { check } : {}) };
+    return { provider: p, connected: true, limit: r.max_agents, ...(check ? { check } : {}) };
   });
 }
 
@@ -103,14 +125,8 @@ async function rootKey(hub: Hub): Promise<{ id: string; key: Uint8Array }> {
 }
 
 /** Keeps `sealed` (`{"key": "…"}` sealed to the hub's box key) as the team's key for `provider`, then checks it. */
-export async function connect(hub: Hub, input: { provider: string; sealed: string; domain?: string; limit?: number }): Promise<SandboxState> {
+export async function connect(hub: Hub, input: { provider: string; sealed: string; limit?: number }): Promise<SandboxState> {
   const provider = known(input.provider);
-  let domain: string | null = null;
-  if (input.domain !== undefined && input.domain.trim() !== "") {
-    if (provider !== "e2b") throw new ToolError("invalid", `Only E2B takes a domain, not ${NAMES[provider]}.`);
-    domain = domainOf(input.domain);
-    if (domain === null) throw new ToolError("invalid", `${input.domain} isn't a domain.`, "give the self-hosted E2B's domain, such as e2b.example.com, or none for E2B's own");
-  }
   const limit = input.limit === undefined ? (rowOf(hub, provider)?.max_agents ?? DEFAULT_LIMIT) : limitOf(input.limit);
   const bytes = openRawToHub(hub, input.sealed);
   let key: string;
@@ -129,10 +145,10 @@ export async function connect(hub: Hub, input: { provider: string; sealed: strin
   const boxed = sealItem(root.key, root.id, binding(provider), new TextEncoder().encode(key));
   hub.db.conn
     .query(
-      `INSERT INTO sandbox_providers (provider, sealed, domain, max_agents, check_json) VALUES (?1, ?2, ?3, ?4, NULL)
-       ON CONFLICT (provider) DO UPDATE SET sealed = excluded.sealed, domain = excluded.domain, max_agents = excluded.max_agents, check_json = NULL`,
+      `INSERT INTO sandbox_providers (provider, sealed, domain, max_agents, check_json) VALUES (?1, ?2, NULL, ?3, NULL)
+       ON CONFLICT (provider) DO UPDATE SET sealed = excluded.sealed, domain = NULL, max_agents = excluded.max_agents, check_json = NULL`,
     )
-    .run(provider, boxed, domain, limit);
+    .run(provider, boxed, limit);
   console.info(`sandbox: the team's ${NAMES[provider]} key was connected`);
   sendLimits(hub);
   return test(hub, provider);
@@ -148,7 +164,7 @@ export function setLimit(hub: Hub, input: { provider: string; limit: number }): 
   return state(hub);
 }
 
-/** Removes the provider's key, domain and limit. */
+/** Removes the provider's key and limit. */
 export function disconnect(hub: Hub, input: { provider: string }): SandboxState {
   const provider = known(input.provider);
   hub.db.conn.query("DELETE FROM sandbox_providers WHERE provider = ?1").run(provider);
@@ -177,14 +193,13 @@ async function keyOf(hub: Hub, provider: KnownSandboxProvider, why: string): Pro
   return Buffer.from(plain).toString("utf8");
 }
 
-/** `{"provider","key","domain"?}` sealed to `machineId`'s box key (base64), for a node that creates sandboxes there. */
+/** `{"provider","key"}` sealed to `machineId`'s box key (base64), for a node that creates sandboxes there. */
 export async function sealedTo(hub: Hub, machineId: string, provider: KnownSandboxProvider, why: string): Promise<string> {
   const to = store(hub).machineGet(machineId)?.boxPubKey;
   if (!to) throw new ToolError("failed", `${machineId} gave the hub no key to seal the team's ${NAMES[provider]} key to.`, "try again once its node links again");
   const key = await keyOf(hub, provider, `${why} on ${machineId}`);
   if (key === undefined) throw new ToolError("failed", `No ${NAMES[provider]} key is connected.`, "an admin connects one in Settings › Hub › Machines");
-  const domain = rowOf(hub, provider)?.domain;
-  return b64(seal(Buffer.from(to, "base64"), new TextEncoder().encode(JSON.stringify({ provider, key, ...(domain ? { domain } : {}) }))));
+  return b64(seal(Buffer.from(to, "base64"), new TextEncoder().encode(JSON.stringify({ provider, key }))));
 }
 
 /** How long the hub waits for a machine's check: the check's own wait and a grace. */
@@ -247,7 +262,7 @@ export function sendLimits(hub: Hub, machineIds?: string[]): void {
   // The hub's own runner runs while a provider is connected (or a bot lives on it).
   runner(hub).sync();
   try {
-    slots(hub).setHosted(all);
+    slots(hub).setHosted(all, linux(hub));
   } catch (e) {
     console.warn(`sandbox: limits not given to the slot board: ${(e as Error).message}`);
   }

@@ -89,6 +89,7 @@ export const CARRIED = [
   "review_stalls",
   "review_tasks",
   "review_verdicts",
+  "sandbox_settings",
   "session_prompts",
   "shell_cursors",
   "sidebar_orders",

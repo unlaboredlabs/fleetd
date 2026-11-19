@@ -5,7 +5,8 @@
 // The wire protocol is spoken here directly (little-endian), only the requests the node needs: QueryExtension,
 // GetKeyboardMapping and ChangeKeyboardMapping, GetImage, QueryPointer, GetInputFocus (a round trip, for sync), XTEST
 // FakeInput and DAMAGE's QueryVersion, Create and Subtract.
-import { connect as netConnect, type Socket } from "node:net";
+import { connect as netConnect } from "node:net";
+import type { Duplex } from "node:stream";
 import { jpeg, type Raw, type Screen } from "./screen.ts";
 
 const NO_SYMBOL = 0;
@@ -61,7 +62,7 @@ class Wire {
   onEvent: (event: Buffer) => void = () => {};
 
   constructor(
-    private readonly socket: Socket,
+    private readonly socket: Duplex,
     rest: Buffer,
   ) {
     if (rest.length) queueMicrotask(() => this.data(rest));
@@ -172,7 +173,7 @@ type Setup = {
 };
 
 /** Reads the server's answer to setup off the socket. */
-function readSetup(socket: Socket): Promise<{ setup: Setup; rest: Buffer }> {
+function readSetup(socket: Duplex): Promise<{ setup: Setup; rest: Buffer }> {
   return new Promise((resolve, reject) => {
     let buf = Buffer.alloc(0);
     const fail = (e: Error) => (cleanup(), reject(e));
@@ -216,7 +217,7 @@ function readSetup(socket: Socket): Promise<{ setup: Setup; rest: Buffer }> {
   });
 }
 
-function connectSocket(path: string): Promise<Socket> {
+function connectSocket(path: string): Promise<Duplex> {
   return new Promise((resolve, reject) => {
     const socket = netConnect(path);
     socket.once("connect", () => {
@@ -243,9 +244,10 @@ export class X implements Screen {
     wire.onEvent = (event) => this.event(event);
   }
 
-  /** Connects to the X server at `socket`, authorized by its MIT cookie. */
-  static async connect(socket: string, cookie: Uint8Array): Promise<X> {
-    const s = await connectSocket(socket);
+  /** Connects to the X server at `socket` (its socket file, or a stream to it: a display in an agent's box,
+   * ../place/box_screens.ts), authorized by its MIT cookie. */
+  static async connect(socket: string | (() => Promise<Duplex>), cookie: Uint8Array): Promise<X> {
+    const s = typeof socket === "string" ? await connectSocket(socket) : await socket();
     try {
       s.write(setupRequest(cookie));
       const { setup, rest } = await readSetup(s);

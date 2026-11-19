@@ -21,7 +21,7 @@ bot's lead. The one step still to do is open; each one done keeps a line saying 
    **A computer**: copy the line shown and paste it in a terminal on a Mac or Linux computer; it installs fleetd and
    joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out. If
    Claude isn't logged in on that computer, **Log in to Claude** opens Claude's sign-in page; paste the code it shows.
-   **Hosted sandboxes**: **Connect** beside E2B, boat.dev or Daytona and paste an API key of your own account there
+   **Hosted sandboxes**: **Connect** beside boat.dev and paste an API key of your own account there
    ([Hosted sandboxes](/docs/machines#sandboxes)); then **Connect Claude** for the account its agents run on.
 2. **Connect GitHub.** One trip to GitHub: you sign in, then choose the repositories fleetd's GitHub App may work on,
    and GitHub sends you back to the page. An organization member who can't install apps there asks an owner from

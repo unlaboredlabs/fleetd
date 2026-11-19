@@ -8,9 +8,13 @@
 // says each live session's claude runs (`places`): a box counts against its provider while it lives, held or idle
 // between turns, and a run that comes back goes where its claude still is.
 //
+// What runs where's Linux machine (`setHosted`'s `linux`) narrows that: `ours_first` is the rule above, `ours_only`
+// leaves the providers out, and a provider's id leaves the machines' own slots out and the other providers too.
+//
 // A bot that picked its agents' computer (`setComputer`: a Local VM or one hosted provider, at an exact size) has its
 // agents placed there and nowhere else: while it has no room, or can't be used (VMs off, the provider disconnected),
-// they wait, saying why, rather than run elsewhere or at another size.
+// they wait, saying why, rather than run elsewhere or at another size. Its pick is the bot's own, so it holds whatever
+// the Linux machine says.
 import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import { computerLabel, type Limit, NAMES, NO_ACCOUNT_HOSTED, overCap, RUNNER_ID, vmFits, vmSlots, vmTakes } from "../../shared/sandbox.ts";
@@ -168,6 +172,8 @@ export class Board {
   private sessionsOnly: MachineId[] = [];
   /** The team's connected hosted providers' limits, in the order agents go to them. */
   private hosted_: Limit[] = [];
+  /** What runs where's Linux machine: `ours_first`, `ours_only`, or a provider's id (that provider only). */
+  private linux_ = "ours_first";
   /** Each bot's pick of its agents' computer; a bot with none is placed as above. */
   private computers: [ProjectRef, ComputerPick][] = [];
 
@@ -238,11 +244,25 @@ export class Board {
     return this.cap_;
   }
 
-  /** The team's hosted providers' limits, in the order agents go to them. Raising one starts what now fits. */
-  setHosted(limits: Limit[]): boolean {
-    const before = JSON.stringify(this.hosted_);
+  /** The team's hosted providers' limits, in the order agents go to them, and where its Linux machine is (`linux`).
+   * Raising a limit, or a pick that opens more room, starts what now fits. */
+  setHosted(limits: Limit[], linux = "ours_first"): boolean {
+    const before = JSON.stringify([this.hosted_, this.linux_]);
     this.hosted_ = limits.map((l) => ({ ...l }));
-    return JSON.stringify(this.hosted_) !== before;
+    this.linux_ = linux;
+    return JSON.stringify([this.hosted_, this.linux_]) !== before;
+  }
+
+  /** The providers the Linux machine places agents in, in order: every connected one for `ours_first`, none for
+   * `ours_only`, the one it names otherwise. */
+  private picked(): Limit[] {
+    if (this.linux_ === "ours_first") return this.hosted_;
+    return this.hosted_.filter((l) => l.provider === this.linux_);
+  }
+
+  /** Whether the Linux machine places agents on the machines' own slots: not when it names a provider only. */
+  private oursPicked(): boolean {
+    return this.linux_ === "ours_first" || this.linux_ === "ours_only";
   }
 
   hosted(): readonly Limit[] {
@@ -299,8 +319,8 @@ export class Board {
   /** The fleet cap when set, else what the machines fit together and the hosted limits any of them can use. */
   total(): number {
     if (this.cap_ !== undefined) return this.cap_;
-    const own = this.machines.reduce((n, m) => n + this.ownCap(m.machineId), 0);
-    const hosted = this.hosted_.filter((l) => this.machines.some((m) => this.canHost(m.machineId, l.provider))).reduce((n, l) => n + l.max, 0);
+    const own = this.oursPicked() ? this.machines.reduce((n, m) => n + this.ownCap(m.machineId), 0) : 0;
+    const hosted = this.picked().filter((l) => this.machines.some((m) => this.canHost(m.machineId, l.provider))).reduce((n, l) => n + l.max, 0);
     return own + hosted;
   }
 
@@ -311,7 +331,7 @@ export class Board {
 
   /** The hosted limits machine `m` can use: those of the providers its node makes boxes in. */
   private hostedCap(m: MachineId): number {
-    return this.hosted_.filter((l) => this.canHost(m, l.provider)).reduce((n, l) => n + l.max, 0);
+    return this.picked().filter((l) => this.canHost(m, l.provider)).reduce((n, l) => n + l.max, 0);
   }
 
   /** Where the node says the claim's thread runs now, if its claude or box lives. */
@@ -383,9 +403,11 @@ export class Board {
       }
       return hostedFree(at) ? at : undefined;
     }
-    if (c.place && c.place !== LOCAL && hostedFree(c.place)) return c.place;
-    if (localFree) return LOCAL;
-    return this.hosted_.find((l) => hostedFree(l.provider))?.provider;
+    // Else where the Linux machine says: where it ran last while that has room, the machine's own slots, the providers.
+    const picked = this.picked();
+    if (c.place && c.place !== LOCAL && picked.some((l) => l.provider === c.place) && hostedFree(c.place)) return c.place;
+    if (localFree && this.oursPicked()) return LOCAL;
+    return picked.find((l) => hostedFree(l.provider))?.provider;
   }
 
   /** The claim's place (LOCAL or a provider), or undefined while it holds no slot. */
@@ -564,7 +586,7 @@ export class Board {
       const takes = slots > 1 ? `, which takes ${slots} of ${name}'s slots` : "";
       return `${picked}${takes}: ${this.localUsed(m)} of ${this.ownCap(m)} in use on ${name} (${machine ? machineWhy(machine) : UNMEASURED_WHY})`;
     }
-    const provider = NAMES[at as keyof typeof NAMES] ?? at;
+    const provider = nameOf(at);
     const limit = this.hosted_.find((l) => l.provider === at);
     if (!limit) return `${picked}, and ${provider} isn't connected: an admin connects it in Settings › Hub › Machines, ${other}`;
     if (!hostable) return `${picked}, but ${NO_ACCOUNT_HOSTED}, ${other}`;
@@ -587,8 +609,9 @@ export class Board {
       case "machine": {
         const pick = this.computerOf(r);
         if (pick && !(c.threadId !== undefined && this.places(m)[c.threadId] !== undefined)) return this.pickBlocker(r, pick, m, c.hostable === true);
-        const usable = this.hosted_.filter((l) => this.canHost(m, l.provider));
-        if (m === RUNNER_ID) return runnerBlocker(this.hosted_.length > 0, usable.map((l) => `${NAMES[l.provider]} ${this.hostedUse(l.provider)} of ${l.max}`), c.hostable === true);
+        const usable = this.picked().filter((l) => this.canHost(m, l.provider));
+        if (m === RUNNER_ID) return runnerBlocker(this.picked().length > 0, usable.map((l) => `${nameOf(l.provider)} ${this.hostedUse(l.provider)} of ${l.max}`), c.hostable === true, this.linux_);
+        if (!this.oursPicked()) return providerOnlyBlocker(this.linux_, this.picked()[0], this.picked()[0] ? this.hostedUse(this.linux_) : 0, this.canHost(m, this.linux_), name, c.hostable === true);
         const why = machine ? machineWhy(machine) : UNMEASURED_WHY;
         const [held, used] = [this.localHeld(m), this.localUsed(m)];
         // A bot's bigger VMs take more than a slot each: then the slots in use say why it's full.
@@ -599,7 +622,7 @@ export class Board {
         if (usable.length === 0) return own;
         if (c.threadId !== undefined && this.places(m)[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
         if (c.hostable !== true) return `${own}; hosted sandboxes take only agents on a Claude account, not this machine's own login`;
-        return `${own}, and hosted sandboxes are full: ${usable.map((l) => `${NAMES[l.provider]} ${this.hostedUse(l.provider)} of ${l.max}`).join(", ")}`;
+        return `${own}, and hosted sandboxes are full: ${usable.map((l) => `${nameOf(l.provider)} ${this.hostedUse(l.provider)} of ${l.max}`).join(", ")}`;
       }
       case "disk":
         return `disk: no room for another agent on ${name} until the new worktrees settle or space frees`;
@@ -835,8 +858,8 @@ export class Board {
     const perMachine = this.machines.slice(0, 50).map((m) => {
       // Its own slots and what runs in them; the hosted limits are the team's, shared by every machine, so they are
       // named beside it, never added to it (the fleet's total counts each once).
-      const usable = this.hosted_.filter((l) => l.max > 0 && this.canHost(m.machineId, l.provider));
-      const shared = usable.length ? `; then the team's hosted sandboxes (${usable.map((l) => `${NAMES[l.provider]} ${l.max}`).join(", ")})` : "";
+      const usable = this.picked().filter((l) => l.max > 0 && this.canHost(m.machineId, l.provider));
+      const shared = usable.length ? `; then the team's hosted sandboxes (${usable.map((l) => `${nameOf(l.provider)} ${l.max}`).join(", ")})` : "";
       const row: MachineRow = {
         machineId: m.machineId,
         cap: machineCapOf(m),
@@ -896,10 +919,24 @@ export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoa
   return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
 }
 
+/** A provider's name where a person reads it; one this build doesn't know, by its id. */
+const nameOf = (p: string): string => NAMES[p as keyof typeof NAMES] ?? p;
+
+/** Why an agent waits on a machine while the Linux machine is `provider` only: it isn't connected, the machine can't
+ * make its boxes yet, the agent has no Claude account, or it is at its limit. */
+export function providerOnlyBlocker(provider: string, limit: Limit | undefined, used: number, canHost: boolean, machine: string, hostable: boolean): string {
+  const name = nameOf(provider);
+  if (!limit) return `the team's agents run on ${name} only, and ${name} isn't connected: an admin connects it, or picks your machines for Linux machine, in Settings › Hub › Machines`;
+  if (!hostable) return `the team's agents run on ${name} only, and ${NO_ACCOUNT_HOSTED}`;
+  if (!canHost) return `the team's agents run on ${name} only, and ${machine} can't make ${name} boxes yet: it gets the key at its next heartbeat`;
+  return `the team's agents run on ${name} only, and it is full: ${used} of ${limit.max}`;
+}
+
 /** Why an agent of a bot no computer runs (the hub's runner) waits: no provider is connected (`connected`) or ready
- * on the runner yet, it has no Claude account, or every provider is at its limit (`full`, one "E2B 3 of 3" each). */
-export function runnerBlocker(connected: boolean, full: string[], hostable: boolean): string {
-  if (!connected) return "no hosted sandbox provider is connected to run it: an admin connects E2B, boat.dev or Daytona in Settings › Hub › Machines";
+ * on the runner yet, it has no Claude account, or every provider is at its limit (`full`, one "boat.dev 3 of 3" each). */
+export function runnerBlocker(connected: boolean, full: string[], hostable: boolean, linux = "ours_first"): string {
+  if (linux === "ours_only") return "the team's agents run on its own machines only, and no computer of the team's runs this bot: an admin picks a provider for Linux machine in Settings › Hub › Machines, or connects a computer";
+  if (!connected) return "no hosted sandbox provider is connected to run it: an admin connects boat.dev in Settings › Hub › Machines";
   if (full.length === 0) return "the hosted sandbox providers aren't ready on the hub yet: it starts once they are";
   if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings";
   return `hosted sandboxes are full: ${full.join(", ")}`;

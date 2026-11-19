@@ -45,7 +45,7 @@ function bot(vms: "on" | "off" | "by choice" | "login only" = "on", account = tr
 
 test("the choices are each real machine the bot can have: its machine's Local VM sizes that fit, then each connected provider's", async () => {
   const { connect, get } = bot();
-  connect("e2b");
+  connect("boat");
   const s = await get();
   expect(s.computer).toBeUndefined();
   expect(s.computers.map((c: { label: string }) => c.label)).toEqual([
@@ -53,9 +53,10 @@ test("the choices are each real machine the bot can have: its machine's Local VM
     "Local VM · 4 vCPU / 4 GB",
     "Local VM · 4 vCPU / 8 GB",
     "Local VM · 8 vCPU / 16 GB",
-    "E2B · 2 vCPU / 4 GB",
-    "E2B · 4 vCPU / 8 GB",
-    "E2B · 8 vCPU / 8 GB",
+    "boat.dev · 2 vCPU / 4 GB",
+    "boat.dev · 4 vCPU / 8 GB",
+    "boat.dev · 8 vCPU / 16 GB",
+    "boat.dev · 16 vCPU / 32 GB",
   ]);
   expect(s.computers.every((c: { unavailable?: string }) => c.unavailable === undefined)).toBe(true);
 });
@@ -74,27 +75,27 @@ test("VMs that can't run now say why on each; VMs off by choice aren't offered; 
 
 test("a pick is one of the choices exactly, kept, and the slot board places the bot's agents by it; the default drops it", async () => {
   const { k, r, connect, get } = bot();
-  connect("e2b");
+  connect("boat");
   const before = events(k.hub).page(0).events.length;
-  const out = await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 4, memGb: 8 } });
-  expect(out.settings.computer).toEqual({ kind: "e2b", cpu: 4, memGb: 8 });
-  expect(out.next).toBe("Its agents start on E2B · 4 vCPU / 8 GB from now on; running ones keep theirs until they next start.");
-  expect(computers(k.hub.db.conn)).toEqual([[r, { kind: "e2b", cpu: 4, memGb: 8 }]]);
-  expect(events(k.hub).page(0).events.slice(before).map((e) => [e.type, e.data])).toEqual([["project.settings", { computer: { kind: "e2b", cpu: 4, memGb: 8 } }]]);
-  // A size E2B doesn't give, a provider not connected, a VM bigger than the machine: refused, never rounded.
-  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 4, memGb: 6 } })).toBe("invalid");
-  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 2, memGb: 4 } })).toBe("invalid");
+  const out = await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 4, memGb: 8 } });
+  expect(out.settings.computer).toEqual({ kind: "boat", cpu: 4, memGb: 8 });
+  expect(out.next).toBe("Its agents start on boat.dev · 4 vCPU / 8 GB from now on; running ones keep theirs until they next start.");
+  expect(computers(k.hub.db.conn)).toEqual([[r, { kind: "boat", cpu: 4, memGb: 8 }]]);
+  expect(events(k.hub).page(0).events.slice(before).map((e) => [e.type, e.data])).toEqual([["project.settings", { computer: { kind: "boat", cpu: 4, memGb: 8 } }]]);
+  // A size boat.dev doesn't give, a provider fleetd removed, a VM bigger than the machine: refused, never rounded.
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 4, memGb: 6 } })).toBe("invalid");
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 2, memGb: 4 } })).toBe("invalid");
   expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "vm", cpu: 16, memGb: 32 } })).toBe("invalid");
   expect(await k.refused(key("read"), "project_settings_set", { ...r, computer: { kind: "vm", cpu: 2, memGb: 4 } })).toBe("forbidden");
-  expect((await get()).computer).toEqual({ kind: "e2b", cpu: 4, memGb: 8 });
-  // The board has it: the bot's agent goes to E2B at that size, though the machine has room.
+  expect((await get()).computer).toEqual({ kind: "boat", cpu: 4, memGb: 8 });
+  // The board has it: the bot's agent goes to boat.dev at that size, though the machine has room.
   const grant = slots(k.hub).acquire({ holder: "T1", projectRef: r, priority: "work", hostable: true } as never);
-  // Until the board has E2B's limit and the machine its key, the agent waits for E2B, not for the machine's slots.
-  expect(grant).toEqual({ granted: false, reason: "its bot's computer is E2B · 4 vCPU / 8 GB, and E2B isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's Computer page" });
-  slots(k.hub).setHosted([{ provider: "e2b", max: 3 }]);
+  // Until the board has boat.dev's limit and the machine its key, the agent waits for boat.dev, not for the machine's slots.
+  expect(grant).toEqual({ granted: false, reason: "its bot's computer is boat.dev · 4 vCPU / 8 GB, and boat.dev isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's Computer page" });
+  slots(k.hub).setHosted([{ provider: "boat", max: 3 }]);
   expect(slots(k.hub).placeOf("T1")).toBeUndefined();
-  slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox: { kind: "microvm" }, sandboxes: ["e2b"] });
-  expect([slots(k.hub).placeOf("T1"), slots(k.hub).sizeOf("T1")]).toEqual(["e2b", { cpu: 4, memGb: 8 }]);
+  slots(k.hub).observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox: { kind: "microvm" }, sandboxes: ["boat"] });
+  expect([slots(k.hub).placeOf("T1"), slots(k.hub).sizeOf("T1")]).toEqual(["boat", { cpu: 4, memGb: 8 }]);
   // Kept with its slot: what it counts at, and starts at, after a hub restart too.
   expect(k.hub.db.all<{ size: string }>("SELECT size FROM slot_claims WHERE holder = 'T1'")[0]?.size).toBe('{"cpu":4,"memGb":8}');
   // Back to the default: nothing kept, placed as before.
@@ -106,24 +107,24 @@ test("a pick is one of the choices exactly, kept, and the slot board places the 
 
 test("a pick whose provider was disconnected stays shown, saying why, never as another size or provider", async () => {
   const { k, r, connect, get } = bot();
-  connect("daytona");
-  await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "daytona", cpu: 4, memGb: 8 } });
-  k.hub.db.conn.run("DELETE FROM sandbox_providers WHERE provider = 'daytona'");
+  connect("boat");
+  await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 4, memGb: 8 } });
+  k.hub.db.conn.run("DELETE FROM sandbox_providers WHERE provider = 'boat'");
   const s = await get();
-  expect(s.computer).toEqual({ kind: "daytona", cpu: 4, memGb: 8 });
+  expect(s.computer).toEqual({ kind: "boat", cpu: 4, memGb: 8 });
   expect(s.computers.at(-1)).toEqual({
-    kind: "daytona",
+    kind: "boat",
     cpu: 4,
     memGb: 8,
-    label: "Daytona · 4 vCPU / 8 GB",
-    unavailable: "Daytona isn't connected: an admin connects it in Settings › Hub › Machines",
+    label: "boat.dev · 4 vCPU / 8 GB",
+    unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines",
   });
-  expect(s.computers.filter((c: { kind: string }) => c.kind === "daytona")).toHaveLength(1);
+  expect(s.computers.filter((c: { kind: string }) => c.kind === "boat")).toHaveLength(1);
 });
 
 test("a bot whose agents run on its machine's own Claude login: VMs that take only accounts and hosted sandboxes say so, and can't be picked", async () => {
   const { k, r, connect, get } = bot("login only", false);
-  connect("e2b");
+  connect("boat");
   const s = await get();
   const vmWhy = "devbox's VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude";
   const hostedWhy = "hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Your accounts › Claude";
@@ -132,28 +133,29 @@ test("a bot whose agents run on its machine's own Claude login: VMs that take on
     ["Local VM · 4 vCPU / 4 GB", vmWhy],
     ["Local VM · 4 vCPU / 8 GB", vmWhy],
     ["Local VM · 8 vCPU / 16 GB", vmWhy],
-    ["E2B · 2 vCPU / 4 GB", hostedWhy],
-    ["E2B · 4 vCPU / 8 GB", hostedWhy],
-    ["E2B · 8 vCPU / 8 GB", hostedWhy],
+    ["boat.dev · 2 vCPU / 4 GB", hostedWhy],
+    ["boat.dev · 4 vCPU / 8 GB", hostedWhy],
+    ["boat.dev · 8 vCPU / 16 GB", hostedWhy],
+    ["boat.dev · 16 vCPU / 32 GB", hostedWhy],
   ]);
   expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "vm", cpu: 2, memGb: 4 } })).toBe("invalid");
-  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 2, memGb: 4 } })).toBe("invalid");
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 2, memGb: 4 } })).toBe("invalid");
   // On a machine whose VMs take every agent, its VMs are the bot's to pick; hosted ones still aren't.
   const open = bot("on", false);
-  open.connect("e2b");
+  open.connect("boat");
   const choices = (await open.get()).computers as { kind: string; unavailable?: string }[];
   expect(choices.filter((c) => c.kind === "vm").every((c) => c.unavailable === undefined)).toBe(true);
-  expect(choices.filter((c) => c.kind === "e2b").every((c) => c.unavailable === hostedWhy)).toBe(true);
+  expect(choices.filter((c) => c.kind === "boat").every((c) => c.unavailable === hostedWhy)).toBe(true);
 });
 
 test("a team whose people have their own Claude accounts, the hub none: hosted sandboxes and VMs on accounts stay the bot's to pick", async () => {
   const { k, r, connect, get } = bot("login only", false);
   new ClaudeAccountStore(k.hub.db).putSubscription("p_aaaaaaaa", { sealedOn: [{ machineId: "devbox", fingerprint: "ab12cd34" }], connectedAt: "x" } as never);
-  connect("e2b");
+  connect("boat");
   const choices = (await get()).computers as { kind: string; unavailable?: string }[];
-  expect(choices.length).toBe(7);
+  expect(choices.length).toBe(8);
   expect(choices.every((c) => c.unavailable === undefined)).toBe(true);
-  expect((await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "e2b", cpu: 2, memGb: 4 } })).settings.computer).toEqual({ kind: "e2b", cpu: 2, memGb: 4 });
+  expect((await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 2, memGb: 4 } })).settings.computer).toEqual({ kind: "boat", cpu: 2, memGb: 4 });
 });
 
 test("a Local VM size that takes more slots than its machine's limit is offered unavailable, saying how to fix it", () => {

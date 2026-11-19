@@ -1,14 +1,14 @@
-// A hosted sandbox provider's row (E2B, boat.dev, Daytona), as Providers.tsx lists every provider: a ProviderRow
-// whose Connect opens its key's sealed field (and for E2B a self-hosted domain); connected, its limit and a menu with
+// A hosted sandbox provider's row (boat.dev), as Providers.tsx lists every provider: a ProviderRow whose Connect opens
+// its key's sealed field; connected, its limit and a menu with
 // Test and Disconnect. Connecting checks the key at once, and the row says what the check found.
 import { useCallback, useState } from "react";
 import type { SandboxProviderState } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
-import { Select, Text } from "../../ui";
+import { Select } from "../../ui";
 import { useHubCall } from "./hub";
 import { ConnectKey, ProviderRow, useProviderRun } from "./Provider";
 import { canWords, specOf } from "../../../shared/providers";
-import { limitChoices, providerHint, providerLine, providerName, takesDomain, withFix } from "./sandboxModel";
+import { limitChoices, providerHint, providerLine, providerName, withFix } from "./sandboxModel";
 import s from "./settings.module.css";
 
 /** A Test asks the provider from one of the team's machines (the hub waits up to 45 seconds for one). */
@@ -39,12 +39,7 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
       connected={p.connected}
       mark={!p.connected ? "off" : failed ? "failed" : "ready"}
       line={
-        line === null
-          ? null
-          : "domain" in line
-            ? // A self-hosted E2B's domain, as it is typed: machine text, shown as such.
-              { node: <Text mono size="sm" tone="quiet">{line.text}</Text> }
-            : { node: <span role={line.tone === "danger" ? "alert" : "status"}>{withFix(line)}</span>, tone: line.tone }
+        line === null ? null : { node: <span role={line.tone === "danger" ? "alert" : "status"}>{withFix(line)}</span>, tone: line.tone }
       }
       setting={
         <Select
@@ -64,8 +59,7 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
       form={
         <ConnectKey
           name={name}
-          domain={takesDomain(p.provider)}
-          seal={(key, domain) => window.fleetd.secret.sandboxKey(hub, { boxPubKey, provider: p.provider, key, ...(domain === undefined ? {} : { domain }) })}
+          seal={(key) => window.fleetd.secret.sandboxKey(hub, { boxPubKey, provider: p.provider, key })}
           reread={reread}
           onCancel={() => setConnecting(false)}
           onDone={() => {

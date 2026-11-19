@@ -1,4 +1,4 @@
-// The hosted place (src/node/place/hosted.ts) end to end against E2B's stand-in server, its box running here as the
+// The hosted place (src/node/place/hosted.ts) end to end against boat.dev's stand-in server, its box running here as the
 // provider would run it: setup's command boots the box and runs in it, the session host starts there with a stand-in
 // claude and its lines come over the box's link, a node that lets go re-adopts it, a session on the machine's own
 // login is refused, the session's ports reach the machine though setup made the box, Claude's endpoint is the box's
@@ -8,7 +8,7 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { connect, createServer } from "node:net";
-import { e2bStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
+import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
@@ -66,14 +66,14 @@ async function setup() {
   sh(repo, `git worktree add -q -b fleetd/T1 ${cwd}`);
   const local = localRunner(join(base, "boxes"), BOX_DIR);
   cleanup = local.cleanup;
-  const s = e2bStandIn(local.runner);
+  const s = boatStandIn(local.runner);
   server = s;
   local.track(s);
   const boxes = new Boxes(home, "devbox", { open: (b) => b }, {
-    provider: (p, auth) => provider(p, auth, { urls: { api: s.url, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
+    provider: (p, auth) => provider(p, auth, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
     source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
   });
-  boxes.setKeys({ e2b: Buffer.from(JSON.stringify({ provider: "e2b", key: KEY })).toString("base64") });
+  boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
   boxes.wire({ lead: { relay: new LeadRelay(), identify: () => ({ kind: "none" }) as never, maskFor: () => new Masker([]) } });
   setBoxes(boxes);
   const env = { HOME, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, FLEETD_NODE_SOCK: join(home, "node.sock"), TMPDIR: join(home, "tmp", "s1") };
@@ -86,12 +86,12 @@ const next = async (link: { next(): Promise<RunnerEvent | undefined> }) =>
 test("setup boots the box and runs there; the session runs in it, is re-adopted, and stop deletes the box", async () => {
   const { s, home, cwd, env } = await setup();
   const dir = join(home, "hosts", "s1");
-  const place = hostedPlace("e2b", "s1", dir);
+  const place = hostedPlace("boat", "s1", dir);
   const ran = await place.run({ cwd, argv: ["sh", "-c", "echo set up > setup.txt; echo ok"], timeoutSec: 30, env, scrub: [] });
   expect(ran).toMatchObject({ exitCode: 0 });
   expect(readFileSync(join(cwd, "setup.txt"), "utf8")).toBe("set up\n");
   const record = readRecord(dir)!;
-  expect(record).toMatchObject({ kind: "hosted", provider: "e2b", session: "s1", cwd });
+  expect(record).toMatchObject({ kind: "hosted", provider: "boat", session: "s1", cwd });
   expect(s.boxes.size).toBe(1);
   // The box's create carried no secret of the session's or the box's own.
   expect(JSON.stringify([...s.boxes.values()][0].req)).not.toContain(record.secret);
@@ -153,15 +153,14 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   await stopHost(dir);
 }, 60_000);
 
-test("a session whose bot picked E2B · 4 vCPU / 8 GB gets a box of exactly that: its own template's size", async () => {
+test("a session whose bot picked boat.dev · 4 vCPU / 8 GB gets a box of exactly that: boat's type of that size", async () => {
   const { s, home, cwd, env } = await setup();
   const dir = join(home, "hosts", "s-big");
-  const place = pick({ sessionId: "s-big", dir, role: "worker", account: true, hosted: "e2b", size: { cpu: 4, memGb: 8 } });
+  const place = pick({ sessionId: "s-big", dir, role: "worker", account: true, hosted: "boat", size: { cpu: 4, memGb: 8 } });
   expect(place.kind).toBe("hosted");
   expect(await place.run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] })).toMatchObject({ exitCode: 0 });
-  const built = s.calls.filter((c) => c.method === "POST" && c.path === "/v3/templates");
-  expect(built.map((c) => [c.body.cpuCount, c.body.memoryMB])).toEqual([[4, 8192]]);
-  expect(built[0]!.body.name).toMatch(/-4c8g$/);
+  const made = s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build"));
+  expect(made.map((c) => c.body.type)).toEqual(["default"]);
   await placeAt(dir).end(dir);
   expect(s.boxes.size).toBe(0);
 });
@@ -178,7 +177,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
     if (!reaches) throw new Error("the box can't reach Claude at 100.104.249.49:8317: curl: (28) Connection timed out");
   };
   const start = (id: string) =>
-    hostedPlace("e2b", id, join(home, "hosts", id)).start({
+    hostedPlace("boat", id, join(home, "hosts", id)).start({
       fleetd: [],
       dir: join(home, "hosts", id),
       sessionId: id,
@@ -233,11 +232,11 @@ test("a box that doesn't come up sets its provider aside, and the next start the
   const cwd = join(home, "worktrees", "not-a-repo");
   mkdirSync(cwd, { recursive: true });
   const start = (id: string) =>
-    hostedPlace("e2b", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
-  const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/v2/sandboxes").length;
+    hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
+  const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;
   const first = await start("s-down1").catch((e: Error) => e);
   expect(first).toBeInstanceOf(HostedDown);
-  expect((first as Error).message).toContain("no hosted sandbox came up at E2B: ");
+  expect((first as Error).message).toContain("no hosted sandbox came up at boat.dev: ");
   // The box it made went, and so did its record; the provider is out of what the heartbeat offers the slot board.
   expect(s.boxes.size).toBe(0);
   expect(readRecord(join(home, "hosts", "s-down1"))).toBeUndefined();
@@ -249,7 +248,7 @@ test("a box that doesn't come up sets its provider aside, and the next start the
   expect((second as Error).message).toContain("left out for a few minutes");
   expect(made()).toBe(1);
   // So is setup's command, which doesn't run.
-  const ran = await hostedPlace("e2b", "s-down3", join(home, "hosts", "s-down3")).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
+  const ran = await hostedPlace("boat", "s-down3", join(home, "hosts", "s-down3")).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
   expect(ran.notRun).toContain("left out for a few minutes");
   expect(made()).toBe(1);
 }, 60_000);

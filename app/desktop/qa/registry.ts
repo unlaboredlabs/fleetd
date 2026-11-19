@@ -82,7 +82,7 @@ export const fixtures = [
   "machines-warning",
   "machines-one",
   "machines-unwell",
-  // ...the team's own hosted sandbox accounts in Machines' Sandboxes section: none yet, and two connected, one refused.
+  // ...the team's own hosted sandbox account in Machines' Sandboxes section: none yet, and connected with its key refused.
   "machines-sandboxes-off",
   "machines-sandboxes-on",
   // ...a hub that had Revyl connected before fleetd removed it: one line says so (D576).
@@ -92,6 +92,8 @@ export const fixtures = [
   "machines-tailscale-login",
   "machines-tailscale-on",
   "machines-tailscale-failed",
+  // ...and one that had E2B and Daytona connected before fleetd removed them: a line each (D576).
+  "machines-e2b-removed",
   // ...and the page as one model (W693): several machines with each one's state and load, both kinds of provider
   // connected or not, and a machine whose agents can't run in VMs, with why.
   "machines-places",
@@ -3656,7 +3658,7 @@ export const screens: readonly Screen[] = [
   // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the button at the
   // title's end.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },
-  // W721: no machine yet, the empty list holding Add machine itself (and no button at the title); E2B connected with
+  // W721: no machine yet, the empty list holding Add machine itself (and no button at the title); boat.dev connected with
   // no Claude account for its hosted agents, which the providers' notice says with Connect. Its button opens Add machine.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-none"], variant: "none" },
   {
@@ -3670,7 +3672,7 @@ export const screens: readonly Screen[] = [
     },
   },
   // W693: the page as one model, every place agents and screens run a row with its state as a dot: three machines (one
-  // busy, one logged out, one offline) with E2B and Daytona (refused) connected; one machine and nothing
+  // busy, one logged out, one offline) with boat.dev (refused) connected, so What runs where's Linux machine is a pick; one machine and nothing
   // connected; and each machine's page with where its agents run, in VMs or as processes and why.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-places", "machines-places-one"], variant: "places" },
   // ...Connect on a provider opens its key's sealed field in its row, the same for each of them.
@@ -3680,8 +3682,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-places-one"],
     variant: "places-connect",
     open: async (page) => {
-      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect" }).click();
-      await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
+      await page.locator('[data-sandbox="boat"]').getByRole("button", { name: "Connect" }).click();
+      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
     },
   },
   // W722: Tailscale, the team's tailnet for its hosted sandboxes, a named connection: Connect; waiting for the sign-in
@@ -3709,7 +3711,35 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Revyl was removed from fleetd, with the key you connected")).toBeVisible();
     },
   },
-  // W688: the team's own hosted sandbox accounts, one section on Machines: none connected, and two with a failed test.
+  // D576: a hub that had E2B and Daytona connected says so, a plain line each, and lists boat.dev alone.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-e2b-removed"],
+    variant: "e2b-removed",
+    open: async (page) => {
+      await page.locator("[data-sandboxes]").scrollIntoViewIfNeeded();
+      await expect(page.getByText("E2B was removed from fleetd, with the key you connected")).toBeVisible();
+      await expect(page.getByText("Daytona was removed from fleetd, with the key you connected")).toBeVisible();
+    },
+  },
+  // W727: What runs where is two rows; with machines and boat.dev both, Linux machine is a pick of three places.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-places"],
+    variant: "where-pick",
+    open: async (page) => {
+      const where = page.locator("[data-where]");
+      await where.scrollIntoViewIfNeeded();
+      await expect(where.locator("[data-where-kind]")).toHaveCount(2);
+      const linux = where.locator("[data-where-kind='linux']");
+      await expect(linux.getByRole("combobox", { name: "Where agents and their Linux screens run" })).toContainText("Your machines first, then boat.dev");
+      await linux.getByRole("combobox").click();
+      await expect(page.getByRole("option", { name: "boat.dev only" })).toBeVisible();
+    },
+  },
+  // W688: the team's own hosted sandbox account, one section on Machines: none connected, and one with a failed test.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
@@ -3719,15 +3749,15 @@ export const screens: readonly Screen[] = [
       await page.locator("[data-sandboxes]").scrollIntoViewIfNeeded();
     },
   },
-  // ...Connect on E2B opens its sealed key field and the self-hosted domain beside it.
+  // ...Connect on boat.dev opens its sealed key field.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
     fixtures: ["machines-sandboxes-off"],
     variant: "sandboxes-connect",
     open: async (page) => {
-      await page.locator('[data-sandbox="e2b"]').getByRole("button", { name: "Connect" }).click();
-      await page.getByRole("textbox", { name: "E2B API key" }).waitFor();
+      await page.locator('[data-sandbox="boat"]').getByRole("button", { name: "Connect" }).click();
+      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
     },
   },
   // The plus opens Add machine's ways in over the list.
@@ -4295,7 +4325,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
       const pick = row.getByRole("combobox", { name: "Runs on" });
-      await expect(pick).toContainText("E2B · 4 vCPU / 8 GB");
+      await expect(pick).toContainText("boat.dev · 4 vCPU / 8 GB");
       await row.scrollIntoViewIfNeeded();
       await pick.click();
       await expect(page.getByRole("option", { name: "boat.dev · 16 vCPU / 32 GB" })).toBeVisible();
@@ -4310,8 +4340,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["computer-runs-on-gone"],
     open: async (page) => {
       const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
-      await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("Daytona · 4 vCPU / 8 GB");
-      await expect(row).toContainText("Its agents wait: Daytona isn't connected");
+      await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("boat.dev · 8 vCPU / 16 GB");
+      await expect(row).toContainText("Its agents wait: boat.dev isn't connected");
       await row.scrollIntoViewIfNeeded();
     },
   },
