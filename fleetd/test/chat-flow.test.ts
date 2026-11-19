@@ -93,6 +93,40 @@ test("a message the lead took is announced again as delivered, stamped after its
   done();
 });
 
+test("a lead whose hosted sandbox doesn't come up says so in the chat, once a run, and the next message goes to it", async () => {
+  // A bot with no repo on hosted sandboxes: the person's message, then nothing at all (W737).
+  const { hub, call, sends, done } = withFlow();
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  const failed = {
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    threadId: "lead-1",
+    summary: "failed",
+    data: {
+      runId: "r1",
+      endCause: "failed",
+      error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: no hosted sandbox came up at boat.dev: git rev-parse failed: fatal: not a git repository (cwd /srv/x)" },
+    },
+  };
+  events(hub).append({ at: "2026-11-19T23:17:39Z", type: "thread.failed", ...failed });
+  events(hub).append({ at: "2026-11-19T23:17:40Z", type: "thread.failed", ...failed });
+  const lines = async () => (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system");
+  for (let i = 0; i < 100 && (await lines()).length === 0; i++) await Bun.sleep(10);
+  await Bun.sleep(50);
+  const said = await lines();
+  expect(said.map((m: { text: string }) => m.text)).toEqual([
+    "The lead couldn't start: no sandbox came up for it at boat.dev. Your message is kept and goes in with your next one: send a message in about 10 minutes to try again. If it keeps failing, check boat.dev in Settings › Hub › Machines.",
+  ]);
+  // In the person's words: no path, no git.
+  expect(said[0].text).not.toMatch(/\/|git/);
+  // No wake: it would fail the same way while the provider is set aside.
+  expect(sends).toEqual([]);
+  // The next message goes to the lead's session, where the node puts the kept one ahead of it.
+  await call(human, "chat_send", { projectRef: PROJECT, text: "are you there?", clientRequestId: "c2" });
+  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("are you there?")]);
+  done();
+});
+
 test("chat_send refuses an empty message, an agent's `now`, and an unknown bot", async () => {
   const { call, done } = withFlow();
   expect(call(human, "chat_send", { projectRef: PROJECT, text: "", clientRequestId: "c1" })).rejects.toThrow("text is empty");

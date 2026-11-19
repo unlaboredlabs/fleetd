@@ -11,8 +11,9 @@
 //   included, ignored ones not) from a bundle, and the worktree's own fleetd files from its git dir.
 // - `syncOut`: the box's commits and uncommitted work back into the machine's worktree, as a bundle on top of what the
 //   box started from.
+// - A bot with no repo has a plain folder, not a checkout: it goes in and comes back whole, as a tar (`PLAIN`).
 // Each piece travels over the guest's link (`BoxFs`), never through the provider's own file calls.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../../cmd/index.ts";
@@ -106,6 +107,54 @@ export async function mirror(box: BoxFs, paths: string[], root = ""): Promise<vo
   }
 }
 
+/** Host tar, throwing its output's tail when it fails. */
+async function tar(args: string[]): Promise<void> {
+  const child = Bun.spawn(["tar", ...args], { stdout: "ignore", stderr: "pipe" });
+  const [err, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+  if (code !== 0) throw new Error(`tar failed: ${err.trim().slice(-300)}`);
+}
+
+/** What `syncIn` answers for a plain folder, which `syncOut` then takes back whole: no commit is ever named so. */
+export const PLAIN = "plain";
+
+/** Whether `cwd` is in a git checkout. */
+const isCheckout = async (cwd: string) => (await tryGit(cwd, ["rev-parse", "--is-inside-work-tree"])) === "true";
+
+/** A plain folder (a bot with no repo) in the box at the same path, as it is here. */
+async function plainIn(box: BoxFs, cwd: string, session: string, root: string): Promise<string> {
+  const tmp = mkdtempSync(join(tmpdir(), "fleetd-plain-"));
+  try {
+    const file = join(tmp, "in.tar");
+    await tar(["-C", cwd, "-cf", file, "."]);
+    const at = `${root}${BOX_DIR}/in-${session}.tar`;
+    await box.write(at, readFileSync(file));
+    await sh(box, "unpacking the bot's folder", `mkdir -p ${q(root + cwd)} && tar -C ${q(root + cwd)} -xf ${q(at)} --no-same-owner; s=$?; rm -f ${q(at)}; exit $s`);
+    return PLAIN;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** The box's plain folder back here whole: what it holds replaces what this one holds, as a checkout's work does. */
+async function plainOut(box: BoxFs, cwd: string, session: string, env: Record<string, string | undefined>, root: string): Promise<void> {
+  const at = `${root}${BOX_DIR}/out-${session}.tar`;
+  await sh(box, "packing the bot's folder", `tar -C ${q(root + cwd)} -cf ${q(at)} .`, env);
+  const bytes = await box.read(at, BUNDLE_MAX);
+  // Unpacked beside the folder first, so a tar that fails leaves this one as it was.
+  const tmp = mkdtempSync(join(dirname(cwd), `.fleetd-out-${basename(cwd)}-`));
+  try {
+    const file = join(tmp, "out.tar");
+    writeFileSync(file, bytes);
+    const into = join(tmp, "files");
+    mkdirSync(into);
+    await tar(["-C", into, "-xf", file, "--no-same-owner"]);
+    for (const n of readdirSync(cwd)) rmSync(join(cwd, n), { recursive: true, force: true });
+    for (const n of readdirSync(into)) renameSync(join(into, n), join(cwd, n));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 /** Where a session's sync refs live in the repo, apart from every other session's. */
 const refs = (session: string) => `refs/fleetd/sync/${session}`;
 
@@ -137,9 +186,11 @@ export type SyncIn = {
   root?: string;
 };
 
-/** The worktree in the box, as it is here. Answers the commit it started from, which `syncOut` builds on. */
+/** The worktree in the box, as it is here. Answers the commit it started from, which `syncOut` builds on (`PLAIN` for a
+ * folder that is no checkout). */
 export async function syncIn(box: BoxFs, o: SyncIn): Promise<string> {
   const { cwd, session } = o;
+  if (!(await isCheckout(cwd))) return plainIn(box, cwd, session, o.root ?? "");
   const bx = (p: string) => (o.root ?? "") + p;
   const common = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   const gitDir = await git(cwd, ["rev-parse", "--absolute-git-dir"]);
@@ -214,9 +265,11 @@ export async function syncIn(box: BoxFs, o: SyncIn): Promise<string> {
   }
 }
 
-/** The box's work back in the machine's worktree: its commits, and its uncommitted work as uncommitted changes. */
+/** The box's work back in the machine's worktree: its commits, and its uncommitted work as uncommitted changes (a
+ * plain folder's whole). */
 export async function syncOut(box: BoxFs, o: { cwd: string; session: string; base: string; env: Record<string, string | undefined>; root?: string }): Promise<void> {
   const { cwd, session, base } = o;
+  if (base === PLAIN) return plainOut(box, cwd, session, o.env, o.root ?? "");
   const r = refs(session);
   const at = `${o.root ?? ""}${BOX_DIR}/out-${session}.bundle`;
   const script = [

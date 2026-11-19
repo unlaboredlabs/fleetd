@@ -155,6 +155,26 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   await stopHost(dir);
 }, 60_000);
 
+test("a bot with no repo starts in a box: its plain folder goes in, and its work comes back at stop", async () => {
+  // Its lead's folder is no checkout, and the box's start failed on it: "no hosted sandbox came up at boat.dev: git
+  // rev-parse failed: fatal: not a git repository" (W737).
+  const { s, home, env } = await setup();
+  const cwd = join(home, "projects", "email-client");
+  mkdirSync(cwd, { recursive: true });
+  writeFileSync(join(cwd, "notes.md"), "first\n");
+  const dir = join(home, "hosts", "s-plain");
+  const place = hostedPlace("boat", "s-plain", dir);
+  const link = await place.start({ fleetd: [], dir, sessionId: "s-plain", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
+  expect(JSON.stringify(await next(link))).toContain("m1");
+  expect(s.boxes.size).toBe(1);
+  expect(readRecord(dir)).toMatchObject({ cwd, base: "plain" });
+  writeFileSync(join(cwd, "reply.md"), "from the box\n");
+  await placeAt(dir).stop(dir);
+  expect(s.boxes.size).toBe(0);
+  expect(readFileSync(join(cwd, "notes.md"), "utf8")).toBe("first\n");
+  expect(readFileSync(join(cwd, "reply.md"), "utf8")).toBe("from the box\n");
+});
+
 test("a session whose bot picked boat.dev · 4 vCPU / 8 GB gets a box of exactly that: boat's type of that size", async () => {
   const { s, home, cwd, env } = await setup();
   const dir = join(home, "hosts", "s-big");
@@ -280,9 +300,8 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
 
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
   const { s, home, env, boxes } = await setup();
-  // The repo doesn't clone in the box (here: no repo at all), which is no fault of the provider's.
-  const cwd = join(home, "worktrees", "not-a-repo");
-  mkdirSync(cwd, { recursive: true });
+  // The worktree doesn't go into the box (here: it isn't there at all), which is no fault of the provider's.
+  const cwd = join(home, "worktrees", "gone");
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
   const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;

@@ -7,6 +7,7 @@ import { leadWakes } from "../api/leads.ts";
 import type { Hub } from "../api/hub.ts";
 import { registerLeadCalls as artifactCalls } from "../artifacts/calls.ts";
 import { registerLeadCalls as checklistCalls } from "../checklist/calls.ts";
+import { chat } from "../chat/index.ts";
 import { executors } from "../executor/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { start as promptsStart } from "../prompts/tools.ts";
@@ -182,6 +183,12 @@ export function start(hub: Hub): void {
     if (found.end.kind === "completed") {
       carriedOn.delete(key);
       return switchLead(found.project);
+    }
+    // Its claude never started: the person reads why, and their message goes in with their next one (the node keeps
+    // it). No wake, which would fail the same way while the provider is set aside.
+    if (found.end.kind === "not_started") {
+      chat(hub).add(found.project, { author: "system", text: found.end.text, source: `lead_start:${found.end.runId ?? e.seq}` });
+      return;
     }
     if (found.end.kind === "own") {
       if (carriedOn.has(key)) return;
