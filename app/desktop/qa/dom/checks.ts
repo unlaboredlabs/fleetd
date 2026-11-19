@@ -109,6 +109,23 @@ function ellipsizes(s: CSSStyleDeclaration) {
 const scrolls = (v: string) => v === "auto" || v === "scroll";
 const clips = (v: string) => v !== "visible";
 
+// Screen-reader-only text (Radix VisuallyHidden, .sr-only: an absolutely positioned box clipped to nothing) is meant
+// to be invisible, so it is exempt from the layout checks; its words still meet the raw-text rule.
+function isScreenReaderOnly(el: Element, style: (el: Element) => CSSStyleDeclaration, memo: Map<Element, boolean>): boolean {
+  const known = memo.get(el);
+  if (known !== undefined) return known;
+  const s = style(el);
+  const clipped =
+    s.position === "absolute" &&
+    // `clip` is deprecated but is what Radix VisuallyHidden and most .sr-only rules still set.
+    (!["auto", ""].includes(s.getPropertyValue("clip")) ||
+      s.clipPath.startsWith("inset(50%") ||
+      (el.clientWidth <= 1 && el.clientHeight <= 1 && clips(s.overflowX)));
+  const result = clipped || (el.parentElement !== null && isScreenReaderOnly(el.parentElement, style, memo));
+  memo.set(el, result);
+  return result;
+}
+
 export function runChecks(opts: CheckOptions): Finding[] {
   const findings: Finding[] = [];
   const viewport: Rect = {
@@ -127,23 +144,8 @@ export function runChecks(opts: CheckOptions): Finding[] {
     return s;
   };
 
-  // Screen-reader-only text (Radix VisuallyHidden, .sr-only: an absolutely positioned box clipped to nothing) is
-  // meant to be invisible, so it is exempt from the layout checks; its words still meet the raw-text rule.
   const srMemo = new Map<Element, boolean>();
-  const screenReaderOnly = (el: Element): boolean => {
-    const known = srMemo.get(el);
-    if (known !== undefined) return known;
-    const s = style(el);
-    const clipped =
-      s.position === "absolute" &&
-      // `clip` is deprecated but is what Radix VisuallyHidden and most .sr-only rules still set.
-      (!["auto", ""].includes(s.getPropertyValue("clip")) ||
-        s.clipPath.startsWith("inset(50%") ||
-        (el.clientWidth <= 1 && el.clientHeight <= 1 && clips(s.overflowX)));
-    const result = clipped || (el.parentElement !== null && screenReaderOnly(el.parentElement));
-    srMemo.set(el, result);
-    return result;
-  };
+  const screenReaderOnly = (el: Element): boolean => isScreenReaderOnly(el, style, srMemo);
 
   // The region where an element's content can be seen: the viewport cut by every clipping ancestor.
   const clipMemo = new Map<Element, Rect>();
@@ -579,7 +581,214 @@ export function runChecks(opts: CheckOptions): Finding[] {
     }
   }
 
+  // 6. An icon off the centre line of the words beside it (a list row's tile riding over its one-line name, a check
+  // mark set for a two-line row).
+  for (const { svg, ...a } of alignments()) {
+    if (Math.abs(a.offset) <= ALIGN_SLOP || exempt(svg, "align")) continue;
+    findings.push({
+      check: "align",
+      message: `an icon sits ${Math.abs(a.offset).toFixed(1)} px ${a.offset < 0 ? "above" : "below"} the centre of the words beside it`,
+      text: a.text,
+      where: a.where,
+      box: a.box,
+    });
+  }
+
   return findings;
+}
+
+// An icon is centred on the line of words beside it: the icon's box's middle on the line's visual middle, halfway
+// between the middles of its x-height and its cap height, to within this.
+const ALIGN_SLOP = 1;
+// An icon is an svg of a glyph's size; a picture (a bot's being, a chat's avatar) is bigger and centres on its block.
+const ICON_MAX = 24;
+// ...and so is a glyph's tile: a list row's 28 px one is held to its name's line, a file card's 40 px or a PR card's 32 px one isn't.
+const TILE_MAX = 30;
+// Words beside an icon start (or end) within this of it: a tile's padding and a row's gap, not the next column.
+const ALIGN_GAP = 28;
+// How far up from the icon the words may be: a row's name sits a few wrappers away from its tile.
+const ALIGN_DEPTH = 4;
+
+export interface Alignment {
+  // The icon's middle less the words' middle, in px: below zero, the icon sits high.
+  offset: number;
+  icon: number;
+  words: number;
+  text: string;
+  where: string;
+  box: Box;
+}
+
+// Every icon beside a line of words, with how far its middle is from the line's, aligned or not: a sweep's log
+// (QA_ALIGN_LOG).
+export function measureAlign(): Alignment[] {
+  return alignments().map(({ svg: _, ...a }) => a);
+}
+
+function alignments(): (Alignment & { svg: SVGSVGElement })[] {
+  const out: (Alignment & { svg: SVGSVGElement })[] = [];
+  const pen = document.createElement("canvas").getContext("2d");
+  if (!pen) return out;
+  const fonts = new Map<string, { x: number; cap: number; ascent: number; box: number }>();
+  const metrics = (s: CSSStyleDeclaration) => {
+    const font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+    let m = fonts.get(font);
+    if (!m) {
+      pen.font = font;
+      const x = pen.measureText("x");
+      const cap = pen.measureText("H");
+      m = { x: x.actualBoundingBoxAscent, cap: cap.actualBoundingBoxAscent, ascent: x.fontBoundingBoxAscent, box: x.fontBoundingBoxAscent + x.fontBoundingBoxDescent };
+      fonts.set(font, m);
+    }
+    return m;
+  };
+  const viewport: Rect = { left: 0, top: 0, right: document.documentElement.clientWidth, bottom: document.documentElement.clientHeight };
+  const shown = (el: Element) => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  const srMemo = new Map<Element, boolean>();
+
+  // The lines of words: one rect per line of every text node in sight, outside what is hidden from everyone.
+  interface Line {
+    el: Element;
+    text: string;
+    rect: Rect;
+    middle: number;
+    size: number;
+  }
+  const lines: Line[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const node = n as Text;
+    const el = node.parentElement;
+    if (!el || !node.data.trim() || el.closest("script, style, noscript, template, svg, #fleetd-qa-overlay") || !shown(el)) continue;
+    // Emoji alone have no x-height or cap height to centre on.
+    if (isScreenReaderOnly(el, getComputedStyle, srMemo) || !/[\p{L}\p{N}]/u.test(node.data)) continue;
+    const s = getComputedStyle(el);
+    const m = metrics(s);
+    const size = parseFloat(s.fontSize);
+    range.selectNodeContents(node);
+    for (const r of range.getClientRects()) {
+      const rect = rectOf(r);
+      if (empty(rect)) continue;
+      // A run's rect is its font's box: the baseline its ascent under the top. A box the canvas measured otherwise (a
+      // fallback face) is taken at its middle.
+      const h = rect.bottom - rect.top;
+      const middle = Math.abs(m.box - h) <= 1 ? rect.top + m.ascent + (h - m.box) / 2 - (m.x + m.cap) / 4 : (rect.top + rect.bottom) / 2;
+      lines.push({ el, text: node.data, rect, middle, size });
+    }
+  }
+
+  const middleX = (r: Rect) => (r.left + r.right) / 2;
+  const across = (a: Rect, b: Rect) => a.bottom > b.top && a.top < b.bottom;
+  // The list an element scrolls in: words in a list that doesn't hold the icon pass under it (the chat under its
+  // floating top bar), they aren't beside it.
+  const scrollerMemo = new Map<Element, Element | null>();
+  const scrollerOf = (el: Element): Element | null => {
+    const known = scrollerMemo.get(el);
+    if (known !== undefined) return known;
+    const parent = el.parentElement;
+    let result: Element | null = null;
+    if (parent) {
+      const st = getComputedStyle(parent);
+      const scrolls = ["auto", "scroll"].includes(st.overflowY) && parent.scrollHeight > parent.clientHeight;
+      result = scrolls ? parent : scrollerOf(parent);
+    }
+    scrollerMemo.set(el, result);
+    return result;
+  };
+  // ...and words in something floating (a hover's strip, a tooltip) are beside only what floats with them.
+  const floatMemo = new Map<Element, Element | null>();
+  const floatOf = (el: Element): Element | null => {
+    const known = floatMemo.get(el);
+    if (known !== undefined) return known;
+    const result = ["absolute", "fixed"].includes(getComputedStyle(el).position) ? el : el.parentElement ? floatOf(el.parentElement) : null;
+    floatMemo.set(el, result);
+    return result;
+  };
+  const inList = (line: Line, svg: Element) => {
+    const list = scrollerOf(line.el);
+    const float = floatOf(line.el);
+    return (list === null || list.contains(svg)) && (float === null || float.contains(svg));
+  };
+  const beside = (line: Line, svg: Element) => inList(line, svg) && !empty(intersect(line.rect, clipped(line.el)));
+  // Where an element can be seen: the viewport cut by every ancestor that clips (a scrolled list, a sheet's edge, a
+  // clamped paragraph's own box).
+  const clipped = (el: Element): Rect => {
+    let clip = viewport;
+    for (let e: Element | null = el; e && e !== document.documentElement; e = e.parentElement) {
+      const st = getComputedStyle(e);
+      if (st.overflowX !== "visible" || st.overflowY !== "visible") clip = intersect(clip, rectOf(e.getBoundingClientRect()));
+      if (st.position === "fixed") break;
+    }
+    return clip;
+  };
+
+  for (const svg of document.body.querySelectorAll("svg")) {
+    if (svg.parentElement?.closest("svg") || svg.closest("#fleetd-qa-overlay") || !shown(svg)) continue;
+    const icon = rectOf(svg.getBoundingClientRect());
+    const h = icon.bottom - icon.top;
+    if (h < 8 || h > ICON_MAX || icon.right - icon.left > ICON_MAX + 8 || !svg.parentElement || empty(intersect(icon, clipped(svg.parentElement)))) continue;
+    // A glyph in a tile bigger than a glyph's (a file card's, a PR's) is a picture, which centres on its block.
+    const tile = svg.parentElement.getBoundingClientRect();
+    if (tile.height > TILE_MAX && tile.width <= tile.height * 1.5) continue;
+    const middle = (icon.top + icon.bottom) / 2;
+    // Its row: a few wrappers up, never past a dialog, something floating (a hover's actions over a line) or the page.
+    const rows: Element[] = [];
+    for (let e: Element | null = svg.parentElement; e && e !== document.body && rows.length < ALIGN_DEPTH; e = e.parentElement) {
+      rows.push(e);
+      if (e.matches("[role='dialog'], [role='alertdialog']") || ["absolute", "fixed"].includes(getComputedStyle(e).position)) break;
+    }
+    // An icon something else covers (a row scrolled under a sticky head) isn't seen beside anything.
+    const hit = document.elementFromPoint(middleX(icon), (icon.top + icon.bottom) / 2);
+    if (hit && !svg.contains(hit) && !rows.some((row) => row.contains(hit))) continue;
+    // The words right beside it, on its height, in its row: a tile's name, a button's label.
+    let near: { line: Line; gap: number } | undefined;
+    for (const line of lines) {
+      const r = line.rect;
+      if (!across(r, icon)) continue;
+      const gap = r.left >= icon.right - 1 ? r.left - icon.right : icon.left >= r.right - 1 ? icon.left - r.right : -1;
+      if (gap < -1 || gap > ALIGN_GAP || (near && near.gap <= gap)) continue;
+      if (!rows.some((row) => row.contains(line.el)) || !beside(line, svg)) continue;
+      near = { line, gap };
+    }
+    // ...and a one-line row's words, however far (a section's plus at the end of its label's line, a button's icon
+    // beside the label before it): with all its words on one line, every icon in the row is centred on its biggest.
+    // A row of two lines and more centres its controls on the block, so it isn't held to this.
+    let row: Line | undefined;
+    for (const el of rows) {
+      // A line cut off by the list's edge still makes the row two lines.
+      const inRow = lines.filter((l) => el.contains(l.el) && inList(l, svg));
+      const seen = inRow.filter((l) => beside(l, svg));
+      if (seen.length === 0 || inRow.every((l) => l.el === near?.line.el)) continue;
+      if (inRow.every((l) => across(l.rect, icon) && inRow.every((o) => across(l.rect, o.rect)))) {
+        row = seen.reduce((a, b) => (b.size > a.size ? b : a));
+      }
+      break;
+    }
+    // Words that wrap beside it (a long command and its copy button) may hold it on their first line or their middle.
+    if (near) {
+      const first = near.line;
+      const wrapped = lines.filter((l) => l.el === first.el && across(l.rect, icon));
+      if (wrapped.length > 1) {
+        const block = (Math.min(...wrapped.map((l) => l.middle)) + Math.max(...wrapped.map((l) => l.middle))) / 2;
+        if (Math.abs(middle - block) < Math.abs(middle - first.middle)) near = { ...near, line: { ...first, middle: block } };
+      }
+    }
+    const pairs = [near?.line, row].filter((l): l is Line => l !== undefined);
+    if (pairs.length === 0) continue;
+    const line = pairs.reduce((a, b) => (Math.abs(middle - b.middle) > Math.abs(middle - a.middle) ? b : a));
+    const r = line.rect;
+    out.push({
+      svg,
+      offset: Math.round((middle - line.middle) * 10) / 10,
+      icon: middle,
+      words: line.middle,
+      text: snippet(line.text),
+      where: describe(svg.parentElement),
+      box: toBox({ left: Math.min(icon.left, r.left), top: Math.min(icon.top, r.top), right: Math.max(icon.right, r.right), bottom: Math.max(icon.bottom, r.bottom) }),
+    });
+  }
+  return out;
 }
 
 // Scrolling: the checks see only what is rendered and in view, so the harness steps every scroll container through
@@ -654,6 +863,7 @@ const COLORS: Record<CheckId, string> = {
   edge: "#8e4ec6",
   "raw-text": "#0090ff",
   drag: "#12a594",
+  align: "#e54666",
 };
 
 // Draws numbered boxes over the findings for the annotated screenshot. CSSOM writes are not inline style attributes,

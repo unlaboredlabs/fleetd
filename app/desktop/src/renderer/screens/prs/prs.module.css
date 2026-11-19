@@ -160,6 +160,11 @@
   gap: var(--space-1);
   min-width: 0;
 }
+/* Its words give the mark its baseline (an icon's is its foot), so beside a label on one baseline (the PR's facts) the
+   words line up and the icon stays on their middle. */
+.checksMark > :not(.checkIcon) {
+  align-self: baseline;
+}
 .checkIcon {
   flex: none;
   display: inline-flex;

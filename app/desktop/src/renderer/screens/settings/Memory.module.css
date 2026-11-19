@@ -78,10 +78,12 @@
   padding-top: 2px;
   overflow-wrap: anywhere;
 }
+/* On the entry's first line: its 2 px over a 20 px line, the controls 28 px. */
 .cardActions {
   flex: none;
   display: flex;
   gap: var(--space-1);
+  margin-top: calc(2px + (var(--leading-md) - var(--control)) / 2);
 }
 
 /* Import memory: the export prompt, its first lines, under its step; and what an import left out. */

@@ -260,6 +260,22 @@ it("adds logins, cards, addresses or a 1Password import on the Vault page, and v
   expect((await openPlus()).map((m) => m.textContent)).toEqual(["Variable", "Paste .env…"]);
 });
 
+it("gives an empty list its own add beside its words, never a pointer to the plus", async () => {
+  team = [];
+  await render("#/settings/vault");
+  const note = host.querySelector<HTMLElement>("[role='list'][aria-label='Vault items']");
+  expect(note?.textContent).toContain("Nothing in the vault yet");
+  expect(host.textContent).not.toContain("with +");
+  const add = [...(note?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Add to the vault");
+  if (add === undefined) throw new Error("no add in the empty list");
+  await act(async () => {
+    add.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  expect([...document.querySelectorAll("[role='menuitem']")].map((m) => m.textContent)).toEqual(["Login", "Card", "Address", "Import from 1Password…"]);
+});
+
 it("adds a login by handing its typed fields to main to seal, never to the hub, and names no scope", async () => {
   await render("#/settings/vault");
   const login = (await openPlus()).find((m) => m.textContent === "Login");

@@ -65,10 +65,11 @@ export const fixtures = [
   "admin-hubs",
   // Teams step 8 (fixtures/admin): Bob on a hub that keeps its Claude API key for leads, with no subscription of his own.
   "admin-claude-member",
-  // The Vault (fixtures/vault): the team's items with two of Sam's set aside, as a member, and on a hub from before it.
+  // The Vault (fixtures/vault): the team's items with two of Sam's set aside, as a member, on a hub from before it, and empty.
   "vault-team",
   "vault-team-member",
   "vault-old-hub",
+  "vault-empty",
   // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -3632,10 +3633,10 @@ export const screens: readonly Screen[] = [
   // Agents (at Tools & skills, which was a page once) and Instructions (the hub-wide built-in prompts open from its
   // foot); Setup, which holds the hub's accounts (Hub accounts once); and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
-  // The Vault: the team's logins, cards and addresses with the set-aside section under them; as a member; and one
-  // list on a hub from before the team vault. A team card only its creator or an admin may show or change, opened.
+  // The Vault: the team's logins, cards and addresses with the set-aside section under them; as a member; one list on
+  // a hub from before the team vault; and an empty one, its own add beside its words. A team card only its creator or an admin may show or change, opened.
   // A project's variables and its order's; and Every project › Vault, the vault key alone.
-  { id: "settings.vault", route: "#/settings/vault", fixtures: ["vault-team", "vault-team-member", "vault-old-hub"] },
+  { id: "settings.vault", route: "#/settings/vault", fixtures: ["vault-team", "vault-team-member", "vault-old-hub", "vault-empty"] },
   {
     id: "settings.vault",
     variant: "creator-or-admin",

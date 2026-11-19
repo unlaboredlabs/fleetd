@@ -63,9 +63,12 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* A shortcut at the row's end, quiet and a step smaller, its keys spaced a hair. */
+/* A shortcut at the row's end, quiet and a step smaller, its keys spaced a hair; or a mark (an out arrow), centred on
+   the row's line rather than sitting on the small words' baseline. */
 .itemHint {
   flex: none;
+  display: flex;
+  align-items: center;
   margin-left: auto;
   padding-left: var(--space-3);
   color: var(--quiet);
@@ -87,14 +90,19 @@
 .danger[data-highlighted] {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
-/* A choice's tick, at the row's end (a checkbox or a radio item). */
+/* A choice's tick, at the row's end (a checkbox or a radio item), centred on the row's line: Radix's indicator is an
+   inline span, whose tick would sit on its baseline. */
 .indicator {
   flex: none;
   order: 9;
   width: 14px;
   margin-left: auto;
   display: inline-flex;
+  align-items: center;
   justify-content: center;
+}
+.indicator > span {
+  display: flex;
 }
 .indicator svg {
   width: 14px;
@@ -276,6 +284,11 @@
   line-height: var(--leading-md);
   font-weight: var(--weight-strong);
   overflow-wrap: anywhere;
+}
+/* Close, a control taller than the title's line, centred on that line however many lines the title takes. */
+.dialogClose {
+  flex: none;
+  margin-top: calc((var(--leading-md) - var(--control)) / 2);
 }
 .dialogDescription {
   color: var(--quiet);
