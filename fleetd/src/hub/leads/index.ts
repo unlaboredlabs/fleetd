@@ -20,7 +20,7 @@ import { leadWiring } from "./ports.ts";
 import { renderLeadStart, reposBlock, startPrompt, whole } from "./prompt.ts";
 import { chatTagsOn } from "../project_lead/store.ts";
 import { LeadRecords, type StoredLead } from "./records.ts";
-import { clip } from "./text.ts";
+import { clip, oneLine } from "./text.ts";
 import { ofChat, short, told } from "./zone.ts";
 
 export { leadState } from "./lead_state.ts";
@@ -39,6 +39,8 @@ export const LEAD_FRESH_AFTER_MS = 3_600_000;
 /** The chat messages a fresh lead session reads, newest last; each cut. */
 const RECENT_CHAT = 12;
 const RECENT_CHAT_CHARS = 500;
+/** The most of a file's name a recap line carries. */
+const RECENT_CHAT_NAME = 80;
 
 export class Leads {
   readonly records: LeadRecords;
@@ -348,11 +350,14 @@ export class Leads {
       } catch {
         continue;
       }
-      if (!m.text.trim()) continue;
+      // Its files by id and name only: the lead saves one with attachment_read, or names its id to an agent.
+      const files = (m.attachments ?? []).map((f) => `${f.attachmentId} "${oneLine(f.name, RECENT_CHAT_NAME)}"`);
+      const said = [clip(m.text.trim(), RECENT_CHAT_CHARS), files.length === 0 ? "" : `[attached: ${files.join(", ")}]`].filter(Boolean).join(" ");
+      if (!said) continue;
       const who = m.author === "human" ? "Human" : m.author === "lead" ? "You" : m.author === "agent" ? `Agent ${m.by ?? ""}` : undefined;
       if (who === undefined) continue;
       const ms = parseMs(m.createdAt);
-      lines.push(`${who.trim()}${ms === undefined ? "" : ` (${short(zone, ms)})`}: ${clip(m.text.trim(), RECENT_CHAT_CHARS)}`);
+      lines.push(`${who.trim()}${ms === undefined ? "" : ` (${short(zone, ms)})`}: ${said}`);
     }
     if (lines.length === 0) return undefined;
     lines.reverse();
