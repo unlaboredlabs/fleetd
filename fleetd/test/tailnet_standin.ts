@@ -1,8 +1,9 @@
 // A stand-in for Tailscale's own programs as the hub's gateway runs them (src/hub/tailnet/local.ts), so its tests need
 // no Tailscale and reach no tailnet:
 // - `daemon` (tailscaled): serves the local API on its --socket: status (logged in once its --state file says
-//   `approved`, which is what a test writes for "the person approved it"; a sign-in page once `up` asked for one), a
-//   dial (to 127.0.0.1 at the port asked, and refused for 100.64.0.9), and a DNS query (answered `<name>/<type>`).
+//   `approved`, which is what a test writes for "the person approved it"; a sign-in page once `up` asked for one; its
+//   own addresses and its peers), a dial (to 127.0.0.1 at the port asked, whatever the address, and refused for
+//   100.64.0.9), and a DNS query (answered `<name>/<type>`).
 // - `cli` (tailscale): `up` asks for a sign-in page and waits until it's approved; `logout` forgets the state and
 //   leaves a mark in the test's dir.
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,6 +11,10 @@ import { connect, createServer, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 
 export const LOGIN_URL = "https://login.tailscale.com/a/standin";
+/** The gateway's own addresses on the stand-in's tailnet. Its peers: devbox (100.104.249.49, fd7a:115c:a1e0::1) and
+ * sshbox (100.64.0.9, whose dial tailscaled refuses). A dial to any address goes to 127.0.0.1 at its port, as a
+ * userspace tailscaled's dial to its own address does: what the gateway must never let through. */
+export const SELF_IPS = ["100.70.0.1", "fd7a:115c:a1e0::70"];
 
 /** The stand-in's two programs, written into `dir`; `marks` is where `logout` leaves its mark. */
 export function standInPrograms(dir: string, marks: string): { tailscale: string; tailscaled: string } {
@@ -30,7 +35,15 @@ function daemon(args: string[]): void {
   const approved = () => existsSync(state) && readFileSync(state, "utf8").startsWith("approved");
   const status = () =>
     approved()
-      ? { BackendState: "Running", CurrentTailnet: { Name: "example.com", MagicDNSSuffix: "tail1234.ts.net" }, Self: { DNSName: "fleetd.tail1234.ts.net.", HostName: "fleetd" } }
+      ? {
+          BackendState: "Running",
+          CurrentTailnet: { Name: "example.com", MagicDNSSuffix: "tail1234.ts.net" },
+          Self: { DNSName: "fleetd.tail1234.ts.net.", HostName: "fleetd", TailscaleIPs: SELF_IPS },
+          Peer: {
+            devbox: { DNSName: "devbox.tail1234.ts.net.", HostName: "devbox", TailscaleIPs: ["100.104.249.49", "fd7a:115c:a1e0::1"] },
+            sshbox: { DNSName: "sshbox.tail1234.ts.net.", HostName: "sshbox", TailscaleIPs: ["100.64.0.9"] },
+          },
+        }
       : existsSync(join(run, "login"))
         ? { BackendState: "NeedsLogin", AuthURL: LOGIN_URL }
         : { BackendState: "NeedsLogin" };

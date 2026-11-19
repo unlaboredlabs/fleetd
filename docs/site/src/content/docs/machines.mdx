@@ -548,7 +548,9 @@ gateway, an MCP server or a dashboard there) through one device the hub runs for
 - **What sandboxes reach.** Tailnet addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) and MagicDNS names, full and
   short, from every program with no proxy settings: curl, git, ssh, `fetch` in node, raw TCP. Only that traffic goes
   through the hub; everything else leaves the sandbox directly, as before. UDP to the tailnet isn't carried (its DNS
-  is). What the device may reach is what your tailnet's access rules let its owner's devices reach.
+  is). Only the tailnet's devices are reached, by address or full name: never the `fleetd` device itself, so nothing
+  reaches the hub's machine through it. What the device may reach is what your tailnet's access rules let its owner's
+  devices reach.
 - **On the hub.** The hub fetches Tailscale's static build (1.104.7, its checksum checked) the first time and runs
   it in userspace under its own home, with its own socket: never the host's own Tailscale, routes or DNS. Its login
   state is sealed in the hub's database under the vault's key, and is in the clear only in a RAM-backed directory

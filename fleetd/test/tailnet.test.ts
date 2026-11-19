@@ -19,7 +19,7 @@ import { NodeTailnet } from "../src/node/sandbox/tailnet.ts";
 import { CAP_SANDBOX } from "../src/shared/sandbox.ts";
 import { DIAL_PATH, signedMessage } from "../src/shared/tailnet.ts";
 import { addMachine, caller, testHub } from "./screens_helpers.ts";
-import { LOGIN_URL, standInPrograms } from "./tailnet_standin.ts";
+import { LOGIN_URL, SELF_IPS, standInPrograms } from "./tailnet_standin.ts";
 
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-tailnet-"));
 const servers: Server[] = [];
@@ -133,6 +133,18 @@ test("a node's signed dials and lookups go through the gateway, and no one else'
     expect(await back).toBe("over the tailnet");
     conn.destroy();
     await expect(node.dial("100.64.0.9", 22)).rejects.toThrow("connection refused");
+    // A peer by name, and by its IPv6 address as a box's capture writes it out in full.
+    for (const host of ["devbox.tail1234.ts.net", "fd7a:115c:a1e0:0:0:0:0:1"]) {
+      const c = await node.dial(host, echo);
+      const got = new Promise<string>((r) => c.once("data", (d: Buffer) => r(d.toString())));
+      c.write(host);
+      expect(await got).toBe(host);
+      c.destroy();
+    }
+    // Never the gateway itself (userspace tailscaled hands its own address to the hub machine's loopback, where the
+    // echo listens here), nor an address or name no peer has (tailscaled would dial that on the host's network).
+    for (const host of [...SELF_IPS, "fd7a:115c:a1e0:0:0:0:0:70", "fleetd.tail1234.ts.net", "100.99.0.1", "ghost.tail1234.ts.net"])
+      await expect(node.dial(host, echo)).rejects.toThrow("isn't a device on the tailnet the gateway reaches");
     expect(Buffer.from(await node.dns("devbox.tail1234.ts.net", 28)).toString()).toBe("devbox.tail1234.ts.net./AAAA");
 
     // Unsigned, signed by a key the hub didn't enroll, too old, or replayed: refused before the gateway.

@@ -8,7 +8,9 @@
 //   one the person opens. Once they approve, the device is in their tailnet as `fleetd`, shields up: nothing on the
 //   tailnet connects to the hub's machine through it (userspace tailscaled would pass such connections to the host's
 //   loopback).
-// - Each dial and name lookup goes through tailscaled's local API (`tailscale nc`'s dial, its DNS query).
+// - Each dial and name lookup goes through tailscaled's local API (`tailscale nc`'s dial, its DNS query). A dial goes
+//   only to a peer in the gateway's netmap, by address or name: never the gateway's own (userspace tailscaled hands
+//   those to the host's loopback), nor an address no peer has (it would dial that on the host's network).
 // - Disconnect logs the device out (Tailscale drops it from the tailnet) and deletes the state, here and sealed.
 // - The hub's stop ends tailscaled; the next start brings the device back from its sealed state.
 import { createHash } from "node:crypto";
@@ -17,7 +19,7 @@ import type { Duplex } from "node:stream";
 import { join } from "node:path";
 import type { TailnetState } from "../../shared/contracts.ts";
 import { type Gateway, NotHere, Off, type StateStore } from "./gateway.ts";
-import { DNS_TYPES, LocalApi, type Programs, type Status, unsupported } from "./tailscale.ts";
+import { DNS_TYPES, isPeer, LocalApi, type Peers, peersOf, type Programs, type Status, unsupported } from "./tailscale.ts";
 
 export { NotHere };
 
@@ -49,6 +51,8 @@ const LOGIN_WAIT_MS = 30_000;
 /** How long tailscaled's socket may take to answer after its start. */
 const START_WAIT_MS = 15_000;
 const LOG_LINES = 20;
+/** How long the netmap's peers, once read, answer a dial: a device that left can't be dialled for longer. */
+const PEERS_MS = 5_000;
 
 /** The directory a hub at `home` runs its tailscaled in: on a RAM-backed filesystem where there is one, so its
  * plaintext state never sits on a disk. */
@@ -100,6 +104,9 @@ export class LocalGateway implements Gateway {
   #retryMs = 5_000;
   /** A Connect is under way: no sign-in page yet is no sign-out. */
   #connecting = false;
+  /** Whom a dial may reach (`dial`): the netmap's peers when last read. */
+  #peers: Peers | undefined;
+  #peersAt = 0;
 
   constructor(readonly o: LocalOptions) {
     this.#run = o.runDir ?? runDirFor(o.home);
@@ -198,6 +205,7 @@ export class LocalGateway implements Gateway {
       await this.o.store.clear();
       this.#sealedAt = 0;
       this.#suffix = undefined;
+      this.#peers = undefined;
       this.#set({ status: "off" });
       console.info("tailnet: the team's Tailscale gateway was disconnected and its state deleted");
       return this.state();
@@ -214,7 +222,19 @@ export class LocalGateway implements Gateway {
 
   async dial(host: string, port: number, signal?: AbortSignal): Promise<Duplex> {
     if (this.#s.status !== "connected") throw new Off();
+    // Only the netmap's peers, read again once on a miss (a device that joined since): never the gateway's own address
+    // or name, which userspace tailscaled hands to the hub machine's loopback, nor an address no peer has, which
+    // tailscaled would dial on the host's own network.
+    if (!this.#peers || Date.now() - this.#peersAt > PEERS_MS || !isPeer(this.#peers, host)) await this.#readPeers(signal);
+    if (!isPeer(this.#peers!, host)) throw new Error(`${host} isn't a device on the tailnet the gateway reaches`);
     return this.#api.dial(host, port, signal);
+  }
+
+  /** The netmap's peers as tailscaled has them now. */
+  async #readPeers(signal?: AbortSignal): Promise<Peers> {
+    this.#peers = peersOf(await this.#api.status(signal ?? AbortSignal.timeout(5_000), true));
+    this.#peersAt = Date.now();
+    return this.#peers;
   }
 
   async dns(name: string, type: number, signal?: AbortSignal): Promise<Uint8Array> {

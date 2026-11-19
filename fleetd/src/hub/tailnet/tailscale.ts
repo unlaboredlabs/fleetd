@@ -2,7 +2,7 @@
 // (checksum verified) the first time it's needed, and tailscaled's local API on its unix socket (status, a dial, a
 // name lookup). The person installs nothing, and the host's own Tailscale, if it has one, is never touched.
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { connect, type Socket } from "node:net";
+import { connect, isIP, type Socket } from "node:net";
 import { join } from "node:path";
 
 /** The build fleetd was tested with, and each architecture's tarball's SHA-256 (pkgs.tailscale.com/stable). */
@@ -59,15 +59,20 @@ export type Status = {
   BackendState?: string;
   AuthURL?: string;
   CurrentTailnet?: { Name?: string; MagicDNSSuffix?: string } | null;
-  Self?: { DNSName?: string; HostName?: string } | null;
+  Self?: Device | null;
+  /** With `peers`: every other device the gateway's netmap has. */
+  Peer?: Record<string, Device> | null;
 };
+
+/** A device as tailscaled's status names it. */
+export type Device = { DNSName?: string; HostName?: string; TailscaleIPs?: string[] | null };
 
 /** tailscaled's local API on `sock`. */
 export class LocalApi {
   constructor(readonly sock: string) {}
 
-  async status(signal?: AbortSignal): Promise<Status> {
-    const res = await fetch("http://local-tailscaled.sock/localapi/v0/status?peers=false", { unix: this.sock, ...(signal ? { signal } : {}) } as RequestInit);
+  async status(signal?: AbortSignal, peers = false): Promise<Status> {
+    const res = await fetch(`http://local-tailscaled.sock/localapi/v0/status?peers=${peers}`, { unix: this.sock, ...(signal ? { signal } : {}) } as RequestInit);
     if (!res.ok) throw new Error(`tailscaled's status answered ${res.status}`);
     return (await res.json()) as Status;
   }
@@ -121,3 +126,37 @@ export class LocalApi {
 
 /** DNS type numbers the gateway's lookup takes, by the names tailscaled takes them as. */
 export const DNS_TYPES: Readonly<Record<number, string>> = { 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 65: "HTTPS" };
+
+/** An address as one spelling: IPv6 compressed and lowercase (a box's capture writes it out in full). */
+export function canonicalIp(ip: string): string {
+  const bare = ip.replace(/^\[(.*)\]$/u, "$1");
+  if (isIP(bare) !== 6) return bare;
+  try {
+    return new URL(`http://[${bare}]`).hostname.slice(1, -1);
+  } catch {
+    return bare.toLowerCase();
+  }
+}
+
+/** Who a dial may reach: the netmap's peers, by address and by full MagicDNS name, never the gateway itself. */
+export type Peers = { ips: Set<string>; names: Set<string> };
+
+/** The peers of `st` (a status read with peers), the gateway's own addresses and names left out. */
+export function peersOf(st: Status): Peers {
+  const name = (d: Device) => (d.DNSName ?? "").toLowerCase().replace(/\.$/u, "");
+  const self = new Set([...(st.Self?.TailscaleIPs ?? []).map(canonicalIp), ...(st.Self ? [name(st.Self)] : [])]);
+  const ips = new Set<string>();
+  const names = new Set<string>();
+  for (const d of Object.values(st.Peer ?? {})) {
+    for (const ip of d.TailscaleIPs ?? []) if (!self.has(canonicalIp(ip))) ips.add(canonicalIp(ip));
+    const full = name(d);
+    if (full && !self.has(full)) names.add(full);
+  }
+  return { ips, names };
+}
+
+/** Whether a dial to `host` reaches one of `p`'s peers. */
+export const isPeer = (p: Peers, host: string): boolean => {
+  const h = host.toLowerCase().replace(/\.$/u, "");
+  return isIP(canonicalIp(h)) !== 0 ? p.ips.has(canonicalIp(h)) : p.names.has(h);
+};

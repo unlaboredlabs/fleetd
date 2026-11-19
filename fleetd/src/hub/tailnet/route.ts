@@ -3,7 +3,8 @@
 // against the key the hub enrolled for the machine, within SKEW_MS of the hub's clock and once per nonce. Nothing here
 // logs an address, a name or a byte. Only the tailnet is reached: an address of its ranges or a MagicDNS name, never
 // anything the hub's machine reaches by itself (its loopback, its LAN, the internet), which a userspace tailscaled
-// would otherwise dial on the host's own network.
+// would otherwise dial on the host's own network. The gateway narrows that to its netmap's peers (./local.ts `dial`):
+// never its own address or name, which userspace tailscaled hands to the hub machine's loopback.
 import type { Duplex } from "node:stream";
 import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
 import { AT_HEADER, MACHINE_HEADER, NONCE_HEADER, NOT_HERE, SIG_HEADER, SKEW_MS, signedMessage, tailnetIp, tailnetName } from "../../shared/tailnet.ts";
