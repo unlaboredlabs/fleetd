@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, sameSize, type Size } from "../../../sandbox/providers/index.ts";
+import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Size } from "../../../sandbox/providers/index.ts";
 import { hosted as hostedRecipe, templateName } from "../../../sandbox/providers/recipe.ts";
 import base from "../../../sandbox/image/Dockerfile" with { type: "text" };
 import { TESTED } from "../../runner/claude.ts";
@@ -19,6 +19,7 @@ import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
 import { NAMES } from "../../../shared/sandbox.ts";
+import type { SandboxTrouble } from "../../../shared/node_link.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
 import { nodeTailnet } from "../tailnet.ts";
@@ -52,7 +53,9 @@ export class Boxes {
   #wiring: Wiring | undefined;
   #reaper: ReturnType<typeof setInterval> | undefined;
   /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
-  #down = new Map<ProviderId, { until: number; why: string }>();
+  #down = new Map<ProviderId, { until: number; why: string; reason: Reason }>();
+  /** Providers whose live boxes couldn't be extended at the last try (`keptAlive`), and why. */
+  #unkept = new Map<ProviderId, { why: string; reason: Reason }>();
   /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
   #making = new Set<string>();
   /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
@@ -128,9 +131,35 @@ export class Boxes {
 
   /** A provider that couldn't make a box is offered to the hub's placement no more for DOWN_MS: the agents it would
    * take run here or wait in line, rather than fail on it again. */
-  setAside(p: ProviderId, why: string, now = Date.now()): void {
-    this.#down.set(p, { until: now + DOWN_MS, why });
+  setAside(p: ProviderId, why: string, now = Date.now(), reason: Reason = "failed"): void {
+    this.#down.set(p, { until: now + DOWN_MS, why, reason });
     console.warn(`${nowIso()} WARN a hosted provider is set aside for ${DOWN_MS / 60_000} minutes {"provider":"${p}","why":${JSON.stringify(why)}}`);
+  }
+
+  /** Every provider set aside is offered again at once: the hub's fresh word (a key that works again, a change). */
+  retry(): void {
+    this.#down.clear();
+  }
+
+  /** A keep-alive of `p`'s box: failed (`error`), or worked, which clears the last failure. */
+  keptAlive(p: ProviderId, error?: unknown): void {
+    if (error === undefined) {
+      this.#unkept.delete(p);
+      return;
+    }
+    const reason: Reason = error instanceof ProviderError ? error.reason : "unreachable";
+    this.#unkept.set(p, { why: error instanceof Error ? error.message : String(error), reason });
+  }
+
+  /** What the heartbeat says is wrong with each provider now (`load.sandboxTrouble`): set aside after a refusal or a
+   * box that didn't come up, until when; or its boxes not kept alive. Only connected providers; empty when all is well. */
+  trouble(now = Date.now()): SandboxTrouble[] {
+    return this.connected().flatMap((p): SandboxTrouble[] => {
+      const d = this.#down.get(p);
+      if (d && d.until > now) return [{ provider: p, what: "start", reason: d.reason, why: d.why, until: d.until }];
+      const k = this.#unkept.get(p);
+      return k ? [{ provider: p, what: "keep_alive", reason: k.reason, why: k.why }] : [];
+    });
   }
 
   client(p: ProviderId): Provider {

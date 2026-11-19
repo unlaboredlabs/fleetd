@@ -23,7 +23,7 @@ export class Sandboxes {
     private readonly box: Opener,
     private readonly provider: Lister = realProvider,
     /** Where the keys go, for the hosted place's boxes. */
-    private readonly boxes?: Pick<Boxes, "setKeys" | "usable">,
+    private readonly boxes?: Pick<Boxes, "setKeys" | "usable" | "retry" | "connected">,
   ) {}
 
   /** The team's limits the hub sent last, in the order agents go to the providers. */
@@ -39,6 +39,14 @@ export class Sandboxes {
     return this.#limits.map((l) => l.provider).filter((p) => held.includes(p));
   }
 
+  /** The provider the hub's runner puts a session in that the hub placed nowhere: the first it can make boxes in now,
+   * else the first it holds a key for that is set aside, whose start then fails saying why (not that none is connected). */
+  forRunner(): KnownSandboxProvider | undefined {
+    if (!hostable()) return undefined;
+    const held = this.boxes?.connected() ?? [];
+    return this.placeable()[0] ?? this.#limits.map((l) => l.provider).find((p) => held.includes(p));
+  }
+
   /** `node_action` sandbox_limits: the team's connected providers' limits, kept in ORDER. */
   setLimits(frame: NodeAction): NodeActionResult {
     const given = Array.isArray(frame.limits) ? frame.limits : [];
@@ -48,6 +56,9 @@ export class Sandboxes {
       return l && Number.isFinite(max) && max >= 0 ? [{ provider: p, max: Math.trunc(max) }] : [];
     });
     if (frame.keys && typeof frame.keys === "object") this.boxes?.setKeys(frame.keys);
+    // The hub sends them when something changed (a key that works again, a limit, a relink): a provider set aside
+    // after a failure is tried again for the next agent rather than at the end of its wait.
+    this.boxes?.retry();
     return { id: frame.id, ok: true, message: `${this.#limits.length} hosted providers' limits kept` };
   }
 
@@ -105,6 +116,8 @@ export function start(node: Node): Sandboxes | undefined {
   node.area("hb").contribute((hb) => {
     const can = s.placeable();
     if (hb.load && can.length > 0) hb.load.sandboxes = can;
+    const trouble = boxes.trouble();
+    if (hb.load && trouble.length > 0) hb.load.sandboxTrouble = trouble;
   });
   // The boxes of this machine no session here holds any more (a crash between a box's create and its record, a
   // delete that failed) go, by their labels.

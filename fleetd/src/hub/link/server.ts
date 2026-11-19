@@ -50,6 +50,10 @@ import {
   type RequestTag,
 } from "../../shared/node_link.ts";
 
+/** What a machine says while its node just linked and its first check hasn't answered: its `degradedReason`, with the
+ * `degradedCause` "starting". */
+export const STARTING = "Starting…";
+
 export const HELLO_TIMEOUT_MS = 10_000;
 /** How many heartbeats apart the hub re-reads the runner's state, so a fixed or expired login shows within a minute. */
 const RUNNER_CHECK_EVERY = 4;
@@ -573,7 +577,8 @@ export class Link {
       status: "degraded",
       lastSeenAt: this.nowIso(),
       nodeVersion: hello.nodeVersion,
-      degradedReason: "checking the node's runner",
+      degradedReason: STARTING,
+      degradedCause: "starting",
     };
     // Browsers seal this machine's secrets to it; a node from before M8 sends none and takes none.
     if (hello.boxPubKey) machine.boxPubKey = hello.boxPubKey;

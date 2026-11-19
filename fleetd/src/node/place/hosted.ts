@@ -21,7 +21,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
-import { NAMES } from "../../shared/sandbox.ts";
+import { NAMES, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
 import { HostLink, LaunchError, PROTOCOL, type HostHandlers, type Launch, type Registration } from "../runner/host.ts";
 import { ACCOUNT_CLEARS } from "../actions/accounts.ts";
@@ -253,14 +253,18 @@ export class HostedDown extends LaunchError {}
 function failed(provider: ProviderId, error: unknown): HostedDown {
   if (error instanceof HostedDown) return error;
   const why = (error as Error).message;
-  boxes()?.setAside(provider, error instanceof ProviderError ? why : `a sandbox there didn't come up: ${why}`);
-  return new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: ${why}`);
+  const b = boxes();
+  b?.setAside(provider, error instanceof ProviderError ? why : `a sandbox at ${NAMES[provider]} didn't come up: ${why}`, Date.now(), error instanceof ProviderError ? error.reason : "failed");
+  // In the words the hub shows on the provider's row, in queued agents' reasons and in the lead's chat line.
+  const aside = b?.trouble().find((t) => t.provider === provider && t.what === "start");
+  return new HostedDown(aside ? troubleLine(troubleOf(provider, aside)) : `no hosted sandbox came up at ${NAMES[provider]}: ${why}`);
 }
 
 /** The session's box, made when it has none; a provider set aside isn't asked for another until its time is out. */
 async function boxFor(provider: ProviderId, session: string, dir: string, cwd: string, env: Record<string, string | undefined>, size?: Size): Promise<Live> {
-  const aside = live.has(session) ? undefined : boxes()?.aside(provider);
-  if (aside) throw new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: it is left out for a few minutes after it failed (${aside})`);
+  // In the words the hub shows on the provider's row and in queued agents' reasons.
+  const aside = live.has(session) ? undefined : boxes()?.trouble().find((t) => t.provider === provider && t.what === "start");
+  if (aside) throw new HostedDown(troubleLine(troubleOf(provider, aside)));
   try {
     return await ensure(provider, session, dir, cwd, env, size);
   } catch (error) {

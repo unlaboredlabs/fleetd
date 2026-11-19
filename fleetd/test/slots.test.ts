@@ -500,6 +500,36 @@ describe("board", () => {
     expect(acquire("T6", hosted)).toEqual(queued(expect.stringContaining("no hosted sandbox provider is connected") as never));
   });
 
+  test("hosted: a provider its node set aside says why, on the board and in a queued agent's reason, until it is back", () => {
+    const [mine, hosted] = [project_("pa", "air"), project_("ph", RUNNER_ID)];
+    const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["boat"] }, { ...machine(RUNNER_ID, 0), sandboxes: ["boat"] }]);
+    k.board.setHosted([{ provider: "boat", max: 20 }]);
+    const now = Date.parse("2026-11-19T12:35:00.000Z");
+    k.board.tick(now);
+    const runner = { cap: 0, why: "hosted sandboxes only" };
+    k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, ["boat"], { th1: "boat", th2: "boat", th3: "boat" });
+    expect(k.board.state().hosted).toEqual([{ provider: "boat", limit: 20, running: 3 }]);
+    // boat.dev refused a box for billing: the runner offers it no more until 12:45, and says why.
+    const refused = { provider: "boat", what: "start" as const, reason: "billing", why: "boat won't run sandboxes on this account until its billing is sorted out (402 Payment Required).", until: now + 10 * 60_000 };
+    k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, [], { th1: "boat" }, [refused]);
+    const trouble = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard", until: "2026-11-19T12:45:00.000Z" };
+    expect(k.board.state().hosted).toEqual([{ provider: "boat", limit: 20, running: 1, trouble }]);
+    const why = "boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying again at 12:45";
+    expect(k.board.acquire("T1", hosted, "work", true)).toEqual(queued(why));
+    // A computer's bot whose own slots are full says it too, rather than nothing about boat.dev.
+    expect(k.board.acquire("T2", mine, "work", true)).toEqual(GRANTED);
+    k.board.observeMachine("air", "air-box", { cap: 1, why: "memory 18 GB" }, undefined, [], {}, [refused]);
+    expect(k.board.acquire("T3", mine, "work", true)).toEqual(queued(`machine cap: 1 of 1 running on air-box (memory 18 GB); ${why}`));
+    // The runner offers boat.dev again: the trouble is gone and the queued agent goes there.
+    k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, ["boat"], { th1: "boat" });
+    k.board.evaluate();
+    expect(k.board.placeOf("T1")).toBe("boat");
+    expect(k.board.state().hosted[0]?.trouble).toEqual(trouble);
+    // air's word is the last one of it; once its heartbeats stop, it no longer counts.
+    k.board.tick(now + 2 * 45_000 + 1);
+    expect(k.board.state().hosted[0]?.trouble).toBeUndefined();
+  });
+
   test("hosted: an agent on the machine's own login stays on its slots, and says why", () => {
     const air = project_("pa", "air");
     const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["boat"] }]);

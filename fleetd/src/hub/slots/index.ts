@@ -8,7 +8,7 @@
 import type { Database } from "bun:sqlite";
 import type { Clock } from "../../shared/clock.ts";
 import type { ComputerPick, HubEventType, MachineId, ProjectRef, SlotSandbox, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
-import type { NodeLoad } from "../../shared/node_link.ts";
+import type { NodeLoad, SandboxTrouble } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
 import { type EventLog, events } from "../store/events.ts";
@@ -327,7 +327,10 @@ export class Slots {
     const places: Record<string, string> = {};
     if (load.places && typeof load.places === "object")
       for (const [thread, at] of Object.entries(load.places)) if (typeof at === "string") places[thread] = at;
-    this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room, sandboxes, places)]);
+    const trouble = Array.isArray(load.sandboxTrouble)
+      ? load.sandboxTrouble.filter((t): t is SandboxTrouble => typeof t?.provider === "string" && typeof t.why === "string" && typeof t.reason === "string" && (t.what === "start" || t.what === "keep_alive"))
+      : [];
+    this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room, sandboxes, places, trouble)]);
   }
 
   /** Takes a slot now, or queues the request (reviews first, then the oldest) and says why. */

@@ -5879,7 +5879,8 @@
     },
     "DegradedCause": {
       "enum": [
-        "claude_login"
+        "claude_login",
+        "starting"
       ],
       "type": "string"
     },
@@ -9633,7 +9634,7 @@
         },
         "degradedCause": {
           "$ref": "#/$defs/DegradedCause",
-          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded."
+          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes); \"starting\", its node just linked and its first check\nhasn't answered yet. Absent for any other reason, and while not degraded."
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",
@@ -18270,6 +18271,44 @@
       ],
       "type": "string"
     },
+    "ProviderTrouble": {
+      "description": "A provider's trouble now, in plain words: never a path, a status code or any part of the key.",
+      "properties": {
+        "fix": {
+          "description": "What to do about it, in plain words.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What is wrong: \"boat.dev refused: billing isn't set up on the account\".",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/SandboxCheckReason"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its agents are tried there again by themselves; only for `start`."
+        },
+        "what": {
+          "$ref": "#/$defs/ProviderTroubleKind"
+        }
+      },
+      "required": [
+        "message",
+        "reason",
+        "what"
+      ],
+      "type": "object"
+    },
+    "ProviderTroubleKind": {
+      "description": "What a machine found wrong with a connected provider just now: `start`, it refused a sandbox or one didn't come up\nthere, so none is asked of it until `until`; `keep_alive`, its running sandboxes couldn't be kept running.",
+      "enum": [
+        "start",
+        "keep_alive"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "Purchase": {
       "description": "A purchase as its request keeps it: what the person approves.",
       "properties": {
@@ -19323,6 +19362,16 @@
         },
         "provider": {
           "$ref": "#/$defs/SandboxProvider"
+        },
+        "running": {
+          "description": "Its sandboxes live now, across the team's machines; absent while not connected, and from older hubs.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trouble": {
+          "$ref": "#/$defs/ProviderTrouble",
+          "description": "What is wrong with it now, as a machine that makes its sandboxes found it; absent while all is well."
         }
       },
       "required": [
@@ -21125,6 +21174,35 @@
       ],
       "type": "object"
     },
+    "SlotHosted": {
+      "description": "A connected hosted provider on the board.",
+      "properties": {
+        "limit": {
+          "description": "Its limit: how many of the team's agents may run there at once.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        },
+        "running": {
+          "description": "Its sandboxes live now, across the team's machines.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trouble": {
+          "$ref": "#/$defs/ProviderTrouble"
+        }
+      },
+      "required": [
+        "limit",
+        "provider",
+        "running"
+      ],
+      "type": "object"
+    },
     "SlotSandbox": {
       "description": "Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
       "properties": {
@@ -21174,6 +21252,14 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "hosted": {
+          "description": "Each connected hosted provider, in the order agents go to them: its sandboxes live now and what is wrong there.",
+          "items": {
+            "$ref": "#/$defs/SlotHosted"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "perMachine": {
           "default": [],

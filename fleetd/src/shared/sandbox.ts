@@ -2,7 +2,7 @@
 // agents go to them, the limit's bounds, and what a node's check of a key found. The hub keeps the keys (hub/sandbox)
 // and its slot board places agents by count (hub/slots/board.ts); a node checks a key with the provider's client and
 // makes one box per agent there (node/sandbox, node/place/hosted.ts).
-import type { ComputerChoice, ComputerPick, KnownSandboxCheckReason, KnownSandboxProvider, SandboxProviderState, SlotSandbox } from "./contracts.ts";
+import type { ComputerChoice, ComputerPick, KnownSandboxCheckReason, KnownSandboxProvider, ProviderTrouble, SandboxProviderState, SlotSandbox } from "./contracts.ts";
 import { type ComputerKind, notOffered, SIZES, type Size, sizeText } from "../sandbox/providers/common.ts";
 
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
@@ -52,22 +52,68 @@ export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limi
 /** A check's reason as one this build knows; anything else is `failed`. */
 export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includes(r as KnownSandboxCheckReason) ? (r as KnownSandboxCheckReason) : "failed");
 
-/** What fixes a failed check of `provider`'s key on `machine`, by its reason (the hub's and fleetd cloud's words). */
-export function checkFix(provider: KnownSandboxProvider, reason: string, machine: string): string {
+/** What fixes a failed check of `provider`'s key, by its reason (the hub's and fleetd cloud's words): the dashboard to
+ * go to, else trying again. */
+export function checkFix(provider: KnownSandboxProvider, reason: string): string {
   const name = NAMES[provider];
   switch (reason) {
     case "invalid_key":
-      return `${name} refused the key: it may be wrong, revoked or from another account. Make a new one in ${name}'s dashboard and connect it again.`;
+      return `make a new key in ${name}'s dashboard and connect it again`;
     case "limit":
-      return `the ${name} account is at its plan's limit: raise the plan at ${name}, or lower the limit here`;
+      return `raise the plan at ${name}, or lower the limit here`;
     case "billing":
-      return `${name} won't run sandboxes on the account until its billing is sorted: check it in ${name}'s dashboard`;
-    case "unreachable":
-      return `test again in a minute; if it keeps failing, check ${machine} reaches ${name}`;
+      return `set up billing in ${name}'s dashboard`;
     default:
-      return `test again in a minute; if it keeps failing, update fleetd on ${machine}`;
+      return "try again in a minute";
   }
 }
+
+/** The longest a provider's own words go into a line a person reads. */
+const WHY_MAX = 200;
+
+/** A provider's or box's own sentence as a person reads it: no status code in brackets, at most WHY_MAX characters. */
+export function plainWhy(text: string): string {
+  const t = text
+    .replace(/\s*\((?:HTTP )?\d{3}\b[^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;:,]+$/, "");
+  return t.length > WHY_MAX ? `${t.slice(0, WHY_MAX - 1)}…` : t;
+}
+
+/** What a refusal of `provider` means, in a few words, by its reason (`failed`: the provider's own, `why`). */
+export function refusalWords(provider: KnownSandboxProvider, reason: string, why: string): string {
+  const name = NAMES[provider];
+  switch (reason) {
+    case "invalid_key":
+      return `${name} refused the key`;
+    case "billing":
+      return `${name} refused: billing isn't set up on the account`;
+    case "limit":
+      return `${name} refused: the account is at its plan's limit`;
+    case "unreachable":
+      return `${name} didn't answer`;
+    default:
+      return plainWhy(why) || `${name} didn't start a sandbox`;
+  }
+}
+
+/** A provider's trouble as a machine reported it (shared/node_link.ts SandboxTrouble), as the apps show it: what is
+ * wrong and its fix in plain words, and when its agents are tried there again. */
+export function troubleOf(provider: KnownSandboxProvider, t: { what: string; reason: string; why: string; until?: number }): ProviderTrouble {
+  const reason = reasonOf(t.reason);
+  const message =
+    t.what === "keep_alive"
+      ? `${NAMES[provider]} couldn't keep its sandboxes running: ${reason === "failed" ? plainWhy(t.why) || "no reason given" : refusalWords(provider, reason, t.why)}`
+      : refusalWords(provider, reason, t.why);
+  return { what: t.what, reason, message, fix: checkFix(provider, reason), ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}) };
+}
+
+/** A trouble's line where a person reads why an agent waits or didn't start: what is wrong, its fix, and when it is
+ * tried again ("boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying
+ * again at 12:45", the hub's clock, UTC, as its other lines). */
+export const troubleLine = (t: Pick<ProviderTrouble, "message" | "fix" | "until">): string =>
+  `${t.message}${t.fix ? ` (${t.fix})` : ""}${t.until ? `; trying again at ${t.until.slice(11, 16)}` : ""}`;
 
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };

@@ -5,7 +5,8 @@
     },
     "DegradedCause": {
       "enum": [
-        "claude_login"
+        "claude_login",
+        "starting"
       ],
       "type": "string"
     },
@@ -21,7 +22,7 @@
         },
         "degradedCause": {
           "$ref": "#/$defs/DegradedCause",
-          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded."
+          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes); \"starting\", its node just linked and its first check\nhasn't answered yet. Absent for any other reason, and while not degraded."
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",
