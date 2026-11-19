@@ -84,6 +84,41 @@ test("a hosted agent's Android starts in its box: it says so while the box boots
 });
 
 
+test("an agent that ends while its box's emulator boots lets it go, and continued in a new box boots one there", async () => {
+  const t = runnerNode();
+  const d = devices(t.node)!;
+  const first = standInBox();
+  const second = standInBox();
+  let own = first.box;
+  d.inBox = (thread) => (thread === THREAD ? (own as never) : undefined);
+  broker(t.node).boxed = (thread) => (thread === THREAD ? { dial: own.dial, box: own } : undefined);
+  d.boxClient = async (home) => sdkAt(home);
+  const released: string[] = [];
+  const booted: unknown[] = [];
+  d.boxEmulator = async (given) => {
+    booted.push(given);
+    await Bun.sleep(20);
+    const which = given === first.box ? "first" : "second";
+    return { lent: { emulator: { serial: `emulator-${which}`, pushed: false }, release: () => released.push(which) }, sdk: { ...sdkAt(t.node.home), adbPort: 1 } };
+  };
+  (d as unknown as { options: { boxWaitMs: number } }).options.boxWaitMs = 0;
+  const start = () => t.local.call("session_start", { kind: "android", purpose: "try the app" }, THREAD);
+  // The call gives up before the boot answers; the boot then finishes with no start to take it.
+  await expect(start()).rejects.toThrow("The Android emulator is starting in your sandbox");
+  await Bun.sleep(50);
+  // The agent's claude ends: the booted emulator and its ports go.
+  router(t.node).ended(THREAD);
+  await Bun.sleep(10);
+  expect(released).toEqual(["first"]);
+  // Continued, in a new box: a boot of its own there, never the old box's emulator.
+  own = second.box;
+  (d as unknown as { options: { boxWaitMs: number } }).options.boxWaitMs = 1_000;
+  const opened = (await start()) as { serial: string };
+  expect(opened.serial).toBe("emulator-second");
+  expect(booted).toEqual([first.box, second.box]);
+});
+
+
 test("a hosted agent's browser starts in its box, not on the node's machine", async () => {
   const t = runnerNode();
   const b = broker(t.node);

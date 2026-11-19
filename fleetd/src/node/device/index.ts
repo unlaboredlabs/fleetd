@@ -495,6 +495,16 @@ export class Devices implements Screens {
 
   /** The agent session ended: its emulator goes now and the recording to the hub, not after the idle timeout. */
   ended(thread: string): void {
+    // A boot in its box no start took yet: its emulator and the ports here that reach it go too, so a continued agent
+    // in a new box boots one there rather than open on this one.
+    const boot = this.booting.get(thread);
+    if (boot) {
+      this.booting.delete(thread);
+      void boot.then(
+        (b) => b.lent.release(),
+        () => {},
+      );
+    }
     const session = this.sessions.get(thread);
     if (!session) return;
     this.sessions.delete(thread);
@@ -581,7 +591,8 @@ export class Devices implements Screens {
 
   pluginDirs(): string[] {
     const dir = pluginDir(this.home);
-    return this.offered() && existsSync(join(dir, ".claude-plugin")) ? [dir] : [];
+    // As `env`: where this node makes boxes, its hosted agents get the skill with the command.
+    return (this.offered() || boxes() !== undefined) && existsSync(join(dir, ".claude-plugin")) ? [dir] : [];
   }
 
   /** Ends every live session (the node stops); their recordings go at the node's next start. */
