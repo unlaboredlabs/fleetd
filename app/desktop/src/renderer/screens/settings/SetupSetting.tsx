@@ -9,11 +9,11 @@ import { useCallback, useState } from "react";
 import { Button, Select, Textarea } from "../../ui";
 import type { ComputerImage, ProjectSettings as Settings, RepoName } from "../../../shared/contracts";
 import { useNow } from "../live";
-import { useToolQuery } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
-import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, setupFrom, whereOf, type SetupDraft } from "./setupModel";
+import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, runsOnHint, setupFrom, whereOf, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
 
 /** One of the project's other repos' computer, read with `repo`, once the hub answers. */
@@ -120,7 +120,7 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
 }
 
 /**
- * Where every agent of the bot runs: one pick, each choice a real machine, provider and exact size together ("boat.dev ·
+ * Where the agents the bot's lead starts run (the lead itself stays on the bot's machine, as the hover says): one pick, each choice a real machine, provider and exact size together ("boat.dev ·
  * 4 vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. Choices
  * that can't be used now are greyed, and the list says why once under them, with the command that fixes it; a pick that
  * can't be had now says so under the row, since its agents wait for it. No row when there is nothing to pick.
@@ -130,10 +130,12 @@ function RunsOnRow({ settings }: { settings: Settings }) {
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const machineName = useData((d) => d.machines[settings.machineId]?.name ?? settings.machineId);
   const options = pickOptions(settings);
   if (options === null) return null;
   const value = pickValue(settings.computer);
   const current = options.find((o) => o.value === value);
+  const hint = runsOnHint(settings.machineId, machineName);
   const pick = (next: string) => {
     if (next === value) return;
     const chosen = options.find((o) => o.value === next);
@@ -156,6 +158,7 @@ function RunsOnRow({ settings }: { settings: Settings }) {
   return (
     <SettingsRow
       title="Runs on"
+      hint={hint}
       line={problem ?? waiting}
       lineTone={problem !== null || waiting !== null ? "danger" : "quiet"}
       data={{ "data-computer": value }}

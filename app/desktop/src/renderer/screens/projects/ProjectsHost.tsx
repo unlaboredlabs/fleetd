@@ -17,13 +17,14 @@ import { parseHash } from "../shell/routes";
 import { localMachine, openAddProject, useAddUi, type Note } from "./store";
 import s from "./projects.module.css";
 
-/** The palette's machines, read from the data layer's store while the palette is open. */
+/** The palette's machines, read from the data layer's store while the palette is open. The hub's runner for hosted
+ * sandboxes is none: its provider's row is in Settings, as Machines lists it (admin/MachineList.tsx). */
 const machinesSource = (layer: DataLayer): Source => ({
   id: "projects.machines",
   items: (): ReadonlyArray<Command> => {
     const d = layer.store.getState();
     const now = hubNow(d, Date.now());
-    return (selectMachines(d) ?? []).map(({ machine: m, live }) => ({
+    return (selectMachines(d) ?? []).filter(({ machine: m }) => m.runner !== true).map(({ machine: m, live }) => ({
       id: `machine:${m.machineId}`,
       title: m.name,
       detail: machineParts(m, live, now).map((p) => p.text).join(" · ") || m.status,

@@ -14,6 +14,7 @@ import {
   clampMax,
   extrasLine,
   extrasOver,
+  holdsLink,
   machineAgents,
   machineHolds,
   pauseLine,
@@ -31,6 +32,7 @@ import { replaceRoute, type SettingsRoute } from "./route";
 import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
+import { RUNNER_ID } from "../../../shared/providers";
 import { revealNext } from "./search";
 import { CommandLine } from "../onboarding/Prose";
 import s from "./settings.module.css";
@@ -222,7 +224,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       title={props.title ?? "Max agents"}
       titleId={`${id}-label`}
       hint="The most agents this bot runs at once. At 1, the lead works through its tasks in order."
-      line={sourceLine(props.slots, a)}
+      line={sourceLine(props.slots, a, props.projectRef.machineId)}
       control={
         <>
           {a.own ? (
@@ -235,7 +237,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       }
     >
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
-      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId)} machineId={props.projectRef.machineId} />
+      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId)} link={holdsLink(a, props.projectRef.machineId)} machineId={props.projectRef.machineId} />
       <ResultLine
         id={id}
         state={state}
@@ -261,7 +263,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
  * Under a project's slider past its machine's cap: the machine holds it there. Machine caps are hub-wide, so an owner or
  * admin gets the way to them in Hub › Machines; everyone else, only the line.
  */
-function MachineHolds(props: { note: string | null; machineId: string }) {
+function MachineHolds(props: { note: string | null; link: string; machineId: string }) {
   const administers = useAdministers();
   if (props.note === null) return null;
   return (
@@ -274,11 +276,12 @@ function MachineHolds(props: { note: string | null; machineId: string }) {
           size="sm"
           variant="quiet"
           onClick={() => {
-            revealNext("hub.caps");
+            // The hosted sandboxes' link lands on their provider's row by itself (admin/HubPages.tsx).
+            if (props.machineId !== RUNNER_ID) revealNext("hub.caps");
             window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: props.machineId });
           }}
         >
-          {`${props.machineId}'s max in Hub › Machines`}
+          {props.link}
         </Button>
       ) : null}
     </div>

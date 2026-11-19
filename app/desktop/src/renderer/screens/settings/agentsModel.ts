@@ -3,6 +3,7 @@
 // them. Pure, so it is tested without a screen.
 import type { ProjectRef, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
 import { isolationOf, type Isolation } from "./placesModel";
+import { hostedProvider, RUNNER_ID } from "../../../shared/providers";
 
 export interface ProjectAgents {
   /** Agents of the project running now (its lead's own turns aside). Above `max` right after a lower. */
@@ -51,20 +52,29 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
 }
 
 /** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
-export function sourceLine(slots: SlotState, a: ProjectAgents): string {
+export function sourceLine(slots: SlotState, a: ProjectAgents, machineId?: string): string {
   if (a.own) return `Set for this bot. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
-  return fleet ? "Follows the default: the hub's fleet cap." : "Follows the default: its machine's cap.";
+  if (fleet) return "Follows the default: the hub's fleet cap.";
+  return machineId === RUNNER_ID ? `Follows the default: ${hostedProvider().name}'s limit.` : "Follows the default: its machine's cap.";
 }
 
 /**
  * Said under a project's slider moved past its machine's cap: the machine holds it there. Null within it. `machineId`
- * names the machine.
+ * names the machine; on the hosted sandboxes, their provider's limit holds it.
  */
 export function machineHolds(a: ProjectAgents, value: number, machineId: string): string | null {
   if (value <= a.machineCap) return null;
+  if (machineId === RUNNER_ID) {
+    const name = hostedProvider().name;
+    return `${name} runs at most ${a.machineCap} agents at once, so this bot runs ${a.machineCap} until an admin raises ${name}'s limit.`;
+  }
   return `${machineId} runs at most ${a.machineCap} agents at once, so this bot runs ${a.machineCap} until an admin raises ${machineId}.`;
 }
+
+/** The admin's way from machineHolds to what holds it: the machine's max, or the hosted provider's limit on its row. */
+export const holdsLink = (a: ProjectAgents, machineId: string): string =>
+  machineId === RUNNER_ID ? `${hostedProvider().name}'s limit (${a.machineCap}) in Hub › Machines` : `${machineId}'s max in Hub › Machines`;
 
 /** One machine as Settings shows it. */
 export interface MachineAgents {

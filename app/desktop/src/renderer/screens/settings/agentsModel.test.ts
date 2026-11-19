@@ -8,6 +8,7 @@ import {
   extrasOver,
   fleetTop,
   fleetCapLine,
+  holdsLink,
   machineAgents,
   machineHolds,
   machineSource,
@@ -71,6 +72,18 @@ describe("machines", () => {
     // A busy project on the default: its row says the fleet's number, and it follows its machine's.
     const busy = { projectRef: billing, maxAgents: 50, own: false, running: 2, queued: 0 };
     expect(projectAgents({ ...fleet, perProject: [busy] }, billing)).toMatchObject({ max: 22, cap: 22, limit: 22, own: false });
+  });
+
+  it("names boat.dev's limit, not a machine, for a bot on the hosted sandboxes", () => {
+    const hosted = { machineId: "hosted", projectId: "shop" };
+    const slots: SlotState = { ...fleet, perMachine: [{ ...devbox, machineId: "hosted", cap: 20, running: 0 }], perProject: [{ projectRef: hosted, maxAgents: 30, own: true, running: 0, queued: 0 }] };
+    const a = projectAgents(slots, hosted);
+    expect(machineHolds(a, 30, "hosted")).toBe("boat.dev runs at most 20 agents at once, so this bot runs 20 until an admin raises boat.dev's limit.");
+    expect(holdsLink(a, "hosted")).toBe("boat.dev's limit (20) in Hub › Machines");
+    expect(sourceLine(slots, { ...a, own: false }, "hosted")).toBe("Follows the default: boat.dev's limit.");
+    // A computer keeps its own words.
+    expect(holdsLink(projectAgents(fleet, storefront), "devbox")).toBe("devbox's max in Hub › Machines");
+    expect(sourceLine(fleet, { ...projectAgents(fleet, storefront), own: false }, "devbox")).toBe("Follows the default: its machine's cap.");
   });
 
   it("counts every bot's agents on the machine when saying how many queued start", () => {
