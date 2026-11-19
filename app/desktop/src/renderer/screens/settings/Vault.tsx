@@ -6,7 +6,7 @@
 // variables and its orders', with a plus for a variable or a pasted .env. Hub › Every project › Vault is the vault
 // key alone. The lists hold metadata alone (vault_list): a value reaches this page only when the person reveals it,
 // and leaves it on a timer or as soon as the window loses focus.
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { VaultItemSummary, VaultKind, VaultStatusOutput } from "../../../shared/contracts";
 import { Button, Dialog, Field, InlineCode, Input, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Segmented, Select, Text, toast } from "../../ui";
@@ -116,7 +116,11 @@ function VaultList({ whose }: { whose: Whose }) {
             <GroupNote>Loading…</GroupNote>
           ) : (
             <SettingsList label={trash ? "Trash" : "Vault items"}>
-              {items.length === 0 ? <GroupNote>{emptyLine(trash, query, filter, whose)}</GroupNote> : null}
+              {items.length === 0 ? (
+                <GroupNote action={trash || query.trim() !== "" ? null : <EmptyAdd whose={whose} filter={filter} onPick={setAdding} />}>
+                  {emptyLine(trash, query, filter, whose)}
+                </GroupNote>
+              ) : null}
               {items.map((item) => (
                 <Row key={item.itemId} item={item} tag={orderTag(item)} current={item.itemId === open} onOpen={() => setOpen(item.itemId === open ? null : item.itemId)} />
               ))}
@@ -145,10 +149,22 @@ const emptyLine = (trash: boolean, query: string, filter: Filter, whose: Whose):
     : query.trim() !== ""
       ? "Nothing matches."
       : filter !== "all"
-        ? `No ${kindWords(filter).plural.toLowerCase()} yet.`
+        ? `No ${kindWords(filter).plural.toLowerCase()} yet`
         : whose.kind === "project"
-          ? "No variables yet. Add one with +."
-          : "Nothing here yet. Add a login, a card or an address with +.";
+          ? "No variables yet"
+          : "Nothing in the vault yet";
+
+/** An empty list's own add, beside its words: the one kind its filter shows, else the plus's menu under a label. */
+function EmptyAdd({ whose, filter, onPick }: { whose: Whose; filter: Filter; onPick: (a: Adding) => void }) {
+  if (filter !== "all") {
+    return (
+      <Button icon={<Plus size={16} aria-hidden />} onClick={() => onPick({ kind: "item", item: filter })}>
+        {`Add ${kindWords(filter).one.toLowerCase()}`}
+      </Button>
+    );
+  }
+  return <AddMenu whose={whose} live onPick={onPick} label={whose.kind === "project" ? "Add variable" : "Add to the vault"} />;
+}
 
 function Row({ item, tag, current, onOpen }: { item: VaultItemSummary; tag: string | undefined; current: boolean; onOpen: () => void }) {
   return (
@@ -168,12 +184,21 @@ function Row({ item, tag, current, onOpen }: { item: VaultItemSummary; tag: stri
   );
 }
 
-/** The plus menu: each kind the page takes; a pasted .env on a project's, an import from 1Password on the team's. */
-function AddMenu({ whose, live, onPick }: { whose: Whose; live: boolean; onPick: (a: Adding) => void }) {
+/**
+ * The plus menu: each kind the page takes; a pasted .env on a project's, an import from 1Password on the team's. With
+ * `label`, the same menu under a labelled button (an empty list's own add).
+ */
+function AddMenu({ whose, live, onPick, label }: { whose: Whose; live: boolean; onPick: (a: Adding) => void; label?: string }) {
   return (
     <Menu>
       <MenuTrigger asChild disabled={!live}>
-        <AddButton label={live ? "Add to the vault" : "Add to the vault (connect to the hub first)"} disabled={!live} />
+        {label === undefined ? (
+          <AddButton label={live ? "Add to the vault" : "Add to the vault (connect to the hub first)"} disabled={!live} />
+        ) : (
+          <Button icon={<Plus size={16} aria-hidden />} disabled={!live}>
+            {label}
+          </Button>
+        )}
       </MenuTrigger>
       <MenuContent align="end">
         {pageKinds(whose).map((k) => (

@@ -176,10 +176,13 @@
 .card:hover {
   background: var(--hover);
 }
+/* On the title's line, as the time is: 1lh is the card's line, which the title keeps. */
 .cardIcon {
   flex: none;
+  align-self: flex-start;
   width: 18px;
   height: 18px;
+  margin-top: calc((1lh - 18px) / 2);
   color: var(--quiet);
 }
 .words {

@@ -44,7 +44,7 @@ export function Dialog(props: DialogProps) {
               ) : null}
             </div>
             <D.Close asChild>
-              <Button variant="quiet" iconOnly aria-label="Close">
+              <Button variant="quiet" iconOnly aria-label="Close" className={s.dialogClose}>
                 <X />
               </Button>
             </D.Close>

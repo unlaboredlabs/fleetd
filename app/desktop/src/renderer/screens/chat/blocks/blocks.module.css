@@ -166,6 +166,11 @@
 .tile > .icon {
   color: var(--text);
 }
+/* A bare mark (an agent's) on the title's first line, not the middle of the title and its state under it. */
+.prTop > .icon {
+  align-self: flex-start;
+  margin-top: calc((var(--leading-sm) - 16px) / 2);
+}
 .prTitle {
   display: flex;
   flex: 1;

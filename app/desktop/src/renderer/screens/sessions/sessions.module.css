@@ -458,11 +458,13 @@
 .you {
   font-weight: 500;
 }
+/* On the words' first line (xs, 16 px), not the middle of the two they may wrap to. */
 .key {
   flex: none;
-  align-self: center;
+  align-self: flex-start;
   width: 12px;
   height: 12px;
+  margin-top: calc((var(--leading-xs) - 12px) / 2);
   color: var(--quiet);
 }
 /* A URL takes the room the words leave, cut once in the middle. */
@@ -477,9 +479,10 @@
 
 /* A replay's steps are buttons: each jumps to its moment; the one on screen is raised, its words a touch heavier. Its
    snapshot is the small control at the end of its line. */
+/* The page's button centred on its step: a step with a code part (a URL) sits its line lower than one without. */
 .stepRow {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   border-radius: var(--radius-sm);
   transition: background var(--dur-quick) var(--ease-snap);
 }
