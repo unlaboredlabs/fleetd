@@ -6,6 +6,7 @@
 // reason in full, a row per agent (live/Lanes), and the count of the agents' DMs, a way to Activity's log of them; a
 // second click, a press outside or Escape closes it. With none of those (the lead's step alone), it is no button. A file name too long for the room is cut once, in the middle.
 import { useId, useLayoutEffect, useRef, useState, useEffect } from "react";
+import { useSteady } from "../../../shared/steady";
 import { cx, InlineCode, StateGlyph, Text, type GlyphState } from "../../ui";
 import { useData } from "../../src/data/react";
 import { selectLeadAtWork } from "../../src/data/selectors";
@@ -14,7 +15,7 @@ import { useDmTotal } from "../dms/hooks";
 import { countWords } from "../dms/model";
 import { HubText } from "../projects/HubText";
 import { panelRoute, toHash } from "../shell/routes";
-import { Lanes, middleEllipsis, selectStrip, stripHeadline, type Strip, type StripAgent } from "../live";
+import { Lanes, middleEllipsis, selectStrip, stripHeadline, useSteadyLine, type Strip, type StripAgent } from "../live";
 import { leadDoing, sentenceCase } from "./activity";
 import type { ProjectRef } from "./slots";
 import s from "./island.module.css";
@@ -30,7 +31,10 @@ const GLYPH: Readonly<Record<StripAgent["state"], GlyphState>> = { working: "wor
 export function Island({ project, warning }: { project: ProjectRef; warning: string | undefined }) {
   const loaded = useData(selectStrip(project));
   const strip = loaded === undefined || loaded.agents === 0 ? undefined : loaded;
-  const doing = useData((st) => leadDoing(st, projectKey(project)));
+  const now = useData((st) => leadDoing(st, projectKey(project)));
+  // Held steady through its short tool calls (shared/steady.ts); thinking, or working with nothing more known, is the
+  // quiet state between them.
+  const doing = useSteady(now, now ?? "", now === undefined || now === "thinking" || now === "working");
   const step = doing === undefined || BARE.has(doing) ? undefined : sentenceCase(doing);
   // The lead at work, as the composer's Stop has it (live, or last known offline), with no words and no agents' glyphs
   // to say so: its glyph, still while offline.
@@ -165,12 +169,20 @@ function Fleet({ strip }: { strip: Strip }) {
     <span className={s.fleet}>
       <span className={s.glyphs}>
         {strip.lanes.slice(0, MAX_GLYPHS).map((a, i) => (
-          <span key={a.laneId} className={cx(s.glyph, a.state === "needsYou" && s.needs)}>
-            <StateGlyph state={a.state === "working" && a.line.thinking ? "thinking" : GLYPH[a.state]} size="sm" phase={i} />
-          </span>
+          <FleetGlyph key={a.laneId} agent={a} phase={i} />
         ))}
       </span>
       <span className={s.count}>{strip.agents}</span>
+    </span>
+  );
+}
+
+/** One agent's glyph: thinking walks its ring, a tool's work is grain, held steady as its row's line is. */
+function FleetGlyph({ agent, phase }: { agent: StripAgent; phase: number }) {
+  const line = useSteadyLine(agent.line);
+  return (
+    <span className={cx(s.glyph, agent.state === "needsYou" && s.needs)}>
+      <StateGlyph state={agent.state === "working" && line.thinking ? "thinking" : GLYPH[agent.state]} size="sm" phase={phase} />
     </span>
   );
 }

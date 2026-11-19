@@ -2,7 +2,7 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its approvals', payments' and linked hubs' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the lead's turn line's words, the New screen picker's machines, the named MCP servers (Paper),
+// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, the named MCP servers (Paper),
 // and fleetd cloud's accounts call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
@@ -132,6 +132,7 @@ export { clockAt, CLOUD_UPDATES, updateStatus, type Row as UpdateRow, type Statu
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
+export { useSteady } from "../../desktop/src/shared/steady";
 export {
   adminNames,
   askLine,

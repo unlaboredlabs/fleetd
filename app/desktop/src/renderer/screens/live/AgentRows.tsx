@@ -4,7 +4,7 @@
 // panel's list.
 import { RoleTag, Text, Truncate, cx, roleTint } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
-import { ActivityLine } from "./parts";
+import { SteadyActivityLine } from "./parts";
 import { type ProjectRef, type Strip, stripPrs } from "./strip";
 import s from "./live.module.css";
 
@@ -46,7 +46,7 @@ export function Lanes({ id, project, strip, onOpened }: { id: string; project: P
                   {a.title}
                 </Truncate>
               </span>
-              <ActivityLine line={a.line} />
+              <SteadyActivityLine line={a.line} />
             </a>
           </li>
         ))}
