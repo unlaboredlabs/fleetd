@@ -27,6 +27,7 @@ import {
   specOf,
   tailnetValue,
   tailnetWaiting,
+  CONNECT_WAIT_MS,
   YOURS,
 } from "../machines";
 import { space, useTheme } from "../theme";
@@ -95,12 +96,15 @@ export function Machines() {
     }
     if (s.status === "approve") return pick("Tailscale", ["Open Tailscale", "Cancel Connecting"], (i) => (i === 0 ? void Linking.openURL("https://login.tailscale.com/admin/machines") : disconnectTailnet(s)));
     if (s.status === "starting" || (s.status === "off" && s.problem !== undefined)) return;
-    void session.call("tailnet_connect", {}).then((out) => {
+    // As long as the hub can take: a first Connect downloads Tailscale, starts it and waits for its sign-in page.
+    void session.call("tailnet_connect", {}, CONNECT_WAIT_MS).then((out) => {
       tailnet.reload();
       if (!out.ok) return Alert.alert("Not connected", errorWords(out.error));
       const url = (out.output as TailnetState).loginUrl;
       if (url !== undefined) void Linking.openURL(url);
     });
+    // Meanwhile the row reads the hub's state, which says it is starting, and goes on reading it until it isn't.
+    setTimeout(rereadTailnet, 1_000);
   };
   const providers = providersOf(sb);
   const failed = [sandboxes.value].flatMap((v) => (v !== undefined && !v.ok && v.error.code !== "not_found" ? [errorWords(v.error)] : []));

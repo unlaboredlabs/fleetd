@@ -10,6 +10,12 @@ describe("Tailscale's row", () => {
     expect(lineOf({ status: "failed", problem: "it ended" })).toEqual({ text: "it ended", tone: "danger" });
   });
 
+  it("says what to do when it's connected but its sign-in can't be kept (a locked vault)", () => {
+    const s = { status: "connected", tailnet: "example.com", device: "fleetd", problem: "Connected, but its sign-in isn't kept: unlock the vault" };
+    expect(lineOf(s)).toEqual({ text: "example.com · as fleetd. Connected, but its sign-in isn't kept: unlock the vault.", tone: "warning" });
+    expect(markOf(s)).toBe("needs");
+  });
+
   it("is off with why where the hub can't run it, and Connect off there", () => {
     const mac = { status: "off", problem: "Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64)" };
     expect(lineOf(mac)?.text).toBe("Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64).");

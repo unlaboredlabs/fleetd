@@ -7,7 +7,7 @@
 // never its own address or name, which userspace tailscaled hands to the hub machine's loopback.
 import type { Duplex } from "node:stream";
 import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
-import { AT_HEADER, MACHINE_HEADER, NONCE_HEADER, NOT_HERE, SIG_HEADER, SKEW_MS, signedMessage, tailnetIp, tailnetName } from "../../shared/tailnet.ts";
+import { ACK_EVERY, AT_HEADER, CAP, MACHINE_HEADER, NONCE_HEADER, NOT_HERE, SIG_HEADER, SKEW_MS, signedMessage, tailnetIp, tailnetName } from "../../shared/tailnet.ts";
 import type { Hub } from "../api/hub.ts";
 import { json, type Route, type Socket, type SocketHandler, upgrade } from "../http/route.ts";
 import { NotHere, Off } from "./gateway.ts";
@@ -61,7 +61,22 @@ export const dnsRoute: Route = async (req, { hub }) => {
   }
 };
 
-type DialState = { conn?: Duplex; early: Buffer[]; closed: boolean; host: string; port: number; machineId: string };
+/** One dial: `held` the node's bytes the gateway's connection hasn't taken yet (CAP at most), `taken` those it took
+ * since the last ack. */
+type DialState = { conn?: Duplex; early: Buffer[]; closed: boolean; host: string; port: number; machineId: string; held: number; taken: number };
+
+/** Hands the node's `bytes` to the gateway's connection, and acks them to the node once taken (shared/tailnet.ts
+ * WINDOW), so the hub holds no more of a connection than the window. */
+function forward(ws: Socket, st: DialState, conn: Duplex, bytes: Buffer): void {
+  conn.write(bytes, () => {
+    st.held -= bytes.length;
+    st.taken += bytes.length;
+    if (st.taken >= ACK_EVERY && !st.closed) {
+      ws.send(JSON.stringify({ ack: st.taken }));
+      st.taken = 0;
+    }
+  });
+}
 
 /** The bytes between the node's socket and the gateway's connection, once the dial went through. */
 function handler(hub: Hub): SocketHandler {
@@ -82,7 +97,7 @@ function handler(hub: Hub): SocketHandler {
       if (st.closed) return void conn.destroy();
       st.conn = conn;
       ws.send(JSON.stringify({ ok: true }));
-      for (const b of st.early.splice(0)) conn.write(b);
+      for (const b of st.early.splice(0)) forward(ws, st, conn, b);
       conn.on("data", (d: Buffer) => {
         // Past Bun's buffer: the gateway's side waits until the node's side drained.
         if (ws.send(d) === -1) conn.pause();
@@ -94,7 +109,10 @@ function handler(hub: Hub): SocketHandler {
     message(ws: Socket, message: string | Buffer) {
       const st = ws.data.state as DialState;
       if (typeof message === "string") return;
-      if (st.conn) st.conn.write(message);
+      st.held += message.length;
+      // A node that ignores the window: cut off, rather than held in the hub's memory.
+      if (st.held > CAP) return void ws.close(1009, "past the tailnet window");
+      if (st.conn) forward(ws, st, st.conn, Buffer.from(message));
       else st.early.push(Buffer.from(message));
     },
     drain(ws: Socket) {
@@ -120,6 +138,6 @@ export const dialRoute: Route = (req, ctx) => {
   if (!onTailnet(host, tailnet(ctx.hub).suffix())) return json({ error: `${host} isn't on the tailnet` }, 403);
   const who = caller(ctx.hub, req, "dial", `${host}:${p}`);
   if ("refused" in who) return json({ error: who.refused }, 401);
-  const state: DialState = { early: [], closed: false, host, port: p, machineId: who.machineId };
+  const state: DialState = { early: [], closed: false, host, port: p, machineId: who.machineId, held: 0, taken: 0 };
   return upgrade(req, ctx, handler(ctx.hub), state);
 };

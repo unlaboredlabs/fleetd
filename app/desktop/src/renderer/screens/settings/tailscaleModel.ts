@@ -11,7 +11,7 @@ export const HINT =
 export const waiting = (s: TailnetState | undefined): boolean => s?.status === "login" || s?.status === "approve" || s?.status === "starting";
 
 export function markOf(s: TailnetState): Mark {
-  if (s.status === "connected") return "ready";
+  if (s.status === "connected") return s.problem === undefined ? "ready" : "needs";
   if (s.status === "failed") return "failed";
   if (waiting(s)) return "needs";
   return "off";
@@ -27,8 +27,11 @@ export function markLabel(s: TailnetState): string {
 /** The line under its name: none at rest. */
 export function lineOf(s: TailnetState): { text: string; tone: TextTone } | null {
   switch (s.status) {
-    case "connected":
-      return { text: [s.tailnet, s.device === undefined ? undefined : `as ${s.device}`].filter(Boolean).join(" · ") || "Connected", tone: "quiet" };
+    case "connected": {
+      const where = [s.tailnet, s.device === undefined ? undefined : `as ${s.device}`].filter(Boolean).join(" · ") || "Connected";
+      // Connected, but not kept across a restart (a locked vault): what to do.
+      return s.problem === undefined ? { text: where, tone: "quiet" } : { text: `${where}. ${s.problem}.`, tone: "warning" };
+    }
     case "login":
       return { text: "Waiting for you to sign in to Tailscale and approve the device.", tone: "quiet" };
     case "approve":

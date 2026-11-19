@@ -6,7 +6,7 @@
 // doesn't hold the gateway (a cloud's) answers so, and the node calls again.
 import { randomBytes } from "node:crypto";
 import { Duplex } from "node:stream";
-import { AT_HEADER, DIAL_PATH, DNS_PATH, MACHINE_HEADER, NONCE_HEADER, NOT_HERE, NOT_HERE_TRIES, SIG_HEADER, signedMessage } from "../../shared/tailnet.ts";
+import { AT_HEADER, DIAL_PATH, DNS_PATH, MACHINE_HEADER, NONCE_HEADER, NOT_HERE, NOT_HERE_TRIES, SIG_HEADER, signedMessage, ACK_EVERY, WINDOW } from "../../shared/tailnet.ts";
 
 /** What a box's link asks of the node for the tailnet. */
 export type TailnetHooks = {
@@ -18,8 +18,6 @@ export type TailnetHooks = {
 
 /** How long a dial's first answer may take: the gateway's own dial and the hub's word on it. */
 const DIAL_WAIT_MS = 20_000;
-/** The most bytes a connection's side here holds unsent before it waits. */
-const HIGH_WATER = 4 << 20;
 
 type Signer = { signTailnet(message: string): string };
 
@@ -132,26 +130,37 @@ export class NodeTailnet implements TailnetHooks {
   }
 }
 
-/** A websocket whose first word was taken, as a byte stream. */
+/** A websocket whose first word was taken, as a byte stream: what it writes is held back once WINDOW bytes wait for
+ * the hub's ack (shared/tailnet.ts), so neither side holds more of the connection than that. */
 function wsDuplex(ws: WebSocket): Duplex {
+  let unacked = 0;
+  let waiting: (() => void) | undefined;
+  const go = () => {
+    const w = waiting;
+    waiting = undefined;
+    w?.();
+  };
   const d = new Duplex({
     read() {},
     write(chunk: Buffer, _encoding, callback) {
-      if (ws.readyState !== WebSocket.OPEN) return callback(new Error("the hub's side of the connection closed"));
-      ws.send(chunk);
-      if (ws.bufferedAmount < HIGH_WATER) return callback();
-      const wait = setInterval(() => {
-        if (ws.bufferedAmount < HIGH_WATER || ws.readyState !== WebSocket.OPEN) {
-          clearInterval(wait);
-          callback();
+      // In pieces no bigger than an ack's, each sent once the window has room.
+      void (async () => {
+        for (let at = 0; at < chunk.length; at += ACK_EVERY) {
+          if (unacked >= WINDOW) await new Promise<void>((r) => (waiting = r));
+          if (ws.readyState !== WebSocket.OPEN) return callback(new Error("the hub's side of the connection closed"));
+          const piece = chunk.subarray(at, at + ACK_EVERY);
+          ws.send(piece);
+          unacked += piece.length;
         }
-      }, 10);
+        callback();
+      })();
     },
     final(callback) {
       ws.close();
       callback();
     },
     destroy(error, callback) {
+      go();
       try {
         ws.close();
       } catch {}
@@ -159,9 +168,16 @@ function wsDuplex(ws: WebSocket): Duplex {
     },
   });
   ws.onmessage = (e) => {
-    if (typeof e.data !== "string") d.push(Buffer.from(e.data as ArrayBuffer));
+    if (typeof e.data !== "string") return void d.push(Buffer.from(e.data as ArrayBuffer));
+    let n = 0;
+    try {
+      n = Number((JSON.parse(e.data) as { ack?: unknown }).ack);
+    } catch {}
+    if (!(n > 0)) return;
+    unacked = Math.max(0, unacked - n);
+    if (unacked < WINDOW) go();
   };
-  ws.onclose = () => d.push(null);
+  ws.onclose = () => (go(), d.push(null));
   ws.onerror = () => d.destroy();
   return d;
 }

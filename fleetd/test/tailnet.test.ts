@@ -327,3 +327,115 @@ test("a dial's bytes keep their order both ways through the hub", async () => {
     await stop(server);
   }
 }, 30_000);
+
+/** A server that takes connections and reads nothing until `read()`; what it read once it does. */
+async function slowReader() {
+  const socks: import("node:net").Socket[] = [];
+  let reading = false;
+  const parts: Buffer[] = [];
+  const s = createServer((c) => {
+    socks.push(c);
+    c.on("data", (d: Buffer) => parts.push(d));
+    if (!reading) c.pause();
+  });
+  servers.push(s);
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+  return {
+    port: (s.address() as { port: number }).port,
+    read: () => ((reading = true), socks.forEach((c) => c.resume())),
+    bytes: () => parts.reduce((n, b) => n + b.length, 0),
+    all: () => Buffer.concat(parts),
+  };
+}
+
+test("a large upload to a device that reads slowly waits on its node, not in the hub's memory", async () => {
+  await call(admin, "tailnet_connect");
+  approve();
+  await until("connected", () => gw.state().status === "connected");
+  const server = serve(t.hub, t.tools, 0);
+  try {
+    const identity = loadOrCreateIdentity(join(dir, "node4"));
+    t.hub.auth.nodes.enrollNode(t.hub.auth.nodes.createEnrollToken("devbox", "devbox").token, "devbox", identity.pubKey());
+    const node = new NodeTailnet(`http://127.0.0.1:${server.port}`, "devbox", identity, clock());
+    node.set({ suffix: "" });
+    const target = await slowReader();
+    const conn = await node.dial("100.104.249.49", target.port);
+    const total = 64 << 20;
+    const piece = Buffer.alloc(256 << 10, 7);
+    let taken = 0;
+    // The node's writes are taken only as fast as the hub hands them on: a window, plus what the sockets' own
+    // buffers on the way hold, never the whole upload.
+    const writing = (async () => {
+      while (taken < total) {
+        await new Promise<void>((r) => conn.write(piece, () => r()));
+        taken += piece.length;
+      }
+    })();
+    await Bun.sleep(1_500);
+    expect(taken).toBeLessThan(24 << 20);
+    target.read();
+    await writing;
+    await until("all there", () => target.bytes() >= total, 30_000);
+    expect(target.bytes()).toBe(total);
+    conn.destroy();
+  } finally {
+    await stop(server);
+  }
+}, 60_000);
+
+test("a node that ignores the window is cut off rather than held in the hub's memory", async () => {
+  await call(admin, "tailnet_connect");
+  approve();
+  await until("connected", () => gw.state().status === "connected");
+  const server = serve(t.hub, t.tools, 0);
+  try {
+    const identity = loadOrCreateIdentity(join(dir, "node5"));
+    t.hub.auth.nodes.enrollNode(t.hub.auth.nodes.createEnrollToken("devbox", "devbox").token, "devbox", identity.pubKey());
+    const target = await slowReader();
+    const at = t.hub.clock.now();
+    const nonce = "w".repeat(24);
+    const ws = new WebSocket(`ws://127.0.0.1:${server.port}${DIAL_PATH}?host=100.104.249.49&port=${target.port}`, {
+      headers: { "x-fleetd-machine": "devbox", "x-fleetd-at": String(at), "x-fleetd-nonce": nonce, "x-fleetd-sig": identity.signTailnet(signedMessage("devbox", at, nonce, "dial", `100.104.249.49:${target.port}`)) },
+    } as unknown as string[]);
+    const closed = new Promise<number>((r) => (ws.onclose = (e) => r(e.code)));
+    await new Promise<void>((r) => (ws.onmessage = () => r()));
+    // Sent as fast as it goes, with no regard for the hub's acks.
+    const piece = new Uint8Array(1 << 20);
+    for (let i = 0; i < 64 && ws.readyState === WebSocket.OPEN; i++) ws.send(piece);
+    expect(await Promise.race([closed, Bun.sleep(15_000).then(() => -1)])).toBe(1009);
+    expect(target.bytes()).toBeLessThan(64 << 20);
+  } finally {
+    await stop(server);
+  }
+}, 30_000);
+
+test("a vault locked at Connect: connected all the same, saying its sign-in isn't kept until the vault is unlocked", async () => {
+  let locked = true;
+  const sealed = sqliteStore(t.hub);
+  const store = {
+    load: () => sealed.load(),
+    clear: () => sealed.clear(),
+    save: async (state: Uint8Array) => {
+      if (locked) throw new Error("The vault's key isn't available (it is locked), so Tailscale's state can't be kept sealed.");
+      await sealed.save(state);
+    },
+  };
+  gw = new LocalGateway({ home: dir, store, programs: async () => standInPrograms(dir, marks), runDir: join(dir, "run"), waitMs: 20, everyMs: 50 });
+  use(gw);
+  expect(await call(admin, "tailnet_connect")).toEqual({ status: "login", loginUrl: LOGIN_URL });
+  approve();
+  await until("connected", () => gw.state().status === "connected");
+  // No error for a device that did connect: the row says what to do instead.
+  expect(await call(member, "tailnet_get")).toEqual({
+    status: "connected",
+    tailnet: "example.com",
+    device: "fleetd",
+    problem:
+      "Connected, but its sign-in isn't kept: the vault's key isn't available (it is locked), so Tailscale's state can't be kept sealed. Unlock the vault in Settings › Vault; until then the hub's next restart signs it out",
+  });
+  expect(sealedRow()).toBeUndefined();
+  // Unlocked: sealed at the next read, and the line goes.
+  locked = false;
+  await until("sealed", () => sealedRow() !== undefined && gw.state().problem === undefined);
+  expect(await call(member, "tailnet_get")).toEqual({ status: "connected", tailnet: "example.com", device: "fleetd" });
+});

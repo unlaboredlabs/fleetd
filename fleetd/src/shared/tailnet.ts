@@ -8,7 +8,7 @@
 import { isIP } from "node:net";
 
 /** One tailnet connection: a websocket, `?host=&port=`. The hub's first message says how the dial went
- * (`{"ok":true}` or `{"error","retry"?}`); the bytes follow as binary messages. */
+ * (`{"ok":true}` or `{"error","retry"?}`); the bytes follow as binary messages, the hub's acks (WINDOW) as text. */
 export const DIAL_PATH = "/node/tailnet/dial";
 /** One tailnet name lookup: `?name=&type=` (a DNS type number), answered with the DNS response's bytes. */
 export const DNS_PATH = "/node/tailnet/dns";
@@ -20,6 +20,13 @@ export const SIG_HEADER = "x-fleetd-sig";
 
 /** How far a call's time may be from the hub's. */
 export const SKEW_MS = 120_000;
+
+/** A dial's bytes from the node to the gateway are windowed: the hub says `{"ack":n}` once it has handed n more bytes
+ * to the gateway's connection, and the node keeps at most WINDOW bytes unacknowledged, so the hub never holds more of
+ * one connection than that. A node past CAP (one that ignores the window) is cut off. */
+export const WINDOW = 1 << 20;
+export const ACK_EVERY = 64 << 10;
+export const CAP = 2 * WINDOW;
 
 /** A gateway that lives on another host than the one a call landed on (a cloud's): the node calls again. HTTP 421
  * Misdirected Request for a lookup, and `retry` in a dial's first message. */

@@ -354,8 +354,21 @@ export class LocalGateway implements Gateway {
     if (b === "Running") {
       this.#suffix = st.CurrentTailnet?.MagicDNSSuffix || undefined;
       const device = (st.Self?.DNSName ?? "").replace(/\.$/u, "").split(".")[0] || st.Self?.HostName || undefined;
-      this.#set({ status: "connected", ...(st.CurrentTailnet?.Name ? { tailnet: st.CurrentTailnet.Name } : {}), ...(device ? { device } : {}) });
-      await this.#seal();
+      // Connected whether or not its sign-in could be sealed (a vault locked by its passphrase): then it says so, and the
+      // seal is tried again at each read until the vault opens.
+      let unsealed: string | undefined;
+      try {
+        await this.#seal();
+      } catch (error) {
+        const why = (error as Error).message.replace(/\.$/u, "");
+        unsealed = `Connected, but its sign-in isn't kept: ${why.charAt(0).toLowerCase()}${why.slice(1)}. Unlock the vault in Settings › Vault; until then the hub's next restart signs it out`;
+      }
+      this.#set({
+        status: "connected",
+        ...(st.CurrentTailnet?.Name ? { tailnet: st.CurrentTailnet.Name } : {}),
+        ...(device ? { device } : {}),
+        ...(unsealed ? { problem: unsealed } : {}),
+      });
     } else if (b === "NeedsMachineAuth") this.#set({ status: "approve" });
     else if (b === "NeedsLogin" && st.AuthURL) this.#set({ status: "login", loginUrl: st.AuthURL });
     else if (b === "NeedsLogin" && !this.#up && !this.#connecting) this.#set({ status: "failed", problem: "Tailscale signed the gateway out (its key expired, or it was removed from the tailnet): connect it again" });
