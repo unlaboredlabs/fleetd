@@ -99,7 +99,8 @@ export function Toaster({ children }: { children: ReactNode }) {
           </div>
         </T.Root>
       ))}
-      <T.Viewport className={s.toastViewport} />
+      {/* Over any modal, sharp and in reach: never held under one (lib/under.ts). */}
+      <T.Viewport className={s.toastViewport} data-over-modal="" />
     </T.Provider>
   );
 }

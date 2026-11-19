@@ -3,7 +3,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
+import { toast, Toaster } from "../primitives/Toast";
 import { underModal } from "./under";
 
 it("holds what comes before a modal at every level up to the body, and lets go of only what it held", () => {
@@ -27,6 +30,34 @@ it("holds what comes before a modal at every level up to the body, and lets go o
   letGoPortal?.();
   expect(held()).toEqual([]);
   expect(underModal(null)).toBeUndefined();
+});
+
+it("never holds the toasts under a modal portalled onto the body: the app around them is held, they stay over it", () => {
+  document.body.innerHTML = `<div id="root"></div>`;
+  const root = createRoot(document.getElementById("root") as HTMLElement);
+  act(() => {
+    root.render(
+      <Toaster>
+        <div id="shell">the app</div>
+      </Toaster>,
+    );
+  });
+  act(() => {
+    toast({ title: "Ada is ready", duration: 0 });
+  });
+  // New bot: its overlay in a portal after the app's root.
+  const portal = document.createElement("div");
+  portal.innerHTML = `<div id="overlay"></div>`;
+  document.body.append(portal);
+  const letGo = underModal(document.getElementById("overlay"));
+  const words = [...document.querySelectorAll("li")].find((el) => el.textContent.includes("Ada is ready"));
+  expect(words, "the toast shows").toBeDefined();
+  expect(words?.closest("[inert], [data-under-modal]"), "the toast is held under the modal").toBeNull();
+  expect(document.getElementById("shell")?.hasAttribute("data-under-modal")).toBe(true);
+  expect(document.getElementById("root")?.hasAttribute("data-under-modal"), "a filter on the root traps the toasts").toBe(false);
+  letGo?.();
+  expect(document.querySelectorAll("[data-under-modal], [inert]")).toHaveLength(0);
+  act(() => root.unmount());
 });
 
 // Read from disk: Vitest blanks CSS imports.
