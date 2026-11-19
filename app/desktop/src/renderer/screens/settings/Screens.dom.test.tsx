@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
-// A machine's Screens, on its page in Hub › Machines: a switch per kind, its line from the machine's node, how many it
-// hosts at once and when an idle one ends (said, not picked); and the hub's recording retention, in days only. A
-// switch goes out as machine_screens_set and the node's answer shows under it; a machine whose node can't take it
-// can't be switched from here.
+// A machine's Screens, on its page in Hub › Machines: no switch per kind (D574), only a line for a kind that needs
+// someone, with the command that fixes it; how many it hosts at once and when an idle one ends (said, not picked); and
+// the hub's recording retention, in days only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -30,23 +29,23 @@ const devbox: MachineRolesEntry = {
   maxSessionsWhy: "auto: 8 CPUs, 16 GB",
   sessionsLive: 1,
   hostsOthers: true,
-  screenSettings: true,
   hosts: [
-    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 },
-    { host: "android", ready: false, detail: "Android screens are off in node.json", off: "off", on: false, idleMinutes: 30 },
-    { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb", on: true, idleMinutes: 30 },
-    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own: its agents session's screen", off: "unsupported", on: false, idleMinutes: 5 },
+    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 30 },
+    { host: "android", ready: false, detail: "Installing the Android emulator for screens", off: "installing", idleMinutes: 30 },
+    { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb", idleMinutes: 30 },
+    { host: "mac", ready: false, detail: "the Mac screen is the agents' Mac's own", off: "unsupported", idleMinutes: 5 },
   ],
 };
-// A Mac on an older fleetd: what it hosts shows, but its switches don't move from here.
+// A machine on an older fleetd, whose node.json turned Android off: on once it is updated.
 const mac1: MachineRolesEntry = {
   ...devbox,
   machineId: "mac1",
   name: "mac1",
   roles: ["sessions"],
-  screenSettings: false,
-  nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node",
-  hosts: [{ host: "mac", ready: true, detail: "the agents session is on the Mac's screen" }],
+  hosts: [
+    { host: "browser", ready: true, detail: "Chrome at /Applications/Google Chrome.app" },
+    { host: "android", ready: false, detail: "Android screens are off in node.json", off: "off" },
+  ],
 };
 // A Linux box with no Xvfb: its node says what installs it.
 const lab: MachineRolesEntry = {
@@ -54,8 +53,8 @@ const lab: MachineRolesEntry = {
   machineId: "lab",
   name: "lab",
   hosts: [
-    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 },
-    { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", on: true, idleMinutes: 30, fix: "sudo apt-get install -y xvfb" },
+    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 30 },
+    { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", idleMinutes: 30, fix: "sudo apt-get install -y xvfb" },
   ],
 };
 const agentsOnly: MachineRolesEntry = { ...devbox, machineId: "builder", name: "builder", roles: ["agents"] };
@@ -82,7 +81,6 @@ let listed: MachineRolesEntry[];
 let withRetention: boolean;
 /** What hub_info says the hub leaves out: fleetd cloud leaves its own update out. */
 let leftOut: string[] | undefined;
-let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -112,8 +110,6 @@ const render = async () => {
           ? { machines: listed, ...(withRetention ? { retention: { retentionDays: 30, maxGbPerProject: 20 } } : {}) }
           : tool === "hub_info"
             ? { version: "0.9.0", protocol: 1, busy: [], admin: true, ...(leftOut === undefined ? {} : { leftOut }) }
-            : tool === "machine_screens_set"
-            ? { machine: devbox, next: "Saved. It applies once the screen live here ends, when the node restarts." }
             : {};
       return Promise.resolve({ ok: true, output });
     },
@@ -137,27 +133,20 @@ const render = async () => {
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("mac1")], projects: [] } });
     await new Promise((r) => setTimeout(r, 0));
   });
-  send = listener;
   await settle();
 };
 
 const row = (m: string) => host.querySelector<HTMLElement>(`[data-screens="${m}"]`);
-const toggle = (within: HTMLElement | null, label: string) => within?.querySelector<HTMLButtonElement>(`button[role="switch"][aria-label^="${label} screens"]`);
+const needs = (within: HTMLElement | null) => [...(within?.querySelectorAll<HTMLElement>("[data-screens-needs]") ?? [])].map((r) => r.dataset.screensNeeds);
 
-it("lists each machine that hosts screens with a switch per kind and what its node says", async () => {
+it("lists each machine that hosts screens with no switch per kind, and nothing more while none needs someone", async () => {
   await render();
   expect(row("builder")).toBeNull();
   const box = row("devbox");
-  expect(toggle(box, "Browser")?.getAttribute("aria-checked")).toBe("true");
-  expect(toggle(box, "Android")?.getAttribute("aria-checked")).toBe("false");
-  expect(toggle(box, "Android")?.disabled).toBe(false);
-  // A kind ready or just off says nothing under its switch: only what stands in the way does.
-  expect(box?.textContent).not.toContain("Ready");
-  // No iOS switch (D298); the agents' Mac can't run on Linux: its switch doesn't move, and says why and how to get one.
-  expect(toggle(box, "iOS")).toBeNull();
-  expect(toggle(box, "Agents’ Mac")?.disabled).toBe(true);
-  expect(box?.textContent).toContain("Only a Mac has this screen. Add one from Machines: the plus, then A Mac for agents.");
-  expect(box?.textContent).not.toContain("the Mac screen is a Mac's own");
+  expect(host.querySelector('button[role="switch"]')).toBeNull();
+  // Ready, installing, or a kind it can't run at all (the agents' Mac on Linux): nothing at rest.
+  expect(needs(box)).toEqual([]);
+  for (const word of ["Browser", "Android", "Linux desktop", "Agents’ Mac", "Not known yet", "Ready"]) expect(box?.textContent).not.toContain(word);
   // Online: nothing about being offline.
   expect(box?.textContent).not.toContain("is offline");
   // The screens open now beside the limit; where the limit comes from is the row's hover.
@@ -166,16 +155,6 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   // One idle timeout, said rather than picked.
   expect(box?.textContent).toContain("An idle screen ends after 30 minutes.");
   expect(box?.querySelector("[aria-label^='Idle timeout']")).toBeNull();
-  // An older node: what it hosts shows, and why it can't be switched from here.
-  expect(toggle(row("mac1"), "Agents’ Mac")?.getAttribute("aria-checked")).toBe("true");
-  expect(toggle(row("mac1"), "Agents’ Mac")?.disabled).toBe(true);
-  expect(row("mac1")?.textContent).toContain("Update mac1's fleetd to change these.");
-  expect([...(row("mac1")?.querySelectorAll("button") ?? [])].some((b) => b.textContent === "Open Updates")).toBe(true);
-  // And if an update didn't restart it: the command, to copy, and where to run it.
-  expect(row("mac1")?.textContent).toContain("Still the same after updating? Run this on mac1:");
-  expect(row("mac1")?.textContent).toContain("launchctl kickstart -k gui/501/sh.fleetd.node");
-  expect([...(row("mac1")?.querySelectorAll("button") ?? [])].some((b) => b.textContent === "Copy")).toBe(true);
-  expect(row("devbox")?.textContent).not.toContain("Update devbox");
   // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
   expect(host.querySelector("[aria-label='Recordings per bot, at most']")).toBeNull();
@@ -195,82 +174,52 @@ it("tells a hub without recordings' retention to update only when it is updated 
   expect(host.querySelector("[data-screens-retention]")).toBeNull();
 });
 
-it("says once that an offline machine's switches wait for it, not on every row", async () => {
-  listed = [{ ...devbox, online: false }];
-  await render();
-  const box = row("devbox");
-  expect((box?.textContent ?? "").split("devbox is offline: these change once it's back.")).toHaveLength(2);
-  expect(box?.textContent).not.toContain("Offline");
-  for (const kind of ["Browser", "Android"]) expect(toggle(box, kind)?.disabled).toBe(true);
-});
-
-// The person updated: the hub read the machines while devbox's node was restarting onto the new build (the machine
-// still online), and the node linked again with no status change. It never reads as too old, and its switches come
-// back once machine.linked says the node is back.
-it("a node restarting after an update is not too old, and its switches come back once it links again", async () => {
-  const { screenSettings: _, ...restarting } = devbox;
-  listed = [restarting];
-  await render();
-  expect(row("devbox")?.textContent).not.toContain("Update devbox");
-  expect(row("devbox")?.textContent).toContain("devbox's node is restarting: these come back once it links again.");
-  expect(toggle(row("devbox"), "Android")?.disabled).toBe(true);
-
-  listed = [devbox];
-  await act(async () => {
-    send({ t: "event", event: { seq: 2, at: AT, type: "machine.linked", machineId: "devbox", summary: "devbox's node linked again, on fleetd 2", data: { nodeVersion: "2" } } });
-    await new Promise((r) => setTimeout(r, 300));
-  });
-  for (let i = 0; i < 3; i++) await settle();
-  expect(row("devbox")?.textContent).not.toContain("restarting");
-  expect(toggle(row("devbox"), "Android")?.disabled).toBe(false);
-});
-
-it("turns a kind on with machine_screens_set and shows the node's answer", async () => {
-  await render();
-  await act(async () => {
-    toggle(row("devbox"), "Android")?.click();
-    await Promise.resolve();
-  });
-  await settle();
-  expect(calls.find((c) => c.tool === "machine_screens_set")?.input).toEqual({ machineId: "devbox", host: "android", on: true });
-  expect(row("devbox")?.textContent).toContain("It applies once the screen live here ends, when the node restarts.");
-});
-
 it("shows what a kind that can't run is missing as the command to run on that machine", async () => {
   await render();
   const box = row("lab");
+  expect(needs(box)).toEqual(["desktop"]);
+  expect(box?.textContent).toContain("No docker, podman or Xvfb.");
   expect(box?.querySelector("dt")?.textContent).toBe("Run on lab, for Linux desktop");
   expect(box?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo apt-get install -y xvfb");
   expect(box?.querySelector("button[aria-label^='Copy']")).not.toBeNull();
-  // Where every kind runs or is simply off, no command.
   expect(row("devbox")?.querySelector("dt")).toBeNull();
+});
+
+it("says a kind an older node turned off comes on with its update, and nothing of the rest", async () => {
+  await render();
+  const box = row("mac1");
+  expect(needs(box)).toEqual(["android"]);
+  expect(box?.textContent).toContain("Off until mac1’s fleetd is updated.");
+  expect(box?.querySelector('button[role="switch"]')).toBeNull();
+});
+
+it("says nothing of an offline machine's kinds: its own note says it is offline", async () => {
+  listed = [{ ...lab, online: false }];
+  await render();
+  expect(needs(row("lab"))).toEqual([]);
 });
 
 // The agents' Mac offers only its own screen: an older node of it still reports a browser, an emulator and a desktop,
 // and none of them shows, nor an idle timeout to pick, as its screen ends after its own few idle minutes.
-it("the agents' Mac shows only its own screen's switch", async () => {
+it("the agents' Mac says only of its own screen", async () => {
   const agentsMac: MachineRolesEntry = {
     ...devbox,
     machineId: "studio",
     name: "studio",
     roles: ["sessions"],
-    mac: { on: true, ready: true },
+    mac: { on: true, ready: false },
     hosts: [
-      { host: "browser", ready: true, detail: "Chrome at /Applications/Google Chrome.app", on: true, idleMinutes: 30 },
-      { host: "android", ready: false, detail: "Android screens run on Linux x86_64 with KVM", off: "unsupported", on: false, idleMinutes: 30 },
-      { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)", off: "unsupported", on: true, idleMinutes: 30 },
-      { host: "mac", ready: true, detail: "the node's session is on the Mac's screen", on: true, idleMinutes: 5 },
+      { host: "browser", ready: false, detail: "node.json names Chrome at /nowhere, which is not there", off: "missing", idleMinutes: 30 },
+      { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)", off: "unsupported", idleMinutes: 30 },
+      { host: "mac", ready: false, detail: "fleetd needs Screen Recording", off: "missing", fix: "open 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'", idleMinutes: 5 },
     ],
   };
   listed = [devbox, agentsMac];
   await render();
   const mac = row("studio");
-  expect([...(mac?.querySelectorAll('button[role="switch"]') ?? [])].map((b) => b.getAttribute("aria-label"))).toEqual(["Agents’ Mac screens on studio"]);
-  expect(toggle(mac, "Agents’ Mac")?.disabled).toBe(false);
+  expect(needs(mac)).toEqual(["mac"]);
+  expect(mac?.querySelector("dt")?.textContent).toBe("Run on studio, for Agents’ Mac");
   expect(mac?.textContent).not.toContain("An idle screen ends");
   expect(mac?.textContent).toContain("An idle Mac screen ends after 5 minutes, so the next agent gets it.");
   expect(mac?.textContent).not.toContain("Chrome");
-  // Another machine keeps every kind.
-  expect(toggle(row("devbox"), "Browser")).not.toBeNull();
-  expect(toggle(row("devbox"), "Linux desktop")).not.toBeNull();
 });

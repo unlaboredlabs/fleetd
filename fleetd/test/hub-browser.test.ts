@@ -21,7 +21,7 @@ function setup() {
   startRoles(t.hub);
   addMachine(t.hub, "devbox");
   addProject(t.hub, "devbox", "p1");
-  t.link.link("devbox", ["browser", "session_end", "screen_settings"]);
+  t.link.link("devbox", ["browser", "session_end"]);
   return t;
 }
 

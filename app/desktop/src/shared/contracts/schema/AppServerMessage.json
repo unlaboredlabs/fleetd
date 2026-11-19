@@ -784,10 +784,6 @@
           "$ref": "#/$defs/HostOff",
           "description": "Why it can't, as a word the app acts on. Absent while it can, and from a node before it."
         },
-        "on": {
-          "description": "Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.\nAbsent from a node before it.",
-          "type": "boolean"
-        },
         "ready": {
           "type": "boolean"
         }
@@ -804,12 +800,7 @@
       "oneOf": [
         {
           "const": "off",
-          "description": "Turned off, or never opted in, in its node.json: an admin turns it on.",
-          "type": "string"
-        },
-        {
-          "const": "restarting",
-          "description": "Turned on, and it starts once the node restarts, after the screens live there end.",
+          "description": "From an older node only: a kind its node.json turned off. Updating its fleetd turns it on.",
           "type": "string"
         },
         {

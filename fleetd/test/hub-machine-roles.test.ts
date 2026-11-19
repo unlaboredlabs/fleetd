@@ -30,7 +30,7 @@ function setup() {
   addMachine(t.hub, "box2", { boxPubKey: KEY });
   addProject(t.hub, "devbox", "p1");
   t.link.link("devbox", ["browser", "session_seal", "session_host"]);
-  t.link.link("box2", ["browser", "session_seal", "session_host", "screen_settings"]);
+  t.link.link("box2", ["browser", "session_seal", "session_host"]);
   t.hub.db.conn.query("INSERT INTO machine_roles (machine_id, agents, sessions) VALUES ('devbox', 1, 0)").run();
   t.link.deliver("box2", load([{ host: "browser", ready: true, detail: "Chrome 131" }]));
   return t;
@@ -266,18 +266,31 @@ test("machine_roles names where a new bot goes: the online machine that takes re
   expect(await best()).toBe("box2");
 });
 
-test("machine_screens_set has the node write it, and takes the node's new host checks", async () => {
+test("no switch per kind: browser, Linux desktop and Android sessions each start on a capable Linux machine, whatever an older node's switches say", async () => {
   setup();
-  t.link.answer = async (machine: string, frame: Record<string, unknown>) => {
-    expect({ machine, frame }).toEqual({ machine: "box2", frame: { t: "node_action", action: "screens", screens: { host: "android", on: true } } });
-    return { ok: true, message: "Saved.", hosts: [{ host: "android", ready: true, detail: "SDK" }] };
-  };
-  const out = await t.tools.call(t.hub, caller("admin"), "machine_screens_set", { machineId: "box2", host: "android", on: true });
-  expect(out).toMatchObject({ output: { next: "Saved.", machine: { hosts: [{ host: "android", ready: true }] } } });
-  t.link.unlink("box2");
-  expect(await t.tools.call(t.hub, caller("admin"), "machine_screens_set", { machineId: "box2", host: "android", on: false })).toMatchObject({
-    error: { error: { code: "machine_offline", message: "box2 is offline." } },
-  });
+  // box2's node is older: it still reports a switch per kind, Android's turned off in its node.json. It lists no
+  // session_android (a fresh machine's emulator isn't installed yet): its ready line alone places the first start
+  // there, which begins the install.
+  t.link.deliver("box2", load([
+    { host: "browser", ready: true, detail: "Chrome 131", on: true },
+    { host: "android", ready: true, detail: "Android screens are ready", on: false },
+    { host: "desktop", ready: true, detail: "Xvfb", on: true },
+  ] as never));
+  for (const kind of ["browser", "linux_desktop", "android"]) {
+    const started = await t.calls.call(agent("devbox", "p1", "T3"), start({ frame: { id: `c-${kind}`, cwd: "/w", threadId: `t-${kind}`, call: { op: "session_start", purpose: "look", kind } } }));
+    expect(started.result).toEqual({ runner: "box2", here: false, sealTo: KEY });
+  }
+  const listed = (await t.tools.call(t.hub, caller("read"), "machine_roles", {})) as { output: { machines: Record<string, unknown>[] } };
+  const box2 = listed.output.machines.find((m) => m.machineId === "box2")!;
+  expect((box2.hosts as Record<string, unknown>[]).map((h) => [h.host, h.ready, "on" in h])).toEqual([
+    ["browser", true, false],
+    ["android", true, false],
+    ["desktop", true, false],
+  ]);
+  expect(box2).not.toHaveProperty("screenSettings");
+  expect(box2).not.toHaveProperty("nodeRestart");
+  // The tool that switched a kind is gone.
+  expect(await t.tools.call(t.hub, caller("admin"), "machine_screens_set", { machineId: "box2", host: "android", on: true })).toMatchObject({ error: {} });
 });
 
 test("the agents' Mac: mac_where names it, mac_send passes a sealed step on and back", async () => {

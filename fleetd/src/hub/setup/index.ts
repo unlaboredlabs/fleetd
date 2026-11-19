@@ -148,7 +148,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
         part(
           "Android screens (optional)",
-          "Android emulators need Linux with KVM. Turn them on on the machine's page in Settings › Hub › Machines. " +
+          "Android emulators run on any Linux machine with KVM: the first one installs itself. " +
             "iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
           [],
           [],

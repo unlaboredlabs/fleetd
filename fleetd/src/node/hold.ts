@@ -1,6 +1,6 @@
 // Holding a node's agents between steps ahead of its update's restart. The hold is a
-// file, `<node home>/update/hold`, naming when it ends (epoch ms); `hold.update` and `hold.screens` beside it note
-// whose it is. Every session's PreToolUse hook waits while it lasts (`fleetd update-hold`), each waiting call marked
+// file, `<node home>/update/hold`, naming when it ends (epoch ms); `hold.update` beside it notes an update's (an older
+// node's `hold.screens`, for a screen-settings restart, is cleared with it). Every session's PreToolUse hook waits while it lasts (`fleetd update-hold`), each waiting call marked
 // held (`update/held/<tool_use_id>`). A hold lasts HOLD_LEASE_SECS past the last ask, so one nobody renews lets go.
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -35,21 +35,6 @@ function holdUntil(home: string): number {
 /** Holds the node's agents for HOLD_LEASE_SECS from now, for an update. */
 export function hold(home: string) {
   replaceFile(updateMark(home), String(holdUntil(home)));
-}
-
-/** A hold for a screen-settings restart, noted as its own. */
-export function holdForScreens(home: string) {
-  replaceFile(screensMark(home), String(holdUntil(home)));
-}
-
-/** Ends a screen-settings restart's hold, unless an update holds too. */
-export function releaseScreens(home: string) {
-  const mark = screensMark(home);
-  const ours = until(mark) !== undefined;
-  rmSync(mark, { force: true });
-  const u = until(updateMark(home));
-  const updating = u !== undefined && Date.now() < u;
-  if (ours && !updating) clear(home);
 }
 
 /** The tool calls waiting on the hold now. */

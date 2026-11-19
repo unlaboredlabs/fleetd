@@ -83,7 +83,6 @@ export const CAP_VAULT_FILL = "vault_fill";
 export const CAP_CLAUDE_MODELS = "claude_models";
 export const CAP_PROFILE_NAMES = "profile_names";
 export const CAP_SYSTEM_PROMPT = "system_prompt";
-export const CAP_SCREEN_SETTINGS = "screen_settings";
 export const CAP_PROJECT_ERASE = "project_erase";
 export const CAP_NO_ASK_FILL = "no_ask_fill";
 export const CAP_PROJECT_SIGNINS = "project_signins";
@@ -249,7 +248,6 @@ export type NodeActionKind =
   | "claude_login"
   | "claude_login_code"
   | "hold"
-  | "screens"
   | "sandbox_check"
   | "sandbox_limits"
   | "github_tokens"
@@ -266,7 +264,6 @@ export type NodeAction = {
   update?: NodeUpdate;
   claude?: string;
   code?: string;
-  screens?: unknown;
   /** `sandbox_check`: `{"provider","key","domain"?}` sealed to this node's box key (base64), for Settings' Test (hub/sandbox). */
   sandbox?: string;
   /** `sandbox_limits`: the team's connected hosted providers and each one's limit, in the order agents go to them. */

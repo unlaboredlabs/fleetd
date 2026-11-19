@@ -33,9 +33,7 @@ import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
 import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
 import { LOGINS } from "./runner/login.ts";
 import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
-import { holdForScreens, ScreensRestart } from "./restart.ts";
 import { emptyHeld } from "./hold.ts";
-import { apply as applyScreens } from "./screens/index.ts";
 import { broker, screenHooks } from "./browser/index.ts";
 import { router as screens } from "./device/router.ts";
 import { sandboxesOf } from "./sandbox/hosted.ts";
@@ -73,7 +71,7 @@ const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, 
 
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -277,7 +275,7 @@ export function joinConfig(home: string, args: JoinArgs): NodeConfig {
     machineId: args.machine,
     name: args.machine,
     ...(args.claudeConfigDir ? { claudeConfigDir: args.claudeConfigDir } : {}),
-    ...(args.mac ? { mac: { enabled: true }, agentsMac: true } : {}),
+    ...(args.mac ? { agentsMac: true } : {}),
     ...(args.runner ? { name: RUNNER_NAME, runner: true, claudeConfigDir: join(home, "claude") } : {}),
     enrolled: false,
   };
@@ -452,9 +450,9 @@ export async function startNode(
   // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).
   sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
   // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
-  // The hub's runner wants agent-browser for its agents and ffmpeg for their recordings, whatever an older join wrote
-  // in its node.json (browser off); it launches no Chrome.
-  if ((config.runner || config.browser?.enabled !== false) && !isAgentsMac(config)) broker(node).prepare();
+  // The hub's runner wants agent-browser for its agents and ffmpeg for their recordings too; it launches no Chrome.
+  // No switch turns browsers off (an older node.json's `browser.enabled` is ignored).
+  if (!isAgentsMac(config)) broker(node).prepare();
   // A boxed agent's browser sees its box's network and files, not this machine's (browser/egress.ts).
   broker(node).boxed = (thread) => {
     const b = boxOf(thread);
@@ -499,15 +497,6 @@ export async function startNode(
   let resolveDone!: (code: number) => void;
   const done = new Promise<number>((r) => (resolveDone = r));
   let enrolled: ((machineId: string) => void) | undefined;
-  const screensRestart = new ScreensRestart(home, {
-    live: () => broker(node).count(),
-    hold: () => {
-      holdForScreens(home);
-      return sessions.midStep();
-    },
-    // A screen setting changed: the node stops as for SIGTERM, and its service manager starts it again.
-    restart: () => resolveDone(0),
-  });
   if (enrollToken)
     enrolled = (machineId) => {
       // A code minted for no machine enrolls the node under the id the hub settled on: its config takes it, and the
@@ -563,7 +552,6 @@ export async function startNode(
         return;
       case "node_action":
         if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
-        if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
         // The hub's runner: the hub's GitHub tokens for its own clones and fetches.
         if (frame.action === "github_tokens" && config.runner) {
           const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);
@@ -633,21 +621,6 @@ export async function startNode(
     // Still running once the watcher decided: the restart was refused, and the hub hears so now.
     const refused = await notRestarted(answer.watch.verdict, (HEALTH_WAIT_SECS + 10) * 1000);
     if (refused) ctx.send(failed(refused));
-  };
-
-  /** `screens`: written into node.json, and the node restarts to apply it once no screen is live here. Answered at
-   * once; the restart waits for the answer to be on the link. */
-  const screensAction = async (frame: NodeAction, ctx: LinkContext) => {
-    const answered = screensRestart.ask();
-    try {
-      if (!frame.screens) throw new Error("the hub named no screen settings");
-      applyScreens(home, frame.screens as never);
-      ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: screensRestart.schedule() });
-    } catch (error) {
-      ctx.send({ t: "node_action_result", id: frame.id, ok: false, message: (error as Error).message.slice(0, 500) });
-    }
-    await Promise.race([ctx.flush(), Bun.sleep(ANSWER_WAIT_MS)]);
-    answered();
   };
 
   const hb = node.area("hb");

@@ -170,8 +170,9 @@ export function runners(hub: Hub): RunnerRow[] {
           : "Its fleetd is older: it hosts only its own agents' screens until it is updated.";
     }
     const [max, why] = roles.maxSessions !== undefined ? [roles.maxSessions, "set"] : [auto, autoWhy];
-    // The node link keeps its own wire shape of a heartbeat's checks: the contracts' HostCheck, field for field.
-    const hosts = load?.hosts as HostCheck[] | undefined;
+    // The node link keeps its own wire shape of a heartbeat's checks: the contracts' HostCheck, field for field, but
+    // for an older node's switch per kind (`on`), which nothing reads any more.
+    const hosts = (load?.hosts as (HostCheck & { on?: boolean })[] | undefined)?.map(({ on: _, ...h }) => h);
     const runner: Runner = {
       machineId: m.machineId,
       name: m.name,

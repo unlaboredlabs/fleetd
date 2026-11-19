@@ -25,7 +25,7 @@ startBrowser(hub.hub);
 startRoles(hub.hub);
 addMachine(hub.hub, "devbox");
 addProject(hub.hub, "devbox", "p1");
-hub.link.link("devbox", ["browser", "session_end", "screen_settings"]);
+hub.link.link("devbox", ["browser", "session_end"]);
 // The task asked for the person and ended its turn, as T3842 did; its messages are timed where they reach the agent.
 const task = TaskRecords.create(hub.hub.db.conn, {
   taskId: "T0",

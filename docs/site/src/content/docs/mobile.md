@@ -157,7 +157,7 @@ never what you typed.
 
 **New Screen**, on a bot's ⓘ page, opens a screen of your own: a browser unless you pick another kind, and the
 machine when more than one can. A kind no machine can host says why in its row; picked, it says why in full under
-**Can't open**, with **Turn On** for an owner or admin where it is only switched off on a machine, or whom to ask. It
+**Can't open**, with whom to ask. It
 opens in the live view with you in control, and **End Screen** closes it. A browser starts on a blank page: tap the bar
 at the top to say where it goes. It runs on the bot's own machine, on the profile the bot keeps, so a site you
 sign in to there stays signed in for its lead. On a full machine, **Wait** keeps your place for its next slot, and the

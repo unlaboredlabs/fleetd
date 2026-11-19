@@ -3,8 +3,9 @@
 // places), and each machine's slots in words, full ones offering to wait. A project's browser runs only on the project's
 // own machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the
 // person gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is
-// the one Apple kind here, the only kind the agents' Mac offers. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
-// admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested. The phone app runs it
+// the one Apple kind here, the only kind the agents' Mac offers. A kind no machine can host says why, from what the
+// machines' nodes report, and what fixes it: an admin's button to the place that does, else who to ask. There is no
+// switch per kind (D574) to turn on. Pure, so it is unit-tested. The phone app runs it
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
@@ -54,9 +55,9 @@ export const canOpen = (machines: readonly MachineRolesEntry[], kind: ScreenKind
 /** A browser keeps its project's sign-ins on the project's machine, so it opens only there; other kinds go anywhere. */
 const onHome = (m: Pick<MachineRolesEntry, "machineId">, kind: ScreenKind, home: string | undefined): boolean => home === undefined || kind !== "browser" || m.machineId === home;
 
-/** What fixes a kind no machine can host: a switch an admin turns on (`turn_on`, on `machine`), a newer fleetd, a
- * machine let host screens, a machine of the kind it needs, or nothing anyone here can do (offline, installing). */
-export type OffFix = "turn_on" | "update" | "roles" | "add" | "none";
+/** What fixes a kind no machine can host: a newer fleetd, a machine let host screens, a machine of the kind it needs,
+ * or nothing anyone here can do (offline, installing). */
+export type OffFix = "update" | "roles" | "add" | "none";
 
 export interface OffReason {
   /** Why, in plain words. */
@@ -101,13 +102,8 @@ const machineOff = (m: MachineRolesEntry, kind: ScreenKind): (OffReason & { read
   }
   switch (check.off) {
     case "off":
-      // No word on screen settings: its node is between two links (restarting, as after an update), not too old.
-      if (m.screenSettings === undefined) return { rank: 2, why: `${noun} are turned off on ${m.name}, and its node is restarting: turn them on once it links again.`, short: "Turned off", fix: "none", machine };
-      return m.screenSettings
-        ? { rank: 0, why: `${noun} are turned off on ${m.name}.`, short: "Turned off", fix: "turn_on", machine }
-        : { rank: 1, why: `${noun} are turned off on ${m.name}, and its fleetd is too old to turn them on from here.`, short: "Turned off", fix: "update", machine };
-    case "restarting":
-      return { rank: 2, why: `${noun} are turned on on ${m.name}: they start once its node restarts, when the screens live there end.`, short: "Starting up", fix: "none", machine };
+      // An older node's node.json turned them off: its update turns them on.
+      return { rank: 1, why: `${noun} are off on ${m.name} until its fleetd is updated.`, short: "Needs an update", fix: "update", machine };
     case "installing":
       return { rank: 2, why: `${m.name} is installing what ${LOWER[kind]} need.`, short: "Installing", fix: "none", machine };
     case "unsupported":
@@ -125,7 +121,7 @@ const sentence = (s: string): string => {
 
 /**
  * Why no machine can host `kind`, from what each machine's node reports, and what fixes it; null where one can. The
- * machine whose fix is nearest speaks: a switch turned off before an install, before an offline machine, before a
+ * machine whose fix is nearest speaks: an update before an install, before an offline machine, before a
  * machine that can never run it. For a project's browser (`home` its machine), only its own machine.
  */
 export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): OffReason | null => {
@@ -182,8 +178,6 @@ export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly st
   const ask = `Ask ${adminWho(admins)}`;
   const on = reason.machine === undefined ? "" : ` on ${reason.machine.name}`;
   switch (reason.fix) {
-    case "turn_on":
-      return `${ask} to turn them on in Settings › Hub › Machines${reason.machine === undefined ? "" : ` › ${reason.machine.name}`}.`;
     case "update":
       return `${ask} to update fleetd${on}.`;
     case "roles":
@@ -198,8 +192,6 @@ export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly st
 /** An admin's one action's label; null where there is nothing to press. */
 export const fixLabel = (fix: OffFix): string | null => {
   switch (fix) {
-    case "turn_on":
-      return "Turn on";
     case "update":
       return "Open updates";
     case "roles":
@@ -211,7 +203,7 @@ export const fixLabel = (fix: OffFix): string | null => {
   }
 };
 
-/** Where an admin's action that isn't Turn on goes: Settings › Hub › Machines › Updates for an update, else the option it reveals
+/** Where an admin's action goes: Settings › Hub › Machines › Updates for an update, else the option it reveals
  * on Settings › Hub › Machines (a role, on the machine's own page when the reason names one). */
 export const fixPlace = (fix: OffFix): { readonly tab: "hub.machines" | "hub.updates"; readonly reveal: string | null } =>
   fix === "update"

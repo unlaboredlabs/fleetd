@@ -58,8 +58,7 @@ const ROLES: MachineRolesEntry[] = [
     maxSessionsWhy: "auto: 8 CPUs, 16 GB",
     sessionsLive: 0,
     hostsOthers: true,
-    screenSettings: true,
-    hosts: [{ host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 }],
+    hosts: [{ host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 30 }],
   },
   { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false },
 ];

@@ -269,10 +269,6 @@ function projectTools(seeded: "none" | "machine" | "gone") {
       return { overturned: decision };
     }),
     tool("project_get", true, "ProjectGet", () => ({ projects: projects.map((p) => ({ ...p, title: "areas", workspaceRoot: "/srv/areas", threads: [], lastActivityAt: at })) })),
-    tool("machine_screens_set", false, "MachineScreensSet", (given) => {
-      if (!machines.has(given.machineId)) throw new Refusal("not_found", `No machine ${given.machineId}.`);
-      throw offline(given.machineId);
-    }),
   ];
   const seed = async () => {
     if (seeded === "none") return;
@@ -305,7 +301,6 @@ test("the bot tools under the hub's rules: project_remove runs last, and what a 
     "pass MCP project_add answers machine_offline, as no node joins",
     "pass MCP project_repo_add answers machine_offline, as no node joins",
     "pass MCP decisions_overturn decodes as decisions_overturn.output",
-    "pass MCP machine_screens_set answers machine_offline, as no node joins",
     "pass MCP project_remove answers machine_offline, as no node joins",
     "pass MCP machine_remove decodes as machine_remove.output",
   ]);

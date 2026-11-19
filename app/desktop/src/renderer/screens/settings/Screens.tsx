@@ -1,23 +1,20 @@
-// A machine's screens, on its page in Hub › Machines (admin/MachinePage.tsx, W268): which kinds of screen it opens, a
-// switch each, and how many it hosts at once; and, on Hub › Machines, how long the hub keeps recordings. A switch is a
-// machine_screens_set call: the machine's node writes its node.json, so turning Android on installs what it needs, and
-// the line under the switch follows what the node says (installing, starting once its live screens end). A kind that
-// can't run for something missing shows the command that fixes it, to run on that machine. The at-once limit is
-// machine_roles_set. An idle screen ends after the node's timeout (30 minutes; the
-// agents' Mac's own screen, 5), said in a line. Retention is browser_retention_set, for every bot: the app sets
-// only the days, and the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
+// A machine's screens, on its page in Hub › Machines (admin/MachinePage.tsx, W268): how many it hosts at once, and,
+// only when a kind it could run needs someone, what stands in the way with the command that fixes it, to run on that
+// machine. There is no switch per kind (D574): a Linux machine hosts every Linux kind it can run, the agents' Mac its
+// own screen, and the hub places a kind a machine can't run elsewhere. The at-once limit is machine_roles_set. An idle
+// screen ends after the node's timeout (30 minutes; the agents' Mac's own screen, 5), said in a line. On Hub ›
+// Machines, how long the hub keeps recordings: browser_retention_set, for every bot: the app sets only the days, and
+// the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
 import { useState, type ReactNode } from "react";
-import type { HostCheck, MachineRolesEntry, SessionHost, ToolInput } from "../../../shared/contracts";
+import type { MachineRolesEntry, ToolInput } from "../../../shared/contracts";
 import { useHub, useToolQuery } from "../../src/data/react";
 import { useServes } from "../admin/role";
-import { Button, Select, Text, Toggle } from "../../ui";
+import { Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { CommandLine } from "../onboarding/Prose";
 import { RunOn } from "../setup/Guide";
-import { navigate } from "../shell/navigation";
 import { GroupNote, SettingsRow } from "./parts";
 import { capChoices, hostsNote, sessionsWhy } from "./machinesModel";
-import { blockedLine, daysChoices, elsewhereLine, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, switchOn } from "./screensModel";
+import { daysChoices, idleLine, needsLines } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -34,12 +31,12 @@ function EchoLine({ echo }: { echo: Echo }) {
   );
 }
 
-type MachineTool = "machine_roles_set" | "machine_screens_set";
-type Change<T extends MachineTool> = ToolInput<T> extends infer I ? (I extends unknown ? Omit<I, "machineId"> : never) : never;
+type MachineTool = "machine_roles_set";
+type Change<T extends MachineTool> = Omit<ToolInput<T>, "machineId">;
 
 /**
- * One machine's change, as its role and its screens make them: the call, the hub's line about it (or why not) under
- * the controls, and the machines read again once it answers.
+ * One machine's change, as its role and its screen cap make them: the call, the hub's line about it (or why not)
+ * under the controls, and the machines read again once it answers.
  */
 export function useMachineSet<T extends MachineTool>(tool: T, machineId: string): { set: (change: Change<T>) => void; disabled: boolean; echo: ReactNode } {
   const live = useLive();
@@ -64,56 +61,19 @@ export function useMachineSet<T extends MachineTool>(tool: T, machineId: string)
 }
 
 /**
- * A machine's screens, rows of its section: a switch per kind it may open with what each needs, how many at once, and
- * when an idle one ends.
+ * A machine's screens, rows of its section: a line for each kind that needs someone, with its fix, then how many at
+ * once and when an idle one ends.
  */
 export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
-  const kind = useMachineSet("machine_screens_set", m.machineId);
   const cap = useMachineSet("machine_roles_set", m.machineId);
-  const check = (host: SessionHost): HostCheck | undefined => (m.hosts ?? []).find((h) => h.host === host);
-  const kinds = kindsOf(m);
-  const wait = nodeWait(m);
   const note = hostsNote(m);
   return (
     <div data-screens={m.machineId}>
-      {/* Offline is the one reason a switch can't move that its line doesn't already say: said once, over them all. */}
-      {m.online ? null : <GroupNote>{`${m.name} is offline: these change once it's back.`}</GroupNote>}
-      {kinds.map(({ host, label }) => {
-        const c = check(host);
-        const locked = lockedWhy(m, c);
-        const fix = fixOf(m, c);
-        return (
-          <SettingsRow
-            key={host}
-            title={label}
-            line={elsewhereLine(m, host, c) ?? blockedLine(c)}
-            control={<Toggle checked={switchOn(c)} disabled={kind.disabled || locked !== null} onCheckedChange={(on) => kind.set({ host, on })} aria-label={`${label} screens on ${m.name}`} />}
-          >
-            {fix === null ? null : <RunOn where={`${m.name}, for ${label}`} command={fix} />}
-          </SettingsRow>
-        );
-      })}
-      {wait === "restarting" ? <GroupNote>{`${m.name}'s node is restarting: these come back once it links again.`}</GroupNote> : null}
-      {wait === "old" ? (
-        <SettingsRow
-          title={`Update ${m.name}'s fleetd to change these.`}
-          control={
-            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
-              Open Updates
-            </Button>
-          }
-        >
-          {m.nodeRestart === undefined ? null : (
-            <>
-              <Text size="sm" tone="quiet">
-                {`Still the same after updating? Run this on ${m.name}:`}
-              </Text>
-              <CommandLine command={m.nodeRestart} />
-            </>
-          )}
+      {needsLines(m).map(({ host, label, line, fix }) => (
+        <SettingsRow key={host} title={label} line={line} lineTone="quiet" data={{ "data-screens-needs": host }}>
+          {fix === null ? null : <RunOn where={`${m.name}, for ${label}`} command={fix} />}
         </SettingsRow>
-      ) : null}
-      {kind.echo}
+      ))}
       <SettingsRow
         title="At once"
         hint={`The most screens it hosts at once (${sessionsWhy(m)}). ${idleLine(m)}`}

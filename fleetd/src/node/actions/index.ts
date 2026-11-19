@@ -1,6 +1,5 @@
 // `node_action` frames from the hub: the doctor's probe of the commit identity,
 // the hold ahead of an update, Claude Code's install and its login from the app. Each always answers, in plain words.
-// Screen settings are the screens' areas' (node/browser and the rest) and answer as not done until they take them.
 import { exec, headUtf16, type Env } from "../util.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../runner/host.ts";
 import { ALREADY, bringTo, type Claude } from "../runner/install.ts";
@@ -102,8 +101,6 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
         return answer(frame.id, false, (error as Error).message);
       }
     }
-    case "screens":
-      return answer(frame.id, false, "the Bun node keeps its screen settings in node.json: edit them there");
     default:
       return answer(frame.id, false, `this node doesn't know the action ${String((frame as NodeAction).action)}`);
   }

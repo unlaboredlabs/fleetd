@@ -46,8 +46,8 @@ export const CAP_SESSION_DESKTOP = "session_linux_desktop";
 
 /** node.json's `desktop`: how this machine runs Linux desktop sessions. Every field is optional. */
 export type DesktopConfig = {
-  /** False turns desktop sessions off on this machine; true also prepares them as the node starts. Absent: on,
-   * prepared when an agent first asks for a session. */
+  /** The node's own word, never node.json's (an older one's `enabled` is ignored): false where this machine lends no
+   * Linux desktop (the agents' Mac, the hub's runner, a test's). Absent: on, prepared when an agent first asks. */
   enabled?: boolean;
   /** `container` or `xvfb` only. Absent: a container where docker or podman works, else Xvfb. */
   backend?: Backend;
@@ -68,7 +68,7 @@ export type DesktopConfig = {
   windowManagers?: string[];
 };
 
-/** On unless node.json turns them off; Linux only (a container's X socket can't cross into macOS). */
+/** On unless the node turns them off; Linux only (a container's X socket can't cross into macOS). */
 export const enabled = (config: DesktopConfig) => config.enabled !== false && process.platform === "linux";
 
 const devOverride = (name: string) => process.env[name] || undefined;
@@ -76,7 +76,7 @@ const devOverride = (name: string) => process.env[name] || undefined;
 /** The node's desktop config as it runs it: node.json's section and the development overrides (config.rs
  * `desktop_screen`). The agents' Mac hosts its own screen, never a Linux desktop. */
 export function desktopConfig(node: Node): DesktopConfig {
-  const section = (node.config.desktop ?? {}) as DesktopConfig;
+  const { enabled: _, ...section } = (node.config.desktop ?? {}) as DesktopConfig;
   const config: DesktopConfig = { ...section };
   for (const [key, env] of [["runtime", "FLEETD_DESKTOP_RUNTIME"], ["image", "FLEETD_DESKTOP_IMAGE"], ["xvfb", "FLEETD_XVFB"], ["ffmpeg", "FLEETD_FFMPEG"]] as const) {
     const v = devOverride(env);
@@ -142,8 +142,8 @@ export function forgetRuntimeCheck(): void {
 }
 
 /** Whether desktop sessions can run here, and in what, for the doctor (each heartbeat): what the node last found when
- * it prepared them, else what it finds now, a container runtime counting only if it answers (asked when `ask`).
- * undefined where node.json turns them off, and where nothing works and node.json doesn't ask for them. */
+ * it prepared them, else what it finds now, a container runtime counting only if it answers (asked when `ask`), and
+ * what to install where nothing works. undefined where the node lends none. */
 export async function healthOf(home: string, config: DesktopConfig, ask = true): Promise<DesktopHealth | undefined> {
   if (!enabled(config)) return undefined;
   try {
@@ -158,7 +158,6 @@ export async function healthOf(home: string, config: DesktopConfig, ask = true):
     const why = !runtime ? "; no docker or podman for containers" : typeof answers === "string" ? `; not in containers: ${answers}` : "";
     return health("ready", "xvfb", `Desktop screens run on Xvfb (${xvfb}) with a fresh home each${why}.`);
   }
-  if (config.enabled !== true) return undefined;
   if (runtime && typeof answers === "string") {
     return health(
       "unavailable",
@@ -188,11 +187,9 @@ export async function hostCheck(home: string, config: DesktopConfig): Promise<Ho
     detail: detail.length > 300 ? `${detail.slice(0, 297)}...` : detail,
     ...(off ? { off } : {}),
     ...(off && fix && fix.length <= 300 ? { fix } : {}),
-    on: enabled(config),
     idleMinutes: IDLE_MINUTES,
   } as HostCheck);
-  if (process.platform !== "linux") return check("unsupported", "desktop screens run on Linux (docker or Xvfb)");
-  if (!enabled(config)) return check("off", "desktop screens are off in node.json");
+  if (process.platform !== "linux" || !enabled(config)) return check("unsupported", "desktop screens run on Linux (docker or Xvfb)");
   const h = await healthOf(home, config);
   if (!h) return check("missing", "no docker, podman or Xvfb", installFix());
   return check(h.state === "unavailable" ? "missing" : undefined, h.message, h.fix);
@@ -272,7 +269,8 @@ export class Desktops implements Screens {
     readonly config: DesktopConfig = desktopConfig(node),
     mac?: MacConfig,
   ) {
-    this.mac = mac ?? ((node.config.mac ?? {}) as MacConfig);
+    // The agents' Mac lends its screen, whatever an older node.json's `mac.enabled` says; no other machine does.
+    this.mac = mac ?? { ...((node.config.mac ?? {}) as MacConfig), enabled: node.config.agentsMac === true };
   }
 
   private sessionsArea(): SessionsArea | undefined {
@@ -300,12 +298,9 @@ export class Desktops implements Screens {
       void installAgentDesktop(this.node.home).catch((e: Error) => console.warn(`agent-desktop not installed yet: ${e.message}`));
     }
     if (enabled(this.config)) {
-      if (this.config.enabled === true) this.beginPrepare();
-      else {
-        // Ask the runtime now, so the next link's hello knows whether containers work.
-        const { runtime } = choose(this.config, this.node.home);
-        void (runtime ? runtimeAnswers(runtime, true) : Promise.resolve()).then(() => this.refreshCaps());
-      }
+      // Ask the runtime now, so the next link's hello knows whether containers work.
+      const { runtime } = choose(this.config, this.node.home);
+      void (runtime ? runtimeAnswers(runtime, true) : Promise.resolve()).then(() => this.refreshCaps());
     }
     this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
     void this.sweep();
@@ -436,7 +431,7 @@ export class Desktops implements Screens {
     if (!enabled(this.config)) {
       throw new ToolError(
         "failed",
-        "This machine hosts no Linux desktop sessions (they run on Linux, and node.json may turn them off).",
+        "This machine hosts no Linux desktop sessions: they run on Linux machines that run agents.",
         "say so in your result",
       );
     }
@@ -933,7 +928,7 @@ export async function prepare(home: string, config: DesktopConfig, state: (h: De
   throw new Error("this machine has neither docker or podman nor Xvfb");
 }
 
-/** The agents' Mac's screen as the heartbeat's host line reads it (hosts.rs `mac_screen`): on in node.json on a Mac,
+/** The agents' Mac's screen as the heartbeat's host line reads it (hosts.rs `mac_screen`): on on the agents' Mac,
  * what stands in the way of it now, and who holds it. */
 export function macScreen(node: Node): { enabled: boolean; blocked(): Blocked | undefined; heldBy(): string | undefined } {
   const d = desktops(node);

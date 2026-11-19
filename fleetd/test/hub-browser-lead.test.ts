@@ -20,7 +20,7 @@ function setup() {
   t.hub.db.conn
     .query("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES ('devbox', 'p1', '', '', ?)")
     .run(JSON.stringify({ machineId: "devbox", projectId: "p1", title: "p1", workspaceRoot: "/work/p1" }));
-  t.link.link("devbox", ["browser", "session_end", "screen_settings"]);
+  t.link.link("devbox", ["browser", "session_end"]);
   lead("lead-1");
   return t;
 }

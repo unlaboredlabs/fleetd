@@ -11,6 +11,8 @@ import {
   CAP_SESSION_DESKTOP,
   capabilities,
   Desktops,
+  desktopConfig,
+  enabled,
   forgetRuntimeCheck,
   healthOf,
   iosRecordingsDir,
@@ -209,15 +211,16 @@ test("health says what desktop sessions run in, and why not", async () => {
   expect(both).toMatchObject({ state: "ready", backend: "xvfb" });
   expect(both!.message).toContain("not in containers: `docker info` failed: Cannot connect");
   forgetRuntimeCheck();
-  // Nothing works: said only where node.json asks for them.
-  expect(await healthOf(dir, { runtime: docker, backend: "container" })).toBeUndefined();
-  forgetRuntimeCheck();
-  const asked = await healthOf(dir, { runtime: docker, backend: "container", enabled: true });
-  expect(asked).toMatchObject({ state: "unavailable", backend: "container" });
-  expect(asked!.fix).toContain("xvfb");
+  // Nothing works: said, with what to install, on every Linux machine (no switch asks for them).
+  const nothing = await healthOf(dir, { runtime: docker, backend: "container" });
+  expect(nothing).toMatchObject({ state: "unavailable", backend: "container" });
+  expect(nothing!.fix).toContain("xvfb");
+  expect(await hostCheck(dir, { runtime: docker, backend: "container" })).toMatchObject({ host: "desktop", ready: false, off: "missing", idleMinutes: 30 });
+  // Where the node lends none (the agents' Mac, the hub's runner): none, and it can't.
   expect(await healthOf(dir, { enabled: false, xvfb })).toBeUndefined();
-  const off = await hostCheck(dir, { enabled: false });
-  expect(off).toMatchObject({ host: "desktop", ready: false, off: "off", on: false, idleMinutes: 30 });
+  const none = await hostCheck(dir, { enabled: false });
+  expect(none).toMatchObject({ host: "desktop", ready: false, off: "unsupported", idleMinutes: 30 });
+  expect(none).not.toHaveProperty("on");
   const ok = fakes(dir, "ok");
   forgetRuntimeCheck();
   expect(await healthOf(dir, { runtime: ok.docker })).toMatchObject({ state: "ready", backend: "container" });
@@ -369,6 +372,18 @@ test("a start on a machine that can't prepare says why at once, and the hub's se
   // A desktop the hub says ends goes; any other id is left.
   expect(d.endScreen("t", "Bnope")).toBe(false);
   expect(new Desktops(t.node, { enabled: false }).count()).toBe(0);
+});
+
+test("no switch: an older node.json's desktop.enabled turns nothing off; only the agents' Mac and the hub's runner lend none", () => {
+  const old = testNode("devbox", { desktop: { enabled: false, backend: "xvfb" } });
+  cleanups.push(old.done);
+  expect(desktopConfig(old.node)).toEqual({ backend: "xvfb" });
+  expect(enabled(desktopConfig(old.node))).toBe(process.platform === "linux");
+  for (const config of [{ agentsMac: true }, { runner: true }]) {
+    const t = testNode("devbox", config);
+    cleanups.push(t.done);
+    expect(enabled(desktopConfig(t.node))).toBe(false);
+  }
 });
 
 test("recordings a stopped node left (desktop ones and a Rust node's iOS screens') are ended and go to the hub", async () => {

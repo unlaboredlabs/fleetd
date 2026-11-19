@@ -177,34 +177,30 @@ function automations(f: Fixture) {
 }
 
 /**
- * Settings → Machines: the fleet's first machine runs agents and hosts sessions on Linux (Chrome and Xvfb; an Android
- * SDK without KVM), the next only hosts sessions on macOS (its Mac screen) on a node too old for screen settings, and
- * any after them only run agents. A role change answers with the row it asked for.
+ * Settings → Machines: the fleet's first machine runs agents and hosts sessions on Linux (Chrome and Xvfb; Android
+ * waits for KVM, with its fix), the next only hosts sessions on macOS (a browser), and any after them only run agents.
+ * A role change answers with the row it asked for.
  */
 function machineRoles(f: Fixture) {
   const machines = isObject(f.snapshot) && Array.isArray(f.snapshot["machines"]) ? f.snapshot["machines"].filter(isObject) : [];
   const linux: JsonObject[] = [
     { host: "browser", ready: true, detail: "Chrome at /home/dev/.fleetd/node/browser/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell" },
-    { host: "android", ready: false, detail: "Android SDK at /home/dev/Android/Sdk, but no /dev/kvm: the emulator needs KVM" },
-    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own: its agents session's screen", off: "unsupported" },
+    { host: "android", ready: false, detail: "no /dev/kvm this user can open: the emulator needs KVM", off: "missing", fix: "sudo usermod -aG kvm $USER" },
+    { host: "mac", ready: false, detail: "the Mac screen is the agents' Mac's own", off: "unsupported" },
     { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb, docker at /usr/bin/docker" },
   ];
   const mac: JsonObject[] = [
     { host: "browser", ready: true, detail: "Chrome not installed yet: the node installs it with the first screen" },
-    { host: "android", ready: true, detail: "Android SDK at /Users/dev/Library/Android/sdk" },
-    { host: "mac", ready: true, detail: "the agents session is on the Mac's screen, unlocked, with Screen Recording and Accessibility" },
-    { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)" },
+    { host: "android", ready: false, detail: "Android screens run on Linux x86_64 with KVM", off: "unsupported" },
+    { host: "mac", ready: false, detail: "the Mac screen is the agents' Mac's own", off: "unsupported" },
+    { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)", off: "unsupported" },
   ];
   const entries: JsonObject[] = machines.map((m, i) => {
     const machineId = asText(m["machineId"]);
     const base: JsonObject = { machineId, name: asText(m["name"]) || machineId, online: m["status"] !== "offline", hostsOthers: true };
-    if (i === 0) return { ...base, roles: ["agents", "sessions"], maxSessions: 8, maxSessionsWhy: "auto: 16 CPUs, 60 GB", sessionsLive: 2, hosts: linux, screenSettings: true };
-    // A Mac whose node runs a build before screen settings: Screens says to update it, and how to restart it there.
-    if (i === 1) {
-      const old = { screenSettings: false, nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node" };
-      return { ...base, roles: ["sessions"], maxSessions: 2, maxSessionsSet: 2, maxSessionsWhy: "set", sessionsLive: 1, hosts: mac, ...old };
-    }
-    return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux, screenSettings: true };
+    if (i === 0) return { ...base, roles: ["agents", "sessions"], maxSessions: 8, maxSessionsWhy: "auto: 16 CPUs, 60 GB", sessionsLive: 2, hosts: linux };
+    if (i === 1) return { ...base, roles: ["sessions"], maxSessions: 2, maxSessionsSet: 2, maxSessionsWhy: "set", sessionsLive: 1, hosts: mac };
+    return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux };
   });
   // With how long recordings are kept, as the hub and fleetd cloud both answer it.
   f.answer("machine_roles", undefined, { machines: entries, retention: { retentionDays: 30, maxGbPerProject: 20 } });
@@ -317,18 +313,17 @@ function machines(from: Fixture): Fixture {
 
 /**
  * Settings › Hub › Machines › Screens with the fleet's second machine as the agents' Mac, ready and on a current
- * fleetd: the hub lists only its own screen there, so its row has that one switch.
+ * fleetd: the hub lists only its own screen there, and it needs no one, so its Screens part is At once alone.
  */
 function agentsMac(from: Fixture): Fixture {
-  const f = Fixture.from(from, "settings-agents-mac", "The fleet's second machine is the agents' Mac, ready: its Screens row has only its own screen");
+  const f = Fixture.from(from, "settings-agents-mac", "The fleet's second machine is the agents' Mac, ready: its Screens part needs no one");
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
-  const mac: JsonObject = { host: "mac", ready: true, detail: "the node's session is on the Mac's screen, unlocked, with Screen Recording and Accessibility", on: true, idleMinutes: 5 };
+  const mac: JsonObject = { host: "mac", ready: true, detail: "the node's session is on the Mac's screen, unlocked, with Screen Recording and Accessibility", idleMinutes: 5 };
   f.update("machine_roles", (out) => {
     if (!isObject(out) || !Array.isArray(out["machines"])) return out;
     const machines = out["machines"].filter(isObject).map((m, i): JsonObject => {
       if (i !== 1) return m;
-      const { nodeRestart: _, ...rest } = m;
-      return { ...rest, roles: ["sessions"], screenSettings: true, mac: { on: true, ready: true }, hosts: [mac] };
+      return { ...m, roles: ["sessions"], mac: { on: true, ready: true }, hosts: [mac] };
     });
     return { ...out, machines };
   });

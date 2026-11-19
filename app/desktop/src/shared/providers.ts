@@ -89,13 +89,16 @@ export const linuxValue = (providers: ReadonlyArray<{ provider: string; connecte
 export const LINUX_NONE = "Add a machine with the plus above, or connect a provider.";
 export const MAC_NONE = "Add a Mac for agents with the plus above.";
 
-/** The machines a kind of screen can run on now, as machine_roles has them. */
-type Machine = { roles: ReadonlyArray<string>; mac?: { on: boolean } | undefined; hosts?: ReadonlyArray<{ host: string; on?: boolean; ready: boolean }> | undefined };
+/** The machines a kind of screen can run on, as machine_roles has them. */
+type Machine = { roles: ReadonlyArray<string>; mac?: { on: boolean } | undefined; hosts?: ReadonlyArray<{ host: string; off?: string; ready: boolean }> | undefined };
 
-/** Whether any of the team's machines runs `kind` now: one for agents, one with the kind on, the agents' Mac. */
+/**
+ * Whether any of the team's machines runs `kind`: one for agents; one that hosts screens and can run the kind, ready
+ * now or once what it needs is there (no switch turns a kind off, D574); the agents' Mac for iOS.
+ */
 export const machinesRun = (kind: Capability, machines: ReadonlyArray<Machine>): boolean => {
   if (kind === "agents") return machines.some((m) => m.mac === undefined && m.roles.includes("agents"));
   if (kind === "ios") return machines.some((m) => m.mac?.on === true);
-  return machines.some((m) => (m.roles.includes("sessions") || m.mac !== undefined) && (m.hosts ?? []).some((h) => h.host === kind && (h.on ?? h.ready)));
+  return machines.some((m) => (m.roles.includes("sessions") || m.mac !== undefined) && (m.hosts ?? []).some((h) => h.host === kind && h.off !== "unsupported"));
 };
 

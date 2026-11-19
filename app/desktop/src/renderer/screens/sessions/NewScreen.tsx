@@ -14,8 +14,8 @@
 // FOLLOW_MS does the picker give up and land on the list. While an open is slow, the footer says what is starting.
 //
 // A kind no machine can host stays pickable: its tile says why in a word or two, and picked, the machine list gives way
-// to the reason from the machines' nodes and its one fix. An admin's is a button (Turn on, which sets it on that machine
-// with machine_screens_set, or the place in Settings › Hub › Machines that fixes it); a member's says who to ask.
+// to the reason from the machines' nodes and its one fix. An admin's is a button to the place in Settings › Hub ›
+// Machines that fixes it (there is no switch per kind to turn on); a member's says who to ask.
 import { Globe, Laptop, Monitor, Plus, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, Tooltip, cx } from "../../ui";
@@ -422,33 +422,18 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   );
 }
 
-/**
- * Why the kind picked can't open, from the machines' nodes, and its one fix: an admin's button, a member's who to ask.
- * Turn on sets the kind on in that machine's node.json through the hub; the machines are read again with its answer.
- */
+/** Why the kind picked can't open, from the machines' nodes, and its one fix: an admin's button, a member's who to ask. */
 function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReason | null; onLeave: () => void }) {
-  const layer = useDataLayer();
   const { administers } = useHubRole();
   const people = useToolQuery("people_list", noInput, { enabled: !administers && reason !== null });
-  const [turning, setTurning] = useState(false);
-  const [said, setSaid] = useState<{ readonly ok: boolean; readonly text: string } | null>(null);
   if (reason === null) return null;
   const label = administers ? fixLabel(reason.fix) : null;
   const ask = administers ? null : askLine(reason, kind, adminNames(people.data?.people ?? []));
-  const act = async () => {
+  const act = () => {
     const { tab, reveal } = fixPlace(reason.fix);
-    if (reason.fix !== "turn_on" || reason.machine === undefined) {
-      onLeave();
-      revealNext(reveal);
-      navigate(tab === "hub.machines" && reason.fix === "roles" && reason.machine !== undefined ? { id: "settings", tab, machine: reason.machine.machineId } : { id: "settings", tab });
-      return;
-    }
-    setTurning(true);
-    setSaid(null);
-    const out = await layer.call("machine_screens_set", { machineId: reason.machine.machineId, host: HOST_OF[kind], on: true });
-    setTurning(false);
-    setSaid(out.ok ? { ok: true, text: out.output.next ?? "Turned on." } : { ok: false, text: out.error.message });
-    void layer.queryClient.invalidateQueries({ queryKey: ["call", "machine_roles"] });
+    onLeave();
+    revealNext(reveal);
+    navigate(tab === "hub.machines" && reason.fix === "roles" && reason.machine !== undefined ? { id: "settings", tab, machine: reason.machine.machineId } : { id: "settings", tab });
   };
   return (
     <div className={s.offReason} data-off-reason={reason.fix}>
@@ -461,22 +446,13 @@ function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReaso
             {ask}
           </Text>
         )}
-        {said === null ? null : (
-          <div role={said.ok ? "status" : "alert"}>
-            <Text size="xs" tone={said.ok ? "quiet" : "danger"}>
-              {said.text}
-            </Text>
-          </div>
-        )}
       </div>
       {label === null ? null : (
-        <Button size="sm" variant={reason.fix === "turn_on" ? "primary" : "secondary"} disabled={turning} onClick={() => void act()}>
-          {turning ? "Turning on…" : label}
+        <Button size="sm" variant="secondary" onClick={act}>
+          {label}
         </Button>
       )}
     </div>
   );
 }
 
-/** A kind's word in machine_screens_set. */
-const HOST_OF: Readonly<Record<ScreenKind, "browser" | "android" | "desktop" | "mac">> = { browser: "browser", android: "android", linux_desktop: "desktop", mac: "mac" };

@@ -30,7 +30,7 @@ describe("on Hermes", () => {
     expect([].toSorted).toBeUndefined();
     const hosts = hostsFor([machine("mac-b", true), machine("mac-a", true), machine("lab", true, { online: false })], "android");
     expect(hosts.map((h) => h.name)).toEqual(["mac-a", "mac-b", "lab"]);
-    const off = whyOff([machine("mac-b", false, { screenSettings: true }), machine("lab", false, { online: false }), machine("mac-a", false, { screenSettings: true })], "android");
-    expect(off).toMatchObject({ fix: "turn_on", machine: { name: "mac-a" } });
+    const off = whyOff([machine("mac-b", false), machine("lab", false, { online: false }), machine("mac-a", false)], "android");
+    expect(off).toMatchObject({ fix: "update", machine: { name: "mac-a" } });
   });
 });
