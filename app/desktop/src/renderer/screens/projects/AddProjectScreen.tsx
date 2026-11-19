@@ -9,7 +9,7 @@
 import { Dialog as D } from "radix-ui";
 import { CloudDownload, Folder, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { Button, Select, StateGlyph, Text, Truncate, cx, type GlyphState } from "../../ui";
+import { Button, Select, StateGlyph, Text, Truncate, cx, underModal, type GlyphState } from "../../ui";
 import { discovery as discoveryOf, orList, projectHome, repoSuggestions, target, type Discovery, type Worker } from "./discovery";
 import { botAtFolder, botHolding, botName, busy, needsUpdate, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
 import { CallError, callKey } from "../../src/data/queries";
@@ -71,7 +71,7 @@ export function AddProjectScreen() {
       }}
     >
       <D.Portal>
-        <D.Overlay className={s.backdrop} />
+        <D.Overlay ref={underModal} className={s.backdrop} />
         <D.Content
           className={s.modal}
           data-screen="projects.add"

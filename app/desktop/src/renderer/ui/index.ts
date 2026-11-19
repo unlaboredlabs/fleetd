@@ -2,6 +2,7 @@
 export { UiProvider } from "./UiProvider";
 export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
+export { underModal } from "./lib/under";
 export { copyText } from "./lib/clipboard";
 export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/arrival";
 export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";

@@ -12,25 +12,13 @@
   padding: 40px 48px;
   background: var(--settings-scrim);
   animation: scrimIn 160ms var(--ease-out) both;
+  /* No backdrop filter: the app under it blurs itself (ui/lib/under.ts). */
 }
 @keyframes scrimIn {
   from {
     background: transparent;
   }
 }
-/* The app under it, blurred itself, evenly, the see-through sidebar too: a backdrop blur on the scrim draws a blurred
-   copy over what is under it, see-through where the window is (the Mac's sidebar), so the crisp words there showed
-   through it, doubled. */
-:global([data-under-sheet]) {
-  filter: blur(2px);
-  animation: underIn 160ms var(--ease-out) both;
-}
-@keyframes underIn {
-  from {
-    filter: none;
-  }
-}
-
 .sheet {
   position: relative;
   display: grid;
@@ -54,8 +42,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .scrim,
-  .sheet,
-  :global([data-under-sheet]) {
+  .sheet {
     animation: none;
   }
 }
