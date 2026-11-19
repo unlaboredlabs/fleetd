@@ -134,7 +134,7 @@ async function plainIn(box: BoxFs, cwd: string, session: string, root: string): 
     await sh(
       box,
       "unpacking the bot's folder",
-      `mkdir -p ${q(root + cwd)} && tar -C ${q(root + cwd)} -xf ${q(at)} --no-same-owner && tar -tf ${q(at)} > ${q(list)}; s=$?; rm -f ${q(at)}; exit $s`,
+      `mkdir -p ${q(root + cwd)} && tar -C ${q(root + cwd)} -xf ${q(at)} --no-same-owner && tar --quoting-style=literal -tf ${q(at)} > ${q(list)}; s=$?; rm -f ${q(at)}; exit $s`,
     );
     return PLAIN;
   } finally {

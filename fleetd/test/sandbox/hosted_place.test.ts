@@ -20,6 +20,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { accountSettingsEnv } from "../../src/node/actions/accounts.ts";
 import { settingsOverlay } from "../../src/node/sessions/index.ts";
+import { notStartedLine } from "../../src/hub/leads/cut_off.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-place-"));
@@ -249,7 +250,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
 }, 60_000);
 
 test("a start that fails once its box exists deletes the box and its record, and the task hears the failure as it was", async () => {
-  const { s, home, cwd, env } = await setup();
+  const { s, home, cwd, env, boxes } = await setup();
   const dir = join(home, "hosts", "s-unreached");
   const place = hostedPlace("boat", "s-unreached", dir);
   // Setup made the box, as it does before a session's start.
@@ -261,6 +262,15 @@ test("a start that fails once its box exists deletes the box and its record, and
   };
   const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
   expect((failed as Error).message).toContain("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
+  // Claude never started: it fails as a box that didn't come up, so a lead's chat says why and its message is kept;
+  // and the box came up, so the provider isn't set aside.
+  expect(failed).toBeInstanceOf(HostedDown);
+  expect(boxes.usable()).toContain("boat");
+  // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
+  const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`);
+  expect(line).toStartWith("The lead couldn't start: the box can't reach Claude at localhost:8317");
+  expect(line).toEndWith("Your message is kept and goes in with your next one.");
+  expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.
   expect(s.calls.filter((c) => c.method === "DELETE" && c.path === `/api/v1/sandboxes/${id}`).length).toBe(1);
   expect(s.boxes.size).toBe(0);

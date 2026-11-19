@@ -88,7 +88,11 @@ export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: str
 export function notStartedLine(message: string): string {
   const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
   if (!at) {
-    const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message).trim().replace(/[.\s]+$/, "");
+    const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
+      // A path the node names (its settings file's) is for the log, not the person.
+      .replace(/\s*\([^()]*\/[^()]*\)/g, "")
+      .trim()
+      .replace(/[.\s]+$/, "");
     return `The lead couldn't start${own ? `: ${own}` : ""}. Your message is kept and goes in with your next one.`;
   }
   const minutes = Math.round(ASIDE_MS / 60_000);
