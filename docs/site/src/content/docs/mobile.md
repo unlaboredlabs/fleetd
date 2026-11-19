@@ -182,6 +182,13 @@ with what it can run, a tap opening one to connect it (its key in a secure field
 test or disconnect it; and what runs where, **Linux machine** (a pick of the same places as on the desktop, once there is more than one) and
 **Mac machine**, then how long recordings are kept. Members don't see it.
 
+## Claude {#claude}
+
+An admin has **Claude** under Machines in Settings, as the desktop app's Settings › Hub › Setup › Claude: the hub's API
+key in a secure field, sealed on the phone to every machine, and its endpoint, Anthropic's own filled in. **Save and
+Test** saves and tries it at once; Test and Remove are there once it is set. An endpoint on your tailnet says, while
+Tailscale isn't connected, that hosted agents reach it only once it is, with **Connect Tailscale** right under it.
+
 ## Update fleetd {#update}
 
 An admin has **Update** in Settings, which says what the desktop app's Settings › Hub › Machines › Updates says, in the same

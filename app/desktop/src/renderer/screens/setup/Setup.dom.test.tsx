@@ -220,8 +220,12 @@ describe("setup", () => {
   it("opens the first step not done, with the hub's guide, and Test runs that step's checks on the hub", async () => {
     await render(<SetupScreen view={null} />);
     expect(document.querySelector("[data-screen='setup']")).not.toBeNull();
-    expect(document.body.textContent).toContain("3 of 7 done.");
+    expect(document.body.textContent).toContain("3 of 8 done.");
+    // Tailscale, optional and right before Claude, is the first not done: its one obvious control is Skip.
+    expect(pane()?.getAttribute("data-step")).toBe("tailscale");
+    expect(button("Skip").className).not.toContain("primary");
     // Claude is done with the hub's key; GitHub is next, to do before the first PR (no project yet), not failing.
+    await render(<SetupScreen view="github" />);
     expect(rail("claude")).toContain("Done");
     expect(rail("github")).toContain("Before the first PR");
     expect(pane()?.getAttribute("data-step")).toBe("github");
@@ -250,10 +254,13 @@ describe("setup", () => {
     expect(lists()).toBeGreaterThan(before);
   });
 
-  it("opens where a step's result is saved: Claude's key on Hub › Setup › Claude, a subscription in Your accounts", async () => {
+  it("holds the hub's Claude key and endpoint on its step, and opens Your accounts for a subscription", async () => {
     await render(<SetupScreen view="claude" />);
-    await click(button("Open Hub › Setup › Claude"));
-    expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hub.setup" });
+    // The key's own controls, as Settings › Hub › Setup › Claude has them: nothing to open for it.
+    expect(pane()?.textContent).toContain("Hub API key");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Hub › Setup › Claude")).toBe(false);
+    // Done, so its guide folds under the controls.
+    await click(button("Show the guide"));
     await click(button("Open Your accounts"));
     expect(window.location.hash).toContain("settings/accounts");
   });
@@ -291,17 +298,24 @@ describe("setup", () => {
     await go(button("Start setup"));
     // The steps down the left under their groups, every one of them, done or not.
     expect([...document.querySelectorAll("nav [data-step]")].map((b) => b.getAttribute("data-step")).sort()).toEqual(guides.map((g) => g.id).sort());
+    // Tailscale first, optional: skipped with one click.
+    expect(pane()?.getAttribute("data-step")).toBe("tailscale");
+    await go(button("Skip"));
     expect(pane()?.getAttribute("data-step")).toBe("github");
     await click(button("Test"));
     expect(rail("github")).toContain("Done");
     const walked: string[] = [];
-    for (const id of ["onepassword", "people", "mac"]) {
-      await go(button("Continue"));
+    for (const [id, onward] of [
+      ["onepassword", "Continue"],
+      ["people", "Continue"],
+      ["mac", "Skip"],
+    ] as const) {
+      await go(button(onward));
       expect(pane()?.getAttribute("data-step")).toBe(id);
       walked.push(pane()?.querySelector("h2")?.textContent ?? "");
     }
     expect(walked).toEqual(["1Password", "Invite people", "A Mac for agents"]);
-    await go(button("Finish"));
+    await go(button("Skip"));
     expect(document.querySelector("[data-screen='setup.done']")).not.toBeNull();
     expect(document.body.textContent).toContain("fleetd is ready");
     await click(button("Add a bot"));
@@ -332,6 +346,7 @@ describe("Settings › Hub › Setup", () => {
     // One checklist: the accounts first, Claude done and saying what it uses, the others when they are needed; then
     // the other steps left; then the done ones, each still a row to change a value or test one.
     expect(rows("Steps")).toEqual([
+      "tailscale:TailscaleOptional",
       "claude:ClaudeUses the hub's API key",
       "github:GitHubBefore the first PR",
       "onepassword:1PasswordBefore the first login",
@@ -342,7 +357,7 @@ describe("Settings › Hub › Setup", () => {
     ]);
     // Nothing required is left: no line says so. Titles and rows only: no rail, no guide, no control of an account.
     expect(settings()?.textContent).not.toContain("required");
-    expect(settings()?.textContent).toContain("3 of 7 done");
+    expect(settings()?.textContent).toContain("3 of 8 done");
     expect(document.querySelector("nav [data-step]")).toBeNull();
     expect(pane()).toBeNull();
     expect(settings()?.querySelector("input, [role='switch']")).toBeNull();
@@ -352,7 +367,7 @@ describe("Settings › Hub › Setup", () => {
     scenario = scenarios["setup-fresh"] as Scenario;
     await render(page);
     expect(settings()?.textContent).toContain("1 required before agents can run.");
-    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeNeeds a look", "github:GitHubBefore the first PR", "onepassword:1PasswordBefore the first login"]);
+    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeNeeds a look", "tailscale:TailscaleOptional", "github:GitHubBefore the first PR"]);
   });
 
   it("puts another step that needs someone before the accounts, when no account does", async () => {
@@ -367,8 +382,8 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     expect(settings()?.textContent).toContain("All set up");
     expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps"]);
-    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordDone"]);
-    expect(rows("Steps").slice(3).map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
+    expect(rows("Steps").slice(0, 4)).toEqual(["tailscale:TailscaleDone", "claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordDone"]);
+    expect(rows("Steps").slice(4).map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
   });
 
   it("opens an account in place: its controls, then its guide with its paste values and Test, and the way back", async () => {
@@ -391,8 +406,8 @@ describe("Settings › Hub › Setup", () => {
     expect(button("Hide the guide")).not.toBeNull();
     // Back: GitHub is done, and still a row, in its place.
     await click(back());
-    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordBefore the first login"]);
-    expect(settings()?.textContent).toContain("4 of 7 done");
+    expect(rows("Steps").slice(0, 3)).toEqual(["tailscale:TailscaleOptional", "claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App"]);
+    expect(settings()?.textContent).toContain("4 of 8 done");
   });
 
   it("keeps GitHub's row, its step and the App's controls saying the same after the App's Test, the step's Test, Remove and Create", async () => {

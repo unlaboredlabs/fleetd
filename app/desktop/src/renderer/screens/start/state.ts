@@ -1,11 +1,14 @@
 // Get started's view from the team's own state (model.ts says what each step waits on): the hub's machines and
-// whether their claude is logged in, the person's GitHub and the App's installations (github_app_get), the team's
+// whether their claude is logged in, the hub's Tailscale device (tailnet_get) and its Claude API key
+// (claude_accounts_get), the person's GitHub and the App's installations (github_app_get), the team's
 // bots, the repositories the App reaches (the cloud's GITHUB_REPOS_PATH), New bot's flow while it makes one. The two
-// things only this browser knows, a skipped GitHub and Skip for now, are kept in its storage per team. Shown only on a
+// things only this browser knows, a skipped GitHub or Tailscale and Skip for now, are kept in its storage per team. Shown only on a
 // fleetd cloud team in the web app; the self-hosted hub and the desktop keep their own first run (setup/FirstRun).
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import type { MachineJoinOutput } from "../../../shared/contracts";
 import type { CloudRepo } from "../../../shared/cloud";
+import { CallError } from "../../src/data/queries";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { selectShownProjects } from "../../src/data/selectors";
 import { onWeb } from "../../src/web";
@@ -20,10 +23,13 @@ import {
   projectLine,
   pushedWords,
   stepsLeft,
+  type ClaudeStep,
   type ComputerStep,
   type GithubStep,
+  type KeyState,
   type ProjectStep,
   type StartView,
+  type TailscaleStep,
 } from "./model";
 import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
@@ -150,35 +156,86 @@ export function useStart(
   const ready = listed.find((m) => m.status === "online" && !claudeLoggedOut(m)) ?? listed.find((m) => loggedIn.has(m.machineId) && m.status !== "offline") ?? null;
   // Joined before, and off now: agents can't run there until it's back.
   const offline = listed.find((m) => m.status === "offline");
+  // The computer agents run on: ready, or joined with its claude logged out (the hub's key may reach it).
+  const joined = ready ?? loggedOut ?? null;
 
   const providerName = hosted === undefined ? "" : specOf(hosted.provider).name;
+  // The hosted sandboxes wait on a Claude account (the hub's runner says so): the Claude step's, not this one's.
+  const runnerNeedsClaude = runnerMachine?.status === "degraded" && /Claude account/u.test(runnerMachine.degradedReason ?? "");
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }
       : hosted !== undefined && listed.length === 0
-        ? runnerMachine?.status === "online"
+        ? runnerMachine?.status === "online" || runnerNeedsClaude
           ? { at: "hosted", provider: providerName }
-          : runnerMachine?.status === "degraded" && /Claude account/u.test(runnerMachine.degradedReason ?? "")
-            ? { at: "hosted_claude", provider: providerName }
-            : { at: "hosted_wait", provider: providerName }
-      : loggedOut !== undefined
-        ? {
-            at: "claude",
-            machine: loggedOut.name,
-            login: login?.machineId === loggedOut.machineId ? login.login : "start",
-            ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.url !== undefined ? { url: login.url } : {}),
-            ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.opened === false ? { opened: false } : {}),
-            ...(login?.machineId === loggedOut.machineId && login.error !== undefined ? { error: login.error } : {}),
-          }
-        : unusable !== undefined
-          ? { at: "unusable", machine: unusable.name, reason: unusable.degradedReason ?? `Agents can't run on ${unusable.name} yet.` }
-          : offline !== undefined
-            ? { at: "offline", machine: offline.name }
-            : {
-                at: "line",
-                line: join.out?.line ?? null,
-                ...(join.error === undefined ? {} : { error: join.error }),
-              };
+          : { at: "hosted_wait", provider: providerName }
+        : loggedOut !== undefined
+          ? { at: "ready", machine: loggedOut.name }
+          : unusable !== undefined
+            ? { at: "unusable", machine: unusable.name, reason: unusable.degradedReason ?? `Agents can't run on ${unusable.name} yet.` }
+            : offline !== undefined
+              ? { at: "offline", machine: offline.name }
+              : {
+                  at: "line",
+                  line: join.out?.line ?? null,
+                  ...(join.error === undefined ? {} : { error: join.error }),
+                };
+
+  // Tailscale: the hub's one device, on a hub that runs it. Read here rather than
+  // through Settings' row (settings/Tailscale.tsx), which the You menu's first load would then carry.
+  const tailnetRead = useToolQuery("tailnet_get", noInput, { enabled: owner && live });
+  const tailnetState = tailnetRead.data;
+  const [tailnetBusy, setTailnetBusy] = useState(false);
+  const [tailnetProblem, setTailnetProblem] = useState<string | null>(null);
+  // The person signs in on Tailscale's page: the hub's state is read again until it isn't waiting on them.
+  const tailnetWaits = tailnetState?.status === "login" || tailnetState?.status === "approve" || tailnetState?.status === "starting";
+  useEffect(() => {
+    if (!tailnetWaits) return undefined;
+    const timer = window.setInterval(() => refetch(["tailnet_get"]), 2_000);
+    return () => window.clearInterval(timer);
+  }, [tailnetWaits, refetch]);
+  const tailscale: TailscaleStep | undefined =
+    tailnetState === undefined || (tailnetState.status === "off" && tailnetState.problem !== undefined)
+      ? undefined
+      : tailnetState.status === "connected"
+        ? { at: "done", tailnet: tailnetState.tailnet ?? "Connected" }
+        : // Skipped stays skipped, a sign-in left half way included; Connect again clears it.
+          kept.tailscale === "skipped"
+          ? { at: "skipped" }
+          : tailnetState.status === "login" || tailnetState.status === "starting"
+            ? { at: "signin", ...(tailnetState.loginUrl === undefined ? {} : { url: tailnetState.loginUrl }) }
+            : tailnetState.status === "approve"
+              ? { at: "approve" }
+              : {
+                  at: "todo",
+                  ...(tailnetBusy ? { busy: true } : {}),
+                  ...(tailnetProblem !== null ? { error: tailnetProblem } : tailnetState.status === "failed" && tailnetState.problem !== undefined ? { error: tailnetState.problem } : {}),
+                };
+
+  // Claude: the hub's API key (with its endpoint) reaches every place; else each place's own way in.
+  const accounts = useToolQuery("claude_accounts_get", noInput, { enabled: owner && live });
+  const [keyState, setKeyState] = useState<KeyState | undefined>(undefined);
+  const withKey = keyState === undefined ? {} : { key: keyState };
+  const claude: ClaudeStep =
+    accounts.data?.hubApi !== undefined
+      ? { at: "done", what: "API key" }
+      : ready !== null
+        ? { at: "done", what: ready.name }
+        : computer.at === "hosted" && runnerMachine?.status === "online"
+          ? { at: "done", what: providerName }
+          : loggedOut !== undefined && computer.at === "ready"
+            ? {
+                at: "login",
+                machine: loggedOut.name,
+                login: login?.machineId === loggedOut.machineId ? login.login : "start",
+                ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.url !== undefined ? { url: login.url } : {}),
+                ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.opened === false ? { opened: false } : {}),
+                ...(login?.machineId === loggedOut.machineId && login.error !== undefined ? { error: login.error } : {}),
+                ...withKey,
+              }
+            : computer.at === "hosted"
+              ? { at: "account", provider: providerName, ...withKey }
+              : { at: "wait" };
 
   // GitHub: the person's own connection, and for an owner the App installed on the team.
   const [githubBusy, setGithubBusy] = useState<string | null | true>(null);
@@ -221,8 +278,8 @@ export function useStart(
   const project: ProjectStep =
     bots[0] !== undefined
       ? { at: "made", name: bots[0].project.title }
-      : creating !== null && ready !== null
-        ? { at: "adding", what: creating.title, machine: ready.name }
+      : creating !== null && joined !== null
+        ? { at: "adding", what: creating.title, machine: joined.name }
         : {
             at: "pick",
             repos: (repos.list ?? []).map((r) => ({
@@ -256,6 +313,9 @@ export function useStart(
           who: "owner",
           team: hub.label,
           computer,
+          ...(tailscale === undefined ? {} : { tailscale }),
+          claude,
+          ...(tailnetState === undefined ? {} : { tailnet: tailnetState.status === "connected" }),
           github: githubStep,
           project,
         };
@@ -325,9 +385,62 @@ export function useStart(
     onGithubSkip: () => writeKept(hub.id, { github: "skipped" }),
     onQuery: setQuery,
     onClaudeAccount: () => navigate({ id: "settings", tab: "accounts" }),
+    onClaudeKey: (saved, key) => {
+      if (key.trim() === "") {
+        setKeyState({ error: "Paste the API key from the Claude Console." });
+        return;
+      }
+      // Sealed in main to every machine that takes secrets (the agents' Mac never), as Settings › Hub › Setup › Claude.
+      const boxes = Object.values(machines)
+        .flatMap((m) => (typeof m.boxPubKey === "string" && m.agentsMac !== true ? [{ machineId: m.machineId, boxPubKey: m.boxPubKey }] : []))
+        .sort((a, b) => a.machineId.localeCompare(b.machineId));
+      const request: ClaudeAccountRequest = { account: "hub_api", key, ...(saved === undefined ? {} : { endpoint: saved }), boxes };
+      setKeyState({ busy: true });
+      void window.fleetd.secret.claudeAccount(hub.id, request).then(
+        (out) => {
+          if (!mounted.current) return;
+          if (!out.ok) {
+            setKeyState({ error: errorText(new CallError(out.error)) });
+            return;
+          }
+          setKeyState(undefined);
+          refetch(["claude_accounts_get"]);
+          // Tried at once, as Settings does: the hub keeps it as the key's last Test.
+          void call("claude_account_test", { account: "hub_api" }, { timeoutMs: 120_000 }).then(
+            () => refetch(["claude_accounts_get"]),
+            () => undefined,
+          );
+        },
+        (e: unknown) => mounted.current && setKeyState({ error: errorText(e) }),
+      );
+    },
+    onTailscale: () => {
+      writeKept(hub.id, { tailscale: null });
+      setTailnetBusy(true);
+      setTailnetProblem(null);
+      call("tailnet_connect", noInput, { timeoutMs: 180_000 })
+        .then(
+          async (st) => {
+            if (st.loginUrl === undefined) return;
+            const opened = await window.fleetd.openExternal(st.loginUrl);
+            if (!opened.ok && mounted.current) setTailnetProblem(opened.message);
+          },
+          (e: unknown) => mounted.current && setTailnetProblem(`Not connected: ${errorText(e)}`),
+        )
+        .finally(() => {
+          if (mounted.current) setTailnetBusy(false);
+          refetch(["tailnet_get"]);
+        });
+    },
+    onTailscaleOpen: () => {
+      // Approval waits in Tailscale's admin console.
+      const url = tailnetState?.status === "approve" ? "https://login.tailscale.com/admin/machines" : tailnetState?.loginUrl;
+      if (url !== undefined) void window.fleetd.openExternal(url);
+    },
+    onTailscaleSkip: () => writeKept(hub.id, { tailscale: "skipped" }),
     onRepo: (owner, name) => {
       // On the computer, else in the hosted sandboxes (the hub's runner).
-      const on = ready?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
+      const on = joined?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
       if (on !== undefined)
         startBot(on, {
           kind: "clone",
@@ -335,7 +448,7 @@ export function useStart(
         });
     },
     onEmpty: () => {
-      const on = ready?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
+      const on = joined?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
       openAddProject(on === undefined ? undefined : { text: "", machine: on });
     },
     onOpen: (key) => {

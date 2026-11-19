@@ -10,6 +10,7 @@ import { type GitIdentity, isMachineId, parseGitIdentity, type SetupState } from
 import { localHostName, machineIdFromHost } from "../project.ts";
 import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
+import { claudeKey, connectTailscale } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
@@ -74,6 +75,14 @@ export class Ui {
         validate: (s) => check(s.trim()),
       });
       return answer.trim();
+    });
+  }
+  /** A secret typed with no echo; empty when nobody is at the terminal. */
+  secret(list: Checklist, prompt: string): Promise<string> {
+    return this.ask(list, "", async () => {
+      const typed = await tty.readHidden(prompt);
+      if (typed === undefined) throw new Stopped();
+      return typed;
     });
   }
   multi<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T[]): Promise<T[]> {
@@ -490,12 +499,18 @@ export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: i
   for (;;) {
     const actions: [string, string, string][] = [];
     if (step.id === "people") actions.push(["invite", "Invite someone now", "a link and a code, for 7 days"]);
+    if (step.id === "tailscale" && step.status !== "done") actions.push(["tailscale", "Connect Tailscale", "opens Tailscale's sign-in; nothing to paste"]);
+    if (step.id === "claude") actions.push(["key", "Give the hub an API key", "an endpoint and a key, sealed here"]);
     if (step.test !== undefined || (step.ways ?? []).length > 0) actions.push(["test", "Test it", "run its checks now"]);
-    actions.push(["next", "Go on", ""]);
+    actions.push(["next", step.need?.kind === "optional" && step.status !== "done" ? "Skip" : "Go on", ""]);
     const picked = await ui.select(list, `${step.title}:`, actions, actions[0]![0]);
     if (picked === "invite") {
       await inviteStep(opts, ui, list);
       if ((await tested(list, client, step.id)) === "done") return "done";
+    } else if (picked === "tailscale") {
+      if ((await connectTailscale(ui, list, client)) && (await tested(list, client, step.id)) === "done") return "done";
+    } else if (picked === "key") {
+      if ((await claudeKey(ui, list, client)) && (await tested(list, client, step.id)) === "done") return "done";
     } else if (picked === "test") {
       if ((await tested(list, client, step.id)) === "done") return "done";
     } else return step.status;

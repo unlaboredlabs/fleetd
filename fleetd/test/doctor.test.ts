@@ -150,6 +150,7 @@ test("setup checks are there only once their step is set up", () => {
     onepassword: [["Sam"]],
     vault: { mode: "file", path: "/home/dev/.config/fleetd/vault.key", locked: false, unsafe: [], recoverySaved: true },
     sandboxes: [["boat.dev", { at: "2026-10-19T09:00:00.000Z", ok: true }]],
+    tailnet: { status: "connected", tailnet: "acme.com" },
   });
   expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });
@@ -603,7 +604,8 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   cleanup = t.done;
   const s = hubSources(t.hub);
   expect(s.machines()).toEqual([]);
-  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [], sandboxes: [] });
+  // Tailscale is off on a fresh hub: there, and no check for it.
+  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [], sandboxes: [], tailnet: expect.objectContaining({ status: "off" }) });
   expect(s.reposWithoutCi()).toEqual([]);
   expect(s.bases("lab-a")).toEqual([]);
   expect(s.sameComputer("lab-a")).toEqual([]);

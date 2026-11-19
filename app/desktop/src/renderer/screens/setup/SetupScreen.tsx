@@ -1,6 +1,7 @@
 // The hub admin's setup: the steps the hub serves (setup_list), the same ones `fleetd init`
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
-// Setup lists the hub's accounts and the steps left, and opens one at a time (StepGuide). Each step's status is the
+// Setup lists the hub's accounts and the steps left, and opens one at a time (StepGuide). The first run's Tailscale and
+// Claude steps hold their controls too (./accounts.tsx): Connect, and the key with its endpoint. Each step's status is the
 // hub's, read from its checks; Test runs that step's checks now (setup_test), and a step's result is saved
 // where it lives already (Settings › Hub › Setup › Claude, › GitHub, Hub › Machines, …), which its place opens. Only
 // owners and admins see any of it.
@@ -18,6 +19,7 @@ import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
+import { INLINE, stepControls } from "./accounts";
 import s from "./setup.module.css";
 
 const noInput = {};
@@ -303,10 +305,15 @@ function StepPane({
   onEnd: () => void;
 }) {
   const test = useTest(step);
+  const me = useHubRole().me;
   const index = steps.indexOf(step);
   const next = steps.slice(index + 1).find((st) => st.status !== "done");
   const onward = () => (next !== undefined ? onOpen(next.id) : onEnd());
   const left = isRequiredLeft(step);
+  // Tailscale and Claude are done right here, with the controls Settings › Hub › Setup holds for them.
+  const account = INLINE.has(step.id) ? stepControls(step.id, me) : undefined;
+  // An optional step not done yet is skipped, one obvious control.
+  const skip = step.need.kind === "optional" && step.status !== "done";
   return (
     <article className={s.pane} aria-labelledby="setup-step-title" data-step={step.id}>
       <Text as="p" size="xs" tone="quiet">
@@ -318,12 +325,12 @@ function StepPane({
       <Text as="p" tone="quiet">
         {step.why}
       </Text>
-      <StepBody step={step} test={test} />
+      <StepBody step={step} test={test} account={account} />
 
       <footer className={s.foot}>
         <span />
-        <Button variant="primary" onClick={onward} disabled={test.busy}>
-          {next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}
+        <Button variant={skip ? "secondary" : "primary"} onClick={onward} disabled={test.busy}>
+          {skip ? "Skip" : next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}
         </Button>
       </footer>
     </article>

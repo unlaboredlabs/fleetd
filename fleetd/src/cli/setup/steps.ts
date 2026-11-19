@@ -4,7 +4,7 @@ import type { McpClient } from "../mcp_client.ts";
 import type { Failure } from "../common.ts";
 import type { Checklist, State } from "./checklist.ts";
 
-async function callFor(client: McpClient, tool: string, input: unknown, waitMs: number): Promise<any> {
+export async function callFor(client: McpClient, tool: string, input: unknown, waitMs: number): Promise<any> {
   let result;
   try {
     result = await client.callTool(tool, input, waitMs);
@@ -89,6 +89,7 @@ export function unowned(checks: any[], steps: any[]): any[] {
 }
 
 function placeWords(place: string): string {
+  if (place === "tailscale") return "Settings › Hub › Setup › Tailscale, Connect";
   if (place === "claude") {
     return "Settings › Hub › Setup › Claude for the hub's API key; Settings › Your accounts › Claude for your own subscription";
   }

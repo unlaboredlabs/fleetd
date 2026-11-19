@@ -43,6 +43,7 @@ import { ImportMemory } from "./src/screens/ImportMemory";
 import { Machines } from "./src/screens/Machines";
 import { providerName } from "./src/machines";
 import { Provider } from "./src/screens/Provider";
+import { Claude } from "./src/screens/Claude";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
 import { Vault } from "./src/screens/vault/Vault";
@@ -519,6 +520,7 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Machines" component={Machines} options={{ ...pushed(t, "Machines"), headerLargeTitleEnabled: true }} />
+      <SettingsStack.Screen name="Claude" component={Claude} options={{ ...pushed(t, "Claude"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />

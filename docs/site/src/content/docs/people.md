@@ -103,9 +103,11 @@ In the app:
   your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key, and shows only
   when the hub's key is yours to pick. *Your subscription* takes the token: paste it and press Connect and test. The
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
-- **Settings › Hub › Setup › Claude** is for owners and admins. *Hub API key* takes the key and an optional endpoint
-  (Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
-  endpoint alone keeps the saved key. A line under it says leads and automations run on it, else the hub owner's
+- **Settings › Hub › Setup › Claude** is for owners and admins. *Hub API key* takes the key and its endpoint,
+  Anthropic's own filled in (Save and test), then shows the machines that hold it, its last Test, and Test, Change and
+  Remove. A change to the endpoint alone keeps the saved key. An endpoint on your tailnet says, while Tailscale isn't
+  connected, that hosted agents reach it only once it is, with **Connect Tailscale** beside it. The phone has the same
+  under Settings › Claude. A line under it says leads and automations run on it, else the hub owner's
   subscription; without a key, whether that subscription is connected. *Members* is the switch.
 - **Settings › Hub › People** shows each person's way on their row, beside their GitHub, with any usage pause on
   their account.

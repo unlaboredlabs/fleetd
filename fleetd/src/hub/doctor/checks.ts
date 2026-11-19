@@ -12,6 +12,7 @@ import type {
   GithubApp,
   OnePasswordTest,
   SandboxCheck,
+  TailnetState,
 } from "../../shared/contracts.ts";
 import type { MacHealth, NodeDisk, NodeLoad, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -107,6 +108,8 @@ export type SetupFacts = {
   vault?: VaultKeyFacts;
   /** Each connected hosted sandbox provider (W688), by its name, with its key's last check. */
   sandboxes?: [name: string, check?: SandboxCheck][];
+  /** The team's Tailscale gateway (W722), as the hub runs it now. */
+  tailnet?: TailnetState;
 };
 
 /** What `hub/vault_key` reads. */
@@ -146,7 +149,7 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
  * The ids `setupChecks` answers for. Each is there only while its state is (someone joined, an App, a token, the
  * vault's key), so one missing from a read means it is gone, not that an earlier read still holds.
  */
-export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key", "hub/sandboxes"]);
+export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key", "hub/sandboxes", "hub/tailnet"]);
 
 /** The setup checks the hub reads from its own state: someone else joined, the GitHub App. */
 export function setupChecks(facts: SetupFacts): DoctorCheck[] {
@@ -167,7 +170,31 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
   if (facts.vault) out.push(vaultKey(facts.vault));
   const hosted = sandboxProviders(facts.sandboxes ?? []);
   if (hosted) out.push(hosted);
+  const tailnet = facts.tailnet === undefined ? undefined : tailnetGateway(facts.tailnet);
+  if (tailnet) out.push(tailnet);
   return out;
+}
+
+/**
+ * `hub/tailnet`: the team's Tailscale gateway, for hosted agents. Absent while it is off and can run here (it is
+ * optional); waiting on a sign-in or an approval, not set up yet; failed, a warning with what it said.
+ */
+export function tailnetGateway(s: TailnetState): DoctorCheck | undefined {
+  const page = "Settings › Hub › Setup › Tailscale";
+  switch (s.status) {
+    case "connected":
+      return hubEntry("tailnet", "ok", `Connected to ${s.tailnet ?? "your tailnet"}${s.device === undefined ? "" : ` as ${s.device}`}.`);
+    case "login":
+    case "starting":
+      return hubEntry("tailnet", "unknown", "Waiting for a sign-in to Tailscale.", manual(`Sign in and approve the device: ${page}, Connect`));
+    case "approve":
+      return hubEntry("tailnet", "unknown", "Signed in; an admin of your tailnet approves the device in Tailscale's admin console.", manual("Approve it on https://login.tailscale.com/admin/machines"));
+    case "failed":
+      return hubEntry("tailnet", "warn", `Tailscale: ${trimDots(s.problem ?? "it stopped")}.`, manual(`Connect again on ${page}`));
+    default:
+      // Where it can't run (the hub's OS), the step says why; nothing is wrong.
+      return s.problem === undefined ? undefined : hubEntry("tailnet", "unknown", `${trimDots(s.problem)}.`);
+  }
 }
 
 /**

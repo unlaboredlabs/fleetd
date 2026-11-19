@@ -1,16 +1,19 @@
 // Get started's model: which step is open and how many are left, for both paths; GitHub's way back; a last push and a
 // teammate's bot in words; a machine whose claude is logged out.
 import { describe, expect, it } from "vitest";
-import { claudeLoggedOut, currentStep, githubReturnOf, projectLine, pushedWords, stepsLeft, withoutGithubReturn } from "./model";
+import { botOf, claudeLoggedOut, currentStep, githubReturnOf, projectLine, pushedWords, stepsLeft, stepsOf, withoutGithubReturn } from "./model";
 import { SAMPLES } from "./samples";
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
 const UTC = "UTC";
 
 describe("steps", () => {
-  it("opens the first step not done, a skipped GitHub counting as done", () => {
+  it("opens the first step not done, a skipped GitHub or Tailscale counting as done", () => {
     expect(currentStep(SAMPLES.computer)).toBe("computer");
-    expect(currentStep(SAMPLES.claude)).toBe("computer");
+    expect(currentStep(SAMPLES.tailscale)).toBe("tailscale");
+    expect(currentStep(SAMPLES["tailscale-signin"])).toBe("tailscale");
+    expect(currentStep(SAMPLES["claude-key"])).toBe("claude");
+    expect(currentStep(SAMPLES.claude)).toBe("claude");
     expect(currentStep(SAMPLES.github)).toBe("github");
     expect(currentStep(SAMPLES["github-failed"])).toBe("github");
     expect(currentStep(SAMPLES.project)).toBe("project");
@@ -18,8 +21,17 @@ describe("steps", () => {
     expect(currentStep(SAMPLES.teammate)).toBe("project");
   });
 
-  it("counts what is left: three for a fresh team, none once its bot is made; a teammate's GitHub alone", () => {
-    expect(stepsLeft(SAMPLES.computer)).toBe(3);
+  it("puts Tailscale right before Claude, where the hub has it, and leaves it out where it hasn't", () => {
+    expect(stepsOf(SAMPLES.tailscale)).toEqual(["computer", "tailscale", "claude", "github", "project"]);
+    const { tailscale: _, ...none } = SAMPLES.tailscale;
+    expect(stepsOf(none)).toEqual(["computer", "claude", "github", "project"]);
+    expect(currentStep(none)).toBe("claude");
+  });
+
+  it("counts what is left: five for a fresh team, none once its bot is made; a skipped Tailscale never asks again", () => {
+    expect(stepsLeft(SAMPLES.computer)).toBe(5);
+    expect(stepsLeft(SAMPLES.tailscale)).toBe(4);
+    expect(stepsLeft({ ...SAMPLES.tailscale, tailscale: { at: "skipped" } })).toBe(3);
     expect(stepsLeft(SAMPLES.github)).toBe(2);
     expect(stepsLeft(SAMPLES["project-skipped"])).toBe(1);
     expect(
@@ -31,6 +43,12 @@ describe("steps", () => {
     expect(stepsLeft(SAMPLES.teammate)).toBe(1);
     expect(stepsLeft(SAMPLES["teammate-open"])).toBe(0);
     expect(stepsLeft({ ...SAMPLES.teammate, github: { at: "requested" } })).toBe(0);
+  });
+
+  it("thinks while the hub's key is saved or a computer's login is checked", () => {
+    expect(botOf({ ...SAMPLES["claude-key"], claude: { at: "account", provider: "boat.dev", key: { busy: true } } })).toBe("thinking");
+    expect(botOf({ ...SAMPLES.claude, claude: { at: "login", machine: "devbox", login: "checking" } })).toBe("thinking");
+    expect(botOf(SAMPLES.github)).toBe("done");
   });
 });
 

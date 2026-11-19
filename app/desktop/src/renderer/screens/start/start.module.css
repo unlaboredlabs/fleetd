@@ -166,6 +166,26 @@
   padding-inline: 0;
 }
 
+/* Claude's endpoint and key: the two fields, then Save. */
+.keyForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.keyForm input {
+  background: var(--raised);
+}
+
+/* Beside an endpoint on the tailnet while Tailscale is off: what's wrong, and Connect, on one line where it fits. */
+.tailnet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .find {
   position: relative;
   display: block;

@@ -7,7 +7,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ClaudeAccountsGetOutput, HubInfoOutput, PeopleListOutput, Person, PersonClaude, UsageStatusOutput } from "../../../shared/contracts";
+import type { ClaudeAccountsGetOutput, HubInfoOutput, PeopleListOutput, Person, PersonClaude, TailnetState, UsageStatusOutput } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -69,15 +69,20 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let sealed: ClaudeAccountRequest[];
 let testWorks: boolean;
+/** The hub's Tailscale: none served unless a test sets it. */
+let tailnet: TailnetState | undefined;
+let opened: string[];
 
 beforeEach(() => {
   calls = [];
   sealed = [];
   testWorks = true;
+  tailnet = undefined;
+  opened = [];
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
-    openExternal: () => Promise.resolve({ ok: true }),
+    openExternal: (url: string) => (opened.push(url), Promise.resolve({ ok: true })),
     secret: {
       claudeAccount: (_hub: string, request: ClaudeAccountRequest) => {
         sealed.push(request);
@@ -131,7 +136,11 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
                   ? { test: testWorks ? { at: AT, machineId: "devbox", ok: true } : { at: AT, machineId: "devbox", ok: false, error: "the gateway refused it" } }
                   : tool === "claude_settings_set"
                     ? { settings: { membersUseHubApi: false } }
-                    : undefined;
+                    : tool === "tailnet_get"
+                      ? tailnet
+                      : tool === "tailnet_connect" && tailnet !== undefined
+                        ? (tailnet = { status: "login", loginUrl: "https://login.tailscale.com/a/standin" })
+                        : undefined;
       // Connections' other parts (GitHub) find a hub without them.
       return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
@@ -321,4 +330,40 @@ it("shows a member who follows the link none of it, and reads nothing", async ()
   await render(withKey, { me: bob, admin: false });
   expect(host.querySelector("[data-screen='settings.hub.denied']")).not.toBeNull();
   expect(sent("claude_accounts_get")).toEqual([]);
+});
+
+it("prefills Anthropic's endpoint, kept as none, and says beside a tailnet endpoint that Tailscale isn't connected, with Connect", async () => {
+  tailnet = { status: "off" };
+  await render(noKey);
+  const endpoint = host.querySelector<HTMLInputElement>("input[aria-label='Endpoint']");
+  expect(endpoint?.value).toBe("https://api.anthropic.com");
+  expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
+  // The human's own: a gateway on the tailnet.
+  await type("Endpoint", "http://100.104.249.49:8317");
+  expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
+  await click(button("Connect Tailscale"));
+  expect(sent("tailnet_connect")).toEqual([{}]);
+  expect(opened).toEqual(["https://login.tailscale.com/a/standin"]);
+  // Signing in: the line says what is left, and the sign-in page is a click away.
+  expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("Finish signing in to Tailscale.");
+  expect(button("Open sign-in")).not.toBeNull();
+  // Back to Anthropic's own: nothing to say, and the save keeps no endpoint.
+  await type("Endpoint", "https://api.anthropic.com/");
+  expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
+  await type("API key", KEY);
+  await click(button("Save and test"));
+  expect(sealed.map((r) => ("endpoint" in r ? r.endpoint : undefined))).toEqual([undefined]);
+});
+
+it("says nothing beside a tailnet endpoint once Tailscale is connected", async () => {
+  tailnet = { status: "connected", tailnet: "acme.com" };
+  await render(noKey);
+  await type("Endpoint", "https://claude.tail1234.ts.net");
+  expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
+});
+
+it("says nothing beside a tailnet endpoint on a hub that serves no Tailscale", async () => {
+  await render(noKey);
+  await type("Endpoint", "https://claude.tail1234.ts.net");
+  expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
 });

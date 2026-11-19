@@ -28,6 +28,7 @@ import { RestartHub } from "./RestartHub";
 import { UpdateFleetd } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
 import { machinesShown } from "../machines";
+import { claudeShown } from "../claude";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -147,6 +148,7 @@ export function Settings() {
       {machinesShown(state.admin) ? (
         <ListSection>
           <ListRow title="Machines" onPress={() => navigation.navigate("Machines")} />
+          {claudeShown(state.admin) ? <ListRow title="Claude" onPress={() => navigation.navigate("Claude")} /> : null}
         </ListSection>
       ) : null}
       {vaultShown(hub) ? (

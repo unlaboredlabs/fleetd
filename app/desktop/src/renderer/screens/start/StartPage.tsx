@@ -1,12 +1,29 @@
 // Get started (model.ts): one page, the bot and a title where sign-in left them, then the few steps still between the
-// person and a first chat with a bot's lead. The step open now is the page's one soft group; a step done is its title and
+// person and a first chat with a bot's lead: where agents run, Tailscale (optional, Skip), Claude, GitHub, a bot. The step open now is the page's one soft group; a step done is its title and
 // what it ended on, one still to come its title alone. Nothing to read at rest but the open step's own words, and a
 // command only where nothing else can do it (a computer joining). Skip for now goes to the app; the You menu keeps a
 // quiet Finish setting up until no step is left.
 import { Check, Plus, Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Bot, Button, copyText, cx, Input, Segmented, StateGlyph, Text } from "../../ui";
-import { botOf, currentStep, matching, stepDone, stepsOf, type ComputerStep, type GithubStep, type ProjectStep, type StartView, type StepId, type TeamProject } from "./model";
+import { ANTHROPIC_ENDPOINT, endpointToSave, tailnetLine } from "../../../shared/claudeEndpoint";
+import { Bot, Button, copyText, cx, Field, Input, Segmented, StateGlyph, Text } from "../../ui";
+import { KEY_PLACEHOLDER } from "../settings/claudeModel";
+import {
+  botOf,
+  currentStep,
+  matching,
+  stepDone,
+  stepsOf,
+  type ClaudeStep,
+  type ComputerStep,
+  type GithubStep,
+  type KeyState,
+  type ProjectStep,
+  type StartView,
+  type StepId,
+  type TailscaleStep,
+  type TeamProject,
+} from "./model";
 import s from "./start.module.css";
 
 export interface StartActions {
@@ -15,6 +32,13 @@ export interface StartActions {
   readonly onClaudeCode?: (code: string) => void;
   /** Settings › Your accounts › Claude: the account hosted sandboxes' agents run on. */
   readonly onClaudeAccount?: () => void;
+  /** The hub's API key, sealed to every machine, with the endpoint the hub keeps (none for Anthropic's own). */
+  readonly onClaudeKey?: (endpoint: string | undefined, key: string) => void;
+  /** Tailscale's Connect: the hub starts its device and opens Tailscale's sign-in page. */
+  readonly onTailscale?: () => void;
+  /** Tailscale's sign-in page, or its admin console, again from a click. */
+  readonly onTailscaleOpen?: () => void;
+  readonly onTailscaleSkip?: () => void;
   readonly onGithub?: () => void;
   readonly onGithubSkip?: () => void;
   /** GitHub's install page again, to choose the repositories fleetd's App reaches. */
@@ -26,7 +50,7 @@ export interface StartActions {
   readonly onSkip?: () => void;
 }
 
-const TITLES: Record<StepId, string> = { computer: "Where agents run", github: "Connect GitHub", project: "Start a bot" };
+const TITLES: Record<StepId, string> = { computer: "Where agents run", tailscale: "Tailscale", claude: "Claude", github: "Connect GitHub", project: "Start a bot" };
 
 /** `hosted`: the team's hosted sandbox providers as rows to connect (settings/Providers), the second way agents run. */
 export function StartPage({ view, actions = {}, hosted }: { view: StartView; actions?: StartActions; hosted?: ReactNode }) {
@@ -58,8 +82,10 @@ export function StartPage({ view, actions = {}, hosted }: { view: StartView; act
 }
 
 function Step({ n, id, view, open, actions, hosted }: { n: number; id: StepId; view: StartView; open: boolean; actions: StartActions; hosted: ReactNode }) {
-  // A skipped GitHub lets the steps go on, but it isn't done: it keeps its number, its Connect at its end.
-  const done = stepDone(view, id) && !(id === "github" && (view.github.at === "skipped" || view.github.at === "requested"));
+  // A skipped GitHub or Tailscale lets the steps go on, but it isn't done: it keeps its number, its Connect at its end.
+  const skipped =
+    (id === "github" && (view.github.at === "skipped" || view.github.at === "requested")) || (id === "tailscale" && view.who === "owner" && view.tailscale?.at === "skipped");
+  const done = stepDone(view, id) && !skipped;
   const title = id === "project" && view.who === "teammate" ? "Open a bot" : TITLES[id];
   return (
     <li className={cx(s.step, open && s.open)} data-step={id} aria-current={open ? "step" : undefined}>
@@ -81,6 +107,15 @@ function Step({ n, id, view, open, actions, hosted }: { n: number; id: StepId; v
 function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: StartActions }) {
   if (id === "computer" && view.who === "owner" && view.computer.at === "ready") return <Text tone="quiet">{view.computer.machine}</Text>;
   if (id === "computer" && view.who === "owner" && view.computer.at === "hosted") return <Text tone="quiet">{view.computer.provider}</Text>;
+  if (id === "tailscale" && view.who === "owner" && view.tailscale?.at === "done") return <Text tone="quiet">{view.tailscale.tailnet}</Text>;
+  if (id === "tailscale" && view.who === "owner" && view.tailscale?.at === "skipped") {
+    return (
+      <Button variant="quiet" className={s.end} onClick={actions.onTailscale}>
+        Connect
+      </Button>
+    );
+  }
+  if (id === "claude" && view.who === "owner" && view.claude.at === "done") return <Text tone="quiet">{view.claude.what}</Text>;
   if (id === "github" && view.github.at === "done") return <Text tone="quiet">{view.github.login}</Text>;
   if (id === "project" && view.who === "owner" && view.project.at === "made") return <Text tone="quiet">{view.project.name}</Text>;
   if (id === "github" && view.github.at === "requested") return <Text tone="quiet">Asked an owner on GitHub</Text>;
@@ -104,6 +139,8 @@ function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: St
 
 function body(id: StepId, view: StartView, actions: StartActions, hosted: ReactNode): ReactNode {
   if (id === "computer" && view.who === "owner") return <Computer step={view.computer} actions={actions} hosted={hosted} />;
+  if (id === "tailscale" && view.who === "owner" && view.tailscale !== undefined) return <Tailscale step={view.tailscale} actions={actions} />;
+  if (id === "claude" && view.who === "owner") return <Claude step={view.claude} tailnet={view.tailnet} actions={actions} />;
   if (id === "github") return <Github step={view.github} actions={actions} />;
   if (view.who === "owner") return <Project step={view.project} skipped={view.github.at !== "done"} actions={actions} />;
   return <Projects projects={view.projects} actions={actions} />;
@@ -132,28 +169,8 @@ function Where({ step, actions, hosted }: { step: Extract<ComputerStep, { at: "l
 
 function Computer({ step, actions, hosted }: { step: ComputerStep; actions: StartActions; hosted: ReactNode }) {
   const [copied, setCopied] = useState(false);
-  const [code, setCode] = useState("");
   if (step.at === "line" && hosted) return <Where step={step} actions={actions} hosted={hosted} />;
   if (step.at === "hosted_wait") return <Waiting>{`Getting ${step.provider}'s sandboxes ready`}</Waiting>;
-  if (step.at === "hosted_claude") {
-    // Agents in sandboxes run on the team's Claude account: no computer's login reaches them.
-    return (
-      <>
-        <div className={s.joined}>
-          <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
-          <Text>{`${step.provider} is connected`}</Text>
-        </div>
-        <Text as="p" tone="quiet">
-          Connect Claude, so its agents can work.
-        </Text>
-        <div className={s.actions}>
-          <Button variant="primary" size="md" onClick={actions.onClaudeAccount}>
-            Connect Claude
-          </Button>
-        </div>
-      </>
-    );
-  }
   if (step.at === "line") {
     const { line } = step;
     return (
@@ -197,13 +214,6 @@ function Computer({ step, actions, hosted }: { step: ComputerStep; actions: Star
       </>
     );
   }
-  if (step.at === "ready" || step.at === "hosted") return null;
-  const joined = (
-    <div className={s.joined}>
-      <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
-      <Text>{`${step.machine} is connected`}</Text>
-    </div>
-  );
   if (step.at === "offline") {
     // Joined before and off now: nothing to do here but turn it on, or start fleetd there again.
     return (
@@ -219,7 +229,7 @@ function Computer({ step, actions, hosted }: { step: ComputerStep; actions: Star
     // Agents can't run there yet: the hub's own words, with their fix; the step goes on once the machine is well.
     return (
       <>
-        {joined}
+        <Joined>{`${step.machine} is connected`}</Joined>
         <span role="status">
           <Text tone="warning">{step.reason}</Text>
         </span>
@@ -227,51 +237,189 @@ function Computer({ step, actions, hosted }: { step: ComputerStep; actions: Star
       </>
     );
   }
+  return null;
+}
+
+function Joined({ children }: { children: string }) {
+  return (
+    <div className={s.joined}>
+      <Check size={14} strokeWidth={2.5} className={s.ok} aria-hidden />
+      <Text>{children}</Text>
+    </div>
+  );
+}
+
+/** Tailscale, optional: Connect (the hub's one device, Tailscale's sign-in), or Skip. Nothing to paste. */
+function Tailscale({ step, actions }: { step: TailscaleStep; actions: StartActions }) {
+  if (step.at === "signin" || step.at === "approve") {
+    return (
+      <>
+        {step.at === "approve" ? (
+          <span role="status">
+            <Text tone="warning">Signed in. An admin of your tailnet approves the device in Tailscale&apos;s admin console.</Text>
+          </span>
+        ) : (
+          <Waiting>Waiting for you to sign in to Tailscale</Waiting>
+        )}
+        <div className={s.actions}>
+          <Button size="md" onClick={actions.onTailscaleOpen}>
+            {step.at === "approve" ? "Open Tailscale" : "Open the sign-in page"}
+          </Button>
+          <Button variant="quiet" size="md" onClick={actions.onTailscaleSkip}>
+            Skip
+          </Button>
+        </div>
+      </>
+    );
+  }
+  if (step.at !== "todo") return null;
   return (
     <>
-      {joined}
-      {step.login === "start" || step.login === "starting" ? (
-        <>
-          <Text as="p" tone="quiet">
-            {`Log in to Claude on ${step.machine}, so its agents can work.`}
+      <Text as="p" tone="quiet">
+        Hosted agents reach your tailnet through one device fleetd runs.
+      </Text>
+      {step.error === undefined ? null : (
+        <span role="alert">
+          <Text size="sm" tone="danger">
+            {step.error}
           </Text>
-          {step.error === undefined ? null : (
-            <span role="alert">
-              <Text size="sm" tone="danger">
-                {step.error}
-              </Text>
-            </span>
-          )}
-          <div className={s.actions}>
-            <Button variant="primary" size="md" disabled={step.login === "starting"} onClick={actions.onClaudeLogin}>
-              {step.login === "starting" ? "Opening Claude…" : "Log in to Claude"}
-            </Button>
-          </div>
-        </>
+        </span>
+      )}
+      <div className={s.actions}>
+        <Button variant="primary" size="md" disabled={step.busy === true} onClick={actions.onTailscale}>
+          {step.busy === true ? "Connecting…" : "Connect Tailscale"}
+        </Button>
+        <Button variant="quiet" size="md" disabled={step.busy === true} onClick={actions.onTailscaleSkip}>
+          Skip
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Claude: the hub's API key with its endpoint, or the place's own way in (a computer's login, the person's
+ * subscription for hosted sandboxes). A hosted team starts on the key; a computer on its login.
+ */
+function Claude({ step, tailnet, actions }: { step: ClaudeStep; tailnet: boolean | undefined; actions: StartActions }) {
+  const [way, setWay] = useState<"key" | "own">(step.at === "login" ? "own" : "key");
+  if (step.at === "wait" || step.at === "done") return null;
+  const own = { value: "own" as const, label: step.at === "login" ? "Claude login" : "Subscription" };
+  const key = { value: "key" as const, label: "API key" };
+  return (
+    <>
+      <Segmented label="How agents reach Claude" options={step.at === "login" ? [own, key] : [key, own]} value={way} onChange={setWay} />
+      {way === "key" ? (
+        <ClaudeKey state={step.key} tailnet={tailnet} actions={actions} />
+      ) : step.at === "login" ? (
+        <Login step={step} actions={actions} />
       ) : (
         <>
           <Text as="p" tone="quiet">
-            {step.opened === false ? "The browser didn't open Claude's sign-in page. Open it, sign in, then paste the code it shows." : "Sign in on the page that opened, then paste the code it shows."}
+            {`Connect your Claude subscription, so ${step.provider}'s agents can work.`}
           </Text>
-          <form
-            className={s.codeRow}
-            onSubmit={(e) => {
-              e.preventDefault();
-              actions.onClaudeCode?.(code);
-            }}
-          >
-            <Input mono aria-label="Code from Claude" placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" />
-            <Button type="submit" variant="primary" size="md" disabled={step.login === "checking"}>
-              {step.login === "checking" ? "Logging in…" : "Log in"}
-            </Button>
-          </form>
-          <div>
-            <Button variant="link" className={s.again} onClick={actions.onClaudeLogin}>
-              {step.opened === false ? "Open the sign-in page" : "Open the page again"}
+          <div className={s.actions}>
+            <Button variant="primary" size="md" onClick={actions.onClaudeAccount}>
+              Connect Claude
             </Button>
           </div>
         </>
       )}
+    </>
+  );
+}
+
+/** The hub's API key and its endpoint, Anthropic's own prefilled; one on the tailnet says so while Tailscale is off. */
+function ClaudeKey({ state, tailnet, actions }: { state: KeyState | undefined; tailnet: boolean | undefined; actions: StartActions }) {
+  const [endpoint, setEndpoint] = useState(ANTHROPIC_ENDPOINT);
+  const [key, setKey] = useState("");
+  const busy = state?.busy === true;
+  const line = tailnet === undefined ? null : tailnetLine(endpoint, tailnet);
+  return (
+    <form
+      className={s.keyForm}
+      onSubmit={(e) => {
+        e.preventDefault();
+        actions.onClaudeKey?.(endpointToSave(endpoint), key);
+      }}
+    >
+      <Field label="Endpoint">
+        <Input mono aria-label="Endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} onChange={(e) => setEndpoint(e.target.value)} />
+      </Field>
+      {line === null ? null : (
+        <div className={s.tailnet} data-tailnet-hint="">
+          <span role="status">
+            <Text size="sm" tone="warning">
+              {line}
+            </Text>
+          </span>
+          <Button size="sm" onClick={actions.onTailscale}>
+            Connect Tailscale
+          </Button>
+        </div>
+      )}
+      <Field label="API key">
+        <Input mono aria-label="API key" data-secret="" type="password" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      {state?.error === undefined ? null : (
+        <span role="alert">
+          <Text size="sm" tone="danger">
+            {state.error}
+          </Text>
+        </span>
+      )}
+      <div className={s.actions}>
+        <Button type="submit" variant="primary" size="md" disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** A computer's own Claude login: Log in, its page, then the code it shows. */
+function Login({ step, actions }: { step: Extract<ClaudeStep, { at: "login" }>; actions: StartActions }) {
+  const [code, setCode] = useState("");
+  return step.login === "start" || step.login === "starting" ? (
+    <>
+      <Text as="p" tone="quiet">
+        {`Log in to Claude on ${step.machine}, so its agents can work.`}
+      </Text>
+      {step.error === undefined ? null : (
+        <span role="alert">
+          <Text size="sm" tone="danger">
+            {step.error}
+          </Text>
+        </span>
+      )}
+      <div className={s.actions}>
+        <Button variant="primary" size="md" disabled={step.login === "starting"} onClick={actions.onClaudeLogin}>
+          {step.login === "starting" ? "Opening Claude…" : "Log in to Claude"}
+        </Button>
+      </div>
+    </>
+  ) : (
+    <>
+      <Text as="p" tone="quiet">
+        {step.opened === false ? "The browser didn't open Claude's sign-in page. Open it, sign in, then paste the code it shows." : "Sign in on the page that opened, then paste the code it shows."}
+      </Text>
+      <form
+        className={s.codeRow}
+        onSubmit={(e) => {
+          e.preventDefault();
+          actions.onClaudeCode?.(code);
+        }}
+      >
+        <Input mono aria-label="Code from Claude" placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" />
+        <Button type="submit" variant="primary" size="md" disabled={step.login === "checking"}>
+          {step.login === "checking" ? "Logging in…" : "Log in"}
+        </Button>
+      </form>
+      <div>
+        <Button variant="link" className={s.again} onClick={actions.onClaudeLogin}>
+          {step.opened === false ? "Open the sign-in page" : "Open the page again"}
+        </Button>
+      </div>
     </>
   );
 }
