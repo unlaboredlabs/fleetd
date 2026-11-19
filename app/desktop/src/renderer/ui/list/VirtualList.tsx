@@ -1,17 +1,39 @@
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { cx } from "../lib/cx";
 import s from "./VirtualList.module.css";
 
 /**
  * Pinning to the end, done by TanStack itself: anchored to the end, the view stays at the bottom when items are
  * appended AND when the last item grows in place (a streaming message), as long as the reader is within
- * `scrollEndThreshold` px of the end. Scrolled up, nothing moves.
+ * `scrollEndThreshold` px of the end. Scrolled up, nothing moves. `away`: the reader has scrolled toward the start
+ * since they were last at the end (readerLeft), so they aren't at it however close they still are.
  */
-export function followOptions(followOutput: boolean | undefined) {
+export function followOptions(followOutput: boolean | undefined, away = false) {
   return followOutput
-    ? ({ anchorTo: "end", followOnAppend: true, scrollEndThreshold: 24 } as const)
+    ? ({ anchorTo: "end", followOnAppend: true, scrollEndThreshold: endThreshold(away) } as const)
     : ({ anchorTo: "start", followOnAppend: false } as const);
+}
+
+/** Within this of the end, a reader who hasn't scrolled away from it is at it; one who has never is (-1). */
+const endThreshold = (away: boolean): number => (away ? -1 : 24);
+
+/** Where a scroller stood at a scroll event. */
+export interface Scrolled {
+  readonly top: number;
+  readonly height: number;
+  readonly view: number;
+}
+
+/**
+ * Whether, from `was` to `now`, the reader left the end (true), came back to it (false), or neither (undefined). Only
+ * the reader moves the view toward the start while the list and the view keep their sizes: a row measured above, a
+ * page landing or the end trimmed changes the height, and the list's own moves go to the end.
+ */
+export function readerLeft(was: Scrolled, now: Scrolled): boolean | undefined {
+  if (now.height - now.top - now.view <= 1) return false;
+  if (now.top < was.top && now.height === was.height && now.view === was.view) return true;
+  return undefined;
 }
 
 export interface VirtualListProps<T> {
@@ -63,6 +85,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const { items, getKey, followOutput, startAtEnd, gap = 0, paddingStart = 0, paddingEnd = 0 } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
+  const [away, setAway] = useState(false);
 
   // TanStack Virtual returns a mutable instance the React Compiler can't memoize; this component opts out of it.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -83,7 +106,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     scrollPaddingStart: paddingStart,
     paddingEnd,
     scrollPaddingEnd: paddingEnd,
-    ...followOptions(followOutput),
+    ...followOptions(followOutput, away),
   });
 
   const { virtualizerRef } = props;
@@ -94,6 +117,27 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       virtualizerRef.current = null;
     };
   }, [virtualizer, virtualizerRef]);
+
+  // Following the end lets go the moment the reader scrolls toward the start, however little. Within the threshold,
+  // a row appended or the last one growing would bring them back to the end, every time while replies come in, so a
+  // slow scroll up from the end (a trackpad's first pixels) kept snapping back. The threshold is set here, in the
+  // scroll event, as well as in the render it asks for: a row can be appended before that render.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!followOutput || !el) return;
+    const look = (): Scrolled => ({ top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight });
+    let was = look();
+    const onScroll = () => {
+      const now = look();
+      const left = readerLeft(was, now);
+      was = now;
+      if (left === undefined) return;
+      virtualizer.options.scrollEndThreshold = endThreshold(left);
+      setAway(left);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [followOutput, virtualizer]);
 
   // TanStack skips measuring rows that mount while the list is scrolling (and for 150 ms after) and leaves them to
   // its ResizeObserver, whose re-render lands a frame or more later; until then the list's height and the first

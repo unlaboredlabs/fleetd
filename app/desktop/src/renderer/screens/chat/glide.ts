@@ -46,19 +46,18 @@ export function anchorOf(was: Place, rows: readonly Row[], startOf: (key: string
   return undefined;
 }
 
-/** Within this of the end, the reader is at it (VirtualList's followOptions). */
-const AT_END = 24;
-
 /**
  * The spring the list makes room on, from `was` to `now`, or undefined when it doesn't glide. It glides only when it
- * grew under the end the reader was at, and the newest row that stayed (`anchor`, anchorOf) hasn't moved: an older
+ * grew under the end the reader was at (within `atEnd` px of it: the virtualizer's scrollEndThreshold, which is
+ * negative once the reader has scrolled away from the end), and the newest row that stayed (`anchor`, anchorOf)
+ * hasn't moved: an older
  * page landing above, or the window resizing, isn't a new message. A message of yours after it glides on your send's
  * spring, any other on a reply's, and none (the last row grew) on the growing one. The island growing with its words
  * only adds room after the rows: the last message moves up with the pill in the same frame, as the pill grows, so a
  * line wrap doesn't redraw the conversation and its glass for a spring's frames while you type.
  */
-export function glideOf(was: Place, now: Pick<Place, "height" | "view" | "width" | "end">, anchor: ReturnType<typeof anchorOf>): Spring | undefined {
-  if (now.height <= was.height || now.end === was.end || was.height - was.top - was.view > AT_END) return undefined;
+export function glideOf(was: Place, now: Pick<Place, "height" | "view" | "width" | "end">, anchor: ReturnType<typeof anchorOf>, atEnd: number): Spring | undefined {
+  if (now.height <= was.height || now.end === was.end || was.height - was.top - was.view > atEnd) return undefined;
   if (now.view !== was.view || now.width !== was.width || anchor === undefined || anchor.now !== anchor.was) return undefined;
   if (anchor.after.length === 0) return GLIDE.grow;
   return anchor.after.some(isMineRow) ? GLIDE.mine : GLIDE.theirs;
@@ -99,7 +98,8 @@ export function useGlide(list: RefObject<Virtualizer<HTMLDivElement, Element> | 
       const before = was;
       was = look();
       if (reduce.matches) return;
-      const spring = glideOf(before, was, anchorOf(before, rowsNow.current, (key) => v.measurementsCache.find((m) => m.key === key)?.start));
+      const anchor = anchorOf(before, rowsNow.current, (key) => v.measurementsCache.find((m) => m.key === key)?.start);
+      const spring = glideOf(before, was, anchor, v.options.scrollEndThreshold);
       if (spring === undefined) return;
       el.scrollTop = el.scrollHeight;
       was = look();

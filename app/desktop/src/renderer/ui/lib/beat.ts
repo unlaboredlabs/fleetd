@@ -15,6 +15,7 @@
 // motion: then :root has no data-beat, and each loop shows its still shape. Every beat is a frame of the whole page
 // (about 5 ms of CPU on a machine that composites in software), so a window you aren't using draws none.
 import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
+import { covered } from "./covered";
 
 export const BEAT_MS = 120;
 export const BEATS = 24;
@@ -120,7 +121,10 @@ export function useBeat(live: boolean, step: Step): void {
 /** A ref for an element whose CSS steps on the beat: while `live` it carries the beat as data-step. */
 export function useBeatRef<E extends HTMLElement>(live: boolean): RefObject<E | null> {
   const ref = useRef<E>(null);
-  const step = useCallback((b: number) => ref.current?.setAttribute("data-step", String(b)), []);
+  // Not under a modal (covered): the next beat after it goes catches it up.
+  const step = useCallback((b: number) => {
+    if (!covered(ref.current)) ref.current?.setAttribute("data-step", String(b));
+  }, []);
   useBeat(live, step);
   return ref;
 }

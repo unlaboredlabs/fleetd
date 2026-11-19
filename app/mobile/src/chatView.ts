@@ -456,3 +456,20 @@ export const streamingAt = (newestFirst: readonly ThreadRow[]): number | undefin
   const r = newestFirst[0];
   return r?.t === "item" && r.item.message?.state === "streaming" ? 0 : undefined;
 };
+
+/** Further than this from the newest end, px, the reader has scrolled away from it. */
+export const AT_NEWEST = 1;
+
+/**
+ * The first row, newest first, that keeps its place as rows come in and grow (maintainVisibleContentPosition's
+ * minIndexForVisible), or none, when the thread rides with the newest end. Scrolled away from it (`away`), however
+ * little, every row keeps its place: within the button down's distance a new reply used to move the rows you were
+ * reading and spring them, so a slow scroll up from the newest end kept sliding back. At the newest end, a long reply
+ * streaming in (`tall`) is followed until its first line reaches the bar, then held there.
+ */
+export const holdFrom = (away: boolean, tall: boolean, streamAt: number | undefined): number | undefined =>
+  away ? 0 : tall && streamAt !== undefined ? streamAt + 1 : undefined;
+
+/** The lead's messages that came in after `seq` (the button down's count), or none without one. */
+export const arrivedSince = (items: readonly ChatItem[], seq: number | null): number =>
+  seq === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > seq).length;
