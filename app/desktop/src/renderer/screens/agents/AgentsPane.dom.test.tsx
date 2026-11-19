@@ -85,6 +85,7 @@ beforeEach(() => {
   document.body.appendChild(host);
 });
 afterEach(() => {
+  vi.useRealTimers();
   elsewhere = [];
   act(() => root?.unmount());
   root = undefined;
@@ -108,8 +109,10 @@ function Harness() {
   );
 }
 
+/** The hub's frames to the mounted pane. */
+let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+
 const mount = async (features?: readonly string[]) => {
-  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
     call: (tool) => Promise.resolve({ ok: true, output: answer(tool) }),
     subscribe: (l) => ((send = l), () => undefined),
@@ -254,4 +257,41 @@ it("folding Also on this repo hides its rows at once, with no leaving fade", asy
   act(() => fold?.click());
   expect(host.querySelector("[data-elsewhere]")).toBeNull();
   expect(host.querySelector("[data-leaving]")).toBeNull();
+});
+
+it("holds an agent's line through a burst of tool calls under 100 ms each, then settles on the latest at once", async () => {
+  await mount();
+  vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
+  const at = () => new Date().toISOString();
+  const frame = (activity?: { kind: "command"; text: string }) => {
+    send({ t: "live", frame: { at: at(), full: false, lanes: [{ laneId: "T1", status: "working", ...(activity === undefined ? {} : { activity: { activity, since: at() } }) }] } });
+  };
+  const row = () => [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Dark mode follows"));
+  // What the row shows: its line, and its glyph's state (thinking walks its ring, a tool's work is grain).
+  const shown = () => `${row()?.querySelector("[role='img']")?.getAttribute("aria-label") ?? ""} | ${row()?.lastElementChild?.textContent ?? ""}`;
+  const seen: string[] = [shown()];
+  const step = (ms: number) => {
+    for (let t = 0; t < ms; t += 10) {
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      if (shown() !== seen.at(-1)) seen.push(shown());
+    }
+  };
+  // Three seconds of tool calls of 60 ms each, 20 ms of thinking between them, each a different command.
+  for (let i = 0; i < 37; i++) {
+    act(() => frame({ kind: "command", text: `rg -n step${String(i)} src` }));
+    step(60);
+    act(() => frame());
+    step(20);
+  }
+  expect(seen.length - 1).toBeLessThanOrEqual(4);
+  expect(seen.every((s) => s.length > " | ".length)).toBe(true);
+  // A long one after the burst shows within a second, and the line ends on the true latest state.
+  act(() => frame({ kind: "command", text: "pnpm test" }));
+  step(1000);
+  expect(shown()).toMatch(/running ?pnpm test$/u);
+  act(() => frame());
+  step(2000);
+  expect(shown()).toBe("thinking | thinking");
 });

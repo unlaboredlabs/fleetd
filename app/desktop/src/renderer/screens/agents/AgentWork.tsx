@@ -10,7 +10,7 @@ import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
-import { ActivityLine, MiddleCut } from "../live/parts";
+import { MiddleCut, SteadyActivityLine } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { AgentSession } from "../sessions/AgentSession";
 import { DmCard } from "../dms/DmCard";
@@ -112,7 +112,7 @@ export function AgentWork({ id }: { id: string }) {
           <Text size="xs" tone="faint">
             Now
           </Text>
-          <ActivityLine line={describe(row)} />
+          <SteadyActivityLine line={describe(row)} />
         </div>
         <AgentSession project={row.projectRef} laneId={row.laneId} />
       </div>

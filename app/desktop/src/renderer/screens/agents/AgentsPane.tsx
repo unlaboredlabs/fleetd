@@ -13,7 +13,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectNotLive, selectProjects, type LiveAgent } from "../../src/data/selectors";
 import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, IdChip, ROLE_WORD, Text, Tooltip, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
-import { ActivityLine } from "../live/parts";
+import { ActivityLine, useSteadyLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
 import { useNow } from "../live/clock";
@@ -315,7 +315,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
 /** The row itself: a link under its hover, which takes the menu's props and ref as any element would. */
 function AgentRow({ agent, ...rest }: { agent: LiveAgent } & ComponentProps<"a">) {
   const { row } = agent;
-  const line = describe(row);
+  const line = useSteadyLine(describe(row));
   const fresh = useArrived(`agents:${agent.project}`, agent.id);
   return (
     <Tooltip content={agentDetail(row, ROLE_WORD[row.role])} side="left">
