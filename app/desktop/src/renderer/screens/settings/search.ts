@@ -56,7 +56,7 @@ const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ k
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.name", label: "Name", tab: "general", keywords: ["your name", "rename", "display name", "profile", "account", "who you are"] },
-  { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
+  { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system", "see-through sidebar", "transparent", "solid sidebar"] },
   { key: "general.presence", label: "Time in the app", tab: "general", keywords: ["presence", "focus", "activity", "privacy", "minutes", "tracking"] },
   { key: "notifications", label: "Notifications", tab: "general", keywords: ["notify me when", "alerts", "mute", "finished", "done"] },
   { key: "notifications.test", label: "Test notification", tab: "general", keywords: ["notifications", "alerts", "try"] },
