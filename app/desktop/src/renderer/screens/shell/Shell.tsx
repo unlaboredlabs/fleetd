@@ -21,7 +21,7 @@ import type { HubView } from "../../src/data/hubs";
 import { homeProject, nextWanting, projectId, routeOf, stepProject, type SidebarProject } from "./model";
 import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
-import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
+import { navigate, setRouteHubs, useNamesHub, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
@@ -65,8 +65,11 @@ export function Shell() {
   useEffect(preloadScreens, []);
   // `#/` opens the last project, which may be on another hub than the route's: the screen goes on that project's hub,
   // so the frame, its chat and every read are that hub's, before the redirect names it and after, if it never lands.
+  // A home that names its hub stays on it, even when the last project is another hub's.
+  const named = useNamesHub();
   const placed = usePlaced(hubs, route.at);
-  const homeRow = route.id === "home" && placed !== undefined ? homeProject(placed, readLast()) : null;
+  const homes = named ? placed?.filter((p) => p.hub === route.at) : placed;
+  const homeRow = route.id === "home" && homes !== undefined ? homeProject(homes, readLast()) : null;
   const at = homeRow?.hub ?? route.at;
   // Under Settings the app stays on the hub it was on, whichever hub the sheet is on (it has that hub's scope): a
   // switch of the hub a Hub page manages never remounts the frame, and the sheet in it, as the other hub's.
@@ -161,7 +164,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const sheet = route.id === "settings";
   const beneath = away.at === undefined || away.at === route.at ? away : HOME;
   const base = sheet ? { ...beneath, at: route.at } : route;
-  const homeRow = base.id === "home" && projects !== undefined ? homeProject(sheet ? projects.filter((p) => p.hub === route.at) : projects, readLast()) : null;
+  const named = useNamesHub();
+  const homeRow = base.id === "home" && projects !== undefined ? homeProject(sheet || named ? projects.filter((p) => p.hub === route.at) : projects, readLast()) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
     () =>
@@ -345,7 +349,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
           {chrome ? <RestartLine /> : null}
           {chrome ? <ConnectionBanner /> : null}
           <div className={s.screen} data-held={held || undefined}>
-            {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
+            {shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
                 <Suspense fallback={null}>
                   <FirstRun onAddProject={() => go({ id: "projects.add" })} />

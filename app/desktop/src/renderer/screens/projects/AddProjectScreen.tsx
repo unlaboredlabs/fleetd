@@ -26,6 +26,7 @@ import {
   create,
   dismissRepo,
   localMachine,
+  pickHub,
   pickMachine,
   refuseCreate,
   removeRepo,
@@ -127,12 +128,17 @@ function HubPick() {
   const hubs = useHubs();
   const hub = useHub();
   if (hubs.length < 2) return null;
+  const pick = (at: string) => {
+    if (at === hub.id) return;
+    pickHub(hub.label, hubs.find((h) => h.id === at)?.label ?? at);
+    navigate({ id: "projects.add", at });
+  };
   return (
     <div className={s.hubPick}>
       <Text size="sm" tone="quiet">
         Adds to
       </Text>
-      <Select aria-label="Hub" className={s.inlineSelect} value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={(at) => navigate({ id: "projects.add", at })} />
+      <Select aria-label="Hub" className={s.inlineSelect} value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={pick} />
     </div>
   );
 }
