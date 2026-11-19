@@ -363,7 +363,9 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         {card?.reason !== undefined && !ended ? (
           <View style={[styles.ask, { top: insets.top + BAR + space.md }]}>
             <Glass appear style={styles.askGlass}>
-              <Icon name="hand" size={18} color={t.warning} />
+              <View style={styles.askIcon}>
+                <Icon name="hand" size={ASK_ICON} color={t.warning} />
+              </View>
               <View style={styles.askText}>
                 <Text style={[type.subhead, styles.strong, { color: t.label }]}>{`${who} needs you`}</Text>
                 <Text style={[type.subhead, { color: t.label }]}>{card.reason}</Text>
@@ -445,7 +447,9 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         {refused === null ? null : (
           <View style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
             <Glass appear style={styles.askGlass}>
-              <Icon name="error" size={18} color={t.danger} />
+              <View style={styles.askIcon}>
+                <Icon name="error" size={ASK_ICON} color={t.danger} />
+              </View>
               <View style={styles.askText}>
                 <Text style={[type.subhead, styles.strong, { color: t.label }]}>The page didn't take that</Text>
                 <Text style={[type.subhead, { color: t.label }]}>{refused}</Text>
@@ -555,6 +559,8 @@ function Action({ label, icon, onPress, prominent = false, destructive = false, 
 const BAR = 52;
 const TOOLBAR = 52;
 
+const ASK_ICON = 18;
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   stage: { flex: 1, paddingHorizontal: space.sm },
@@ -574,6 +580,8 @@ const styles = StyleSheet.create({
   titleText: { flexShrink: 1 },
   ask: { position: "absolute", left: space.lg, right: space.lg },
   askGlass: { flexDirection: "row", alignItems: "flex-start", gap: space.md, borderRadius: 22, borderCurve: "continuous", paddingHorizontal: space.lg, paddingVertical: space.md },
+  // The glyph's middle on its title's line.
+  askIcon: { marginTop: (type.subhead.lineHeight - ASK_ICON) / 2 },
   askText: { flex: 1, gap: 2 },
   strong: { fontWeight: "600" },
   hint: { position: "absolute", left: 0, right: 0, alignItems: "center" },

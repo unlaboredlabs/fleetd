@@ -51,3 +51,51 @@ pre, code, .mono { font-family: monospace; }
 .popover p, .popover-clear p { margin: 0; }
 .popover.narrow { width: 120px; }
 @media (prefers-color-scheme: dark) { .popover { background: #111214; } }
+
+/* Icons beside words: centred on the words' line; one riding high (a tile pinned to a two-line row's top), one low. */
+.icon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+.icon-row.two {
+  align-items: flex-start;
+}
+.icon-row .tile {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+}
+.icon-row.two .tile {
+  margin-top: -4px;
+  line-height: 20px;
+}
+.icon-row.two > div {
+  line-height: 20px;
+}
+.icon-row .high {
+  align-self: flex-start;
+}
+.icon-row .low {
+  display: grid;
+  position: relative;
+  top: 6px;
+}
+.icon-row.spread {
+  justify-content: space-between;
+  width: 320px;
+}
+.icon-row .plus {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.icon-row.end-high {
+  align-items: flex-end;
+}

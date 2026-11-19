@@ -1,7 +1,7 @@
 // Launches the built app on a fixture, sets the window to a size and theme, runs the DOM checks and writes the
 // screenshots. Used by the screen suite, the platform suite and the self-test.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type CDPSession, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
@@ -499,6 +499,11 @@ export async function shoot(
   await holdView(page);
   await opaqueSidebar(page);
   const findings = await checkAtView(page, reserved);
+  // A sweep of every icon beside words, aligned or not, with its offset (the align check fails only those past 1 px).
+  if (process.env.QA_ALIGN_LOG) {
+    const pairs = await run<object[]>(page, "measureAlign()");
+    appendFileSync(path.join(resultsDir, "align.jsonl"), pairs.map((a) => `${JSON.stringify({ ...meta, ...a })}\n`).join(""));
+  }
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);
   const shot: Shot = { ...meta, scale, platform: process.platform, png, scrolled: [], findings };
