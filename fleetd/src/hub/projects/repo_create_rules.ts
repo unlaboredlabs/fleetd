@@ -81,8 +81,9 @@ export function createRefused(status: number, said: string, full: string, who: s
   if (status === 422 && /already exists/i.test(said)) return alreadyThere(full);
   if (status === 401) return new ToolError("forbidden", `${who} was turned away by GitHub: ${why}.`, grant);
   if (status === 403) return new ToolError("forbidden", `${who} may not create repos in ${owner}: ${why}.`, grant);
+  // GitHub answers 404 both for a name it doesn't know and for an organisation the login may not see: both are said.
   if (status === 404) {
-    return invalid(`GitHub found no organisation ${owner} to create ${full} in: ${why}.`, "Check the organisation's name with the person, or leave owner out");
+    return new ToolError("forbidden", `${who} found no organisation ${owner} it may create repos in: ${why}.`, `Check the organisation's name with the person; if it is right: ${grant}`);
   }
   if (status >= 400 && status < 500) {
     return new ToolError(

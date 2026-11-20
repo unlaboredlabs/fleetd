@@ -143,10 +143,13 @@ test("an organisation's policy refusal (GitHub's 422) says GitHub's own reason a
   });
   expect(refusal(await raced.send("th-lead", { op: "repo_create", name: "email-client", private: true }))).toMatchObject({ code: "invalid", message: "ada/email-client already exists on GitHub." });
 
-  const typo = await rig({ ...SIGNED_IN, "POST orgs/acmee/repos": [404, { message: "Not Found" }] });
-  const unknown = refusal(await typo.send("th-lead", { op: "repo_create", name: "open", private: true, owner: "acmee" }));
-  expect(unknown).toMatchObject({ code: "invalid", message: "GitHub found no organisation acmee to create acmee/open in: Not Found." });
-  expect(unknown?.fix).toContain("leave owner out");
+  // GitHub's 404 for an organisation is the same for a misspelled name and for one whose members don't include the
+  // login: the line says both, and the fix keeps the owner's grant beside checking the name.
+  const hidden = await rig({ ...SIGNED_IN, "POST orgs/acme/repos": [404, { message: "Not Found", documentation_url: "https://docs.github.com/rest/repos/repos#create-an-organization-repository", status: "404" }] });
+  const unseen = refusal(await hidden.send("th-lead", { op: "repo_create", name: "open", private: true, owner: "acme" }));
+  expect(unseen).toMatchObject({ code: "forbidden", message: "The hub's GitHub login ada found no organisation acme it may create repos in: Not Found." });
+  expect(unseen?.fix).toStartWith("Check the organisation's name with the person; if it is right: An owner of acme lets ada create repos there");
+  expect(hidden.names()).toEqual([]);
 }, 15_000);
 
 test("only a lead makes a repo, and only with a name and private said", async () => {
