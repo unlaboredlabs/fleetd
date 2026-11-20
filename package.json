@@ -39,6 +39,7 @@
     "./box/lead": "./fleetd/src/node/lead/channel.ts",
     "./box/claude": "./fleetd/src/node/runner/claude_spec.ts",
     "./box/session_state": "./fleetd/src/node/sessions/state.ts",
+    "./box/mask": "./fleetd/src/node/mask.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",
     "./fakes/accounts": "./fleetd/test/fake-accounts.ts",
