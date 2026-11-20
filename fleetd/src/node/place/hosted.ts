@@ -134,8 +134,8 @@ const hhmm = (at: number | string | undefined) => (at === undefined ? "its start
 type KeptBox = { record: HostedRecord; untilMs: number };
 const keptDir = (home: string) => join(home, "sandbox", "kept");
 const keptFile = (home: string, session: string) => join(keptDir(home), `${session}.json`);
-/** Kept boxes being tried now. */
-const retrying = new Set<string>();
+/** Kept boxes being tried now, by session: what a settle waits for. */
+const retrying = new Map<string, Promise<void>>();
 
 const live = new Map<string, Live>();
 const making = new Map<string, Promise<Live>>();
@@ -238,12 +238,12 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
   const made = (async (): Promise<Live> => {
     const b = need();
     const home = homeOf(dir);
-    // A box kept from the session's last end goes first, its work brought back if it can be: a new box starts from the
-    // machine's worktree, and the kept one's work must never land over the new one's.
-    await settleKept(home, session);
     // A record without a live box here: what a node before this one left. That box goes first.
     const old = readRecord(dir);
     if (old) await teardown(session, dir);
+    // Then a box kept from the session's last end (that teardown's own included), its work brought back if it can be:
+    // a new box starts from the machine's worktree, and the kept one's work must never land over the new one's.
+    await settleKept(home, session);
     // One HOME for setup's git and the session: the git config made here (its credential helper) is the agent's.
     const HOME = env.HOME ?? homeDir();
     const PATH = boxPath(env.PATH, home);
@@ -579,6 +579,14 @@ export async function retryKept(home: string): Promise<void> {
  * it, and the lead is told.
  */
 async function tryKept(home: string, session: string, last: boolean): Promise<void> {
+  // A try under way ends first; a settle then makes its own last one, as the box may still be kept.
+  const going = retrying.get(session);
+  if (going) {
+    await going;
+    if (!last) return;
+  }
+  // While the session has a box of its own, only its next start settles a kept one: a retry never writes its worktree.
+  if (!last && (live.has(session) || making.has(session))) return;
   const file = keptFile(home, session);
   const b = boxes();
   if (!b || !existsSync(file) || retrying.has(session)) return;
@@ -588,39 +596,45 @@ async function tryKept(home: string, session: string, last: boolean): Promise<vo
   } catch {
     return;
   }
-  retrying.add(session);
+  const run = tryOne(b, file, k, session, last);
+  retrying.set(session, run);
   try {
-    const r = k.record;
-    let box: Box | undefined;
-    try {
-      box = await b.open(r, session);
-    } catch {}
-    let why: string | undefined;
-    if (!box || box.ended) why = "the sandbox is gone";
-    else if (!r.cwd || !r.base || !existsSync(r.cwd)) why = "its worktree is gone from the machine";
-    else {
-      try {
-        await syncOut(box, { cwd: r.cwd, session, base: r.base, env: r.env ?? {} });
-        if (r.transcript) await fetchNew(box, r.transcript, TRANSCRIPT_MAX);
-      } catch (error) {
-        why = (error as Error).message;
-      }
-    }
-    const answers = box !== undefined && !box.ended;
-    box?.close();
-    if (why !== undefined && !last && answers && Date.now() < k.untilMs) return;
-    if (why === undefined) console.warn(`${nowIso()} WARN a kept hosted box's work came back {"sessionId":"${session}"}`);
-    else say({ sessionId: session, state: "given_up", text: givenUp(r, why, last ? "a new sandbox started from the machine's work" : undefined) });
-    try {
-      await b.destroy(r);
-    } catch (error) {
-      // The reaper deletes it later, by its labels.
-      console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
-    }
-    rmSync(file, { force: true });
+    await run;
   } finally {
     retrying.delete(session);
   }
+}
+
+/** One try of the kept box `k` (`tryKept`). */
+async function tryOne(b: Boxes, file: string, k: KeptBox, session: string, last: boolean): Promise<void> {
+  const r = k.record;
+  let box: Box | undefined;
+  try {
+    box = await b.open(r, session);
+  } catch {}
+  let why: string | undefined;
+  if (!box || box.ended) why = "the sandbox is gone";
+  else if (!r.cwd || !r.base || !existsSync(r.cwd)) why = "its worktree is gone from the machine";
+  else {
+    try {
+      await syncOut(box, { cwd: r.cwd, session, base: r.base, env: r.env ?? {} });
+      if (r.transcript) await fetchNew(box, r.transcript, TRANSCRIPT_MAX);
+    } catch (error) {
+      why = (error as Error).message;
+    }
+  }
+  const answers = box !== undefined && !box.ended;
+  box?.close();
+  if (why !== undefined && !last && answers && Date.now() < k.untilMs) return;
+  if (why === undefined) console.warn(`${nowIso()} WARN a kept hosted box's work came back {"sessionId":"${session}"}`);
+  else say({ sessionId: session, state: "given_up", text: givenUp(r, why, last ? "a new sandbox started from the machine's work" : undefined) });
+  try {
+    await b.destroy(r);
+  } catch (error) {
+    // The reaper deletes it later, by its labels.
+    console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+  }
+  rmSync(file, { force: true });
 }
 
 /** Why the session's box ended without the session asking, in plain words, once; undefined when it didn't. */

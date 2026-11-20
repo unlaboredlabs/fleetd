@@ -301,3 +301,38 @@ test("a kept box is given up after its time, or as a new box for the session sta
   unlock2();
   unlock();
 }, 120_000);
+
+test("a new box settles a kept box only after an old node's record is torn down, so old work never lands later", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, dir, env } = await started("s-order");
+  const unlock = lockIndex(cwd);
+  // A node before this one left the box's record and no live box: the record's teardown keeps it (its work won't come
+  // back), and only then is the session's kept box settled, before its new box starts.
+  const record = readRecord(dir)!;
+  await teardown("s-order", dir);
+  rmSync(join(home, "sandbox", "kept", "s-order.json"));
+  writeFileSync(join(dir, "place.json"), JSON.stringify(record));
+  const ran = await hostedPlace("boat", "s-order", dir).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
+  // (The new box can't take the worktree while git is locked: what matters is what happened to the old one first.)
+  expect(ran.exitCode).toBeNull();
+  expect(keptBoxes(home).size).toBe(0);
+  expect([...s.boxes.keys()]).not.toContain(record.boxId);
+  expect(said.filter((e) => e.state === "given_up").at(-1)!.text).toContain("a new sandbox started from the machine's work");
+  unlock();
+}, 120_000);
+
+test("a settle waits for the kept box's retry under way, then makes its own last try", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, dir } = await started("s-race");
+  const unlock = lockIndex(cwd);
+  await teardown("s-race", dir);
+  expect(keptBoxes(home).size).toBe(1);
+  // The node's sweep tries it again, and a new box's start settles it, at once.
+  await Promise.all([retryKept(home), settleKept(home, "s-race")]);
+  expect(keptBoxes(home).size).toBe(0);
+  expect(s.boxes.size).toBe(0);
+  expect(said.map((e) => e.state)).toEqual(["kept", "given_up"]);
+  unlock();
+}, 120_000);
