@@ -1,13 +1,15 @@
 // A lead whose turn was cut off carries on by itself. Its node stopping or
 // restarting under it wakes it every time; its own turn ending badly (the stall guard, its claude exiting unasked, its
 // machine sleeping) wakes it once per run of such turns, so a turn that keeps hanging doesn't loop. The wake goes
-// through the offline write queue like any other.
+// through the offline write queue like any other. A run whose hosted sandbox didn't come up never reached claude: the
+// person reads why in the chat, and their message, which the node keeps, goes in with the next one (`not_started`).
 import type { HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
+import { ASIDE_MS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
 
 /** How a run died (tasks/recovery.rs `Kind`), the kinds the lead's wake reads. */
-export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "context_full" | "cut" | "not_dead" | "fatal";
+export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "no_sandbox" | "context_full" | "cut" | "not_dead" | "fatal";
 
 /** Reads a `thread.failed` or `thread.interrupted` event (tasks/recovery.rs `death`): its kind and its words. */
 export function death(type: HubEventType, data: Record<string, unknown> | undefined, machine: string): { kind: DeathKind; text: string } {
@@ -22,7 +24,8 @@ export function death(type: HubEventType, data: Record<string, unknown> | undefi
   const reported = typeof data?.endCause === "string" ? (data.endCause as string) : undefined;
   const stalled = field("reason") === "stalled";
   const node = (how: string) => `the node on ${machine} ${how}`;
-  const byClass = (): DeathKind => (cls === "process_exited" ? "exited" : cls === "network" || cls === "overloaded" ? "unreachable" : "fatal");
+  const byClass = (): DeathKind =>
+    cls === "process_exited" ? "exited" : cls === "network" || cls === "overloaded" ? "unreachable" : cls === "sandbox" ? "no_sandbox" : "fatal";
   const nodeEnd =
     reported === "node_stopping" || reported === "node_restarted"
       ? reported
@@ -74,8 +77,27 @@ export function death(type: HubEventType, data: Record<string, unknown> | undefi
   return { kind, text: t === "" ? (kind === "exited" ? "the agent exited" : "it failed without saying why") : oneLine(t, 200) };
 }
 
-/** How a lead's thread ended, as its wakes see it. */
-export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: string } | { kind: "completed" };
+/** How a lead's thread ended, as its wakes see it. `not_started`: its claude never started, so no wake reaches it;
+ * `text` is the chat's line for the person, once per run (`runId`). */
+export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: string } | { kind: "not_started"; text: string; runId?: string } | { kind: "completed" };
+
+/** The chat's line when the lead's hosted sandbox didn't come up (the node's words: "… no hosted sandbox came up at
+ * boat.dev: …"): where, that the message is kept, and when a message starts it again. In the person's words: the
+ * provider's own error stays in the run's failure. A box that came up but couldn't start the lead (Claude out of its
+ * reach) has the node's own sentence, which says what to do, without the node's wrapper (its claude's path, its cwd). */
+export function notStartedLine(message: string): string {
+  const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
+  if (!at) {
+    const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
+      // A path the node names (its settings file's) is for the log, not the person.
+      .replace(/\s*\([^()]*\/[^()]*\)/g, "")
+      .trim()
+      .replace(/[.\s]+$/, "");
+    return `The lead couldn't start${own ? `: ${own}` : ""}. Your message is kept and goes in with your next one.`;
+  }
+  const minutes = Math.round(ASIDE_MS / 60_000);
+  return `The lead couldn't start: no sandbox came up for it at ${at}. Your message is kept and goes in with your next one: send a message in about ${minutes} minutes to try again. If it keeps failing, check ${at} in Settings › Hub › Machines.`;
+}
 
 /** The project and how its lead's thread ended; undefined for another thread, or an end that wakes nothing. */
 export function end(event: HubEvent, leads: StoredLead[]): { project: ProjectRef; end: End } | undefined {
@@ -96,6 +118,11 @@ export function end(event: HubEvent, leads: StoredLead[]): { project: ProjectRef
         text: `- Your last turn was cut off: ${died.text}, and it is back. Carry on from where you were; a step you were taking may be half done, so check it before you repeat it.`,
       },
     };
+  }
+  if (died.kind === "no_sandbox") {
+    const runId = typeof data?.runId === "string" ? data.runId : undefined;
+    const message = (data?.error as { message?: unknown } | undefined)?.message;
+    return { project: lead.projectRef, end: { kind: "not_started", text: notStartedLine(typeof message === "string" ? message : ""), ...(runId ? { runId } : {}) } };
   }
   if (died.kind === "stalled" || died.kind === "exited" || died.kind === "unreachable") {
     return {

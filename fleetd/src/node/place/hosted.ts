@@ -375,7 +375,9 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     try {
       await (hostedProbe.probe ?? probe)(box, endpoint.url);
     } catch (error) {
-      throw new LaunchError(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
+      // Claude never started, so it fails as a box that didn't come up (the hub's `sandbox` class: the message is kept
+      // and the chat says why), with no set-aside: the provider made the box.
+      throw new HostedDown(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
     }
     const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
     const pid = nobodyPid(session);

@@ -27,6 +27,10 @@ export const ORDER: readonly KnownSandboxProvider[] = ["boat"];
 
 export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { boat: "boat.dev" };
 
+/** How long a provider that failed to make a box is left out of placement (the node's boxes.ts), and so how long a
+ * lead whose box didn't come up waits before a message can start it there again (the hub's leads/cut_off.ts). */
+export const ASIDE_MS = 10 * 60_000;
+
 export const isProvider = (p: string): p is KnownSandboxProvider => (ORDER as readonly string[]).includes(p);
 
 /**

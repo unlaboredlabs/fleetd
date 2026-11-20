@@ -20,6 +20,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { accountSettingsEnv } from "../../src/node/actions/accounts.ts";
 import { settingsOverlay } from "../../src/node/sessions/index.ts";
+import { notStartedLine } from "../../src/hub/leads/cut_off.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-place-"));
@@ -155,6 +156,26 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   await stopHost(dir);
 }, 60_000);
 
+test("a bot with no repo starts in a box: its plain folder goes in, and its work comes back at stop", async () => {
+  // Its lead's folder is no checkout, and the box's start failed on it: "no hosted sandbox came up at boat.dev: git
+  // rev-parse failed: fatal: not a git repository" (W737).
+  const { s, home, env } = await setup();
+  const cwd = join(home, "projects", "email-client");
+  mkdirSync(cwd, { recursive: true });
+  writeFileSync(join(cwd, "notes.md"), "first\n");
+  const dir = join(home, "hosts", "s-plain");
+  const place = hostedPlace("boat", "s-plain", dir);
+  const link = await place.start({ fleetd: [], dir, sessionId: "s-plain", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
+  expect(JSON.stringify(await next(link))).toContain("m1");
+  expect(s.boxes.size).toBe(1);
+  expect(readRecord(dir)).toMatchObject({ cwd, base: "plain" });
+  writeFileSync(join(cwd, "reply.md"), "from the box\n");
+  await placeAt(dir).stop(dir);
+  expect(s.boxes.size).toBe(0);
+  expect(readFileSync(join(cwd, "notes.md"), "utf8")).toBe("first\n");
+  expect(readFileSync(join(cwd, "reply.md"), "utf8")).toBe("from the box\n");
+});
+
 test("a session whose bot picked boat.dev · 4 vCPU / 8 GB gets a box of exactly that: boat's type of that size", async () => {
   const { s, home, cwd, env } = await setup();
   const dir = join(home, "hosts", "s-big");
@@ -229,7 +250,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
 }, 60_000);
 
 test("a start that fails once its box exists deletes the box and its record, and the task hears the failure as it was", async () => {
-  const { s, home, cwd, env } = await setup();
+  const { s, home, cwd, env, boxes } = await setup();
   const dir = join(home, "hosts", "s-unreached");
   const place = hostedPlace("boat", "s-unreached", dir);
   // Setup made the box, as it does before a session's start.
@@ -241,6 +262,15 @@ test("a start that fails once its box exists deletes the box and its record, and
   };
   const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
   expect((failed as Error).message).toContain("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
+  // Claude never started: it fails as a box that didn't come up, so a lead's chat says why and its message is kept;
+  // and the box came up, so the provider isn't set aside.
+  expect(failed).toBeInstanceOf(HostedDown);
+  expect(boxes.usable()).toContain("boat");
+  // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
+  const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`);
+  expect(line).toStartWith("The lead couldn't start: the box can't reach Claude at localhost:8317");
+  expect(line).toEndWith("Your message is kept and goes in with your next one.");
+  expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.
   expect(s.calls.filter((c) => c.method === "DELETE" && c.path === `/api/v1/sandboxes/${id}`).length).toBe(1);
   expect(s.boxes.size).toBe(0);
@@ -280,9 +310,8 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
 
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
   const { s, home, env, boxes } = await setup();
-  // The repo doesn't clone in the box (here: no repo at all), which is no fault of the provider's.
-  const cwd = join(home, "worktrees", "not-a-repo");
-  mkdirSync(cwd, { recursive: true });
+  // The worktree doesn't go into the box (here: it isn't there at all), which is no fault of the provider's.
+  const cwd = join(home, "worktrees", "gone");
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
   const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;

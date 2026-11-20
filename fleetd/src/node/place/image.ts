@@ -150,6 +150,9 @@ export function baseRef(root: string, base?: string): string {
   return r.exitCode === 0 && ref.startsWith("origin/") ? ref : "HEAD";
 }
 
+/** `root` when it is a checkout (its own .git), else undefined. */
+const checkout = (root: string | undefined) => (root && existsSync(join(root, ".git")) ? root : undefined);
+
 /** One build: the bot's checkout at its base (`cwd`, a worktree of the build's own), its commands and variables. */
 export type Job = {
   project: string;
@@ -251,7 +254,8 @@ export class Images {
   ensure(project: string, setup: WorktreeSetup, force = false, base?: string): ComputerImage {
     const b = this.o.backend();
     if (!b || !(setup.commands ?? []).length) return { state: "none" };
-    const root = this.o.root(project);
+    // A bot with no repo has a plain folder: there is no base to build its image from.
+    const root = checkout(this.o.root(project));
     const run = this.#running.get(project);
     if (run || !root) {
       if (run) run.again = { setup, force: force || !!run.again?.force, ...(base ? { base } : {}) };

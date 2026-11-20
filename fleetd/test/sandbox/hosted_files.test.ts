@@ -1,13 +1,13 @@
 // A hosted box's files (src/node/sandbox/remote/files.ts) with a stand-in box on this machine whose paths sit under a
 // dir of its own: the worktree goes in as it is here (commits not on origin, uncommitted and untracked work, not
 // what's ignored), at the same path and git dir, with fleetd's own files of its git dir; the box's work comes back
-// as commits and uncommitted changes; a launch's named files are mirrored; a chat file is read under the machine's
-// rules.
+// as commits and uncommitted changes; a bot's plain folder (no repo) goes in and comes back whole; a launch's named
+// files are mirrored; a chat file is read under the machine's rules.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { RunOutcome } from "../../src/node/cmd/index.ts";
-import { mirror, named, readChatFile, syncIn, syncOut, type BoxFs } from "../../src/node/sandbox/remote/files.ts";
+import { mirror, named, PLAIN, readChatFile, syncIn, syncOut, type BoxFs } from "../../src/node/sandbox/remote/files.ts";
 
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-files-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -103,6 +103,39 @@ test("the worktree goes into the box as it is here, and the box's work comes bac
   // What's ignored stays as it was here.
   expect(existsSync(join(cwd, "node_modules", "big.js"))).toBe(true);
   expect(sh(repo, "git for-each-ref refs/fleetd")).toBe("");
+});
+
+test("a bot with no repo: its plain folder goes into the box as it is here, and comes back whole", async () => {
+  // A plain folder failed the box's start: "git rev-parse failed: fatal: not a git repository" (W737).
+  const cwd = join(tmp, "projects", "email-client");
+  mkdirSync(join(cwd, "notes"), { recursive: true });
+  writeFileSync(join(cwd, "a.txt"), "a\n");
+  writeFileSync(join(cwd, "gone.txt"), "x\n");
+  writeFileSync(join(cwd, "notes", "n.md"), "n\n");
+  const root = join(tmp, "box-plain");
+  expect(await syncIn(local, { cwd, session: "s-plain", env: ENV, root })).toBe(PLAIN);
+  const there = root + cwd;
+  expect(readFileSync(join(there, "a.txt"), "utf8")).toBe("a\n");
+  expect(readFileSync(join(there, "notes", "n.md"), "utf8")).toBe("n\n");
+  expect(existsSync(join(there, ".git"))).toBe(false);
+
+  // The agent works in the box: a change, a new file, a deletion, a folder gone.
+  writeFileSync(join(there, "a.txt"), "a changed in the box\n");
+  writeFileSync(join(there, "new.txt"), "new\n");
+  rmSync(join(there, "gone.txt"));
+  rmSync(join(there, "notes"), { recursive: true });
+  // Meanwhile the machine's folder gets a file the person sent the lead.
+  mkdirSync(join(cwd, ".fleetd", "attachments"), { recursive: true });
+  writeFileSync(join(cwd, ".fleetd", "attachments", "F1.png"), "png\n");
+  await syncOut(local, { cwd, session: "s-plain", base: PLAIN, env: ENV, root });
+  expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("a changed in the box\n");
+  expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("new\n");
+  expect(existsSync(join(cwd, "gone.txt"))).toBe(false);
+  expect(existsSync(join(cwd, "notes"))).toBe(false);
+  // What the box never had, it didn't take away.
+  expect(readFileSync(join(cwd, ".fleetd", "attachments", "F1.png"), "utf8")).toBe("png\n");
+  // Nothing of the sync is left beside the folder.
+  expect(readdirSync(dirname(cwd))).toEqual(["email-client"]);
 });
 
 test("a launch's files under the node's home are mirrored, but what has its own way in", async () => {

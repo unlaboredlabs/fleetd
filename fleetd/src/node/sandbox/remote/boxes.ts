@@ -18,7 +18,7 @@ import { TESTED } from "../../runner/claude.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
-import { NAMES } from "../../../shared/sandbox.ts";
+import { ASIDE_MS, NAMES } from "../../../shared/sandbox.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
 import { nodeTailnet } from "../tailnet.ts";
@@ -31,7 +31,7 @@ export const SESSION_LABEL = "fleetd-session";
 export const LIFETIME_MS = 3600_000;
 export const EXTEND_MS = 20 * 60_000;
 /** How long a provider that failed to make a box is left out of placement. */
-export const DOWN_MS = 10 * 60_000;
+export const DOWN_MS = ASIDE_MS;
 /** How long a box's bootstrap or guest may take to answer its first dial. */
 const UP_MS = 90_000;
 
