@@ -4,7 +4,9 @@
 // (an `order:` sink) at each repo's checkout: sealed to the checkout machine's box key, masked in what the agents
 // report, read again at each command, and dropped with the order's other variables when it closes. The hub delivers it
 // at each task launch (`deliver`) and checks every order's on each sweep (`renew`), from what it keeps in
-// `github_order_tokens`, so running agents keep getting fresh tokens across a hub restart.
+// `github_order_tokens`, so running agents keep getting fresh tokens across a hub restart. A refresh of a person's token
+// ends the one before at GitHub, so whichever of those made it hands the new one to every open order of theirs before
+// it goes on (`spread`).
 //
 // Never anyone else's account (D187). A writer whose order's starter hasn't connected GitHub is refused at spawn
 // (`refusal`) and at launch. When a person's token is taken back (they disconnect, GitHub lapses it, or they leave
@@ -266,7 +268,7 @@ async function hand(
     let got: { token: string; expiresMs: number } | undefined;
     let failed: string | undefined;
     try {
-      got = await userToken(apps, github.person);
+      got = await personToken(hub, github.person);
     } catch (error) {
       failed = (error as Error).message;
     }
@@ -300,9 +302,21 @@ async function hand(
   }
   await put(hub, checkout, order, token.token);
   keep(hub, { ...pending, expiresMs: token.expiresMs, blocked: false });
-  if (person !== undefined) await spread(hub, person, token.token, token.expiresMs);
+  if (person !== undefined) {
+    // A refresh while this was handed over ended this token, and handed the new one to the records it read, maybe
+    // before this one was kept: this checkout gets it too.
+    const now = await personToken(hub, person).catch(() => undefined);
+    if (now && now.token !== token.token) {
+      await put(hub, checkout, order, now.token);
+      keep(hub, { ...pending, expiresMs: now.expiresMs, blocked: false });
+    }
+  }
   return true;
 }
+
+/** The person's token (people.ts `userToken`): when it is refreshed, every open order of theirs has the new one first. */
+const personToken = (hub: Hub, person: PersonId) =>
+  userToken(githubApps(hub), person, (token, expiresMs) => spread(hub, person, token, expiresMs));
 
 /** A launch GitHub gave no token for: its agents hold `UNRENEWED_TOKEN` under a blocked record the sweep renews. */
 async function waitForToken(hub: Hub, pending: Kept, e: string): Promise<boolean> {
@@ -317,19 +331,38 @@ async function waitForToken(hub: Hub, pending: Kept, e: string): Promise<boolean
   return false;
 }
 
-/** Hands a person's refreshed token to every other of their orders that holds the one before: the refresh ended it. */
+/**
+ * Hands a person's refreshed token to every checkout of each of their open orders: the refresh ended the one before.
+ * A checkout whose node can't take it now keeps its record as it was, within its margin of the old token's end (a
+ * refresh comes only then), so the first sweep after its node links hands it over.
+ */
 async function spread(hub: Hub, person: PersonId, token: string, expiresMs: number): Promise<void> {
-  for (const k of kept(hub).filter((k) => k.person === person && !k.blocked && k.expiresMs !== expiresMs)) {
+  const apps = githubApps(hub);
+  const holders = kept(hub).filter((k) => k.person === person && isOpen(hub, k.order) && apps.reaches(repoAt(hub, k.r, k.repoId)?.repo ?? ""));
+  let handed = 0;
+  for (const k of holders) {
     try {
       await put(hub, k.checkout, k.order, token);
-      try {
-        keep(hub, { ...k, expiresMs });
-      } catch (error) {
-        console.warn(`github: the refreshed token's record not kept: ${error} (order ${k.order})`);
-      }
     } catch (error) {
-      console.warn(`github: the refreshed token not handed over yet: ${(error as Error).message} (order ${k.order})`);
+      warnOnce(hub, k.checkout, k.order, "the refreshed token not handed over yet", (error as Error).message);
+      continue;
     }
+    warnOnce(hub, k.checkout, k.order, "the refreshed token not handed over yet", undefined);
+    handed++;
+    try {
+      keep(hub, { ...k, expiresMs, blocked: false });
+    } catch (error) {
+      console.warn(`github: the refreshed token's record not kept: ${error} (order ${k.order})`);
+    }
+  }
+  console.info(`github: ${person}'s token was refreshed and handed to ${handed} of ${holders.length} checkouts of their open orders`);
+}
+
+function isOpen(hub: Hub, order: WorkstreamId): boolean {
+  try {
+    return seams.workstream(hub.db.conn, order)?.state === "open";
+  } catch {
+    return false;
   }
 }
 
@@ -472,12 +505,7 @@ export async function renew(hub: Hub): Promise<void> {
     // Read again: a refresh for an order before it in this sweep may have handed it its token already.
     const k = keptAt(hub, listed.checkout, listed.order);
     if (!k) continue;
-    let open = false;
-    try {
-      const w = seams.workstream(hub.db.conn, k.order);
-      open = w !== undefined && w.state === "open";
-    } catch {}
-    if (!open) {
+    if (!isOpen(hub, k.order)) {
       forget(hub, k.checkout, k.order);
       continue;
     }

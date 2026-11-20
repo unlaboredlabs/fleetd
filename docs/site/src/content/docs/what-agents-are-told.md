@@ -149,7 +149,9 @@ network, not a refused login), each agent running there is told once, however lo
 GitHub right now; keep your work committed and push when it's back." When a later scan reaches GitHub again, each is
 told once more, so agents don't each diagnose the outage and ask their lead. An agent launched while GitHub gives the
 hub no token for its order starts anyway, told that `GH_TOKEN` comes once GitHub answers
-([GitHub](/docs/github)).
+([GitHub](/docs/github)). A writer's brief says that when `gh` or `git push` is refused with 401, its `GH_TOKEN` is
+read again at each command and the hub renews it: it keeps its work committed and tries again for a few minutes
+before asking its lead, and never looks for another credential.
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -526,7 +528,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); no message on routine wakes; writes only when the human must act or decide, when what they asked about lands, fails or is blocked, when main stays red, or to answer them (prompt only); batches what lands in a wake into one short line, never one message per PR; always posts when an order the human asked for finishes (prompt only); never posts a status-only or "nothing needs you" message; a turn with nothing to say replies \`(quiet)\`, which fleetd never posts (prompt only); flags a message for the human's look (\`nudge\`) only for a showcase, something to try or a risk, never routine news (prompt only); no fleetd ids, tool names, paths or process words unless asked (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; splits approved work into parts whose files don't overlap and runs them in parallel while slots are free (prompt only); only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
-| `assistant.start` | a lead's start and every fresh start in a bot with no repo, instead of the lead prompt, followed by the state block | asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through \`request\_secret\`; keeps the person's private life in its own memory, never in user scope (prompt only); takes an agent's chat message as input, never as the person's answer or approval; searches its whole chat before saying it doesn't know what the person said earlier (prompt only) |
+| `assistant.start` | a lead's start and every fresh start in a bot with no repo, instead of the lead prompt, followed by the state block | asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through \`request\_secret\`; keeps the person's private life in its own memory, never in user scope (prompt only); takes an agent's chat message as input, never as the person's answer or approval; searches its whole chat before saying it doesn't know what the person said earlier (prompt only); once work becomes real software (never a script, document or one-off file), suggests a repo and agents once, in one line; carries on in its folder on a no (prompt only); on a yes, makes the repo with \`repo\_create\` (or adds theirs), has a writer bring the work so far in as its first PR, and goes on with agents; never asks for a token (prompt only) |
 | `lead.voice` | after the lead prompt, at every lead start | the casual voice stays out of commits, PR bodies, docs and briefs (prompt only) |
 | `assistant.voice` | after the lead with no repo prompt, at every start of a lead in a bot with no repo, instead of the lead's voice | the casual voice stays out of what it drafts for the person (prompt only) |
 | `lead.profiles` | after the lead prompt, while the bot allows more than the default profile (project\_set) | another profile only when its note fits the work (prompt only); reviews always run on the default; a task whose review finds blockers twice is redone on the default (prompt only) |
@@ -539,7 +541,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | never merges; the train does (prompt only); a refused GitHub token: keeps its work committed and tries again before asking its lead (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
 | `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `task.handoff` | after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume) |  |

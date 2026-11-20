@@ -1,7 +1,8 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
 // (how the link is, its address and version), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
-// (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), the Vault (screens/vault) on a
+// (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), on a
+// fleetd cloud team Billing (Billing.tsx), the Vault (screens/vault) on a
 // hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
@@ -28,6 +29,7 @@ import { RestartHub } from "./RestartHub";
 import { UpdateFleetd } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
 import { machinesShown } from "../machines";
+import { billingShown } from "../billing";
 import { claudeShown } from "../claude";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
@@ -149,6 +151,7 @@ export function Settings() {
         <ListSection>
           <ListRow title="Machines" onPress={() => navigation.navigate("Machines")} />
           {claudeShown(state.admin) ? <ListRow title="Claude" onPress={() => navigation.navigate("Claude")} /> : null}
+          {billingShown(paired, state.admin) ? <ListRow title="Billing" onPress={() => navigation.navigate("Billing")} /> : null}
         </ListSection>
       ) : null}
       {vaultShown(hub) ? (

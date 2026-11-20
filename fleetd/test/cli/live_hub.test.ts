@@ -16,7 +16,7 @@ const CASE_MS = 30_000;
 const said = (text: string) => {
   expect(text).toContain("would change the live hub");
   expect(text).toContain("only reads it");
-  expect(text).toContain("repo_add, repo_remove, project_setup, project_propose");
+  expect(text).toContain("repo_add, repo_create, repo_remove, project_setup, project_propose");
   expect(text).toContain("set FLEETD_HOME");
 };
 

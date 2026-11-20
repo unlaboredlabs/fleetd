@@ -104,6 +104,7 @@ export const SETTINGS_TABS = [
   "project-vault",
   "hub.people",
   "hub.machines",
+  "hub.billing",
   "hub.updates",
   "hub.profiles",
   "hub.tools",

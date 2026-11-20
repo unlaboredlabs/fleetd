@@ -23,4 +23,10 @@ describe("Settings' search for a member", () => {
     expect([at("hub.updates"), at("hub.tools"), at("hub.mcp"), at("hub.skills")]).toEqual(["hub.machines", "hub.profiles", "hub.profiles", "hub.profiles"]);
     expect([at("hub.accounts"), at("admin.claude"), at("admin.claude.members"), at("admin.github")]).toEqual(["hub.setup", "hub.setup", "hub.setup", "hub.setup"]);
   });
+
+  it("offers Billing only on a fleetd cloud team, so a self-hosted hub never names it", () => {
+    for (const q of ["billing", "credits", "spend cap"]) expect(searchSettings(q, optionsFor(true)).filter((o) => o.tab === "hub.billing"), q).toEqual([]);
+    expect(searchSettings("credits", optionsFor(true, true, true))[0]?.tab).toBe("hub.billing");
+    expect(optionsFor(false, true, true).some((o) => o.tab === "hub.billing")).toBe(false);
+  });
 });

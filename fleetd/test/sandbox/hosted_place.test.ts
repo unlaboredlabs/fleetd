@@ -12,7 +12,7 @@ import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, ProviderError } from "../../src/sandbox/providers/index.ts";
 import { Boxes, DOWN_MS, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, mirroredIn, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -106,6 +106,13 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   const echo = createServer((sock) => sock.pipe(sock)).listen(0, "127.0.0.1");
   await new Promise((r) => echo.once("listening", r));
   const cdp = (echo.address() as { port: number }).port;
+  // The order's variables, which the node rewrites when the hub renews its GitHub token, and the file that sources them.
+  const order = join(home, "orders", "p", "W1.sh");
+  mkdirSync(dirname(order), { recursive: true });
+  writeFileSync(order, "export GH_TOKEN=ghu_1\n");
+  const envFile = join(home, "sessions", "s1", "order-env.sh");
+  mkdirSync(dirname(envFile), { recursive: true });
+  writeFileSync(envFile, `if [ -r '${order}' ]; then . '${order}'; fi\n`);
   const link = await place.start({
     fleetd: [],
     dir,
@@ -113,8 +120,9 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
     program: "claude",
     args: [],
     cwd,
-    env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: "s1.mark", AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
+    env: { ...env, CLAUDE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: "s1.mark", AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
   });
+  expect(mirroredIn("s1")).toContain(order);
   expect(readRecord(dir)!.tcp).toEqual([cdp]);
   // In the box (its loopback here is 127.0.0.2), the port reaches this machine's proxy.
   const said = await new Promise<string>((resolve, reject) => {
@@ -140,6 +148,10 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   const again = await placeAt(dir).adopt(dir);
   expect(again).toBeDefined();
   expect(again!.pid).toBe(link.pid);
+  // The re-adopted box goes on getting the order's variables as they change: a token renewed after the node's restart.
+  expect(mirroredIn("s1")).toContain(order);
+  // The node's own git there reads them as the agent's commands do.
+  expect(readRecord(dir)!.env?.CLAUDE_ENV_FILE).toBe(envFile);
   // In the box (its loopback here is 127.0.0.2), the relay reaches this machine's gateway again.
   const relayed = await new Promise<string>((resolve, reject) => {
     const c = connect({ host: "127.0.0.2", port: gw }, () => c.write("claude"));
@@ -282,6 +294,31 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(s.boxes.size).toBe(0);
   expect(hasBox("s-unreached")).toBe(false);
   expect(hostedBox("s-unreached")).toBeUndefined();
+  expect(existsSync(join(dir, "place.json"))).toBe(false);
+}, 60_000);
+
+test("a start whose Claude Code isn't in the box says so, and a box no session ran in brings nothing back (W756)", async () => {
+  const { s, home, cwd, env } = await setup();
+  const dir = join(home, "hosts", "s-noclaude");
+  // The template has no Claude Code where the start runs it (fleetd-94251c014f62 on 2026-11-20).
+  BOX_CLAUDE.path = join(tmp, "no-such-claude");
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]) => void warned.push(a.map(String).join(" "));
+  try {
+    const failed = await hostedPlace("boat", "s-noclaude", dir).start({ fleetd: [], dir, sessionId: "s-noclaude", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
+    expect(failed).toBeInstanceOf(BoxNotReady);
+    expect((failed as Error).message).toBe("its boat.dev sandbox came up, but fleetd didn't start in it");
+  } finally {
+    console.warn = warn;
+  }
+  expect(warned.some((w) => w.includes("fleetd's session host didn't come up in a hosted box"))).toBe(true);
+  // Nothing was taken back from a box no session ran in: no second, misleading error, and no sync ref in the repo.
+  expect(warned.filter((w) => w.includes("work didn't come back"))).toEqual([]);
+  expect(sh(cwd, "git for-each-ref refs/fleetd/sync/s-noclaude")).toBe("");
+  // A take-back resets the worktree to what the box sent (files.ts syncOut): none did here.
+  expect(sh(cwd, "git reflog -n 50 --format=%gs")).not.toContain("fleetd/sync/s-noclaude/out-head");
+  expect(s.boxes.size).toBe(0);
   expect(existsSync(join(dir, "place.json"))).toBe(false);
 }, 60_000);
 

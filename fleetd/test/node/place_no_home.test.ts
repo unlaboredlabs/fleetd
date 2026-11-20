@@ -18,7 +18,7 @@ import { readBox } from "../../src/node/place/box_record.ts";
 import { MicroVm, SIGN_IN_FIX, type BootPlan, type Booted } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { BOX_HOME, boxHome, forClaude, keepShown, NoClaudeLogin, provision, transcriptBack } from "../../src/node/place/provision.ts";
+import { BOX_HOME, boxHome, forClaude, keepShown, NoClaudeLogin, orderRefresh, provision, transcriptBack } from "../../src/node/place/provision.ts";
 import { guestOwn, mountScript, shows, under, type View } from "../../src/node/place/view.ts";
 import { marker, readRegistration, startOf, type HostLink } from "../../src/node/runner/host.ts";
 import type { VmCheck } from "../../src/sandbox/host/capable.ts";
@@ -293,6 +293,12 @@ test("what a box is given: a value naming a place of the home it doesn't have is
   utimesSync(join(p.node, "order-env/p1/W1.sh"), new Date(), new Date(Date.now() + 5_000));
   given.refresh();
   expect(readFileSync(copy, "utf8")).toBe("export GH_TOKEN='renewed'\n");
+  // A node after this one, adopting the box without its launch, goes on copying them in.
+  const adopted = orderRefresh(p.node, "s3")!;
+  write(join(p.node, "order-env/p1/W1.sh"), "export GH_TOKEN='renewed again'\n", 0o600);
+  utimesSync(join(p.node, "order-env/p1/W1.sh"), new Date(), new Date(Date.now() + 10_000));
+  adopted();
+  expect(readFileSync(copy, "utf8")).toBe("export GH_TOKEN='renewed again'\n");
   expect(given.ro.concat(given.rw).some((x) => under(join(p.node, "order-env"), x) || under(x, join(p.node, "order-env")))).toBe(false);
 });
 

@@ -3,11 +3,12 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Every bot and Setup, which says how many required steps are left. Vault shows
+// and admins only: People, Machines, Billing (a fleetd cloud team's only), Every bot and Setup, which says how many required steps are left. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
   Brain,
+  CreditCard,
   Layers,
   LayoutGrid,
   ListChecks,
@@ -68,6 +69,7 @@ const HUB_PAGES: ReadonlyArray<{
 }> = [
   { tab: "hub.people", label: "People", icon: <Users /> },
   { tab: "hub.machines", label: "Machines", icon: <Server /> },
+  { tab: "hub.billing", label: "Billing", icon: <CreditCard /> },
   { tab: "hub.profiles", label: "Every bot", icon: <Layers /> },
   { tab: "hub.setup", label: "Setup", icon: <ListChecks /> },
 ];
@@ -185,7 +187,9 @@ function useEntries() {
   const route = useSettingsRoute();
   const administers = useSettledAdministers();
   const vault = useData((st) => vaultServed(st.features));
-  const { id } = useHub();
+  const { id, cloud } = useHub();
+  // Billing is a fleetd cloud team's alone: a self-hosted hub has no such page, not even a row that says so.
+  const billing = cloud === true;
   const steps = useServes("setup_list");
   const setup = useToolQuery("setup_list", noInput, {
     enabled: steps && administers,
@@ -228,7 +232,7 @@ function useEntries() {
     }),
   ];
   const hub: Entry[] | null = administers
-    ? HUB_PAGES.map((p) => ({
+    ? HUB_PAGES.filter((p) => billing || p.tab !== "hub.billing").map((p) => ({
         key: p.tab,
         label: p.label,
         icon: p.icon,
@@ -240,7 +244,7 @@ function useEntries() {
         go: () => navigate({ id: "settings", tab: p.tab, at: id }),
       }))
     : null;
-  return { you, bots, hub, administers, vault };
+  return { you, bots, hub, administers, vault, billing };
 }
 
 function Item({ entry }: { entry: Entry }) {
@@ -285,10 +289,10 @@ function Group({
 
 /** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
-  const { you, bots, hub, administers, vault } = useEntries();
+  const { you, bots, hub, administers, vault, billing } = useEntries();
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
-  const results = searchSettings(query, optionsFor(administers, vault));
+  const results = searchSettings(query, optionsFor(administers, vault, billing));
   return (
     <nav className={n.index} aria-label="Settings">
       <div className={n.indexHead}>

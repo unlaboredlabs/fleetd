@@ -23,9 +23,9 @@
 // - The team's tailnet (its Tailscale gateway, which the hub runs) is in every box while it is on, from the box's
 //   start, before its repo comes in (../sandbox/tailnet_box.ts): Claude's endpoint, a git host or an MCP server there
 //   is reached as the box reaches the internet. Nothing of this machine's own network is relayed into a box.
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
+import { CLAUDE_PATH, ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { Stages } from "../../shared/stages.ts";
 import { NAMES, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
@@ -33,7 +33,7 @@ import { HostLink, LaunchError, PROTOCOL, type HostHandlers, type Launch, type R
 import { ACCOUNT_CLEARS } from "../actions/accounts.ts";
 import type { Box } from "../sandbox/box.ts";
 import { boxes, type BoxRecord, type Boxes, EXTEND_MS, LIFETIME_MS } from "../sandbox/remote/boxes.ts";
-import { fetchNew, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
+import { fetchNew, keepMirrored, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
 import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
 import { claudeEndpoint, probe, unreached } from "./endpoint.ts";
@@ -50,10 +50,10 @@ export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents
 /** How a box's reach of Claude is checked (./endpoint.ts probe); tests set a stand-in. */
 export const hostedProbe: { probe?: (box: Box, url: string) => Promise<void> } = {};
 
-/** The Claude Code every hosted template installs, at the version fleetd was tested with (sandbox/providers/recipe.ts):
- * its own install, not /usr/local/bin's, which a provider's image may hold another of (boat's did). Tests set a
- * stand-in. */
-export const BOX_CLAUDE = { path: "/opt/claude/.local/bin/claude" };
+/** The Claude Code every hosted template installs, at the version fleetd was tested with: the recipe's own path
+ * (sandbox/providers/recipe.ts CLAUDE_PATH, which every template's build proves before its save), not /usr/local/bin's,
+ * which a provider's image may hold another of (boat's did). Tests set a stand-in. */
+export const BOX_CLAUDE = { path: CLAUDE_PATH };
 /** Dirs every box has, after the machine's own PATH. */
 const BOX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const TRANSCRIPT_MAX = 512 * 1024 ** 2;
@@ -67,7 +67,11 @@ export type HostedRecord = BoxRecord & {
   /** The transcript's path, here and in the box. */
   transcript?: string;
   registration?: Registration;
-  env?: { HOME?: string; PATH?: string };
+  /** The box's environment for the node's own git there (`syncOut`): the order's variables come from the file the
+   * agent's commands source, `CLAUDE_ENV_FILE`, as it is then. */
+  env?: { HOME?: string; PATH?: string; CLAUDE_ENV_FILE?: string };
+  /** What the session's launch named under the node's home, kept in the box as it changes, a re-adopt's too. */
+  mirrored?: string[];
   /** When the work last came back to the machine (the box's start, then each turn's checkpoint): what a lost box lost
    * is what it did after. */
   since?: string;
@@ -82,7 +86,8 @@ type Live = {
   extender?: ReturnType<typeof setTimeout>;
   /** Keep-alives that failed in a row. */
   failed: number;
-  refresher?: ReturnType<typeof setInterval>;
+  /** Stops sending the launch's files again as they change (`keepMirrored`). */
+  refresher?: () => void;
 };
 
 /** The keep-alive's timing: an extension every `everyMs`; after one fails, again every `retryMs`, and the session ends
@@ -90,8 +95,8 @@ type Live = {
 export const KEEP_ALIVE = { everyMs: EXTEND_MS, retryMs: 2 * 60_000, endBeforeMs: 15 * 60_000 };
 
 /** How often the files a session's launch named are checked for changes (the order's variables, which the node
- * rewrites when the hub renews its GitHub token) and sent to the box again. */
-const REFRESH_MS = 30_000;
+ * rewrites when the hub renews its GitHub token) and sent to the box again. Tests set a shorter one. */
+export const REFRESH = { everyMs: 30_000 };
 
 const live = new Map<string, Live>();
 const making = new Map<string, Promise<Live>>();
@@ -111,13 +116,21 @@ const recordFile = (dir: string) => join(dir, "place.json");
 
 const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
-const isDir = (p: string) => {
-  try {
-    return statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-};
+/** Keeps the files `paths` names in `l`'s box as they change (files.ts `keepMirrored`), saying once when they don't go. */
+function watch(l: Live, paths: string[], sent?: Map<string, number>): void {
+  l.refresher?.();
+  let said = false;
+  l.refresher = keepMirrored(l.box, paths, REFRESH.everyMs, {
+    ...(sent ? { sent } : {}),
+    failed: (error) => {
+      if (error && !said) console.warn(`${nowIso()} WARN a hosted box's files (its order's variables) didn't go in again: the next look tries again {"sessionId":"${l.record.session}","error":${JSON.stringify(error.message)}}`);
+      said = error !== undefined;
+    },
+  });
+}
+
+/** The files a session's box is kept up to date with, for tests. */
+export const mirroredIn = (session: string): string[] | undefined => (live.get(session)?.refresher ? live.get(session)?.record.mirrored : undefined);
 
 /** Whether the session has a box now, or one being made. */
 export const hasBox = (session: string) => live.has(session) || making.has(session);
@@ -359,7 +372,7 @@ function letGo(l: Live | undefined): void {
 }
 
 /** The session's box goes: its work and transcript back here, then the box is destroyed. Idempotent. */
-export function teardown(session: string, dir: string): Promise<void> {
+export function teardown(session: string, dir: string, o: { takeBack?: boolean } = {}): Promise<void> {
   const already = ending.get(session);
   if (already) return already;
   const p = (async () => {
@@ -367,7 +380,7 @@ export function teardown(session: string, dir: string): Promise<void> {
     live.delete(session);
     letGo(l);
     if (l?.extender) clearTimeout(l.extender);
-    if (l?.refresher) clearInterval(l.refresher);
+    l?.refresher?.();
     // A turn's checkpoint under way ends first: one bundle at a time goes into the worktree.
     await checkpoints.get(session)?.run;
     const record = l?.record ?? readRecord(dir);
@@ -383,14 +396,14 @@ export function teardown(session: string, dir: string): Promise<void> {
       console.warn(`${nowIso()} WARN a hosted box was lost: its work since its last checkpoint didn't come back {"sessionId":"${session}","since":"${record.since ?? ""}"}`);
       box = undefined;
     }
-    if (box && record.cwd && record.base && existsSync(record.cwd)) {
+    if (box && o.takeBack !== false && record.cwd && record.base && existsSync(record.cwd)) {
       try {
         await syncOut(box, { cwd: record.cwd, session, base: record.base, env: record.env ?? {} });
       } catch (error) {
         console.warn(`${nowIso()} WARN a hosted box's work didn't come back {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
       }
     }
-    if (box && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
+    if (box && o.takeBack !== false && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
     box?.close();
     l?.box.close();
     try {
@@ -575,18 +588,14 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     if (self) await sh(box, "linking fleetd", `mkdir -p ${shq(dirname(self))} && ln -sf ${shq(`${BOX_DIR}/fleetd`)} ${shq(self)}`);
     stages.done("fleetd");
     const paths = named(launch.args, env, [home], skip);
+    // Read before they go: a change while they do goes again at the first look.
+    const sent = new Map(paths.map((p) => [p, mtimeOf(p)]));
     await mirror(box, paths);
     stages.done("files");
-    // The files among them go again when they change, while the box lives.
-    const seen = new Map(paths.filter((p) => !isDir(p)).map((p) => [p, mtimeOf(p)]));
-    if (l.refresher) clearInterval(l.refresher);
-    l.refresher = setInterval(() => {
-      const changed = [...seen].filter(([p, t]) => mtimeOf(p) !== t).map(([p]) => p);
-      if (changed.length === 0) return;
-      for (const p of changed) seen.set(p, mtimeOf(p));
-      void mirror(box, changed.filter((p) => existsSync(p))).catch(() => {});
-    }, REFRESH_MS);
-    l.refresher.unref?.();
+    l.record.mirrored = paths;
+    if (env.CLAUDE_ENV_FILE) l.record.env = { ...l.record.env, CLAUDE_ENV_FILE: env.CLAUDE_ENV_FILE };
+    save(dir, l.record);
+    watch(l, paths, sent);
     const transcript = sessionFile(configDir(env), launch.cwd, session);
     if (transcript) {
       l.record.transcript = transcript;
@@ -631,10 +640,12 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       const l = await boxFor(provider, session, dir, launch.cwd, env, size);
       // A start that fails once the box exists (Claude out of its reach, a host that didn't come up) ends the box and
       // its record, or its keep-alive would renew it and the reaper would spare it; the error reaches the task as is.
+      // A box no session ever ran in has nothing to bring back: its files are the worktree's as they went in.
+      const ran = l.record.registration !== undefined;
       try {
         return await startIn(l, launch);
       } catch (error) {
-        await teardown(session, dir);
+        await teardown(session, dir, { takeBack: ran });
         throw error;
       }
     },
@@ -649,6 +660,9 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
         const l: Live = { record, box, dir: d, failed: 0 };
         live.set(session, l);
         boxed.set(session, record.provider);
+        // The launch's files go on reaching the box: all of them at the first look, as any may have changed while no
+        // node ran (a GitHub token renewed meanwhile, which ended the one the box holds).
+        if (record.mirrored) watch(l, record.mirrored);
         const link = await linkTo(l, d, record.registration);
         // At once: the node before this one may have been gone a while.
         keepAlive(b, l, 0);

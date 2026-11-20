@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
-import type { CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -165,6 +165,9 @@ const api: FleetdApi = {
     invite: (hub, request) => ipcRenderer.invoke(IPC.cloudInvite, hub, request) as Promise<InviteOutcome>,
     revokeInvite: (hub, inviteId) => ipcRenderer.invoke(IPC.cloudRevokeInvite, hub, inviteId) as Promise<RevokeInviteOutcome>,
     installGithub: (hub) => ipcRenderer.invoke(IPC.cloudInstallGithub, hub) as Promise<InstallGithubOutcome>,
+    billing: (hub) => ipcRenderer.invoke(IPC.cloudBilling, hub) as Promise<BillingOutcome>,
+    billingOpen: (hub, what) => ipcRenderer.invoke(IPC.cloudBillingOpen, hub, what) as Promise<BillingOpenOutcome>,
+    billingCap: (hub, capCents) => ipcRenderer.invoke(IPC.cloudBillingCap, hub, capCents) as Promise<BillingCapOutcome>,
     // Get started is the web app's: the desktop lists repos and connects GitHub from New bot and Settings.
     githubRepos: () => Promise.resolve<GithubReposOutcome>({ ok: false, failure: { code: "desktop", message: "The desktop app lists repositories in New bot." } }),
     connectGithub: () => Promise.resolve<ConnectGithubOutcome>({ ok: false, failure: { code: "desktop", message: "Connect GitHub in Settings › Your accounts › GitHub." } }),

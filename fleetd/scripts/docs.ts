@@ -697,6 +697,7 @@ function example(role: Role, tool: string): Json {
       why: "Worked out where the portal hides the PDF download.",
     },
     repo_add: { url: "https://github.com/acme/billing" },
+    repo_create: { name: "email-client", private: true },
     repo_remove: { repo: "billing" },
     project_setup: {
       title: "Storefront",

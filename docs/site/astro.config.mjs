@@ -76,6 +76,7 @@ export default defineConfig({
             "desktop-app",
             "mobile",
             "web-app",
+            "billing",
             "phone-notifications",
             "several-hubs",
             "status",
