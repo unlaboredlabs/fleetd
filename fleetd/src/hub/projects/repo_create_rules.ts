@@ -56,19 +56,43 @@ export function createRequest(call: RepoCreateCall, login: string): { path: stri
 export const alreadyThere = (full: string) =>
   invalid(`${full} already exists on GitHub.`, "Pick another name with the person, or add that repo with repo_add if it is the one they mean");
 
-/**
- * GitHub's refusal to make `owner/name`, as the lead's. `who` names the connection ("the hub's GitHub login alice");
- * `grant`, the one step that gives it the permission it lacks, which the lead tells the person.
- */
-export function createRefused(status: number, message: string, full: string, who: string, grant: string): ToolError {
-  if (status === 422 && /already exists/i.test(message)) return alreadyThere(full);
-  if (status === 401) return new ToolError("forbidden", `${who} was turned away by GitHub: ${message}.`, grant);
-  if (status === 403 || status === 404) {
-    return new ToolError("forbidden", `${who} may not create repos in ${full.split("/")[0]}: ${message}.`, grant);
-  }
-  return new ToolError("failed", `GitHub did not create ${full}: ${message}.`, "Try again; if it fails the same way, tell the person this line");
+/** GitHub's own words for a refusal: its message, then each error's (a 422 keeps its reason there), each without its
+ * last period. "" when it said none. The cloud's words for the same (fleetd-cloud#466). */
+export function githubSaid(body: unknown): string {
+  const b = (body ?? {}) as { message?: unknown; errors?: unknown };
+  const errors = Array.isArray(b.errors)
+    ? b.errors.map((e) => (typeof e === "string" ? e : (e as { message?: unknown } | null)?.message)).filter((m): m is string => typeof m === "string")
+    : [];
+  return [typeof b.message === "string" ? b.message : "", ...errors]
+    .map((m) => m.trim().replace(/\.$/u, ""))
+    .filter((m) => m !== "")
+    .join(": ");
 }
 
-/** What the lead is told once the repo exists, before its checkout's own line. */
-export const createdLine = (full: string, priv: boolean) =>
-  `Created ${full} on GitHub, ${priv ? "private" : "public"}, with a README as its first commit, and added it to the bot.`;
+/**
+ * GitHub's refusal to make `owner/name`, as the lead's. `said`: GitHub's words (`githubSaid`). `who` names the
+ * connection ("the hub's GitHub login alice"); `grant`, the one step that gives it the permission it lacks, which the
+ * lead tells the person. A refusal of the account's own (an organisation's policy on private or public repos) says
+ * GitHub's words and is never tried again.
+ */
+export function createRefused(status: number, said: string, full: string, who: string, grant: string): ToolError {
+  const owner = full.split("/")[0];
+  const why = said || "it gave no reason";
+  if (status === 422 && /already exists/i.test(said)) return alreadyThere(full);
+  if (status === 401) return new ToolError("forbidden", `${who} was turned away by GitHub: ${why}.`, grant);
+  if (status === 403) return new ToolError("forbidden", `${who} may not create repos in ${owner}: ${why}.`, grant);
+  if (status === 404) {
+    return invalid(`GitHub found no organisation ${owner} to create ${full} in: ${why}.`, "Check the organisation's name with the person, or leave owner out");
+  }
+  if (status >= 400 && status < 500) {
+    return new ToolError(
+      "forbidden",
+      `GitHub refused to create ${full} (${status}): ${why}.`,
+      `Tell the person GitHub's words: ${owner}'s own settings on GitHub decide this, and its admin changes them there, or they pick another account`,
+    );
+  }
+  return new ToolError("failed", `GitHub did not create ${full} (${status}): ${why}.`, "Try again; if it fails the same way, tell the person this line");
+}
+
+/** What the lead is told once the repo exists, before the add's own line (added, or its clone under way). */
+export const createdLine = (full: string, priv: boolean) => `Created ${full} on GitHub, ${priv ? "private" : "public"}, with a README as its first commit.`;

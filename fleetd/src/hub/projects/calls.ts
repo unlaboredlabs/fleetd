@@ -221,7 +221,11 @@ async function repoCreate(hub: Hub, caller: LeadCaller, call: LeadCall): Promise
       path === "user/repos"
         ? `The hub signs in to GitHub as ${login} with gh: ${GH_AUTH_FIX} with an account that may create repos`
         : `An owner of ${want.owner} lets ${login} create repos there (the organisation's Settings › Member privileges), or the person names an account ${login} may create in`;
-    throw create.createRefused(out.status, out.message, full, `The hub's GitHub login ${login}`, grant);
+    let said = out.message.trim().replace(/\.$/u, "");
+    try {
+      said = create.githubSaid(JSON.parse(out.body ?? "")) || said;
+    } catch {}
+    throw create.createRefused(out.status, said, full, `The hub's GitHub login ${login}`, grant);
   }
   let made = full;
   let url = `https://github.com/${full}`;
@@ -661,7 +665,7 @@ export function register(tools: Registry): void {
 export function registerLeadCalls(hub: Hub): void {
   leadCalls(hub).register("repo_add", (caller, call) => repoAdd(hub, caller, call));
   leadCalls(hub).register("repo_create", (caller, call) => repoCreate(hub, caller, call));
-  leadCalls(hub).register("repo_remove",(caller, call) => repoRemove(hub, caller, call));
+  leadCalls(hub).register("repo_remove", (caller, call) => repoRemove(hub, caller, call));
   leadCalls(hub).register("project_setup", (caller, call) => setup(hub, caller, call));
   leadCalls(hub).register("project_propose", (caller, call) => {
     onlyLead(caller, "project_propose", "A person makes a bot themselves with New bot in the app.");

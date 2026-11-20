@@ -433,7 +433,7 @@ export class TrainGitHub {
     accept: string,
     fields: [string, string][] = [],
     flags: string[] = [],
-  ): Promise<{ ok: true; text: string } | { ok: false; status: number; message: string }> {
+  ): Promise<{ ok: true; text: string } | { ok: false; status: number; message: string; body?: string }> {
     const owner = ownerOf(path, fields);
     const resource = path === "graphql" ? "graphql" : "core";
     const until = this.budget.until(owner, resource);
@@ -452,7 +452,7 @@ export class TrainGitHub {
     // limit is not asked again: it is waited out.
     let tries = 1;
     let wait = READ_RETRY_FIRST_MS;
-    let reply: { ok: true; text: string } | { ok: false; status: number; message: string } | undefined;
+    let reply: { ok: true; text: string } | { ok: false; status: number; message: string; body?: string } | undefined;
     let thrown: GhError | undefined;
     let headers = new Map<string, string>();
     for (;;) {
@@ -478,7 +478,8 @@ export class TrainGitHub {
             const m = (JSON.parse(answer.body) as { message?: unknown }).message;
             if (typeof m === "string") message = m;
           } catch {}
-          reply = { ok: false, status: answer.status ?? httpStatus(out.stderr), message: message ?? lastLine(out.stderr) };
+          // Its whole body too: a refusal's reasons can be in `errors` (a 422's "Repository creation failed.").
+          reply = { ok: false, status: answer.status ?? httpStatus(out.stderr), message: message ?? lastLine(out.stderr), body: answer.body };
         }
       } catch (error) {
         if (!(error instanceof GhError)) throw error;
