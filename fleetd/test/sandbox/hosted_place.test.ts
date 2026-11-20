@@ -139,7 +139,10 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   expect(placeAt(dir).kind).toBe("hosted");
   // The node lets go (its restart); the next node re-adopts the session from the record. A box made before the Claude
   // endpoint stopped being relayed (W722) keeps the relay its claude is pointed at: the record a node of then wrote.
+  // The old node's link to the box goes with it, as its process does; left open, it would redial against the new one.
+  const before = hostedBox("s1")!;
   await link.detach();
+  before.close();
   expect(s.boxes.size).toBe(1);
   const gateway = createServer((sock) => sock.pipe(sock)).listen(0, "127.0.0.1");
   await new Promise((r) => gateway.once("listening", r));
@@ -159,9 +162,10 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
     c.once("error", reject);
   });
   expect(relayed).toBe("claude");
-  gateway.close();
 
+  // Its work comes back as it stops (over the relay it still has), and the box is deleted.
   await placeAt(dir).stop(dir);
+  gateway.close();
   expect(s.boxes.size).toBe(0);
   expect(existsSync(dir)).toBe(false);
   // The node's sweep finds nothing of it left.

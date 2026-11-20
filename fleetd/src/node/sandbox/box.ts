@@ -84,6 +84,8 @@ export class Box {
   #requests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   #nextId = 0;
   #runs = 0;
+  /** This link's own mark on its run ids: a run a dropped link left going in the guest never refuses a new link's. */
+  readonly #tag = crypto.randomUUID().slice(0, 8);
   #nextDial = NODE_CHANNELS;
   /** The dials the guest hasn't answered yet, by channel: undefined once it connected, else why not. */
   #dials = new Map<number, (why: string | undefined) => void>();
@@ -124,7 +126,7 @@ export class Box {
    * A link that drops meanwhile ends the wait with a run that didn't finish. `root`: the node's own commands in the box
    * (its pin to Claude's relay). */
   async run(r: ConfinedRun & { root?: boolean }): Promise<RunOutcome> {
-    const run = `r${++this.#runs}`;
+    const run = `r${++this.#runs}-${this.#tag}`;
     const cancel = () => void this.#request({ op: "cancel", run }).catch(() => {});
     r.signal?.addEventListener("abort", cancel, { once: true });
     try {
