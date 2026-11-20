@@ -317,10 +317,30 @@ export function MachineCap({ machineId, name }: { machineId: string; name: strin
                 {m.isolation.fix === undefined ? m.isolation.why : `${m.isolation.why} Run on ${name}:`}
               </Text>
               {m.isolation.fix === undefined ? null : <CommandLine command={m.isolation.fix} />}
+              {m.isolation.vm || m.isolation.detail === undefined ? null : <Details text={m.isolation.detail} />}
             </div>
           )}
         </SettingsRow>
       )}
+    </>
+  );
+}
+
+/** What's behind a reason (a VM's console), shown only when asked for. */
+function Details({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <span>
+        <Button variant="link" size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Hide details" : "Show details"}
+        </Button>
+      </span>
+      {open ? (
+        <Text as="pre" size="xs" tone="faint" mono className={s.details}>
+          {text}
+        </Text>
+      ) : null}
     </>
   );
 }

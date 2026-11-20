@@ -717,6 +717,54 @@ test("a setup command whose box doesn't boot runs as a plain process, and the ma
   vm.close();
 });
 
+/** The console of a session's second VM on the devbox (2026-11-19): its guest found the first VM's link socket on the
+ * box's disk and stopped, and its init powered the VM off. */
+const ENDED_CONSOLE = [
+  "[    0.715790] Run /sbin/fleetd-init as init process\r",
+  "[    0.753054] EXT4-fs (vdb): mounted filesystem 0d7c9c02 r/w with ordered data mode. Quota mode: disabled.\r",
+  "2026-11-19T23:57:42.101Z WARN sandbox-guest: can't listen at /run/fleetd/link.sock: listen EADDRINUSE: address already in use /run/fleetd/link.sock",
+  "fleetd-init: sandbox-guest ended (1): powering off\r",
+  "[    1.126180] sysrq: Power Off\r",
+  "[    1.129552] ACPI: PM: Preparing to enter system sleep state S5\r",
+  "[    1.130301] reboot: Power down\r",
+  "",
+].join("\n");
+
+test("a VM whose guest stops as it boots: the machine says so in one plain sentence with the retry time, its console only behind it", async () => {
+  const n = node();
+  const vm = new MicroVm({
+    ...n.vm.o,
+    // The VM ends at once, its console saying why.
+    boot: async (b) => {
+      writeFileSync(join(b.dir, "console.log"), ENDED_CONSOLE);
+      const child = spawn("true", [], { detached: true, stdio: "ignore" });
+      const pid = child.pid!;
+      const start = startOf(pid)!;
+      await new Promise((r) => child.once("exit", r));
+      return { leader: { pid, start }, helpers: [] };
+    },
+  });
+  const dir = join(n.home, "hosts", "s-ended");
+  const ran = await vm.bound({ sessionId: "s-ended", dir, role: "worker" }).run({ cwd: n.cwd, argv: ["true"], timeoutSec: 5, env: envOf(n.home) });
+  expect(ran).toMatchObject({ exitCode: 0 });
+  const status = vm.status();
+  if (status.kind !== "process") throw new Error("VMs still on");
+  expect(status.why).toMatch(/^the last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after \d\d:\d\d UTC$/u);
+  for (const raw of ["fleetd-init", "sysrq", "[ ", "|", "EADDRINUSE", "hello"]) expect(status.why).not.toContain(raw);
+  // Behind it: the guest's own error line first, then the console as it ended.
+  const lines = status.detail!.split("\n");
+  expect(lines[0]).toBe("2026-11-19T23:57:42.101Z WARN sandbox-guest: can't listen at /run/fleetd/link.sock: listen EADDRINUSE: address already in use /run/fleetd/link.sock");
+  expect(lines[1]).toStartWith("the VM ended before its guest answered");
+  expect(lines.at(-1)).toBe("[    1.130301] reboot: Power down");
+  // The hub keeps the sentence and the detail apart: the line people read never holds the console.
+  const load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes"> = {};
+  reportVm(load, status);
+  const shown = withSandbox({ why: "memory 60 GB, about 4 GB an agent" }, load.sandbox);
+  expect(shown.sandbox).toEqual({ kind: "process", why: status.why, detail: status.detail! });
+  expect(shown.why).not.toContain("sandbox-guest");
+  vm.close();
+});
+
 test("a box's share is watched: at a quarter of its fd limit the guest forgets its files, and the node says so", async () => {
   const n = node();
   let open = 10;

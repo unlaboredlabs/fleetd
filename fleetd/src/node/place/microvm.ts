@@ -119,7 +119,7 @@ const TOOL_DIRS = ["browser/agent-browser", "device/agent-device", "build-slots/
 /** Where this machine's agents run, and why when it's a plain process (or, in VMs, which of them don't and why:
  * `why` and `fix` on `microvm`): `fix` the command that fixes it, `expected` when
  * it's by choice or the machine's design (turned off, macOS, the VM files on their way), nothing to fix. */
-export type VmStatus = { kind: "microvm"; why?: string; fix?: string; accountsOnly?: true } | { kind: "process"; why: string; fix?: string; expected?: true };
+export type VmStatus = { kind: "microvm"; why?: string; fix?: string; accountsOnly?: true } | { kind: "process"; why: string; fix?: string; expected?: true; detail?: string };
 
 /** What a box needs started: its dir, its view, its port, the fleetd binary the guest runs, the tools, the check, and
  * this machine's addresses its network keeps out. */
@@ -210,7 +210,7 @@ export class MicroVm {
   #net: NetTools | undefined;
   #watch: ReturnType<typeof setInterval>;
   #warned = new Set<string>();
-  #failed: { until: number; why: string } | undefined;
+  #failed: { until: number; why: string; detail?: string } | undefined;
   #shareWatch: ReturnType<typeof setInterval>;
   #shares = new Map<string, ShareWatch>();
   #counting = false;
@@ -356,7 +356,8 @@ export class MicroVm {
       return { kind: "process", why: `node.json "sandbox" is ${JSON.stringify(off)}: "process" turns VMs off and "microvm" (or no key) on, so they're off until it says which` };
     if (this.#failed && now < this.#failed.until) {
       const at = new Date(this.#failed.until).toISOString().slice(11, 16);
-      return { kind: "process", why: `the last VM didn't start: ${this.#failed.why}; the node tries VMs again after ${at} UTC` };
+      const { detail } = this.#failed;
+      return { kind: "process", why: `the last VM didn't start: ${this.#failed.why}; the node tries VMs again after ${at} UTC`, ...(detail ? { detail } : {}) };
     }
     if (this.o.fleetd.length !== 1) return { kind: "process", why: "this node runs fleetd from source, and a VM runs only its built binary", expected: true };
     if (/\s/u.test(this.o.fleetd[0]!)) return { kind: "process", why: `the fleetd binary's path has a space in it (${this.o.fleetd[0]})` };
@@ -374,10 +375,20 @@ export class MicroVm {
     return { kind: "microvm" };
   }
 
-  /** A box couldn't boot or reach Claude: new sessions run as plain processes for FAILED_MS, and say why. */
-  failed(why: string, now = Date.now()): void {
-    this.#failed = { until: now + FAILED_MS, why };
+  /** A box couldn't boot or reach Claude: new sessions run as plain processes for FAILED_MS, and say why (`detail`:
+   * what a person looks into only when they want to, such as the VM's console). */
+  failed(why: string, now = Date.now(), detail?: string): void {
+    this.#failed = { until: now + FAILED_MS, why, ...(detail ? { detail } : {}) };
     this.#checked = undefined;
+  }
+
+  /** A box didn't come up for session `session`: the node's log says so, with the console's detail, and so does the
+   * machine's status until VMs are tried again. */
+  #noBox(what: string, session: string, error: unknown): void {
+    const why = (error as Error).message;
+    const detail = error instanceof BootFailed ? error.detail : undefined;
+    console.warn(`${nowIso()} WARN ${what} {"sessionId":"${session}","error":${JSON.stringify(why)}${detail ? `,"detail":${JSON.stringify(detail)}` : ""}}`);
+    this.failed(why, undefined, detail);
   }
 
   #tools(): VmTools | undefined {
@@ -452,8 +463,7 @@ export class MicroVm {
       p = this.#provision(s, r.cwd, r.env ?? {});
       held = await this.#box(s, needs({ cwd: r.cwd, env: p.env, argv: r.argv, node: this.o.home, session: s.sessionId, rw: [this.#update(), ...p.rw], ro: [...this.#base(s), ...p.ro] }), undefined, true);
     } catch (error) {
-      console.warn(`${nowIso()} WARN no VM for a setup command: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
-      this.failed((error as Error).message);
+      this.#noBox("no VM for a setup command: it runs as a plain process", s.sessionId, error);
       return processPlace.run(r);
     }
     return held.box.run({ ...r, env: await this.#inBox(p.env, r.cwd) });
@@ -566,8 +576,7 @@ export class MicroVm {
     try {
       held = await this.#box(s, need, l.scope);
     } catch (error) {
-      console.warn(`${nowIso()} WARN no VM for the session: it runs as a plain process {"sessionId":"${s.sessionId}","error":${JSON.stringify((error as Error).message)}}`);
-      this.failed((error as Error).message);
+      this.#noBox("no VM for the session: it runs as a plain process", s.sessionId, error);
       await this.#drop(l.dir);
       return processPlace.start(l);
     }
@@ -690,8 +699,7 @@ export class MicroVm {
       return { box, view, record };
     } catch (error) {
       await destroyBox(s.dir);
-      const tail = consoleTail(s.dir);
-      throw new Error(`${(error as Error).message}${tail ? `; the VM's console ended: ${tail}` : ""}`);
+      throw bootFailure((error as Error).message, consoleOf(s.dir));
     }
   }
 
@@ -989,14 +997,45 @@ const userName = () => {
 /** This machine's user, which the guest runs the agent as. */
 const ids = () => ({ uid: process.getuid?.() ?? 1000, gid: process.getgid?.() ?? 1000 });
 
-/** The last lines of the VM's console, for why it didn't come up. */
-function consoleTail(dir: string): string {
+/** The VM's console, for why it didn't come up. */
+function consoleOf(dir: string): string {
   try {
-    const text = readFileSync(join(dir, "console.log"), "utf8").trim();
-    return text.split("\n").slice(-4).join(" | ").slice(-600);
+    return readFileSync(join(dir, "console.log"), "utf8");
   } catch {
     return "";
   }
+}
+
+/** A box that didn't come up: why in plain words, and `detail`, what its console said, for whoever looks into it. */
+export class BootFailed extends Error {
+  constructor(
+    why: string,
+    readonly detail: string,
+  ) {
+    super(why);
+  }
+}
+
+/** The lines of a VM's console kept in a failed boot's detail. */
+const DETAIL_LINES = 12;
+
+/**
+ * Why a box didn't come up (`error`, the dial's word), in plain words, with its console behind it: the guest's own last
+ * error line (sandbox-guest's or its init's) first, then the console's last lines. The words never quote the console.
+ */
+export function bootFailure(error: string, console: string): BootFailed {
+  const lines = console.replaceAll("\r", "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+  const ended = lines.some((l) => /^fleetd-init: sandbox-guest ended \(/u.test(l));
+  const own = lines.filter((l) => / (?:WARN|ERROR) sandbox-guest: /u.test(l) || (/^fleetd-init: /u.test(l) && !/^fleetd-init: sandbox-guest ended \(/u.test(l))).at(-1);
+  const why = ended
+    ? "fleetd's helper in it stopped right after the VM booted"
+    : own
+      ? "the VM stopped while it was being set up"
+      : error.startsWith("the VM ended before its guest answered")
+        ? "the VM stopped right after it booted"
+        : error;
+  const detail = [...(own ? [own] : []), ...(why === error ? [] : [error]), ...lines.slice(-DETAIL_LINES)].join("\n");
+  return new BootFailed(why, detail);
 }
 
 /** The kernel's command line: the read-only root, fleetd's init and what it reads (sandbox/image/init.sh), and the

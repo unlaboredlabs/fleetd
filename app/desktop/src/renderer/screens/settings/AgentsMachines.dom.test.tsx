@@ -264,3 +264,20 @@ it("says where each machine's agents run: a VM, or a process with why and its fi
   expect(vm("devbox")?.textContent.replace(why, "")).not.toContain("macOS");
   expect(vm("devbox")?.textContent).not.toContain("Run on");
 });
+
+it("says a VM that didn't start in one plain sentence, its console only behind Show details", async () => {
+  const why = "the last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after 00:08 UTC";
+  const detail = "2026-11-19T23:48:34.000Z WARN sandbox-guest: can't listen at /run/fleetd/link.sock\nfleetd-init: sandbox-guest ended (1): powering off\n[    1.126180] sysrq: Power Off";
+  await render("hub", true, {
+    ...slots,
+    perMachine: [{ machineId: "devbox", cap: 10, auto: 10, running: 7, why: `memory 60 GB, about 4 GB an agent; agents run as plain processes: ${why}`, sandbox: { kind: "process", why, detail } }],
+  });
+  const vm = () => section("devbox").querySelector<HTMLElement>("[data-vm]")!;
+  expect(vm().textContent).toContain("The last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after 00:08 UTC.");
+  for (const raw of ["sandbox-guest", "fleetd-init", "sysrq"]) expect(vm().textContent).not.toContain(raw);
+  const toggle = () => [...vm().querySelectorAll("button")].find((b) => /details/u.test(b.textContent ?? ""))!;
+  expect(toggle().textContent).toBe("Show details");
+  await act(async () => toggle().click());
+  expect(toggle().textContent).toBe("Hide details");
+  expect(vm().querySelector("pre")?.textContent).toBe(detail);
+});

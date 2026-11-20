@@ -452,3 +452,38 @@ test("a local VM's clock is set from this machine's on each link; a guest that c
   expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
   box.close();
 }, 20_000);
+
+test("a guest takes over the link socket a killed one left (a session's next VM boots over its disk); a live guest's it leaves", async () => {
+  const b = await standIn();
+  const sock = join(b.dir, "link.sock");
+  const again = () =>
+    Bun.spawn([process.execPath, MAIN, "sandbox-guest", "--listen", sock, "--dir", join(b.dir, "hosts"), "--loopback", "127.0.0.2"], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  // The first guest still answers: a second doesn't take its socket.
+  const second = again();
+  expect(await within(second.exited, 10_000, "the second guest's end")).toBe(1);
+  expect(await new Response(second.stderr).text()).toContain("EADDRINUSE");
+  // Killed as the node ends a VM: its socket stays behind, and nothing answers it.
+  b.proc.kill("SIGKILL");
+  await b.proc.exited;
+  expect(existsSync(sock)).toBe(true);
+  const third = again();
+  guests.push({ proc: third, dir: b.dir });
+  const box = await within(
+    (async () => {
+      for (;;) {
+        if (third.exitCode !== null) throw new Error(`the guest ended (${third.exitCode}): ${await new Response(third.stderr).text()}`);
+        try {
+          return await Box.open({ session: "s-again", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks() });
+        } catch {
+          await Bun.sleep(20);
+        }
+      }
+    })(),
+    10_000,
+    "the new guest's hello",
+  );
+  expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
+  box.close();
+}, 30_000);
