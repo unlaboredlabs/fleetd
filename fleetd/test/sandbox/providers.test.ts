@@ -216,6 +216,9 @@ describe("refusals in plain words", () => {
     ["boat", 402, { ok: false, code: "billing_required", message: "Add a card", error: { code: "billing_required", message: "Add a card", status: 402 } }, "billing", /billing is sorted out/],
     ["boat", 429, { ok: false, code: "limit_reached", message: "100 at once" }, "limit", /sandboxes at once/],
     ["boat", 429, { ok: false, code: "rate_limited", message: "12 per minute", window: "minute" }, "rate", /sandbox starts/],
+    // An hour's or a day's starts don't free within a minute: the plan's limit, with its longer wait (W756 review).
+    ["boat", 429, { ok: false, code: "rate_limited", message: "25 per hour", window: "hour" }, "limit", /sandbox starts an hour/],
+    ["boat", 429, { ok: false, code: "rate_limited", message: "75 per day", error: { code: "rate_limited", details: { window: "day" } } }, "limit", /sandbox starts a day/],
     ["boat", 403, { ok: false, code: "trial_machine_class_not_allowed", message: "Needs a paid plan" }, "billing", /doesn't include that sandbox size/],
   ];
   for (const [id, status, body, reason, words] of cases) {

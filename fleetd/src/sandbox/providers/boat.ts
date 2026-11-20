@@ -296,9 +296,15 @@ function refine(a: Answer, words: string): { reason: "billing" | "limit" | "rate
       return { reason: "billing", message: `boat.dev's plan for this account doesn't include that sandbox size (${words}).` };
     case "trial_compute_limit_reached":
       return { reason: "billing", message: `boat.dev's free trial hours are used up (${words}).` };
-    case "rate_limited":
-      // Its starts a minute (or an hour, a day) are used up: they free by themselves, nothing for anyone to raise.
-      return { reason: "rate", message: `boat.dev's limit on sandbox starts is reached for now (${words}).` };
+    case "rate_limited": {
+      // It names the window whose starts are used up (docs.boat.dev/limits): a minute's free by themselves within one,
+      // so asked again then (`rate`); an hour's or a day's don't, and a retry each minute wouldn't help: the plan's
+      // limit, with its wait.
+      const b = a.body;
+      const window = String(b?.window ?? b?.error?.window ?? b?.details?.window ?? b?.error?.details?.window ?? "");
+      if (window === "minute") return { reason: "rate", message: `boat.dev's limit on sandbox starts a minute is reached for now (${words}).` };
+      return { reason: "limit", message: `boat.dev's limit on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached (${words}).` };
+    }
     case "limit_reached":
       return { reason: "limit", message: `boat.dev's limit on sandboxes at once is reached (${words}).` };
     case "snapshot_not_found":
