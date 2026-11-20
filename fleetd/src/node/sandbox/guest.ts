@@ -46,12 +46,12 @@ import { timingSafeEqual } from "node:crypto";
 import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
-import { HOST, Mux, NODE_CHANNELS, type Target } from "./mux.ts";
+import { GUEST_PROTOCOL, HOST, type HostInfo, Mux, NODE_CHANNELS, READ_CHUNK, type Target } from "./mux.ts";
 import { BoxTailnet } from "./tailnet_box.ts";
 import { setClock, setUpGuest, watchOom } from "./system.ts";
 
-/** Bumped when the link's frames or control messages change incompatibly. */
-export const GUEST_PROTOCOL = 1;
+export { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./mux.ts";
+
 export const GUEST_COMMAND = "sandbox-guest";
 const START_TIMEOUT_MS = 10_000;
 /** How long an ended connection to the session host may take to close before it is cut. */
@@ -61,12 +61,8 @@ const CONFIRM_MS = 200;
 export const IDLE_MS = 10 * 60_000;
 /** How long a once guest outlives its session host, for the node to take the host's last lines. */
 const AFTER_HOST_MS = 2_000;
-/** The most bytes one `read` answers: a control message's frame takes 1 MiB, base64 included. */
-export const READ_CHUNK = 512 * 1024;
 /** The variable holding the per-box secret a hosted guest takes its link with. */
 export const SECRET_ENV = "FLEETD_BOX_SECRET";
-
-export type HostInfo = { protocol: number; refused: Registration["refused"] };
 
 type Options = {
   listen: string;

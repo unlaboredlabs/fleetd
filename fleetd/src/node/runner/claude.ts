@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { homeDir, type Env } from "../util.ts";
 import type { Effort } from "../../shared/contracts.ts";
+import { SUPPORTED, TESTED } from "./claude_pins.ts";
 import { autoupdaterOff } from "./install.ts";
 import { accountOverrides, loginLabel, proxyOf } from "./claude/setup.ts";
 import {
@@ -17,10 +18,7 @@ import type { RunnerInfo, RuntimeMode, SessionRole } from "../sessions/types.ts"
 
 /** Every profile's own model (guide.rs MODEL). */
 export const MODEL = "claude-opus-5-5";
-export const SUPPORTED = ">=2.1.300, <2.2.0";
-export const TESTED = "2.1.314";
-/** The claude the runner's recorded fixtures came from. */
-export const RECORDED = "2.1.302";
+export { RECORDED, SUPPORTED, TESTED } from "./claude_pins.ts";
 const INSTALL_FIX = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /** A profile's own model and effort: `medium` at effort medium and any other at high. */

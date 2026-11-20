@@ -110,6 +110,9 @@ imported.
 | `fleetd/gen/migrations` | the hub's migrations in order, each with its SQL |
 | `fleetd/hub/<area>/<module>` | the hub's pure modules, each at its own path under `src/hub` |
 | `fleetd/node/<area>/<module>` | a node module the service shares, pure as the hub's are (`screens/settings`) |
+| `fleetd/box/mux`, `fleetd/box/host_link`, `fleetd/box/box` | box side: the link to a box's guest (`Mux`, its frames, `GUEST_PROTOCOL`: `src/node/sandbox/mux.ts`), the lines to its session host (`HostLink.open`, `PROTOCOL`, `RunnerEvent`, `SessionCommand`: `src/node/runner/host_link.ts`) and a whole box over that link (`Box`: `src/node/sandbox/box.ts`, with its node.sock and build-slot connections answered by the `lead` and `slots` it's given) |
+| `fleetd/box/providers` | box side: the hosted providers' clients (`provider`, `ProviderError`, `GUEST_PORT`, `SECRET_HEADER`: `src/sandbox/providers`) and the template's recipe (`hostedDockerfile`, `templateName`, `CLAUDE_TESTED`) |
+| `fleetd/box/bootstrap`, `fleetd/box/files` | box side: fleetd handed to a fresh box (`bootArgv`, `firstWord`, `deliver`: `src/node/sandbox/remote/bootstrap.ts`) and what runs in a box for its files (`BoxFs`, `sh`, `prepare`, `unpack`: `src/node/sandbox/remote/box_files.ts`) |
 
 An exported module is pure: neither it nor anything it imports, a type included, touches the database, the
 filesystem, a process, the network, the machine's environment, the `Hub` or an npm package (the fakes open sockets,
@@ -118,8 +121,14 @@ process as the hub does. In `fleetd/`, `bun test/pkg/purity.ts` prints where eve
 and `src/gen` stands: exported, pure and left out with why (`LEFT_OUT`), pure but for a type it imports, impure only
 through an import.
 
+A box-side module (`fleetd/box/…`) is the second kind: box side, sockets and fetch only, no fs, process or env. It
+drives a sandbox box, and a service with no node (fleetd hosted) runs it just as the node does, so the code is shared,
+never forked. It may open sockets and WebSockets and call `fetch`, and otherwise holds to the same rule: no
+filesystem, process, environment, database or `Hub`. So what it needs of the node (the answer to a node.sock call, a
+build slot) comes in as an option, and the node passes its own.
+
 - **Adding one.** One line in `exports`, the module at its own path. `test/pkg/purity.test.ts` fails while it or
-  anything it imports isn't pure; `test/pkg/outside.test.ts` installs the package in a throwaway project outside the
+  anything it imports isn't pure (a box-side one: does more than the network); `test/pkg/outside.test.ts` installs the package in a throwaway project outside the
   repo, imports every entry and typechecks it. Don't export a module by copying it: split what is pure into its own
   file, which the hub then imports too.
 - **Changing one.** An exported module that needs the database or the `Hub` loses its line, and one that moves gets
