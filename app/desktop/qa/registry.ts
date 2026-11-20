@@ -193,6 +193,14 @@ export const fixtures = [
   "cloud-github-installed",
   "cloud-github-connect-first",
   "cloud-github-not-set-up",
+  // ...and Billing on a team: no plan, a plan with credits, a declined card, the cap reached, fleetd's computers not on
+  // yet, and the team not answering.
+  "cloud-billing-none",
+  "cloud-billing-plan",
+  "cloud-billing-failed",
+  "cloud-billing-cap",
+  "cloud-billing-off",
+  "cloud-billing-unreachable",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -4257,6 +4265,24 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Email" }).fill("eve@example.com");
       await page.getByRole("button", { name: "Invite", exact: true }).click();
       await page.getByRole("alert").filter({ hasText: "limit of people" }).waitFor();
+    },
+  },
+  // Billing on a fleetd cloud team (fixtures/cloud, the team's answer from src/shared/billing.samples.ts): no plan and
+  // no credits, the Team plan with credits and use, a declined card, the cap reached, fleetd's computers not on yet,
+  // and the team not answering; then Add credits' menu open. A self-hosted hub has no Billing row (settings.sheet).
+  {
+    id: "settings.hub.billing",
+    route: "#/settings/hub/billing",
+    fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-off", "cloud-billing-unreachable"],
+  },
+  {
+    id: "settings.hub.billing",
+    route: "#/settings/hub/billing",
+    fixtures: ["cloud-billing-plan"],
+    variant: "add-credits",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add credits" }).click();
+      await page.getByRole("menu").waitFor();
     },
   },
   // No hub and nothing kept from one: connect first, never Loading… for ever.

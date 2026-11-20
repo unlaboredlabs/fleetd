@@ -29,6 +29,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "project-vault": "Vault",
   "hub.people": "People",
   "hub.machines": "Machines",
+  "hub.billing": "Billing",
   "hub.updates": "Updates",
   "hub.profiles": "Agents",
   "hub.tools": "Tools & skills",
@@ -118,6 +119,11 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.invites", label: "Waiting to join", tab: "hub.people", keywords: ["invites", "open", "pending", "revoke"] },
   { key: "hub.links", label: "Hub links", tab: "hub.people", keywords: ["hub link", "link key", "other hub", "revoke", "everyone"] },
   page("hub.machines", ["machine", "computer", "box", "repair", "remove", "devices"]),
+  page("hub.billing", ["billing", "payment", "pay", "stripe", "invoice", "card", "subscription"]),
+  { key: "hub.billing.plan", label: "Plan", tab: "hub.billing", keywords: ["plan", "solo", "team", "scale", "upgrade", "subscription", "price"] },
+  { key: "hub.billing.credits", label: "Credits", tab: "hub.billing", keywords: ["credits", "top up", "add credits", "balance", "buy"] },
+  { key: "hub.billing.usage", label: "Computer time", tab: "hub.billing", keywords: ["usage", "hours", "computer time", "spend", "cost"] },
+  { key: "hub.billing.cap", label: "Spend cap", tab: "hub.billing", keywords: ["cap", "limit", "budget", "spend cap", "monthly"] },
   { key: "hub.add-machine", label: "Add machine", tab: "hub.machines", keywords: ["machine", "ssh", "join", "computer", "this computer"] },
   { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "browser", "android", "desktop", "mac", "hosts"] },
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
@@ -149,10 +155,10 @@ const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];
 
 /**
  * What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. The Vault's
- * pages only on a hub that serves it (`vault`).
+ * pages only on a hub that serves it (`vault`); Billing only on a fleetd cloud team (`billing`).
  */
-export const optionsFor = (administers: boolean, vault = true): ReadonlyArray<SettingsOption> =>
-  OPTIONS.filter((o) => (administers || !isHubTab(o.tab)) && (vault || !VAULT_TABS.includes(o.tab)));
+export const optionsFor = (administers: boolean, vault = true, billing = false): ReadonlyArray<SettingsOption> =>
+  OPTIONS.filter((o) => (administers || !isHubTab(o.tab)) && (vault || !VAULT_TABS.includes(o.tab)) && (billing || o.tab !== "hub.billing"));
 
 const words = (q: string) => q.toLowerCase().split(/\s+/u).filter(Boolean);
 

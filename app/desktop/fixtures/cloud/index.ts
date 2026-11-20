@@ -5,8 +5,11 @@
 // `cloud-admin`, the Hub group as a team's owner sees it, the hub's own controls (Updates, Restart hub, adding a machine
 // over SSH, setup steps, creating a GitHub App) gone, as hub_info's leftOut says; and `cloud-github-*`, its GitHub step
 // with fleetd's one App: to install, installed, the person's own GitHub to connect first, and a service without the
-// App. Without a `cloud` section every other fixture is today's app.
+// App; and `cloud-billing-*`, Settings › Hub › Billing in each state (src/shared/billing.samples.ts): no plan, a plan
+// with credits, a declined card, the cap reached, fleetd's computers not on yet, and the service not answering.
+// Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
+import { BILLING_SAMPLES, type BillingSample } from "../../src/shared/billing.samples.ts";
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
@@ -115,6 +118,10 @@ const github = (base: Fixture, name: string, note: string, app: JsonObject | nul
   return f;
 };
 
+/** Billing on the team acme as its owner, the team answering `GET /billing/v1` as `sample`. */
+const billing = (base: Fixture, sample: BillingSample, note: string): Fixture =>
+  admin(base, `cloud-billing-${sample}`, note, { billing: BILLING_SAMPLES[sample] as unknown as JsonObject });
+
 export default defineGroup({
   fixtures: (base) => [
     unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own hub under it.", {}),
@@ -188,6 +195,14 @@ export default defineGroup({
       });
       return f;
     })(),
+    billing(base("typical"), "none", "Billing on a cloud team with no plan and no credits: one line with Add credits, Pick a plan, nothing used."),
+    billing(base("typical"), "plan", "Billing on the Team plan with credits left, $10 lapsing within 30 days, two sizes used and a cap."),
+    billing(base("typical"), "failed", "Billing after the Team plan's card was declined: one line with Update card, and the plan ends."),
+    billing(base("typical"), "cap", "Billing with this month's spend cap reached: one line with Raise cap."),
+    billing(base("typical"), "off", "Billing before fleetd's computers are on for teams: one line, nothing to buy."),
+    admin(base("typical"), "cloud-billing-unreachable", "Billing when the team doesn't answer: why, and Try again.", {
+      billingFailure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." },
+    }),
     (() => {
       const f = Fixture.from(base("typical"), "cloud-account-signed-out", "Settings on a build with fleetd cloud, not signed in.");
       f.cloud = { signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }] } } };

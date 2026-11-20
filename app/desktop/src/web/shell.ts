@@ -23,6 +23,7 @@ import { cleanLabel, HUB_COLORS, type HubColor, type HubEntry, type HubId } from
 import type { CallRequest, FileRequest } from "../shared/ipc";
 import { readFile } from "../shared/transfer";
 import type { UpdatesState } from "../shared/updates";
+import { openBilling, readTeamBilling, setBillingCap } from "../main/cloud/billing";
 import { connectGithub, githubRepos, installGithub } from "../main/cloud/github";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
 import { externalUrl } from "../main/external";
@@ -365,6 +366,19 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       connectGithub: (hub, request) => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : connectGithub(teamFetch, team, request, deps.go);
+      },
+      billing: (hub) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : readTeamBilling(teamFetch, team);
+      },
+      // Stripe's page is this tab's trip too, as GitHub's is: it comes back to the web app (a pop-up would be blocked after the call).
+      billingOpen: (hub, what) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : openBilling(teamFetch, team, what, (url) => Promise.resolve(deps.go(url)));
+      },
+      billingCap: (hub, capCents) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : setBillingCap(teamFetch, team, capCents);
       },
     },
     system: { hostName: () => Promise.resolve("") },
