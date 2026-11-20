@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, HubState } from "../../desktop";
-import { countValue, dmsShown, glyphOf, joinPages, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, withNewest, withOlder, type AgentMessage, type DmReceipt } from "./model";
+import { countValue, dmsShown, glyphOf, isNote, joinPages, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, withNewest, withOlder, type AgentMessage, type DmReceipt } from "./model";
 
 const AT = "2026-11-08T23:04:00.000Z";
 const P = { machineId: "devbox", projectId: "fleetd" };
@@ -60,6 +60,15 @@ describe("a bot's DMs between agents", () => {
   it("reads a row out as one sentence", () => {
     expect(rowLabel(dm("M1", [to("T2577", "delivered")], "Rebased."), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Delivered.");
     expect(rowLabel(dm("M1", [to("T2577", "not_woken")], "Rebased"), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Didn't wake it.");
+  });
+
+  it("labels a note to the bot as sent to the bot, with no recipient's outcome", () => {
+    const note: AgentMessage = { ...dm("M2", [], "Moving the cloud pin in #404"), toBot: true };
+    expect(isNote(note)).toBe(true);
+    expect(route(note)).toBe("T2573 → the bot");
+    expect(rowOutcome(note)).toBe("Note to the bot");
+    expect(glyphOf(note)).toBe("delivered");
+    expect(rowLabel(note, "23:04")).toBe("From T2573 to the bot, 23:04. Moving the cloud pin in #404. Note to the bot.");
   });
 
   it("counts them on the Info row once there are any", () => {
