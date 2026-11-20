@@ -243,7 +243,7 @@ export function sessionConfig(
   for (const server of k ? ofRole(k) : []) {
     if (server.name.toLowerCase() === FLEETD_SERVER) continue;
     try {
-      const resolved = resolve(home, server);
+      const resolved = relayed(server) ? resolveSignedIn(home, server) : resolve(home, server);
       servers[resolved.name] = relay && relayed(server) ? relay(resolved.name) : entry(resolved);
       secrets.push(...resolved.secrets);
     } catch (error) {
@@ -262,6 +262,17 @@ export function roleOf(role: string | undefined, branch: string | undefined): Mc
   if (role === "lead" || role === "assistant") return "lead";
   if (role === "worker") return branch ? "writer" : "reviewer";
   return undefined;
+}
+
+/** A signed-in server's secrets: where the session was told they are, else the team's. A bot's sign-in moved to the
+ * team (D592) after the session started, so its token is now kept under the global scope. */
+function resolveSignedIn(home: string, server: McpSessionServer): Resolved {
+  try {
+    return resolve(home, server);
+  } catch (error) {
+    if (!(error instanceof MissingSecrets) || server.secrets.kind === "global") throw error;
+    return resolve(home, { ...server, secrets: { kind: "global" } });
+  }
 }
 
 /** The server signs in with OAuth and is reached by URL: the session gets it through `fleetd mcp-relay`. */
@@ -288,7 +299,7 @@ export function relayHeaders(home: string, dir: string, name: string): RelayHead
   if (!server) throw new RelayRefused(`${name} isn't one of this session's signed-in servers`, true);
   let resolved: Resolved;
   try {
-    resolved = resolve(home, server);
+    resolved = resolveSignedIn(home, server);
   } catch (error) {
     if (!(error instanceof MissingSecrets)) throw error;
     throw new RelayRefused(`${name} is signed out`, true);

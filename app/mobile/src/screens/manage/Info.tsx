@@ -29,7 +29,6 @@ import { artifactsShown } from "../artifacts/model";
 import { vaultShown } from "../vault/model";
 import { countValue, dmsShown } from "../dms/model";
 import { TypedDelete } from "./TypedDelete";
-import { NamedServers } from "./Named";
 
 /** Each project's screen as last read this launch: it opens on that at once, as chat apps' profiles do, while its reads go again. */
 const lastRead = new Map<string, InfoRead>();
@@ -266,7 +265,6 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
       </ListSection>
 
-      {live ? <NamedServers project={p} /> : null}
 
       <ListSection
         header="Sign-ins"

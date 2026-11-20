@@ -6,7 +6,7 @@ import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
-import { getRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
+import { getRow, hubBoxKey, putRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
 import { registerLeadCalls } from "../src/hub/mcp_oauth/calls.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
@@ -93,9 +93,12 @@ const NODE_SECRET = crypto.getRandomValues(new Uint8Array(32));
 class FakeLink implements Link {
   calls: Record<string, unknown>[] = [];
   opened: string[] = [];
-  async request(_m: string, frame: Record<string, unknown>) {
+  /** The machine of each call. */
+  to: string[] = [];
+  async request(m: string, frame: Record<string, unknown>) {
     const call = frame.call as Record<string, unknown>;
     this.calls.push(call);
+    this.to.push(m);
     if (call.op === "mcp_secrets") {
       const set = call.set as { field: string; name: string; sealed: string }[];
       const keep = call.keep as { field: string; name: string }[];
@@ -158,6 +161,8 @@ function lab(serve: ServeStatus = async () => undefined) {
 }
 
 const scope = { kind: "project", machineId: "lab", projectId: "p1" } as const;
+/** Where a server that signs in is once signed in: the team's, for every bot (D592). */
+const team = { kind: "global" } as const;
 const sealedFor = (value: string) => Buffer.from(seal(publicKeyOf(NODE_SECRET), new TextEncoder().encode(value))).toString("base64");
 
 test("a bot's server keeps only its secrets' fingerprints, and its sessions get them by name", async () => {
@@ -252,7 +257,7 @@ test("signs in with a registered client and PKCE, hands the token to the machine
   const challenge = Buffer.from(new Bun.CryptoHasher("sha256").update(trade.code_verifier!).digest()).toString("base64url");
   expect(authorize.searchParams.get("code_challenge")).toBe(challenge);
   expect(link.opened).toEqual(["Bearer at-1"]);
-  const server = mcpServers(hub).get(scope, "docs")!;
+  const server = mcpServers(hub).get(team, "docs")!;
   expect(server.oauth).toMatchObject({ status: "connected", signingIn: false, expiresAt: "2026-11-08T11:00:00.000Z" });
   expect(server.headers).toEqual([{ name: "Authorization", kind: "secret", sealedOn: [expect.objectContaining({ machineId: "lab" })] }]);
   // Hub-side the tokens are sealed to the hub's own key: no row holds them in the clear.
@@ -265,11 +270,11 @@ test("signs in with a registered client and PKCE, hands the token to the machine
   await renewDue(hub);
   expect(svc.seen.tokens.at(-1)).toMatchObject({ grant_type: "refresh_token", refresh_token: "rt-1" });
   expect(link.opened.at(-1)).toBe("Bearer at-2");
-  expect(getRow(hub, scope, "docs")!.record.pushed).toBe(true);
+  expect(getRow(hub, team, "docs")!.record.pushed).toBe(true);
   // Removed: revoked where the service offers it.
-  await call("mcp_server_remove", { scope, name: "docs" });
+  await call("mcp_server_remove", { scope: team, name: "docs" });
   expect(svc.seen.revoked).toEqual(["rt-2"]);
-  expect(getRow(hub, scope, "docs")).toBeUndefined();
+  expect(getRow(hub, team, "docs")).toBeUndefined();
 });
 
 /**
@@ -477,7 +482,7 @@ test("a sign-in from an app on plain http calls back at the hub's https front, a
     const st = authorize.searchParams.get("state")!;
     const page = (await oauthCallback(new Request(`https://devbox.example.ts.net:4791/oauth/callback?state=${st}&code=c-1`), { hub } as never))!;
     expect(page.status).toBe(200);
-    expect(mcpServers(hub).get(scope, "canvas")!.oauth).toMatchObject({ status: "connected", signingIn: false });
+    expect(mcpServers(hub).get(team, "canvas")!.oauth).toMatchObject({ status: "connected", signingIn: false });
     // An app already on https keeps its own address.
     const own = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "https://hub.example.com" });
     expect(own.redirectUri).toBe("https://hub.example.com/oauth/callback");
@@ -498,7 +503,7 @@ async function signedIn(l: ReturnType<typeof lab>) {
   const started = await l.call("mcp_oauth_start", { scope, name: "docs", hubUrl: "http://127.0.0.1:4795" });
   const st = new URL(started.authorizeUrl as string).searchParams.get("state")!;
   await oauthCallback(new Request(`http://127.0.0.1:4795/oauth/callback?state=${st}&code=c-1`), { hub: l.hub } as never);
-  expect(mcpServers(l.hub).get(scope, "docs")!.oauth?.status).toBe("connected");
+  expect(mcpServers(l.hub).get(team, "docs")!.oauth?.status).toBe("connected");
 }
 
 const agentCaller: LeadCaller = { projectRef: { machineId: "lab", projectId: "p1" }, by: "lead:lab/p1", agent: { kind: "task", taskId: "T1" }, threadId: "th-1" };
@@ -520,10 +525,10 @@ test("an agent's relay has a turned-away token renewed, and one that renewing ca
   // The token just renewed was turned away too: Settings stops saying Connected, and the chat says what to do.
   const out = await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", refused: true });
   expect(out).toMatchObject({ renewed: "signed_out", problem: expect.stringContaining("turned away the sign-in fleetd had just renewed") });
-  const server = mcpServers(l.hub).get(scope, "docs")!;
+  const server = mcpServers(l.hub).get(team, "docs")!;
   expect(server.oauth).toMatchObject({ status: "signed_out", problem: expect.stringContaining("sign in again") });
   // Its dead token leaves the machine and the server's headers: no new session gets the server.
-  expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "project", projectId: "p1" }, server: "docs", set: [], keep: [] });
+  expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "global" }, server: "docs", set: [], keep: [] });
   expect(server.headers).toEqual([]);
   expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([]);
 
@@ -541,17 +546,111 @@ test("a sign-in the service ends takes its token off the machine, at once or onc
     // Due for renewal; the service refuses: signed out, but the machine can't be told yet.
     l.tick(31 * 60_000);
     await renewDue(l.hub);
-    expect(mcpServers(l.hub).get(scope, "docs")!.oauth?.status).toBe("signed_out");
-    expect(mcpServers(l.hub).get(scope, "docs")!.headers).toEqual([expect.objectContaining({ name: "Authorization" })]);
+    expect(mcpServers(l.hub).get(team, "docs")!.oauth?.status).toBe("signed_out");
+    expect(mcpServers(l.hub).get(team, "docs")!.headers).toEqual([expect.objectContaining({ name: "Authorization" })]);
     // Back: the next round takes the token off it.
     l.link.offline = false;
     await renewDue(l.hub);
-    expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "project", projectId: "p1" }, server: "docs", set: [], keep: [] });
-    expect(mcpServers(l.hub).get(scope, "docs")!.headers).toEqual([]);
+    expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "global" }, server: "docs", set: [], keep: [] });
+    expect(mcpServers(l.hub).get(team, "docs")!.headers).toEqual([]);
     const calls = l.link.calls.length;
     await renewDue(l.hub);
     expect(l.link.calls.length).toBe(calls);
   } finally {
     svc.seen.refuseRefresh = false;
   }
+});
+
+test("bots' own sign-ins become the team's at upgrade, the newest kept, with no new sign-in, and reach every bot's machine", async () => {
+  const l = lab();
+  await signedIn(l);
+  const client = getRow(l.hub, team, "docs")!.record.client!;
+  const at = "2026-11-08T10:00:00.000Z";
+  store(l.hub).machineUpsert({ machineId: "lab2", name: "lab2", nodeVersion: "1", status: "online", lastSeenAt: at, boxPubKey: Buffer.from(publicKeyOf(NODE_SECRET)).toString("base64") } as never);
+  store(l.hub).projectsUpsertMany("lab2", [{ machineId: "lab2", projectId: "p2", title: "P2", workspaceRoot: "/w2", lastActivityAt: at, threads: { running: 0, total: 0 } } as never]);
+  const sealHub = (v: string) => seal(publicKeyOf(hubBoxKey(l.hub)), new TextEncoder().encode(v));
+  // As an older hub left them: Paper signed in on each of two bots, each token on its own bot's machine.
+  for (const [m, p, signedInAt, token] of [
+    ["lab", "p1", "2026-11-01T10:00:00.000Z", "at-p1"],
+    ["lab2", "p2", "2026-11-05T10:00:00.000Z", "at-p2"],
+  ] as const) {
+    const bot = { kind: "project", machineId: m, projectId: p } as const;
+    mcpServers(l.hub).put({
+      scope: bot,
+      name: "paper",
+      enabled: true,
+      roles: { lead: true, writers: true, reviewers: true },
+      transport: { type: "http", url: `${svc.base}/mcp` },
+      env: [],
+      headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: m, fingerprint: "0000aaaa" }] }],
+      oauth: { status: "connected", issuer: client.issuer, signedInAt },
+      updatedAt: at,
+    });
+    putRow(l.hub, { scope: bot, name: "paper", record: { client, lifetimeMs: 3_600_000, expiresMs: Date.parse(at) + 3_600_000, pushed: true }, access: sealHub(token), refresh: sealHub(`rt-${p}`) });
+  }
+  const trades = svc.seen.tokens.length;
+  l.link.opened = [];
+  l.link.to = [];
+  await renewDue(l.hub);
+  // One team server, from the newest sign-in, its token on both machines under the team's scope.
+  const paper = mcpServers(l.hub).get(team, "paper")!;
+  expect(paper.oauth).toMatchObject({ status: "connected", signedInAt: "2026-11-05T10:00:00.000Z" });
+  expect(mcpServers(l.hub).perBot().filter((x) => x.name === "paper")).toEqual([]);
+  expect(getRow(l.hub, team, "paper")).toBeDefined();
+  expect(getRow(l.hub, { kind: "project", machineId: "lab", projectId: "p1" }, "paper")).toBeUndefined();
+  expect(l.link.opened).toEqual(["Bearer at-p2", "Bearer at-p2"]);
+  expect(l.link.to).toEqual(["lab", "lab2"]);
+  expect(l.link.calls.at(-1)).toMatchObject({ op: "mcp_secrets", scope: { kind: "global" }, server: "paper" });
+  expect(paper.headers![0]!.sealedOn!.map((x) => x.machineId)).toEqual(["lab", "lab2"]);
+  // Nobody signs in again: no code was traded.
+  expect(svc.seen.tokens.length).toBe(trades);
+  // Every bot's agents get it, from the team.
+  for (const r of [{ machineId: "lab", projectId: "p1" }, { machineId: "lab2", projectId: "p2" }]) {
+    expect(mcpServers(l.hub).sessionConfig(r).servers.find((x) => x.name === "paper")).toMatchObject({ secrets: { kind: "global" }, oauth: true });
+  }
+  // Each bot's machine forgets what it kept for the bot.
+  expect(mcpServers(l.hub).forgets()).toEqual(
+    expect.arrayContaining([
+      ["lab", { kind: "project", projectId: "p1" }, "paper"],
+      ["lab2", { kind: "project", projectId: "p2" }, "paper"],
+    ]),
+  );
+  // Done once.
+  const calls = l.link.calls.length;
+  await renewDue(l.hub);
+  expect(l.link.calls.length).toBe(calls);
+});
+
+test("any person connects and signs in to a service for the team; its connector or an admin disconnects it", async () => {
+  const l = lab();
+  const member: Caller = { ...l.person, keyId: "k2", grants: [{ role: "operate", machines: ["lab"] }], person: { personId: "p_bbbbbbbb", name: "Bo" } };
+  const other: Caller = { ...member, keyId: "k3", person: { personId: "p_cccccccc", name: "Cy" } };
+  const input = { scope: team, name: "paper", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [] };
+  const saved = (await l.call("mcp_server_set", input, member)).server as McpServer;
+  expect(saved).toMatchObject({ scope: team, connectedBy: "p_bbbbbbbb" });
+  // Not signed in yet: no bot's agents get it.
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([]);
+  // Anyone signs the team in.
+  expect((await l.call("mcp_oauth_start", { scope: team, name: "paper", hubUrl: "http://127.0.0.1:4795" }, other)).authorizeUrl).toBeString();
+  // Only its connector or an admin changes or disconnects it.
+  await expect(l.call("mcp_server_set", { ...input, enabled: false }, other)).rejects.toMatchObject({ code: "forbidden" });
+  await expect(l.call("mcp_server_remove", { scope: team, name: "paper" }, other)).rejects.toMatchObject({ code: "forbidden" });
+  await l.call("mcp_server_remove", { scope: team, name: "paper" }, member);
+  expect(mcpServers(l.hub).get(team, "paper")).toBeUndefined();
+  // A server with a key of its own for every bot stays the admins'.
+  const keyed = { ...input, name: "crm", headers: [{ kind: "secret", name: "X-Key", sealed: [{ machineId: "lab", sealed: sealedFor("k") }] }] };
+  await expect(l.call("mcp_server_set", keyed, member)).rejects.toMatchObject({ code: "forbidden" });
+});
+
+test("a bot's server signs the team in: Connect from an older app, on a bot, ends as the team's", async () => {
+  const l = lab();
+  await l.call("mcp_server_set", { scope, name: "paper", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [] });
+  const started = await l.call("mcp_oauth_start", { scope, name: "paper", hubUrl: "http://127.0.0.1:4795" });
+  expect(started.scope).toEqual(team);
+  expect(mcpServers(l.hub).get(scope, "paper")).toBeUndefined();
+  const st = new URL(started.authorizeUrl as string).searchParams.get("state")!;
+  await oauthCallback(new Request(`http://127.0.0.1:4795/oauth/callback?state=${st}&code=c-1`), { hub: l.hub } as never);
+  expect(mcpServers(l.hub).get(team, "paper")!.oauth?.status).toBe("connected");
+  // The app still asking for it as the bot's reaches the team's.
+  expect(((await l.call("mcp_server_test", { scope, name: "paper" })).result as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
 });

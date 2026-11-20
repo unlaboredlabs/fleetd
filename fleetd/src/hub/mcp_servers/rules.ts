@@ -37,6 +37,31 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
   );
 }
 
+/**
+ * A server reached by URL with no key of its own: it signs in with an account. Such a server is connected once for the
+ * whole team (scope global, D592), and any person on the hub connects it, as anyone adds to the team vault.
+ */
+export const signsInOnly = (input: Pick<McpServerSetInput, "transport" | "env" | "headers">) =>
+  input.transport.type !== "stdio" &&
+  (input.env ?? []).length === 0 &&
+  (input.headers ?? []).every((v) => v.kind === "keep" && v.name.toLowerCase() === "authorization");
+
+/**
+ * Whether `caller` may connect, change or disconnect the team's signed-in server `server` (none: a new one): any
+ * person may connect one; once it is there, the one who connected it or an admin (as with vault items).
+ */
+export function mayConnect(caller: AgentKeyInfo, server: McpServer | undefined): void {
+  if (caller.kind !== "human" || caller.person === undefined) {
+    throw new ToolError("forbidden", "Only a person connects a service for the team.", "Connect it in the app: Settings › Vault › Integrations.");
+  }
+  if (server === undefined || allowsEverywhere(caller, "admin") || server.connectedBy === caller.person.personId) return;
+  throw new ToolError(
+    "forbidden",
+    `${server.name} was connected for the team by someone else: only they or an admin change or disconnect it.`,
+    "Ask them or an admin. You can still sign in to it again with Sign in.",
+  );
+}
+
 /** A scope as the contracts take it. */
 export function checkScope(scope: unknown): McpScope {
   const s = scope as McpScope | undefined;

@@ -8,7 +8,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { McpServersSection } from "./Integrations";
+import { McpServersSection, TeamIntegrations } from "./Integrations";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -102,7 +102,8 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async () => {
+/** A bot's MCP servers, or the team's integrations (the Vault page's section). */
+const render = async (which: "bot" | "team" = "bot") => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -129,7 +130,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={layer}>
-          <McpServersSection projectRef={ref} />
+          {which === "bot" ? <McpServersSection projectRef={ref} /> : <TeamIntegrations />}
         </DataProvider>
       </UiProvider>,
     );
@@ -183,8 +184,8 @@ const hubCalls = () => JSON.stringify(calls);
 describe("a bot's MCP servers", () => {
   it("offers to add an MCP server, and says the lead's writes follow Approvals", async () => {
     await render();
-    // Only the named services, each ready to connect.
-    expect([...document.querySelectorAll('[role="listitem"]')].map((r) => r.getAttribute("aria-label"))).toEqual(["Paper"]);
+    // Nothing yet, and no Paper: the team connects it once, on the Vault page (D592).
+    expect([...document.querySelectorAll('[role="listitem"]')].map((r) => r.getAttribute("aria-label"))).toEqual([]);
     expect(button("Add an MCP server")).toBeDefined();
     expect(document.body.textContent).toContain("Reads run unasked; anything else follows Approvals.");
     expect(document.body.textContent).not.toMatch(/xaq/iu);
@@ -464,7 +465,7 @@ describe("an MCP server that signs you in", () => {
 
 const PAPER = "https://mcp.paper.design";
 const paper = (oauth?: NonNullable<McpServer["oauth"]>, url = PAPER): McpServer => ({
-  scope: { kind: "project", ...ref },
+  scope: { kind: "global" },
   name: "paper",
   enabled: true,
   roles: { lead: true, writers: true, reviewers: true },
@@ -476,7 +477,7 @@ const paper = (oauth?: NonNullable<McpServer["oauth"]>, url = PAPER): McpServer 
 
 /** The hub says Paper's sign-in moved, as it does when the browser comes back. */
 const paperMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
-  project = [paper(oauth)];
+  global = [paper(oauth)];
   seq += 1;
   await act(async () => {
     send({ t: "event", event: { seq, at: AT, type: "mcp.oauth", summary: "paper's sign-in changed", data: { name: "paper" } } });
@@ -485,7 +486,7 @@ const paperMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
   await settle();
 };
 
-describe("named services", () => {
+describe("named services, connected once for the team", () => {
   beforeEach(() => {
     started = { authorizeUrl: "https://app.paper.design/oauth/authorize?client_id=c1&state=s1", redirectUri: "https://devbox.example.ts.net/oauth/callback" };
     vi.stubGlobal("fleetd", {
@@ -497,20 +498,21 @@ describe("named services", () => {
       secret: {
         mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
           saved.push(request);
-          project = [paper()];
-          return Promise.resolve({ ok: true, output: { server: project[0] } });
+          global = [paper()];
+          return Promise.resolve({ ok: true, output: { server: global[0] } });
         },
       },
     });
   });
 
   it("connects Paper with one press: the manual form's server, then straight to its sign-in, then Connected with Test", async () => {
-    await render();
+    await render("team");
+    expect(document.querySelector("[data-team-integrations]")?.textContent).toContain("Integrations");
     expect(row("Paper").querySelector("[data-mark=paper]")).not.toBeNull();
     await click(button("Connect", row("Paper")));
     expect(saved).toEqual([
       {
-        scope: { kind: "project", ...ref },
+        scope: { kind: "global" },
         name: "paper",
         enabled: true,
         roles: { lead: true, writers: true, reviewers: true },
@@ -522,7 +524,7 @@ describe("named services", () => {
     ]);
     // Nothing else to press: the sign-in page is open.
     expect(dialog().textContent).toContain("Sign in to Paper");
-    expect(calls.find((c) => c.tool === "mcp_oauth_start")?.input).toEqual({ scope: { kind: "project", ...ref }, name: "paper", hubUrl: "http://devbox:4710" });
+    expect(calls.find((c) => c.tool === "mcp_oauth_start")?.input).toEqual({ scope: { kind: "global" }, name: "paper", hubUrl: "http://devbox:4710" });
     expect(opened).toEqual(["https://app.paper.design/oauth/authorize?client_id=c1&state=s1"]);
     await paperMoved({ status: "signed_out", issuer: "https://app.paper.design", signingIn: true });
     tested = { machineId: "devbox", result: { server: "Paper 1.0", tools: [{ name: "get_basic_info", policy: "read" }] } };
@@ -531,22 +533,24 @@ describe("named services", () => {
     const text = row("Paper").textContent;
     expect(text).toContain("Connected");
     expect(text).toContain("Works on devbox (Paper 1.0).");
+    // Titles and controls: nothing explaining under the row.
+    expect(text).not.toMatch(/every bot|renews/iu);
     expect(button("Test", row("Paper"))).toBeDefined();
     expect(() => button("Connect", row("Paper"))).toThrow();
   });
 
   it("shows a paper server added by hand at Paper's URL as Paper, not twice", async () => {
-    project = [paper({ status: "connected", issuer: "https://app.paper.design", signedInAt: AT }, "https://mcp.paper.design/")];
-    await render();
+    global = [paper({ status: "connected", issuer: "https://app.paper.design", signedInAt: AT }, "https://mcp.paper.design/")];
+    await render("team");
     expect([...document.querySelectorAll('[role="listitem"]')].map((r) => r.getAttribute("aria-label"))).toEqual(["Paper"]);
     expect(row("Paper").textContent).toContain("Connected");
     await click(button("Test", row("Paper")));
-    expect(calls.find((c) => c.tool === "mcp_server_test")?.input).toEqual({ scope: { kind: "project", ...ref }, name: "paper" });
+    expect(calls.find((c) => c.tool === "mcp_server_test")?.input).toEqual({ scope: { kind: "global" }, name: "paper" });
   });
 
   it("says a sign-in is needed again, and Sign in goes straight to Paper's page", async () => {
-    project = [paper({ status: "signed_out", issuer: "https://app.paper.design", signedInAt: AT, problem: "`app.paper.design` ended the sign-in (revoked), so you need to sign in again." })];
-    await render();
+    global = [paper({ status: "signed_out", issuer: "https://app.paper.design", signedInAt: AT, problem: "`app.paper.design` ended the sign-in (revoked), so you need to sign in again." })];
+    await render("team");
     const text = row("Paper").textContent;
     expect(text).toContain("Sign in needed");
     expect(text).toContain("app.paper.design ended the sign-in");
@@ -556,8 +560,8 @@ describe("named services", () => {
   });
 
   it("names it paper-2 where a server of another URL is already paper", async () => {
-    project = [{ ...crm, name: "paper" }];
-    await render();
+    global = [{ ...crm, scope: { kind: "global" }, name: "paper", oauth: { status: "connected", issuer: "https://login.crm.example" } }];
+    await render("team");
     expect(row("paper").textContent).toContain("mcp.crm.example");
     await click(button("Connect", row("Paper")));
     expect(saved[0]?.name).toBe("paper-2");
