@@ -12,7 +12,7 @@ import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, ProviderError } from "../../src/sandbox/providers/index.ts";
 import { Boxes, DOWN_MS, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, mirroredIn, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -106,6 +106,13 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   const echo = createServer((sock) => sock.pipe(sock)).listen(0, "127.0.0.1");
   await new Promise((r) => echo.once("listening", r));
   const cdp = (echo.address() as { port: number }).port;
+  // The order's variables, which the node rewrites when the hub renews its GitHub token, and the file that sources them.
+  const order = join(home, "orders", "p", "W1.sh");
+  mkdirSync(dirname(order), { recursive: true });
+  writeFileSync(order, "export GH_TOKEN=ghu_1\n");
+  const envFile = join(home, "sessions", "s1", "order-env.sh");
+  mkdirSync(dirname(envFile), { recursive: true });
+  writeFileSync(envFile, `if [ -r '${order}' ]; then . '${order}'; fi\n`);
   const link = await place.start({
     fleetd: [],
     dir,
@@ -113,8 +120,9 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
     program: "claude",
     args: [],
     cwd,
-    env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: "s1.mark", AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
+    env: { ...env, CLAUDE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: "s1.mark", AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
   });
+  expect(mirroredIn("s1")).toContain(order);
   expect(readRecord(dir)!.tcp).toEqual([cdp]);
   // In the box (its loopback here is 127.0.0.2), the port reaches this machine's proxy.
   const said = await new Promise<string>((resolve, reject) => {
@@ -140,6 +148,10 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
   const again = await placeAt(dir).adopt(dir);
   expect(again).toBeDefined();
   expect(again!.pid).toBe(link.pid);
+  // The re-adopted box goes on getting the order's variables as they change: a token renewed after the node's restart.
+  expect(mirroredIn("s1")).toContain(order);
+  // The node's own git there reads them as the agent's commands do.
+  expect(readRecord(dir)!.env?.CLAUDE_ENV_FILE).toBe(envFile);
   // In the box (its loopback here is 127.0.0.2), the relay reaches this machine's gateway again.
   const relayed = await new Promise<string>((resolve, reject) => {
     const c = connect({ host: "127.0.0.2", port: gw }, () => c.write("claude"));

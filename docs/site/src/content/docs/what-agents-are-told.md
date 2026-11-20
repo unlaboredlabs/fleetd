@@ -149,7 +149,9 @@ network, not a refused login), each agent running there is told once, however lo
 GitHub right now; keep your work committed and push when it's back." When a later scan reaches GitHub again, each is
 told once more, so agents don't each diagnose the outage and ask their lead. An agent launched while GitHub gives the
 hub no token for its order starts anyway, told that `GH_TOKEN` comes once GitHub answers
-([GitHub](/docs/github)).
+([GitHub](/docs/github)). A writer's brief says that when `gh` or `git push` is refused with 401, its `GH_TOKEN` is
+read again at each command and the hub renews it: it keeps its work committed and tries again for a few minutes
+before asking its lead, and never looks for another credential.
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -539,7 +541,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | never merges; the train does (prompt only); a refused GitHub token: keeps its work committed and tries again before asking its lead (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
 | `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `task.handoff` | after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume) |  |

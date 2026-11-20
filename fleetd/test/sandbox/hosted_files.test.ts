@@ -4,10 +4,10 @@
 // as commits and uncommitted changes; a bot's plain folder (no repo) goes in and comes back whole; a launch's named
 // files are mirrored; a chat file is read under the machine's rules.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { RunOutcome } from "../../src/node/cmd/index.ts";
-import { mirror, named, PLAIN, readChatFile, syncIn, syncOut, type BoxFs } from "../../src/node/sandbox/remote/files.ts";
+import { keepMirrored, mirror, mtimeOf, named, PLAIN, readChatFile, syncIn, syncOut, type BoxFs } from "../../src/node/sandbox/remote/files.ts";
 
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-files-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -170,6 +170,63 @@ test("a launch's files under the node's home are mirrored, but what has its own 
   expect(readFileSync(root + join(home, "orders/p/o.sh"), "utf8")).toBe("export GH_TOKEN=x\n");
   expect(existsSync(root + join(home, "browser/agent-browser/bin/agent-browser"))).toBe(true);
   expect(existsSync(root + join(home, "build-slots"))).toBe(false);
+});
+
+test("a renewed order variable goes into the box at the next look, and a send that failed goes again", async () => {
+  const home = join(tmp, "node-home-3");
+  mkdirSync(join(home, "orders/p"), { recursive: true });
+  const order = join(home, "orders/p/o.sh");
+  writeFileSync(order, "export GH_TOKEN=ghu_old\n");
+  const root = join(tmp, "box4");
+  await mirror(local, [order], root);
+  // The box's link is down for one send.
+  let down = 1;
+  const flaky: BoxFs = { ...local, write: async (path, bytes) => (down-- > 0 ? Promise.reject(new Error("link down")) : local.write(path, bytes)) };
+  const failures: (string | undefined)[] = [];
+  const stop = keepMirrored(flaky, [order], 10, { sent: new Map([[order, mtimeOf(order)]]), root, failed: (e) => failures.push(e?.message) });
+  try {
+    await Bun.sleep(30);
+    // The hub renewed the order's token (GitHub ended the old one): the node rewrites the order's file.
+    writeFileSync(order, "export GH_TOKEN=ghu_new\n");
+    utimesSync(order, new Date(), new Date(Date.now() + 5_000));
+    const inBox = root + order;
+    for (let i = 0; i < 200 && readFileSync(inBox, "utf8") !== "export GH_TOKEN=ghu_new\n"; i++) await Bun.sleep(10);
+    expect(readFileSync(inBox, "utf8")).toBe("export GH_TOKEN=ghu_new\n");
+    expect(failures).toEqual(["link down", undefined]);
+  } finally {
+    stop();
+  }
+});
+
+test("the box's work comes back with the order's GitHub token as the agent's commands read it now", async () => {
+  const origin = join(tmp, "origin-token.git");
+  sh(tmp, `git init -q --bare -b main ${origin}`);
+  const repo = join(tmp, "checkout-token");
+  sh(tmp, `git clone -q ${origin} ${repo}`);
+  writeFileSync(join(repo, "a.txt"), "a\n");
+  sh(repo, "git add -A && git commit -qm one && git push -q origin HEAD:main");
+  const cwd = join(tmp, "worktrees", "T2-token");
+  sh(repo, `git worktree add -q -b fleetd/T2-token ${cwd} origin/main`);
+  const root = join(tmp, "box5");
+  const base = await syncIn(local, { cwd, session: "s5", env: ENV, root });
+  // The box's git, on its PATH: it notes the GH_TOKEN it ran with, which its credential helper answers GitHub with.
+  const bin = join(tmp, "token-bin");
+  const said = join(tmp, "token-said");
+  mkdirSync(bin, { recursive: true });
+  const git = Bun.which("git")!;
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "\${GH_TOKEN:-none}" >> '${said}'\nexec '${git}' "$@"\n`);
+  chmodSync(join(bin, "git"), 0o755);
+  // The order's variables as the node keeps them now, renewed since the box started, and the file that sources them.
+  const order = join(tmp, "orders-token.sh");
+  writeFileSync(order, "export GH_TOKEN=ghu_renewed\n");
+  const envFile = join(tmp, "order-env-token.sh");
+  writeFileSync(envFile, `if [ -r '${order}' ]; then . '${order}'; fi\n`);
+  writeFileSync(join(root + cwd, "b.txt"), "b\n");
+  sh(root + cwd, "git add -A && git commit -qm two");
+  await syncOut(local, { cwd, session: "s5", base, env: { ...ENV, PATH: `${bin}:${ENV.PATH}`, CLAUDE_ENV_FILE: envFile }, root });
+  const tokens = [...new Set(readFileSync(said, "utf8").trim().split("\n"))];
+  expect(tokens).toEqual(["ghu_renewed"]);
+  expect(readFileSync(join(cwd, "b.txt"), "utf8")).toBe("b\n");
 });
 
 test("a chat file comes from the box under the machine's rules: inside the working directory, a plain file", async () => {

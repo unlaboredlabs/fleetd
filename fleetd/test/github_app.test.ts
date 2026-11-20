@@ -12,7 +12,8 @@ import { Registry, type Caller } from "../src/hub/api/registry.ts";
 import { AppGh, repoOf } from "../src/hub/github_app/gh.ts";
 import { doctor } from "../src/hub/doctor/index.ts";
 import { githubApps, manifest } from "../src/hub/github_app/index.ts";
-import { BLOCKED_TOKEN, deliver, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
+import { BLOCKED_TOKEN, blockedLine, deliver, deliverAtLaunch, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
+import { leadWakes } from "../src/hub/api/leads.ts";
 import { isoMs } from "../src/hub/train/seams.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import type { Grant, HubSetupStep } from "../src/shared/contracts.ts";
@@ -41,6 +42,8 @@ type Fake = {
   liveRefresh: string[];
   down: boolean;
   revoked: number;
+  /** The user tokens GitHub still takes: a refresh ends the one issued with the refresh token it used. */
+  liveAccess: string[];
 };
 
 const publicKey = createPublicKey(KEY);
@@ -58,7 +61,7 @@ const bearer = (req: Request) => (req.headers.get("authorization") ?? "").replac
 const refused = (status: number, message: string) => Response.json({ message }, { status });
 
 function fakeGithub(clock: ManualClock) {
-  const fake: Fake = { minted: [], badJwts: 0, issued: 0, refuseRefresh: false, liveRefresh: [], down: false, revoked: 0 };
+  const fake: Fake = { minted: [], badJwts: 0, issued: 0, refuseRefresh: false, liveRefresh: [], down: false, revoked: 0, liveAccess: [] };
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -123,6 +126,8 @@ function fakeGithub(clock: ManualClock) {
           const live = fake.liveRefresh.includes(given);
           fake.liveRefresh = fake.liveRefresh.filter((r) => r !== given);
           ok = !fake.refuseRefresh && live;
+          // GitHub: "Once you use a refresh token, that refresh token and the old user access token will no longer work."
+          if (ok) fake.liveAccess = fake.liveAccess.filter((a) => a !== `ghu_${given.slice("ghr_".length)}`);
         } else {
           ok = field("code") === "good-user-code" && field("code_verifier").length >= 43 && field("redirect_uri").startsWith("http://127.0.0.1:");
         }
@@ -131,6 +136,7 @@ function fakeGithub(clock: ManualClock) {
         }
         const n = ++fake.issued;
         fake.liveRefresh.push(`ghr_${n}`);
+        fake.liveAccess.push(`ghu_${n}`);
         return Response.json({
           access_token: `ghu_${n}`,
           expires_in: 28800,
@@ -360,13 +366,14 @@ test("a person connects their GitHub, kept sealed and refreshed; a refused refre
   expect((await call(l, sam, "github_app_get")).me.login).toBe("sam-rivera");
   const { userToken } = await import("../src/hub/github_app/people.ts");
   const apps = githubApps(l.hub);
-  expect((await userToken(apps, sam.person!.personId))!.token).toBe("ghu_1");
+  const handOn = async () => {};
+  expect((await userToken(apps, sam.person!.personId, handOn))!.token).toBe("ghu_1");
   // Within two hours of its end, it is refreshed first.
   l.clock.advance(7 * 60 * 60_000);
-  expect((await userToken(apps, sam.person!.personId))!.token).toBe("ghu_2");
+  expect((await userToken(apps, sam.person!.personId, handOn))!.token).toBe("ghu_2");
   l.clock.advance(7 * 60 * 60_000);
   l.fake.refuseRefresh = true;
-  await expect(userToken(apps, sam.person!.personId)).rejects.toThrow("GitHub no longer takes sam-rivera's connection");
+  await expect(userToken(apps, sam.person!.personId, handOn)).rejects.toThrow("GitHub no longer takes sam-rivera's connection");
   expect((await call(l, sam, "github_app_get")).me.lapsed).toBe(true);
   const gone = await call(l, sam, "github_disconnect");
   expect(gone.revoked).toBe(true);
@@ -401,23 +408,32 @@ function node(l: Lab, machineId: string) {
   return { got, state };
 }
 
-/** A project on `machineId` whose repo is `repo` on GitHub, with an open order started by `starter`. */
-function order(l: Lab, machineId: string, repo: string, starter?: string): { r: { machineId: string; projectId: string }; w: string } {
-  const r = { machineId, projectId: "p1" };
+/** A project on `machineId` whose repo is `repo` on GitHub, with an open order `w` started by `starter`. */
+function order(
+  l: Lab,
+  machineId: string,
+  repo: string,
+  starter?: string,
+  w = "W1",
+  projectId = "p1",
+): { r: { machineId: string; projectId: string }; w: string } {
+  const r = { machineId, projectId };
   l.hub.db.conn
-    .query("INSERT INTO repos (name, checkout_machine_id, checkout_project_id, repo_key, machine_id, project_id) VALUES ('web', ?, 'p1', ?, ?, 'p1')")
-    .run(machineId, `github.com/${repo}`, machineId);
+    .query("INSERT INTO repos (name, checkout_machine_id, checkout_project_id, repo_key, machine_id, project_id) VALUES ('web', ?, ?, ?, ?, ?)")
+    .run(machineId, projectId, `github.com/${repo}`, machineId, projectId);
   // The project's work is bound to the repo, as adding it from a GitHub checkout does.
-  l.hub.db.conn.query("INSERT INTO work_projects (machine_id, project_id, repo_key, base, updated_ms) VALUES (?, 'p1', ?, 'main', 0)").run(machineId, `github.com/${repo}`);
+  l.hub.db.conn
+    .query("INSERT INTO work_projects (machine_id, project_id, repo_key, base, updated_ms) VALUES (?, ?, ?, 'main', 0)")
+    .run(machineId, projectId, `github.com/${repo}`);
   const data = {
-    workstreamId: "W1",
+    workstreamId: w,
     projectRef: r,
     title: "t",
     state: "open",
     ...(starter ? { startedBy: { personId: starter, name: "Sam" } } : {}),
   };
-  l.hub.db.conn.query("INSERT INTO workstreams (machine_id, project_id, state, data) VALUES (?, 'p1', 'open', ?)").run(machineId, JSON.stringify(data));
-  return { r, w: "W1" };
+  l.hub.db.conn.query("INSERT INTO workstreams (machine_id, project_id, state, data) VALUES (?, ?, 'open', ?)").run(machineId, projectId, JSON.stringify(data));
+  return { r, w };
 }
 
 test("an order nobody started gets the App's token on its node, kept as the order's; a repo it doesn't reach gets none", async () => {
@@ -508,6 +524,162 @@ test("the GitHub setup step stops counting the App the moment it is removed", as
   const after = await github();
   expect(after.way).not.toBe("the hub's GitHub App");
   expect(after.said ?? "").not.toContain("is installed on");
+});
+
+/**
+ * Machines whose nodes keep what they are handed, each checkout's token as it holds it now: `online` takes a machine
+ * off its link, and `hold` keeps that machine's next delivery waiting until it is let go.
+ */
+function fleet(l: Lab, ids: string[]) {
+  const boxes = new Map(ids.map((m) => [m, crypto.getRandomValues(new Uint8Array(32))]));
+  for (const [machineId, box] of boxes) {
+    const machine = { machineId, name: machineId, status: "online", boxPubKey: Buffer.from(publicKeyOf(box)).toString("base64") };
+    l.hub.db.conn.query("INSERT INTO machines (machine_id, data) VALUES (?, ?)").run(machineId, JSON.stringify(machine));
+  }
+  const holds = new Map<string, string>();
+  const online = new Set(ids);
+  const held = new Map<string, Promise<void>>();
+  const releases: (() => void)[] = [];
+  const up = (m: string) => online.has(m) && boxes.has(m);
+  l.hub.area("link", () => ({
+    can: up,
+    lacks: () => false,
+    linkId: (m: string) => (up(m) ? 1 : undefined),
+    request: async () => ({ id: "1", output: {} }),
+    commands: {
+      deliverSecret: async (m: string, frame: Record<string, unknown>) => {
+        const token = new TextDecoder().decode(openSealed(boxes.get(m)!, new Uint8Array(Buffer.from(String(frame.sealed), "base64")))!);
+        const wait = held.get(m);
+        held.delete(m);
+        if (wait) await wait;
+        holds.set(String(frame.sink), token);
+        return { id: "1", fingerprint: `sha256:${token}` };
+      },
+    },
+  }));
+  return {
+    holds,
+    online,
+    /** The machine's next delivery waits until the answer is called; it resolves once that delivery has begun. */
+    hold(m: string): { begun: Promise<void>; release: () => void } {
+      let release!: () => void;
+      let begun!: () => void;
+      const started = new Promise<void>((r) => (begun = r));
+      held.set(
+        m,
+        new Promise<void>((r) => {
+          release = r;
+          releases.push(r);
+          begun();
+        }),
+      );
+      // `begun` once deliverSecret has taken the hold: it deletes it as it starts waiting.
+      const taken = (async () => {
+        await started;
+        while (held.has(m)) await Bun.sleep(1);
+      })();
+      return { begun: taken, release };
+    },
+  };
+}
+
+/** Sam, connected, with an order on each of `machines`: W1 on the first, W2 on the second, and so on. */
+async function samsOrders(l: Lab, machines: string[]) {
+  await created(l);
+  await githubApps(l.hub).test();
+  const f = fleet(l, [...new Set(machines)]);
+  const sam = device(l.hub, person(l.hub, "Sam", "member"), "operate");
+  await call(l, sam, "github_connect", connectInput());
+  const orders = machines.map((m, i) => order(l, m, "acme/web", sam.person!.personId, `W${i + 1}`, `p${i + 1}`));
+  return { f, sam, orders };
+}
+
+/** Each order's checkout holds a token GitHub takes. */
+function allLive(l: Lab, f: ReturnType<typeof fleet>, orders: { r: { machineId: string }; w: string }[]) {
+  const held = orders.map((o) => f.holds.get(`order:${o.r.machineId}:${o.w}`));
+  expect(held.every((t) => t !== undefined && l.fake.liveAccess.includes(t))).toBe(true);
+}
+
+// Within two hours of its end, the person's token is refreshed, which ends it at GitHub.
+const UNDER_MARGIN = 6 * 60 * 60_000 + 60_000;
+
+test("a refresh at a launch hands the new token to every order of the person before it returns, its own node offline or not", async () => {
+  const l = lab();
+  const { f, orders } = await samsOrders(l, ["devbox", "devbox-2", "devbox-2"]);
+  const [a, b, c] = orders as [ReturnType<typeof order>, ReturnType<typeof order>, ReturnType<typeof order>];
+  for (const o of orders) await deliverAtLaunch(l.hub, o.r, o.w, undefined, true, o.r);
+  l.clock.advance(UNDER_MARGIN);
+  // The launch's own machine is offline: the launch fails, but the refresh it made reached the order elsewhere already.
+  f.online.delete("devbox-2");
+  await expect(deliverAtLaunch(l.hub, c.r, c.w, undefined, true, c.r)).rejects.toThrow("offline");
+  expect(l.fake.issued).toBe(2);
+  allLive(l, f, [a]);
+  // The machine back: the first sweep after it links hands its orders the token.
+  f.online.add("devbox-2");
+  await renew(l.hub);
+  allLive(l, f, [a, b, c]);
+  expect(l.fake.issued).toBe(2);
+});
+
+test("a refresh at the sweep or a delivery hands the new token to every order before anything uses the old one", async () => {
+  const l = lab();
+  const { f, orders } = await samsOrders(l, ["devbox", "devbox-2"]);
+  for (const o of orders) await deliver(l.hub, o.r, o.w, undefined, true);
+  l.clock.advance(UNDER_MARGIN);
+  await renew(l.hub);
+  expect(l.fake.issued).toBe(2);
+  allLive(l, f, orders);
+  l.clock.advance(UNDER_MARGIN);
+  await deliver(l.hub, orders[1]!.r, orders[1]!.w, undefined, true);
+  expect(l.fake.issued).toBe(3);
+  allLive(l, f, orders);
+});
+
+test("two launches and a sweep at once refresh once, and a launch that read the token before the refresh hands on the new one", async () => {
+  const l = lab();
+  const { f, orders } = await samsOrders(l, ["devbox", "devbox-2", "devbox-2"]);
+  const [a, b, c] = orders as [ReturnType<typeof order>, ReturnType<typeof order>, ReturnType<typeof order>];
+  await deliverAtLaunch(l.hub, a.r, a.w, undefined, true, a.r);
+  // Just outside the margin: A's next launch reads the token it has, and its node is slow to take it.
+  l.clock.advance(UNDER_MARGIN - 2 * 60_000);
+  const slow = f.hold("devbox");
+  const first = deliverAtLaunch(l.hub, a.r, a.w, undefined, true, a.r);
+  await slow.begun;
+  // Now inside it: two launches and the sweep at once, while A's delivery still waits.
+  l.clock.advance(2 * 60_000);
+  const rest = Promise.all([
+    deliverAtLaunch(l.hub, b.r, b.w, undefined, true, b.r),
+    deliverAtLaunch(l.hub, c.r, c.w, undefined, true, c.r),
+    renew(l.hub),
+  ]);
+  await Bun.sleep(20);
+  slow.release();
+  await Promise.all([first, rest]);
+  expect(l.fake.issued).toBe(2);
+  allLive(l, f, orders);
+});
+
+test("a person's token the hub can't renew before it ends is replaced, and the lead hears the plain line once", async () => {
+  const l = lab();
+  const { f, orders } = await samsOrders(l, ["devbox"]);
+  const lines: string[] = [];
+  leadWakes(l.hub).trigger = (_r, t) => void lines.push((t as { text: string }).text);
+  const [a] = orders as [ReturnType<typeof order>];
+  await deliver(l.hub, a.r, a.w, undefined, true);
+  l.fake.down = true;
+  l.clock.advance(UNDER_MARGIN);
+  await renew(l.hub);
+  // Not ended yet: the agents keep the one they hold, which GitHub still takes.
+  allLive(l, f, orders);
+  l.clock.advance(2 * 60 * 60_000);
+  await renew(l.hub);
+  await renew(l.hub);
+  expect(f.holds.get(`order:devbox:${a.w}`)).toBe(UNRENEWED_TOKEN);
+  expect(lines).toEqual([blockedLine(a.w, "Sam", { kind: "not_renewed", why: "GitHub refused (503)" })]);
+  l.fake.down = false;
+  l.clock.advance(5 * 60_000);
+  await renew(l.hub);
+  allLive(l, f, orders);
 });
 
 beforeEach(() => {
