@@ -88,9 +88,6 @@ type Live = {
  * with its work brought back once the box has `endBeforeMs` left. Tests set shorter ones. */
 export const KEEP_ALIVE = { everyMs: EXTEND_MS, retryMs: 2 * 60_000, endBeforeMs: 15 * 60_000 };
 
-/** Each keep-alive's outcome, for the hub's provider row (`Boxes.keptAlive`). */
-type KeepAliveReport = { keptAlive?(provider: ProviderId, error?: unknown): void };
-
 /** How often the files a session's launch named are checked for changes (the order's variables, which the node
  * rewrites when the hub renews its GitHub token) and sent to the box again. */
 const REFRESH_MS = 30_000;
@@ -427,7 +424,7 @@ export function endHosted(provider: ProviderId, why: string): Promise<void>[] {
  * back, rather than lose it when the provider stops the box at its time. */
 function keepAlive(b: Boxes, l: Live, inMs: number): void {
   const { session, provider } = l.record;
-  const report = (error?: unknown) => (b as Boxes & KeepAliveReport).keptAlive?.(provider, error);
+  const report = (error?: unknown) => b.keptAlive(provider, error);
   l.extender = setTimeout(async () => {
     if (live.get(session) !== l) return;
     const asked = Date.now();

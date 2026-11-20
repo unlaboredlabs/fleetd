@@ -20,7 +20,7 @@ import { appLine, hostedLine, machinesLine, menuLines, setupLine, updateLine, wo
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
 import type { SlotHosted } from "../../../shared/contracts";
-import { RUNNER_ID } from "../../../shared/hostedRow";
+import { RUNNER_ID } from "../../../shared/providers";
 
 const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 

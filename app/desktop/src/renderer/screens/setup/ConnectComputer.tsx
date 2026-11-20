@@ -67,7 +67,7 @@ function HostedNotReady({ runner }: { runner: RunnerState }) {
   const wait = useWaitedOut(!claude);
   const [trying, setTrying] = useState(false);
   const [tried, setTried] = useState<string | null>(null);
-  const problem = wait.over && provider !== undefined ? hostedProblem(provider.provider, provider.check, runner) : undefined;
+  const problem = wait.over && provider !== undefined ? hostedProblem(provider, runner) : undefined;
   const again = () => {
     if (provider === undefined) return;
     setTrying(true);

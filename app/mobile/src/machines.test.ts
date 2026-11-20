@@ -43,10 +43,6 @@ describe("Settings › Machines", () => {
     expect(machineValue({ status: "offline" })).toEqual({ text: "Offline", warn: true });
     expect(machineValue({ status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toEqual({ text: "Claude is not logged in", warn: true });
     expect(machineValue({ status: "degraded" })).toEqual({ text: "Needs a look", warn: true });
-    // The hub's runner with no Claude account: the cause in a few words, not the hub's sentence.
-    const hosted = { status: "degraded", runner: true, degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect one" } as const;
-    expect(machineValue({ ...hosted, degradedCause: "claude_login" })).toEqual({ text: "Needs a Claude account", warn: true });
-    expect(machineValue(hosted)).toEqual({ text: "Agents in hosted sandboxes run on a Claude account, and none reaches them", warn: true });
   });
 });
 

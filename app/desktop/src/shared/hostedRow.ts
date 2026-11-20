@@ -6,10 +6,6 @@
 import type { DegradedCause, MachineStatus, ProviderTrouble, SandboxProviderState, SlotHosted } from "./contracts";
 import { specOf } from "./providers";
 
-/** The hub's runner's machine id (the hub's shared/sandbox.ts RUNNER_ID): `#/settings/hub/machines/hosted` opens
- * the hosted provider's row (admin/HubPages.tsx), where every link to hosted sandboxes lands. */
-export const RUNNER_ID = "hosted";
-
 /** The hub's runner as the row reads it; absent on a hub that has none (it can't run one, or nothing hosted is on). */
 export type HostedRunner = { status: MachineStatus; degradedCause?: DegradedCause | undefined; degradedReason?: string | undefined };
 
