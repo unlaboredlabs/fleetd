@@ -6,7 +6,7 @@
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
-import { useData } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import {
   appliedLine,
@@ -14,6 +14,7 @@ import {
   clampMax,
   extrasLine,
   extrasOver,
+  holdOf,
   holdsLink,
   machineAgents,
   machineHolds,
@@ -205,11 +206,18 @@ function ResultLine(props: { id: string; state: SliderState; idle: string | null
   );
 }
 
+const NO_INPUT = {};
+
 /** One project's Max agents: the slider, which applies when you let go, and what the change does. */
 export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
   const live = useLive();
   const call = useHubCall();
-  const a = projectAgents(props.slots, props.projectRef);
+  // What holds it past its max: its machine's cap and the hosted limits it goes on to, or the provider its Runs on
+  // picked, whose limit alone holds its agents (the hub's slot board places them so).
+  const pick = useToolQuery("project_settings_get", props.projectRef, { enabled: live }).data?.settings.computer;
+  const sandboxes = useToolQuery("sandbox_get", NO_INPUT, { enabled: live }).data;
+  const hold = holdOf(pick, sandboxes);
+  const a = projectAgents(props.slots, props.projectRef, hold);
   const state = useApplySlider(a.max, !a.own, (maxAgents, pauseExtras, follow) =>
     call("cap_set", {
       project: { projectRef: props.projectRef, ...(follow ? { followDefault: true } : { maxAgents }), ...(pauseExtras ? { pauseExtras: true } : {}) },
@@ -224,7 +232,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       title={props.title ?? "Max agents"}
       titleId={`${id}-label`}
       hint="The most agents this bot runs at once. At 1, the lead works through its tasks in order."
-      line={sourceLine(props.slots, a, props.projectRef.machineId)}
+      line={sourceLine(props.slots, a, props.projectRef.machineId, hold)}
       control={
         <>
           {a.own ? (
@@ -237,7 +245,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       }
     >
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
-      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId)} link={holdsLink(a, props.projectRef.machineId)} machineId={props.projectRef.machineId} />
+      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId, hold)} link={holdsLink(a, props.projectRef.machineId, hold)} machineId={props.projectRef.machineId} />
       <ResultLine
         id={id}
         state={state}
@@ -263,7 +271,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
  * Under a project's slider past its machine's cap: the machine holds it there. Machine caps are hub-wide, so an owner or
  * admin gets the way to them in Hub › Machines; everyone else, only the line.
  */
-function MachineHolds(props: { note: string | null; link: string; machineId: string }) {
+function MachineHolds(props: { note: string | null; link: { text: string; provider: boolean }; machineId: string }) {
   const administers = useAdministers();
   if (props.note === null) return null;
   return (
@@ -276,12 +284,12 @@ function MachineHolds(props: { note: string | null; link: string; machineId: str
           size="sm"
           variant="quiet"
           onClick={() => {
-            // The hosted sandboxes' link lands on their provider's row by itself (admin/HubPages.tsx).
-            if (props.machineId !== RUNNER_ID) revealNext("hub.caps");
-            window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: props.machineId });
+            // A provider's limit: the hosted sandboxes' link lands on its row by itself (admin/HubPages.tsx).
+            if (!props.link.provider) revealNext("hub.caps");
+            window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: props.link.provider ? RUNNER_ID : props.machineId });
           }}
         >
-          {props.link}
+          {props.link.text}
         </Button>
       ) : null}
     </div>
