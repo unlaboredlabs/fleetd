@@ -12,6 +12,7 @@ import { HubsProvider } from "../../src/data/react";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { runCommand } from "../palette/registry";
+import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
@@ -25,8 +26,8 @@ interface FakeHub {
 }
 
 const fake = vi.hoisted(() => {
-  // `discover`: what project_discover answers, when a test sets it.
-  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown }>();
+  // `discover` and `add`: what project_discover and project_add answer, when a test sets them.
+  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown; add?: unknown }>();
   const badge: number[] = [];
   // The chat each hub streams, as the page last asked (hub.chat): a project, or null for none.
   const chats: Array<[string, unknown]> = [];
@@ -67,6 +68,8 @@ const fake = vi.hoisted(() => {
         if (tool === "orders_board") return Promise.resolve({ ok: true, output: { orders: [] } });
         const discover = of(id).discover;
         if (tool === "project_discover" && discover !== undefined) return Promise.resolve({ ok: true, output: discover });
+        const add = of(id).add;
+        if (tool === "project_add" && add !== undefined) return Promise.resolve({ ok: true, output: add });
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
       },
       chat: (id: string, project: unknown) => (chats.push([id, project]), done()),
@@ -183,6 +186,8 @@ beforeEach(() => {
   resetSidebarView();
 });
 afterEach(() => {
+  // New bot's state outlives the window, as it does the dialog: the next test opens a fresh one.
+  act(() => closeAddProject());
   act(() => root.unmount());
   host.remove();
 });
@@ -460,7 +465,10 @@ it("says which hub a new bot goes to with several hubs, the hub on screen first,
   expect(picker()).toBeNull();
 });
 
-/** New bot opened on Personal, whose last bot is the one opened, then Acme (sent `acme`) picked in its Adds to. */
+/**
+ * New bot opened on Personal, whose last bot is the one opened, a name typed, then Acme (sent `acme`) picked in its
+ * Adds to. Returns what was on screen before the pick, to compare with after.
+ */
 const pickAcme = async (acme: HubFrame) => {
   // The last bot opened is on Personal: going to Acme's home must not open it, which took the dialog back.
   window.localStorage.setItem("fleetd.lastProject", "devbox/storefront");
@@ -482,7 +490,14 @@ const pickAcme = async (acme: HubFrame) => {
   await settle();
   await settle();
   expect(hubPicker()?.textContent).toContain("Personal");
+  await type("Name", "Garden notes");
+  const before = { dialog: dialog(), backdrop: dialog()?.previousElementSibling, field: nameField(), screen: host.querySelector("[data-screen='shell']") };
+  // What leaves the page from here: a node the dialog, its backdrop or the app is made of, taken out to be made again.
+  const removed: Node[] = [];
+  const watch = new MutationObserver((records) => removed.push(...records.flatMap((r) => [...r.removedNodes])));
+  watch.observe(document.body, { childList: true, subtree: true });
   await act(async () => {
+    hubPicker()?.focus();
     hubPicker()?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
     await Promise.resolve();
   });
@@ -495,33 +510,97 @@ const pickAcme = async (acme: HubFrame) => {
   await settle();
   await settle();
   await settle();
+  watch.disconnect();
+  return { before, removed };
 };
 
 const hubPicker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+const dialog = () => document.querySelector<HTMLElement>("[data-screen='projects.add']");
+const nameField = () => document.querySelector<HTMLInputElement>("input[aria-label='Name']");
+const type = async (label: string, text: string) => {
+  const el = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+  if (el === null) throw new Error(`no field ${label}`);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+};
 
-it("moves New bot to the hub picked in Adds to, one with no bot and no machine too, and keeps it there", async () => {
-  await pickAcme(empty);
-  expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
+it("switches New bot to the hub picked in Adds to in place: nothing remounts, the name and focus stay, the app under it stays", async () => {
+  fake.of("a1b2").discover = { machines: [{ machineId: "laptop", online: true, cloneRoot: "/home/l/src", projectsRoot: "/home/l/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "laptop" };
+  const { before, removed } = await pickAcme(machineOnly("laptop"));
   expect(hubPicker()?.textContent).toContain("Acme");
-  expect(window.location.hash).toBe("#/?at=a1b2");
-  // Behind it, Acme's empty home; and the dialog asks Acme what it can make a bot on.
-  expect(host.querySelector("[data-screen='home.empty']")).not.toBeNull();
+  // The same dialog, backdrop, field and app: none of them left the page and came back (the flash).
+  expect(dialog()).toBe(before.dialog);
+  expect(dialog()?.previousElementSibling).toBe(before.backdrop);
+  expect(nameField()).toBe(before.field);
+  expect(host.querySelector("[data-screen='shell']")).toBe(before.screen);
+  const parts = [before.dialog, before.backdrop, before.field, before.screen];
+  expect(removed.filter((n) => parts.some((p) => p != null && (n === p || n.contains(p))))).toEqual([]);
+  // What was typed stays, and focus is where it was: on Adds to.
+  expect(nameField()?.value).toBe("Garden notes");
+  expect(document.activeElement).toBe(hubPicker());
+  // Under it, Personal's chat as it was; Acme was asked what it can make a bot on, and its machine is the one offered.
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
   expect(hub("a1b2").calls.some((c) => c.tool === "project_discover")).toBe(true);
+  expect(dialog()?.textContent).toContain("On laptop");
 });
 
-it("makes the bot on the hub picked in Adds to", async () => {
+it("picks a hub with no bot and no machine in Adds to, and keeps it there", async () => {
+  await pickAcme(empty);
+  expect(dialog()).not.toBeNull();
+  expect(hubPicker()?.textContent).toContain("Acme");
+  expect(nameField()?.value).toBe("Garden notes");
+});
+
+it("opens New bot on the hub on view, from the sidebar's +, the palette and a link, with that hub's machine", async () => {
+  window.localStorage.setItem("fleetd.lastProject", "devbox/storefront");
+  fake.of("hub").discover = { machines: [{ machineId: "devbox", online: true, cloneRoot: "/home/d/src", projectsRoot: "/home/d/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "devbox" };
   fake.of("a1b2").discover = { machines: [{ machineId: "laptop", online: true, cloneRoot: "/home/l/src", projectsRoot: "/home/l/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "laptop" };
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(machineOnly("laptop"));
+  });
+  await settle();
+  await act(() => import("../projects/AddProjectScreen"));
+  const opened = async (open: () => void) => {
+    act(open);
+    await settle();
+    await settle();
+    await settle();
+    const shown = { hub: hubPicker()?.textContent, on: dialog()?.textContent.includes("On laptop") ? "laptop" : dialog()?.textContent.includes("On devbox") ? "devbox" : null };
+    act(() => closeAddProject());
+    await settle();
+    return shown;
+  };
+  // Personal's chat on screen, Acme on view in the sidebar.
+  pickHub("Acme");
+  await settle();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  const plus = () => host.querySelector<HTMLElement>("[data-opens='projects.add']");
+  expect(await opened(() => plus()?.click())).toEqual({ hub: "Acme", on: "laptop" });
+  expect(await opened(() => runCommand("go:projects.add"))).toEqual({ hub: "Acme", on: "laptop" });
+  // A link naming a hub adds to that one.
+  expect(await opened(() => void (window.location.hash = "#/projects/add?at=hub"))).toEqual({ hub: "Personal", on: "devbox" });
+  // Back on Personal: its own.
+  pickHub("Personal");
+  await settle();
+  expect(await opened(() => plus()?.click())).toEqual({ hub: "Personal", on: "devbox" });
+  expect(await opened(() => runCommand("go:projects.add"))).toEqual({ hub: "Personal", on: "devbox" });
+});
+
+it("makes the bot on the hub picked in Adds to, and opens its chat there once that hub lists it", async () => {
+  fake.of("a1b2").discover = { machines: [{ machineId: "laptop", online: true, cloneRoot: "/home/l/src", projectsRoot: "/home/l/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "laptop" };
+  fake.of("a1b2").add = { machineId: "laptop", path: "/home/l/fleetd/projects/notes", projectId: "notes", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } };
   await pickAcme(machineOnly("laptop"));
   expect(document.body.textContent).toContain("On laptop");
-  const type = async (label: string, text: string) => {
-    const el = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
-    if (el === null) throw new Error(`no field ${label}`);
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      await Promise.resolve();
-    });
-  };
   const press = async (button: HTMLElement | null | undefined) => {
     await act(async () => {
       button?.click();
@@ -533,6 +612,13 @@ it("makes the bot on the hub picked in Adds to", async () => {
   await press([...document.querySelectorAll<HTMLButtonElement>("[data-screen='projects.add'] button")].find((b) => b.textContent === "Create"));
   expect(hub("a1b2").calls.filter((c) => c.tool === "project_add").map((c) => c.input)).toEqual([expect.objectContaining({ machineId: "laptop", title: "Notes" })]);
   expect(hub("hub").calls.filter((c) => c.tool === "project_add")).toEqual([]);
+  // Made with no repo: the dialog is done at once and lets go of Acme, the screen still on Personal's chat. The chat
+  // opens once Acme's snapshot lists the bot, on Acme.
+  expect(dialog()).toBeNull();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  act(() => hub("a1b2").send(project("laptop", "notes")));
+  await settle();
+  expect(window.location.hash).toBe("#/project/laptop/notes?at=a1b2");
 });
 
 it("opens on the one sidebar on a computer that kept the old List or Rail layout", async () => {

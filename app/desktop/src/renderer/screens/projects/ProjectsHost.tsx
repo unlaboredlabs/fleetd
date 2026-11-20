@@ -8,13 +8,14 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Text } from "../../ui";
 import { useCommands, useSource, type Command, type Source } from "../palette";
 import type { DataLayer } from "../../src/data/queries";
-import { useDataLayer, useHub } from "../../src/data/react";
+import { HubScope, useDataLayer, useHubs } from "../../src/data/react";
 import { hubNow, selectMachines } from "../../src/data/selectors";
 import { machineParts } from "./machineText";
 import { githubRepo, linkUrl, otherHost, tilde } from "./source";
-import { navigate, screenHash } from "../shell/navigation";
+import { screenHash } from "../shell/navigation";
 import { parseHash } from "../shell/routes";
-import { localMachine, openAddProject, useAddUi, type Note } from "./store";
+import { localMachine, openAddProject, useAddState, useAddUi, type Note } from "./store";
+import type { HubId } from "../../../shared/hubs";
 import s from "./projects.module.css";
 
 /** The palette's machines, read from the data layer's store while the palette is open. The hub's runner for hosted
@@ -117,27 +118,53 @@ const AddProjectScreen = lazy(() => import("./AddProjectScreen").then((m) => ({ 
 
 /**
  * `#/projects/add` (the sidebar's +, links, the QA harness) opens the modal and puts the address back to the screen
- * behind it, so Back never reopens it. One naming another hub opens it over that hub's home.
+ * behind it, so Back never reopens it. One naming a hub adds to that hub, over the screen it opened from.
  */
 const useAddRoute = (): void => {
-  const { id } = useHub();
   useEffect(() => {
     const take = () => {
       const r = parseHash(window.location.hash);
       if (r.id !== "projects.add") return;
-      openAddProject();
-      if (r.at !== undefined && r.at !== id) navigate({ id: "home", at: r.at }, { replace: true });
-      else window.location.replace(screenHash() || "#/");
+      openAddProject(undefined, r.at);
+      window.location.replace(screenHash() || "#/");
     };
     take();
     window.addEventListener("hashchange", take);
     return () => window.removeEventListener("hashchange", take);
-  }, [id]);
+  }, []);
 };
+
+/**
+ * The New bot dialog, mounted by the shell outside the hub-keyed frame, in the scope of the hub it adds to: the one
+ * picked in Adds to (or named by its link, or a bot is being made on), else `on`, the hub on view. A switch of Adds to
+ * keeps the dialog, its backdrop and its fields mounted (no flash, no lost focus), and the screen under it stays as
+ * it was; only what it reads moves to the other hub. Mounted while closed too, so the flow follows that hub's events.
+ */
+export function NewBot({ on }: { on: HubId }) {
+  const hubs = useHubs();
+  const { open, hub: picked } = useAddState();
+  const hub = hubs.find((h) => h.id === picked) ?? hubs.find((h) => h.id === on) ?? hubs[0];
+  if (hub === undefined) return null;
+  return (
+    <HubScope hub={hub}>
+      <Flow />
+      {open ? (
+        <Suspense fallback={null}>
+          <AddProjectScreen />
+        </Suspense>
+      ) : null}
+    </HubScope>
+  );
+}
+
+/** Feeds the flow from the scope's hub (store.ts connect). */
+function Flow() {
+  useAddUi();
+  return null;
+}
 
 export function ProjectsHost() {
   const [over, setOver] = useState(false);
-  const { open } = useAddUi();
   useAddRoute();
 
   const commands = useMemo<ReadonlyArray<Command>>(
@@ -208,11 +235,6 @@ export function ProjectsHost() {
 
   return (
     <>
-      {open ? (
-        <Suspense fallback={null}>
-          <AddProjectScreen />
-        </Suspense>
-      ) : null}
       {over ? (
         <div className={s.dropOverlay} aria-hidden>
           <Text size="lg" strong>

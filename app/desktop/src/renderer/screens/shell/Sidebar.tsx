@@ -142,7 +142,7 @@ export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void
       <div className={s.topTools}>
         <SearchField />
         <Tooltip content="New bot">
-          <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add" })}>
+          <button type="button" className={s.new} aria-label="New bot" data-opens="projects.add" onClick={() => go({ id: "projects.add", at: hub })}>
             <Plus aria-hidden />
           </button>
         </Tooltip>

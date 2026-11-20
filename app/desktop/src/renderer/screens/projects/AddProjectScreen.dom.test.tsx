@@ -337,7 +337,7 @@ describe("New bot", () => {
     await addRepo("acme/shop");
     act(() => pickMachine("buildbox", "devbox"));
     await addRepo("/home/b/src/ci");
-    act(() => pickHub("Personal", "Acme"));
+    act(() => pickHub("acme", "Personal", "Acme"));
     await settle();
     expect(listed()).toEqual(["acme/shop"]);
     expect(addUi().machine).toBeUndefined();

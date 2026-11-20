@@ -3279,6 +3279,24 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("listbox", { name: "Found" }).getByRole("option").first()).toBeVisible();
     },
   },
+  // With two hubs: a name typed, then Acme picked in Adds to. The dialog stays where it was, over Personal's chat, with
+  // the name and Acme's machine; nothing in it was made again (the flash, W754).
+  {
+    id: "projects.add",
+    route: "#/projects/add",
+    fixtures: ["sidebar-hubs"],
+    variant: "hub-switch",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("Garden notes");
+      await page.locator("[data-screen='projects.add']").evaluate((el) => el.setAttribute("data-qa-first", ""));
+      await page.getByRole("combobox", { name: "Hub" }).click();
+      await page.getByRole("option", { name: "Acme" }).click();
+      await expect(page.getByRole("combobox", { name: "Hub" })).toHaveText("Acme");
+      await expect(page.locator("[data-screen='projects.add'][data-qa-first]")).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Garden notes");
+      await expect(page.getByRole("combobox", { name: "Hub" })).toBeFocused();
+    },
+  },
   // On a machine whose node is too old to make a bot's folder: Create says why and the fix.
   {
     id: "projects.add",

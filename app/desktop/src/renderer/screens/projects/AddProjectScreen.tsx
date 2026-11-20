@@ -4,18 +4,18 @@
 // before creating. The machine, when there is more than one, at the foot. Create makes the bot and opens its chat
 // behind the dialog, which then shows each repo coming in: its clone's progress, ✓, or why it failed with Retry. Esc
 // closes it; a clone carries on. The agents' Mac is never offered: no bot lives there (projectHome). With several
-// hubs a line beside the title says which hub it adds to, and picks another.
+// hubs a line beside the title says which hub it adds to, and picks another: the dialog stays as it is, in place, and
+// what it lists is that hub's (NewBot, ProjectsHost.tsx, puts it in that hub's scope).
 
 import { Dialog as D } from "radix-ui";
 import { CloudDownload, Folder, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Button, Select, StateGlyph, Text, Truncate, cx, underModal, type GlyphState } from "../../ui";
 import { discovery as discoveryOf, orList, projectHome, repoSuggestions, target, type Discovery, type Worker } from "./discovery";
 import { botAtFolder, botHolding, botName, busy, needsUpdate, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
 import { CallError, callKey } from "../../src/data/queries";
-import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { HubScope, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { navigate } from "../shell/navigation";
 import { HubText } from "./HubText";
 import { NAME_MAX, nameProblem } from "./model";
 import { otherHost, tilde } from "./source";
@@ -42,12 +42,11 @@ import s from "./projects.module.css";
 /** The dialog. Its content carries data-screen="projects.add"; the state inside, "projects.add.<state>". */
 export function AddProjectScreen() {
   const ui = useAddUi();
-  const data = useDataLayer();
+  const hub = useHub();
   const field = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    // New checkouts on disk raise no event: look again each time it opens.
-    void data.queryClient.invalidateQueries({ queryKey: callKey("project_discover", allRepos) });
-  }, [data]);
+  // What each hub found, asked of every hub as it opens: Adds to then shows the other hub's machines at once.
+  const [found, setFound] = useState<Readonly<Record<string, Discovery | null>>>({});
+  const onFound = useCallback((at: string, d: Discovery | null) => setFound((f) => (f[at] === d ? f : { ...f, [at]: d })), []);
   const phase = ui.add.phase;
   const failures = ui.add.jobs.some((j) => j.state.t === "failed");
   const title =
@@ -89,7 +88,8 @@ export function AddProjectScreen() {
             </D.Title>
             {phase.kind === "form" ? <HubPick /> : null}
           </div>
-          {phase.kind === "form" ? <Form ui={ui} field={field} /> : phase.kind === "failed" ? <Failed message={phase.message} fix={phase.fix} /> : <Progress ui={ui} />}
+          <Discoveries onFound={onFound} />
+          {phase.kind === "form" ? <Form ui={ui} d={found[hub.id] ?? null} field={field} /> : phase.kind === "failed" ? <Failed message={phase.message} fix={phase.fix} /> : <Progress ui={ui} />}
         </D.Content>
       </D.Portal>
     </D.Root>
@@ -120,18 +120,38 @@ const useDiscovery = (): Discovery | null => {
   }, [query.data, query.error, machines]);
 };
 
+/** Each hub's finds, each in its own hub's scope (a query keeps the client it was made with), told to `onFound`. */
+function Discoveries({ onFound }: { onFound: (hub: string, d: Discovery | null) => void }) {
+  const hubs = useHubs();
+  return hubs.map((h) => (
+    <HubScope key={h.id} hub={h}>
+      <Discover onFound={onFound} />
+    </HubScope>
+  ));
+}
+
+function Discover({ onFound }: { onFound: (hub: string, d: Discovery | null) => void }) {
+  const data = useDataLayer();
+  const { id } = useHub();
+  useEffect(() => {
+    // New checkouts on disk raise no event: look again each time it opens.
+    void data.queryClient.invalidateQueries({ queryKey: callKey("project_discover", allRepos) });
+  }, [data]);
+  const d = useDiscovery();
+  useEffect(() => onFound(id, d), [onFound, id, d]);
+  return null;
+}
+
 /**
- * With several hubs, which one the bot goes to: the hub on screen, or another picked here (the dialog stays open,
- * over that hub's home). With one hub, nothing.
+ * With several hubs, which one the bot goes to: the hub on view, or another picked here. The dialog stays as it is
+ * and the screen under it too; its machines and found repos become that hub's. With one hub, nothing.
  */
 function HubPick() {
   const hubs = useHubs();
   const hub = useHub();
   if (hubs.length < 2) return null;
   const pick = (at: string) => {
-    if (at === hub.id) return;
-    pickHub(hub.label, hubs.find((h) => h.id === at)?.label ?? at);
-    navigate({ id: "projects.add", at });
+    if (at !== hub.id) pickHub(at, hub.label, hubs.find((h) => h.id === at)?.label ?? at);
   };
   return (
     <div className={s.hubPick}>
@@ -151,8 +171,7 @@ const blocker = (to: Worker | null, d: Discovery | null, repos: ReadonlyArray<Re
   return d.workers.some((w) => w.machineId === to.machineId) ? needsUpdate(to, repos, typed) : null;
 };
 
-function Form({ ui, field }: { ui: AddUi; field: RefObject<HTMLInputElement | null> }) {
-  const d = useDiscovery();
+function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObject<HTMLInputElement | null> }) {
   const projects = useData((x) => x.projects);
   const to = target(d, ui.machine ?? null);
   const online = (d?.workers ?? []).filter((w) => w.online);

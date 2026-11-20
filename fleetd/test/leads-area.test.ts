@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
-import { end } from "../src/hub/leads/cut_off.ts";
+import { end, notStartedLine } from "../src/hub/leads/cut_off.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { Debouncer, WAKE_COALESCE_MS, WAKE_DEBOUNCE_MS, WAKE_MAX_WAIT_MS } from "../src/hub/leads/lead_wakes.ts";
 import { start } from "../src/hub/leads/loops.ts";
@@ -204,15 +204,16 @@ test("a lead cut off by its node is woken every time; one whose own turn hung, o
   expect(end(ev("thread.interrupted", {}), leadsList)).toBeUndefined();
   expect(end(ev("thread.completed", {}), leadsList)?.end.kind).toBe("completed");
   expect(end({ ...ev("thread.failed", {}), threadId: "other" }, leadsList)).toBeUndefined();
-  // Its hosted sandbox didn't come up, so its claude never started: a line for the person, not a wake.
+  // Its hosted sandbox didn't come up, so its claude never started: a line for the person, and a start again later.
   const boxless = end(ev("thread.failed", { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at boat.dev: HTTP 402" } }), leadsList)?.end;
-  expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", text: expect.stringContaining("The lead couldn't start: no sandbox came up for it at boat.dev.") });
+  expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", message: "no hosted sandbox came up at boat.dev: HTTP 402" });
+  expect(notStartedLine((boxless as { message: string }).message, 1)).toStartWith("The lead couldn't start: no sandbox came up for it at boat.dev.");
   // A box that came up but couldn't start it: the node's own sentence, without its wrapper.
   const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines (cwd /srv/p)" } }), leadsList)?.end;
-  expect(unreached).toMatchObject({
-    kind: "not_started",
-    text: "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines. Your message is kept and goes in with your next one.",
-  });
+  expect(unreached?.kind).toBe("not_started");
+  expect(notStartedLine((unreached as { message: string }).message, 1)).toBe(
+    "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines. It tries again by itself in about 10 minutes, and your message is kept for it.",
+  );
 });
 
 test("workstream_list and project_set", async () => {

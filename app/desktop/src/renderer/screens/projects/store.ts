@@ -9,7 +9,7 @@ import { projectKey, type DataState } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Machine } from "./contracts";
 import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CreateState, type HubView, type RepoDraft } from "./create";
-import { toHash } from "../shell/routes";
+import { navigate } from "../shell/navigation";
 import { addSource, machineIdFromHost, omit, tilde } from "./source";
 
 export interface Note {
@@ -29,6 +29,8 @@ export interface AddUi {
   readonly refused?: string;
   /** The machine picked; absent: the hub's suggestion. */
   readonly machine?: string;
+  /** The hub it adds to, picked in Adds to, named by the link that opened it, or the one a bot is being made on; absent: the hub on view (NewBot). */
+  readonly hub?: string;
   /** The dialog is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
@@ -53,14 +55,25 @@ const hubState = (): DataState | undefined => layer?.store.getState();
 /** A machine's name from the store, else its id. */
 export const machineName = (id: string): string => hubState()?.machines[id]?.name ?? id;
 
-/** The bot just made, to open once the hub's snapshot lists it, so its chat never shows as missing first. */
-let toOpen: { machineId: string; projectId: string } | undefined;
+/** Stops waiting for the bot just made to be listed. */
+let stopWaiting: (() => void) | undefined;
 
-const openWhenListed = () => {
-  const next = toOpen;
-  if (next === undefined || hubState()?.projects[projectKey(next)] === undefined) return;
-  toOpen = undefined;
-  window.location.hash = toHash({ id: "project", project: next, message: null });
+/**
+ * Opens the bot just made once its hub's snapshot lists it, so its chat never shows as missing first. It watches the
+ * store of the hub it was made on (`on`), whichever hub the flow follows by then: a dialog done at once lets go of
+ * that hub, and the screen may be on another one.
+ */
+const openWhenListed = (project: { machineId: string; projectId: string }, on: DataLayer) => {
+  stopWaiting?.();
+  const look = () => {
+    if (on.store.getState().projects[projectKey(project)] === undefined) return;
+    stop();
+    stopWaiting = undefined;
+    navigate({ id: "project", project, message: null, at: on.hub });
+  };
+  const stop = on.store.subscribe(look);
+  stopWaiting = stop;
+  look();
 };
 
 /** A fresh, closed dialog: what the next New bot opens on. */
@@ -73,8 +86,7 @@ const dispatch = (msg: CreateMsg) => {
   for (const c of calls) run(c);
   if (before.phase.kind === "creating" && next.phase.kind === "made") {
     // Made: its chat opens behind the dialog at once, which stays to show its repos coming in, if it has any.
-    toOpen = next.phase.bot.project;
-    openWhenListed();
+    if (layer !== undefined) openWhenListed(next.phase.bot.project, layer);
     if (next.jobs.every((j) => j.state.t === "added")) {
       // Nothing more to show, open or hidden: one toast, and the next New bot starts fresh.
       const done = next.phase.bot.title;
@@ -112,9 +124,13 @@ const announce = (before: CreateState) => {
 
 const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, projects: d.projects, events: d.events });
 
-/** Starts feeding the flow from the layer's store; once per layer. */
+/** The store `layer` feeds the flow from, until another hub's takes its place. */
+let unsubscribe: (() => void) | undefined;
+
+/** Starts feeding the flow from the layer's store: the hub the dialog adds to. */
 const connect = (next: DataLayer): void => {
   if (layer === next) return;
+  unsubscribe?.();
   layer = next;
   let prev: HubView | undefined;
   let lastSeq: number | undefined;
@@ -124,14 +140,14 @@ const connect = (next: DataLayer): void => {
     if (prev === undefined) lastSeq = d.cursor;
     const msgs = hubMessages(prev, now, lastSeq);
     prev = now;
-    openWhenListed();
     for (const msg of msgs) {
       if (msg.t === "event") lastSeq = msg.event.seq;
       dispatch(msg);
     }
   };
-  next.store.subscribe(onChange);
+  unsubscribe = next.store.subscribe(onChange);
   onChange(next.store.getState());
+  if (ui.hostName !== undefined) return;
   void window.fleetd.system.hostName().then((hostName) => set({ ...ui, hostName }));
 };
 
@@ -140,11 +156,15 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
+/** The dialog's state, fed from the scope's hub: the hub it adds to. */
 export const useAddUi = (): AddUi => {
   const data = useDataLayer();
   useEffect(() => connect(data), [data]);
-  return useSyncExternalStore(subscribe, addUi);
+  return useAddState();
 };
+
+/** The dialog's state, read alone: outside any hub's scope too. */
+export const useAddState = (): AddUi => useSyncExternalStore(subscribe, addUi);
 
 /** The dialog's state as it is now. */
 export const addUi = (): AddUi => ui;
@@ -155,9 +175,10 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
 
 /**
  * Opens New bot from anywhere: the sidebar's +, the palette, the File menu, a drop on the window. A `prefill` (a
- * pasted or dropped URL or path) goes in its repos unless something is being made.
+ * pasted or dropped URL or path) goes in its repos unless something is being made. `hub`: the hub it adds to, when
+ * the opener names one (a link's `?at=`); else the hub on view.
  */
-export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
+export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }, hub?: string): void => {
   // A bot made while the dialog was hidden is done with: a new one starts on a fresh form. One refused shows why,
   // with Back to what was typed.
   if (!busy(ui.add) && ui.add.phase.kind === "made") set(fresh());
@@ -175,6 +196,7 @@ export const openAddProject = (prefill?: { text: string; note?: Note; machine?: 
       ...(machine === undefined ? {} : { machine }),
     });
   } else if (!ui.open) set({ ...ui, open: true });
+  if (hub !== undefined && hub !== ui.hub && ui.add.phase.kind === "form") set({ ...omit(ui, "machine"), hub });
 };
 
 /** A toast's Show: the dialog as it was left, its failed repos or refusal still there. */
@@ -220,10 +242,10 @@ export const pickMachine = (machine: string, from?: string): void => {
   set({ ...omit(ui, "refused"), machine, repos: ui.repos.filter((r) => r.kind !== "folder"), note });
 };
 
-/** Another hub: the machine picked was the old hub's, and so was each folder, which comes out (`from`, `to`: their names). */
-export const pickHub = (from: string, to: string): void => {
+/** Another hub (`hub`): the machine picked was the old hub's, and so was each folder, which comes out (`from`, `to`: their names). */
+export const pickHub = (hub: string, from: string, to: string): void => {
   const moved = ui.repos.flatMap((r) => (r.kind === "folder" ? [r.path] : []));
-  const rest = omit(ui, "refused", "machine");
+  const rest = { ...omit(ui, "refused", "machine"), hub };
   if (moved.length === 0) {
     set(rest);
     return;
@@ -244,7 +266,8 @@ export const create = (machineId: string | undefined, why?: string, typed?: Repo
     set({ ...shown, refused: refused ?? "" });
     return;
   }
-  set(shown);
+  // Made on the hub it is on now, which it keeps until it is done, whichever hub is on view meanwhile.
+  set(layer === undefined ? shown : { ...shown, hub: layer.hub });
   dispatch({ t: "start", draft: { name, machineId, repos } });
 };
 
@@ -277,6 +300,8 @@ export const localMachine = (): Machine | undefined => {
 
 /** A bot opens as its lead chat, the dialog closed. */
 export const openProject = (machineId: string, projectId: string): void => {
+  // Its hub's, before closing lets go of it.
+  const at = layer?.hub;
   closeAddProject();
-  window.location.hash = toHash({ id: "project", project: { machineId, projectId }, message: null });
+  navigate({ id: "project", project: { machineId, projectId }, message: null, ...(at === undefined ? {} : { at }) });
 };
