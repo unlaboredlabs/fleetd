@@ -16,7 +16,7 @@ import { Masker } from "../../src/node/mask.ts";
 import { dir as slotsDir, take } from "../../src/node/build_slots.ts";
 import { boxAlive, boxFile, readBox } from "../../src/node/place/box_record.ts";
 import { inBox, leavesBox, pick, placeAt, useVm } from "../../src/node/place/index.ts";
-import { FAILED_MS, GUEST_CPUS, GUEST_MEM_GIB, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
+import { BOX_SQLITE_TMPDIR, FAILED_MS, GUEST_CPUS, GUEST_MEM_GIB, fdLimit, forgetAt, guestMemGiB, hostLike, forwards, gitInBox, kernelCmdline, launcherScript, MicroVm, openFds, reportVm, SOCKS, vsockDial, type BootPlan, type Booted, type MicroVmOptions } from "../../src/node/place/microvm.ts";
 import { processPlace } from "../../src/node/place/process.ts";
 import { marker, readRegistration, startOf, sweep, type HostLink, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { withSandbox } from "../../src/hub/slots/index.ts";
@@ -924,7 +924,7 @@ test("a local VM's guest runs the agent as this machine's user, never root; else
   expect(script).toContain(`fleetd.uid=${uid}`);
 });
 
-test("a box's pnpm store is in its checkout, out of git; its temp files stay in its scratch dir, outside the repo", async () => {
+test("a box's pnpm store is in its checkout, out of git; its temp files stay in its scratch dir, outside the repo, and SQLite's on its own disk", async () => {
   const n = node();
   const repo = join(n.home, "wt-tmp");
   mkdirSync(repo, { recursive: true });
@@ -932,11 +932,13 @@ test("a box's pnpm store is in its checkout, out of git; its temp files stay in 
   const dir = join(n.home, "hosts", "s-tmp");
   const place = n.vm.bound({ sessionId: "s-tmp", dir, role: "worker" });
   const env = envOf(n.home);
-  const script = 'mkdir -p "$pnpm_config_store_dir" && touch "$pnpm_config_store_dir/x" && echo "tmp=$TMPDIR store=$pnpm_config_store_dir" && git status --porcelain';
+  const script = 'mkdir -p "$pnpm_config_store_dir" && touch "$pnpm_config_store_dir/x" && echo "tmp=$TMPDIR store=$pnpm_config_store_dir sqlite=$SQLITE_TMPDIR" && git status --porcelain';
   const ran = await place.run({ cwd: repo, argv: ["/bin/sh", "-c", script], timeoutSec: 10, env });
   expect(ran.exitCode).toBe(0);
   // A temp dir inside the repo would be found by every tool walking up from it (its package.json, its test runner).
-  expect(ran.outputTail).toContain(`tmp=${env.TMPDIR} store=${join(repo, ".fleetd/pnpm-store/")}`);
+  expect(ran.outputTail).toContain(`tmp=${env.TMPDIR} store=${join(repo, ".fleetd/pnpm-store/")} sqlite=${BOX_SQLITE_TMPDIR}`);
+  // The box's own, never a place its share shows: SQLite's spill there would cross to this machine again.
+  expect(guestOwn(BOX_SQLITE_TMPDIR)).toBe(true);
   expect(ran.outputTail).not.toContain("??");
   expect(readFileSync(join(repo, ".git/info/exclude"), "utf8")).toContain("/.fleetd/pnpm-store/\n");
   await place.end(dir);
