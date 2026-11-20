@@ -117,6 +117,33 @@ test("a lead texts another unasked, that lead is woken once and replies with the
   }
 });
 
+test("the same short answer to two texts is two answers, and the same words after an answer are a new text, not a retry", async () => {
+  const { hub, launches, sends, texts, done } = twoBots();
+  try {
+    const handle = async (from: ProjectRef, to: string, words: string, reply?: string) =>
+      ((await answer(hub, from, text(to, words, reply))) as { handle: string }).handle;
+    expect(await handle(HOME, "Storefront", "Is v3 live?")).toBe("N1");
+    expect(await handle(SHOP, "Shop", "Yes.", "N1")).toBe("N2");
+    expect(await handle(HOME, "Storefront", "Does it take gift cards?")).toBe("N3");
+    // The same "Yes." answers N3 this time: a new text that wakes Shop's lead again, not N2 once more.
+    expect(await handle(SHOP, "Shop", "Yes.", "N3")).toBe("N4");
+    // A retry of that answer is still that answer.
+    expect(await handle(SHOP, "Shop", "Yes.", "N3")).toBe("N4");
+    // The same heads-up again after an answer came between is a new text too.
+    expect(await handle(HOME, "Storefront", "Is v3 live?")).toBe("N5");
+    expect(texts(HOME).filter((m) => m.lead?.to === undefined).map((m) => [m.text, m.lead?.reply])).toEqual([
+      ["Yes.", "N1"],
+      ["Yes.", "N3"],
+    ]);
+    // Shop's lead started on the first answer, then took the second into its session; Storefront's on N1, then N3 and N5.
+    expect(launches.map((l) => l.project)).toEqual(["Storefront", "Shop"]);
+    expect(sends.filter((s) => s.text.includes("Storefront's reply to your N3, as N4.")).length).toBe(1);
+    expect(texts(SHOP).filter((m) => m.lead?.to === undefined).map((m) => m.lead?.handle)).toEqual(["N1", "N3", "N5"]);
+  } finally {
+    done();
+  }
+});
+
 test("the per-pair cap refuses the next text with a plain reason, both ways together, and lifts after the hour", async () => {
   const { hub, clock, done } = twoBots();
   try {

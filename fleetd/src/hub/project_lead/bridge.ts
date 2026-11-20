@@ -315,6 +315,24 @@ function capped(hub: Hub, a: ProjectRef, b: ProjectRef, title: string, now: numb
   );
 }
 
+/**
+ * The text a lead's call repeats, if it is a retry: the newest text between the two bots either way, from this lead,
+ * within RETRY_MS, with the same words and answering the same text (`reply`'s n, or none).
+ */
+function retried(c: Database, from: ProjectRef, to: ProjectRef, text: string, reply: number | null, now: number): number | undefined {
+  const last = c
+    .query<{ n: number; from_machine_id: string; from_project_id: string; text: string; at_ms: number; reply: number | null }, [string, string, string, string]>(
+      `SELECT n, from_machine_id, from_project_id, text, at_ms, reply FROM project_asks
+         WHERE via_link IS NULL AND to_hub IS NULL
+           AND ((from_machine_id = ?1 AND from_project_id = ?2 AND to_machine_id = ?3 AND to_project_id = ?4)
+             OR (from_machine_id = ?3 AND from_project_id = ?4 AND to_machine_id = ?1 AND to_project_id = ?2))
+         ORDER BY n DESC LIMIT 1`,
+    )
+    .get(from.machineId, from.projectId, to.machineId, to.projectId);
+  const sentBy = last !== null && last.from_machine_id === from.machineId && last.from_project_id === from.projectId;
+  return sentBy && last.text === text && last.at_ms >= now - RETRY_MS && last.reply === reply ? last.n : undefined;
+}
+
 export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessageCall): Promise<ProjectMessageResult> {
   const to = target(hub, asker, call.project);
   const toRef = refOf(to);
@@ -331,23 +349,28 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
   const text = call.text;
   const now = hub.clock.now();
   const c = hub.db.conn;
-  // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again.
-  const first = c
-    .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
-      `SELECT n FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
+  const answers = replied === undefined ? null : Number(replied.slice(1));
+  // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again. A
+  // lead's text is one only while nothing went between the two bots since, and answering the same text.
+  const first =
+    asker.kind === "link"
+      ? c
+          .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
+            `SELECT n FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
                      AND to_project_id = ? AND text = ? AND at_ms >= ? AND via_link IS ? AND to_hub IS NULL
                      ORDER BY n DESC LIMIT 1`,
-    )
-    .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now - RETRY_MS, via)?.n;
+          )
+          .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now - RETRY_MS, via)?.n
+      : retried(c, from, toRef, text, answers, now);
   if (first === undefined && asker.kind === "project") capped(hub, from, toRef, to.title, now);
   const n =
     first ??
     (c
-      .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
+      .query<{ n: number }, [string, string, string, string, string, number, string | null, number | null]>(
         `INSERT INTO project_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
-                 via_link) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING n`,
+                 via_link, reply) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING n`,
       )
-      .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via)?.n as number);
+      .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via, answers)?.n as number);
   const handle = `N${n}`;
   if (asker.kind === "link") {
     const by = linkAuthor(asker.link);
