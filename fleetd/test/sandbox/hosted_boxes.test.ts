@@ -8,7 +8,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { join } from "node:path";
 import { boatStandIn, KEY, localRunner, type StandIn, type Step } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
-import { Boxes, DOWN_MS, hostable, MACHINE_LABEL, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
+import { Boxes, DOWN_MS, hostable, MACHINE_LABEL, PROBE_AGAIN_MS, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR, type Source } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { FLEETD_PATH } from "../../src/sandbox/providers/recipe.ts";
 import { type Box } from "../../src/node/sandbox/box.ts";
@@ -39,7 +39,7 @@ afterEach(async () => {
 
 /** A stand-in for `id` whose boxes run here, each with a port and a box dir of its own. `o.step`: how a template
  * build's commands end; `o.before`: what the account holds before the keys come (`name`: this recipe's template). */
-async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, name: string) => void; source?: () => Source; baked?: string; released?: (url: string) => Promise<boolean> } = {}) {
+async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, name: string) => void; source?: () => Source; baked?: string; released?: (url: string) => Promise<boolean>; now?: () => number } = {}) {
   const dir = join(root, `w${++made}`);
   mkdirSync(dir, { recursive: true });
   const local = localRunner(join(dir, "boxes"), BOX_DIR);
@@ -59,6 +59,7 @@ async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, nam
     provider: (p, auth) => provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
     source: o.source ?? (() => ({ sha256: sha(FLEETD), bytes: async () => FLEETD })),
     ...(o.released ? { released: o.released } : {}),
+    ...(o.now ? { now: o.now } : {}),
   });
   o.before?.(s, boxes.templateName());
   boxes.setKeys({ [id]: Buffer.from(JSON.stringify({ provider: id, key: KEY })).toString("base64") });
@@ -347,6 +348,94 @@ test("a new template's build deletes the account's older templates past the newe
   await boxes.template("boat");
   await until(() => !s.saved!.has("fleetd-tcccccccccccc"));
   expect([...s.saved!.keys()].sort()).toEqual([boxes.templateName(), "fleetd-taaaaaaaaaaaa", "fleetd-tdddddddddddd", "fleetd-p1-0123456789ab"].sort());
+}, 60_000);
+
+test("a new template's build deletes every template named as before builds proved them, and nothing else (W756)", async () => {
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...a: unknown[]) => void logged.push(a.join(" "));
+  try {
+    const { s, boxes } = await world("boat", {
+      before: (s) => {
+        // From before the rename: never started from, all of them deleted, the newest too, a failed one too.
+        seed(s, "fleetd-94251c014f62", "2026-11-19T09:00:00Z");
+        seed(s, "fleetd-0123456789ab", "2026-11-12T09:00:00Z");
+        seed(s, "fleetd-abcdef012345", "2026-11-11T09:00:00Z", "failed");
+        // Proven ones, kept as today: the newest two.
+        seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+        seed(s, "fleetd-tcccccccccccc", "2026-11-10T09:00:00Z");
+        // A bot's computer image, and a person's own templates whose names only look alike.
+        seed(s, "fleetd-p1-0123456789ab", "2026-11-01T09:00:00Z");
+        seed(s, "fleetd-0123456789ab-mine", "2026-11-01T09:00:00Z");
+        seed(s, "fleetd-mybox", "2026-11-01T09:00:00Z");
+        seed(s, "fleetd-0123456789abc", "2026-11-01T09:00:00Z");
+      },
+    });
+    await boxes.template("boat");
+    await until(() => !s.saved!.has("fleetd-tcccccccccccc") && !s.saved!.has("fleetd-abcdef012345"));
+    expect([...s.saved!.keys()].sort()).toEqual([boxes.templateName(), "fleetd-taaaaaaaaaaaa", "fleetd-p1-0123456789ab", "fleetd-0123456789ab-mine", "fleetd-mybox", "fleetd-0123456789abc"].sort());
+    for (const n of ["fleetd-94251c014f62", "fleetd-0123456789ab", "fleetd-abcdef012345"]) expect(logged.filter((l) => l.includes("INFO an old hosted sandbox template is deleted") && l.includes(`"name":"${n}"`))).toHaveLength(1);
+  } finally {
+    console.log = log;
+  }
+}, 60_000);
+
+test("a template a box of this node is being created from is never pruned", async () => {
+  const { s, boxes } = await world("boat");
+  const name = await boxes.template("boat");
+  // The account loses this recipe's template, so the next machine builds and prunes; two old ones are there.
+  await boxes.client("boat").forget!(name);
+  seed(s, "fleetd-0123456789ab", "2026-11-12T09:00:00Z");
+  seed(s, "fleetd-0123456789cd", "2026-11-12T09:00:00Z");
+  let open = () => {};
+  const gate = new Promise<void>((r) => (open = r));
+  const again = new Boxes(join(root, `again-${++made}`), "devbox", { open: (b) => b }, {
+    provider: (p, auth) => {
+      const c = provider(p, auth, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 });
+      return { ...c, create: async (o) => (await gate, c.create(o)) };
+    },
+    source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
+  });
+  again.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  again.wire({ lead: { relay: new LeadRelay(), identify: () => ({ kind: "none" }) as never, maskFor: () => new Masker([]) } });
+  const making = again.create("boat", "sess-old", [], [], undefined, { template: "fleetd-0123456789ab" });
+  await until(() => !s.saved!.has("fleetd-0123456789cd"));
+  expect(s.saved!.has("fleetd-0123456789ab")).toBe(true);
+  open();
+  const record = await making;
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-0123456789ab");
+  await again.destroy(record);
+}, 60_000);
+
+test("a release asset's HEAD that missed is asked again PROBE_AGAIN_MS later, not at every start; one found stays (W756)", async () => {
+  const baked = join(root, `baked-${++made}`);
+  writeFileSync(baked, FLEETD, { mode: 0o755 });
+  let now = Date.parse("2026-11-20T10:00:00Z");
+  let published = false;
+  const asked: number[] = [];
+  const { s, boxes } = await world("boat", { source: release, baked, now: () => now, released: async () => (asked.push(now), published) });
+  // Not published yet: the plain template.
+  expect(await boxes.template("boat")).toBe(boxes.templateName());
+  expect(asked).toHaveLength(1);
+  // Starts before the wait ask nothing.
+  now += PROBE_AGAIN_MS - 1;
+  published = true;
+  expect(await boxes.template("boat")).toBe(boxes.templateName());
+  expect(asked).toHaveLength(1);
+  // After it, asked again: found, this release's template is built ahead while boxes start from the plain one.
+  now += 1;
+  const steps: HostedStep[] = [];
+  expect(await boxes.template("boat", undefined, (step) => steps.push(step))).toBe(boxes.templateName());
+  expect(asked).toHaveLength(2);
+  expect(steps).toEqual([{ older: expect.any(String), building: true }]);
+  const own = `${boxes.templateName()}-f${sha(FLEETD).slice(0, 12)}`;
+  await until(() => s.saved!.has(own) && saves(s).length === 2);
+  await until(() => s.saved!.get(own)!.asked >= 2);
+  expect(await boxes.template("boat")).toBe(own);
+  // Found stays found: never asked again.
+  now += 10 * PROBE_AGAIN_MS;
+  expect(await boxes.template("boat")).toBe(own);
+  expect(asked).toHaveLength(2);
 }, 60_000);
 
 test("a box whose noted template was deleted looks again and starts, never set aside for it", async () => {

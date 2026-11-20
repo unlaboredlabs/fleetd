@@ -40,6 +40,10 @@ const UP_MS = 90_000;
 const DIAL_MAX_MS = 1000;
 /** How many of the account's templates are kept, newest first: this release's and the one before (`#prune`). */
 export const KEEP_TEMPLATES = 2;
+/** How long after the release asset's HEAD missed (not published yet, a network blip) a start asks again (`#probe`):
+ * a release's asset is up within minutes of its tag, and a build of one's own, whose asks all miss, asks at most this
+ * often, only when a box starts or the keys come. */
+export const PROBE_AGAIN_MS = 10 * 60_000;
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
@@ -47,7 +51,7 @@ type Opener = { open(sealed: Uint8Array): Uint8Array | null };
  * recipe's own when it is ready there (`own`) and the newest ready one of another recipe (`older`, the last good);
  * `done`, the recipe's own once it is there; `failed`, set when it didn't build, until the next build ahead; `id`, set
  * once it is there. */
-type Run = { looked: Promise<{ own?: string; older?: { id: string; at: string } }>; done: Promise<string>; failed?: boolean; id?: string };
+type Run = { name: string; looked: Promise<{ own?: string; older?: { id: string; at: string } }>; done: Promise<string>; failed?: boolean; id?: string };
 
 /** What the node gives every box's link: how node.sock calls are answered. */
 export type Wiring = { lead: LeadSocketHooks };
@@ -72,13 +76,16 @@ export class Boxes {
   #making = new Set<string>();
   /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
   #held = new Set<string>();
+  /** The templates boxes of this node are being created from now, and how many: `#prune` never deletes one. */
+  #starting = new Map<string, number>();
 
   constructor(
     readonly home: string,
     readonly machineId: string,
     private readonly opener: Opener,
-    /** Tests: another provider than the real clients, another fleetd source, and how long a new box is left alone. */
-    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number; released?: (url: string) => Promise<boolean> } = {},
+    /** Tests: another provider than the real clients, another fleetd source, how long a new box is left alone, whether
+     * a release asset is published, and the clock. */
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number; released?: (url: string) => Promise<boolean>; now?: () => number } = {},
   ) {
     for (const p of PROVIDERS) {
       const sealed = this.#keyFile(p);
@@ -221,7 +228,9 @@ export class Boxes {
       kept = JSON.parse(readFileSync(file, "utf8"));
     } catch {}
     if (kept.name === name && kept.id) return kept.id;
-    let run = this.#runs.get(key) ?? this.ahead(p, size)!;
+    // A run of another name (the plain template's, before the probe found this release's asset) is built ahead anew.
+    let run = this.#runs.get(key);
+    if (!run || run.name !== name) run = this.ahead(p, size)!;
     const { own, older } = await run.looked;
     // A build that is done answers at once; one that failed is tried again only when there is no other to start from.
     if (run.id ?? own) return (run.id ?? own)!;
@@ -246,18 +255,26 @@ export class Boxes {
   }
 
   /** This node's fleetd as a template holds it, once `#probe` found it: a release build's URL and SHA-256. Undefined
-   * for a build of one's own (its URL names an asset no release has), a release whose asset isn't published there, a
-   * machine that makes no boxes, or before the probe. */
+   * for a build of one's own (its URL names an asset no release has), a release whose asset isn't published there yet,
+   * a machine that makes no boxes, or before the probe. */
   #bakedMemo: { url: string; sha256: string } | undefined;
   #probed: Promise<void> | undefined;
+  /** When the last probe's HEAD missed: the next is asked PROBE_AGAIN_MS after it. */
+  #missedAt: number | undefined;
   #baked(): { url: string; sha256: string } | undefined {
     return this.#bakedMemo;
   }
 
-  /** Finds once whether this node's fleetd is a published release asset (`source().url` answers), the only one a
-   * template's build can fetch: a URL is every machine's (a build of one's own gets one that answers 404). A template
-   * of a build that isn't one holds no fleetd, and its boxes fetch or take it at their start as before. */
+  /** Finds whether this node's fleetd is a published release asset (`source().url` answers), the only one a template's
+   * build can fetch: a URL is every machine's (a build of one's own gets one that answers 404). A template of a build
+   * that isn't one holds no fleetd, and its boxes fetch or take it at their start as before. A found asset is kept for
+   * the process; a miss is asked again at a call PROBE_AGAIN_MS later, never at every start. */
   #probe(): Promise<void> {
+    const now = this.o.now ?? Date.now;
+    if (this.#probed && this.#missedAt !== undefined && now() - this.#missedAt >= PROBE_AGAIN_MS) {
+      this.#probed = undefined;
+      this.#missedAt = undefined;
+    }
     return (this.#probed ??= (async () => {
       let s: Source;
       try {
@@ -272,7 +289,10 @@ export class Boxes {
         ok = await released(s.url);
       } catch {}
       if (ok) this.#bakedMemo = { url: s.url, sha256: s.sha256 };
-      else console.log(`${nowIso()} INFO this machine's fleetd isn't a published release: its hosted template holds none {"url":${JSON.stringify(s.url)}}`);
+      else {
+        this.#missedAt = now();
+        console.log(`${nowIso()} INFO this machine's fleetd isn't a published release (yet): its hosted template holds none, asked again in ${PROBE_AGAIN_MS / 60_000} minutes {"url":${JSON.stringify(s.url)}}`);
+      }
     })());
   }
 
@@ -283,7 +303,7 @@ export class Boxes {
   ahead(p: ProviderId, size: Size = DEFAULT_SIZE): Run | undefined {
     const { name, sized, baked, file, key } = this.#named(p, size);
     const was = this.#runs.get(key);
-    if (was && !was.failed) return was;
+    if (was && !was.failed && was.name === name) return was;
     try {
       const kept = JSON.parse(readFileSync(file, "utf8")) as { name?: string; id?: string };
       if (kept.name === name && kept.id) return undefined;
@@ -292,7 +312,7 @@ export class Boxes {
     try {
       client = this.client(p);
     } catch (error) {
-      const r: Run = { looked: Promise.resolve({}), done: Promise.reject(error), failed: true };
+      const r: Run = { name, looked: Promise.resolve({}), done: Promise.reject(error), failed: true };
       r.done.catch(() => {});
       return r;
     }
@@ -306,6 +326,7 @@ export class Boxes {
     // A lookup that fails builds, as one that finds none.
     const list = (client.saved?.("fleetd-") ?? Promise.resolve([] as Saved[])).catch(() => [] as Saved[]);
     const run: Run = {
+      name,
       looked: list.then((all) => ({ ...(all.some((t) => t.name === name && t.status === "ready") ? { own: name } : {}), older: lastGood(all, name, sized) })),
       done: Promise.resolve(""),
     };
@@ -346,13 +367,16 @@ export class Boxes {
   }
 
   /** Deletes the account's ready templates past the newest KEEP_TEMPLATES (each costs by the day past the plan's
-   * included ones). Only templates (`lastGood`'s names), never a bot's computer image, never one still saving. A
-   * machine still on an older release whose template went starts from a newer one (`create`'s second try). */
+   * included ones), and every template named as before builds proved what a start runs (`isUnproven`), which no box
+   * starts from any more. Only templates (`lastGood`'s names and those), never a bot's computer image, never one still
+   * saving, never one a box of this node is being created from. A machine still on an older release whose template went
+   * starts from a newer one (`create`'s second try). */
   async #prune(client: Provider, p: ProviderId, sized: string): Promise<void> {
     if (!client.saved || !client.forget) return;
     try {
-      const ready = (await client.saved("fleetd-")).filter((t) => t.status === "ready" && isTemplate(t.name, sized)).sort(newestFirst);
-      for (const t of ready.slice(KEEP_TEMPLATES)) {
+      const all = (await client.saved("fleetd-")).filter((t) => t.status !== "saving" && !this.#starting.has(t.name));
+      const ready = all.filter((t) => t.status === "ready" && isTemplate(t.name, sized)).sort(newestFirst);
+      for (const t of [...ready.slice(KEEP_TEMPLATES), ...all.filter((t) => isUnproven(t.name, sized))]) {
         await client.forget(t.name);
         console.log(`${nowIso()} INFO an old hosted sandbox template is deleted {"provider":"${p}","name":"${t.name}"}`);
       }
@@ -400,7 +424,7 @@ export class Boxes {
       client.create({ template, key: `fleetd-${randomBytes(12).toString("hex")}`, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });
     let made: Awaited<ReturnType<Provider["create"]>>;
     try {
-      made = await make();
+      made = await this.#from(template, make);
     } catch (error) {
       // The template this machine noted is gone (another machine deleted an old one, or a person did): looked up again,
       // once.
@@ -408,7 +432,7 @@ export class Boxes {
       console.warn(`${nowIso()} WARN the hosted sandbox template a box was to start from is gone: looking again {"provider":"${p}","template":"${template}"}`);
       this.#forget(p, size);
       template = await this.template(p, size, (step) => stepped(session, step));
-      made = await make();
+      made = await this.#from(template, make);
     }
     stages.done("create");
     const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
@@ -447,6 +471,18 @@ export class Boxes {
       throw error;
     } finally {
       made_();
+    }
+  }
+
+  /** `make`, with `template` kept from `#prune` until it is answered. */
+  async #from<T>(template: string, make: () => Promise<T>): Promise<T> {
+    this.#starting.set(template, (this.#starting.get(template) ?? 0) + 1);
+    try {
+      return await make();
+    } finally {
+      const n = this.#starting.get(template)! - 1;
+      if (n) this.#starting.set(template, n);
+      else this.#starting.delete(template);
     }
   }
 
@@ -552,6 +588,9 @@ export class Boxes {
  * templateName, or `fleetd-t<hash>-f<fleetd>` with a release's fleetd in it, then `sized`): never a name from before
  * builds proved it (one of those couldn't run a session), nor a bot's computer image. */
 const isTemplate = (name: string, sized: string) => new RegExp(`^fleetd-t[0-9a-f]{12}(-f[0-9a-f]{12})?${sized.replace(/[^a-z0-9-]/g, "")}$`).test(name);
+/** Whether `name` is a template from before builds proved what a start runs: `fleetd-<hash>` exactly, as templateName
+ * named them until W756, then `sized`. A bot's computer image (`fleetd-<bot>-<key>`) or a person's own never is. */
+const isUnproven = (name: string, sized: string) => new RegExp(`^fleetd-[0-9a-f]{12}${sized.replace(/[^a-z0-9-]/g, "")}$`).test(name);
 const newestFirst = (a: Saved, b: Saved) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0);
 
 /** The newest ready template other than `name` (`isTemplate`'s), with when it was saved: another recipe's, or this
