@@ -19,8 +19,17 @@
 // - Channel 0 carries the control messages, one JSON object a DATA frame, outside the windows.
 //
 // A link that drops ends every channel on it; the node dials again (./box.ts) and the session host's own seq/ack
-// resend (../runner/host.ts) carries its lines across.
+// resend (../runner/host_link.ts) carries its lines across. Box side (docs/CONTRIBUTING.md "The package").
 import { Duplex } from "node:stream";
+import type { Refusal } from "../runner/host_link.ts";
+
+/** Bumped when the link's frames or control messages change incompatibly. */
+export const GUEST_PROTOCOL = 1;
+/** The most bytes one `read` answers: a control message's frame takes 1 MiB, base64 included. */
+export const READ_CHUNK = 512 * 1024;
+
+/** What the guest says of the session host it started: its protocol (./host_link.ts PROTOCOL), or why it refused. */
+export type HostInfo = { protocol: number; refused: Refusal | null | undefined };
 
 export const FRAME = { OPEN: 1, DATA: 2, END: 3, CREDIT: 4 } as const;
 const HEADER = 9;
