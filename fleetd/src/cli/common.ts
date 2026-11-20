@@ -57,7 +57,7 @@ function sessionVar(name: string): string | undefined {
 export const sessionThreadId = () => sessionVar("FLEETD_THREAD_ID");
 
 /** The lead's fleetd tools that set its project up: what an agent uses instead of the CLI's writes. */
-export const LEAD_SETUP_TOOLS = ["repo_add", "repo_remove", "project_setup", "project_propose"];
+export const LEAD_SETUP_TOOLS = ["repo_add", "repo_create", "repo_remove", "project_setup", "project_propose"];
 
 /** Why a write to the live hub from an agent's session is refused, and what works instead: one line. */
 export const liveHubRefusal = (what: string) =>

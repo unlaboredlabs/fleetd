@@ -73,6 +73,8 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "private-memory", label: "keeps the person's private life in its own memory, never in user scope", needle: "project scope, your own memory", enforced: "prompt" },
       { id: "agent-not-human", label: "takes an agent's chat message as input, never as the person's answer or approval", needle: "never as the person's answer", enforced: "code" },
       { id: "searches-its-chat", label: "searches its whole chat before saying it doesn't know what the person said earlier", needle: "before you say you don't know", enforced: "prompt" },
+      { id: "suggests-repo", label: "once work becomes real software (never a script, document or one-off file), suggests a repo and agents once, in one line; carries on in its folder on a no", needle: "say so once, in one plain line", enforced: "prompt" },
+      { id: "repo-on-yes", label: "on a yes, makes the repo with `repo_create` (or adds theirs), has a writer bring the work so far in as its first PR, and goes on with agents; never asks for a token", needle: "Never ask them for a token", enforced: "prompt" },
     ],
   },
   {
