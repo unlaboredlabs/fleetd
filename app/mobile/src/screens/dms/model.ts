@@ -1,6 +1,7 @@
 // A project's DMs between agents on the phone (W533), kept pure: agent_messages' shapes, a DM's route (who to whom),
 // its opening words, what became of it for each recipient (delivered at its next step, held for its next run, woke
-// it to answer what it asked, didn't wake it, or not sent), and the events that change the log. Read-only: the hub keeps every
+// it to answer what it asked, didn't wake it, or not sent), and the events that change the log. A note to the whole bot
+// has no recipients: it reads as sent to the bot. Read-only: the hub keeps every
 // DM as it was sent, and nobody edits or deletes one.
 import type { AgentMessage, AgentMessageOutcome, AgentMessageRecipient, AgentMessagesOutput, HubEvent, HubState, ProjectRef } from "../../desktop";
 
@@ -24,8 +25,14 @@ export type DmPage = Pick<AgentMessagesOutput, "messages" | "more" | "total">;
 /** The most DMs one read brings. */
 export const DM_PAGE = 50;
 
-/** Who to whom: "T2573 → T2577, T2580". */
-export const route = (m: Pick<AgentMessage, "from" | "to">): string => `${m.from.taskId} → ${m.to.map((r) => r.taskId).join(", ")}`;
+/** A note to the whole bot (`to: ["bot"]`), not a DM to named agents. */
+export const isNote = (m: Pick<AgentMessage, "toBot">): boolean => m.toBot === true;
+
+/** What became of a note: there is no recipient to have a receipt. */
+export const NOTE_OUTCOME = "Its agents read it in their agent list. Nobody was woken.";
+
+/** Who to whom: "T2573 → T2577, T2580", or "T2573 → the bot" for a note. */
+export const route = (m: Pick<AgentMessage, "from" | "to" | "toBot">): string => `${m.from.taskId} → ${isNote(m) ? "the bot" : m.to.map((r) => r.taskId).join(", ")}`;
 
 /** Its opening words on one line: the row cuts them at two. */
 export const opening = (text: string): string => text.replace(/\s+/gu, " ").trim().slice(0, 300);
@@ -52,7 +59,8 @@ export const outcomeWord = (outcome: DmOutcome): string => {
 const outcomeWords = (outcome: DmOutcome, n: number): string => (n === 1 ? outcomeWord(outcome) : outcome === "woke" ? "Woke them" : outcome === "not_woken" ? "Didn't wake them" : outcomeWord(outcome));
 
 /** Its row's last line: one outcome for all, or each with whom it was for ("Delivered to T2577 · Didn't wake T2567"). */
-export const rowOutcome = (m: Pick<AgentMessage, "to">): string => {
+export const rowOutcome = (m: Pick<AgentMessage, "to" | "toBot">): string => {
+  if (isNote(m)) return "Note to the bot";
   const groups: { outcome: DmOutcome; ids: string[] }[] = [];
   for (const r of m.to) {
     const g = groups.find((x) => x.outcome === r.outcome);
@@ -84,7 +92,7 @@ export const glyphOf = (m: Pick<AgentMessage, "to">): DmGlyph => {
 };
 
 /** For VoiceOver: a row read out as a sentence. */
-export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.taskId} to ${m.to.map((r) => r.taskId).join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
+export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.taskId} to ${isNote(m) ? "the bot" : m.to.map((r) => r.taskId).join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
 
 /** Words ending as a sentence does, once. */
 const sentence = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);

@@ -490,11 +490,15 @@
           "type": "string"
         },
         "to": {
-          "description": "In the order the sender named them.",
+          "description": "In the order the sender named them; none for a note to the project.",
           "items": {
             "$ref": "#/$defs/AgentMessageRecipient"
           },
           "type": "array"
+        },
+        "toBot": {
+          "description": "A note to the whole project (`to: [\"bot\"]`): it has no recipients, and its agents read it in `agents`.",
+          "type": "boolean"
         }
       },
       "required": [

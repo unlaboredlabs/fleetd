@@ -1,7 +1,8 @@
 // Agent messages: one agent's words to one to five others of its project
 // (`agent_message`). Each recipient's delivery is a steer by the sender, with its receipts; the message and where it
 // stands for each recipient are kept here whole, for the person to read and audit (`agent_messages`), and every change
-// is an `agent.messaged` or `agent.message_updated` event on the project.
+// is an `agent.messaged` or `agent.message_updated` event on the project. A note to the whole bot (`to: ["bot"]`) is a
+// message with no recipients: nobody is steered or woken, and its agents read the newest at the top of `agents`.
 import type { AgentMessage, AgentMessageOutcome, AgentMessageRecipient, HubEventType, ProjectRef, Steer, Task } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -15,6 +16,13 @@ import { TaskRecords } from "../tasks/records.ts";
 
 /** The most recipients one agent's messages reach in a minute: room for any real exchange, a stop for a loop. */
 export const PER_MINUTE = 20;
+/** `to: ["bot"]`: a note to every agent of the bot. */
+export const BOT = "bot";
+/** A note is one line of at most this many characters: a claim or a finding, not a dump. */
+export const NOTE_MAX = 300;
+/** The notes `agents` shows: the newest, while their sender's task is live and for a day at most. */
+export const NOTES_SHOWN = 10;
+export const NOTE_MS = 24 * 3_600_000;
 
 type Send = (from: Task, message: string, taskId: string, text: string, crid: string) => Promise<Steer>;
 type AskedAt = (taskId: string) => number | undefined;
@@ -32,13 +40,17 @@ function oneLine(text: string, max: number): string {
  * `refused` in the answer, not an error: the others still get it. */
 export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, from: Task, to: string[], text: string) {
   const ids = [...new Set(to)];
+  const toBot = ids.includes(BOT);
+  if (toBot) noteRule(from, ids, text);
   const now = nowMs(hub.clock);
   const c = hub.db.conn;
+  // A note counts as one recipient.
   const sent =
     c
       .query<{ n: number }, [string, number]>(
-        `SELECT COUNT(*) AS n FROM agent_message_to t JOIN agent_messages m ON m.n = t.message_n
-         WHERE m.from_task = ? AND m.sent_ms > ?`,
+        `SELECT (SELECT COUNT(*) FROM agent_message_to t JOIN agent_messages m ON m.n = t.message_n
+                  WHERE m.from_task = ?1 AND m.sent_ms > ?2)
+              + (SELECT COUNT(*) FROM agent_messages WHERE from_task = ?1 AND sent_ms > ?2 AND to_bot = 1) AS n`,
       )
       .get(from.taskId, now - 60_000)?.n ?? 0;
   if (sent + ids.length > PER_MINUTE) {
@@ -51,10 +63,20 @@ export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, fro
   const r = from.projectRef;
   const n = Number(
     c
-      .query(`INSERT INTO agent_messages (machine_id, project_id, from_task, from_title, text, sent_ms) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(r.machineId, r.projectId, from.taskId, from.title, text, now).lastInsertRowid,
+      .query(`INSERT INTO agent_messages (machine_id, project_id, from_task, from_title, text, sent_ms, to_bot) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(r.machineId, r.projectId, from.taskId, from.title, text, now, toBot ? 1 : 0).lastInsertRowid,
   );
   const id = `M${n}`;
+  if (toBot) {
+    emit(hub, "agent.messaged", r, id, from.taskId, [], text, true);
+    tellLead(hub, r, id, from.taskId, [], text, true);
+    return {
+      messageId: id,
+      to: [],
+      toBot: true,
+      next: `${id} is up as a note to the bot: its agents (reviews aside) see it at the top of \`agents\` while you are live, a day at most. It wakes nobody: write to an agent by id when it must act on it. Carry on.`,
+    };
+  }
   const recipients: AgentMessageRecipient[] = [];
   for (const [pos, taskId] of ids.entries()) {
     const found = TaskRecords.get(c, taskId)?.task;
@@ -97,6 +119,19 @@ export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, fro
   return { messageId: id, to: recipients, next: next(id, recipients) };
 }
 
+/** A note is one line of at most NOTE_MAX characters, to the bot alone, from an agent that isn't a review. */
+function noteRule(from: Task, ids: string[], text: string): void {
+  if (from.kind === "review") {
+    throw new ToolError("forbidden", `${from.taskId} is a review, and a review posts no notes to the bot.`, "Put what you found in your verdict (report), or write to an agent by id.");
+  }
+  if (ids.length > 1) throw new ToolError("invalid", 'A note goes to the bot alone: to: ["bot"].', "Send the note, then write to the agents by id in a message of its own.");
+  if (/[\r\n]/u.test(text.trim())) throw new ToolError("invalid", "A note to the bot is one line.", "Say the claim or finding in one line; a handoff with details goes to an agent by id.");
+  const length = [...text.trim()].length;
+  if (length > NOTE_MAX) {
+    throw new ToolError("invalid", `A note to the bot is at most ${NOTE_MAX} characters, and this one is ${length}.`, "Keep it to the claim or finding (\"moving the cloud pin in #404\"); details go to an agent by id.");
+  }
+}
+
 /** What the sender is told: where it stands for each recipient, and what to do when that isn't enough. */
 function next(id: string, to: AgentMessageRecipient[]): string {
   const lines = to.map((r) => {
@@ -118,20 +153,21 @@ function next(id: string, to: AgentMessageRecipient[]): string {
 }
 
 /** The lead's quiet copy, with its next wake. */
-function tellLead(hub: Hub, r: ProjectRef, id: string, from: string, to: AgentMessageRecipient[], text: string): void {
+function tellLead(hub: Hub, r: ProjectRef, id: string, from: string, to: AgentMessageRecipient[], text: string, toBot = false): void {
   const names = to.map((t) => (t.outcome === "delivered" || t.outcome === "woke" ? t.taskId : `${t.taskId} (${t.outcome.replace("_", " ")})`));
-  const line = renderEvent({ kind: "agent_messaged", from, to: names.join(", "), message: id, text });
+  const line = renderEvent({ kind: "agent_messaged", from, to: toBot ? "the bot" : names.join(", "), message: id, text });
   leadWakes(hub).trigger(r, { kind: "line", line: "quiet", text: line });
 }
 
-function emit(hub: Hub, type: HubEventType, r: ProjectRef, id: string, from: string, to: AgentMessageRecipient[], text: string): void {
+function emit(hub: Hub, type: HubEventType, r: ProjectRef, id: string, from: string, to: AgentMessageRecipient[], text: string, toBot = false): void {
   const data = {
     messageId: id,
     from,
     to: to.map((t) => ({ taskId: t.taskId, outcome: t.outcome, ...(t.detail !== undefined ? { detail: t.detail } : {}) })),
+    ...(toBot ? { toBot: true } : {}),
     text: jsTake(text, 120),
   };
-  const summary = `${id} from ${from} to ${to.map((t) => t.taskId).join(", ")}: '${oneLine(text, 120)}'`;
+  const summary = `${id} from ${from} to ${toBot ? "the bot" : to.map((t) => t.taskId).join(", ")}: '${oneLine(text, 120)}'`;
   try {
     events(hub).append({ at: isoMs(nowMs(hub.clock)), type, machineId: r.machineId, projectId: r.projectId, summary: jsTake(summary, 200), data });
   } catch (error) {
@@ -182,6 +218,21 @@ export function onSteer(hub: Hub, steer: Steer): void {
   if (got) emit(hub, "agent.message_updated", got.projectRef, got.message.id, got.message.from.taskId, got.message.to, got.message.text);
 }
 
+/** The notes to the bot `agents` shows its agents, newest first: "M12 T4153 14:44: moving the cloud pin in #404". Only
+ * those whose sender's task is live (queued, running or idle), from the last day, NOTES_SHOWN at most. */
+export function notes(db: HubDb, r: ProjectRef, now: number): string[] {
+  return db.conn
+    .query<{ n: number; from_task: string; text: string; sent_ms: number }, [string, string, number, number]>(
+      `SELECT m.n, m.from_task, m.text, m.sent_ms FROM agent_messages m
+         JOIN tasks t ON t.n = CAST(substr(m.from_task, 2) AS INTEGER)
+       WHERE m.machine_id = ? AND m.project_id = ? AND m.to_bot = 1 AND m.sent_ms > ?
+         AND t.state IN ('queued', 'running', 'idle')
+       ORDER BY m.n DESC LIMIT ?`,
+    )
+    .all(r.machineId, r.projectId, now - NOTE_MS, NOTES_SHOWN)
+    .map((row) => `M${row.n} ${row.from_task} ${hhmm(row.sent_ms)}: ${oneLine(row.text, NOTE_MAX)}`);
+}
+
 /** The project's agent messages (only those `taskId` sent or got, with one) older than `before`, newest first. */
 export function list(db: HubDb, r: ProjectRef, taskId: string | undefined, before: string | undefined, limit: number) {
   const c = db.conn;
@@ -206,8 +257,8 @@ export function list(db: HubDb, r: ProjectRef, taskId: string | undefined, befor
 export function get(db: HubDb, n: number): { projectRef: ProjectRef; message: AgentMessage } | undefined {
   const c = db.conn;
   const head = c
-    .query<{ machine_id: string; project_id: string; from_task: string; from_title: string; text: string; sent_ms: number }, [number]>(
-      "SELECT machine_id, project_id, from_task, from_title, text, sent_ms FROM agent_messages WHERE n = ?",
+    .query<{ machine_id: string; project_id: string; from_task: string; from_title: string; text: string; sent_ms: number; to_bot: number }, [number]>(
+      "SELECT machine_id, project_id, from_task, from_title, text, sent_ms, to_bot FROM agent_messages WHERE n = ?",
     )
     .get(n);
   if (!head) return undefined;
@@ -227,6 +278,6 @@ export function get(db: HubDb, n: number): { projectRef: ProjectRef; message: Ag
     );
   return {
     projectRef: { machineId: head.machine_id, projectId: head.project_id },
-    message: { id: `M${n}`, from: { taskId: head.from_task, title: head.from_title }, text: head.text, sentAt: isoMs(head.sent_ms), to },
+    message: { id: `M${n}`, from: { taskId: head.from_task, title: head.from_title }, text: head.text, sentAt: isoMs(head.sent_ms), to, ...(head.to_bot === 1 ? { toBot: true } : {}) },
   };
 }

@@ -225,16 +225,21 @@ export function describe(e: HubEvent): Line | undefined {
 
 /**
  * One agent's DM to others: "T2573 → T2577" and its opening words, folded with the pair's other DMs of the same hour
- * ("3 DMs · T2573 ↔ T2577"). A wake the guard refused stands on its own line, in words: "T2584 didn’t wake T2567".
+ * ("3 DMs · T2573 ↔ T2577"). A wake the guard refused stands on its own line, in words: "T2584 didn’t wake T2567". A
+ * note to the bot has no recipients: "T2573 → the bot", on a line of its own.
  */
 function dm(e: HubEvent, data: Readonly<Record<string, unknown>>, base: Pick<Line, "seq" | "at" | "kind">): Line | undefined {
   const from = str(data["from"]);
   const to = (Array.isArray(data["to"]) ? data["to"] : []).map(record).filter((t) => str(t["taskId"]) !== undefined);
+  const dms: PanelView = { tab: "activity", dms: true };
+  if (from !== undefined && data["toBot"] === true) {
+    const ids = [from, str(data["messageId"])].filter((x) => x !== undefined).join(" · ");
+    return { ...base, ids, icon: "dm", tone: "quiet", text: `${from} → the bot`, detail: str(data["text"]), link: dms };
+  }
   if (from === undefined || to.length === 0) return undefined;
   const ids = to.map((t) => str(t["taskId"]) as string);
   const words = str(data["text"]);
   const ref = { ...base, ids: [from, ...ids, str(data["messageId"])].filter((x) => x !== undefined).join(" · ") };
-  const dms: PanelView = { tab: "activity", dms: true };
   const no = to.find((t) => t["outcome"] === "not_woken");
   if (no !== undefined) {
     return { ...ref, icon: "noWake", tone: "quiet", strong: true, text: `${from} didn’t wake ${str(no["taskId"]) ?? ""}`, detail: str(no["detail"]) ?? words, link: dms };

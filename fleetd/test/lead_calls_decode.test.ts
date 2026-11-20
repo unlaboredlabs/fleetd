@@ -72,6 +72,10 @@ test("types, required fields, unknown ops and a bad frame are refused in serde's
   expect(await detail({ op: "ask_lead", question: "" })).toBe("expected a non-empty string");
   expect(await detail({ op: "ask_lead", question: "x".repeat(4001) })).toBe("expected at most 4000 characters");
   expect(await detail({ op: "ask_lead", question: "?" }, "work/app")).toBe("cwd must be an absolute path");
+  // agent_message names agents by id, or the bot for a note to all of them.
+  // (It decodes; only the policy refuses it here, from no task.)
+  expect(await detail({ op: "agent_message", to: ["bot"], text: "moving the pin" })).toStartWith("agent_message is one agent's message");
+  expect(await detail({ op: "agent_message", to: ["all"], text: "x" })).toStartWith("expected a string matching");
 });
 
 test("defaults are filled and fields the contract doesn't name are dropped", async () => {

@@ -67,3 +67,12 @@ it("shows a DM it sent to several with a receipt for each, and the guard's refus
   expect(card?.querySelector("[data-outcome=delivered]")?.textContent).toMatch(/^T2577: Delivered at its next step, \d\d:\d\d\.$/u);
   expect(card?.querySelector("[data-outcome=not_woken]")?.textContent).toBe("Didn’t wake T2567: it has finished and isn’t waiting on T2573. Held for its next run.");
 });
+
+it("shows a note it sent as to the bot, with nobody woken", () => {
+  render({ ...ANSWER, id: "M22", text: "Moving the fleetd-cloud pin in #404", to: [], toBot: true }, "T2573");
+  const card = host.querySelector("[data-dm=M22]");
+  expect(card?.getAttribute("aria-label")).toBe("Note to the bot");
+  expect(card?.textContent).toContain("Tothe bot");
+  expect(card?.querySelector("a")).toBeNull();
+  expect(card?.textContent).toContain("Nobody was woken.");
+});

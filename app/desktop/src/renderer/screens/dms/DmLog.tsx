@@ -1,6 +1,7 @@
 // Activity › DMs: every DM between the project's agents, newest first, one line each (sender → recipients, the
 // opening words, what became of it, the time) under its day's name. A line opens in place to the full words and a
-// receipt per recipient, ending with the lead's quiet copy. "Any agent" narrows it to one agent's DMs. Read-only for
+// receipt per recipient, ending with the lead's quiet copy; a note to the bot reads "T2573 → the bot", and what its
+// agents do with it. "Any agent" narrows it to one agent's DMs. Read-only for
 // everyone, members and admins alike: a DM is the log, never edited or deleted.
 import { Ban, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +12,7 @@ import { shortClock } from "../chat/format";
 import { useNow } from "../live/clock";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { useDmLog, type DmLog as Log } from "./hooks";
-import { logReceipt, notWoken, opening, route, rowState, type AgentMessage } from "./model";
+import { isNote, logReceipt, NOTE_RECEIPT, notWoken, opening, route, rowState, type AgentMessage } from "./model";
 import s from "./dms.module.css";
 
 const ANY = "any";
@@ -173,6 +174,13 @@ function DmRow({ dm, project, open, onToggle }: { dm: AgentMessage; project: Pro
             </dt>
             <dd>sent it</dd>
             <dd className={s.time}>{shortClock(dm.sentAt)}</dd>
+            {isNote(dm) ? (
+              <>
+                <dt>The bot</dt>
+                <dd>{NOTE_RECEIPT}</dd>
+                <dd className={s.time}>{shortClock(dm.sentAt)}</dd>
+              </>
+            ) : null}
             {dm.to.map((t) => (
               <Recipient key={t.taskId} project={project} t={t} sentAt={dm.sentAt} />
             ))}

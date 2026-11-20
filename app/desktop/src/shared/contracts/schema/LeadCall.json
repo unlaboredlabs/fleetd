@@ -8,7 +8,7 @@
       "type": "string"
     },
     "AgentMessageCall": {
-      "description": "`agent_message`: a task's agent writes to another agent of its project. A running one takes it at its next tool\nboundary; one that isn't running gets it with its next run (held until then), which a message from an agent never\nstarts, except as the answer to a question the recipient is waiting on (`ask_lead`).",
+      "description": "`agent_message`: a task's agent writes to another agent of its project. A running one takes it at its next tool\nboundary; one that isn't running gets it with its next run (held until then), which a message from an agent never\nstarts, except as the answer to a question the recipient is waiting on (`ask_lead`).\n`to: [\"bot\"]` instead is a note to the whole project: one line of at most 300 characters that steers and wakes nobody;\nits agents read the newest at the top of `agents` while the sender's task is live, a day at most. A review posts none.",
       "properties": {
         "text": {
           "maxLength": 4000,
@@ -16,9 +16,10 @@
           "type": "string"
         },
         "to": {
-          "description": "The agents it is for (T<n>), 1 to 5, in the same project; `agents` lists them.",
+          "description": "The agents it is for (T<n>), 1 to 5, in the same project; `agents` lists them. Or [\"bot\"] alone: a note to the\nproject.",
           "items": {
-            "$ref": "#/$defs/TaskId"
+            "pattern": "^(T[1-9][0-9]*|bot)$",
+            "type": "string"
           },
           "maxItems": 5,
           "minItems": 1,

@@ -334,8 +334,10 @@ export type AgentMessage = {
   sentAt: Timestamp;
   /** The whole text. */
   text: string;
-  /** In the order the sender named them. */
+  /** In the order the sender named them; none for a note to the project. */
   to: AgentMessageRecipient[];
+  /** A note to the whole project (`to: ["bot"]`): it has no recipients, and its agents read it in `agents`. */
+  toBot?: boolean;
 };
 
 /** An agent of the project, as an agent message names it. */
