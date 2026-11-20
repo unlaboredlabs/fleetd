@@ -37,7 +37,8 @@ export function settle(summary: SessionSummary, runs: RunInfo[], at: string): vo
   summary.updatedAt = at;
 }
 
-export type ExitInfo = { code: number | null; signal: number | null; stderr_tail: string };
+/** `why`: what ended it in plain words, said in place of how it exited (a hosted box that stopped). */
+export type ExitInfo = { code: number | null; signal: number | null; stderr_tail: string; why?: string };
 
 /** Why a process ended while runs were still active. */
 export type EndCause =
@@ -52,6 +53,7 @@ export const causeEnd = (c: EndCause): RunEnd =>
 export const causeEndedBy = (c: EndCause) => (c.kind === "requested" && c.why.trim() ? headUtf16(c.why.trim(), 200) : undefined);
 
 function describeExit(exit: ExitInfo): string {
+  if (exit.why) return exit.why;
   const how =
     exit.signal !== null
       ? `the agent was killed by signal ${exit.signal}`

@@ -10,8 +10,13 @@
 //   host's start, over the guest's link. A box is never paused or snapshotted; it is destroyed. The one exception is a
 //   bot's computer image (`buildSnapshot`): a box that ran only its setup, with its bot's variables and no session's,
 //   checked for their values, then saved by the provider; a session placed in that provider starts from it.
-// - Once the session host in it is gone (the agent idled out, stopped, or the box died), its work comes back to the
-//   machine's worktree and its transcript to the machine's, and the box is destroyed. The next start makes a new one.
+// - After each of its turns, its work comes back to the machine's worktree and its transcript to the machine's
+//   (`checkpoint`), so a box that dies loses only the turn under way. Once the session host in it is gone (the agent
+//   idled out, stopped, or the box died), they come back once more where the box still answers, and the box is
+//   destroyed. The next start makes a new one, from the work as it came back last.
+// - A box is kept alive by its provider's lifetime, extended while it runs. One that can't be extended (a revoked key,
+//   an outage) is reported, and ended with its work brought back before its lifetime is out; so is every box of a
+//   provider whose key is disconnected (`endHosted`).
 // - A session here has no process on this machine. Its registration names a pid above Linux's PID_MAX_LIMIT (2^22),
 //   which no process has, so the node's pid fallbacks (a kill of the group, the orphan sweep) find nothing to act on.
 // - The machine's own Claude login never leaves the machine: a session without an account's variables is refused.
@@ -26,8 +31,8 @@ import { configDir, sessionFile } from "../runner/claude.ts";
 import { HostLink, LaunchError, PROTOCOL, type HostHandlers, type Launch, type Registration } from "../runner/host.ts";
 import { ACCOUNT_CLEARS } from "../actions/accounts.ts";
 import type { Box } from "../sandbox/box.ts";
-import { boxes, type BoxRecord, EXTEND_MS } from "../sandbox/remote/boxes.ts";
-import { fetchBack, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
+import { boxes, type BoxRecord, type Boxes, EXTEND_MS, LIFETIME_MS } from "../sandbox/remote/boxes.ts";
+import { fetchNew, mirror, mtimeOf, named, prepare, readChatFile, sh, syncIn, syncOut } from "../sandbox/remote/files.ts";
 import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { homeDir, nowIso } from "../util.ts";
 import { claudeEndpoint, probe, unreached } from "./endpoint.ts";
@@ -61,9 +66,29 @@ export type HostedRecord = BoxRecord & {
   transcript?: string;
   registration?: Registration;
   env?: { HOME?: string; PATH?: string };
+  /** When the work last came back to the machine (the box's start, then each turn's checkpoint): what a lost box lost
+   * is what it did after. */
+  since?: string;
+  /** Until when (epoch ms) the provider keeps the box, as its last extension set it. */
+  aliveUntil?: number;
 };
 
-type Live = { record: HostedRecord; box: Box; extender: ReturnType<typeof setInterval>; refresher?: ReturnType<typeof setInterval> };
+type Live = {
+  record: HostedRecord;
+  box: Box;
+  dir: string;
+  extender?: ReturnType<typeof setTimeout>;
+  /** Keep-alives that failed in a row. */
+  failed: number;
+  refresher?: ReturnType<typeof setInterval>;
+};
+
+/** The keep-alive's timing: an extension every `everyMs`; after one fails, again every `retryMs`, and the session ends
+ * with its work brought back once the box has `endBeforeMs` left. Tests set shorter ones. */
+export const KEEP_ALIVE = { everyMs: EXTEND_MS, retryMs: 2 * 60_000, endBeforeMs: 15 * 60_000 };
+
+/** Each keep-alive's outcome, for the hub's provider row (`Boxes.keptAlive`). */
+type KeepAliveReport = { keptAlive?(provider: ProviderId, error?: unknown): void };
 
 /** How often the files a session's launch named are checked for changes (the order's variables, which the node
  * rewrites when the hub renews its GitHub token) and sent to the box again. */
@@ -72,6 +97,10 @@ const REFRESH_MS = 30_000;
 const live = new Map<string, Live>();
 const making = new Map<string, Promise<Live>>();
 const ending = new Map<string, Promise<void>>();
+/** Each session's checkpoint under way, and whether another turn ended meanwhile. */
+const checkpoints = new Map<string, { run: Promise<void>; again: boolean }>();
+/** Why a session's box ended without its session asking, in plain words, until the session reads it (`boxEnd`). */
+const ends = new Map<string, string>();
 /** Every session with a box of its provider's, from the box's making until it is destroyed: what the hub's slot board
  * counts against each provider (the heartbeat's `load.places`). */
 const boxed = new Map<string, ProviderId>();
@@ -153,6 +182,8 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
   const pending = making.get(session);
   if (pending) return pending;
   boxed.set(session, provider);
+  // What the last box's end said is that box's: a box that ended with no claude to hear it (setup's) says nothing now.
+  ends.delete(session);
   const made = (async (): Promise<Live> => {
     const b = need();
     const home = homeOf(dir);
@@ -170,6 +201,7 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     const image = choice?.where === provider ? choice : undefined;
     let setupAgain: string[] = [];
     let made: BoxRecord;
+    const asked = Date.now();
     try {
       made = await b.create(provider, session, forwardedPorts(env), dirs, size, image ? { template: image.ref } : {});
     } catch (error) {
@@ -179,7 +211,7 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       setupAgain = image.worktree ? [] : (image.commands ?? []);
       made = await b.create(provider, session, forwardedPorts(env), dirs, size);
     }
-    const record: HostedRecord = { ...made, session, cwd };
+    const record: HostedRecord = { ...made, session, cwd, aliveUntil: asked + LIFETIME_MS };
     record.env = { ...(HOME ? { HOME } : {}), PATH };
     save(dir, record);
     let box: Box | undefined;
@@ -188,15 +220,15 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       await withTailnet(box, session, false);
       await prepare(box, dirs);
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
+      record.since = nowIso();
       save(dir, record);
       for (const command of setupAgain) {
         const out = await box.run({ argv: ["sh", "-c", command], cwd, env: { ...env, HOME, PATH }, timeoutSec: SETUP_TIMEOUT_SEC });
         if (out.exitCode !== 0) console.warn(`${nowIso()} WARN a setup command failed in a session's box {"sessionId":"${session}","exitCode":${out.exitCode}}`);
       }
-      const extender = setInterval(() => void b.extend(record).catch(() => {}), EXTEND_MS);
-      extender.unref?.();
-      const l: Live = { record, box, extender };
+      const l: Live = { record, box, dir, failed: 0 };
       live.set(session, l);
+      keepAlive(b, l, KEEP_ALIVE.everyMs);
       console.log(`${nowIso()} INFO a hosted box is ready for the session {"sessionId":"${session}","provider":"${provider}"}`);
       return l;
     } catch (error) {
@@ -275,8 +307,10 @@ export function teardown(session: string, dir: string): Promise<void> {
   const p = (async () => {
     const l = live.get(session);
     live.delete(session);
-    if (l) clearInterval(l.extender);
+    if (l?.extender) clearTimeout(l.extender);
     if (l?.refresher) clearInterval(l.refresher);
+    // A turn's checkpoint under way ends first: one bundle at a time goes into the worktree.
+    await checkpoints.get(session)?.run;
     const record = l?.record ?? readRecord(dir);
     if (!record) return;
     const b = boxes();
@@ -285,6 +319,11 @@ export function teardown(session: string, dir: string): Promise<void> {
     try {
       box ??= await b.open(record, session);
     } catch {}
+    // A box whose guest is gone gives nothing back: the machine keeps the work as the last turn's checkpoint brought it.
+    if (box?.ended) {
+      console.warn(`${nowIso()} WARN a hosted box was lost: its work since its last checkpoint didn't come back {"sessionId":"${session}","since":"${record.since ?? ""}"}`);
+      box = undefined;
+    }
     if (box && record.cwd && record.base && existsSync(record.cwd)) {
       try {
         await syncOut(box, { cwd: record.cwd, session, base: record.base, env: record.env ?? {} });
@@ -292,8 +331,9 @@ export function teardown(session: string, dir: string): Promise<void> {
         console.warn(`${nowIso()} WARN a hosted box's work didn't come back {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
       }
     }
-    if (box && record.transcript) await fetchBack(box, record.transcript, TRANSCRIPT_MAX);
+    if (box && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
     box?.close();
+    l?.box.close();
     try {
       await b.destroy(record);
     } catch (error) {
@@ -308,18 +348,130 @@ export function teardown(session: string, dir: string): Promise<void> {
   return p.finally(() => ending.delete(session));
 }
 
+/** The work of `session`'s box back on the machine after one of its turns: its commits and uncommitted work into the
+ * worktree, and what its transcript gained. Nothing waits on it: a failure is logged, and the next turn's tries again.
+ * A turn that ends while one runs gets one more after it. */
+export function checkpoint(session: string): Promise<void> {
+  const l = live.get(session);
+  if (!l) return Promise.resolve();
+  const under = checkpoints.get(session);
+  if (under) {
+    under.again = true;
+    return under.run;
+  }
+  const c = { again: true, run: Promise.resolve() };
+  c.run = (async () => {
+    while (c.again && live.get(session) === l && !l.box.ended) {
+      c.again = false;
+      await bringBack(l);
+    }
+  })().finally(() => checkpoints.delete(session));
+  checkpoints.set(session, c);
+  return c.run;
+}
+
+async function bringBack(l: Live): Promise<void> {
+  const { record, box } = l;
+  if (!record.cwd || !record.base || !existsSync(record.cwd)) return;
+  const at = nowIso();
+  try {
+    await syncOut(box, { cwd: record.cwd, session: record.session, base: record.base, env: record.env ?? {} });
+    if (record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
+    record.since = at;
+    if (live.get(record.session) === l) save(l.dir, record);
+  } catch (error) {
+    console.warn(`${nowIso()} WARN a hosted box's work didn't come back after its turn: the next turn tries again {"sessionId":"${record.session}","error":${JSON.stringify((error as Error).message)}}`);
+  }
+}
+
+/** Why the session's box ended without the session asking, in plain words, once; undefined when it didn't. */
+export function boxEnd(session: string): string | undefined {
+  const why = ends.get(session);
+  ends.delete(session);
+  return why;
+}
+
+/** What a session whose box was lost is told: since when its work is gone. */
+function lostWords(r: HostedRecord): string {
+  const since = r.since ? ` since ${r.since.slice(11, 16)} UTC` : "";
+  return `its sandbox stopped (${NAMES[r.provider]}), so its work${since} was lost; it goes on from its work as of then`;
+}
+
+/** The session ends, its work brought back while its box still answers, and the box goes; `why` is what it hears. */
+function endSession(l: Live, why: string): Promise<void> {
+  ends.set(l.record.session, why);
+  return teardown(l.record.session, l.dir);
+}
+
+/** Every live session in a box of `provider` ends, its work brought back, while the node still holds the key that
+ * deletes its box (the key being disconnected). What to wait on, one per session. */
+export function endHosted(provider: ProviderId, why: string): Promise<void>[] {
+  return [...live.values()].filter((l) => l.record.provider === provider).map((l) => endSession(l, why));
+}
+
+/** Extends the box's life every KEEP_ALIVE.everyMs while its session has it. A failure is reported (the hub's provider
+ * row) and tried again sooner; once the box has KEEP_ALIVE.endBeforeMs left, the session ends with its work brought
+ * back, rather than lose it when the provider stops the box at its time. */
+function keepAlive(b: Boxes, l: Live, inMs: number): void {
+  const { session, provider } = l.record;
+  const report = (error?: unknown) => (b as Boxes & KeepAliveReport).keptAlive?.(provider, error);
+  l.extender = setTimeout(async () => {
+    if (live.get(session) !== l) return;
+    const asked = Date.now();
+    try {
+      await b.extend(l.record);
+      report();
+      if (live.get(session) !== l) return;
+      l.failed = 0;
+      l.record.aliveUntil = asked + LIFETIME_MS;
+      save(l.dir, l.record);
+      keepAlive(b, l, KEEP_ALIVE.everyMs);
+    } catch (error) {
+      report(error);
+      if (live.get(session) !== l) return;
+      l.failed++;
+      const message = (error as Error).message;
+      if (l.failed === 1) console.warn(`${nowIso()} WARN a hosted box couldn't be kept running {"sessionId":"${session}","provider":"${provider}","error":${JSON.stringify(message)}}`);
+      const left = (l.record.aliveUntil ?? asked) - Date.now();
+      if (left - KEEP_ALIVE.retryMs >= KEEP_ALIVE.endBeforeMs) return keepAlive(b, l, KEEP_ALIVE.retryMs);
+      console.warn(`${nowIso()} WARN ending a hosted session before its box's time runs out {"sessionId":"${session}","failed":${l.failed}}`);
+      const name = NAMES[provider];
+      void endSession(l, `its sandbox at ${name} couldn't be kept running (${notKept(error, name)}), so it was ended with its work saved before its time ran out`);
+    }
+  }, inMs);
+  l.extender.unref?.();
+}
+
+/** Why a box's life couldn't be extended, in plain words, by the provider's kind of refusal. */
+function notKept(error: unknown, name: string): string {
+  switch (error instanceof ProviderError ? error.reason : undefined) {
+    case "invalid_key":
+      return `${name} refused the team's key`;
+    case "billing":
+      return `${name} wants the account's billing sorted out`;
+    case "limit":
+      return `the ${name} account is at its plan's limit`;
+    default:
+      return `${name} didn't answer`;
+  }
+}
+
 /** The session host's lines through the box, ending the box once the session host is gone for good. */
 function linkTo(l: Live, dir: string, registration: Registration): Promise<HostLink> {
   let link: HostLink | undefined;
+  const session = l.record.session;
   return HostLink.connect(dir, {
     registration,
     dial: (h: HostHandlers) =>
       l.box.dialHost({
         ...h,
         close: () => {
+          // The guest went away (the box died, was stopped at its provider, or its time ran out) while nothing here
+          // was ending it: the session hears so, and since when its work is lost.
+          if (!link?.detached && live.get(session) === l && l.box.ended && !ends.has(session)) ends.set(session, lostWords(l.record));
           h.close();
           // The node letting go (its shutdown) leaves the box running for the next node.
-          if (!link?.detached) void teardown(l.record.session, dir);
+          if (!link?.detached) void teardown(session, dir);
         },
       }),
   }).then((made) => (link = made));
@@ -414,12 +566,13 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       try {
         const box = await b.open(record, session);
         await withTailnet(box, session, false);
-        const extender = setInterval(() => void b.extend(record).catch(() => {}), EXTEND_MS);
-        extender.unref?.();
-        const l: Live = { record, box, extender };
+        const l: Live = { record, box, dir: d, failed: 0 };
         live.set(session, l);
         boxed.set(session, record.provider);
-        return await linkTo(l, d, record.registration);
+        const link = await linkTo(l, d, record.registration);
+        // At once: the node before this one may have been gone a while.
+        keepAlive(b, l, 0);
+        return link;
       } catch {
         return undefined;
       }
@@ -462,8 +615,10 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
 export async function destroyHosted(dir: string): Promise<void> {
   const record = readRecord(dir);
   if (!record) return;
-  live.get(record.session)?.box.close();
+  const l = live.get(record.session);
   live.delete(record.session);
+  if (l?.extender) clearTimeout(l.extender);
+  l?.box.close();
   // `fleetd session-host stop-all` (a machine's removal) runs without the node: the keys are read from its home.
   let b = boxes();
   if (!b) {
