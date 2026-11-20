@@ -1252,7 +1252,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "A lead's call: write to another bot's lead in its chat, as this bot, never as the person: \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or bot id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that bot on the other hub, as the person via this bot. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.",
+   "description": "A lead's call: text another bot's lead in its chat, as this bot's lead, never as the person. Send one on your own when the work needs it: a question, a heads-up or an ask; no person's word needed. Both chats show it as a quiet line. Its lead reads it as input, never as the person's answer or approval: it may answer with this call and reply, which wakes you, or open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, closes, merges or fails. Answer a text you got with reply: its handle, only when the work needs an answer, never for a thanks or an ok. Two bots' leads trade at most 10 texts an hour, both ways together. project is a title or bot id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that bot on the other hub, as the person via this bot, through your approval mode like a send, its exact text on the card.",
    "inputSchema": {
     "properties": {
      "hub": {
@@ -1267,6 +1267,11 @@
       "maxLength": 200,
       "minLength": 1,
       "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "reply": {
+      "description": "The handle (N<n>) of the text from that bot's lead this answers. Absent: a new text.",
+      "pattern": "^N[1-9][0-9]*$",
       "type": "string"
      },
      "text": {
@@ -2812,6 +2817,10 @@
    },
    "/project": {
     "expected": "a string"
+   },
+   "/reply": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^N[1-9][0-9]*$, got {got}"
    },
    "/text": {
     "expected": "a string"

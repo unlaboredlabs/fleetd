@@ -2,6 +2,7 @@
 // lists a message's links among its actions. A bubble is one element (holding it is its menu), so its links and code
 // blocks, which a finger taps inside it, are actions too. Pure, so it is unit-tested.
 import { rowKeyOf, type Arrival } from "./arrivals";
+import { agentName } from "./chatTags";
 import type { ChatItem } from "./desktop";
 import { parseMarkdown, plainText, type Block, type Inline } from "./markdown";
 
@@ -83,7 +84,7 @@ export const arrivedReplies = (heard: Set<Arrival>, entering: ReadonlyMap<string
     heard.add(came);
     const first = spokenText(item.text).split("\n")[0]?.trim() ?? "";
     const words = first.length > 200 ? `${first.slice(0, 199)}…` : first;
-    const who = item.author === "agent" ? (item.message?.by ?? "Agent") : title;
+    const who = item.author === "agent" ? agentName(item.message) : title;
     said.push(words === "" ? `${who} sent a file` : `${who}: ${words}`);
   }
   return said;

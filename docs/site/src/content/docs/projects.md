@@ -503,8 +503,9 @@ bomb) is refused, with why.
 
 What reaches outside goes by the bot's **Approvals** setting (decision D263): a send, reply, forward, share or
 invite through an [integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm
-or Submit on a site (`confirm_step`), and a message to another bot's lead (`project_message`), whose card is
-headed "Message the lead of Shop" and shows the exact text.
+or Submit on a site (`confirm_step`), and a message to a bot's lead on a [linked hub](#hub-links) (`project_message`),
+whose card is headed "Message the lead of Shop on acme" and shows the exact text. A text to another bot's lead on
+this hub never asks: see [Leads text each other](#lead-texts).
 
 A new bot starts in **YOLO**, where none of these asks you. Pick **Checker decides** or **Ask me about
 everything** to be asked. A bot made before YOLO became the starting mode keeps the mode it had: the one you
@@ -739,6 +740,23 @@ bot of theirs*), and one word for its state:
 
 **Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
 notice says so: its link stays listed there until someone revokes it, but nothing can use it.
+
+## Leads text each other {#lead-texts}
+
+A bot's lead texts another bot's lead on this hub when the work needs it: a question, a heads-up, or an ask for work
+(`project_message`). It needs no word from you and no approval card. The other lead is woken once and may answer
+with the same call, which wakes the first. Both chats show each text as a quiet line headed by whose lead wrote it,
+and neither rings your phone.
+
+- **Input, never your word.** A lead reads another lead's text as input: it can't approve a command, answer a
+  question the lead asked you, give a secret, change a decision or set up a bot. What needs you, the lead asks you
+  in its own chat.
+- **Work only when it is worth it.** The other lead opens an order for an ask only when it judges it worth one, and
+  the asker hears when it lands (*Asked of other bots*, below).
+- **No ping-pong.** Two bots' leads trade at most 10 texts an hour, both ways together. Past that the next is
+  refused, with the time it can go again.
+- **Linked hubs ask as before.** A text to a bot on a [linked hub](#hub-links) goes through the bot's approval mode
+  like a send, and gets no reply: the asker hears what happens to the work.
 
 ## Asked {#asked}
 

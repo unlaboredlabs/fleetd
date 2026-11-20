@@ -4,6 +4,7 @@
 // history. The live strip isn't a row: it floats over the composer (live/LiveStrip.tsx), and neither is what the lead
 // is doing, a line beside it (TurnLine.tsx), so nothing in the list moves for either.
 import type { ChatItem } from "../../src/data/chat";
+import type { ChatMessage } from "../../src/data/chat-contract";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
 import { workedFor } from "../../../shared/turnWords";
@@ -82,12 +83,19 @@ export const isMine = (item: ChatItem, me: string | undefined): boolean => item.
 /** A row of yours: a message row isMine says is yours (its `by` is otherPerson's). */
 export const isMineRow = (r: Row): boolean => r.kind === "message" && r.item.author === "human" && r.by === undefined;
 
+/**
+ * Who an agent message is from: another bot's lead texting this one ("Lead of Shop"), this bot's lead texting
+ * another's ("Lead to Shop"), or an agent by the key that wrote it.
+ */
+export const agentLabel = (m: ChatMessage | undefined): string =>
+  m?.lead === undefined ? `Agent · ${m?.by ?? "unnamed"}` : m.lead.to !== undefined ? `Lead to ${m.lead.to}` : `Lead of ${m.by ?? "another bot"}`;
+
 /** Who a message's header names: another person by their name, an agent by the key that wrote it. */
 export const authorLabel = (item: ChatItem, me?: string, names?: PersonNames): string =>
   item.author === "human"
     ? (otherPerson(item, me, names) ?? "You")
     : item.author === "agent"
-      ? `Agent · ${item.message?.by ?? "unnamed"}`
+      ? agentLabel(item.message)
       : item.author === "lead"
         ? "Lead"
         : "fleetd";

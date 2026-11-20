@@ -2840,7 +2840,7 @@
       "type": "string"
     },
     "ProjectMessageCall": {
-      "description": "`project_message`: a project's lead writes to another project's lead in its chat, as the agent named by its own\nproject's title, never as the person. The lead reads it as input, never as the person's answer or approval.",
+      "description": "`project_message`: a project's lead texts another project's lead in its chat, as the agent named by its own project's\ntitle, never as the person; with `reply`, it answers a text it got. The lead reads it as input, never as the person's\nanswer or approval. A pair of leads trades at most 10 texts an hour; to a project on this hub it needs no approval.",
       "properties": {
         "hub": {
           "description": "A linked hub, by its label: the project is there. Absent: this hub.",
@@ -2855,6 +2855,10 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "reply": {
+          "$ref": "#/$defs/AskHandle",
+          "description": "The handle (N<n>) of the text from that bot's lead this answers. Absent: a new text."
         },
         "text": {
           "maxLength": 4000,

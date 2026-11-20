@@ -1,7 +1,9 @@
-// A project's factory bridge: a project's lead writes to another project's lead
-// (`project_message`), reads the factory in one call (`factory_status`), and is woken when what it asked for changes.
-// Each message is an ask `N<n>`; the lead that opens an order for it passes `asked: "N<n>"` to `brief`, and from then
-// on `step` follows the order in the event log and wakes the asking lead with one line.
+// A project's factory bridge: a project's lead texts another project's lead (`project_message`), reads the factory in
+// one call (`factory_status`), and is woken when what it asked for changes. Each message is an ask `N<n>`. The other
+// lead may answer it with the same call (`reply: "N<n>"`), which wakes the first; both chats show each text as a quiet
+// line, and a pair of leads trades at most PAIR_PER_HOUR texts an hour. The lead that opens an order for one passes
+// `asked: "N<n>"` to `brief`, and from then on `step` follows the order in the event log and wakes the asking lead
+// with one line.
 //
 // A hub link is the bridge's other asker: a project on another hub, acting as the person who minted the link here. Its
 // asks go into chats as "<person> via <label>", reach only the link's projects, and what happens to them goes out on
@@ -11,18 +13,19 @@
 // client's `ask`, `status` and `linked` are set on `found` by their areas once they are ported; a call that needs one
 // not set yet says so.
 import type { Database } from "bun:sqlite";
-import type { Grant, HubEvent, PersonRef, ProjectRef, ProjectSummary, Role, TodoItem } from "../../shared/contracts.ts";
+import type { Grant, HubEvent, LeadText, PersonRef, ProjectRef, ProjectSummary, Role, TodoItem } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
-import { sendAsAgent } from "../chat/index.ts";
+import { noteSent, sendAsAgent } from "../chat/index.ts";
 import { read as readChecklist } from "../checklist/index.ts";
 import { workstreamGet, workstreamsList } from "../orders/workstreams.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
-import { askFooter, RETRY_MS } from "./asks.ts";
+import { isoMs } from "../store/time.ts";
+import { askFooter, HOUR_MS, PAIR_PER_HOUR, RETRY_MS } from "./asks.ts";
 
-export { askFooter, RETRY_MS } from "./asks.ts";
+export { askFooter, leadFooter, PAIR_PER_HOUR, RETRY_MS } from "./asks.ts";
 
 export const OPS = ["project_message", "factory_status"] as const;
 /** `project_message` as a project's session asks for it. */
@@ -49,7 +52,7 @@ export const linkLimits = (link: Issued, p: ProjectRef) =>
 /** Who a link's asks are from, in the chats here. */
 export const linkAuthor = (link: Issued) => `${link.who} via ${link.label}`;
 
-export type ProjectMessageCall = { project: string; text: string; hub?: string };
+export type ProjectMessageCall = { project: string; text: string; hub?: string; reply?: string };
 export type ProjectMessageResult = {
   handle: string;
   projectRef: ProjectRef;
@@ -90,7 +93,8 @@ type StatusRow = {
 };
 
 type Found = {
-  sendAsAgent?: (hub: Hub, to: ProjectRef, by: string, body: string, requestId: string) => Promise<{ leadWaiting?: string | boolean }>;
+  sendAsAgent?: (hub: Hub, to: ProjectRef, by: string, body: string, requestId: string, lead?: LeadText) => Promise<{ leadWaiting?: string | boolean }>;
+  noteSent?: (hub: Hub, r: ProjectRef, by: string, text: string, request: string, lead: LeadText) => Promise<unknown>;
   statusRows?: (hub: Hub, nowMs: number) => StatusRow[];
   ask?: (hub: Hub, project: ProjectRef, label: string, call: ProjectMessageCall) => Promise<ProjectMessageResult>;
   status?: (hub: Hub, project: ProjectRef, label: string, call: FactoryStatusCall) => Promise<FactoryStatusResult>;
@@ -99,7 +103,7 @@ type Found = {
 /**
  * The other areas' parts the bridge calls that have no module on main yet, set by those areas with
  * `Object.assign(found, …)` when they land (the status `statusRows`, the hub links `ask`, `status` and `linked`). One
- * not set yet makes the call that needs it say so. A test may set `sendAsAgent` in place of the chat's.
+ * not set yet makes the call that needs it say so. A test may set `sendAsAgent` and `noteSent` in place of the chat's.
  */
 export const found: Found = {};
 
@@ -276,6 +280,59 @@ function askOf(c: Database, workstreamId: string): Ask | undefined {
 
 export const projectTitle = (hub: Hub, r: ProjectRef) => store(hub).projectGet(r)?.title ?? r.projectId;
 
+/** The text `reply` answers: one `to`'s lead sent this lead's project on this hub. Its handle. */
+function answering(hub: Hub, asker: Asker, to: ProjectSummary, reply: string): string {
+  const fix = "reply takes the handle at the end of the text it answers; without reply, the message starts a new exchange.";
+  if (asker.kind !== "project") throw new ToolError("invalid", "Only a bot's lead answers a text with reply.", "Send it without reply.");
+  const a = askByHandle(hub.db.conn, reply);
+  if (!a || a.viaLink !== undefined || a.toHub !== undefined || !same(a.to, asker.project)) {
+    throw new ToolError("not_found", `${reply} is not a text this bot's lead got from another bot here.`, fix);
+  }
+  if (!same(a.from, refOf(to))) {
+    const from = projectTitle(hub, a.from);
+    throw new ToolError("invalid", `${reply} came from ${from}, not ${to.title}.`, `Answer it with project "${from}".`);
+  }
+  return a.handle;
+}
+
+/** Refuses a new text once two bots' leads traded PAIR_PER_HOUR in the last hour, both ways together. */
+function capped(hub: Hub, a: ProjectRef, b: ProjectRef, title: string, now: number): void {
+  const at = hub.db.conn
+    .query<{ at_ms: number }, [string, string, string, string, number, number]>(
+      `SELECT at_ms FROM project_asks WHERE via_link IS NULL AND to_hub IS NULL AND at_ms > ?5
+         AND ((from_machine_id = ?1 AND from_project_id = ?2 AND to_machine_id = ?3 AND to_project_id = ?4)
+           OR (from_machine_id = ?3 AND from_project_id = ?4 AND to_machine_id = ?1 AND to_project_id = ?2))
+         ORDER BY at_ms LIMIT ?6`,
+    )
+    .all(a.machineId, a.projectId, b.machineId, b.projectId, now - HOUR_MS, PAIR_PER_HOUR)
+    .map((r) => r.at_ms);
+  if (at.length < PAIR_PER_HOUR) return;
+  const again = isoMs((at[0] as number) + HOUR_MS).slice(11, 16);
+  throw new ToolError(
+    "invalid",
+    `This bot's lead and ${title}'s have texted each other ${PAIR_PER_HOUR} times in the last hour, the most fleetd allows.`,
+    `Write again after ${again} UTC, all in one message, or end your turn. What needs the person goes in your own chat.`,
+  );
+}
+
+/**
+ * The text a lead's call repeats, if it is a retry: the newest text between the two bots either way, from this lead,
+ * within RETRY_MS, with the same words and answering the same text (`reply`'s n, or none).
+ */
+function retried(c: Database, from: ProjectRef, to: ProjectRef, text: string, reply: number | null, now: number): number | undefined {
+  const last = c
+    .query<{ n: number; from_machine_id: string; from_project_id: string; text: string; at_ms: number; reply: number | null }, [string, string, string, string]>(
+      `SELECT n, from_machine_id, from_project_id, text, at_ms, reply FROM project_asks
+         WHERE via_link IS NULL AND to_hub IS NULL
+           AND ((from_machine_id = ?1 AND from_project_id = ?2 AND to_machine_id = ?3 AND to_project_id = ?4)
+             OR (from_machine_id = ?3 AND from_project_id = ?4 AND to_machine_id = ?1 AND to_project_id = ?2))
+         ORDER BY n DESC LIMIT 1`,
+    )
+    .get(from.machineId, from.projectId, to.machineId, to.projectId);
+  const sentBy = last !== null && last.from_machine_id === from.machineId && last.from_project_id === from.projectId;
+  return sentBy && last.text === text && last.at_ms >= now - RETRY_MS && last.reply === reply ? last.n : undefined;
+}
+
 export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessageCall): Promise<ProjectMessageResult> {
   const to = target(hub, asker, call.project);
   const toRef = refOf(to);
@@ -286,37 +343,60 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
       "Ask an admin of that hub for operate on its machine.",
     );
   }
+  const replied = call.reply !== undefined ? answering(hub, asker, to, call.reply) : undefined;
   const from = asker.kind === "project" ? asker.project : { machineId: "", projectId: "" };
   const via = asker.kind === "link" ? asker.link.linkId : null;
   const text = call.text;
   const now = hub.clock.now();
   const c = hub.db.conn;
-  // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again.
-  const first = c
-    .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
-      `SELECT n FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
+  const answers = replied === undefined ? null : Number(replied.slice(1));
+  // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again. A
+  // lead's text is one only while nothing went between the two bots since, and answering the same text.
+  const first =
+    asker.kind === "link"
+      ? c
+          .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
+            `SELECT n FROM project_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
                      AND to_project_id = ? AND text = ? AND at_ms >= ? AND via_link IS ? AND to_hub IS NULL
                      ORDER BY n DESC LIMIT 1`,
-    )
-    .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now - RETRY_MS, via)?.n;
+          )
+          .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now - RETRY_MS, via)?.n
+      : retried(c, from, toRef, text, answers, now);
+  if (first === undefined && asker.kind === "project") capped(hub, from, toRef, to.title, now);
   const n =
     first ??
     (c
-      .query<{ n: number }, [string, string, string, string, string, number, string | null]>(
+      .query<{ n: number }, [string, string, string, string, string, number, string | null, number | null]>(
         `INSERT INTO project_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
-                 via_link) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING n`,
+                 via_link, reply) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING n`,
       )
-      .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via)?.n as number);
+      .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via, answers)?.n as number);
   const handle = `N${n}`;
-  const by = asker.kind === "project" ? author(hub, asker.project) : linkAuthor(asker.link);
-  const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `ask:${handle}`);
+  if (asker.kind === "link") {
+    const by = linkAuthor(asker.link);
+    const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `ask:${handle}`);
+    const waiting = typeof sent.leadWaiting === "string" ? sent.leadWaiting : undefined;
+    return {
+      handle,
+      projectRef: toRef,
+      title: to.title,
+      ...(waiting !== undefined ? { leadWaiting: waiting } : {}),
+      next: `In ${to.title}'s chat as ${by}. Its lead reads it as input, never as the person's approval: anything it needs the person for, it asks in its own chat. A wake tells you when an order opened for ${handle} opens, closes, merges or fails; end your turn instead of waiting.`,
+    };
+  }
+  // One lead's text to another: the other lead reads its handle and how to answer it; the person reads the words in
+  // both chats, as quiet lines, and the sender's copy goes to no lead.
+  const by = author(hub, asker.project);
+  const lead: LeadText = { handle, ...(replied !== undefined ? { reply: replied } : {}) };
+  const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, text, `ask:${handle}`, lead);
+  await (found.noteSent ?? noteSent)(hub, asker.project, by, text, `sent:${handle}`, { ...lead, to: to.title });
   const waiting = typeof sent.leadWaiting === "string" ? sent.leadWaiting : undefined;
   return {
     handle,
     projectRef: toRef,
     title: to.title,
     ...(waiting !== undefined ? { leadWaiting: waiting } : {}),
-    next: `In ${to.title}'s chat as ${by}. Its lead reads it as input, never as the person's approval: anything it needs the person for, it asks in its own chat. A wake tells you when an order opened for ${handle} opens, closes, merges or fails; end your turn instead of waiting.`,
+    next: `Sent to ${to.title}'s lead, and shown in both chats. It reads it as input, never as the person's word. Its reply, if the work needs one, wakes you with its own handle; an order it opens for ${handle} wakes you as it opens, closes, merges or fails. End your turn instead of waiting.`,
   };
 }
 
@@ -502,6 +582,9 @@ export async function answer(hub: Hub, project: ProjectRef, call: { op: string }
   if (call.op === "project_message") {
     const c = call as unknown as ProjectMessageCall;
     if (c.hub !== undefined) {
+      if (c.reply !== undefined) {
+        throw new ToolError("invalid", "reply answers a text from a bot on this hub.", "Send it to the linked hub's bot without reply: it hears back on its own.");
+      }
       if (!found.ask) throw new NotImplemented("src/hub/hub_links (client ask)");
       return found.ask(hub, project, c.hub, c);
     }

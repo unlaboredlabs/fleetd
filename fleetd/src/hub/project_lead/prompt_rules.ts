@@ -37,7 +37,8 @@ export function automationPreview(a: Automation): ToolPreview {
 /**
  * The project's rules on a prompt the integrations policy had no word on: its final confirm on a site (a payment is
  * refused, anything else is a risky action like a send), letting an automation run on its own, and its message to
- * another project's lead. Undefined: no rule, so the approval mode decides.
+ * another project's lead: to one on this hub it goes at once, the team's own bots texting (D580); to a linked hub's,
+ * it is a risky action like a send. Undefined: no rule, so the approval mode decides.
  */
 export function promptVerdict(tool: string, input: unknown, automation: Automation | undefined): PromptVerdict | undefined {
   if (tool === confirm.TOOL) {
@@ -51,7 +52,8 @@ export function promptVerdict(tool: string, input: unknown, automation: Automati
   }
   if (tool === BRIDGE_TOOL) {
     const card = bridgePreview(input);
-    return card ? { ask: card } : { deny: "Blocked by fleetd: this project_message can't be read. Give project and text." };
+    if (!card) return { deny: "Blocked by fleetd: this project_message can't be read. Give project and text." };
+    return (input as { hub?: unknown }).hub == null ? { allow: true } : { ask: card };
   }
   return undefined;
 }

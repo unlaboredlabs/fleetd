@@ -676,6 +676,19 @@ export type AskBlock = {
 
 export type AskHandle = string;
 
+/**
+ * An agent message one bot's lead texted another's (`project_message`). The receiver's copy has `by` as the bot that
+ * sent it; the sender's own copy names the bot it went to in `to`. Never the person's word.
+ */
+export type LeadText = {
+  /** The message's handle, which a reply answers. */
+  handle: AskHandle;
+  /** The handle it answers. Absent: it starts an exchange. */
+  reply?: AskHandle;
+  /** The sender's copy: the bot it went to. */
+  to?: string;
+};
+
 /** An image, clip or file already uploaded to the hub: its bytes come from `attachment_get`. */
 export type AttachmentBlock = {
   attachmentId: AttachmentId;
@@ -1581,6 +1594,8 @@ export type ChatMessage = {
   /** From before the chat: where this history message came from. */
   history?: ChatHistorySource;
   item?: ChatItem;
+  /** An agent message one bot's lead texted another's (`project_message`): never the person's word. */
+  lead?: LeadText;
   /**
    * A system line "Memory refreshed: +a ~b −c": what the nightly memory refresh changed, each change undone on its
    * own or all together with `memory_undo`.

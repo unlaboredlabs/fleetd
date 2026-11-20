@@ -30,7 +30,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
-import { aboutChoices, aboutOf, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
+import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
 import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
@@ -944,7 +944,7 @@ function ItemView({
   if (side === "center") return <Event text={item.text} />;
 
   const messageId = item.message?.messageId;
-  const who = item.author === "human" ? "You" : item.author === "agent" ? (item.message?.by ?? "Agent") : title;
+  const who = item.author === "human" ? "You" : item.author === "agent" ? agentName(item.message) : title;
   const said = { who, at: bubbleTime(item.at, now) };
   const files = attachmentBubbles(item);
 
@@ -1027,7 +1027,7 @@ function ItemView({
       {tag !== undefined ? (
         <TagLine tag={tag} mine={false} onLens={lensOn} />
       ) : first && item.author === "agent" ? (
-        <Text style={[type.caption, styles.by, { color: t.secondary }]}>{item.message?.by ?? "Agent"}</Text>
+        <Text style={[type.caption, styles.by, { color: t.secondary }]}>{agentName(item.message)}</Text>
       ) : null}
       {parts.map(({ bubble: b, part }, i) => {
         const own = partAbout(part);

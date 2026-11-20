@@ -125,6 +125,22 @@ export async function defaultBranch(root: string): Promise<string | undefined> {
   return currentBranch(root);
 }
 
+/**
+ * The repo's default branch as this machine knows it now, never waiting on the remote: what git recorded of the
+ * remote's HEAD, else the branch checked out at `root`. A stale answer is asked of the remote in the background, for
+ * the next read. For what a page shows (project_worktrees, Settings › Bots): the ls-remote took 0.5-3.6 s on the first
+ * open after a node start.
+ */
+export async function knownDefaultBranch(root: string): Promise<string | undefined> {
+  const r = await remote(root);
+  if (r) {
+    void askedHead(root, r);
+    const name = await cachedHead(root, r);
+    if (name) return name;
+  }
+  return currentBranch(root);
+}
+
 /** The branch checked out at `path` when it is a worktree of `root` (`null`: detached); undefined when it isn't one. */
 async function worktreeBranch(root: string, path: string): Promise<string | null | undefined> {
   const list = await git(root, ["worktree", "list", "--porcelain"]);

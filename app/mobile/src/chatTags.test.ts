@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { aboutChoices, lensHides, openOrdersOf, ordersOf, sendAbout, tagOf, taggedItems, type TagView } from "./chatTags";
+import { aboutChoices, agentName, lensHides, openOrdersOf, ordersOf, sendAbout, tagOf, taggedItems, type TagView } from "./chatTags";
 import { sameRow, threadRows, type ThreadRow } from "./chatView";
 import { chatItems, emptyChat, type ChatItem, type ChatMessage, type OrderCard } from "./desktop";
 import { fakeHub } from "./hub/fake";
@@ -305,5 +305,16 @@ describe("Session in a tagged chat", () => {
     hub.answer("orders_board", { orders: [card("W1", "Apple Pay")] });
     await flush();
     expect(openOrdersOf(session.state.orders, KEY)).toEqual([{ workstreamId: "W1", title: "Apple Pay", phaseDetail: undefined }]);
+  });
+});
+
+describe("agentName", () => {
+  const m = (by: string, lead?: ChatMessage["lead"]) =>
+    ({ messageId: "m1", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "agent", text: "v3?", createdAt: "2026-11-08T10:00:00Z", state: "final", by, ...(lead ? { lead } : {}) }) as ChatMessage;
+  it("names another bot's lead texting this one, this bot's lead texting another's, and an agent by its key", () => {
+    expect(agentName(m("Storefront", { handle: "N2", reply: "N1" }))).toBe("Lead of Storefront");
+    expect(agentName(m("Shop", { handle: "N1", to: "Storefront" }))).toBe("Lead to Storefront");
+    expect(agentName(m("scout"))).toBe("scout");
+    expect(agentName(undefined)).toBe("Agent");
   });
 });

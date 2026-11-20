@@ -114,7 +114,7 @@ export const LEAD_ASK_WHY: Why<string> = [
   ["mcp__fleetd__project_propose", "Only a person creates a bot, on the card a lead's proposal shows them."],
   [
     "mcp__fleetd__project_message",
-    "A message to another bot's lead, who may open work for it, goes through the bot's approval mode, like a send.",
+    "A text to another bot's lead on this hub goes at once; one to a linked hub's bot goes through the bot's approval mode, like a send.",
   ],
 ];
 
