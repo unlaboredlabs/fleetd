@@ -2,8 +2,8 @@
 // integrations-approvals: its approvals with the checker on, and what ran without asking (the checker's go with its
 // reason, YOLO's run, a first visit), each linking to its line. integrations-signin: servers that sign in with OAuth:
 // mail signed in, calendar signed out by its service (Reconnect, whose service takes only the person's own app), and
-// adding notes, whose test asks for sign-in; Paper not added yet, whose Connect goes straight to its sign-in page.
-// integrations-paper: Paper connected, added by hand as paper at its URL, shown as the named row. The approval cards an integration raises are in inline-items (a message to
+// adding notes, whose test asks for sign-in. Paper is the team's, on the Vault page (fixtures/vault, D592). The
+// approval cards an integration raises are in inline-items (a message to
 // send, a page to delete).
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -156,36 +156,6 @@ const signin = (base: Fixture): Fixture => {
     machineId: ref.machineId,
     result: { error: "notes asks you to sign in with your own account, not a key.", signIn: true },
   });
-  f.answer("mcp_server_set", { scope, name: "paper" }, { server: paper(ref) });
-  f.answer("mcp_oauth_start", { scope, name: "paper" }, {
-    authorizeUrl: "https://app.paper.design/oauth/authorize?client_id=fleetd-devbox&state=qa",
-    redirectUri: "http://devbox:4790/oauth/callback",
-  });
-  return f;
-};
-
-/** Paper as Connect saves it: its URL, no key, the lead and agents; signed in with `signIn` once it is. */
-const paper = (ref: { machineId: string; projectId: string }, signIn?: JsonObject): JsonObject => ({
-  scope: { kind: "project", ...ref },
-  name: "paper",
-  enabled: true,
-  roles: { lead: true, writers: true, reviewers: true },
-  transport: { type: "http", url: "https://mcp.paper.design" },
-  headers: [],
-  ...(signIn === undefined ? {} : { oauth: signIn }),
-  updatedAt: AT,
-});
-
-const paperConnected = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-paper", "Paper connected and signed in, beside a keyed server: the named row with Test.");
-  const ref = home(f);
-  const scope = { kind: "project", ...ref };
-  const signedIn = { status: "connected", issuer: "https://app.paper.design", signedInAt: AT, expiresAt: "2026-10-27T10:00:00.000Z" };
-  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [custom(ref), paper(ref, signedIn)], userServers: true });
-  f.answer("mcp_server_test", { scope, name: "paper" }, {
-    machineId: ref.machineId,
-    result: { server: "Paper MCP 0.4.0", tools: tools(["get_basic_info", "get_tree_summary", "get_screenshot"], ["create_artboard", "write_html", "update_styles"]) },
-  });
   return f;
 };
 
@@ -208,7 +178,6 @@ const approvalsLong = (base: Fixture): Fixture => {
 export default defineGroup({
   fixtures: (base) => [
     signin(base("typical")),
-    paperConnected(base("typical")),
     approvals(base("typical")),
     approvalsLong(base("typical")),
   ],

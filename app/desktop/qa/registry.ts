@@ -71,6 +71,9 @@ export const fixtures = [
   "vault-team-member",
   "vault-old-hub",
   "vault-empty",
+  // ...and Paper under the team's Integrations, to connect and connected (fixtures/vault, D592).
+  "vault-paper-connect",
+  "vault-paper",
   // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -253,8 +256,6 @@ export const fixtures = [
   "integrations-approvals-long",
   // A project's servers that sign in with OAuth (fixtures/integrations).
   "integrations-signin",
-  // Paper, a named service, connected (fixtures/integrations, W686).
-  "integrations-paper",
   // A bot's Computer, one fixture an image state, and a bot with two repos (fixtures/computer, W705).
   "computer-ready",
   "computer-building",
@@ -4683,14 +4684,15 @@ export const screens: readonly Screen[] = [
       await expect(dialog.getByRole("region", { name: "Redirect URL" })).toContainText("http://devbox:4790/oauth/callback");
     },
   },
-  // Paper, a named service, heads the list with Connect; Connect saves it and goes straight to its sign-in page (W686).
+  // Paper, a named service the team connects once, on the Vault page's Integrations (D592): Connect saves it and goes
+  // straight to its sign-in page (W686).
   {
-    id: "settings.projects",
+    id: "settings.vault",
     variant: "integrations-paper-connect",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["integrations-signin"],
+    route: "#/settings/vault",
+    fixtures: ["vault-paper-connect"],
     open: async (page) => {
-      const row = page.getByRole("list", { name: "MCP servers" }).getByRole("listitem", { name: "Paper" });
+      const row = page.getByRole("list", { name: "Integrations" }).getByRole("listitem", { name: "Paper" });
       await row.getByRole("button", { name: "Connect" }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.getByText("Sign in to Paper")).toBeVisible();
@@ -4699,16 +4701,16 @@ export const screens: readonly Screen[] = [
   },
   // ...Paper connected: its row says so, and Test says where it works.
   {
-    id: "settings.projects",
+    id: "settings.vault",
     variant: "integrations-paper",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["integrations-paper"],
+    route: "#/settings/vault",
+    fixtures: ["vault-paper"],
     open: async (page) => {
-      const list = page.getByRole("list", { name: "MCP servers" });
+      const list = page.getByRole("list", { name: "Integrations" });
       const row = list.getByRole("listitem", { name: "Paper" });
       await expect(row).toContainText("Connected");
       await row.getByRole("button", { name: "Test" }).click();
-      await expect(row).toContainText("Works on devbox (Paper MCP 0.4.0).");
+      await expect(row).toContainText("Works on");
       await expect(list.getByRole("listitem", { name: "paper", exact: true })).toHaveCount(0);
       await list.scrollIntoViewIfNeeded();
     },
