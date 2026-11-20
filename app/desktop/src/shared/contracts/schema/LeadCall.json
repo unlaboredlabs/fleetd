@@ -1599,6 +1599,23 @@
           "type": "object"
         },
         {
+          "description": "A hosted session's start, in plain words while its computer comes up.",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "starting",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "failure": {
               "$ref": "#/$defs/RunFailure"

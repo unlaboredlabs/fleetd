@@ -33,6 +33,7 @@ import { homeDir, nowIso } from "../util.ts";
 import { claudeEndpoint, probe, unreached } from "./endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import type { Place } from "./index.ts";
+import { stepped } from "./hosted_steps.ts";
 import { dropChoice, dropDisk, sessionImage, type Backend, type Built, type Job } from "./image.ts";
 import { SETUP_TIMEOUT_SEC } from "../worktree/setup.ts";
 import { keptToken } from "../repos/github.ts";
@@ -170,6 +171,7 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     const image = choice?.where === provider ? choice : undefined;
     let setupAgain: string[] = [];
     let made: BoxRecord;
+    stepped(session, "computer");
     try {
       made = await b.create(provider, session, forwardedPorts(env), dirs, size, image ? { template: image.ref } : {});
     } catch (error) {
@@ -187,8 +189,10 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       box = await b.open(record, session);
       await withTailnet(box, session, false);
       await prepare(box, dirs);
+      stepped(session, git ? "clone" : "files");
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
       save(dir, record);
+      if (setupAgain.length) stepped(session, "setup");
       for (const command of setupAgain) {
         const out = await box.run({ argv: ["sh", "-c", command], cwd, env: { ...env, HOME, PATH }, timeoutSec: SETUP_TIMEOUT_SEC });
         if (out.exitCode !== 0) console.warn(`${nowIso()} WARN a setup command failed in a session's box {"sessionId":"${session}","exitCode":${out.exitCode}}`);
@@ -246,6 +250,11 @@ async function gitRoot(cwd: string): Promise<string | undefined> {
 /** No box came up for the session: its run fails so that fleetd's recovery starts it again (the hub's `sandbox`
  * failure class), where the slot board then puts it. */
 export class HostedDown extends LaunchError {}
+
+/** A box came up but the session couldn't start in it: Claude's endpoint is out of its reach, or fleetd's session
+ * host didn't come up there. The provider isn't set aside: a lead's start tries once more (../sessions/index.ts), a
+ * task's recovery once, and the run then fails with these plain words; the log keeps the detail. */
+export class BoxNotReady extends HostedDown {}
 
 /** Why no box came up, in the provider's plain words (or the box's, for the repo's clone in it). The provider is set
  * aside for a while either way, so the run's retry goes to this machine's slots or waits in line rather than fail
@@ -375,13 +384,24 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     try {
       await (hostedProbe.probe ?? probe)(box, endpoint.url);
     } catch (error) {
-      throw new LaunchError(await unreached(endpoint, (error as Error).message, nodeTailnet()?.on === true));
+      const detail = (error as Error).message;
+      console.warn(`${nowIso()} WARN a hosted box can't reach Claude {"sessionId":"${session}","source":${JSON.stringify(endpoint.source)},"error":${JSON.stringify(detail)}}`);
+      throw new BoxNotReady(await unreached(endpoint, NAMES[provider], nodeTailnet()?.on === true));
     }
-    const info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
+    const notUp = (detail: string) => {
+      console.warn(`${nowIso()} WARN fleetd's session host didn't come up in a hosted box {"sessionId":"${session}","error":${JSON.stringify(detail)}}`);
+      return new BoxNotReady(`its ${NAMES[provider]} sandbox came up, but fleetd didn't start in it`);
+    };
+    let info: Awaited<ReturnType<Box["start"]>>;
+    try {
+      info = await box.start({ sessionId: session, program: BOX_CLAUDE.path, args: launch.args, cwd: launch.cwd, env: boxEnv });
+    } catch (error) {
+      throw notUp((error as Error).message);
+    }
     const pid = nobodyPid(session);
     const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
-    if (info.refused) throw new LaunchError(`no host came up in the box: ${info.refused.message}`, info.refused);
-    if (info.protocol !== PROTOCOL) throw new LaunchError(`the box's session host speaks protocol ${info.protocol}, this node ${PROTOCOL}`);
+    if (info.refused) throw notUp(info.refused.message);
+    if (info.protocol !== PROTOCOL) throw notUp(`the box's session host speaks protocol ${info.protocol}, this node ${PROTOCOL}`);
     l.record.registration = registration;
     save(dir, l.record);
     return linkTo(l, dir, registration);
@@ -441,6 +461,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       } catch (error) {
         return { exitCode: null, outputTail: "", timedOut: false, notRun: (error as Error).message };
       }
+      stepped(session, "setup");
       const env = { ...(r.env ?? {}), PATH: boxPath(r.env?.PATH, homeOf(dir)) };
       const out = await l.box.run({ argv: r.argv, cwd: r.cwd, env, timeoutSec: r.timeoutSec, ...(r.signal ? { signal: r.signal } : {}) });
       let tail = out.outputTail;

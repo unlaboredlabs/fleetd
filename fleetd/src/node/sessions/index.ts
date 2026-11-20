@@ -26,7 +26,9 @@ import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { reapLeaked } from "../place/box_record.ts";
 import { hostDir, isRunner, leavesBox, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
-import { boxPlaces, hasBox, HostedDown } from "../place/hosted.ts";
+import { boxPlaces, BoxNotReady, hasBox, HostedDown } from "../place/hosted.ts";
+import { stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
+import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
@@ -194,6 +196,9 @@ export type SessionConfig = {
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
 export const RETRY_MESSAGE = "Continue where you left off.";
 export const MAX_RUN_RETRIES = 3;
+/** How long a lead's hosted start waits before its one more try, when its box came up but it couldn't start there
+ * (place/hosted.ts BoxNotReady). A task's recovery tries again itself (the hub's `sandbox` class). Tests set it. */
+export const HOSTED_RETRY = { ms: 30_000 };
 
 /** The delay before retry `attempt` (1-based): 1, 4 and 15 minutes, each ±10% by `unit` in [0, 1), whole seconds. */
 export function retryDelayMs(attempt: number, unit = Math.random()): number | undefined {
@@ -1255,12 +1260,54 @@ export class SessionService {
     // A hosted session with no claude running makes its box first (a template's first build takes minutes): the
     // launch or send answers now, and the run fails with the provider's words if no box comes up.
     const row = this.store.session(id);
-    if (!this.#live.has(id) && row && hostedOf(row.local.hosted) !== undefined && !hasBox(id)) {
-      void send().catch(() => {});
+    const provider = hostedOf(row?.local.hosted);
+    if (!this.#live.has(id) && provider !== undefined && !hasBox(id)) {
+      const end = this.#hostedProgress(id, runId, provider);
+      void send().then(
+        () => end(true),
+        () => end(false),
+      );
       return recorded.queued;
     }
     await send();
     return recorded.queued;
+  }
+
+  /** The run's progress line while the session's hosted computer starts (place/hosted_steps.ts): one item whose words
+   * follow each step, which the chat shows under the lead's "working" and the agents panel on the agent; `end` once
+   * claude started there or the start failed. */
+  #hostedProgress(id: string, runId: string, provider: ProviderId): (started: boolean) => void {
+    const itemId = `starting-${runId}`;
+    const startedAt = nowIso();
+    const put = (text: string, status: "running" | "completed" | "failed") => {
+      try {
+        this.update(id, (c) =>
+          this.#putItem(c, {
+            id: itemId,
+            runId,
+            status,
+            title: "Starting",
+            startedAt,
+            ...(status === "running" ? {} : { completedAt: c.at }),
+            updatedAt: c.at,
+            kind: { type: "starting", text },
+          }),
+        );
+      } catch {}
+    };
+    let text = stepWords("computer", provider);
+    put(text, "running");
+    const unwatch = watchSteps(id, (step) => {
+      text = stepWords(step, provider);
+      put(text, "running");
+    });
+    let ended = false;
+    return (started) => {
+      if (ended) return;
+      ended = true;
+      unwatch();
+      put(text, started ? "completed" : "failed");
+    };
   }
 
   /** `unsent`: what a `sandbox` failure kept for claude's next start, else the run's own message. */
@@ -1359,24 +1406,42 @@ export class SessionService {
     if (file) spec.resume = existsSync(file);
     stages.done("spec");
     const mark = marker(id);
+    const provider = hostedOf(row.local.hosted);
+    const place = pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(provider ? { hosted: provider } : {}), ...(row.local.size ? { size: row.local.size } : {}) });
+    const launch = {
+      fleetd: this.config.fleetd,
+      dir: spec.hostDir!,
+      sessionId: id,
+      program: this.config.claudeBin,
+      args: claude.args(spec),
+      cwd: spec.cwd,
+      env: { ...claude.spawnEnv(spec, mark) },
+      // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
+      ...(existsSync(this.config.claudeBin) ? { scope: await currentScope() } : {}),
+    };
+    // A hosted box that came up but where the session couldn't start (Claude out of its reach, fleetd's host not up in
+    // it, the box gone meanwhile): a lead tries once more in a new box after a while; a task's recovery does that.
+    const notReady = (error: unknown) => provider !== undefined && (error instanceof BoxNotReady || !(error instanceof LaunchError));
     let link: HostLink;
     try {
-      link = await pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}), ...(row.local.size ? { size: row.local.size } : {}) }).start({
-        fleetd: this.config.fleetd,
-        dir: spec.hostDir!,
-        sessionId: id,
-        program: this.config.claudeBin,
-        args: claude.args(spec),
-        cwd: spec.cwd,
-        env: { ...claude.spawnEnv(spec, mark) },
-        // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
-        ...(existsSync(this.config.claudeBin) ? { scope: await currentScope() } : {}),
+      link = await place.start(launch).catch(async (error: unknown) => {
+        if (!notReady(error) || row.local.role !== "lead") throw error;
+        console.warn(`${nowIso()} WARN a lead's hosted start failed; it is tried once more {"sessionId":"${id}","inMs":${HOSTED_RETRY.ms},"error":${JSON.stringify((error as Error).message)}}`);
+        await Bun.sleep(HOSTED_RETRY.ms);
+        stepped(id, "again");
+        return place.start(launch);
       });
     } catch (error) {
       if (error instanceof LaunchError && error.refused?.missing && !existsSync(this.config.claudeBin))
         throw new Refusal("runner_unavailable", `${this.config.claudeBin} was not found on PATH`, `install Claude Code: curl -fsSL https://claude.ai/install.sh | bash`);
-      // A hosted box that didn't come up: recovery starts the run again, wherever the slot board then puts it.
-      throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`, undefined, error instanceof HostedDown ? "sandbox" : undefined);
+      // Hosted: the provider's or the box's own words, which never name this machine's claude or paths; recovery starts
+      // a run whose box didn't come up again, wherever the slot board then puts it.
+      if (provider !== undefined) {
+        const said = error instanceof LaunchError ? error.message : `its ${NAMES[provider]} sandbox came up, but the agent couldn't start in it`;
+        if (!(error instanceof LaunchError)) console.warn(`${nowIso()} WARN a hosted session didn't start in its box {"sessionId":"${id}","error":${JSON.stringify((error as Error).message)}}`);
+        throw new Refusal("runner_unavailable", said, undefined, error instanceof HostedDown || notReady(error) ? "sandbox" : undefined);
+      }
+      throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`);
     }
     stages.done("session host");
     row.local.started = true;
@@ -1958,7 +2023,19 @@ export class SessionService {
   #setUpThenSend(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: setup.Plan): void {
     const abort = new AbortController();
     this.#setupCancel.set(id, { runId, abort });
-    const done = this.#setUp(id, runId, text, mode, plan, abort.signal).finally(() => {
+    // Setup's first command makes a hosted session's box: the progress line runs from there until claude starts.
+    const provider = hostedOf(this.store.session(id)?.local.hosted);
+    const end = provider !== undefined && !hasBox(id) && !this.#live.has(id) ? this.#hostedProgress(id, runId, provider) : undefined;
+    const done = this.#setUp(id, runId, text, mode, plan, abort.signal).then(
+      (started) => {
+        end?.(started);
+        return started;
+      },
+      (error: unknown) => {
+        end?.(false);
+        throw error;
+      },
+    ).finally(() => {
       this.#settingUp.delete(id);
       this.#setupCancel.delete(id);
     });

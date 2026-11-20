@@ -82,6 +82,8 @@ group("the activity line", () => {
     expect(describe(lane("T1", "waiting")).tone).toBe("warning");
     const text = "npm test -- cart --reporter=dot --run src/cart/total.test.ts src/cart/discounts.test.ts";
     expect(describe(lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text }, since: T0 } }) })).machine).toBe(text);
+    const starting = lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "starting", text: "Starting its computer at boat.dev" }, since: T0 } }) });
+    expect(describe(starting)).toMatchObject({ words: "Starting its computer at boat.dev", tone: "quiet" });
   });
 });
 

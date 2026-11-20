@@ -46,6 +46,8 @@ describe("the lead's activity line", () => {
     expect(doingWords({ kind: "tool", name: "x", server: "other" })).toBe("working");
     expect(doingWords({ kind: "web", detail: "github.com" })).toBe("reading the web");
     expect(doingWords({ kind: "planning" })).toBe("planning");
+    // A hosted agent's computer starting: the node's own plain words.
+    expect(doingWords({ kind: "starting", text: "Cloning the repo" })).toBe("Cloning the repo");
   });
 
   it("times the turn from its first working to its idle, and the turn before once a new one hasn't begun", () => {

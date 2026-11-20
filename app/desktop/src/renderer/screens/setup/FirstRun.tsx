@@ -11,7 +11,7 @@ import { GetStarted } from "../onboarding";
 import { navigate } from "../shell/navigation";
 import { startScreen, useKept } from "../start/kept";
 import { onWeb } from "../../src/web";
-import { ConnectComputer } from "./ConnectComputer";
+import { ConnectComputer, whereOpen } from "./ConnectComputer";
 import { useFreshSetup, Welcome } from "./SetupScreen";
 
 const noInput = {};
@@ -30,7 +30,9 @@ export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   const machines = useData((d) => Object.keys(d.machines).length);
   // Once shown, Where agents run stays until the person moves on, so what joins (a computer, or the hub's runner for
   // hosted sandboxes) is greeted there.
-  const [connecting, setConnecting] = useState(false);
+  const [shown, setConnecting] = useState(false);
+  // ...a resync that mounts the home again included.
+  const connecting = shown || (cloud && whereOpen(hub.id));
   const later = useKept(hub.id).later === true;
   const start = onWeb() && hub.cloud === true && !later;
   useEffect(() => {

@@ -133,6 +133,20 @@ export default defineGroup({
     team(base("empty"), "connect", "Signed in, the team has no machine: Connect a computer, and a terminal opens.", { terminal: "a terminal" }),
     team(base("empty"), "connect-no-terminal", "Connect a computer where no terminal opens: the line is the way.", {}),
     (() => {
+      // W743: boat.dev connected, its sandboxes stuck coming up: past the wait (3 s in the QA build), why, the fix and
+      // Try again.
+      const f = team(base("empty"), "hosted-stuck", "Hosted sandboxes connected that never get ready: why, the fix and Try again.", { terminal: "a terminal" });
+      f.answer("sandbox_get", undefined, {
+        boxPubKey: "dGVhbS1ib3gta2V5LWZvci1zYW5kYm94LWtleXMtMDAwMDA=",
+        placing: true,
+        providers: [{ provider: "boat", connected: true, limit: 5, check: { at: "2026-10-19T09:00:00Z", ok: true } }],
+      });
+      const runner = { machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "checking the node's runner", lastSeenAt: "2026-10-19T09:00:00Z", nodeVersion: "1.0.0" };
+      // The runner joins after the screen opened, as it does once the key is connected: a snapshot after the first.
+      if (f.snapshot !== undefined) f.later(800, "snapshot", { ...f.snapshot, cursor: Number(f.snapshot["cursor"] ?? 0) + 1, machines: [runner] });
+      return f.settleAt(4_500);
+    })(),
+    (() => {
       const f = Fixture.from(base("typical"), "cloud-account", "Settings with a fleetd account signed in, and its team acme.");
       f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
       f.label = "acme";

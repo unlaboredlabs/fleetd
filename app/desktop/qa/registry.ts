@@ -114,6 +114,7 @@ export const fixtures = [
   "live-1-question",
   // W651: the island over the composer, quiet, crowded (a long red main), and with a file name too long for any band.
   "live-band-quiet",
+  "live-band-starting",
   "live-band-crowded",
   "live-band-long",
   // W685: no agent at work, the lead writing, and the agents' DMs: the island's card holds the DMs alone.
@@ -172,6 +173,7 @@ export const fixtures = [
   "cloud-invited",
   "cloud-connect",
   "cloud-connect-no-terminal",
+  "cloud-hosted-stuck",
   "cloud-account",
   "cloud-account-signed-out",
   // ...and People on a team: its owner and an admin invite by email, a member sees no People page, and a team at its
@@ -685,7 +687,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-crowded", "live-band-long", "live-band-dms"],
+    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-starting", "live-band-crowded", "live-band-long", "live-band-dms"],
     sizes: [...defaultSizes, "narrow"],
     variant: "island",
     check: islandHolds,
@@ -2771,6 +2773,9 @@ export const screens: readonly Screen[] = [
   // Where agents run: a team of fleetd cloud with nothing to run agents on, as its owner. A computer: Connect this
   // computer opens a terminal, or, where none opens, points at the line. Or hosted sandboxes: the team's providers.
   { id: "setup.machine", route: "#/", fixtures: ["cloud-connect"] },
+  // ...hosted sandboxes connected that never get ready: past the wait, why, the fix and Try again (W743).
+  // On the real clock: the wait is a timer of the screen's own.
+  { id: "setup.machine.hosted.not-ready", route: "#/", fixtures: ["cloud-hosted-stuck"], realClock: true },
   {
     id: "setup.machine",
     route: "#/",
@@ -2799,6 +2804,7 @@ export const screens: readonly Screen[] = [
     computer: "computer",
     unusable: "computer",
     offline: "computer",
+    "hosted-failed": "computer",
     tailscale: "tailscale",
     "tailscale-signin": "tailscale",
     "claude-key": "claude",
