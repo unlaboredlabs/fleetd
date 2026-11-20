@@ -41,6 +41,8 @@ export const doingWords = (a: Activity): string => {
       return "tidying its notes";
     case "retrying":
       return `retrying (${String(a.attempt)} of ${String(a.of)})`;
+    case "starting":
+      return a.text;
     case "web":
       return "reading the web";
     case "planning":

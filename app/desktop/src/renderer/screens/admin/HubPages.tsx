@@ -8,7 +8,7 @@
 // Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every
 // page, and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Text } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
@@ -20,14 +20,15 @@ import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame, Part } from "../settings/Frames";
 import { PageHead, SettingsSection } from "../settings/parts";
-import { useReveal } from "../settings/search";
+import { revealNext, useReveal } from "../settings/search";
+import { hostedReveal, RUNNER_ID } from "../../../shared/providers";
 import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
-import { isEveryProject, type SettingsRoute } from "../settings/route";
+import { isEveryProject, replaceHash, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
 import { navigate } from "../shell/navigation";
-import type { HubTab } from "../shell/routes";
+import { parseHash, toHash, type HubTab } from "../shell/routes";
 import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
@@ -96,6 +97,23 @@ function Managing({ tab }: { tab: HubTab }) {
   );
 }
 
+/**
+ * `#/settings/hub/machines/hosted`: the hosted sandboxes are a provider's, so the link lands on Machines at the
+ * provider's row (its state and limit) and the address becomes Machines', never a machine page with controls that do
+ * nothing for them.
+ */
+function ToProviders() {
+  useEffect(() => {
+    revealNext(hostedReveal());
+    const here = parseHash(window.location.hash);
+    if (here.id !== "settings") return;
+    // Its hub (`at`) stays.
+    const { machine: _hosted, ...machines } = here;
+    replaceHash(toHash(machines));
+  }, []);
+  return <Machines />;
+}
+
 function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, offline }: HubRoleView): ReactNode {
   if (!administers) {
     // A member who follows a link here sees why, and nothing else; with no hub, there is no one to ask yet.
@@ -117,7 +135,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
     case "hub.people":
       return <People me={me} />;
     case "hub.machines":
-      return route.machine === undefined ? <Machines /> : <MachinePage machineId={route.machine} />;
+      return route.machine === undefined ? <Machines /> : route.machine === RUNNER_ID ? <ToProviders /> : <MachinePage machineId={route.machine} />;
     // Updates is a part of Machines, and Tools & skills of Every project › Agents (settings/route.ts).
     case "hub.updates":
       return <Machines />;

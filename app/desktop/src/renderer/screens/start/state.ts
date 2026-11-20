@@ -34,6 +34,7 @@ import {
 import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
 import { specOf } from "../../../shared/providers";
+import { hostedProblem, runnerNeedsClaude, useWaitedOut } from "../setup/hostedWait";
 
 const noInput = {};
 
@@ -161,14 +162,22 @@ export function useStart(
 
   const providerName = hosted === undefined ? "" : specOf(hosted.provider).name;
   // The hosted sandboxes wait on a Claude account (the hub's runner says so): the Claude step's, not this one's.
-  const runnerNeedsClaude = runnerMachine?.status === "degraded" && /Claude account/u.test(runnerMachine.degradedReason ?? "");
+  const needsClaude = runnerNeedsClaude(runnerMachine);
+  const hostedWaits = ready === null && hosted !== undefined && listed.length === 0 && runnerMachine?.status !== "online" && !needsClaude;
+  // Not ready within the wait: why, its fix, and Try again (the provider's key tested again).
+  const hostedWait = useWaitedOut(owner && hostedWaits);
+  const [hostedTrying, setHostedTrying] = useState(false);
+  const [hostedTried, setHostedTried] = useState<string | null>(null);
+  const hostedFailed = hostedWait.over && hosted !== undefined ? hostedProblem(hosted, runnerMachine) : undefined;
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }
       : hosted !== undefined && listed.length === 0
-        ? runnerMachine?.status === "online" || runnerNeedsClaude
+        ? !hostedWaits
           ? { at: "hosted", provider: providerName }
-          : { at: "hosted_wait", provider: providerName }
+          : hostedFailed !== undefined
+            ? { at: "hosted_failed", provider: providerName, reason: hostedFailed.reason, fix: hostedTried ?? hostedFailed.fix, ...(hostedTrying ? { trying: true } : {}) }
+            : { at: "hosted_wait", provider: providerName }
         : loggedOut !== undefined
           ? { at: "ready", machine: loggedOut.name }
           : unusable !== undefined
@@ -362,6 +371,22 @@ export function useStart(
   };
 
   const actions: StartActions = {
+    onHostedRetry: () => {
+      if (hosted === undefined) return;
+      setHostedTrying(true);
+      setHostedTried(null);
+      call("sandbox_test", { provider: hosted.provider }).then(
+        () => {
+          setHostedTrying(false);
+          refetch(["sandbox_get"]);
+          hostedWait.again();
+        },
+        (e: unknown) => {
+          setHostedTrying(false);
+          setHostedTried(errorText(e));
+        },
+      );
+    },
     onClaudeLogin: startLogin,
     onClaudeCode: (code) => {
       if (loggedOut === undefined || login === null || login.login !== "code" || code.trim() === "") return;

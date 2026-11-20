@@ -20,6 +20,21 @@ export const PROVIDERS: ReadonlyArray<ProviderSpec> = [
   { id: "boat", name: "boat.dev", can: ["agents", "browser", "desktop", "android"] },
 ];
 
+/**
+ * The hub's own runner's machine id (fleetd's RUNNER_ID): the hosted sandboxes, a provider's, never a machine of the
+ * team's. A link to it lands on the providers' rows (hostedReveal), not a machine's page.
+ */
+export const RUNNER_ID = "hosted";
+
+/** The reveal key of a provider's row in Hub › Machines (Sandboxes.tsx), where every link to hosted sandboxes lands. */
+export const providerReveal = (id: string): string => `hub.sandbox.${id}`;
+
+/** The provider the hosted sandboxes are, where a person reads of them: the first, the one agents go to first. */
+export const hostedProvider = (): ProviderSpec => PROVIDERS[0] ?? specOf("boat");
+
+/** The row a link to the hosted sandboxes opens: their provider's. */
+export const hostedReveal = (): string => providerReveal(hostedProvider().id);
+
 /** A provider by its id; an unknown one runs agents (the hub lists it among its sandbox providers) under its own id. */
 export const specOf = (id: string): ProviderSpec => PROVIDERS.find((p) => p.id === id) ?? { id, name: id, can: ["agents"] };
 

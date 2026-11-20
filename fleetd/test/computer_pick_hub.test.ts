@@ -180,3 +180,23 @@ test("a Local VM size that takes more slots than its machine's limit is offered 
     ],
   ]);
 });
+
+test("a bot's agents on boat.dev are held by boat.dev's limit, never by its machine's cap, which only its lead and local agents use", async () => {
+  const { k, r, connect } = bot();
+  connect("boat");
+  const board = slots(k.hub);
+  board.setHosted([{ provider: "boat", max: 5 }]);
+  board.observeMachine("devbox", "devbox", { cpus: 16, load1: 0, memTotalBytes: 32 * GIB, sandbox: { kind: "microvm" }, sandboxes: ["boat"] });
+  board.setCap({ machine: { machineId: "devbox", maxAgents: 2 }, maxAgents: { projectRef: r, maxAgents: 64 } });
+  // Pinned to a boat.dev size: five run, boat.dev's limit, past devbox's 2.
+  await k.ok(key("operate"), "project_settings_set", { ...r, computer: { kind: "boat", cpu: 2, memGb: 4 } });
+  const grants = Array.from({ length: 6 }, (_, i) => board.acquire({ holder: `P${i}`, projectRef: r, priority: "work", hostable: true } as never));
+  expect(grants.filter((g) => g.granted).length).toBe(5);
+  expect(grants[5]).toEqual({ granted: false, reason: "its bot's computer is boat.dev · 2 vCPU / 4 GB: boat.dev is full, 5 of 5" });
+  for (let i = 0; i < 6; i++) board.release(`P${i}`);
+  // Automatic: devbox's 2 first, then boat.dev's 5.
+  await k.ok(key("operate"), "project_settings_set", { ...r, computerDefault: true });
+  const spill = Array.from({ length: 8 }, (_, i) => board.acquire({ holder: `A${i}`, projectRef: r, priority: "work", hostable: true } as never));
+  expect(spill.filter((g) => g.granted).length).toBe(7);
+  expect(Array.from({ length: 7 }, (_, i) => board.placeOf(`A${i}`))).toEqual(["local", "local", "boat", "boat", "boat", "boat", "boat"]);
+});

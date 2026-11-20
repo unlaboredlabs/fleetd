@@ -8,6 +8,8 @@ import {
   extrasOver,
   fleetTop,
   fleetCapLine,
+  holdOf,
+  holdsLink,
   machineAgents,
   machineHolds,
   machineSource,
@@ -73,6 +75,44 @@ describe("machines", () => {
     expect(projectAgents({ ...fleet, perProject: [busy] }, billing)).toMatchObject({ max: 22, cap: 22, limit: 22, own: false });
   });
 
+  it("holds a bot whose Runs on is a boat.dev size by boat.dev's limit alone, never its machine's cap", () => {
+    // The human's case: devbox runs 10, the bot's max is 64, its agents on boat.dev · 2 vCPU / 4 GB, boat.dev's limit 20.
+    const ten: SlotState = { cap: 64, used: 0, queued: 0, perMachine: [{ ...devbox, cap: 10, running: 0 }], perProject: [{ projectRef: storefront, maxAgents: 64, own: true, running: 0, queued: 0 }] };
+    const boat = { providers: [{ provider: "boat", connected: true, limit: 20 }] };
+    const hold = holdOf({ kind: "boat" }, boat);
+    expect(hold).toEqual({ pinned: { name: "boat.dev", limit: 20 }, spill: [] });
+    const a = projectAgents(ten, storefront, hold);
+    expect(a.machineCap).toBe(20);
+    const note = machineHolds(a, 64, "devbox", hold);
+    expect(note).toBe("boat.dev runs at most 20 agents at once, so this bot runs 20 until an admin raises boat.dev's limit.");
+    expect(note).not.toContain("devbox");
+    expect(holdsLink(a, "devbox", hold)).toEqual({ text: "boat.dev's limit (20) in Hub › Machines", provider: true });
+    expect(sourceLine(ten, { ...a, own: false }, "devbox", hold)).toBe("Follows the default: boat.dev's limit.");
+    // Automatic: devbox's 10, then boat.dev's 20.
+    const auto = holdOf(undefined, boat);
+    const b = projectAgents(ten, storefront, auto);
+    expect(b.machineCap).toBe(30);
+    expect(machineHolds(b, 64, "devbox", auto)).toBe("devbox runs at most 10 agents at once, then boat.dev 20, so this bot runs 30 until an admin raises one of them.");
+    expect(holdsLink(b, "devbox", auto)).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
+    // A Local VM pick, or a Linux machine kept to the team's own: the machine alone.
+    expect(holdOf({ kind: "vm" }, boat)).toEqual({ spill: [] });
+    expect(holdOf(undefined, { ...boat, linux: "ours_only" })).toEqual({ spill: [] });
+    expect(projectAgents(ten, storefront, holdOf({ kind: "vm" }, boat)).machineCap).toBe(10);
+  });
+
+  it("names boat.dev's limit, not a machine, for a bot on the hosted sandboxes", () => {
+    const hosted = { machineId: "hosted", projectId: "shop" };
+    const runner: SlotState = { ...fleet, perMachine: [{ ...devbox, machineId: "hosted", cap: 0, auto: 0, running: 0 }], perProject: [{ projectRef: hosted, maxAgents: 30, own: true, running: 0, queued: 0 }] };
+    const hold = holdOf(undefined, { providers: [{ provider: "boat", connected: true, limit: 20 }] });
+    const a = projectAgents(runner, hosted, hold);
+    expect(machineHolds(a, 30, "hosted", hold)).toBe("boat.dev runs at most 20 agents at once, so this bot runs 20 until an admin raises boat.dev's limit.");
+    expect(holdsLink(a, "hosted", hold)).toEqual({ text: "boat.dev's limit (20) in Hub › Machines", provider: true });
+    expect(sourceLine(runner, { ...a, own: false }, "hosted", hold)).toBe("Follows the default: boat.dev's limit.");
+    // A computer with no provider keeps its own words.
+    expect(holdsLink(projectAgents(fleet, storefront), "devbox")).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
+    expect(sourceLine(fleet, { ...projectAgents(fleet, storefront), own: false }, "devbox")).toBe("Follows the default: its machine's cap.");
+  });
+
   it("counts every bot's agents on the machine when saying how many queued start", () => {
     // storefront and billing share devbox's 22: 10 and 10 run, so 2 slots are free whatever storefront's max.
     const shared: SlotState = {
@@ -97,7 +137,7 @@ describe("machines", () => {
 
 describe("max agents", () => {
   it("reads a bot's max, and the fleet cap when it has none of its own", () => {
-    const at12 = { cap: 12, machineCap: 12, top: 12 };
+    const at12 = { cap: 12, machineCap: 12, machineOwn: 12, top: 12 };
     expect(projectAgents(slots, storefront)).toEqual({ running: 6, queued: 2, max: 6, limit: 6, free: 4, ...at12, own: true });
     expect(projectAgents(slots, billing)).toEqual({ running: 2, queued: 0, max: 12, limit: 12, free: 4, ...at12, own: false });
     expect(projectAgents(slots, { machineId: "devbox", projectId: "new" })).toEqual({ running: 0, queued: 0, max: 12, limit: 12, free: 4, ...at12, own: false });
@@ -120,7 +160,7 @@ describe("max agents", () => {
       ],
     };
     // No fleet cap: the sliders go past what the machines fit, to 64.
-    const on6 = { cap: 6, machineCap: 6, top: 64, free: 6 };
+    const on6 = { cap: 6, machineCap: 6, machineOwn: 6, top: 64, free: 6 };
     expect(projectAgents(machines, storefront)).toEqual({ running: 0, queued: 0, max: 6, limit: 6, ...on6, own: false });
     expect(projectAgents(machines, billing)).toEqual({ running: 0, queued: 0, max: 3, limit: 3, ...on6, own: true });
     expect(projectAgents(machines, { machineId: "builder", projectId: "new" }).max).toBe(14);

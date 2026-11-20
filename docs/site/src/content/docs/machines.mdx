@@ -26,7 +26,7 @@ it made on your boat.dev account.
 | Group | What it holds |
 |---|---|
 | **Machines** | Every machine, a dot before its name: grey while it is well, amber while it needs someone. At the row's end, what runs there now ("8 agents · 2 screens", Idle) or what is wrong ("Offline since Fri 09:03", "Claude is not logged in"). A role other than both shows beside the name. A row opens [its page](#checks). The plus adds a machine. |
-| **Providers** | The team's own accounts at [hosted sandbox providers](#sandboxes) (boat.dev), one list, each with what it can run beside its name. Not connected, **Connect**; connected, its limit where it has one and a menu with **Test** and **Disconnect**. Its dot is grey while its key works, red when its last check failed, a ring while it isn't connected. A hub without a provider's tools lists none of them. A hub that had Revyl, E2B or Daytona connected before fleetd removed it says so in one line above them for 30 days; its key was deleted (iOS simulators run on a Mac machine; agents on your machines or boat.dev). |
+| **Providers** | The team's own accounts at [hosted sandbox providers](#sandboxes) (boat.dev), one list, each with what it can run beside its name. Not connected, **Connect**; connected, its limit where it has one and a menu with **Test** and **Disconnect**. A hosted provider's dot and line are its real state: **Starting…** (a ring) while the hub's runner comes up, **Ready · 3 of 20 running** (grey), **Needs a Claude account** with **Connect** (amber), or **Couldn't start** with why, its fix and **Try again** (red); a key refused at its test says so with **Test again**. The hub menu says the same while it isn't ready ("boat.dev isn't ready: billing isn't set up") and opens the row; `#/settings/hub/machines/hosted` opens it too. A ring while it isn't connected. A hub without a provider's tools lists none of them. A hub that had Revyl, E2B or Daytona connected before fleetd removed it says so in one line above them for 30 days; its key was deleted (iOS simulators run on a Mac machine; agents on your machines or boat.dev). |
 | **What runs where** | Two rows. **Linux machine**: where agents run, and their browser, Linux desktop and Android with them (an agent's screens run where it runs). With a machine and a provider both, a pick: **Your machines**, **Your machines first, then boat.dev** (the default, as every hub placed before the pick), or **boat.dev only**; the hub places every agent by it ([How placement picks](#sandboxes)). With one place, that place as a value; with none, **None yet**, with how to add one in its hover. **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
 | **Updates** | Where the hub and its machines stand, **Update**, and **Update automatically** ([Updating](/docs/updating-and-uninstall)). |
 
@@ -468,7 +468,8 @@ it as an optional step, **Hosted sandboxes**.
 **Test.** Connect tests the key at once; **Test**, in the row's menu, does it again. The hub sends the key sealed to the team's Linux
 machines online, in the order of their ids (with none, to its own runner), and the first asks the provider for
 fleetd's sandboxes there, which starts nothing. A key the provider refuses, an account at its plan's limit or behind on
-billing, and a provider that doesn't answer each read as such, with what to do. Sandboxes are
+billing, and a provider that doesn't answer each read as such, with what to do: one plain line, never a machine's name
+or a status code. A test that works also has the team's machines try a provider they set aside again at once. Sandboxes are
 made from Linux on x86_64, never from a Mac: a hub on a Mac with no Linux computer says so.
 
 **Limit and order.** Each connected provider has one number, how many of the team's agents may run there at once
@@ -488,19 +489,29 @@ on its machine's own Claude login stays on its machine's slots (that login never
 agents shows its own slots, and names the team's hosted limits beside them: they are shared, not each machine's. Where
 an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.dev · receipt-dates".
 
+**When the provider refuses.** A refusal (the key, the plan's limit, billing), a provider that doesn't answer, or a
+sandbox that doesn't come up sets the provider aside for 10 minutes on the machine that met it: no sandbox is asked of
+it meanwhile, and the agents it would take wait, saying why ("boat.dev refused: billing isn't set up on the account
+(set up billing in boat.dev's dashboard); trying again at 12:45", the hub's clock). The provider's row turns red with
+the same words and **Try again**; a lead that couldn't start says them in the chat. A provider whose running sandboxes
+can't be kept running says that on its row too.
+
 **What differs from an agent on its machine.**
 - *Files.* The sandbox starts from the agent's worktree on its machine: the repo cloned from its origin with the
   order's GitHub token, at the same path, then its commits and uncommitted work. Ignored files (`node_modules`,
   `target/`) don't travel, so the repo's [setup commands](/docs/projects#setup) run again in each new sandbox. On the
   hub's own runner with boat.dev, a bot's sandboxes start from its [computer image](/docs/projects#computer) instead
   (a boat snapshot holding the repo's clone and what setup installed): the clone only fetches what's new, and setup
-  doesn't run. When the
-  sandbox ends, its commits and uncommitted work come back to the worktree on the machine. Until then, the machine's
-  copy shows the work as it was when the sandbox started.
+  doesn't run. After each
+  of the agent's turns, and when the sandbox ends, its commits, uncommitted work and conversation come back to the
+  machine, so the machine's copy is never more than a turn behind.
 - *Life.* A sandbox goes when its agent's Claude does: after 10 minutes idle (unless a Monitor or a screen holds
   it), at a stop, or when the task ends. The next message makes a new one and resumes the conversation. It is never
-  paused or kept at the provider. A sandbox that dies on its own (the provider's 24 hour cap, an outage) loses what
-  wasn't committed and pushed; the agent's next turn starts a new one.
+  paused or kept at the provider. A sandbox that dies on its own (an outage, a stop at boat.dev) loses only the turn
+  under way: the agent's line says its sandbox stopped and since when its work was lost, and it goes on from its last
+  finished turn. While it runs, the machine keeps renewing its time at the provider; when that fails (a revoked key,
+  boat.dev down), the provider's row says so, and the agent is ended with its work brought back before its time runs
+  out. Disconnecting the key ends every running sandbox the same way first.
 - *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
   GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
 - *Screens in the sandbox.* An agent's browser, Linux desktop and Android run in its own sandbox, beside its files and on its
@@ -534,7 +545,9 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.
 A team with a provider connected and no computer still runs agents. The hub starts a runner of its own, a fleetd node
 that runs no agent on the hub's machine, and every agent of a bot added there, its lead too, runs in a sandbox of the
 connected providers. It shows as **Hosted sandboxes** wherever a bot says where it runs, never in the list of
-computers, and it goes by itself once no provider is connected and no bot lives on it.
+computers (on the phone too) or the command palette, and it goes by itself once no provider is connected and no bot
+lives on it. It has no machine page: a link to one opens the provider's row under Providers, whose limit is how many
+run at once, and the hub refuses a join code, a role or a max agents of its own for it.
 
 - *Bots.* A bot there is a GitHub repository, cloned on the hub with the hub's [GitHub App](/docs/github) token for
   it; a folder of the hub's machine can't be one. Its agents push and open PRs from their sandboxes as any hosted

@@ -15,9 +15,9 @@
 // agents placed there and nowhere else: while it has no room, or can't be used (VMs off, the provider disconnected),
 // they wait, saying why, rather than run elsewhere or at another size. Its pick is the bot's own, so it holds whatever
 // the Linux machine says.
-import type { MachineId, ProjectRef, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
-import type { NodeLoad } from "../../shared/node_link.ts";
-import { computerLabel, type Limit, NAMES, NO_ACCOUNT_HOSTED, overCap, RUNNER_ID, vmFits, vmSlots, vmTakes } from "../../shared/sandbox.ts";
+import type { MachineId, ProjectRef, ProviderTrouble, SlotHosted, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
+import { HEARTBEAT_TIMEOUT_SECS, type NodeLoad, type SandboxTrouble } from "../../shared/node_link.ts";
+import { computerLabel, isProvider, type Limit, NAMES, ORDER, NO_ACCOUNT_HOSTED, overCap, RUNNER_ID, troubleLine, troubleOf, vmFits, vmSlots, vmTakes } from "../../shared/sandbox.ts";
 import type { Size } from "../../sandbox/providers/common.ts";
 import { type Auto, type Host, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
@@ -49,12 +49,17 @@ export type Machine = {
   places?: Record<string, string>;
   /** When `places` came (the board's clock). */
   placesAt?: number;
+  /** What its node found wrong with a provider, as its last heartbeat said (shared/node_link.ts SandboxTrouble). */
+  trouble?: SandboxTrouble[];
 };
 
 /** How long a machine's last word on its live sessions counts after it stops reporting (offline, removed): a hosted box
  * lives an hour past its node's last renewal (node/sandbox/remote/boxes.ts LIFETIME_MS), so no box of it is left by
  * then and its provider's room is free again. */
 export const PLACES_FRESH_MS = 65 * 60_000;
+
+/** How long a machine's word on a provider's trouble counts once its heartbeats stop: two missed ones. */
+export const TROUBLE_FRESH_MS = 2 * HEARTBEAT_TIMEOUT_SECS * 1000;
 
 /** A machine's own slots: a person's number, else what it fits. */
 const machineCapOf = (m: Machine) => m.maxAgents ?? m.auto.cap;
@@ -134,6 +139,8 @@ export type BoardState = {
   queued: number;
   perProject: ProjectRow[];
   perMachine: MachineRow[];
+  /** Each connected provider: its boxes live now and what is wrong there. */
+  hosted: SlotHosted[];
 };
 
 /** What a project's max agents comes from, for its lead's line. */
@@ -382,6 +389,45 @@ export class Board {
     return n + this.claims_.filter((c) => c.state === "held" && c.place === provider && this.liveAt(c) === undefined).length;
   }
 
+  /** What a machine that makes `provider`'s boxes last said is wrong there, while that still holds: the hub's runner's
+   * word first, then the other machines' in their order. */
+  trouble(provider: string): ProviderTrouble | undefined {
+    if (!isProvider(provider)) return undefined;
+    const ms = [...this.machines].sort((a, b) => (a.machineId === RUNNER_ID ? -1 : b.machineId === RUNNER_ID ? 1 : 0));
+    for (const m of ms) {
+      if (m.placesAt === undefined || this.nowMs - m.placesAt > TROUBLE_FRESH_MS) continue;
+      const t = m.trouble?.find((x) => x.provider === provider && (x.what !== "start" || (x.until ?? 0) > this.nowMs));
+      if (t) return troubleOf(provider, t);
+    }
+    return undefined;
+  }
+
+  /** Forgets what the machines said is wrong with `provider` (a test of its key just worked, and they were told to try
+   * it again): until a heartbeat says it again. */
+  clearTrouble(provider: string): void {
+    for (const m of this.machines) {
+      if (!m.trouble) continue;
+      m.trouble = m.trouble.filter((t) => t.provider !== provider);
+      if (m.trouble.length === 0) delete m.trouble;
+    }
+  }
+
+  /** The troubles of the picked providers, each as its line (`troubleLine`). */
+  private troubleLines(): string[] {
+    return this.picked().flatMap((l) => {
+      const t = this.trouble(l.provider);
+      return t ? [troubleLine(t)] : [];
+    });
+  }
+
+  /** Each connected provider, in order: its boxes live now, its limit and its trouble. */
+  hostedState(): SlotHosted[] {
+    return this.hosted_.map((l) => {
+      const t = this.trouble(l.provider);
+      return { provider: l.provider, limit: l.max, running: this.hostedUse(l.provider), ...(t ? { trouble: t } : {}) };
+    });
+  }
+
   /** Where claim `c` would run on `m` now; undefined when it can't yet. A claude still alive runs where it is: its box
    * already counts against its provider; on the machine, it needs a free slot. Else where it ran last while that has
    * room, then the machine's own slots, then each hosted provider in order. */
@@ -453,7 +499,15 @@ export class Board {
   }
 
   /** A heartbeat's facts. True when the machine now takes more than before. */
-  observeMachine(machineId: MachineId, name: string, auto: Auto, diskRoom: number | undefined, sandboxes: string[] = [], places: Record<string, string> = {}): boolean {
+  observeMachine(
+    machineId: MachineId,
+    name: string,
+    auto: Auto,
+    diskRoom: number | undefined,
+    sandboxes: string[] = [],
+    places: Record<string, string> = {},
+    trouble: SandboxTrouble[] = [],
+  ): boolean {
     const roomBefore = this.diskRoom(machineId) ?? Infinity;
     const capBefore = this.machineCap(machineId);
     const m = this.machine(machineId);
@@ -464,6 +518,7 @@ export class Board {
       if (sandboxes.length) machine.sandboxes = [...sandboxes];
       if (Object.keys(places).length) machine.places = { ...places };
       machine.placesAt = this.nowMs;
+      if (trouble.length) machine.trouble = trouble.map((t) => ({ ...t }));
       this.machines.push(machine);
       this.ops.push({ op: "machine", machineId, name, auto: { ...auto } });
     } else {
@@ -477,6 +532,8 @@ export class Board {
       if (Object.keys(places).length) m.places = { ...places };
       else delete m.places;
       m.placesAt = this.nowMs;
+      if (trouble.length) m.trouble = trouble.map((t) => ({ ...t }));
+      else delete m.trouble;
       // Where its agents run comes with every heartbeat and isn't stored: kept as it was said last.
       if (auto.sandbox) m.auto.sandbox = { ...auto.sandbox };
       else delete m.auto.sandbox;
@@ -590,7 +647,10 @@ export class Board {
     const limit = this.hosted_.find((l) => l.provider === at);
     if (!limit) return `${picked}, and ${provider} isn't connected: an admin connects it in Settings › Hub › Machines, ${other}`;
     if (!hostable) return `${picked}, but ${NO_ACCOUNT_HOSTED}, ${other}`;
-    if (!this.canHost(m, at)) return `${picked}, and ${name} can't make ${provider} boxes yet: it gets the key at its next heartbeat`;
+    if (!this.canHost(m, at)) {
+      const t = this.trouble(at);
+      return t ? `${picked}, but ${troubleLine(t)}` : `${picked}, and ${name} can't make ${provider} boxes yet: it gets the key at its next heartbeat`;
+    }
     return `${picked}: ${provider} is full, ${this.hostedUse(at)} of ${limit.max}`;
   }
 
@@ -610,8 +670,12 @@ export class Board {
         const pick = this.computerOf(r);
         if (pick && !(c.threadId !== undefined && this.places(m)[c.threadId] !== undefined)) return this.pickBlocker(r, pick, m, c.hostable === true);
         const usable = this.picked().filter((l) => this.canHost(m, l.provider));
-        if (m === RUNNER_ID) return runnerBlocker(this.picked().length > 0, usable.map((l) => `${nameOf(l.provider)} ${this.hostedUse(l.provider)} of ${l.max}`), c.hostable === true, this.linux_);
-        if (!this.oursPicked()) return providerOnlyBlocker(this.linux_, this.picked()[0], this.picked()[0] ? this.hostedUse(this.linux_) : 0, this.canHost(m, this.linux_), name, c.hostable === true);
+        if (m === RUNNER_ID)
+          return runnerBlocker(this.picked().length > 0, usable.map((l) => `${nameOf(l.provider)} ${this.hostedUse(l.provider)} of ${l.max}`), c.hostable === true, this.linux_, this.troubleLines());
+        if (!this.oursPicked()) {
+          const t = this.trouble(this.linux_);
+          return providerOnlyBlocker(this.linux_, this.picked()[0], this.picked()[0] ? this.hostedUse(this.linux_) : 0, this.canHost(m, this.linux_), name, c.hostable === true, t ? troubleLine(t) : undefined);
+        }
         const why = machine ? machineWhy(machine) : UNMEASURED_WHY;
         const [held, used] = [this.localHeld(m), this.localUsed(m)];
         // A bot's bigger VMs take more than a slot each: then the slots in use say why it's full.
@@ -619,7 +683,11 @@ export class Board {
           used === held
             ? `machine cap: ${held} of ${this.ownCap(m)} running on ${name} (${why})`
             : `machine cap: ${used} of ${this.ownCap(m)} slots in use on ${name} (${why}), by ${held} agents, a bot's bigger VMs taking more than one`;
-        if (usable.length === 0) return own;
+        if (usable.length === 0) {
+          // A provider its node set aside after a failure: what went wrong there, rather than nothing.
+          const troubles = c.hostable === true ? this.troubleLines() : [];
+          return troubles.length > 0 ? `${own}; ${troubles.join("; ")}` : own;
+        }
         if (c.threadId !== undefined && this.places(m)[c.threadId] === LOCAL) return `${own}; its Claude still runs there, so it waits for a slot of its own`;
         if (c.hostable !== true) return `${own}; hosted sandboxes take only agents on a Claude account, not this machine's own login`;
         return `${own}, and hosted sandboxes are full: ${usable.map((l) => `${nameOf(l.provider)} ${this.hostedUse(l.provider)} of ${l.max}`).join(", ")}`;
@@ -879,6 +947,7 @@ export class Board {
       queued: count("queued"),
       perProject: rows.slice(0, 50),
       perMachine,
+      hosted: this.hostedState(),
     };
     if (this.cap_ !== undefined) out.fleetCap = this.cap_;
     return out;
@@ -926,20 +995,23 @@ const nameOf = (p: string): string => NAMES[p as keyof typeof NAMES] ?? p;
 
 /** Why an agent waits on a machine while the Linux machine is `provider` only: it isn't connected, the machine can't
  * make its boxes yet, the agent has no Claude account, or it is at its limit. */
-export function providerOnlyBlocker(provider: string, limit: Limit | undefined, used: number, canHost: boolean, machine: string, hostable: boolean): string {
+export function providerOnlyBlocker(provider: string, limit: Limit | undefined, used: number, canHost: boolean, machine: string, hostable: boolean, trouble?: string): string {
   const name = nameOf(provider);
   if (!limit) return `the team's agents run on ${name} only, and ${name} isn't connected: an admin connects it, or picks your machines for Linux machine, in Settings › Hub › Machines`;
   if (!hostable) return `the team's agents run on ${name} only, and ${NO_ACCOUNT_HOSTED}`;
+  if (!canHost && trouble) return `the team's agents run on ${name} only, and ${trouble}`;
   if (!canHost) return `the team's agents run on ${name} only, and ${machine} can't make ${name} boxes yet: it gets the key at its next heartbeat`;
   return `the team's agents run on ${name} only, and it is full: ${used} of ${limit.max}`;
 }
 
-/** Why an agent of a bot no computer runs (the hub's runner) waits: no provider is connected (`connected`) or ready
- * on the runner yet, it has no Claude account, or every provider is at its limit (`full`, one "boat.dev 3 of 3" each). */
-export function runnerBlocker(connected: boolean, full: string[], hostable: boolean, linux = "ours_first"): string {
+/** Why an agent of a bot no computer runs (the hub's runner) waits: no provider is connected (`connected`), one the
+ * runner set aside after a failure (`trouble`, each its line) or none ready on it yet, it has no Claude account, or
+ * every provider is at its limit (`full`, one "boat.dev 3 of 3" each). */
+export function runnerBlocker(connected: boolean, full: string[], hostable: boolean, linux = "ours_first", trouble: string[] = []): string {
   if (linux === "ours_only") return "the team's agents run on its own machines only, and no computer of the team's runs this bot: an admin picks a provider for Linux machine in Settings › Hub › Machines, or connects a computer";
   if (!connected) return "no hosted sandbox provider is connected to run it: an admin connects boat.dev in Settings › Hub › Machines";
-  if (full.length === 0) return "the hosted sandbox providers aren't ready on the hub yet: it starts once they are";
+  if (full.length === 0 && trouble.length > 0) return trouble.join("; ");
+  if (full.length === 0) return `${ORDER.map((p) => NAMES[p]).join(" and ")} is starting: the agent starts once it is ready`;
   if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings";
   return `hosted sandboxes are full: ${full.join(", ")}`;
 }
@@ -950,6 +1022,7 @@ export function slotState(s: BoardState): SlotState {
   const count = (n: number) => Math.max(n, 0);
   const out: SlotState = { cap: count(s.cap), used: count(s.used), queued: count(s.queued), perProject: [] };
   if (s.fleetCap !== undefined) out.fleetCap = count(s.fleetCap);
+  if (s.hosted.length > 0) out.hosted = s.hosted.map((h) => ({ ...h, limit: count(h.limit), running: count(h.running) }));
   out.perProject = s.perProject.map(
     (row): SlotStatePerProject => ({
       projectRef: row.projectRef,

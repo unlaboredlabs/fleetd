@@ -1,12 +1,14 @@
 // The account menu's lines (You.tsx, HubStatus.tsx; W607). All being well a hub is one line: a dot and its name. What
 // is off is one more line each, in plain words, with the one thing to do about it: the link (can't reach it, it
 // refused the key, not paired), an update to take or one that didn't go in, and for an admin a machine that is
-// offline and setup steps left. A member never reads an admin's line; where the problem is theirs too, the line ends
+// offline, the hosted provider while it isn't ready (its row's words, opening its row) and setup steps left. A member never reads an admin's line; where the problem is theirs too, the line ends
 // in who to ask instead of an action. An update's line is the update status's own title and button (updates/quiet.ts),
 // the words Settings › Hub › Machines › Updates says. This app's own update is one app's and one restart's, so it is a
 // row of its own below the hubs (appLine), never one under each hub. The hub's address, Disconnect, versions and the setup steps themselves are
 // in Settings (You › Hubs & devices, Hub › Machines › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
-import type { DegradedCause, MachineStatus } from "../../../shared/contracts";
+import type { DegradedCause, MachineStatus, SlotHosted } from "../../../shared/contracts";
+import { hostedRow } from "../../../shared/hostedRow";
+import { specOf } from "../../../shared/providers";
 import type { HubState } from "../../../shared/hub";
 import type { UpdatesState } from "../../../shared/updates";
 import { appStatus, clockAt, type Act } from "../updates/model";
@@ -26,11 +28,13 @@ export type LineDoes =
   | { readonly to: "setup" }
   | { readonly to: "start" }
   | { readonly to: "machines"; readonly machineId?: string }
+  /** The hosted provider's row in Hub › Machines; `retry`: test its key first, which has it tried again at once. */
+  | { readonly to: "hosted"; readonly retry?: string }
   | { readonly to: "updates" }
   | { readonly to: "update"; readonly act: Act };
 
 export interface MenuLine {
-  readonly key: "hub" | "update" | "machines" | "setup" | "start" | "app";
+  readonly key: "hub" | "update" | "machines" | "hosted" | "setup" | "start" | "app";
   readonly mark: LineMark;
   readonly text: string;
   /** The hub's or machine's name in `text`, the one part the row may cut short when it is long; never what is wrong. */
@@ -50,10 +54,8 @@ export interface MenuMachine {
   /** The hub's own runner for hosted sandboxes, named as a plural ("Hosted sandboxes"). */
   readonly runner?: boolean | undefined;
   readonly degradedCause?: DegradedCause | undefined;
+  readonly degradedReason?: string | undefined;
 }
-
-/** What the hub's runner lacks, in a few words, and where it is fixed: a Claude account, in Your accounts. */
-const HOSTED_LOGIN = { text: "Hosted agents need a Claude account", action: "Connect", does: { to: "accounts" } } as const;
 
 export interface MenuInput {
   readonly hub: HubState;
@@ -63,6 +65,8 @@ export interface MenuInput {
   readonly admin: boolean;
   /** Undefined until the hub's machines are known. */
   readonly machines: readonly MenuMachine[] | undefined;
+  /** The connected hosted providers as the slot board has them now (their live count and trouble). */
+  readonly hosted?: readonly SlotHosted[] | undefined;
   /** Required setup steps left; 0 for a member. */
   readonly setupLeft: number;
   /** Get started's steps left on a fleetd cloud team in the web app (screens/start); 0 elsewhere. */
@@ -140,13 +144,14 @@ export const appLine = (state: UpdatesState | null, whole = false): MenuLine | n
 };
 
 /**
- * Machines that need someone, for an admin: the one by name, opening its page, or how many. The hub's runner with no
- * Claude account says so and opens Your accounts, where one is connected. A member reads of them
+ * Machines that need someone, for an admin: the one by name, opening its page, or how many. A member reads of them
  * only when none is online, since then nothing of theirs runs, in the Machines page's words: all offline, all degraded
- * (connected, but agents can't run there), or some of each.
+ * (connected, but agents can't run there), or some of each. The hub's runner is no machine of the team's: its line is
+ * the hosted provider's (`hostedLine`).
  */
-export const machinesLine = (machines: readonly MenuMachine[] | undefined, admin: boolean): MenuLine | null => {
+export const machinesLine = (all: readonly MenuMachine[] | undefined, admin: boolean): MenuLine | null => {
   const line = { key: "machines", mark: "warning" } as const;
+  const machines = all?.filter((m) => m.runner !== true);
   const off = machines?.filter((m) => m.status !== "online") ?? [];
   if (machines === undefined || off.length === 0) return null;
   if (!admin) {
@@ -157,11 +162,36 @@ export const machinesLine = (machines: readonly MenuMachine[] | undefined, admin
   const offline = off.every((m) => m.status === "offline");
   const [one] = off;
   if (off.length === 1 && one !== undefined) {
-    if (one.runner === true && one.status === "degraded" && one.degradedCause === "claude_login") return { ...line, ...HOSTED_LOGIN };
-    const words = one.runner === true ? (offline ? "are offline" : "need a look") : offline ? "is offline" : "needs a look";
-    return { ...line, text: `${one.name} ${words}`, name: one.name, action: "Open", does: { to: "machines", machineId: one.machineId } };
+    return { ...line, text: `${one.name} ${offline ? "is offline" : "needs a look"}`, name: one.name, action: "Open", does: { to: "machines", machineId: one.machineId } };
   }
   return { ...line, text: `${String(off.length)} machines ${offline ? "offline" : "need a look"}`, action: "Open", does: { to: "machines" } };
+};
+
+/**
+ * The hosted provider while it isn't ready, in the words its row says (shared/hostedRow.ts): "boat.dev isn't ready:
+ * <why>" with its fix's own button (Connect, Try again), opening its row; starting, a quiet line that marks nothing.
+ * Ready, none. A member reads it only when the runner is all the team has, with who to ask instead of the button.
+ */
+export const hostedLine = (machines: readonly MenuMachine[] | undefined, hosted: readonly SlotHosted[] | undefined, admin: boolean): MenuLine | null => {
+  const runner = machines?.find((m) => m.runner === true);
+  const providers = hosted ?? [];
+  if (runner === undefined && providers.length === 0) return null;
+  // The provider in trouble, else the first; a runner with no provider on the board yet speaks for boat.dev.
+  const at = providers.find((h) => h.trouble !== undefined) ?? providers[0];
+  const p = { provider: at?.provider ?? "boat", connected: true, limit: at?.limit ?? 0, running: at?.running ?? 0, ...(at?.trouble ? { trouble: at.trouble } : {}) };
+  const row = hostedRow(p, runner, at);
+  if (row.state === "ready" || row.state === "off") return null;
+  const name = specOf(p.provider).name;
+  const open = { to: "hosted" } as const;
+  if (!admin) {
+    const alone = machines?.every((m) => m.runner === true) ?? false;
+    return alone && row.state !== "starting" ? { key: "hosted", mark: "warning", text: `${name} isn't ready: ${row.why ?? "it didn't start"}`, aside: ASK } : null;
+  }
+  if (row.state === "starting") return { key: "hosted", mark: "quiet", text: `${name} is starting…`, does: open };
+  const text = `${name} isn't ready: ${row.why ?? "it didn't start"}`;
+  if (row.action === "connect") return { key: "hosted", mark: "warning", text, action: "Connect", does: { to: "accounts" } };
+  if (row.action === "retry" || row.action === "test") return { key: "hosted", mark: "warning", text, action: "Try again", does: { to: "hosted", retry: p.provider } };
+  return { key: "hosted", mark: "warning", text, action: "Open", does: open };
 };
 
 /** Setup steps left, an admin's to finish. */
@@ -176,10 +206,10 @@ export const startLine = (left: number): MenuLine | null =>
   left > 0 ? { key: "start", mark: "quiet", text: "Finish setting up", aside: `${String(left)} left`, does: { to: "start" } } : null;
 
 /** One hub's lines, its own first. What the hub alone can say (updates, machines, setup) shows only while it answers. */
-export const menuLines = ({ hub, label, quiet, admin, machines, setupLeft, startLeft = 0, now, timeZone }: MenuInput): readonly MenuLine[] => {
+export const menuLines = ({ hub, label, quiet, admin, machines, hosted, setupLeft, startLeft = 0, now, timeZone }: MenuInput): readonly MenuLine[] => {
   const own = hubLine(hub, label, quiet, now, timeZone);
   if (hub.phase !== "live") return [own];
-  return [own, updateLine(quiet), machinesLine(machines, admin), setupLine(setupLeft, admin), startLine(startLeft)].filter((l) => l !== null);
+  return [own, updateLine(quiet), hostedLine(machines, hosted, admin), machinesLine(machines, admin), setupLine(setupLeft, admin), startLine(startLeft)].filter((l) => l !== null);
 };
 
 /** What marks your avatar for one hub: the most pressing thing off, in a few words; null while all is well. */
@@ -198,8 +228,8 @@ const marked = (line: MenuLine | undefined, of: string): HubMark | null =>
 export const linkMark = (hub: HubState, label: string | null, now = Date.now()): HubMark | null => marked(hubLine(hub, label, null, now), "");
 
 /**
- * The mark of what else is off on a hub: machines, then setup steps. An update says itself in the word under your
+ * The mark of what else is off on a hub: its hosted provider, machines, then setup steps. An update says itself in the word under your
  * name, so it marks nothing. With several hubs the words name the hub.
  */
 export const workMark = (lines: ReadonlyArray<MenuLine | null>, label: string | null): HubMark | null =>
-  marked(lines.find((l) => l?.key === "machines" || l?.key === "setup") ?? undefined, label === null ? "" : ` (${label})`);
+  marked(lines.find((l) => l?.key === "hosted" || l?.key === "machines" || l?.key === "setup") ?? undefined, label === null ? "" : ` (${label})`);

@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, sameSize, type Size } from "../../../sandbox/providers/index.ts";
+import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Size } from "../../../sandbox/providers/index.ts";
 import { hosted as hostedRecipe, templateName } from "../../../sandbox/providers/recipe.ts";
 import base from "../../../sandbox/image/Dockerfile" with { type: "text" };
 import { TESTED } from "../../runner/claude.ts";
@@ -19,8 +19,10 @@ import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
 import { ASIDE_MS, NAMES } from "../../../shared/sandbox.ts";
+import type { SandboxTrouble } from "../../../shared/node_link.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
+import { stepped } from "../../place/hosted_steps.ts";
 import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
@@ -52,7 +54,10 @@ export class Boxes {
   #wiring: Wiring | undefined;
   #reaper: ReturnType<typeof setInterval> | undefined;
   /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
-  #down = new Map<ProviderId, { until: number; why: string }>();
+  #down = new Map<ProviderId, { until: number; why: string; reason: Reason }>();
+  /** Providers whose live boxes couldn't be extended at the last try (`keptAlive`), and why; once none of their boxes
+   * is left (`noneLive`), until when it is still said. */
+  #unkept = new Map<ProviderId, { why: string; reason: Reason; until?: number }>();
   /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
   #making = new Set<string>();
   /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
@@ -96,6 +101,8 @@ export class Boxes {
 
   /** The team's keys as the hub sent them last (sealed to this node, base64), by provider: one not sent is forgotten. */
   setKeys(sealed: Partial<Record<string, string>>): void {
+    // A new key, or none: the last keep-alive's failure was the old key's.
+    this.#unkept.clear();
     mkdirSync(join(this.home, "sandbox", "keys"), { recursive: true, mode: 0o700 });
     for (const p of PROVIDERS) {
       const b64 = sealed[p];
@@ -128,9 +135,43 @@ export class Boxes {
 
   /** A provider that couldn't make a box is offered to the hub's placement no more for DOWN_MS: the agents it would
    * take run here or wait in line, rather than fail on it again. */
-  setAside(p: ProviderId, why: string, now = Date.now()): void {
-    this.#down.set(p, { until: now + DOWN_MS, why });
+  setAside(p: ProviderId, why: string, now = Date.now(), reason: Reason = "failed"): void {
+    this.#down.set(p, { until: now + DOWN_MS, why, reason });
     console.warn(`${nowIso()} WARN a hosted provider is set aside for ${DOWN_MS / 60_000} minutes {"provider":"${p}","why":${JSON.stringify(why)}}`);
+  }
+
+  /** Every provider set aside is offered again at once: the hub's fresh word (a key that works again, a change). */
+  retry(): void {
+    this.#down.clear();
+    this.#unkept.clear();
+  }
+
+  /** A keep-alive of `p`'s box: failed (`error`), or worked, which clears the last failure. */
+  keptAlive(p: ProviderId, error?: unknown): void {
+    if (error === undefined) {
+      this.#unkept.delete(p);
+      return;
+    }
+    const reason: Reason = error instanceof ProviderError ? error.reason : "unreachable";
+    this.#unkept.set(p, { why: error instanceof Error ? error.message : String(error), reason });
+  }
+
+  /** `p` has no live box left (its last session ended, a failed keep-alive's own end among them): its keep-alive
+   * failure is said for DOWN_MS more, so the row and the leads hear of it, then goes, with no box left to keep. */
+  noneLive(p: ProviderId, now = Date.now()): void {
+    const k = this.#unkept.get(p);
+    if (k && k.until === undefined) k.until = now + DOWN_MS;
+  }
+
+  /** What the heartbeat says is wrong with each provider now (`load.sandboxTrouble`): set aside after a refusal or a
+   * box that didn't come up, until when; or its boxes not kept alive. Only connected providers; empty when all is well. */
+  trouble(now = Date.now()): SandboxTrouble[] {
+    return this.connected().flatMap((p): SandboxTrouble[] => {
+      const d = this.#down.get(p);
+      if (d && d.until > now) return [{ provider: p, what: "start", reason: d.reason, why: d.why, until: d.until }];
+      const k = this.#unkept.get(p);
+      return k && (k.until ?? Infinity) > now ? [{ provider: p, what: "keep_alive", reason: k.reason, why: k.why }] : [];
+    });
   }
 
   client(p: ProviderId): Provider {
@@ -151,8 +192,9 @@ export class Boxes {
 
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
    * needed. boat sizes a box at create, so one serves every size; a provider that fixed a box's size in its template
-   * would build one per size (`<name>-<cpu>c<mem>g`). */
-  template(p: ProviderId, size: Size = DEFAULT_SIZE): Promise<string> {
+   * would build one per size (`<name>-<cpu>c<mem>g`). `onBuild`: called when it isn't built yet (a build starts, or
+   * one is under way). */
+  template(p: ProviderId, size: Size = DEFAULT_SIZE, onBuild?: () => void): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
     const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
     const name = `${this.templateName()}${sized}`;
@@ -163,6 +205,7 @@ export class Boxes {
       kept = JSON.parse(readFileSync(file, "utf8"));
     } catch {}
     if (kept.name === name && kept.id) return Promise.resolve(kept.id);
+    onBuild?.();
     let building = this.#templates.get(key);
     if (!building) {
       console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
@@ -173,6 +216,12 @@ export class Boxes {
           writeFileSync(file, JSON.stringify({ name, id }));
           console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
           return id;
+        })
+        .catch((error: unknown) => {
+          // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
+          if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
+          console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify(error.message)}}`);
+          throw new ProviderError("failed", `${NAMES[p]}'s sandbox template didn't build`);
         });
       building.catch(() => this.#templates.delete(key));
       this.#templates.set(key, building);
@@ -202,7 +251,7 @@ export class Boxes {
     // A size the provider has no exact box of is refused here, before any box or template is made.
     const not = size ? notOffered(p, size, NAMES[p]) : undefined;
     if (not) throw new ProviderError("failed", not);
-    const template = o.template ?? (await this.template(p, size));
+    const template = o.template ?? (await this.template(p, size, () => stepped(session, "template")));
     // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;

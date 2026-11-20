@@ -103,6 +103,10 @@ export const fixtures = [
   "machines-places-one",
   // ...and no machine of the team's, its hosted agents with no Claude account (W721).
   "machines-none",
+  // ...and boat.dev's row's own states (W743): starting, ready with how many run, and refused for billing.
+  "machines-hosted-starting",
+  "machines-hosted-ready",
+  "machines-hosted-refused",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -115,6 +119,7 @@ export const fixtures = [
   "live-1-question",
   // W651: the island over the composer, quiet, crowded (a long red main), and with a file name too long for any band.
   "live-band-quiet",
+  "live-band-starting",
   "live-band-crowded",
   "live-band-long",
   // W685: no agent at work, the lead writing, and the agents' DMs: the island's card holds the DMs alone.
@@ -173,6 +178,7 @@ export const fixtures = [
   "cloud-invited",
   "cloud-connect",
   "cloud-connect-no-terminal",
+  "cloud-hosted-stuck",
   "cloud-account",
   "cloud-account-signed-out",
   // ...and People on a team: its owner and an admin invite by email, a member sees no People page, and a team at its
@@ -387,6 +393,7 @@ export const fixtures = [
   "menu-setup",
   "menu-machine-offline",
   "menu-hosted-account",
+  "menu-hosted-refused",
   "menu-offline",
   "menu-refused",
   "menu-updating",
@@ -689,7 +696,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-crowded", "live-band-long", "live-band-dms"],
+    fixtures: ["live-1", "live-3", "live-20", "live-1-lead", "live-20-lead", "live-band-quiet", "live-band-starting", "live-band-crowded", "live-band-long", "live-band-dms"],
     sizes: [...defaultSizes, "narrow"],
     variant: "island",
     check: islandHolds,
@@ -2637,6 +2644,7 @@ export const screens: readonly Screen[] = [
       "menu-setup",
       "menu-machine-offline",
       "menu-hosted-account",
+      "menu-hosted-refused",
       "menu-offline",
       "menu-refused",
       "sidebar-hubs-offline",
@@ -2906,6 +2914,9 @@ export const screens: readonly Screen[] = [
   // Where agents run: a team of fleetd cloud with nothing to run agents on, as its owner. A computer: Connect this
   // computer opens a terminal, or, where none opens, points at the line. Or hosted sandboxes: the team's providers.
   { id: "setup.machine", route: "#/", fixtures: ["cloud-connect"] },
+  // ...hosted sandboxes connected that never get ready: past the wait, why, the fix and Try again (W743).
+  // On the real clock: the wait is a timer of the screen's own.
+  { id: "setup.machine.hosted.not-ready", route: "#/", fixtures: ["cloud-hosted-stuck"], realClock: true },
   {
     id: "setup.machine",
     route: "#/",
@@ -2934,6 +2945,7 @@ export const screens: readonly Screen[] = [
     computer: "computer",
     unusable: "computer",
     offline: "computer",
+    "hosted-failed": "computer",
     tailscale: "tailscale",
     "tailscale-signin": "tailscale",
     "claude-key": "claude",
@@ -3905,6 +3917,20 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("option", { name: "boat.dev only" })).toBeVisible();
     },
   },
+  // W743: boat.dev's row says its real state with the one button that fixes it: Starting… while the hub's runner comes
+  // up; Ready with 3 of 20 running; Needs a Claude account with Connect; Couldn't start after a refusal for billing, with
+  // its fix and Try again; its key refused at its test, with Test again. No explaining text under it at rest.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-hosted-starting", "machines-hosted-ready", "machines-none", "machines-hosted-refused", "machines-sandboxes-on"],
+    variant: "hosted-states",
+    open: async (page) => {
+      const row = page.locator('[data-sandbox="boat"]');
+      await row.scrollIntoViewIfNeeded();
+      await expect(row).toHaveAttribute("data-hosted-state", /^(starting|ready|needs_claude|failed)$/);
+    },
+  },
   // W688: the team's own hosted sandbox account, one section on Machines: none connected, and one with a failed test.
   {
     id: "settings.hub.machines",
@@ -3924,6 +3950,18 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-sandbox="boat"]').getByRole("button", { name: "Connect" }).click();
       await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
+    },
+  },
+  // W743: a link to the hosted sandboxes' old machine page lands on Machines at boat.dev's row, never a machine page.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines/hosted",
+    fixtures: ["machines-sandboxes-on"],
+    variant: "hosted-link",
+    open: async (page) => {
+      await expect(page.locator('[data-sandbox="boat"]')).toBeInViewport();
+      await expect(page.locator("[data-screen='settings.hub.machine']")).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => window.location.hash)).toBe("#/settings/hub/machines");
     },
   },
   // The plus opens Add machine's ways in over the list.

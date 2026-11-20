@@ -83,7 +83,9 @@ export const syncAgents = (f: Fixture): void => {
   const cap = f.agentsFromSlots && typeof set["cap"] === "number" ? set["cap"] : Math.max(12, largest, Math.ceil(used / 6) * 6);
   // A fixture about the slot state keeps its machines as it set them.
   const machines = f.agentsFromSlots && Array.isArray(set["perMachine"]) ? { perMachine: set["perMachine"] } : {};
-  const slots: JsonObject = { cap, ...(f.agentsFromSlots && typeof set["fleetCap"] === "number" ? { fleetCap: set["fleetCap"] } : {}), used, queued, ...machines, perProject };
+  // The hosted providers' live count and trouble aren't the lanes' to remake: kept as the fixture set them.
+  const hosted = Array.isArray(set["hosted"]) ? { hosted: set["hosted"] } : {};
+  const slots: JsonObject = { cap, ...(f.agentsFromSlots && typeof set["fleetCap"] === "number" ? { fleetCap: set["fleetCap"] } : {}), used, queued, ...machines, ...hosted, perProject };
   f.snapshot["slots"] = slots;
   for (const frame of f.live) if (frame["slots"] !== undefined || frame["full"] === true) frame["slots"] = structuredClone(slots);
 

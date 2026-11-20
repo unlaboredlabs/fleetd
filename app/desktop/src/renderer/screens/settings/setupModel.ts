@@ -4,6 +4,7 @@
 import type { ComputerChoice, ComputerImage, ComputerPick, WorktreeSetup } from "../../../shared/contracts";
 import { age } from "../live/when";
 import { fmtBytes } from "../time/format";
+import { hostedProvider, RUNNER_ID } from "../../../shared/providers";
 
 /** WorktreeSetup's most commands and input files. */
 export const SETUP_COMMANDS_MAX = 20;
@@ -95,6 +96,13 @@ export const whereOf = (image: ComputerImage | undefined): string | null => (ima
 
 /** The pick's value in the Runs on select: AUTO for none, else `<kind>:<cpu>:<memGb>`. */
 export const AUTO = "auto";
+/**
+ * Runs on's hover: the pick is where the agents the lead starts run, and the lead itself stays on the bot's machine
+ * (`name`), or on the hosted sandboxes, in a box of its own.
+ */
+export const runsOnHint = (machineId: string, name: string): string =>
+  `Where the agents the lead starts run. The lead itself runs ${machineId === RUNNER_ID ? `in a ${hostedProvider().name} sandbox` : `on ${name}`}.`;
+
 export const pickValue = (p: Pick<ComputerChoice, "kind" | "cpu" | "memGb"> | undefined): string => (p ? `${p.kind}:${p.cpu}:${p.memGb}` : AUTO);
 
 /** Why options can't be used now, said once under the last of them, with the command that fixes it when there is one. */

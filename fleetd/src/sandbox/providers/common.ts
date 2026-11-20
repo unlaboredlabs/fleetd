@@ -120,6 +120,8 @@ export type ClientOptions = {
   urls?: { api?: string; sandbox?: (id: string, port: number) => string };
   WebSocket?: typeof WebSocket;
   pollMs?: number;
+  /** The clock a provider's deadlines read (epoch ms); tests set one. */
+  now?: () => number;
 };
 
 /** Why `key` can't be an idempotency key, or undefined. Every provider takes this form. */

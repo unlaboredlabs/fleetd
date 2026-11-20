@@ -17,7 +17,8 @@ import { parse } from "./recipe.ts";
 import { envFile, envPath, launcher, shq } from "./shell.ts";
 import { dial } from "./stream.ts";
 
-const NAME = "boat";
+/** Its name in every message: NAMES.boat (shared/sandbox.ts). */
+const NAME = "boat.dev";
 export const API = "https://boat.dev/api/v1";
 /** Where a detached command's output goes in the box. */
 const LOG = "/tmp/.fleetd-start.log";
@@ -32,6 +33,10 @@ export const TYPES: readonly { type: string; cpu: number; memGb: number }[] = [
 const READY = new Set(["ready", "idle", "running"]);
 /** The longest a build's box may take to come up. */
 const BUILD_UP_MS = 10 * 60_000;
+/** The longest one step of a template build may run, and a snapshot may take to save: past it, boat is taken as not
+ * answering (`unreachable`), so a hung step or a save stuck in "saving" fails every start waiting on it, with why. */
+export const STEP_MS = 15 * 60_000;
+export const SAVE_MS = 20 * 60_000;
 
 /** The boat type of exactly `size`; a size boat has no type of is refused, never rounded up to a larger one. */
 export function typeFor(size: Size): string {
@@ -43,6 +48,7 @@ export function typeFor(size: Size): string {
 export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
   const http = new Http({ name: NAME, base: o.urls?.api ?? API, headers: { Authorization: `Bearer ${auth.key}` }, key: auth.key, fetch: o.fetch, signal: o.signal, refine });
   const pollMs = o.pollMs ?? 2000;
+  const now = o.now ?? Date.now;
   /** Each box's port URLs, token included: boat answers the same one again, so this only saves a call. */
   const hosted = new Map<string, string>();
   const box = (id: string) => `/sandboxes/${encodeURIComponent(id)}`;
@@ -79,18 +85,34 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     for (const k of hosted.keys()) if (k.startsWith(`${id}:`)) hosted.delete(k);
   }
 
-  /** Runs `command` detached; with `wait`, until it ends, failing on a non-zero exit. */
+  /** Runs `command` detached; with `wait`, until it ends (at most STEP_MS), failing on a non-zero exit. */
   async function run(id: string, command: string, wait: boolean, signal?: AbortSignal): Promise<void> {
     const started = await onBox("POST", `${box(id)}/commands`, { body: { command, detached: true }, signal });
     if (!wait) return;
     const pid = started.body?.processId;
+    const until = now() + STEP_MS;
     for (;;) {
+      if (now() > until) throw new ProviderError("unreachable", `a step of boat.dev's sandbox build didn't finish within ${STEP_MS / 60_000} minutes`);
       await pause(pollMs, signal);
       const st = await http.call("GET", `${box(id)}/commands/${pid}`, { query: { tailBytes: "2000" }, signal });
       if (st.body?.running) continue;
       if (st.body?.exitCode === 0) return;
       const tail = String(st.body?.stderr || st.body?.stdout || "").trim().split("\n").slice(-3).join(" / ");
-      throw new ProviderError("failed", `a step failed in boat's build box (exit ${st.body?.exitCode ?? st.body?.status}): ${tail.slice(0, 300)}`);
+      throw new ProviderError("failed", `a step failed in boat.dev's build box (exit ${st.body?.exitCode ?? st.body?.status}): ${tail.slice(0, 300)}`);
+    }
+  }
+
+  /** Saves box `id` as the snapshot `name`, waiting until boat says it is ready (at most SAVE_MS). */
+  async function save(id: string, name: string, signal?: AbortSignal): Promise<string> {
+    await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name }, signal });
+    const until = now() + SAVE_MS;
+    for (;;) {
+      const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal });
+      const status = g.body?.snapshot?.status;
+      if (status === "ready") return name;
+      if (status === "failed") throw new ProviderError("failed", `boat.dev couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
+      if (now() > until) throw new ProviderError("unreachable", `boat.dev didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`);
+      await pause(pollMs, signal);
     }
   }
 
@@ -150,7 +172,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       if (!url) {
         const a = await onBox("POST", `${box(id)}/host`, { body: { port }, signal: c.signal });
         url = String(a.body?.url ?? "");
-        if (!url) throw new ProviderError("failed", `boat gave no URL for port ${port} of the box`);
+        if (!url) throw new ProviderError("failed", `boat.dev gave no address for port ${port} of the box`);
         hosted.set(`${id}:${port}`, url);
       }
       const token = new URL(url).searchParams.get("_token") ?? "";
@@ -162,7 +184,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       try {
         a = await onBox("GET", `${box(id)}/files`, { query: { path, encoding: "base64" }, signal: r.signal });
       } catch (e) {
-        if (e instanceof ProviderError && e.status === 413) throw new ProviderError("failed", `${path} in the box is larger than boat reads (5 MiB)`, 413);
+        if (e instanceof ProviderError && e.status === 413) throw new ProviderError("failed", `${path} in the box is larger than boat.dev reads (5 MiB)`, 413);
         if (e instanceof ProviderError && e.status === 404) throw new ProviderError("failed", `the box has no file ${path}`, 404);
         throw e;
       }
@@ -175,16 +197,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       await http.call("PATCH", box(id), { body: { ttlSeconds: seconds(ms) }, signal: l.signal });
     },
 
-    async snapshot(id, name, s = {}) {
-      await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name }, signal: s.signal });
-      for (;;) {
-        const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal: s.signal });
-        const status = g.body?.snapshot?.status;
-        if (status === "ready") return name;
-        if (status === "failed") throw new ProviderError("failed", `boat couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
-        await pause(pollMs, s.signal);
-      }
-    },
+    snapshot: (id, name, s = {}) => save(id, name, s.signal),
 
     async forget(template, f = {}) {
       await http.call("DELETE", `/saved-snapshots/${encodeURIComponent(template)}`, { ok: [404], signal: f.signal });
@@ -203,13 +216,13 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       );
       const id = String(s.id);
       try {
-        const until = Date.now() + BUILD_UP_MS;
+        const until = now() + BUILD_UP_MS;
         for (;;) {
           const g = await http.call("GET", box(id), { signal: b.signal });
           const state = String(g.body?.sandbox?.state ?? "");
           if (READY.has(state)) break;
-          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `boat's build box didn't start (${g.body?.sandbox?.error ?? state})`);
-          if (Date.now() > until) throw new ProviderError("failed", "boat's build box didn't start within 10 minutes");
+          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `boat.dev's build box didn't start (${g.body?.sandbox?.error ?? state})`);
+          if (now() > until) throw new ProviderError("failed", "boat.dev's build box didn't start within 10 minutes");
           await pause(pollMs, b.signal);
         }
         const env: [string, string][] = [];
@@ -230,14 +243,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           const lines = env.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n");
           await run(id, `sudo bash -c ${shq(`printf '%s\\n' ${shq(lines)} >> /etc/environment`)}`, true, b.signal);
         }
-        await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name: b.name }, signal: b.signal });
-        for (;;) {
-          const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(b.name)}`, { signal: b.signal });
-          const status = g.body?.snapshot?.status;
-          if (status === "ready") return b.name;
-          if (status === "failed") throw new ProviderError("failed", `boat couldn't save the snapshot ${b.name} (${g.body?.snapshot?.error ?? "no reason given"})`);
-          await pause(pollMs, b.signal);
-        }
+        return await save(id, b.name, b.signal);
       } finally {
         await destroy(id).catch(() => {});
       }
@@ -253,23 +259,23 @@ function refine(a: Answer, words: string): { reason: "billing" | "limit" | "fail
   switch (code) {
     case "billing_required":
     case "credit_required":
-      return { reason: "billing", message: `boat won't start sandboxes on this account until its billing is sorted out (${words}).` };
+      return { reason: "billing", message: `boat.dev won't start sandboxes on this account until its billing is sorted out (${words}).` };
     case "team_member_cap_reached":
     case "member_limit_reached":
-      return { reason: "limit", message: `boat's organization owner has capped this member's use (${words}).` };
+      return { reason: "limit", message: `boat.dev's organization owner has capped this member's use (${words}).` };
     case "org_suspended":
-      return { reason: "billing", message: `boat has suspended the organization's wallet (${words}).` };
+      return { reason: "billing", message: `boat.dev has suspended the organization's wallet (${words}).` };
     case "trial_machine_class_not_allowed":
     case "machine_class_plan_required":
-      return { reason: "billing", message: `boat's plan for this account doesn't include that sandbox size (${words}).` };
+      return { reason: "billing", message: `boat.dev's plan for this account doesn't include that sandbox size (${words}).` };
     case "trial_compute_limit_reached":
-      return { reason: "billing", message: `boat's free trial hours are used up (${words}).` };
+      return { reason: "billing", message: `boat.dev's free trial hours are used up (${words}).` };
     case "rate_limited":
-      return { reason: "limit", message: `boat's limit on sandbox starts is reached for now (${words}).` };
+      return { reason: "limit", message: `boat.dev's limit on sandbox starts is reached for now (${words}).` };
     case "limit_reached":
-      return { reason: "limit", message: `boat's limit on sandboxes at once is reached (${words}).` };
+      return { reason: "limit", message: `boat.dev's limit on sandboxes at once is reached (${words}).` };
     case "snapshot_not_found":
-      return { reason: "failed", message: `boat has no saved snapshot by that name (${words}): build it first.` };
+      return { reason: "failed", message: `boat.dev has no saved snapshot by that name (${words}): build it first.` };
   }
   return undefined;
 }

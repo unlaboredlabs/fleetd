@@ -237,6 +237,8 @@ export function SettingsRow(props: {
   hint?: ReactNode | undefined;
   line?: ReactNode | undefined;
   lineTone?: TextTone | undefined;
+  /** The one button that fixes what the line says, at its end (a danger or warning line's notice). */
+  lineAction?: ReactNode | undefined;
   control?: ReactNode | undefined;
   children?: ReactNode | undefined;
   /** The title's id, for a control that names itself by it (aria-labelledby). */
@@ -262,7 +264,9 @@ export function SettingsRow(props: {
             </Text>
             <HintWords id={hintId} hint={props.hint} />
             {props.line === undefined || props.line === null || props.line === false ? null : props.lineTone === "danger" || props.lineTone === "warning" ? (
-              <Notice tone={props.lineTone}>{props.line}</Notice>
+              <Notice tone={props.lineTone} action={props.lineAction}>
+                {props.line}
+              </Notice>
             ) : (
               <Text size="sm" tone={props.lineTone ?? "quiet"}>
                 {props.line}
@@ -410,7 +414,7 @@ export function SettingsListRow(props: {
  * provider refused its key) or off (not connected, nothing to run on). "none" is its room, empty. Its words are its
  * label; the row says them where they matter.
  */
-export type Mark = "ready" | "needs" | "failed" | "off";
+export type Mark = "ready" | "starting" | "needs" | "failed" | "off";
 
 export function PlaceMark({ mark, label }: { mark: Mark | "none"; label?: string | undefined }) {
   return (

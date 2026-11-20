@@ -1,14 +1,19 @@
 // A hosted sandbox provider's row (boat.dev), as Providers.tsx lists every provider: a ProviderRow whose Connect opens
-// its key's sealed field; connected, its limit and a menu with
-// Test and Disconnect. Connecting checks the key at once, and the row says what the check found.
+// its key's sealed field; connected, its limit and a menu with Test and Disconnect. Its dot and one line are its real
+// state (shared/hostedRow.ts: Starting…, Ready with how many run, Needs a Claude account, Couldn't start with why and
+// its fix), with the one button that fixes it on the line: Connect, Try again or Test again. Connecting checks the key
+// at once. The hub's links to hosted sandboxes land here (reveal `hub.sandbox.<provider>`).
 import { useCallback, useState } from "react";
 import type { SandboxProviderState } from "../../../shared/contracts";
-import { useDataLayer } from "../../src/data/react";
-import { Select } from "../../ui";
+import { ACTION_LABELS, hostedRow, type HostedRow, rowWords, runnerOf } from "../../../shared/hostedRow";
+import { useData, useDataLayer } from "../../src/data/react";
+import { Button, Select } from "../../ui";
+import { navigate } from "../shell/navigation";
 import { useHubCall } from "./hub";
 import { ConnectKey, ProviderRow, useProviderRun } from "./Provider";
 import { canWords, specOf } from "../../../shared/providers";
-import { limitChoices, providerHint, providerLine, providerName, withFix } from "./sandboxModel";
+import type { Mark } from "./parts";
+import { limitChoices, providerHint, providerName } from "./sandboxModel";
 import s from "./settings.module.css";
 
 /** A Test asks the provider from one of the team's machines (the hub waits up to 45 seconds for one). */
@@ -27,9 +32,16 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
   const { hub } = useDataLayer();
   const name = providerName(p.provider);
   const [connecting, setConnecting] = useState(false);
-  const { busy, checked, problem, run, setChecked } = useProviderRun(reread);
-  const line = problem === null ? providerLine(p, checked) : { text: problem, tone: "danger" as const };
-  const failed = p.connected && p.check !== undefined && !p.check.ok;
+  const { busy, problem, run, setChecked } = useProviderRun(reread);
+  // Its runner and its live count and trouble, as the hub pushes them; sandbox_get's where the push has none yet.
+  // Each selector picks a stored object, so the value is stable between changes.
+  const runner = useData((d) => Object.values(d.machines).find((m) => m.runner === true));
+  const live = useData((d) => (d.live.slots ?? d.slots)?.hosted?.find((h) => h.provider === p.provider));
+  const state = hostedRow(p, runner === undefined ? undefined : runnerOf([runner]), live);
+  const test = () => run("test", () => call("sandbox_test", { provider: p.provider }, { timeoutMs: TEST_TIMEOUT_MS }), "Not tested");
+  const act = () => (state.action === "connect" ? navigate({ id: "settings", tab: "accounts" }) : test());
+  const words = problem ?? rowWords(state);
+  const danger = problem !== null || state.state === "failed";
   return (
     <ProviderRow
       name={name}
@@ -37,9 +49,24 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
       reveal={`hub.sandbox.${p.provider}`}
       hint={providerHint(p.provider)}
       connected={p.connected}
-      mark={!p.connected ? "off" : failed ? "failed" : "ready"}
+      mark={MARKS[state.state]}
+      markLabel={`${name}: ${state.text ?? "not connected"}`}
       line={
-        line === null ? null : { node: <span role={line.tone === "danger" ? "alert" : "status"}>{withFix(line)}</span>, tone: line.tone }
+        words === null
+          ? null
+          : {
+              node: <span data-line="">{words}</span>,
+              tone: danger ? "danger" : state.state === "needs_claude" ? "warning" : "quiet",
+              ...(state.action === undefined || problem !== null
+                ? {}
+                : {
+                    action: (
+                      <Button size="sm" variant="secondary" disabled={busy !== null} onClick={act}>
+                        {ACTION_LABELS[state.action]}
+                      </Button>
+                    ),
+                  }),
+            }
       }
       setting={
         <Select
@@ -52,7 +79,7 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
         />
       }
       busy={busy}
-      onTest={() => run("test", () => call("sandbox_test", { provider: p.provider }, { timeoutMs: TEST_TIMEOUT_MS }), "Not tested")}
+      onTest={test}
       onDisconnect={() => run("disconnect", () => call("sandbox_disconnect", { provider: p.provider }), "Not disconnected")}
       connecting={connecting}
       onConnect={() => setConnecting(true)}
@@ -68,7 +95,11 @@ export function SandboxRow({ p, boxPubKey }: { p: SandboxProviderState; boxPubKe
           }}
         />
       }
-      data={{ "data-sandbox": p.provider, "data-sandbox-state": p.connected ? "connected" : "off" }}
+      data={{ "data-sandbox": p.provider, "data-sandbox-state": p.connected ? "connected" : "off", "data-hosted-state": state.state }}
     />
   );
 }
+
+/** The row's dot by its state: neutral while ready, a ring while it starts, amber while it needs someone, red when it
+ * can't start. */
+const MARKS: Readonly<Record<HostedRow["state"], Mark>> = { off: "off", starting: "starting", ready: "ready", needs_claude: "needs", failed: "failed" };

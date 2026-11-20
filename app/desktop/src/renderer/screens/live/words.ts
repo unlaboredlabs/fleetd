@@ -75,6 +75,8 @@ export const describe = (lane: AgentLane): Line => {
           return say("compacting context");
         case "retrying":
           return say(`retrying (${act.attempt} of ${act.of}): ${act.reason}`, "warning");
+        case "starting":
+          return say(act.text);
         case "thinking":
           return { ...say("thinking"), thinking: true };
       }

@@ -252,6 +252,10 @@ export type Activity = {
   kind: "retrying";
   of: number;
   reason: string;
+} | {
+  /** A hosted agent's computer starting: "Starting its computer at boat.dev", "Cloning the repo", "Running setup". */
+  kind: "starting";
+  text: string;
 };
 
 export type ActivityNow = {
@@ -4055,8 +4059,11 @@ export type MacTool = {
   ready: boolean;
 };
 
-/** Why a machine is degraded, where a client acts on it (Machine.degradedCause). */
-export type DegradedCause = "claude_login";
+/**
+ * Why a machine is degraded, where a client acts on it (Machine.degradedCause): `claude_login`, no Claude login reaches
+ * its agents; `starting`, its node just linked and its first check hasn't answered yet.
+ */
+export type DegradedCause = "claude_login" | "starting";
 
 export type Machine = {
   /**
@@ -4071,7 +4078,8 @@ export type Machine = {
   boxPubKey?: BoxPublicKey;
   /**
    * Why it is degraded, where a client acts on it: "claude_login", no Claude login reaches its agents (on the hub's
-   * runner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded.
+   * runner, no Claude account is connected for hosted sandboxes); "starting", its node just linked and its first check
+   * hasn't answered yet. Absent for any other reason, and while not degraded.
    */
   degradedCause?: DegradedCause;
   /** Plain language, set while status is "degraded". */
@@ -5078,6 +5086,26 @@ export type NodeLoad = {
    * there once the machine's own slots are full, each up to the team's limit. Absent for none, and from older nodes.
    */
   sandboxes?: string[];
+  /**
+   * What the machine's node found wrong with a hosted provider just now, one each at most: the hub shows it on the
+   * provider's row and in queued agents' reasons. Absent while all is well, and from older nodes.
+   */
+  sandboxTrouble?: NodeSandboxTrouble[];
+};
+
+/**
+ * A hosted provider in trouble on a node: `start`, set aside after it refused a box or one didn't come up there, no box
+ * asked of it until `until` (epoch ms); `keep_alive`, its live boxes couldn't be extended at the last try.
+ */
+export type NodeSandboxTrouble = {
+  provider: string;
+  /** Its kind: invalid_key, limit, billing, unreachable or failed (SandboxCheckReason). */
+  reason: string;
+  /** Epoch ms; only for `start`. */
+  until?: number;
+  what: string;
+  /** The provider's or box's own sentence. */
+  why: string;
 };
 
 /**
@@ -7238,6 +7266,30 @@ export type SandboxProviderState = {
   /** How many of the team's agents may run there at once, across its machines; 0 while not connected. */
   limit: number;
   provider: SandboxProvider;
+  /** Its sandboxes live now, across the team's machines; absent while not connected, and from older hubs. */
+  running?: number;
+  /** What is wrong with it now, as a machine that makes its sandboxes found it; absent while all is well. */
+  trouble?: ProviderTrouble;
+};
+
+/**
+ * What a machine found wrong with a connected provider just now: `start`, it refused a sandbox or one didn't come up
+ * there, so none is asked of it until `until`; `keep_alive`, its running sandboxes couldn't be kept running.
+ */
+export type KnownProviderTroubleKind = "start" | "keep_alive";
+/** KnownProviderTroubleKind, or a value from a newer hub. */
+export type ProviderTroubleKind = KnownProviderTroubleKind | (string & {});
+
+/** A provider's trouble now, in plain words: never a path, a status code or any part of the key. */
+export type ProviderTrouble = {
+  /** What to do about it, in plain words. */
+  fix?: string;
+  /** What is wrong: "boat.dev refused: billing isn't set up on the account". */
+  message: string;
+  reason: SandboxCheckReason;
+  /** When its agents are tried there again by themselves; only for `start`. */
+  until?: Timestamp;
+  what: ProviderTroubleKind;
 };
 
 export type SandboxSetInput = {
@@ -7927,10 +7979,22 @@ export type SlotState = {
   cap: number;
   /** The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps. */
   fleetCap?: number;
+  /** Each connected hosted provider, in the order agents go to them: its sandboxes live now and what is wrong there. */
+  hosted?: SlotHosted[];
   perMachine?: SlotStatePerMachine[];
   perProject: SlotStatePerProject[];
   queued: number;
   used: number;
+};
+
+/** A connected hosted provider on the board. */
+export type SlotHosted = {
+  /** Its limit: how many of the team's agents may run there at once. */
+  limit: number;
+  provider: SandboxProvider;
+  /** Its sandboxes live now, across the team's machines. */
+  running: number;
+  trouble?: ProviderTrouble;
 };
 
 /** One machine's share of the board: what it fits, and what runs there. */

@@ -50,6 +50,8 @@ export type ComputerStep =
   | { readonly at: "ready"; readonly machine: string }
   /** A hosted provider connected, its sandboxes not ready yet (the hub's runner coming up). */
   | { readonly at: "hosted_wait"; readonly provider: string }
+  /** Not ready past the bounded wait (setup/hostedWait.ts): why in the hub's words, its fix, and Try again. */
+  | { readonly at: "hosted_failed"; readonly provider: string; readonly reason: string; readonly fix: string; readonly trying?: boolean }
   /** Agents run in the provider's sandboxes once Claude reaches them. */
   | { readonly at: "hosted"; readonly provider: string };
 

@@ -3,7 +3,7 @@
 // session frames (session_call, session_reply, machine_event, thread_event, clone_progress) are src/shared/sessions.ts's.
 // Fields are camelCase on the wire unless a type says otherwise.
 import type { HubToNodeTag, NodeToHubTag } from "./wire_tags.ts";
-import type { HubChannel, SleptSpan, Timestamp } from "./contracts.ts";
+import type { HubChannel, NodeSandboxTrouble, SleptSpan, Timestamp } from "./contracts.ts";
 
 /** Any frame, by its tag: the JSON object as it travels. The typed frames below narrow the ones the link reads. */
 export type NodeFrame<T extends NodeToHubTag = NodeToHubTag> = { t: T } & Record<string, unknown>;
@@ -168,6 +168,9 @@ export type MacHealth = {
   checks: { id: string; state: "ok" | "warn" | "fail" | "unknown"; message: string; fix?: string; command?: string }[];
 };
 
+/** A hosted provider in trouble on a node (shared/contracts.ts NodeSandboxTrouble), its kind narrowed. */
+export type SandboxTrouble = Omit<NodeSandboxTrouble, "what"> & { what: "start" | "keep_alive" };
+
 /** What a machine reports about itself with each heartbeat. */
 export type NodeLoad = {
   cpus: number;
@@ -179,6 +182,9 @@ export type NodeLoad = {
   /** The hosted providers whose boxes the node can make (it holds their keys): the slot board may place agents there
    * once its own slots are full, each up to the team's limit (hub/slots/board.ts). Absent for none. */
   sandboxes?: string[];
+  /** What is wrong with a connected provider now, one each at most: the hub shows it on the provider's row and in
+   * queued agents' reasons. Absent while all is well. */
+  sandboxTrouble?: SandboxTrouble[];
   /** Where each of the node's live sessions runs (thread id → "local" or a hosted provider): a hosted box from its
    * making until it is destroyed, a claude on the machine while it lives. The slot board counts a box against its
    * provider by it, held or idle. Absent for none. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, setupFrom, whereOf } from "./setupModel";
+import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, runsOnHint, setupFrom, whereOf } from "./setupModel";
 
 describe("setup commands", () => {
   const saved = { commands: ["pnpm install --frozen-lockfile", "pnpm codegen"], inputs: ["pnpm-lock.yaml"] };
@@ -63,6 +63,11 @@ describe("the computer image's line", () => {
 });
 
 describe("Runs on", () => {
+  it("says it is where the lead's agents run, and where the lead itself runs", () => {
+    expect(runsOnHint("devbox", "devbox")).toBe("Where the agents the lead starts run. The lead itself runs on devbox.");
+    expect(runsOnHint("hosted", "Hosted sandboxes")).toBe("Where the agents the lead starts run. The lead itself runs in a boat.dev sandbox.");
+  });
+
   const choices = [
     { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
     { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev's key failed its last test: refused" },

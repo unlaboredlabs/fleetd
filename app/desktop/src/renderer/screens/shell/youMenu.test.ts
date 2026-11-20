@@ -3,7 +3,7 @@ import type { HubState } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
 import { updateStatus } from "../updates/model";
 import { quietOf, type Quiet } from "../updates/quiet";
-import { appLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, startLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
+import { appLine, hostedLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, startLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
 
 const HUB = "https://devbox.example.ts.net:4790";
 const NOW = Date.parse("2026-10-19T09:03:07.195Z");
@@ -130,12 +130,47 @@ describe("machines and setup", () => {
     expect(machinesLine([], true)).toBeNull();
   });
 
-  it("says what the hub's runner lacks in a few words and opens where it is fixed: a Claude account, in Your accounts", () => {
+  it("says boat.dev isn't ready and why, with its fix's own button, opening its row, never the runner's machine page", () => {
     const hosted = { machineId: "hosted", name: "Hosted sandboxes", runner: true } as const;
-    expect(machinesLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], true)).toEqual({ key: "machines", mark: "warning", text: "Hosted agents need a Claude account", action: "Connect", does: { to: "accounts" } });
-    // Anything else wrong with it is its page's to say, in its plural name's grammar.
-    expect(machinesLine([machine("devbox"), { ...hosted, status: "degraded" }], true)).toMatchObject({ text: "Hosted sandboxes need a look", does: { to: "machines", machineId: "hosted" } });
-    expect(machinesLine([machine("devbox"), { ...hosted, status: "offline" }], true)).toMatchObject({ text: "Hosted sandboxes are offline" });
+    const boat = [{ provider: "boat", limit: 20, running: 3 }];
+    // Ready: nothing to say, and the runner is no machine of the team's.
+    expect(hostedLine([machine("devbox"), { ...hosted, status: "online" }], boat, true)).toBeNull();
+    expect(machinesLine([machine("devbox"), { ...hosted, status: "degraded" }], true)).toBeNull();
+    // No Claude account: Connect, in Your accounts.
+    expect(hostedLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, true)).toEqual({
+      key: "hosted",
+      mark: "warning",
+      text: "boat.dev isn't ready: it needs a Claude account",
+      action: "Connect",
+      does: { to: "accounts" },
+    });
+    // A refusal: its reason, and Try again, which tests the key on the row.
+    const trouble = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard" };
+    expect(hostedLine([{ ...hosted, status: "online" }], [{ provider: "boat", limit: 20, running: 3, trouble }], true)).toEqual({
+      key: "hosted",
+      mark: "warning",
+      text: "boat.dev isn't ready: billing isn't set up",
+      action: "Try again",
+      does: { to: "hosted", retry: "boat" },
+    });
+    // Starting: a quiet line that marks nothing.
+    const starting = hostedLine([{ ...hosted, status: "degraded", degradedCause: "starting", degradedReason: "Starting…" }], boat, true);
+    expect(starting).toEqual({ key: "hosted", mark: "quiet", text: "boat.dev is starting…", does: { to: "hosted" } });
+    expect(workMark([starting], null)).toBeNull();
+    // Stuck for another reason: that, with Open.
+    expect(hostedLine([{ ...hosted, status: "degraded", degradedReason: "its network has no IPv4 address. Fix: reconnect it" }], boat, true)).toMatchObject({
+      text: "boat.dev isn't ready: it didn't start",
+      action: "Open",
+      does: { to: "hosted" },
+    });
+    // A member reads it only when hosted is all the team has, with who to ask.
+    expect(hostedLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, false)).toBeNull();
+    expect(hostedLine([{ ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, false)).toEqual({
+      key: "hosted",
+      mark: "warning",
+      text: "boat.dev isn't ready: it needs a Claude account",
+      aside: "Ask an admin",
+    });
   });
 
   it("tells a member only when no machine is online, and who to ask", () => {

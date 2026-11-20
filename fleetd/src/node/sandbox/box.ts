@@ -223,10 +223,10 @@ export class Box {
     }
   }
 
-  /** `path` in the box, refused past `max` bytes. */
-  async read(path: string, max: number): Promise<Uint8Array> {
+  /** `path` in the box from byte `from` on, refused past `max` bytes. */
+  async read(path: string, max: number, from = 0): Promise<Uint8Array> {
     const parts: Buffer[] = [];
-    let at = 0;
+    let at = from;
     for (;;) {
       const got = (await this.#request({ op: "read", path, offset: at, max: READ_CHUNK }, ANSWER_MS * 4)) as { data: string; size: number };
       if (got.size > max) throw new Error(`${path} in the box is larger than ${max} bytes`);
@@ -241,6 +241,11 @@ export class Box {
    * then closes the fd it keeps for each). */
   async forget(): Promise<void> {
     await this.#request({ op: "forget" }, ANSWER_MS * 4);
+  }
+
+  /** Whether the link ended for good: the guest went away, or the node let go. */
+  get ended(): boolean {
+    return this.#over;
   }
 
   /** Lets go of the link (the node's shutdown): the guest and its session go on, for the next node to dial. */

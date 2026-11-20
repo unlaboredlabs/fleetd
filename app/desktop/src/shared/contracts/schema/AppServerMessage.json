@@ -184,6 +184,24 @@
             "reason"
           ],
           "type": "object"
+        },
+        {
+          "description": "A hosted agent's computer starting: \"Starting its computer at boat.dev\", \"Cloning the repo\", \"Running setup\".",
+          "properties": {
+            "kind": {
+              "const": "starting",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -612,7 +630,8 @@
     },
     "DegradedCause": {
       "enum": [
-        "claude_login"
+        "claude_login",
+        "starting"
       ],
       "type": "string"
     },
@@ -1805,7 +1824,7 @@
         },
         "degradedCause": {
           "$ref": "#/$defs/DegradedCause",
-          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes). Absent for any other reason, and while not degraded."
+          "description": "Why it is degraded, where a client acts on it: \"claude_login\", no Claude login reaches its agents (on the hub's\nrunner, no Claude account is connected for hosted sandboxes); \"starting\", its node just linked and its first check\nhasn't answered yet. Absent for any other reason, and while not degraded."
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",
@@ -2023,6 +2042,13 @@
           "description": "Where each of the node's live sessions runs (thread id → \"local\" or a hosted provider): a hosted box from its\nmaking until it is destroyed, a claude on the machine while it lives. Absent for none, and from older nodes.",
           "type": "object"
         },
+        "sandboxTrouble": {
+          "description": "What the machine's node found wrong with a hosted provider just now, one each at most: the hub shows it on the\nprovider's row and in queued agents' reasons. Absent while all is well, and from older nodes.",
+          "items": {
+            "$ref": "#/$defs/NodeSandboxTrouble"
+          },
+          "type": "array"
+        },
         "sandboxes": {
           "description": "The hosted providers whose boxes the machine's node can make (it holds their keys): the slot board places agents\nthere once the machine's own slots are full, each up to the team's limit. Absent for none, and from older nodes.",
           "items": {
@@ -2053,6 +2079,36 @@
       },
       "required": [
         "ipv4"
+      ],
+      "type": "object"
+    },
+    "NodeSandboxTrouble": {
+      "description": "A hosted provider in trouble on a node: `start`, set aside after it refused a box or one didn't come up there, no box\nasked of it until `until` (epoch ms); `keep_alive`, its live boxes couldn't be extended at the last try.",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Its kind: invalid_key, limit, billing, unreachable or failed (SandboxCheckReason).",
+          "type": "string"
+        },
+        "until": {
+          "description": "Epoch ms; only for `start`.",
+          "type": "number"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "description": "The provider's or box's own sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "reason",
+        "what",
+        "why"
       ],
       "type": "object"
     },
@@ -2290,6 +2346,44 @@
       ],
       "type": "object"
     },
+    "ProviderTrouble": {
+      "description": "A provider's trouble now, in plain words: never a path, a status code or any part of the key.",
+      "properties": {
+        "fix": {
+          "description": "What to do about it, in plain words.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What is wrong: \"boat.dev refused: billing isn't set up on the account\".",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/SandboxCheckReason"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its agents are tried there again by themselves; only for `start`."
+        },
+        "what": {
+          "$ref": "#/$defs/ProviderTroubleKind"
+        }
+      },
+      "required": [
+        "message",
+        "reason",
+        "what"
+      ],
+      "type": "object"
+    },
+    "ProviderTroubleKind": {
+      "description": "What a machine found wrong with a connected provider just now: `start`, it refused a sandbox or one didn't come up\nthere, so none is asked of it until `until`; `keep_alive`, its running sandboxes couldn't be kept running.",
+      "enum": [
+        "start",
+        "keep_alive"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "QuietWindow": {
       "properties": {
         "from": {
@@ -2316,6 +2410,26 @@
       "description": "Repo name, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "SandboxCheckReason": {
+      "description": "Why a hosted sandbox provider's key failed its last check, as a word the app acts on: `invalid_key` (the provider\nrefused it), `limit` (the account is at its plan's limit), `billing` (the account can't pay), `unreachable` (the\nprovider didn't answer), `failed` (anything else, or no machine could test it).",
+      "enum": [
+        "invalid_key",
+        "limit",
+        "billing",
+        "unreachable",
+        "failed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SandboxProvider": {
+      "description": "A hosted sandbox provider a team connects with its own key.",
+      "enum": [
+        "boat"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "ScreenThumb": {
       "description": "A live session's picture for the Screens page (`screen_thumb`): one of its frames, made small (at most\n[`THUMB_SIDE`] pixels a side), a few a minute while an app shows the page (`screen_thumbs`).",
@@ -2403,6 +2517,35 @@
       ],
       "type": "object"
     },
+    "SlotHosted": {
+      "description": "A connected hosted provider on the board.",
+      "properties": {
+        "limit": {
+          "description": "Its limit: how many of the team's agents may run there at once.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/SandboxProvider"
+        },
+        "running": {
+          "description": "Its sandboxes live now, across the team's machines.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trouble": {
+          "$ref": "#/$defs/ProviderTrouble"
+        }
+      },
+      "required": [
+        "limit",
+        "provider",
+        "running"
+      ],
+      "type": "object"
+    },
     "SlotSandbox": {
       "description": "Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
       "properties": {
@@ -2458,6 +2601,14 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "hosted": {
+          "description": "Each connected hosted provider, in the order agents go to them: its sandboxes live now and what is wrong there.",
+          "items": {
+            "$ref": "#/$defs/SlotHosted"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "perMachine": {
           "default": [],

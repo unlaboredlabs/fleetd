@@ -28,6 +28,8 @@ import s from "./start.module.css";
 
 export interface StartActions {
   readonly onCopy?: (line: string) => void;
+  /** Hosted sandboxes that didn't get ready: their provider's key tested again, and the wait started over. */
+  readonly onHostedRetry?: () => void;
   readonly onClaudeLogin?: () => void;
   readonly onClaudeCode?: (code: string) => void;
   /** Settings › Your accounts › Claude: the account hosted sandboxes' agents run on. */
@@ -171,6 +173,22 @@ function Computer({ step, actions, hosted }: { step: ComputerStep; actions: Star
   const [copied, setCopied] = useState(false);
   if (step.at === "line" && hosted) return <Where step={step} actions={actions} hosted={hosted} />;
   if (step.at === "hosted_wait") return <Waiting>{`Getting ${step.provider}'s sandboxes ready`}</Waiting>;
+  if (step.at === "hosted_failed")
+    return (
+      <>
+        <span role="alert">
+          <Text tone="warning">{step.reason}</Text>
+        </span>
+        <Text as="p" tone="quiet">
+          {step.fix}
+        </Text>
+        <div>
+          <Button variant="primary" disabled={step.trying === true} onClick={actions.onHostedRetry}>
+            {step.trying === true ? "Trying again…" : "Try again"}
+          </Button>
+        </div>
+      </>
+    );
   if (step.at === "line") {
     const { line } = step;
     return (

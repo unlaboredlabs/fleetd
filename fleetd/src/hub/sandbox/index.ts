@@ -10,10 +10,10 @@
 // provider only. The limits reach the team's machines (`sandbox_limits`), whose nodes report what they
 // can make boxes in (`load.sandboxes`), and the slot board (hub/slots/board.ts) counts each provider's limit across
 // all of them. With the limits each machine gets the keys, sealed to its own box key: its node makes the boxes.
-import type { KnownSandboxProvider, LinuxPlace, SandboxCheck, SandboxProviderState, SandboxState } from "../../shared/contracts.ts";
+import type { KnownSandboxProvider, LinuxPlace, SandboxCheck, SandboxProviderState, SandboxState, SlotHosted } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeActionResult } from "../../shared/node_link.ts";
-import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf, REMOVED, RUNNER_ID } from "../../shared/sandbox.ts";
+import { CAP_SANDBOX, CHECK_WAIT, checkFix, DEFAULT_LIMIT, isProvider, type Limit, MAX_LIMIT, NAMES, ORDER, reasonOf, refusalWords, REMOVED, RUNNER_ID } from "../../shared/sandbox.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -85,12 +85,31 @@ export function setLinux(hub: Hub, input: { linux: string }): SandboxState {
 /** Every provider as the hub keeps it, in ORDER: what a bot's computer choices list (projects/settings.ts). */
 export function providerStates(hub: Hub): SandboxProviderState[] {
   const all = rows(hub);
+  const live = onBoard(hub);
   return ORDER.map((p): SandboxProviderState => {
     const r = all.find((x) => x.provider === p);
     if (!r) return { provider: p, connected: false, limit: 0 };
     const check = checkOf(r);
-    return { provider: p, connected: true, limit: r.max_agents, ...(check ? { check } : {}) };
+    const now = live.find((h) => h.provider === p);
+    return {
+      provider: p,
+      connected: true,
+      limit: r.max_agents,
+      ...(check ? { check } : {}),
+      running: now?.running ?? 0,
+      ...(now?.trouble ? { trouble: now.trouble } : {}),
+    };
   });
+}
+
+/** Each provider as the slot board has it now (its boxes live, what a machine found wrong there); none before the
+ * board is up. */
+function onBoard(hub: Hub): SlotHosted[] {
+  try {
+    return slots(hub).state().hosted ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /** The connected providers' limits, in the order agents go to them. */
@@ -235,22 +254,28 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
       break;
     }
     const reason = reasonOf(reply.reason);
-    check = { at, ok: false, reason, message: `${m.name}: ${reply.message}`, fix: checkFix(provider, reason, m.name) };
+    // The machine that ran it and the provider's status code are the log's, not the line's.
+    console.warn(`sandbox: ${m.name} found the team's ${NAMES[provider]} key failing (${reason})`);
+    check = { at, ok: false, reason, message: `${refusalWords(provider, reason, reply.message)}.`, fix: checkFix(provider, reason) };
     break;
   }
   const why = runner(hub).unsupported;
+  if (!check) console.warn(`sandbox: nothing tested the team's ${NAMES[provider]} key: ${machines.length > 0 ? `no check from ${unanswered.join(", ")}` : (why ?? "the hub's runner didn't link")}`);
   check ??= {
     at,
     ok: false,
     reason: "failed",
-    message:
-      machines.length > 0
-        ? `No machine of the team's could test the key. No check from ${unanswered.join(", ")}.`
-        : why !== undefined
-          ? `Nothing here can test the key: ${why}.`
-          : "The hub's runner for hosted sandboxes didn't come up to test the key.",
-    fix: why !== undefined ? "connect a Linux computer of the team's, then test again" : "test again in a moment; if it still fails, the hub's log says why its runner didn't start",
+    ...(machines.length === 0 && why !== undefined
+      ? { message: `The key can't be tested here: ${why}.` }
+      : { message: "The key couldn't be tested just now.", fix: "try again in a minute" }),
   };
+  // A key that works again is tried again for new agents at once, where a machine had set its provider aside.
+  if (check.ok) {
+    sendLimits(hub);
+    try {
+      slots(hub).clearTrouble(provider);
+    } catch {}
+  }
   hub.db.conn.query("UPDATE sandbox_providers SET check_json = ?1 WHERE provider = ?2").run(JSON.stringify(check), provider);
   return state(hub);
 }
