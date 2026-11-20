@@ -26,6 +26,7 @@ import type { Caller } from "../api/registry.ts";
 import { ExecutorError, executors, newUuid } from "../executor/index.ts";
 import { projectUpsert } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
+import { leads } from "../leads/index.ts";
 import { link } from "../link/index.ts";
 import { startNew as startApprovals } from "../project_lead/checker.ts";
 import * as repos from "../repos/store.ts";
@@ -135,6 +136,8 @@ async function registerAt(
   // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
   const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title: named, path, created, inspect });
   appendAdded(hub, m, projectId, `${named} added on ${m}: ${inspect.leadNeeds}`, data);
+  // A new bot's lead starts now, with no turn, so its first message finds it ready.
+  if (created) void leads(hub).startAhead(project);
   return { projectId, created, inspect };
 }
 
@@ -183,7 +186,7 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
     if (dryRun) return dry(m, path, inspect);
     const added = await registerAt(hub, m, path, title, facts, inspect, undefined);
     return {
-      next: `${added.inspect.leadNeeds}. Write to its lead with chat_send; the lead starts with the first message.`,
+      next: `${added.inspect.leadNeeds}. Write to its lead with chat_send; it starts as the bot is made.`,
       machineId: m,
       path,
       projectId: added.projectId,

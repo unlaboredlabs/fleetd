@@ -18,6 +18,8 @@ export type LaunchInput = {
   runtimeMode: "approval-required" | "full-access";
   title?: string;
   clientRequestId: string;
+  /** Started ahead of its first turn: the node starts claude and keeps `prompt` for the first send. */
+  ahead?: true;
 };
 
 export type SessionRole = "lead" | "assistant";

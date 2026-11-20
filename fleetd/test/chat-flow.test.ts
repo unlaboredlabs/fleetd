@@ -397,3 +397,42 @@ test("chat_search finds a lead's own chat by words, a page at a time; chat_read 
   expect(excerpt(`${"a ".repeat(400)}needle ${"b ".repeat(400)}`, ["needle"], 300)[0]).toStartWith("…");
   done();
 });
+
+test("a lead started ahead takes the bot's first message as a send into its session; one that failed to, says nothing and starts with it", async () => {
+  const { hub, call, launches, sends, done } = withFlow();
+  const ahead: unknown[] = [];
+  const launch = leadWiring(hub).ports.launch;
+  leadWiring(hub).ports.launch = async (m, input, role) => {
+    ahead.push(input.ahead);
+    return launch(m, input, role);
+  };
+  await leads(hub).startAhead(PROJECT);
+  // The start text alone, held by the node for the first message: no turn.
+  expect(ahead).toEqual([true]);
+  expect(launches[0]).toContain("# bot Shop (lab-a/p1)");
+  expect(events(hub).page(0).events.find((e) => e.type === "lead.started")?.summary).toBe("Lead of Shop started (session 0, ahead of its first message)");
+  // Again, or once it has a lead: nothing more.
+  await leads(hub).startAhead(PROJECT);
+  expect(launches.length).toBe(1);
+  const first = await call(human, "chat_send", { projectRef: PROJECT, text: "add dark mode", clientRequestId: "c1" });
+  expect(launches.length).toBe(1);
+  expect(sends).toEqual([{ text: expect.stringContaining("add dark mode"), crid: `chat:${first.message.messageId}` }]);
+  done();
+
+  // A start ahead the node refused: no lead, no line in the chat; the first message starts the lead with it.
+  const t = withFlow();
+  leadWiring(t.hub).ports.launch = async () => {
+    throw new Error("devbox is offline");
+  };
+  await leads(t.hub).startAhead(PROJECT);
+  expect(leads(t.hub).get(PROJECT)).toBeUndefined();
+  expect((await t.call(caller("read"), "chat_history", { projectRef: PROJECT })).messages).toEqual([]);
+  leadWiring(t.hub).ports.launch = async (_m, input) => {
+    t.launches.push(input.prompt);
+    return "lead-1";
+  };
+  const out = await t.call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  expect(out.message.delivery).toBe("turn");
+  expect(t.launches).toEqual([expect.stringContaining("hello")]);
+  t.done();
+});

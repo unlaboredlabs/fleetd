@@ -135,6 +135,22 @@ export class Leads {
     });
   }
 
+  /**
+   * Starts a new bot's lead with no turn, so its first message finds it ready: its computer comes up and claude waits,
+   * and the start text this launch builds goes in with that message (the node keeps it). Says nothing when it can't
+   * start: the first message then starts the lead as it would have. A lead the bot already has is left as it is.
+   */
+  async startAhead(r: ProjectRef): Promise<void> {
+    try {
+      await this.locked(async () => {
+        if (this.records.leadGet(r) || this.archived(r)) return;
+        await this.launch(r, this.projectOf(r), 0, undefined, true);
+      });
+    } catch (error) {
+      console.info(`the lead of ${r.machineId}/${r.projectId} was not started ahead; its first message starts it: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /** Starts the project's lead for its waiting orders; `first`, the chat message that starts it, ends its first message. */
   async autoStart(r: ProjectRef, first?: string): Promise<AutoStart> {
     try {
@@ -366,7 +382,8 @@ export class Leads {
     return `## Recent chat\nYour session started fresh; the chat before this is not in it. Times are in ${told(zone)}.\n${lines.join("\n")}`;
   }
 
-  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string): Promise<Lead> {
+  /** `ahead`: the node starts it with no turn and keeps the start text for its first message (`startAhead`). */
+  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string, ahead = false): Promise<Lead> {
     this.refuseArchived(r);
     const held = this.archived(r);
     if (held) throw held;
@@ -428,6 +445,7 @@ export class Leads {
         title: [...`fleetd lead: ${project.title}`].slice(0, 80).join(""),
         // The node's launch is idempotent on the id, so the id names this launch.
         clientRequestId: `fleetd-lead:${r.machineId}/${r.projectId}:${sessionGeneration}:${launchedMs}`,
+        ...(ahead ? { ahead: true as const } : {}),
       },
       ownWork ? "assistant" : "lead",
     );
@@ -450,8 +468,8 @@ export class Leads {
       machineId: r.machineId,
       projectId: r.projectId,
       threadId,
-      summary: `Lead of ${project.title} started (session ${sessionGeneration})`,
-      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha },
+      summary: `Lead of ${project.title} started (session ${sessionGeneration}${ahead ? ", ahead of its first message" : ""})`,
+      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha, ...(ahead ? { ahead: true } : {}) },
     });
     return this.withState(lead);
   }

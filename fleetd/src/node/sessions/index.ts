@@ -1183,6 +1183,8 @@ export class SessionService {
       row.local.setup = plan;
       row.local.setupPending = true;
     }
+    // Started ahead of its first turn: no run, and claude gets the prompt with the first send.
+    if (launch.ahead) row.local.unsent = [prompt];
     this.store.commit(row, [], false);
     stages.done("store");
     const dir = join(this.home, "sessions", id);
@@ -1193,8 +1195,12 @@ export class SessionService {
       throw new Refusal("internal", `cannot keep the session's skills: ${(error as Error).message}`);
     }
     stages.done("record");
-    // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
-    if (plan) {
+    // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done. One
+    // started ahead starts claude now, unasked: a start that fails says nothing, and the first send starts it again.
+    if (launch.ahead) {
+      if (!plan) void this.#ensureLive(id, true).catch((error: Error) => console.log(`${nowIso()} INFO a session started ahead didn't start; its first send starts it {"sessionId":"${id}","error":${JSON.stringify(error.message)}}`));
+      stages.done("ahead");
+    } else if (plan) {
       if (this.#recordRun(id, launch.runId, prompt)) this.#setUpThenSend(id, launch.runId, prompt, "plain", plan);
       stages.done("setup queued");
     } else {
@@ -1360,20 +1366,21 @@ export class SessionService {
 
   /** The live process, spawning (first start) or resuming the session when there is none. One spawn per session at a
    * time, so two sends never start two processes. */
-  #ensureLive(id: string): Promise<[Live, string | undefined]> {
+  #ensureLive(id: string, ahead = false): Promise<[Live, string | undefined]> {
     const stages = new Stages("node spawn", id);
     const prior = this.#spawning.get(id) ?? Promise.resolve();
     const next = prior
       .catch(() => {})
       .then(() => {
         stages.done("spawn lock");
-        return this.#spawn(id, stages);
+        return this.#spawn(id, stages, ahead);
       });
     this.#spawning.set(id, next);
     return next;
   }
 
-  async #spawn(id: string, stages: Stages): Promise<[Live, string | undefined]> {
+  /** `ahead`: started with no send (`SessionLaunch.ahead`), so its note waits with the launch's prompt for the first. */
+  async #spawn(id: string, stages: Stages, ahead = false): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
     // A claude still in a VM on a machine that runs none now (turned off, or its last VM failed) goes before a new turn,
     // which starts as a plain process from its transcript. Never mid-turn: a run under way (a steer, a message queued
@@ -1463,6 +1470,10 @@ export class SessionService {
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
     stages.end();
+    if (ahead && note) {
+      this.update(id, (c) => void (c.row.local.unsent = [note, ...(c.row.local.unsent ?? [])]));
+      return [live, undefined];
+    }
     return [live, note];
   }
 

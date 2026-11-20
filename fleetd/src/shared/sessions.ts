@@ -150,6 +150,9 @@ export type SessionLaunch = {
   workspace: SessionWorkspace;
   /** The first user message. */
   prompt: string;
+  /** Starts claude now with no run: `prompt` goes in ahead of the session's first send (a new bot's lead, started as
+   * the bot is made so its first message finds it ready). Only nodes listing CAP_LAUNCH_AHEAD get it. */
+  ahead?: boolean;
   /** The session's standing rules; only nodes listing CAP_SYSTEM_PROMPT get it. */
   systemPrompt?: string;
   /** The first run's id. */

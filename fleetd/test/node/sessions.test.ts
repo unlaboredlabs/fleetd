@@ -401,3 +401,46 @@ test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its mes
     await other.stopAll();
   }
 });
+
+test("a launch started ahead starts claude with no run; its prompt goes in with the first send, to that same claude", async () => {
+  const ahead = { projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, role: "lead", ahead: true };
+  await ok("launch", { ...ahead, sessionId: "s-ahead", prompt: "the start text", runId: "ra0" });
+  const pid = await until("claude to start", () => service.store.session("s-ahead")?.local.pid);
+  // Nothing ran: no run, no message, the session idle; the prompt waits for the first send.
+  expect(service.store.runs("s-ahead")).toEqual([]);
+  expect(summary("s-ahead")).toMatchObject({ status: "idle" });
+  expect(service.store.session("s-ahead")?.local.unsent).toEqual(["the start text"]);
+  await ok("send", { sessionId: "s-ahead", runId: "ra1", text: "hello" });
+  await until("the first send", () => summary("s-ahead")?.latestRun?.status === "completed");
+  expect(summary("s-ahead")?.latestAssistantTail).toBe("ok: the start text\n\nhello");
+  expect(service.store.runs("s-ahead").map((r) => r.id)).toEqual(["ra1"]);
+  expect(service.store.session("s-ahead")?.local.pid).toBe(pid);
+  expect(service.store.session("s-ahead")?.local.unsent).toBeUndefined();
+  // A send while its claude is still starting goes in after that start, into it: never lost, never a second claude.
+  await ok("launch", { ...ahead, sessionId: "s-ahead2", prompt: "the start text", runId: "rb0" });
+  await ok("send", { sessionId: "s-ahead2", runId: "rb1", text: "quick" });
+  await until("the send", () => summary("s-ahead2")?.latestRun?.status === "completed");
+  expect(summary("s-ahead2")?.latestAssistantTail).toBe("ok: the start text\n\nquick");
+  expect(service.store.runs("s-ahead2").map((r) => r.id)).toEqual(["rb1"]);
+});
+
+test("a launch started ahead whose claude can't start says nothing; its first send starts it as any first send", async () => {
+  const other = await SessionService.start({ ...config(), home: join(home.dir, "node-ahead"), fleetd: [join(home.dir, "no-such-fleetd")] });
+  let n = 0;
+  const go = (op: string, args: Record<string, unknown>) => other.handle({ id: `a${++n}`, call: { op, ...args } as never });
+  try {
+    await go("project_upsert", { projectId: "p1", title: "demo", workspaceRoot: repo });
+    const launched = await go("launch", { sessionId: "s-quiet", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "the start text", runId: "rq0", role: "lead", ahead: true });
+    expect(launched.result).toMatchObject({ ok: { kind: "launched" } });
+    await Bun.sleep(300);
+    expect(other.store.runs("s-quiet")).toEqual([]);
+    expect(other.store.session("s-quiet")?.summary.status).toBe("idle");
+    // The first send fails as it would have, with the same words, and the start text is kept for the next.
+    await go("send", { sessionId: "s-quiet", runId: "rq1", text: "hello" });
+    const failed = await until("the send to fail", () => other.store.runs("s-quiet").find((r) => r.id === "rq1" && r.status === "failed"));
+    expect(failed.failure?.message).toContain("could not start");
+    expect(other.store.session("s-quiet")?.local.unsent).toEqual(["the start text"]);
+  } finally {
+    await other.stopAll();
+  }
+});
