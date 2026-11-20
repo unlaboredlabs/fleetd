@@ -10,7 +10,7 @@ import { loadOrCreateBoxKey } from "../identity.ts";
 import { type ClientOptions, type Provider, provider as realProvider, type ProviderAuth, ProviderError, type ProviderId } from "../../sandbox/providers/index.ts";
 import { Boxes, boxes as currentBoxes, hostable, knownBoxes, setBoxes } from "./remote/boxes.ts";
 import { join } from "node:path";
-import { endHosted } from "../place/hosted.ts";
+import { endHosted, KEPT, keptBoxes, retryKept } from "../place/hosted.ts";
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
@@ -133,6 +133,9 @@ export function start(node: Node): Sandboxes | undefined {
   });
   // The boxes of this machine no session here holds any more (a crash between a box's create and its record, a
   // delete that failed) go, by their labels.
-  boxes.startReaper(() => knownBoxes(join(node.home, "hosts")));
+  boxes.startReaper(() => new Set([...knownBoxes(join(node.home, "hosts")), ...keptBoxes(node.home)]));
+  // A box kept because its work didn't come back as it ended (place/hosted.ts `keep`): tried again now and at each sweep.
+  void retryKept(node.home);
+  setInterval(() => void retryKept(node.home), KEPT.everyMs).unref?.();
   return s;
 }

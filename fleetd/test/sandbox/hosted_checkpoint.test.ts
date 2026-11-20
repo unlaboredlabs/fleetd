@@ -6,7 +6,10 @@
 //   is lost, and the session hears that its sandbox stopped and since when its work was lost;
 // - a keep-alive that fails: it is reported, and the session ends with its work brought back before the box's time
 //   runs out;
-// - the key disconnected with a box live: the session ends with its work brought back, then the key goes.
+// - the key disconnected with a box live: the session ends with its work brought back, then the key goes;
+// - work that doesn't come back after a turn is said to the lead once; a box whose work doesn't come back as it ends
+//   is kept, tried again, and deleted once its work is here, or given up (the lead told) after its time or as a new
+//   box starts for the session (which first tries to bring its work back).
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,7 +17,7 @@ import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { Boxes, LIFETIME_MS, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, boxEnd, checkpoint, hasBox, hostedBox, hostedPlace, hostedProbe, KEEP_ALIVE, readRecord, teardown } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, boxEnd, boxWork, type BoxWork, checkpoint, hasBox, hostedBox, hostedPlace, hostedProbe, KEEP_ALIVE, KEPT, keptBoxes, readRecord, retryKept, settleKept, teardown } from "../../src/node/place/hosted.ts";
 import { configDir, sessionFile } from "../../src/node/runner/claude.ts";
 import { Sandboxes } from "../../src/node/sandbox/hosted.ts";
 import { causeMessage } from "../../src/node/sessions/state.ts";
@@ -26,10 +29,13 @@ import type { RunnerEvent } from "../../src/node/runner/host.ts";
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-checkpoint-"));
 const keepAliveBefore = { ...KEEP_ALIVE };
+const keptBefore = { ...KEPT };
 let server: StandIn | undefined;
 let cleanup = async () => {};
 afterEach(async () => {
   Object.assign(KEEP_ALIVE, keepAliveBefore);
+  Object.assign(KEPT, keptBefore);
+  delete boxWork.said;
   server?.stop();
   await cleanup();
 });
@@ -217,3 +223,116 @@ test("disconnecting the key with a box live ends its session with its work broug
   expect(readFileSync(join(cwd, "late.txt"), "utf8")).toBe("late\n");
   expect(boxEnd("s-key")).toBe("the team's boat.dev key was disconnected, so its sandbox was ended with its work saved");
 }, 90_000);
+
+/** Something else holds the machine's index of `cwd`: git can't set its worktree, so a bring-back fails. */
+function lockIndex(cwd: string): () => void {
+  const lock = join(sh(cwd, "git rev-parse --absolute-git-dir"), "index.lock");
+  writeFileSync(lock, "");
+  return () => rmSync(lock, { force: true });
+}
+
+test("work that doesn't come back is said once; a box whose work didn't come back as it ended is kept, and deleted once its work is here", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, root, dir, env } = await started("s-back");
+  const unlock = lockIndex(cwd);
+  await checkpoint("s-back");
+  const box = hostedBox("s-back")!;
+  expect((await box.run({ argv: ["sh", "-c", "echo two > two.txt && git add two.txt && git commit -qm 'turn two'"], cwd, env, timeoutSec: 30 })).exitCode).toBe(0);
+  await checkpoint("s-back");
+  // Two turns whose work didn't come back: the lead hears it once.
+  expect(said.map((e) => e.state)).toEqual(["not_back"]);
+  expect(said[0]!.text).toStartWith("its sandbox's work since ");
+  expect(said[0]!.text).toContain("didn't come back to the machine after its turn");
+  expect(log(cwd)).toBe("one");
+
+  // The session ends with its work still not back: its box is kept, not deleted with the only copy of that work.
+  await teardown("s-back", dir);
+  expect(s.boxes.size).toBe(1);
+  expect(readRecord(dir)).toBeUndefined();
+  expect(said.map((e) => e.state)).toEqual(["not_back", "kept"]);
+  expect(said[1]!.text).toContain("so the sandbox is kept and fleetd tries again every 10 minutes until");
+  expect(said[1]!.untilMs).toBeGreaterThan(Date.now());
+  // The node's sweep of leftover boxes leaves it alone.
+  expect(keptBoxes(home).size).toBe(1);
+  // Tried again at the node's sweep while git still can't: kept.
+  await retryKept(home);
+  expect(s.boxes.size).toBe(1);
+  expect(said.length).toBe(2);
+  // Once it can, the work is here and only then the box goes.
+  unlock();
+  await retryKept(home);
+  expect(log(cwd)).toBe("turn two\nturn one\none");
+  expect(log(root + cwd)).toBe("turn two\nturn one\none");
+  expect(s.boxes.size).toBe(0);
+  expect(keptBoxes(home).size).toBe(0);
+  expect(said.length).toBe(2);
+}, 90_000);
+
+test("a kept box is given up after its time, or as a new box for the session starts, and the lead is told", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, dir, env } = await started("s-gone");
+  const unlock = lockIndex(cwd);
+  KEPT.forMs = 0;
+  await teardown("s-gone", dir);
+  expect(s.boxes.size).toBe(1);
+  await retryKept(home);
+  expect(s.boxes.size).toBe(0);
+  expect(keptBoxes(home).size).toBe(0);
+  expect(said.map((e) => e.state)).toEqual(["kept", "given_up"]);
+  expect(said[1]!.text).toContain("never came back to the machine");
+  expect(said[1]!.text).toContain("so fleetd gave it up and deleted the sandbox");
+
+  // Kept again, then a new box for the session is starting (`ensure` settles first): the kept one's work comes back
+  // before the new box starts from the machine's worktree, or, where it still can't, the kept box is given up.
+  KEPT.forMs = 60 * 60_000;
+  const { home: home2, cwd: cwd2, dir: dir2, s: s2, env: env2 } = await started("s-new");
+  const box2 = hostedBox("s-new")!;
+  expect((await box2.run({ argv: ["sh", "-c", "echo late > late.txt"], cwd: cwd2, env: env2, timeoutSec: 30 })).exitCode).toBe(0);
+  const unlock2 = lockIndex(cwd2);
+  await teardown("s-new", dir2);
+  expect(said.at(-1)!.state).toBe("kept");
+  await settleKept(home2, "s-new");
+  expect(said.at(-1)!.state).toBe("given_up");
+  expect(said.at(-1)!.text).toContain("a new sandbox started from the machine's work");
+  expect(keptBoxes(home2).size).toBe(0);
+  expect(s2.boxes.size).toBe(0);
+  unlock2();
+  unlock();
+}, 120_000);
+
+test("a new box settles a kept box only after an old node's record is torn down, so old work never lands later", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, dir, env } = await started("s-order");
+  const unlock = lockIndex(cwd);
+  // A node before this one left the box's record and no live box: the record's teardown keeps it (its work won't come
+  // back), and only then is the session's kept box settled, before its new box starts.
+  const record = readRecord(dir)!;
+  await teardown("s-order", dir);
+  rmSync(join(home, "sandbox", "kept", "s-order.json"));
+  writeFileSync(join(dir, "place.json"), JSON.stringify(record));
+  const ran = await hostedPlace("boat", "s-order", dir).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
+  // (The new box can't take the worktree while git is locked: what matters is what happened to the old one first.)
+  expect(ran.exitCode).toBeNull();
+  expect(keptBoxes(home).size).toBe(0);
+  expect([...s.boxes.keys()]).not.toContain(record.boxId);
+  expect(said.filter((e) => e.state === "given_up").at(-1)!.text).toContain("a new sandbox started from the machine's work");
+  unlock();
+}, 120_000);
+
+test("a settle waits for the kept box's retry under way, then makes its own last try", async () => {
+  const said: BoxWork[] = [];
+  boxWork.said = (e) => void said.push(e);
+  const { s, home, cwd, dir } = await started("s-race");
+  const unlock = lockIndex(cwd);
+  await teardown("s-race", dir);
+  expect(keptBoxes(home).size).toBe(1);
+  // The node's sweep tries it again, and a new box's start settles it, at once.
+  await Promise.all([retryKept(home), settleKept(home, "s-race")]);
+  expect(keptBoxes(home).size).toBe(0);
+  expect(s.boxes.size).toBe(0);
+  expect(said.map((e) => e.state)).toEqual(["kept", "given_up"]);
+  unlock();
+}, 120_000);

@@ -319,17 +319,27 @@ export async function syncOut(box: BoxFs, o: { cwd: string; session: string; bas
   await sh(box, "packing the box's work", script, o.env);
   const bytes = await box.read(at, BUNDLE_MAX);
   const tmp = mkdtempSync(join(tmpdir(), "fleetd-bundle-"));
+  const wipRef = `${r}/out-wip`;
   try {
     const bundle = join(tmp, "out.bundle");
     writeFileSync(bundle, bytes);
-    await git(cwd, ["fetch", "-q", bundle, `${r}/*:${r}/*`]);
-    await git(cwd, ["reset", "-q", "--hard", `${r}/out-head`]);
-    await git(cwd, ["clean", "-fdq"]);
-    await git(cwd, ["read-tree", "-u", "--reset", `${r}/out-wip`]);
-    await git(cwd, ["reset", "-q"]);
+    // The work is one commit on the box's HEAD. The bundle leaves that HEAD out when this machine has it already (the
+    // box committed nothing since it started, or went back to an older commit), so it is read as the work's parent.
+    await git(cwd, ["fetch", "-q", bundle, `+${wipRef}:${wipRef}`]);
+    const wip = await git(cwd, ["rev-parse", "--verify", "-q", `${wipRef}^{commit}`]);
+    const head = await git(cwd, ["rev-parse", "--verify", "-q", `${wip}^1`]);
+    try {
+      await git(cwd, ["reset", "-q", "--hard", head]);
+      await git(cwd, ["clean", "-fdq"]);
+      await git(cwd, ["read-tree", "-u", "--reset", wip]);
+      await git(cwd, ["reset", "-q"]);
+    } catch (error) {
+      // Never lost: the work stays here under its ref, which the next bring-back replaces with the box's newer work.
+      throw new Error(`the box's work came back but ${cwd} wasn't set to it (${(error as Error).message}); it is kept as ${wipRef}`);
+    }
+    await tryGit(cwd, ["update-ref", "-d", wipRef]);
   } finally {
     await tryGit(cwd, ["update-ref", "-d", `${r}/out-head`]);
-    await tryGit(cwd, ["update-ref", "-d", `${r}/out-wip`]);
     rmSync(tmp, { recursive: true, force: true });
   }
 }

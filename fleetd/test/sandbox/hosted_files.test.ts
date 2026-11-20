@@ -229,6 +229,65 @@ test("the box's work comes back with the order's GitHub token as the agent's com
   expect(readFileSync(join(cwd, "b.txt"), "utf8")).toBe("b\n");
 });
 
+test("a box turn whose work is all uncommitted comes back, and so does one that reset to an older commit", async () => {
+  const origin = join(tmp, "origin-wip.git");
+  sh(tmp, `git init -q --bare -b main ${origin}`);
+  const repo = join(tmp, "checkout-wip");
+  sh(tmp, `git clone -q ${origin} ${repo}`);
+  writeFileSync(join(repo, "a.txt"), "a\n");
+  sh(repo, "git add -A && git commit -qm one && git push -q origin HEAD:main");
+  const cwd = join(tmp, "worktrees", "T3-wip");
+  sh(repo, `git worktree add -q -b fleetd/T3-wip ${cwd} origin/main`);
+  writeFileSync(join(cwd, "b.txt"), "b\n");
+  sh(cwd, "git add b.txt && git commit -qm two");
+  const one = sh(cwd, "git rev-parse HEAD~1");
+  const root = join(tmp, "box6");
+  const base = await syncIn(local, { cwd, session: "s6", env: ENV, root });
+  const there = root + cwd;
+  // The box's turn: edits, a new file, no commit. Its HEAD is still the commit it started from.
+  writeFileSync(join(there, "a.txt"), "a edited in the box\n");
+  writeFileSync(join(there, "new.txt"), "new in the box\n");
+  await syncOut(local, { cwd, session: "s6", base, env: ENV, root });
+  expect(sh(cwd, "git rev-parse HEAD")).toBe(base);
+  expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("a edited in the box\n");
+  expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("new in the box\n");
+  expect(sh(cwd, "git status --porcelain").split("\n").sort()).toEqual([" M a.txt", "?? new.txt"]);
+  // The next turn goes back to an older commit (one origin had), still with work of its own.
+  sh(there, "git reset -q --hard HEAD~1");
+  writeFileSync(join(there, "c.txt"), "c\n");
+  await syncOut(local, { cwd, session: "s6", base, env: ENV, root });
+  expect(sh(cwd, "git rev-parse HEAD")).toBe(one);
+  expect(readFileSync(join(cwd, "c.txt"), "utf8")).toBe("c\n");
+  expect(existsSync(join(cwd, "b.txt"))).toBe(false);
+  expect(sh(repo, "git for-each-ref refs/fleetd")).toBe("");
+});
+
+test("a bring-back that can't set the machine's worktree keeps the box's work here and says where", async () => {
+  const origin = join(tmp, "origin-kept.git");
+  sh(tmp, `git init -q --bare -b main ${origin}`);
+  const repo = join(tmp, "checkout-kept");
+  sh(tmp, `git clone -q ${origin} ${repo}`);
+  writeFileSync(join(repo, "a.txt"), "a\n");
+  sh(repo, "git add -A && git commit -qm one && git push -q origin HEAD:main");
+  const cwd = join(tmp, "worktrees", "T4-kept");
+  sh(repo, `git worktree add -q -b fleetd/T4-kept ${cwd} origin/main`);
+  const root = join(tmp, "box7");
+  const base = await syncIn(local, { cwd, session: "s7", env: ENV, root });
+  writeFileSync(join(root + cwd, "a.txt"), "a from the box\n");
+  // Something else holds the machine's index: git can't change the worktree.
+  const lock = join(sh(cwd, "git rev-parse --absolute-git-dir"), "index.lock");
+  writeFileSync(lock, "");
+  const error = await syncOut(local, { cwd, session: "s7", base, env: ENV, root }).then(() => undefined, (e: Error) => e.message);
+  expect(error).toContain("it is kept as refs/fleetd/sync/s7/out-wip");
+  expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("a\n");
+  expect(sh(repo, "git show refs/fleetd/sync/s7/out-wip:a.txt")).toBe("a from the box");
+  // Once git can, the next bring-back sets it and leaves nothing behind.
+  rmSync(lock);
+  await syncOut(local, { cwd, session: "s7", base, env: ENV, root });
+  expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("a from the box\n");
+  expect(sh(repo, "git for-each-ref refs/fleetd")).toBe("");
+});
+
 test("a chat file comes from the box under the machine's rules: inside the working directory, a plain file", async () => {
   const wd = join(tmp, "wd");
   mkdirSync(join(wd, "out"), { recursive: true });
