@@ -79,6 +79,16 @@ export function register(tools: Registry): void {
   tools.add("mcp_server_test", (hub, caller, input) => test(hub, caller, input.scope, input.name, input.machineId));
 }
 
+/** A save of a bot's server that went to the team as it signed in (D592), from an app that still shows it as the
+ * bot's (Add's second save, of the tools that only read): the team's server is saved, not a new bot copy without its
+ * sign-in that would hide it from the bot. */
+function toTeamsOwn(hub: Hub, input: McpServerSetInput): McpServerSetInput {
+  const scope = checkScope(input.scope);
+  if (scope.kind === "global" || !signsInOnly(input) || mcpServers(hub).get(scope, input.name)) return input;
+  const team = mcpServers(hub).get({ kind: "global" }, input.name);
+  return team?.oauth !== undefined && sameTransport(team.transport, input.transport) ? { ...input, scope: { kind: "global" } } : input;
+}
+
 /** The server, or for a bot's that moved to the team when it signed in (D592), the team's of that name: an app that
  * still shows it as the bot's reaches it. */
 export function teamOr(hub: Hub, scope: McpScope, name: string): McpServer | undefined {
@@ -110,7 +120,8 @@ const ready = (hub: Hub, m: string) => linked(hub, m) && nodeCan(hub, m, CAP_MCP
 
 const byMachine = (a: { machineId: string }, b: { machineId: string }) => (a.machineId < b.machineId ? -1 : a.machineId > b.machineId ? 1 : 0);
 
-async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
+async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
+  const input = toTeamsOwn(hub, given);
   const scope = checkScope(input.scope);
   // A service the team signs in to (no key of its own) is connected once for every bot, by any person (D592).
   const team = scope.kind === "global" && signsInOnly(input);

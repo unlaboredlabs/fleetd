@@ -9,7 +9,8 @@ import type { McpOauth, McpScope, McpServer, ProjectRef } from "../../shared/con
 import { loadOrCreateBoxKey, openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
-import { mcpServers, OAUTH_HEADER, scopeKey, secretScope, valuesOf } from "../mcp_servers/index.ts";
+import { mcpServers, OAUTH_HEADER, scopeKey, secretScope, transportOf, valuesOf } from "../mcp_servers/index.ts";
+import { sameTransport } from "../mcp_servers/rules.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -596,7 +597,8 @@ function toTeam(hub: Hub, servers: McpServer[]): Row | undefined {
   const s = mcpServers(hub);
   const name = servers[0]!.name;
   const team = s.get(TEAM, name);
-  if (team && team.oauth === undefined) return undefined;
+  // The team has a server of that name with a key of its own, or another service under it: these stay the bots'.
+  if (team && (team.oauth === undefined || !sameTransport(team.transport, servers[0]!.transport))) return undefined;
   const [keep, ...rest] = team ? [undefined, ...servers] : [...servers].sort(newestFirst);
   let moved: Row | undefined;
   if (keep) {
@@ -613,11 +615,17 @@ function toTeam(hub: Hub, servers: McpServer[]): Row | undefined {
   return moved;
 }
 
-/** Every bot's signed-in server becomes the team's (`toTeam`), and its token goes to every bot's machine. */
+/** The server a carry-over groups by: one service is its name at one address. */
+const serviceOf = (s: McpServer) => `${s.name}\u0000${JSON.stringify(transportOf(s.transport))}`;
+
+/** Every bot's signed-in server with no key of its own (`teamable`) becomes the team's (`toTeam`), and its token goes
+ * to every bot's machine. One with a key of its own stays the bot's: its key is sealed under the bot's scope. */
 export async function carryOver(hub: Hub): Promise<void> {
-  const byName = new Map<string, McpServer[]>();
-  for (const server of mcpServers(hub).perBot()) if (server.oauth) byName.set(server.name, [...(byName.get(server.name) ?? []), server]);
-  for (const servers of byName.values()) {
+  const byService = new Map<string, McpServer[]>();
+  for (const server of mcpServers(hub).perBot()) {
+    if (server.oauth && teamable(server)) byService.set(serviceOf(server), [...(byService.get(serviceOf(server)) ?? []), server]);
+  }
+  for (const servers of byService.values()) {
     const row = await one(hub, async () => toTeam(hub, servers));
     if (row?.access) await push(hub, row).catch((e) => console.info(`a team sign-in's token waits for its machines (${row.name}): ${(e as Error).message}`));
   }
@@ -631,15 +639,31 @@ export const teamable = (s: McpServer) =>
  * A sign-in opened on a bot's server signs the team in instead (D592): the server is the team's from then on, unless
  * another bot's sign-in to it is newer, which the team keeps.
  */
-export async function teamScope(hub: Hub, server: McpServer): Promise<McpServer> {
+export async function teamScope(hub: Hub, server: McpServer, by?: string): Promise<McpServer> {
   const at = server.scope;
   if (at.kind === "global" || !teamable(server)) return server;
   const same = mcpServers(hub)
     .perBot()
-    .filter((s) => s.name === server.name && (s.oauth !== undefined || (s.scope.kind === "project" && s.scope.machineId === at.machineId && s.scope.projectId === at.projectId)));
+    .filter(
+      (s) =>
+        serviceOf(s) === serviceOf(server) &&
+        ((s.oauth !== undefined && teamable(s)) || (s.scope.kind === "project" && s.scope.machineId === at.machineId && s.scope.projectId === at.projectId)),
+    );
+  const had = mcpServers(hub).get(TEAM, server.name);
   const row = await one(hub, async () => toTeam(hub, same));
   if (row?.access) await push(hub, row).catch(() => {});
-  return mcpServers(hub).get(TEAM, server.name) ?? server;
+  // The team's only when the bot's went to it; else (the team keeps a server of that name of its own) the bot's.
+  const team = mcpServers(hub).get(TEAM, server.name);
+  if (!team || mcpServers(hub).get(at, server.name) !== undefined || !sameTransport(team.transport, server.transport)) return server;
+  // Made the team's now, by this sign-in: who signs it in connected it for the team.
+  if (by !== undefined && had === undefined && team.connectedBy === undefined) {
+    return (
+      updateServer(hub, TEAM, server.name, (s) => {
+        s.connectedBy = by;
+      }) ?? team
+    );
+  }
+  return team;
 }
 
 /** One round of the renewal loop: ends sign-ins left unfinished, renews tokens near their end, pushes missed ones. */
@@ -687,10 +711,19 @@ async function renewOne(hub: Hub, row: Row): Promise<void> {
     return;
   }
   if (due(row.record, at) && (row.record.retryMs === undefined || row.record.retryMs <= at)) await renew(hub, row);
-  if (row.access && !row.record.pushed) {
-    // A machine offline now gets it on a later round.
+  if (row.access && (!row.record.pushed || lacking(hub, row))) {
+    // A machine offline now, or one that has run a bot only since, gets it on a later round.
     await push(hub, row).catch(() => {});
   }
+}
+
+/** A machine that keeps the server's token (`machinesOf`) doesn't hold the current one: one that got its first bot
+ * since the last push. */
+function lacking(hub: Hub, row: Row): boolean {
+  if (!row.access) return false;
+  const print = printOf(openOwn(hub, row.access));
+  const holding = (mcpServers(hub).get(row.scope, row.name)?.headers ?? []).find((v) => isToken("header", v.name))?.sealedOn ?? [];
+  return machinesOf(hub, row).some((m) => !holding.some((x) => x.machineId === m && x.fingerprint === print));
 }
 
 /**

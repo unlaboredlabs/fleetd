@@ -598,9 +598,9 @@ test("bots' own sign-ins become the team's at upgrade, the newest kept, with no 
   expect(mcpServers(l.hub).perBot().filter((x) => x.name === "paper")).toEqual([]);
   expect(getRow(l.hub, team, "paper")).toBeDefined();
   expect(getRow(l.hub, { kind: "project", machineId: "lab", projectId: "p1" }, "paper")).toBeUndefined();
-  expect(l.link.opened).toEqual(["Bearer at-p2", "Bearer at-p2"]);
-  expect(l.link.to).toEqual(["lab", "lab2"]);
-  expect(l.link.calls.at(-1)).toMatchObject({ op: "mcp_secrets", scope: { kind: "global" }, server: "paper" });
+  expect(l.link.opened.filter((x) => x === "Bearer at-p2")).toHaveLength(2);
+  expect(l.link.to.filter((_, i) => l.link.opened[i] === "Bearer at-p2")).toEqual(["lab", "lab2"]);
+  expect(l.link.calls.filter((c) => c.server === "paper").at(-1)).toMatchObject({ op: "mcp_secrets", scope: { kind: "global" }, server: "paper" });
   expect(paper.headers![0]!.sealedOn!.map((x) => x.machineId)).toEqual(["lab", "lab2"]);
   // Nobody signs in again: no code was traded.
   expect(svc.seen.tokens.length).toBe(trades);
@@ -678,4 +678,61 @@ test("two agents turned away at once: the older token's refusal never signs out 
   // The current token refused after its renewal does sign out.
   const now = print(l.link.opened.at(-1)!);
   expect(await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", fingerprint: now, refused: true })).toMatchObject({ renewed: "signed_out" });
+});
+
+test("a machine that runs its first bot after the token went out gets the team's token on the next round", async () => {
+  const l = lab();
+  await signedIn(l);
+  // Pushed to every machine there was, and not due for renewal for a long while.
+  await renewDue(l.hub);
+  const calls = l.link.calls.length;
+  await renewDue(l.hub);
+  expect(l.link.calls.length).toBe(calls);
+  const at = "2026-11-08T10:00:00.000Z";
+  store(l.hub).machineUpsert({ machineId: "lab3", name: "lab3", nodeVersion: "1", status: "online", lastSeenAt: at, boxPubKey: Buffer.from(publicKeyOf(NODE_SECRET)).toString("base64") } as never);
+  store(l.hub).projectsUpsertMany("lab3", [{ machineId: "lab3", projectId: "p3", title: "P3", workspaceRoot: "/w3", lastActivityAt: at, threads: { running: 0, total: 0 } } as never]);
+  await renewDue(l.hub);
+  expect(l.link.to.at(-1)).toBe("lab3");
+  expect(l.link.calls.at(-1)).toMatchObject({ op: "mcp_secrets", scope: { kind: "global" }, server: "docs" });
+  expect(mcpServers(l.hub).get(team, "docs")!.headers![0]!.sealedOn!.map((x) => x.machineId)).toEqual(["lab", "lab3"]);
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab3", projectId: "p3" }).servers.map((x) => x.name)).toEqual(["docs"]);
+});
+
+test("Add on a bot, then its second save of the tools that only read, ends as the team's server, not a bot copy without its sign-in", async () => {
+  const l = lab();
+  await signedIn(l);
+  // The app still saves it as the bot's: the save is the team's, and the bot has no copy hiding it.
+  await l.call("mcp_server_set", { scope, name: "docs", enabled: true, roles: { lead: true, writers: false, reviewers: false }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [], integration: { readTools: ["read_doc"] } });
+  expect(mcpServers(l.hub).get(scope, "docs")).toBeUndefined();
+  expect(mcpServers(l.hub).get(team, "docs")).toMatchObject({ integration: { readTools: ["read_doc"] }, oauth: { status: "connected" } });
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers.find((x) => x.name === "docs")).toMatchObject({ secrets: { kind: "global" }, oauth: true });
+});
+
+test("only a bot's sign-in with no key of its own is carried over, one service per name and address; a team server of that name of its own is never taken over", async () => {
+  const l = lab();
+  const at = "2026-11-08T10:00:00.000Z";
+  store(l.hub).machineUpsert({ machineId: "lab2", name: "lab2", nodeVersion: "1", status: "online", lastSeenAt: at, boxPubKey: Buffer.from(publicKeyOf(NODE_SECRET)).toString("base64") } as never);
+  store(l.hub).projectsUpsertMany("lab2", [{ machineId: "lab2", projectId: "p2", title: "P2", workspaceRoot: "/w2", lastActivityAt: at, threads: { running: 0, total: 0 } } as never]);
+  const bot2 = { kind: "project", machineId: "lab2", projectId: "p2" } as const;
+  const base = { enabled: true, roles: { lead: true, writers: true, reviewers: true }, env: [], updatedAt: at };
+  const signedInAs = { status: "connected" as const, issuer: `${svc.base}/as`, signedInAt: at };
+  // A sign-in with a key of its own beside it stays the bot's, key and all.
+  mcpServers(l.hub).put({ ...base, scope, name: "crm", transport: { type: "http", url: `${svc.base}/crm` }, headers: [{ name: "X-Workspace", kind: "secret", sealedOn: [{ machineId: "lab", fingerprint: "0000aaaa" }] }, { name: "Authorization", kind: "secret", sealedOn: [{ machineId: "lab", fingerprint: "0000bbbb" }] }], oauth: signedInAs });
+  // Two bots' different services under one name: one is carried over, the other stays its bot's.
+  mcpServers(l.hub).put({ ...base, scope, name: "docs", transport: { type: "http", url: `${svc.base}/mcp` }, headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: "lab", fingerprint: "0000cccc" }] }], oauth: signedInAs });
+  mcpServers(l.hub).put({ ...base, scope: bot2, name: "docs", transport: { type: "http", url: "https://docs.other.example/mcp" }, headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: "lab2", fingerprint: "0000dddd" }] }], oauth: signedInAs });
+  await renewDue(l.hub);
+  expect(mcpServers(l.hub).get(scope, "crm")?.headers?.map((v) => v.name)).toEqual(["X-Workspace", "Authorization"]);
+  expect(mcpServers(l.hub).get(team, "crm")).toBeUndefined();
+  const moved = [mcpServers(l.hub).get(team, "docs")?.transport, mcpServers(l.hub).get(scope, "docs")?.transport, mcpServers(l.hub).get(bot2, "docs")?.transport].filter((t) => t !== undefined);
+  expect(moved).toHaveLength(2);
+  expect(mcpServers(l.hub).forgets().map(([m]) => m)).toEqual(["lab"]);
+
+  // A team server of a bot's server's name with a key of its own: signing in on the bot's stays the bot's.
+  await l.call("mcp_server_set", { scope: team, name: "tickets", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [{ kind: "secret", name: "X-Key", sealed: [{ machineId: "lab", sealed: sealedFor("k") }] }] });
+  await l.call("mcp_server_set", { scope, name: "tickets", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [] });
+  const started = await l.call("mcp_oauth_start", { scope, name: "tickets", hubUrl: "http://127.0.0.1:4795" });
+  expect(started.scope).toEqual(scope);
+  expect(mcpServers(l.hub).get(team, "tickets")!.oauth).toBeUndefined();
+  expect(getRow(l.hub, team, "tickets")).toBeUndefined();
 });
