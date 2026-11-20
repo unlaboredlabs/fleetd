@@ -146,12 +146,12 @@ it("hosted sandboxes that don't get ready within the wait say why, the fix and T
     expect(calls).toContain("sandbox_test");
     // The wait starts over.
     expect(screen()).toBe("setup.machine.hosted");
-    // A reason of the hub's own is shown as it says it.
+    // A reason of the hub's own is shown in the words the boat.dev row says (shared/hostedRow.ts).
     await act(async () => {
       send({ t: "snapshot", snapshot: { cursor: 3, attention: [], machines: [{ ...runner, degradedReason: "boat.dev refused: billing isn't set up on the account" }], projects: [] } } as never);
       await new Promise((r) => setTimeout(r, 120));
     });
-    expect(host.querySelector("[role=alert]")?.textContent).toBe("boat.dev refused: billing isn't set up on the account.");
+    expect(host.querySelector("[role=alert]")?.textContent).toBe("Couldn't start: boat.dev refused: billing isn't set up on the account.");
     stop();
   } finally {
     HOSTED_WAIT.ms = was;

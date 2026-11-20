@@ -28,6 +28,8 @@ describe("the boat.dev row", () => {
   it("is Starting… while its runner links or answers its first check", () => {
     expect(hostedRow(boat, { status: "degraded", degradedCause: "starting", degradedReason: "Starting…" })).toEqual({ state: "starting", text: "Starting…" });
     expect(hostedRow(boat, { status: "offline" }).state).toBe("starting");
+    // A hub from before the cause: its start words aren't a reason, and "runner" never reaches the person.
+    expect(hostedRow(boat, { status: "degraded", degradedReason: "checking the node's runner" })).toEqual({ state: "starting", text: "Starting…" });
   });
 
   it("needs a Claude account, with Connect", () => {

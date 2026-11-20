@@ -74,7 +74,8 @@ export function hostedRow(
   }
   if (runner !== undefined && runner.status !== "online") {
     if (runner.status === "degraded" && runner.degradedCause === "claude_login") return { state: "needs_claude", text: "Needs a Claude account", action: "connect", why: "it needs a Claude account" };
-    if (runner.status === "offline" || runner.degradedCause === "starting") return { state: "starting", text: "Starting…" };
+    // A hub (or the cloud) from before `degradedCause: "starting"` words its start "checking the node's runner".
+    if (runner.status === "offline" || runner.degradedCause === "starting" || /^(checking|starting)\b/iu.test(runner.degradedReason?.trim() ?? "")) return { state: "starting", text: "Starting…" };
     const why = (runner.degradedReason ?? "").split(/\s+Fix:/u)[0]?.trim().replace(/[.:]$/u, "") ?? "";
     return { state: "failed", text: `Couldn't start${why === "" ? "." : `: ${sentence(why)}`}`, why: "it didn't start" };
   }
