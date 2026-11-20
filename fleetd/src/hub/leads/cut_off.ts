@@ -3,14 +3,16 @@
 // machine sleeping) wakes it once per run of such turns, so a turn that keeps hanging doesn't loop. The wake goes
 // through the offline write queue like any other. A run whose hosted sandbox didn't come up never reached claude: the
 // person reads why in the chat, and the lead is started again by itself once its provider is offered again, its message
-// (which the node keeps) first (`not_started`, ./start_retry.ts).
-import type { HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
+// (which the node keeps) first (`not_started`, ./start_retry.ts). A turn Claude refused for its sign-in (an expired or
+// revoked token, a bad key) wakes nothing, which would be refused the same way: the person reads where to reconnect it,
+// and the lead carries on once they do (`signed_out`, ./signed_in.ts).
+import type { ClaudeAccount, HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
 import { ASIDE_MS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
 
 /** How a run died (tasks/recovery.rs `Kind`), the kinds the lead's wake reads. */
-export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "no_sandbox" | "context_full" | "cut" | "not_dead" | "fatal";
+export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "no_sandbox" | "signed_out" | "context_full" | "cut" | "not_dead" | "fatal";
 
 /** Reads a `thread.failed` or `thread.interrupted` event (tasks/recovery.rs `death`): its kind and its words. */
 export function death(type: HubEventType, data: Record<string, unknown> | undefined, machine: string): { kind: DeathKind; text: string } {
@@ -26,7 +28,7 @@ export function death(type: HubEventType, data: Record<string, unknown> | undefi
   const stalled = field("reason") === "stalled";
   const node = (how: string) => `the node on ${machine} ${how}`;
   const byClass = (): DeathKind =>
-    cls === "process_exited" ? "exited" : cls === "network" || cls === "overloaded" ? "unreachable" : cls === "sandbox" ? "no_sandbox" : "fatal";
+    cls === "process_exited" ? "exited" : cls === "network" || cls === "overloaded" ? "unreachable" : cls === "sandbox" ? "no_sandbox" : cls === "auth" ? "signed_out" : "fatal";
   const nodeEnd =
     reported === "node_stopping" || reported === "node_restarted"
       ? reported
@@ -79,8 +81,26 @@ export function death(type: HubEventType, data: Record<string, unknown> | undefi
 }
 
 /** How a lead's thread ended, as its wakes see it. `not_started`: its claude never started; `message` is the node's
- * words for why (`notStartedLine` makes the chat's line of them), once per run (`runId`). */
-export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: string } | { kind: "not_started"; message: string; runId?: string } | { kind: "completed" };
+ * words for why (`notStartedLine` makes the chat's line of them), once per run (`runId`). `signed_out`: Claude refused
+ * its sign-in (`signedOutLine`), once per run. */
+export type End =
+  | { kind: "node_lost"; text: string }
+  | { kind: "own"; text: string }
+  | { kind: "not_started"; message: string; runId?: string }
+  | { kind: "signed_out"; runId?: string }
+  | { kind: "completed" };
+
+/** The chat's line when Claude refused the lead's sign-in, by what the lead runs on (the thread's account; none: the
+ * machine's own login): where it is reconnected, and that the lead then carries on by itself. */
+export function signedOutLine(account: ClaudeAccount | undefined): string {
+  if (account?.kind === "hub") return "The hub's Claude API key stopped working for this bot: an admin replaces it in Settings › Hub › Setup › Claude. The lead carries on by itself once it is.";
+  if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Your accounts › Claude. The lead carries on by itself once it is.";
+  return "Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message.";
+}
+
+/** The wake's line for a lead whose sign-in was reconnected: its last turn was refused before it began. */
+export const SIGNED_IN_LINE =
+  "- Your Claude sign-in was reconnected. Your last turn was refused for it before you could answer, so the message above has no answer yet: answer it, and carry on from where you were.";
 
 /** How many times in a row a lead whose start didn't come up is started again by itself. */
 export const START_RETRIES = 3;
@@ -171,6 +191,10 @@ export function end(event: HubEvent, leads: StoredLead[]): { project: ProjectRef
     const runId = typeof data?.runId === "string" ? data.runId : undefined;
     const message = (data?.error as { message?: unknown } | undefined)?.message;
     return { project: lead.projectRef, end: { kind: "not_started", message: typeof message === "string" ? message : "", ...(runId ? { runId } : {}) } };
+  }
+  if (died.kind === "signed_out") {
+    const runId = typeof data?.runId === "string" ? data.runId : undefined;
+    return { project: lead.projectRef, end: { kind: "signed_out", ...(runId ? { runId } : {}) } };
   }
   if (died.kind === "stalled" || died.kind === "exited" || died.kind === "unreachable") {
     return {

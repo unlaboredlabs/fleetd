@@ -196,5 +196,7 @@ An agent's launch that takes 2 s or more logs a `slow start` line at info, with 
 `hub spawn` and `hub message` split a lead's call into `scope`, `tasks lock`, `checks` and `start`; `hub launch` splits
 the start into `policy`, `default branch`, `prompt`, `node launch` and `pinned`. On the node, `node launch` splits it
 into `checks`, `fetch` (a review's PR head with it), `launch lock`, `worktree`, `record` and `run`, and `node spawn` the run's
-`spawn lock`, `spec`, `fence` and `session host`. Set `FLEETD_LOG=info,fleetd::stages=debug` to log every launch's
+`spawn lock`, `spec`, `fence` and `session host`. A hosted sandbox's `hosted box` splits into `computer`, `link`,
+`tailnet and dirs` and `clone` (or `files`), and `hosted start` into `ports`, `dirs`, `fleetd`, `files`, `transcript`,
+`claude check` (what was left of the Claude check, which runs beside the steps before it) and `session host`. Set `FLEETD_LOG=info,fleetd::stages=debug` to log every launch's
 stages, and **node session host**'s `host` and `claude` too.

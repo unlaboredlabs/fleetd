@@ -8,6 +8,7 @@ import type { Hub } from "../api/hub.ts";
 import { registerLeadCalls as artifactCalls } from "../artifacts/calls.ts";
 import { registerLeadCalls as checklistCalls } from "../checklist/calls.ts";
 import { chat } from "../chat/index.ts";
+import { accounts } from "../claude_accounts/tools.ts";
 import { executors } from "../executor/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { start as promptsStart } from "../prompts/tools.ts";
@@ -21,7 +22,7 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
-import { end, notStartedLine } from "./cut_off.ts";
+import { end, notStartedLine, signedOutLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
 import type { StoredLead } from "./stored.ts";
@@ -200,6 +201,14 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
       const n = lead ? (failedStarts(hub, lead)?.n ?? 1) : 1;
       chat(hub).add(found.project, { author: "system", text: notStartedLine(found.end.message, n), source: `lead_start:${found.end.runId ?? e.seq}` });
       if (lead) retryLater(found.project, lead, e.seq);
+      return;
+    }
+    // Claude refused its sign-in: the person reads where to reconnect it, and the lead carries on once they do
+    // (./signed_in.ts). No wake, which would be refused the same way.
+    if (found.end.kind === "signed_out") {
+      const thread = area.records.leadGet(found.project)?.threadId;
+      const account = thread ? accounts(hub).threadAccount(found.project.machineId, thread) : undefined;
+      chat(hub).add(found.project, { author: "system", text: signedOutLine(account), source: `lead_auth:${found.end.runId ?? e.seq}` });
       return;
     }
     if (found.end.kind === "own") {

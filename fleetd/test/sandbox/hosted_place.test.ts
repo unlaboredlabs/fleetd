@@ -371,34 +371,57 @@ test("a keep-alive failure goes with Try again or a new key, and a while after t
   expect(boxes.trouble(at + DOWN_MS + 1)).toEqual([]);
 });
 
-test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
-  const { s, home, env, boxes } = await setup();
+test("one bot's own failure (its files didn't go in) fails its start alone: the provider stays offered, and another bot's box comes up", async () => {
+  // W756 W5: before, a bot whose repo or files didn't go in set boat.dev aside for 10 minutes for every bot of the team.
+  const { s, home, cwd, env, boxes } = await setup();
+  const start = (id: string, at: string) =>
+    hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd: at, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
+  const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;
   // The worktree doesn't go into the box (here: it isn't there at all), which is no fault of the provider's.
-  const cwd = join(home, "worktrees", "gone");
+  const first = await start("s-own1", join(home, "worktrees", "gone")).catch((e: Error) => e);
+  // It fails as a box that came up where the session couldn't start: a lead's chat says why and its message is kept.
+  expect(first).toBeInstanceOf(BoxNotReady);
+  // In plain words: what didn't work, never the tar's output or the machine's paths (the log keeps those), nor a time.
+  expect((first as Error).message).toBe("its boat.dev sandbox came up, but it couldn't get the bot's files");
+  expect((first as Error).message).not.toContain(home);
+  expect(notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(first as Error).message} (cwd ${cwd})`, 1)).toBe(
+    "The lead couldn't start: its boat.dev sandbox came up, but it couldn't get the bot's files. It tries again by itself in about 10 minutes, and your message is kept for it.",
+  );
+  // The box it made went, and so did its record; the provider is still offered, with no trouble on its row.
+  expect(s.boxes.size).toBe(0);
+  expect(readRecord(join(home, "hosts", "s-own1"))).toBeUndefined();
+  expect(boxes.trouble()).toEqual([]);
+  expect(boxes.usable()).toContain("boat");
+  expect(made()).toBe(1);
+  // Another bot's start makes its own box and comes up. (A box here shares this machine's paths: the first one's
+  // forwarded node.sock stays behind, where a real box has its own.)
+  rmSync(join(home, "node.sock"), { force: true });
+  await start("s-own2", cwd);
+  expect(made()).toBe(2);
+  expect(hasBox("s-own2")).toBe(true);
+  await placeAt(join(home, "hosts", "s-own2")).stop(join(home, "hosts", "s-own2"));
+}, 60_000);
+
+test("a provider's own refusal sets it aside, and the next start there is refused without another box", async () => {
+  const { s, home, cwd, env, boxes } = await setup();
+  // boat.dev doesn't answer creates (its API is down): its own failure, not a bot's.
+  s.fail({ path: /^POST \/api\/v1\/sandboxes$/, status: 503, body: { ok: false, code: "unavailable", message: "Service unavailable" }, times: 10 });
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
-  const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;
+  const asked = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes").length;
   const first = await start("s-down1").catch((e: Error) => e);
   expect(first).toBeInstanceOf(HostedDown);
-  // In plain words: what didn't work, never the tar's output or the machine's paths (the log keeps those).
-  expect((first as Error).message).toStartWith("a sandbox at boat.dev didn't come up: it couldn't get the bot's files (try again in a minute)");
-  expect((first as Error).message).not.toContain("tar");
-  expect((first as Error).message).not.toContain(home);
-  expect(boxes.trouble()[0]?.why).toBe("a sandbox at boat.dev didn't come up: it couldn't get the bot's files");
-  // The box it made went, and so did its record; the provider is out of what the heartbeat offers the slot board.
-  expect(s.boxes.size).toBe(0);
-  expect(readRecord(join(home, "hosts", "s-down1"))).toBeUndefined();
+  expect(first).not.toBeInstanceOf(BoxNotReady);
+  expect(boxes.trouble()).toMatchObject([{ provider: "boat", what: "start" }]);
   expect(boxes.usable()).toEqual([]);
-  expect(made()).toBe(1);
+  const before = asked();
   // Another session's start (the hub placed it before the heartbeat said so) is refused at once, asking for no box.
   const second = await start("s-down2").catch((e: Error) => e);
   expect(second).toBeInstanceOf(HostedDown);
-  // In the words the hub shows: what went wrong, its fix and when it is tried again.
-  expect((second as Error).message).toMatch(/^a sandbox at boat\.dev didn't come up: it couldn't get the bot's files \(try again in a minute\); trying again at \d\d:\d\d$/);
-  expect((second as Error).message).not.toContain(home);
-  expect(made()).toBe(1);
+  expect((second as Error).message).toMatch(/; trying again at \d\d:\d\d$/);
+  expect(asked()).toBe(before);
   // So is setup's command, which doesn't run.
   const ran = await hostedPlace("boat", "s-down3", join(home, "hosts", "s-down3")).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });
-  expect(ran.notRun).toContain("a sandbox at boat.dev didn't come up");
-  expect(made()).toBe(1);
+  expect(ran.notRun).toMatch(/trying again at/);
+  expect(asked()).toBe(before);
 }, 60_000);
