@@ -25,7 +25,7 @@ import {
   signedIn,
   valuesOf,
 } from "./index.ts";
-import { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkInput, checkScope, mayChange, notFound, sameTransport } from "./rules.ts";
+import { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkInput, checkScope, mayChange, mayConnect, notFound, sameTransport, signsInOnly } from "./rules.ts";
 
 export { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkScope, mayChange, notFound } from "./rules.ts";
 
@@ -45,9 +45,11 @@ export function register(tools: Registry): void {
   tools.add("mcp_server_set", (hub, caller, input) => set(hub, caller, input));
   tools.add("mcp_server_remove", async (hub, caller, input) => {
     const scope = checkScope(input.scope);
-    mayChange(caller, scope);
     const s = mcpServers(hub);
     const before = s.get(scope, input.name);
+    // The team's signed-in server is its connector's or an admin's to disconnect; anything else as before.
+    if (scope.kind === "global" && before?.oauth !== undefined) mayConnect(caller, before);
+    else mayChange(caller, scope);
     if (!before) throw notFound(scope, input.name);
     s.remove(scope, input.name);
     if (before.oauth) await oauth.forget(hub, scope, input.name);
@@ -77,6 +79,26 @@ export function register(tools: Registry): void {
   tools.add("mcp_server_test", (hub, caller, input) => test(hub, caller, input.scope, input.name, input.machineId));
 }
 
+/** A save of a bot's server that went to the team as it signed in (D592), from an app that still shows it as the
+ * bot's (Add's second save, of the tools that only read): the team's server is saved, not a new bot copy without its
+ * sign-in that would hide it from the bot. */
+function toTeamsOwn(hub: Hub, input: McpServerSetInput): McpServerSetInput {
+  const scope = checkScope(input.scope);
+  if (scope.kind === "global" || !signsInOnly(input) || mcpServers(hub).get(scope, input.name)) return input;
+  const team = mcpServers(hub).get({ kind: "global" }, input.name);
+  return team?.oauth !== undefined && sameTransport(team.transport, input.transport) ? { ...input, scope: { kind: "global" } } : input;
+}
+
+/** The server, or for a bot's that moved to the team when it signed in (D592), the team's of that name: an app that
+ * still shows it as the bot's reaches it. */
+export function teamOr(hub: Hub, scope: McpScope, name: string): McpServer | undefined {
+  const s = mcpServers(hub);
+  const own = s.get(scope, name);
+  if (own || scope.kind === "global") return own;
+  const team = s.get({ kind: "global" }, name);
+  return team?.oauth !== undefined ? team : undefined;
+}
+
 export function projectOf(hub: Hub, scope: McpScope): ProjectRef | undefined {
   if (scope.kind !== "project") return undefined;
   const r = { machineId: scope.machineId, projectId: scope.projectId };
@@ -98,12 +120,17 @@ const ready = (hub: Hub, m: string) => linked(hub, m) && nodeCan(hub, m, CAP_MCP
 
 const byMachine = (a: { machineId: string }, b: { machineId: string }) => (a.machineId < b.machineId ? -1 : a.machineId > b.machineId ? 1 : 0);
 
-async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
+async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
+  const input = toTeamsOwn(hub, given);
   const scope = checkScope(input.scope);
-  mayChange(caller, scope);
+  // A service the team signs in to (no key of its own) is connected once for every bot, by any person (D592).
+  const team = scope.kind === "global" && signsInOnly(input);
+  const existing = team ? mcpServers(hub).get(scope, input.name) : undefined;
+  if (team && (existing === undefined || existing.oauth !== undefined || existing.connectedBy !== undefined)) mayConnect(caller, existing);
+  else mayChange(caller, scope);
   checkInput(input);
   const project = projectOf(hub, scope);
-  if (input.integration && !project) {
+  if (input.integration && !project && !team) {
     // Only a project's lead asks before a tool runs: one saved for every project would reach agents unasked.
     throw new ToolError(
       "invalid",
@@ -206,6 +233,8 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
       sealedOn.sort(byMachine);
       return { name: v.name, kind: "secret", ...(sealedOn.length > 0 ? { sealedOn } : {}) };
     });
+  // The person who connected a team sign-in, kept through later saves.
+  const connectedBy = !team ? undefined : before ? before.connectedBy : caller.person?.personId;
   // Read again: a renewal may have changed the sign-in while the nodes answered.
   const signIn = signsIn ? s.get(scope, input.name)?.oauth : undefined;
   const server: McpServer = {
@@ -217,6 +246,7 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
     headers: values("header"),
     ...(input.integration ? { integration: input.integration } : {}),
     ...(signIn ? { oauth: signIn } : {}),
+    ...(connectedBy !== undefined ? { connectedBy } : {}),
     updatedAt: isoMs(hub.clock.now()),
   };
   s.put(server);
@@ -253,13 +283,16 @@ export async function forgetQueued(hub: Hub): Promise<void> {
 }
 
 async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, asked: string | undefined) {
-  const scope = checkScope(scopeIn);
+  const given = checkScope(scopeIn);
+  const server = teamOr(hub, given, name);
+  if (!server) throw notFound(given, name);
+  const scope = server.scope;
   const project = projectOf(hub, scope);
-  const server = mcpServers(hub).get(scope, name);
-  if (!server) throw notFound(scope, name);
   let machineId: string;
   if (project) machineId = project.machineId;
   else if (asked !== undefined) machineId = asked;
+  // The team's, asked for as a bot's: tested where that bot's agents reach it.
+  else if (given.kind === "project") machineId = given.machineId;
   else {
     const found = store(hub)
       .machinesList()

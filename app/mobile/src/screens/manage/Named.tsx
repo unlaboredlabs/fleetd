@@ -1,5 +1,5 @@
-// A project's named services on its screen (MCP servers: Paper), as the desktop's rows at the head of its MCP servers
-// (namedServers.ts). Connect saves the server the manual form would, then opens the service's own sign-in page in the
+// The team's named services on the Vault screen (Integrations: Paper), connected once for every bot (D592), as the
+// desktop's Vault page has them (namedServers.ts). Connect saves the server the manual form would, then opens the service's own sign-in page in the
 // in-app browser; once the person is back (iOS: the sheet closed; Android, whose Custom Tab returns at once: the app
 // active again) the row reads again and, signed in, tests it. Connected, a tap offers Test and
 // Disconnect; one that needs a sign-in says so, and a tap signs in. Calls: namedApi.ts.
@@ -7,7 +7,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, AppState, Platform } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { NAMED, namedState, type McpServer, type Named, type ProjectRef } from "../../desktop";
+import { NAMED, namedState, type McpServer, type Named } from "../../desktop";
 import { useHub } from "../../hubContext";
 import { useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
@@ -16,16 +16,16 @@ import { machineName } from "./model";
 import { connect, disconnect, readServers, rowOf, signInPage, test, testLine, turnOn } from "./namedApi";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 
-export function NamedServers({ project }: { project: ProjectRef }) {
+export function NamedServers() {
   const { session } = useHub();
-  const read = useRead(() => readServers(session, project), [session, project.machineId, project.projectId]);
+  const read = useRead(() => readServers(session), [session]);
   const r = read.value;
   if (r === undefined) return null;
-  if (!r.ok) return <Problem text={`Couldn't read its MCP servers: ${errorWords(r.error)}`} />;
+  if (!r.ok) return <Problem text={`Couldn't read the team's integrations: ${errorWords(r.error)}`} />;
   return (
-    <ListSection header="MCP servers">
+    <ListSection header="Integrations">
       {NAMED.map((entry) => (
-        <Row key={entry.id} entry={entry} project={project} servers={r.value} reload={read.reload} />
+        <Row key={entry.id} entry={entry} servers={r.value} reload={read.reload} />
       ))}
     </ListSection>
   );
@@ -39,7 +39,7 @@ function Mark({ entry }: { entry: Named }) {
   );
 }
 
-function Row({ entry, project, servers, reload }: { entry: Named; project: ProjectRef; servers: McpServer[]; reload: () => void }) {
+function Row({ entry, servers, reload }: { entry: Named; servers: McpServer[]; reload: () => void }) {
   const t = useTheme();
   const { session, state: hub } = useHub();
   const [busy, setBusy] = useState(false);
@@ -69,7 +69,7 @@ function Row({ entry, project, servers, reload }: { entry: Named; project: Proje
   const back = async () => {
     away.current = false;
     reload();
-    const now = await readServers(session, project);
+    const now = await readServers(session);
     if (!now.ok) return failed("Couldn't read it again", now.error);
     const after = namedState(entry, now.value);
     if (after.kind === "connected") await runTest(after.server);
@@ -111,7 +111,7 @@ function Row({ entry, project, servers, reload }: { entry: Named; project: Proje
   const press = () => {
     if (row.press === "connect") {
       go(async () => {
-        const saved = await connect(session, entry, project, servers);
+        const saved = await connect(session, entry, servers);
         if (!saved.ok) return failed("Not connected", saved.error);
         await signIn(saved.value);
       });
@@ -145,7 +145,7 @@ function Row({ entry, project, servers, reload }: { entry: Named; project: Proje
   const remove = (sv: McpServer) =>
     confirmDestructive({
       title: `Disconnect ${entry.label}?`,
-      message: "Its lead and agents start without it from their next message.",
+      message: "Every bot's lead and agents start without it from their next message.",
       button: "Disconnect",
       onConfirm: () =>
         go(async () => {

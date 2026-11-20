@@ -75,6 +75,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
   page("vault", ["vault", "team vault", "passwords", "logins", "cards", "credit card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every bot", "hub-wide"]),
   { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
+  { key: "vault.integrations", label: "Integrations", tab: "vault", keywords: ["integrations", "paper", "connect", "sign in", "oauth"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),

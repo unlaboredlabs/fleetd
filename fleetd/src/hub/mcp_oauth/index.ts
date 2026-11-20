@@ -4,15 +4,17 @@
 // `<hub>/oauth/callback`. The callback trades the code for the tokens (`finish`). The hub keeps them sealed to its own
 // box key in `mcp_oauth`, and seals each access token to the project's machine as the server's `Authorization`
 // header (`push`). `renewDue` renews a token before it ends; a service that refuses signs the server out.
+import { createHash } from "node:crypto";
 import type { McpOauth, McpScope, McpServer, ProjectRef } from "../../shared/contracts.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
-import { sessionCall } from "../link/node_port.ts";
-import { mcpServers, OAUTH_HEADER, scopeKey, secretScope, valuesOf } from "../mcp_servers/index.ts";
+import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
+import { mcpServers, OAUTH_HEADER, scopeKey, secretScope, transportOf, valuesOf } from "../mcp_servers/index.ts";
+import { sameTransport } from "../mcp_servers/rules.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { nodeReady } from "../mcp_servers/tools.ts";
+import { CAP_MCP_SERVERS, nodeReady } from "../mcp_servers/tools.ts";
 import * as oauth from "./oauth.ts";
 import { type Client, clientOf, due, PENDING_MS, projectOfRow, type Record_, recordText, RETRY_MS, type Row, tidy } from "./record.ts";
 
@@ -177,15 +179,33 @@ export const oauthHooks = (hub: Hub) =>
     say: (r, text) => console.warn(`mcp_oauth: no chat in this build; a line for ${r.machineId}/${r.projectId} not said: ${text}`),
   }));
 
+/** A line in the chat of the server's bot, or of every bot for the team's (D592). */
 function say(hub: Hub, row: Row, text: string): void {
-  const r = projectOfRow(row);
-  if (!r) return;
-  try {
-    oauthHooks(hub).say(r, text);
-  } catch (e) {
-    console.warn(`an MCP sign-in line was not said in the chat (${row.name}):`, e);
+  const own = projectOfRow(row);
+  const bots = own ? [own] : store(hub).projectsList().map((p) => ({ machineId: p.machineId, projectId: p.projectId }));
+  for (const r of bots) {
+    try {
+      oauthHooks(hub).say(r, text);
+    } catch (e) {
+      console.warn(`an MCP sign-in line was not said in the chat (${row.name}):`, e);
+    }
   }
 }
+
+/** Where a person signs the server in again. */
+const reconnectAt = (row: Row) => (row.scope.kind === "global" ? "Settings › Vault › Integrations" : "the bot's settings › Integrations");
+
+/** The machines that keep the server's token: its bot's, or, for the team's, every machine a bot runs on. */
+export function machinesOf(hub: Hub, row: Row): string[] {
+  const own = projectOfRow(row);
+  if (own) return [own.machineId];
+  return [...new Set(store(hub).projectsList().map((p) => p.machineId))].sort();
+}
+
+/** The fingerprint a node answers for the header holding `access`: what it keeps, unopened. */
+const printOf = (access: string) => createHash("sha256").update(`Bearer ${access}`).digest("hex").slice(0, 8);
+
+const reachable = (hub: Hub, m: string) => linked(hub, m) && nodeCan(hub, m, CAP_MCP_SERVERS);
 
 /** The URL and transport kind of a server that can sign in. */
 export function urlOf(s: McpServer): [string, boolean] | undefined {
@@ -368,39 +388,63 @@ function keepTokens(hub: Hub, row: Row, tokens: oauth.Tokens, at: number): void 
 }
 
 /**
- * Seals the access token to the project's machine as the server's `Authorization` header, keeping its other secrets
- * there, and records the fingerprint the node answers.
+ * Seals the access token to each machine that keeps it (`machinesOf`) as the server's `Authorization` header, keeping
+ * its other secrets there, and records the fingerprint each node answers. A machine that holds it already is skipped;
+ * one offline gets it on a later round of the renewal loop. A bot's server needs its one machine (else it throws);
+ * the team's throws only when it reached none.
  */
 export async function push(hub: Hub, row: Row): Promise<void> {
-  const r = projectOfRow(row);
-  if (!r) throw new Error("a global server doesn't sign in");
-  const m = r.machineId;
-  nodeReady(hub, m);
+  const own = projectOfRow(row);
+  if (own) nodeReady(hub, own.machineId);
   if (!row.access) throw new Error("no token to hand over");
   const access = openOwn(hub, row.access);
-  const boxKey = store(hub).machineGet(m)?.boxPubKey;
-  if (!boxKey) throw new Error(`${m} has no box key to seal the token to`);
-  const pub = Buffer.from(boxKey, "base64");
-  if (pub.length !== 32) throw new Error(`${m}'s box key isn't 32 bytes`);
-  const sealedBox = Buffer.from(seal(new Uint8Array(pub), new TextEncoder().encode(`Bearer ${access}`))).toString("base64");
+  const print = printOf(access);
   const server = mcpServers(hub).get(row.scope, row.name);
   if (!server) throw new Error("the server was removed");
-  const out = await sessionCall(hub, m, {
-    op: "mcp_secrets",
-    scope: secretScope(row.scope),
-    server: row.name,
-    set: [{ field: "header", name: OAUTH_HEADER, sealed: sealedBox }],
-    keep: othersOn(server, m),
-  });
-  const saved = (out.secrets as { field: string; name: string; fingerprint: string }[] | undefined) ?? [];
-  const fingerprint = saved.find((s) => s.field === "header" && s.name === OAUTH_HEADER)?.fingerprint;
-  if (!fingerprint) throw new Error("the machine didn't keep the token");
-  updateServer(hub, row.scope, row.name, (s) => {
-    s.headers = (s.headers ?? []).filter((v) => v.name.toLowerCase() !== OAUTH_HEADER.toLowerCase());
-    s.headers.push({ name: OAUTH_HEADER, kind: "secret", sealedOn: [{ machineId: m, fingerprint }] });
-  });
-  row.record.pushed = true;
+  const holding = (server.headers ?? []).find((v) => isToken("header", v.name))?.sealedOn ?? [];
+  const held: { machineId: string; fingerprint: string }[] = [];
+  const missed: string[] = [];
+  for (const m of machinesOf(hub, row)) {
+    if (holding.some((x) => x.machineId === m && x.fingerprint === print)) continue;
+    if (!reachable(hub, m)) {
+      missed.push(`${m} is offline`);
+      continue;
+    }
+    const boxKey = store(hub).machineGet(m)?.boxPubKey;
+    const pub = boxKey ? Buffer.from(boxKey, "base64") : undefined;
+    if (!pub || pub.length !== 32) {
+      missed.push(`${m} has no box key to seal the token to`);
+      continue;
+    }
+    const sealedBox = Buffer.from(seal(new Uint8Array(pub), new TextEncoder().encode(`Bearer ${access}`))).toString("base64");
+    try {
+      const out = await sessionCall(hub, m, {
+        op: "mcp_secrets",
+        scope: secretScope(row.scope),
+        server: row.name,
+        set: [{ field: "header", name: OAUTH_HEADER, sealed: sealedBox }],
+        keep: othersOn(server, m),
+      });
+      const saved = (out.secrets as { field: string; name: string; fingerprint: string }[] | undefined) ?? [];
+      const fingerprint = saved.find((x) => x.field === "header" && x.name === OAUTH_HEADER)?.fingerprint;
+      if (!fingerprint) throw new Error(`${m} didn't keep the token`);
+      held.push({ machineId: m, fingerprint });
+    } catch (e) {
+      if (own) throw e;
+      missed.push(`${m}: ${(e as Error).message}`);
+    }
+  }
+  if (held.length > 0) {
+    updateServer(hub, row.scope, row.name, (s) => {
+      const before = (s.headers ?? []).find((v) => isToken("header", v.name))?.sealedOn ?? [];
+      const sealedOn = [...before.filter((x) => !held.some((h) => h.machineId === x.machineId)), ...held].sort((x, y) => (x.machineId < y.machineId ? -1 : 1));
+      s.headers = (s.headers ?? []).filter((v) => !isToken("header", v.name));
+      s.headers.push({ name: OAUTH_HEADER, kind: "secret", sealedOn });
+    });
+  }
+  row.record.pushed = missed.length === 0;
   putRow(hub, row);
+  if (missed.length > 0 && held.length === 0 && !holding.some((x) => x.fingerprint === print)) throw new Error(missed.join("; "));
 }
 
 /** The server's secrets on machine `m` other than its token: they stay there when the token changes or goes. */
@@ -412,19 +456,27 @@ const othersOn = (server: McpServer, m: string) =>
 const isToken = (field: string, name: string) => field === "header" && name.toLowerCase() === OAUTH_HEADER.toLowerCase();
 
 /**
- * Takes a signed-out server's dead token off its machine, keeping its other secrets there, then out of the server's
- * headers: no session gets the server again, and a running agent's relay hears that it is signed out. A machine
- * offline now has it taken on a later round of the renewal loop (`renewOne`).
+ * Takes a signed-out server's dead token off each machine holding it, keeping its other secrets there, then out of
+ * the server's headers: no session gets the server again, and a running agent's relay hears that it is signed out. A
+ * machine offline now has it taken on a later round of the renewal loop (`renewOne`).
  */
 export async function erase(hub: Hub, row: Row): Promise<void> {
-  const r = projectOfRow(row);
   const server = mcpServers(hub).get(row.scope, row.name);
-  if (!r || !server || row.access || !(server.headers ?? []).some((v) => isToken("header", v.name))) return;
-  const m = r.machineId;
-  nodeReady(hub, m);
-  await sessionCall(hub, m, { op: "mcp_secrets", scope: secretScope(row.scope), server: row.name, set: [], keep: othersOn(server, m) });
+  const holding = (server?.headers ?? []).find((v) => isToken("header", v.name));
+  if (!server || row.access || !holding) return;
+  const own = projectOfRow(row);
+  if (own) nodeReady(hub, own.machineId);
+  const gone: string[] = [];
+  for (const { machineId: m } of holding.sealedOn ?? []) {
+    if (!reachable(hub, m)) continue;
+    await sessionCall(hub, m, { op: "mcp_secrets", scope: secretScope(row.scope), server: row.name, set: [], keep: othersOn(server, m) });
+    gone.push(m);
+  }
   updateServer(hub, row.scope, row.name, (s) => {
+    const token = (s.headers ?? []).find((v) => isToken("header", v.name));
+    const left = (token?.sealedOn ?? []).filter((x) => !gone.includes(x.machineId));
     s.headers = (s.headers ?? []).filter((v) => !isToken("header", v.name));
+    if (left.length > 0) s.headers.push({ name: OAUTH_HEADER, kind: "secret", sealedOn: left });
   });
 }
 
@@ -447,7 +499,7 @@ async function signOut(hub: Hub, row: Row, problem: string): Promise<void> {
   say(
     hub,
     row,
-    `${row.name} is signed out: ${problem} Its bot can't use it until you press Reconnect on it in the bot's settings › Integrations.`,
+    `${row.name} is signed out: ${problem} ${row.scope.kind === "global" ? "No bot can" : "Its bot can't"} use it until you press Reconnect on it in ${reconnectAt(row)}.`,
   );
   try {
     await erase(hub, row);
@@ -517,8 +569,110 @@ export async function renew(hub: Hub, row: Row): Promise<Renewed> {
   return "yes";
 }
 
+const TEAM: McpScope = { kind: "global" };
+
+/** The newest working sign-in first: connected before not, then signed in last. */
+const newestFirst = (a: McpServer, b: McpServer) => {
+  const on = (s: McpServer) => (s.oauth?.status === "connected" ? 1 : 0);
+  return on(b) - on(a) || (b.oauth?.signedInAt ?? "").localeCompare(a.oauth?.signedInAt ?? "");
+};
+
+/** A bot's server goes, with its sign-in, and its machine forgets the secrets it kept for it. */
+function dropBots(hub: Hub, server: McpServer): void {
+  if (server.scope.kind !== "project") return;
+  const s = mcpServers(hub);
+  s.remove(server.scope, server.name);
+  removeRow(hub, server.scope, server.name);
+  s.forget(server.scope.machineId, server.scope.projectId, server.name);
+  removed(hub, server.scope, server.name);
+}
+
+/**
+ * A bot's signed-in server becomes the team's (D592), with its sign-in, so nobody signs in again: the server and its
+ * tokens move to the global scope, and the token goes to every bot's machine on its next push. Another bot's sign-in
+ * to the same server goes (not revoked: the service may hold one grant for both). One whose name a team server with
+ * a key of its own already has stays the bot's.
+ */
+function toTeam(hub: Hub, servers: McpServer[]): Row | undefined {
+  const s = mcpServers(hub);
+  const name = servers[0]!.name;
+  const team = s.get(TEAM, name);
+  // The team has a server of that name with a key of its own, or another service under it: these stay the bots'.
+  if (team && (team.oauth === undefined || !sameTransport(team.transport, servers[0]!.transport))) return undefined;
+  const [keep, ...rest] = team ? [undefined, ...servers] : [...servers].sort(newestFirst);
+  let moved: Row | undefined;
+  if (keep) {
+    const row = getRow(hub, keep.scope, name);
+    // The token is on its bot's machine under the bot's scope: it is pushed again under the team's.
+    s.put({ ...keep, scope: TEAM, headers: (keep.headers ?? []).map((v) => (isToken("header", v.name) ? { name: v.name, kind: "secret" } : v)) });
+    if (row) {
+      moved = { ...row, scope: TEAM, record: { ...row.record, pushed: false } };
+      putRow(hub, moved);
+    }
+    dropBots(hub, keep);
+  }
+  for (const other of rest) if (other) dropBots(hub, other);
+  return moved;
+}
+
+/** The server a carry-over groups by: one service is its name at one address. */
+const serviceOf = (s: McpServer) => `${s.name}\u0000${JSON.stringify(transportOf(s.transport))}`;
+
+/** Every bot's signed-in server with no key of its own (`teamable`) becomes the team's (`toTeam`), and its token goes
+ * to every bot's machine. One with a key of its own stays the bot's: its key is sealed under the bot's scope. */
+export async function carryOver(hub: Hub): Promise<void> {
+  const byService = new Map<string, McpServer[]>();
+  for (const server of mcpServers(hub).perBot()) {
+    if (server.oauth && teamable(server)) byService.set(serviceOf(server), [...(byService.get(serviceOf(server)) ?? []), server]);
+  }
+  for (const servers of byService.values()) {
+    const row = await one(hub, async () => toTeam(hub, servers));
+    if (row?.access) await push(hub, row).catch((e) => console.info(`a team sign-in's token waits for its machines (${row.name}): ${(e as Error).message}`));
+  }
+}
+
+/** A server that signs in with an account and has no key of its own, which the team connects once. */
+export const teamable = (s: McpServer) =>
+  s.transport.type !== "stdio" && (s.env ?? []).length === 0 && (s.headers ?? []).every((v) => v.kind === "secret" && isToken("header", v.name));
+
+/**
+ * A sign-in opened on a bot's server signs the team in instead (D592): the server is the team's from then on, unless
+ * another bot's sign-in to it is newer, which the team keeps.
+ */
+export async function teamScope(hub: Hub, server: McpServer, by?: string): Promise<McpServer> {
+  const at = server.scope;
+  if (at.kind === "global" || !teamable(server)) return server;
+  const same = mcpServers(hub)
+    .perBot()
+    .filter(
+      (s) =>
+        serviceOf(s) === serviceOf(server) &&
+        ((s.oauth !== undefined && teamable(s)) || (s.scope.kind === "project" && s.scope.machineId === at.machineId && s.scope.projectId === at.projectId)),
+    );
+  const had = mcpServers(hub).get(TEAM, server.name);
+  const row = await one(hub, async () => toTeam(hub, same));
+  if (row?.access) await push(hub, row).catch(() => {});
+  // The team's only when the bot's went to it; else (the team keeps a server of that name of its own) the bot's.
+  const team = mcpServers(hub).get(TEAM, server.name);
+  if (!team || mcpServers(hub).get(at, server.name) !== undefined || !sameTransport(team.transport, server.transport)) return server;
+  // Made the team's now, by this sign-in: who signs it in connected it for the team.
+  if (by !== undefined && had === undefined && team.connectedBy === undefined) {
+    return (
+      updateServer(hub, TEAM, server.name, (s) => {
+        s.connectedBy = by;
+      }) ?? team
+    );
+  }
+  return team;
+}
+
 /** One round of the renewal loop: ends sign-ins left unfinished, renews tokens near their end, pushes missed ones. */
 export async function renewDue(hub: Hub): Promise<void> {
+  try {
+    await carryOver(hub);
+  } catch (e) {
+    console.warn("bots' MCP sign-ins not carried over to the team:", e);
+  }
   let rows: Row[];
   try {
     rows = allRows(hub);
@@ -557,10 +711,19 @@ async function renewOne(hub: Hub, row: Row): Promise<void> {
     return;
   }
   if (due(row.record, at) && (row.record.retryMs === undefined || row.record.retryMs <= at)) await renew(hub, row);
-  if (row.access && !row.record.pushed) {
-    // A machine offline now gets it on a later round.
+  if (row.access && (!row.record.pushed || lacking(hub, row))) {
+    // A machine offline now, or one that has run a bot only since, gets it on a later round.
     await push(hub, row).catch(() => {});
   }
+}
+
+/** A machine that keeps the server's token (`machinesOf`) doesn't hold the current one: one that got its first bot
+ * since the last push. */
+function lacking(hub: Hub, row: Row): boolean {
+  if (!row.access) return false;
+  const print = printOf(openOwn(hub, row.access));
+  const holding = (mcpServers(hub).get(row.scope, row.name)?.headers ?? []).find((v) => isToken("header", v.name))?.sealedOn ?? [];
+  return machinesOf(hub, row).some((m) => !holding.some((x) => x.machineId === m && x.fingerprint === print));
 }
 
 /**
@@ -595,11 +758,24 @@ export function forget(hub: Hub, scope: McpScope, name: string): Promise<void> {
   });
 }
 
-/** Renews the server's token now, as when the server turned the token away before it was due. */
-export function renewNow(hub: Hub, scope: McpScope, name: string): Promise<Renewed> {
+/**
+ * The token an agent was turned away with (`stale`, the fingerprint its node holds) is older than the hub's: another
+ * agent's turn-away renewed it in between. Nothing is renewed or signed out for it; the current token goes to the
+ * machines that still lack it, and the agent tries that one.
+ */
+async function superseded(hub: Hub, row: Row, stale: string | undefined): Promise<boolean> {
+  if (stale === undefined || !row.access || printOf(openOwn(hub, row.access)) === stale) return false;
+  await push(hub, row).catch((e) => console.info(`a renewed MCP token waits for its machine (${row.name}): ${(e as Error).message}`));
+  return true;
+}
+
+/** Renews the server's token now, as when the server turned the token away before it was due: unless `stale`, the
+ * token it turned away, is older than the hub's current one (`superseded`). */
+export function renewNow(hub: Hub, scope: McpScope, name: string, stale?: string): Promise<Renewed> {
   return one(hub, async () => {
     const row = getRow(hub, scope, name);
     if (!row?.access) return "signed_out";
+    if (await superseded(hub, row, stale)) return "yes";
     return renew(hub, row);
   });
 }
@@ -607,12 +783,14 @@ export function renewNow(hub: Hub, scope: McpScope, name: string): Promise<Renew
 /**
  * An agent's relay was turned away with the token just renewed (`mcp_oauth_renew` with `refused`): the service no
  * longer takes this sign-in, so the server is signed out, which Settings and the chat say, and its token leaves the
- * machine.
+ * machines. Only for the hub's current token: one older than it (`stale`, superseded by another agent's renewal)
+ * never signs out.
  */
-export function turnedAway(hub: Hub, scope: McpScope, name: string): Promise<Renewed> {
+export function turnedAway(hub: Hub, scope: McpScope, name: string, stale?: string): Promise<Renewed> {
   return one(hub, async (): Promise<Renewed> => {
     const row = getRow(hub, scope, name);
     if (!row?.access) return "signed_out";
+    if (await superseded(hub, row, stale)) return "yes";
     const host = row.record.client ? oauth.hostOf(row.record.client.issuer) : name;
     await signOut(hub, row, `${host} turned away the sign-in fleetd had just renewed, so you need to sign in again.`);
     return "signed_out";

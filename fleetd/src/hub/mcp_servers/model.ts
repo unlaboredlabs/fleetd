@@ -66,7 +66,9 @@ export function oneSwitch(roles: McpRoles, enabled: boolean): { roles: McpRoles;
  */
 export function forSession(s: McpServer, machineId: string): McpSessionServer | undefined {
   const tokenless = s.oauth !== undefined && !valuesOf(s).some(([f, v]) => isOauthToken(s, f, v));
-  if (secretsMissingOn(s, machineId).length > 0 || !signedIn(s) || tokenless) return undefined;
+  // One a person connected for the team reaches agents only once signed in: no one adds a keyless server for every bot.
+  const unsigned = s.connectedBy !== undefined && s.oauth?.status !== "connected";
+  if (secretsMissingOn(s, machineId).length > 0 || !signedIn(s) || tokenless || unsigned) return undefined;
   const values = (list: McpValue[] | undefined): McpSessionValue[] =>
     (list ?? []).map((v) =>
       v.kind === "plain" && v.value !== undefined ? { kind: "plain", name: v.name, value: v.value } : { kind: "secret", name: v.name },
@@ -93,7 +95,7 @@ export const parse = (data: string): McpServer | undefined => {
 /** The Rust struct's key order, so a row reads the same whichever hub wrote it. */
 export function canonical(s: McpServer): McpServer {
   const out: Record<string, unknown> = {};
-  for (const k of ["scope", "name", "enabled", "roles", "transport", "env", "headers", "integration", "oauth", "updatedAt"] as const) {
+  for (const k of ["scope", "name", "enabled", "roles", "transport", "env", "headers", "integration", "oauth", "connectedBy", "updatedAt"] as const) {
     if (s[k] !== undefined && s[k] !== null) out[k] = s[k];
   }
   out.transport = transportOf(s.transport);

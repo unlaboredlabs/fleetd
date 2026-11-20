@@ -1,28 +1,30 @@
 // `mcp_oauth_start`: a person opens the sign-in of a saved server. Only a
-// person, with operate on the project's machine, as for saving the server.
+// person: any one for the team's service that takes no key (D592), which a bot's server of that kind becomes as its
+// sign-in opens; for any other, one who may change the server.
 import { ToolError } from "../../shared/errors.ts";
 import { openSealed } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Registry } from "../api/registry.ts";
 import { mcpServers } from "../mcp_servers/index.ts";
-import { checkScope, mayChange, notFound, projectOf } from "../mcp_servers/tools.ts";
+import { checkScope, mayChange, notFound, projectOf, teamOr } from "../mcp_servers/tools.ts";
 import { httpsFront } from "./https_front.ts";
-import { hubBoxKey, hubBoxPublic, start, urlOf } from "./index.ts";
+import { hubBoxKey, hubBoxPublic, start, teamable, teamScope, urlOf } from "./index.ts";
 
 export function register(tools: Registry): void {
   tools.add("mcp_oauth_start", async (hub, caller, input) => {
     const scope = checkScope(input.scope);
-    mayChange(caller, scope);
-    if (scope.kind === "global") {
-      throw new ToolError(
-        "invalid",
-        "Signing in connects one bot's server, with your own account; a global server reaches every teammate's agents.",
-        "Add the server to the bot (a bot's Integrations), then sign in.",
-      );
+    const found = teamOr(hub, scope, input.name);
+    // Any person signs the team in to a service that takes no key (D592); a server with keys of its own is changed
+    // only by who may change it.
+    if (scope.kind === "global" && found !== undefined && teamable(found)) {
+      if (caller.kind !== "human" || caller.person === undefined) throw new ToolError("forbidden", "Only a person signs the team in to a service.");
+    } else {
+      mayChange(caller, scope);
+      projectOf(hub, scope);
     }
-    projectOf(hub, scope);
-    const server = mcpServers(hub).get(scope, input.name);
-    if (!server) throw notFound(scope, input.name);
+    if (!found) throw notFound(scope, input.name);
+    // A bot's server that signs in is the team's from now on: one sign-in for every bot.
+    const server = await teamScope(hub, found, caller.person?.personId);
     if (!urlOf(server)) {
       throw new ToolError(
         "invalid",
@@ -73,6 +75,7 @@ export function register(tools: Registry): void {
       return {
         authorizeUrl: started.signIn,
         redirectUri: redirect,
+        scope: server.scope,
         next: "Open authorizeUrl in the person's browser. Once they sign in, the server's oauth shows connected (event mcp.oauth); then test it.",
       };
     }
@@ -84,6 +87,7 @@ export function register(tools: Registry): void {
     }
     return {
       redirectUri: redirect,
+      scope: server.scope,
       needsClient: { issuer: started.needsClient, boxPubKey },
       next: "The service lets no app register itself: make an OAuth client there allowing redirectUri, then start again with client.",
     };

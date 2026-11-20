@@ -22,7 +22,9 @@ export function registerLeadCalls(hub: Hub): void {
     if (!server?.oauth) return { renewed: "signed_out" satisfies Renewed, problem: `${name} doesn't sign in for this bot.` };
     let renewed: Renewed;
     try {
-      renewed = call.refused === true ? await turnedAway(hub, server.scope, name) : await renewNow(hub, server.scope, name);
+      // The token the agent was turned away with: one older than the hub's is never renewed again or signed out.
+      const stale = typeof call.fingerprint === "string" ? call.fingerprint : undefined;
+      renewed = call.refused === true ? await turnedAway(hub, server.scope, name, stale) : await renewNow(hub, server.scope, name, stale);
     } catch (e) {
       throw new ToolError("failed", (e as Error).message, "try again shortly");
     }

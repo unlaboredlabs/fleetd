@@ -104,6 +104,7 @@ const render = async (hash: string, features: string[] = TEAM, page?: ReactNode,
       if (tool === "vault_status") return Promise.resolve({ ok: true, output: { hubBoxKey: "k", keyMode: "file", locked: false, keyMissing: false, recoverySaved: true, migration: { done: true, machines: [] } } });
       if (tool === "vault_move") return Promise.resolve({ ok: true, output: { item: { ...amazon } } });
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin: false } });
+      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
       if (tool === "project_settings_get")
         return Promise.resolve({ ok: true, output: { settings: { machineId: "devbox", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", setup: { commands: [], inputs: [] }, env: [{ name: "STRIPE_KEY", kind: "secret", fingerprint: "ab12cd34", bytes: 20, updatedAt: AT }], worktrees: { dir: "/w/wt", baseBranch: "main", worktrees: [] } } } });
       if (tool === "project_purchases") return Promise.resolve({ ok: true, output: { purchases: [], ...(card === undefined ? {} : { card }) } });

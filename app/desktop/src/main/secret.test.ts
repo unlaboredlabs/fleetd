@@ -248,7 +248,9 @@ describe("a person's own OAuth client for an MCP server's sign-in", () => {
     const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
     const request = { scope, name: "mail", hubUrl: "http://devbox:4790", boxPubKey: rust.publicKey, clientId: " my-client ", clientSecret: "s3cret-devbox\n" };
     expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", request]).ok).toBe(true);
-    expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", { ...request, scope: { kind: "global" } }]).ok).toBe(false);
+    // The team's sign-in too (D592); anything else no.
+    expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", { ...request, scope: { kind: "global" } }]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", { ...request, scope: { kind: "everyone" } }]).ok).toBe(false);
     expect((await submitMcpOauthClient(request, call)).ok).toBe(true);
     expect(sent[0]).toBe("mcp_oauth_start");
     const input = sent[1] as { client: { clientId: string; sealedSecret: string } };

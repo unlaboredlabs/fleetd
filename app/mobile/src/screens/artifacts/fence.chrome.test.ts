@@ -79,5 +79,7 @@ describe.skipIf(missing)("an HTML artifact in a real engine", () => {
       step("closed");
       udp.close();
     }
-  }, 30_000);
+    // A cold Chrome on a CI runner took 25 s to launch alone (run 44825506992: "launched at 25053 ms"), before the
+    // page's 6 s at most and the close: the budget covers a cold launch.
+  }, 90_000);
 });

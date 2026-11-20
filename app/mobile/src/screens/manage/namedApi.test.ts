@@ -3,8 +3,8 @@ import { NAMED, namedState, type McpServer } from "../../desktop";
 import type { Hub } from "./api";
 import { connect, disconnect, readServers, rowOf, signInPage, test, TEST_MS, testLine, turnOn } from "./namedApi";
 
-const REF = { machineId: "devbox", projectId: "ada" };
-const scope = { kind: "project" as const, ...REF };
+/** The team's: connected once for every bot (D592). */
+const scope = { kind: "global" as const };
 const PAPER = NAMED[0];
 if (PAPER === undefined) throw new Error("no Paper");
 
@@ -31,10 +31,10 @@ const stub = (answers: Record<string, unknown>) => {
   return { hub, calls };
 };
 
-describe("a bot's named services on the phone", () => {
+describe("the team's named services on the phone", () => {
   it("connects Paper as the desktop's manual form saves it: name, URL, no key, its agents too", async () => {
     const { hub, calls } = stub({ mcp_server_set: { server: paper() } });
-    const out = await connect(hub, PAPER, REF, []);
+    const out = await connect(hub, PAPER, []);
     expect(out).toEqual({ ok: true, value: paper() });
     expect(calls).toEqual([
       {
@@ -47,7 +47,7 @@ describe("a bot's named services on the phone", () => {
 
   it("takes paper-2 where paper is another server", async () => {
     const { hub, calls } = stub({ mcp_server_set: { server: paper({ name: "paper-2" }) } });
-    await connect(hub, PAPER, REF, [paper({ transport: { type: "http", url: "https://mcp.crm.example" } })]);
+    await connect(hub, PAPER, [paper({ transport: { type: "http", url: "https://mcp.crm.example" } })]);
     expect((calls[0]?.input as { name: string }).name).toBe("paper-2");
   });
 
@@ -66,17 +66,17 @@ describe("a bot's named services on the phone", () => {
 
   it("reads, tests, turns on and disconnects by the server's own scope and name", async () => {
     const { hub, calls } = stub({
-      mcp_servers_get: { global: [], project: [paper()], userServers: true },
+      mcp_servers_get: { global: [paper()], project: [], userServers: true },
       mcp_server_test: { machineId: "devbox", result: { tools: [{ name: "get_basic_info" }] } },
       mcp_server_set: { server: paper() },
       mcp_server_remove: { ok: true },
     });
-    expect(await readServers(hub, REF)).toEqual({ ok: true, value: [paper()] });
+    expect(await readServers(hub)).toEqual({ ok: true, value: [paper()] });
     expect(await test(hub, paper())).toEqual({ ok: true, value: { machineId: "devbox", result: { tools: [{ name: "get_basic_info" }] } } });
     await turnOn(hub, paper({ enabled: false }));
     expect(await disconnect(hub, paper())).toEqual({ ok: true, value: null });
     expect(calls.map((c) => c.tool)).toEqual(["mcp_servers_get", "mcp_server_test", "mcp_server_set", "mcp_server_remove"]);
-    expect(calls[0]?.input).toEqual({ project: REF });
+    expect(calls[0]?.input).toEqual({});
     expect(calls[1]?.ms).toBe(TEST_MS);
     expect((calls[2]?.input as { enabled: boolean }).enabled).toBe(true);
   });
