@@ -1,13 +1,15 @@
-// How the node's own fleetd reaches a hosted box. A provider's template holds the base recipe and Claude Code only,
-// so it doesn't change with every fleetd build; each box starts this small script under the template's Bun instead
-// (`bootArgv`), on the guest's port, taking a WebSocket only with the box's secret, as the guest does. Over that one
+// How the node's own fleetd reaches a hosted box. A provider's template may hold another fleetd build than the node's
+// (one built for an older release, a build of one's own), so each box starts this small script under the template's Bun
+// first (`bootArgv`), on the guest's port, taking a WebSocket only with the box's secret, as the guest does. Over that one
 // link the node hands it its fleetd (`deliver`): the URL of this very build's release asset, which the box fetches
-// itself, or, where there is none (a build of one's own), the binary's bytes. The script checks the SHA-256, then
-// runs `fleetd sandbox-guest` on the same port and waits on it: the node dials again and finds the guest.
+// itself, or, where there is none (a build of one's own), the binary's bytes. A template built for this release holds
+// that build at FLEETD_PATH already: the script starts it there when its SHA-256 is the one asked for, fetching
+// nothing. The script checks the SHA-256, then runs `fleetd sandbox-guest` on the same port and waits on it: the node
+// dials again and finds the guest.
 //
 // The script's text holds no value: the secret is its environment's, given at start, never at create.
 import type { Duplex as WebDuplex } from "../../../sandbox/providers/index.ts";
-import { GUEST_PORT, SECRET_HEADER } from "../../../sandbox/providers/index.ts";
+import { FLEETD_PATH, GUEST_PORT, SECRET_HEADER } from "../../../sandbox/providers/index.ts";
 import boot from "./boot.mjs" with { type: "text" };
 
 /** Where the box keeps fleetd and the guest's files: the box user's own, outside any path the node mirrors. */
@@ -28,7 +30,7 @@ export function bootArgv(dirs: string[] = []): { argv: string[]; env: Record<str
     .map((d) => `d=${shq(d)}; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || sudo -n mkdir -p "$d"; [ -w "$d" ] || sudo -n chown "$(id -u):$(id -g)" "$d"`);
   return {
     argv: ["sh", "-c", [...make, `exec bun -e ${shq(SCRIPT)}`].join("; ")],
-    env: { FLEETD_BOOT_PORT: String(GUEST_PORT), FLEETD_BOOT_DIR: BOX_DIR },
+    env: { FLEETD_BOOT_PORT: String(GUEST_PORT), FLEETD_BOOT_DIR: BOX_DIR, FLEETD_BOOT_BAKED: FLEETD_PATH },
   };
 }
 

@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
-import { hostedCheck, hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
+import { bakedName, hostedCheck, hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
+import { Stages } from "../../../shared/stages.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
@@ -35,6 +36,10 @@ export const EXTEND_MS = 20 * 60_000;
 export const DOWN_MS = ASIDE_MS;
 /** How long a box's bootstrap or guest may take to answer its first dial. */
 const UP_MS = 90_000;
+/** The longest wait between two dials of a box coming up: it answers within a second of being ready. */
+const DIAL_MAX_MS = 1000;
+/** How many of the account's templates are kept, newest first: this release's and the one before (`#prune`). */
+export const KEEP_TEMPLATES = 2;
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
@@ -73,7 +78,7 @@ export class Boxes {
     readonly machineId: string,
     private readonly opener: Opener,
     /** Tests: another provider than the real clients, another fleetd source, and how long a new box is left alone. */
-    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number } = {},
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number; released?: (url: string) => Promise<boolean> } = {},
   ) {
     for (const p of PROVIDERS) {
       const sealed = this.#keyFile(p);
@@ -122,7 +127,9 @@ export class Boxes {
     }
     // The hub sends the keys at each link and when one is connected: the template is built then, in the background,
     // never at a person's message.
-    for (const p of this.connected()) this.ahead(p);
+    void this.#probe().then(() => {
+      for (const p of this.connected()) this.ahead(p);
+    });
   }
 
   /** The providers this node holds a key for. */
@@ -207,6 +214,7 @@ export class Boxes {
    * template at all waits on a build. boat sizes a box at create, so one serves every size; a provider that fixed a
    * box's size in its template would build one per size (`<name>-<cpu>c<mem>g`). */
   async template(p: ProviderId, size: Size = DEFAULT_SIZE, said?: (step: HostedStep) => void): Promise<string> {
+    await this.#probe();
     const { name, file, key } = this.#named(p, size);
     let kept: { name?: string; id?: string } = {};
     try {
@@ -228,10 +236,44 @@ export class Boxes {
     return run.done;
   }
 
-  /** The recipe's template name for `p` and `size`, this machine's note of it, and its key among the runs. */
+  /** The template name for `p` and `size`, this machine's note of it, and its key among the runs: the recipe's, with
+   * this node's fleetd in it where that is a release build (`baked`), whose boxes then start it without a fetch. */
   #named(p: ProviderId, size: Size) {
     const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
-    return { name: `${this.templateName()}${sized}`, sized, file: join(this.home, "sandbox", `template-${p}${sized}.json`), key: `${p}${sized}` };
+    const baked = this.#baked();
+    const name = baked ? bakedName(this.templateName(), baked.sha256) : this.templateName();
+    return { name: `${name}${sized}`, sized, baked, file: join(this.home, "sandbox", `template-${p}${sized}.json`), key: `${p}${sized}` };
+  }
+
+  /** This node's fleetd as a template holds it, once `#probe` found it: a release build's URL and SHA-256. Undefined
+   * for a build of one's own (its URL names an asset no release has), a release whose asset isn't published there, a
+   * machine that makes no boxes, or before the probe. */
+  #bakedMemo: { url: string; sha256: string } | undefined;
+  #probed: Promise<void> | undefined;
+  #baked(): { url: string; sha256: string } | undefined {
+    return this.#bakedMemo;
+  }
+
+  /** Finds once whether this node's fleetd is a published release asset (`source().url` answers), the only one a
+   * template's build can fetch: a URL is every machine's (a build of one's own gets one that answers 404). A template
+   * of a build that isn't one holds no fleetd, and its boxes fetch or take it at their start as before. */
+  #probe(): Promise<void> {
+    return (this.#probed ??= (async () => {
+      let s: Source;
+      try {
+        s = this.source();
+      } catch {
+        return;
+      }
+      if (!s.url) return;
+      const released = this.o.released ?? (async (url: string) => (await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(15_000) })).ok);
+      let ok = false;
+      try {
+        ok = await released(s.url);
+      } catch {}
+      if (ok) this.#bakedMemo = { url: s.url, sha256: s.sha256 };
+      else console.log(`${nowIso()} INFO this machine's fleetd isn't a published release: its hosted template holds none {"url":${JSON.stringify(s.url)}}`);
+    })());
   }
 
   /** Builds this recipe's template in the background unless it is there or under way: the account's saved templates
@@ -239,7 +281,7 @@ export class Boxes {
    * never saved over; else it is built. A run that failed stays failed (boxes start from the last good) until the next
    * call: the next link or connected key. Undefined when the template is noted already. */
   ahead(p: ProviderId, size: Size = DEFAULT_SIZE): Run | undefined {
-    const { name, sized, file, key } = this.#named(p, size);
+    const { name, sized, baked, file, key } = this.#named(p, size);
     const was = this.#runs.get(key);
     if (was && !was.failed) return was;
     try {
@@ -254,7 +296,7 @@ export class Boxes {
       r.done.catch(() => {});
       return r;
     }
-    const recipe = hostedDockerfile();
+    const recipe = hostedDockerfile(baked);
     const keep = (id: string) => {
       mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
       writeFileSync(file, JSON.stringify({ name, id }));
@@ -284,7 +326,9 @@ export class Boxes {
           // Saved only once what a start runs is proven in it (recipe.ts templateCheck).
           const id = await client.build(recipe, { name, size, onLog: () => {}, labels: { [MACHINE_LABEL]: label(this.machineId) }, onBox: (box) => void (release = this.hold(box)), check: hostedCheck() });
           console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
-          return keep(id);
+          keep(id);
+          void this.#prune(client, p, sized);
+          return id;
         } finally {
           release();
         }
@@ -299,6 +343,29 @@ export class Boxes {
     run.done.catch(() => {});
     this.#runs.set(key, run);
     return run;
+  }
+
+  /** Deletes the account's ready templates past the newest KEEP_TEMPLATES (each costs by the day past the plan's
+   * included ones). Only templates (`lastGood`'s names), never a bot's computer image, never one still saving. A
+   * machine still on an older release whose template went starts from a newer one (`create`'s second try). */
+  async #prune(client: Provider, p: ProviderId, sized: string): Promise<void> {
+    if (!client.saved || !client.forget) return;
+    try {
+      const ready = (await client.saved("fleetd-")).filter((t) => t.status === "ready" && isTemplate(t.name, sized)).sort(newestFirst);
+      for (const t of ready.slice(KEEP_TEMPLATES)) {
+        await client.forget(t.name);
+        console.log(`${nowIso()} INFO an old hosted sandbox template is deleted {"provider":"${p}","name":"${t.name}"}`);
+      }
+    } catch (error) {
+      console.warn(`${nowIso()} WARN old hosted sandbox templates not deleted {"provider":"${p}","error":${JSON.stringify((error as Error).message)}}`);
+    }
+  }
+
+  /** Forgets this machine's note and run of `p`'s template: the account no longer has the one it named. */
+  #forget(p: ProviderId, size: Size = DEFAULT_SIZE): void {
+    const { file, key } = this.#named(p, size);
+    rmSync(file, { force: true });
+    this.#runs.delete(key);
   }
 
   /** Where this node's fleetd comes from for a box: its own binary, and its release asset where it has one. */
@@ -323,11 +390,27 @@ export class Boxes {
     // A size the provider has no exact box of is refused here, before any box or template is made.
     const not = size ? notOffered(p, size, NAMES[p]) : undefined;
     if (not) throw new ProviderError("failed", not);
-    const template = o.template ?? (await this.template(p, size, (step) => stepped(session, step)));
-    // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
-    // box must be a new one.
-    const key = `fleetd-${randomBytes(12).toString("hex")}`;
-    const made = await client.create({ template, key, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });
+    // Each step's time to the log, at info when the box was slow to come up (shared/stages.ts).
+    const stages = new Stages("hosted computer", session);
+    let template = o.template ?? (await this.template(p, size, (step) => stepped(session, step)));
+    stages.done("template");
+    const make = () =>
+      // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
+      // box must be a new one.
+      client.create({ template, key: `fleetd-${randomBytes(12).toString("hex")}`, labels: { [MACHINE_LABEL]: label(this.machineId), [SESSION_LABEL]: label(session) }, lifetimeMs: LIFETIME_MS, ...(size ? { size } : {}), ...(o.keep ? { keep: true } : {}) });
+    let made: Awaited<ReturnType<Provider["create"]>>;
+    try {
+      made = await make();
+    } catch (error) {
+      // The template this machine noted is gone (another machine deleted an old one, or a person did): looked up again,
+      // once.
+      if (o.template || !(error instanceof ProviderError) || error.code !== "snapshot_not_found") throw error;
+      console.warn(`${nowIso()} WARN the hosted sandbox template a box was to start from is gone: looking again {"provider":"${p}","template":"${template}"}`);
+      this.#forget(p, size);
+      template = await this.template(p, size, (step) => stepped(session, step));
+      made = await make();
+    }
+    stages.done("create");
     const record: BoxRecord = { kind: "hosted", provider: p, boxId: made.id, secret: randomBytes(24).toString("base64url"), tcp };
     this.#making.add(made.id);
     // Its caller writes the record at once; until a while after, the reaper leaves the box.
@@ -335,14 +418,19 @@ export class Boxes {
     try {
       const boot = bootArgv(dirs);
       await client.start(made.id, { argv: boot.argv, env: { ...boot.env, FLEETD_BOX_SECRET: record.secret } });
+      stages.done("start");
       // Until fleetd's guest answers: a provider's proxy may take the link before the bootstrap listens.
       const deadline = Date.now() + UP_MS;
-      for (let wait = 250; ; wait = Math.min(wait * 2, 3000)) {
+      for (let wait = 250; ; wait = Math.min(wait * 2, DIAL_MAX_MS)) {
         const link = await this.#dialUp(record);
         let word: Awaited<ReturnType<typeof firstWord>>;
         try {
           word = await firstWord(link);
-          if (word === "bootstrap") await deliver(link, this.source());
+          if (word === "bootstrap") {
+            stages.done("bootstrap up");
+            await deliver(link, this.source());
+            stages.done("fleetd");
+          }
         } finally {
           link.close();
         }
@@ -351,6 +439,8 @@ export class Boxes {
         if (Date.now() + wait >= deadline) throw new ProviderError("unreachable", `fleetd's guest didn't answer in the box within ${UP_MS / 1000} s`);
         await Bun.sleep(word === "bootstrap" ? 300 : wait);
       }
+      stages.done("guest up");
+      stages.end();
       return record;
     } catch (error) {
       await client.destroy(made.id).catch(() => {});
@@ -363,7 +453,7 @@ export class Boxes {
   /** The box's port, dialled until something there answers. */
   async #dialUp(b: BoxRecord) {
     const deadline = Date.now() + UP_MS;
-    for (let wait = 250; ; wait = Math.min(wait * 2, 3000)) {
+    for (let wait = 250; ; wait = Math.min(wait * 2, DIAL_MAX_MS)) {
       try {
         return await this.client(b.provider).connect(b.boxId, GUEST_PORT, b.secret);
       } catch (error) {
@@ -458,12 +548,16 @@ export class Boxes {
   }
 }
 
-/** The newest ready template of another recipe than `name`, with when it was saved: only one whose build proved what a
- * start runs before its save (`fleetd-t<hash><sized>`, recipe.ts templateName), never an older name's (one of those
- * couldn't run a session) nor a bot's computer image. */
+/** Whether `name` is a template whose build proved what a start runs before its save (`fleetd-t<hash>`, recipe.ts
+ * templateName, or `fleetd-t<hash>-f<fleetd>` with a release's fleetd in it, then `sized`): never a name from before
+ * builds proved it (one of those couldn't run a session), nor a bot's computer image. */
+const isTemplate = (name: string, sized: string) => new RegExp(`^fleetd-t[0-9a-f]{12}(-f[0-9a-f]{12})?${sized.replace(/[^a-z0-9-]/g, "")}$`).test(name);
+const newestFirst = (a: Saved, b: Saved) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0);
+
+/** The newest ready template other than `name` (`isTemplate`'s), with when it was saved: another recipe's, or this
+ * one's with another release's fleetd in it. */
 function lastGood(all: Saved[], name: string, sized: string): { id: string; at: string } | undefined {
-  const re = new RegExp(`^fleetd-t[0-9a-f]{12}${sized.replace(/[^a-z0-9-]/g, "")}$`);
-  const ready = all.filter((t) => t.status === "ready" && t.name !== name && re.test(t.name)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  const ready = all.filter((t) => t.status === "ready" && t.name !== name && isTemplate(t.name, sized)).sort(newestFirst);
   return ready[0] ? { id: ready[0].name, at: ready[0].at } : undefined;
 }
 

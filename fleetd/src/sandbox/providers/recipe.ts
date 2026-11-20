@@ -83,8 +83,9 @@ function envPairs(rest: string): string[] {
 export type HostedPins = {
   /** `TESTED` of runner/claude.ts. */
   claude: string;
-  /** The fleetd release binary for linux x64 and its SHA-256. The hosted kind leaves it out: each box gets the node's
-   * own fleetd at its start (node/sandbox/remote/bootstrap.ts), so a template outlives fleetd's updates. */
+  /** The fleetd release binary for linux x64 and its SHA-256, at FLEETD_PATH: a box's bootstrap starts that one when
+   * it is the node's own build, and fetches the node's otherwise (node/sandbox/remote/bootstrap.ts), so a template
+   * built for one release still serves the next. */
   fleetd?: { url: string; sha256: string };
 };
 
@@ -109,6 +110,9 @@ export function templateCheck(claude: string): string {
   return `test -x ${CLAUDE_PATH} && ${CLAUDE_PATH} --version | grep -q '^${claude.replaceAll(".", "\\.")} ' && bun --version >/dev/null`;
 }
 
+/** Where a hosted template holds fleetd (`HostedPins.fleetd`), which a box's bootstrap looks at first. */
+export const FLEETD_PATH = "/usr/local/bin/fleetd";
+
 /** The tunnel that carries a box's tailnet connections to its guest (node/sandbox/tailnet_box.ts): hev-socks5-tunnel
  * (MIT), its static x86_64 build, pinned. */
 export const TUNNEL = {
@@ -128,9 +132,9 @@ export function hosted(base: string, pins: HostedPins): string {
   if (f && !/^https:\/\/[^\s'"]+$/.test(f.url)) throw new Error("fleetd's pin needs an https URL");
   parse(base);
   const fleetd = f
-    ? `RUN curl -fsSL ${f.url} -o /usr/local/bin/fleetd \\
- && echo '${f.sha256}  /usr/local/bin/fleetd' | sha256sum -c - \\
- && chmod 755 /usr/local/bin/fleetd
+    ? `RUN curl -fsSL ${f.url} -o ${FLEETD_PATH} \\
+ && echo '${f.sha256}  ${FLEETD_PATH}' | sha256sum -c - \\
+ && chmod 755 ${FLEETD_PATH}
 `
     : "";
   return `${base.trimEnd()}
@@ -158,7 +162,12 @@ export function templateName(dockerfile: string): string {
 /** The hosted template's Dockerfile as fleetd builds it: its base (../image/Dockerfile) and the Claude Code fleetd was
  * tested with. Whoever builds a team's template names it from this (`templateName`), so every builder finds the same
  * one. */
-export const hostedDockerfile = (): string => hosted(base, { claude: TESTED });
+export const hostedDockerfile = (fleetd?: HostedPins["fleetd"]): string => hosted(base, { claude: TESTED, ...(fleetd ? { fleetd } : {}) });
 /** The check every hosted template's build passes before its save: `templateCheck` at the Claude Code fleetd was tested
  * with. */
 export const hostedCheck = (): string => templateCheck(TESTED);
+
+/** The name a hosted template holding fleetd `sha256` (`hostedDockerfile(fleetd)`) is saved under: its recipe's own
+ * name (`templateName(hostedDockerfile())`, which a bot's computer image keys on, so a release builds none of those
+ * again) and its fleetd build's, so each release has one of its own. */
+export const bakedName = (recipe: string, sha256: string): string => `${recipe}-f${sha256.slice(0, 12)}`;

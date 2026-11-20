@@ -13,7 +13,7 @@
 //   image, saves it as a saved snapshot, and deletes the box. That image comes with apt sources of its own besides
 //   Ubuntu's (the ondrej/php PPA), which the recipe doesn't use and which can break `apt-get update` from outside
 //   (a changed release info, an unreachable host): the build drops them first (`APT_OWN`).
-import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, notOffered, type ProviderAuth, sameSize, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
+import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, notOffered, type ProviderAuth, sameSize, type Saved, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
 import { envFile, envPath, launcher, shq } from "./shell.ts";
@@ -39,6 +39,10 @@ const BUILD_UP_MS = 10 * 60_000;
  * answering (`unreachable`), so a hung step or a save stuck in "saving" fails every start waiting on it, with why. */
 export const STEP_MS = 15 * 60_000;
 export const SAVE_MS = 20 * 60_000;
+/** A call to a box still starting is tried again this often, for at most STARTING_MS in all (20 s, the ten tries two
+ * seconds apart it was). */
+export const STARTING_POLL_MS = 250;
+export const STARTING_MS = 20_000;
 /** A template build's first step: only Ubuntu's own apt sources stay (noble's ubuntu.sources), and a change of their
  * release info (an Ubuntu point release) is taken rather than failing `apt-get update`. */
 export const APT_OWN = `for f in /etc/apt/sources.list.d/*; do [ -e "$f" ] || continue; [ "\${f##*/}" = ubuntu.sources ] || rm -rf -- "$f"; done
@@ -54,20 +58,24 @@ export function typeFor(size: Size): string {
 export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
   const http = new Http({ name: NAME, base: o.urls?.api ?? API, headers: { Authorization: `Bearer ${auth.key}` }, key: auth.key, fetch: o.fetch, signal: o.signal, refine });
   const pollMs = o.pollMs ?? 2000;
+  /** How often a box still starting is asked again: every STARTING_POLL_MS, for at most STARTING_MS in all. */
+  const startingMs = Math.min(pollMs, STARTING_POLL_MS);
   const now = o.now ?? Date.now;
   /** Each box's port URLs, token included: boat answers the same one again, so this only saves a call. */
   const hosted = new Map<string, string>();
   const box = (id: string) => `/sandboxes/${encodeURIComponent(id)}`;
 
-  /** A call to the box's machine, tried again while the box is still starting or restoring (boat says when it may be). */
+  /** A call to the box's machine, tried again while the box is still starting or restoring (boat says when it may be):
+   * asked often, since a box's start waits on it, for as long in all as before (STARTING_MS). */
   async function onBox(method: string, path: string, c: Parameters<Http["call"]>[2] = {}): Promise<Answer> {
-    for (let tries = 0; ; tries++) {
+    const until = now() + STARTING_MS;
+    for (;;) {
       try {
         return await http.call(method, path, c);
       } catch (e) {
         const again = e instanceof ProviderError && (e.code === "sandbox_starting" || e.code === "boat_starting" || (e.status === 502 && /sandbox_restoring/.test(e.message)));
-        if (!again || tries >= 10) throw e;
-        await pause(pollMs, c.signal);
+        if (!again || now() + startingMs > until) throw e;
+        await pause(startingMs, c.signal);
       }
     }
   }
@@ -220,8 +228,16 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     },
 
     async saved(prefix, o = {}) {
-      const a = await http.call("GET", "/saved-snapshots", { query: { namePrefix: prefix }, signal: o.signal });
-      return ((a.body?.snapshots ?? []) as any[]).map((s) => ({ name: String(s.name), status: s.status, at: String(s.createdAt ?? "") }));
+      // Every page: boat documents none for this list, but one it sends is followed, as `list` does, so a template
+      // never drops off the first page behind a bot's many images (which share the prefix).
+      const out: Saved[] = [];
+      let cursor: string | undefined;
+      do {
+        const a = await http.call("GET", "/saved-snapshots", { query: { namePrefix: prefix, cursor }, signal: o.signal });
+        for (const s of (a.body?.snapshots ?? []) as any[]) out.push({ name: String(s.name), status: s.status, at: String(s.createdAt ?? "") });
+        cursor = a.body?.pageInfo?.hasMore ? (a.body.pageInfo.nextCursor ?? undefined) : undefined;
+      } while (cursor);
+      return out;
     },
 
     settled: (name, o = {}) => settle(name, o.signal),

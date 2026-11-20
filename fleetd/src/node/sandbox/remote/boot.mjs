@@ -1,4 +1,4 @@
-const { mkdirSync, writeFileSync, renameSync, appendFileSync } = require("node:fs");
+const { mkdirSync, writeFileSync, renameSync, appendFileSync, readFileSync, rmSync, symlinkSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 const { timingSafeEqual } = require("node:crypto");
 const secret = Buffer.from(process.env.FLEETD_BOX_SECRET || "");
@@ -8,11 +8,28 @@ mkdirSync(dir, { recursive: true, mode: 0o700 });
 const bin = dir + "/fleetd";
 const log = (m) => appendFileSync(dir + "/boot.log", new Date().toISOString() + " " + m + "\n");
 let want = null, parts = [], got = 0, done = false;
+const sha256 = (bytes) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 function finish(ws, bytes) {
-  const sha = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  const sha = sha256(bytes);
   if (sha !== want.sha256) throw new Error("fleetd's SHA-256 is " + sha + ", not " + want.sha256);
   writeFileSync(bin + ".part", bytes, { mode: 0o755 });
   renameSync(bin + ".part", bin);
+  run(ws);
+}
+// The template's own fleetd, when it is the very build the node asks for: started where it is, with nothing fetched.
+function baked(ws) {
+  const at = process.env.FLEETD_BOOT_BAKED;
+  if (!at) return false;
+  let bytes;
+  try { bytes = readFileSync(at); } catch { return false; }
+  if (sha256(bytes) !== want.sha256) { log("the template's fleetd is another build"); return false; }
+  rmSync(bin, { force: true });
+  symlinkSync(at, bin);
+  log("the template's fleetd is the node's");
+  run(ws);
+  return true;
+}
+function run(ws) {
   done = true;
   ws.send(JSON.stringify({ ok: true }));
   setTimeout(() => {
@@ -38,6 +55,7 @@ const server = Bun.serve({
       try {
         if (typeof m === "string") {
           want = JSON.parse(m); parts = []; got = 0;
+          if (baked(ws)) return;
           if (want.url) {
             log("fetching fleetd");
             const r = await fetch(want.url);

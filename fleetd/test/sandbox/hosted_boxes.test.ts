@@ -4,12 +4,13 @@
 // then commands, files in and out, and the box's delete, and the reaper of boxes no session holds. The bootstrap and
 // the guest run here as the provider would run them in the box.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { boatStandIn, KEY, localRunner, type StandIn, type Step } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { Boxes, DOWN_MS, hostable, MACHINE_LABEL, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
-import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
+import { BOX_DIR, type Source } from "../../src/node/sandbox/remote/bootstrap.ts";
+import { FLEETD_PATH } from "../../src/sandbox/providers/recipe.ts";
 import { type Box } from "../../src/node/sandbox/box.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
@@ -38,11 +39,16 @@ afterEach(async () => {
 
 /** A stand-in for `id` whose boxes run here, each with a port and a box dir of its own. `o.step`: how a template
  * build's commands end; `o.before`: what the account holds before the keys come (`name`: this recipe's template). */
-async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, name: string) => void } = {}) {
+async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, name: string) => void; source?: () => Source; baked?: string; released?: (url: string) => Promise<boolean> } = {}) {
   const dir = join(root, `w${++made}`);
   mkdirSync(dir, { recursive: true });
   const local = localRunner(join(dir, "boxes"), BOX_DIR);
   cleanups.push(local.cleanup);
+  // Where the box's template holds fleetd, here.
+  if (o.baked) {
+    const rewrite = local.runner.rewrite;
+    local.runner.rewrite = (box, text) => rewrite(box, text).replaceAll(FLEETD_PATH, o.baked!);
+  }
   const s = boatStandIn(local.runner, o.step);
   running.push(s);
   local.track(s);
@@ -51,7 +57,8 @@ async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, nam
   mkdirSync(home, { recursive: true });
   const boxes = new Boxes(home, "devbox", { open: (b) => b }, {
     provider: (p, auth) => provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
-    source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
+    source: o.source ?? (() => ({ sha256: sha(FLEETD), bytes: async () => FLEETD })),
+    ...(o.released ? { released: o.released } : {}),
   });
   o.before?.(s, boxes.templateName());
   boxes.setKeys({ [id]: Buffer.from(JSON.stringify({ provider: id, key: KEY })).toString("base64") });
@@ -272,6 +279,86 @@ test("a template's build box carries the machine's label: the reaper leaves it w
   const orphan = await boxes.client("boat").create({ template: "t", key: "k-orphan", labels: { [MACHINE_LABEL]: "devbox", "fleetd-build": "fleetd-000000000000" }, lifetimeMs: 60_000 });
   expect(await boxes.reap(() => new Set())).toBe(1);
   expect(s.boxes.has(orphan.id)).toBe(false);
+}, 60_000);
+
+/** A release build's source: its URL (nothing answers there, so a fetch fails and the node sends the bytes) and SHA. */
+const release = (): Source => ({ sha256: sha(FLEETD), url: "https://127.0.0.1:9/fleetd-linux-x64", bytes: async () => FLEETD });
+/** A box's bootstrap log, in the stand-in's dir of that box. */
+const bootLog = (home: string, boxId: string) => readFileSync(join(home, "..", "boxes", boxId, "boot.log"), "utf8");
+
+test("a template built for this release holds its fleetd, and a box from it starts that one, fetching nothing (W755 fix 5)", async () => {
+  const baked = join(root, `baked-${++made}`);
+  writeFileSync(baked, FLEETD, { mode: 0o755 });
+  const { s, boxes, home } = await world("boat", { source: release, baked, released: async () => true });
+  const name = await boxes.template("boat");
+  // Saved under the recipe's name and the release's fleetd; a bot's computer image keys on the recipe's alone.
+  expect(name).toBe(`${boxes.templateName()}-f${sha(FLEETD).slice(0, 12)}`);
+  expect(boxes.templateName()).toMatch(/^fleetd-t[0-9a-f]{12}$/);
+  // The build fetched and checked that very build into the template.
+  const steps = s.calls.filter((c) => c.method === "POST" && /\/commands$/.test(c.path)).map((c) => String(c.body.command));
+  expect(steps.some((c) => c.includes("https://127.0.0.1:9/fleetd-linux-x64") && c.includes(`${sha(FLEETD)}  ${FLEETD_PATH}`))).toBe(true);
+  const record = await boxes.create("boat", "sess-baked", [], []);
+  expect(bootLog(home, record.boxId)).toContain("the template's fleetd is the node's");
+  expect(bootLog(home, record.boxId)).not.toContain("fetching fleetd");
+  expect(lstatSync(join(home, "..", "boxes", record.boxId, "fleetd")).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(join(home, "..", "boxes", record.boxId, "fleetd"))).toBe(baked);
+  await boxes.destroy(record);
+}, 60_000);
+
+test("a fleetd that isn't a published release (a build of one's own) bakes nothing: the plain template, and the box takes it at its start", async () => {
+  const asked: string[] = [];
+  // Its URL answers 404, as a build of one's own's does.
+  const { s, boxes, home } = await world("boat", { source: release, released: async (url) => (asked.push(url), false) });
+  expect(await boxes.template("boat")).toBe(boxes.templateName());
+  expect(asked).toEqual(["https://127.0.0.1:9/fleetd-linux-x64"]);
+  // Its recipe fetched no fleetd: a build that would fail on a 404.
+  const steps = s.calls.filter((c) => c.method === "POST" && /\/commands$/.test(c.path)).map((c) => String(c.body.command));
+  expect(steps.some((c) => c.includes("127.0.0.1:9"))).toBe(false);
+  const record = await boxes.create("boat", "sess-own", [], []);
+  expect(bootLog(home, record.boxId)).toContain("starting the guest");
+  await boxes.destroy(record);
+  // Asked once per process.
+  await boxes.template("boat");
+  expect(asked).toHaveLength(1);
+}, 60_000);
+
+test("a template holding another fleetd build: the box takes the node's as before", async () => {
+  const baked = join(root, `baked-${++made}`);
+  writeFileSync(baked, new TextEncoder().encode("#!/bin/sh\nexit 3\n"), { mode: 0o755 });
+  const { boxes, home } = await world("boat", { source: release, baked, released: async () => true });
+  const record = await boxes.create("boat", "sess-other", [], []);
+  const log = bootLog(home, record.boxId);
+  expect(log).toContain("the template's fleetd is another build");
+  // Its fetch failed here (nothing at the URL), so the node sent the bytes; the guest came up on them.
+  expect(log).toContain("starting the guest");
+  await boxes.destroy(record);
+}, 60_000);
+
+test("a new template's build deletes the account's older templates past the newest two, never a bot's image", async () => {
+  const { s, boxes } = await world("boat", {
+    before: (s) => {
+      seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+      seed(s, "fleetd-tbbbbbbbbbbbb-f0123456789ab", "2026-11-17T09:00:00Z");
+      seed(s, "fleetd-tcccccccccccc", "2026-11-10T09:00:00Z");
+      seed(s, "fleetd-p1-0123456789ab", "2026-11-01T09:00:00Z");
+      seed(s, "fleetd-tdddddddddddd", "2026-11-09T09:00:00Z", "saving");
+    },
+  });
+  await boxes.template("boat");
+  await until(() => !s.saved!.has("fleetd-tcccccccccccc"));
+  expect([...s.saved!.keys()].sort()).toEqual([boxes.templateName(), "fleetd-taaaaaaaaaaaa", "fleetd-tdddddddddddd", "fleetd-p1-0123456789ab"].sort());
+}, 60_000);
+
+test("a box whose noted template was deleted looks again and starts, never set aside for it", async () => {
+  const { s, boxes } = await world("boat");
+  const name = await boxes.template("boat");
+  // Another machine of the team pruned it; this one's note still names it.
+  await boxes.client("boat").forget!(name);
+  seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+  const record = await boxes.create("boat", "sess-gone", [], []);
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
+  expect(boxes.usable()).toEqual(["boat"]);
+  await boxes.destroy(record);
 }, 60_000);
 
 test("boat.dev's start rate sets it aside for a minute, in its own words, not the plan's limit (W8)", () => {
