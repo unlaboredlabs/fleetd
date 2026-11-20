@@ -46,6 +46,8 @@ let prompts: Record<string, boolean>;
 let edited: Record<string, "global" | "project">;
 /** The edited prompts whose built-in text changed since. */
 let stale: ReadonlySet<string>;
+/** sandbox_get's answer; undefined: not faked (no provider shown). */
+let sandbox: unknown;
 
 const version = (id: string, text: string) => ({ ref: `${id}@1`, text });
 
@@ -86,6 +88,7 @@ beforeEach(() => {
   prompts = { "lead.start": true, "task.brief.write": true, instructions: true };
   edited = {};
   stale = new Set();
+  sandbox = undefined;
   vi.stubGlobal("fleetd", { platform: "linux", fixture: null, openExternal: () => Promise.resolve({ ok: true }), system: { hostName: () => Promise.resolve("devbox") },
     // Add machine, on Machines: this computer isn't one of the hub's, and nothing is joining.
     machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
@@ -124,7 +127,9 @@ const render = async (node: React.ReactNode) => {
                 ? { skills: [] }
                 : tool === "machine_roles_get"
                   ? { machines: [] }
-                  : undefined;
+                  : tool === "sandbox_get"
+                    ? sandbox
+                    : undefined;
       return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -413,4 +418,19 @@ it("keeps Settings' instructions to one bot's, with no text for every bot", asyn
   await type(text, "Use pnpm.");
   await click(button("Save"));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "project", projectRef: { machineId: "devbox", projectId: "storefront" }, text: "Use pnpm." })]);
+});
+
+it("lands a link to the hosted sandboxes on Machines at boat.dev's row, never a machine page for them", async () => {
+  sandbox = { boxPubKey: "AAAA", placing: true, providers: [{ provider: "boat", connected: true, limit: 20 }] };
+  window.location.hash = "#/settings/hub/machines/hosted";
+  await render(admin);
+  for (let i = 0; i < 4; i++) await settle();
+  expect(window.location.hash).toBe("#/settings/hub/machines");
+  const row = host.querySelector<HTMLElement>("[data-sandbox='boat']");
+  expect(row).not.toBeNull();
+  expect(row?.contains(document.activeElement)).toBe(true);
+  // None of a machine page's controls: Repair, its version, Used for, At once, Remove.
+  const text = host.textContent;
+  for (const word of ["Repair", "Remove…", "Used for", "fleetd 0.0.0"]) expect(text).not.toContain(word);
+  expect(host.querySelector("[data-screen^='settings.machine']")).toBeNull();
 });

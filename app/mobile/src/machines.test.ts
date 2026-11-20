@@ -18,6 +18,7 @@ import {
   providersOf,
   providerValue,
   specOf,
+  teamMachines,
 } from "./machines";
 
 const at = "2026-11-17T09:00:00.000Z";
@@ -25,6 +26,11 @@ const sb = (provider: string, connected: boolean, limit = connected ? 5 : 0) => 
 const BOX = "box";
 
 describe("Settings › Machines", () => {
+  it("lists the team's computers, never the hub's runner for hosted sandboxes", () => {
+    const ms = [{ machineId: "devbox", runner: false }, { machineId: "hosted", runner: true }, { machineId: "studio" }];
+    expect(teamMachines(ms).map((m) => m.machineId)).toEqual(["devbox", "studio"]);
+  });
+
   it("is an admin's", () => {
     expect(machinesShown(true)).toBe(true);
     expect(machinesShown(false)).toBe(false);

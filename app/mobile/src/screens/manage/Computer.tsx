@@ -1,5 +1,6 @@
-// A bot's Computer, pushed from its screen, as the desktop's Computer section: Runs on, where every agent of the bot
-// runs (Automatic, or one real machine, provider and exact size together, a tap picking it), then for its own directory and each other
+// A bot's Computer, pushed from its screen, as the desktop's Computer section: Runs on, headed "Agents run on", where the
+// agents its lead starts run, the lead itself staying on the bot's machine (Automatic, or one real machine, provider and
+// exact size together, a tap picking it), then for its own directory and each other
 // repo, what its setup installs (its commands, read-only here; the desktop edits them), the image its agents' computers
 // start from (Ready, Building…, Failed with its log, Not built yet; when it was built and its size) and Rebuild
 // (project_image_rebuild). The hub's project.settings brings each change, a build's end too.
@@ -89,7 +90,7 @@ function RunsOn({ project: p, gen }: { project: ProjectSummary; gen: number }) {
     });
   };
   return (
-    <ListSection header="Runs on">
+    <ListSection header="Agents run on">
       {rows.flatMap((row) => [
         <ListRow
           key={row.key}

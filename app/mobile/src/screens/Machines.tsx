@@ -20,6 +20,7 @@ import {
   MAC,
   machinesRun,
   machineValue,
+  teamMachines,
   NONE,
   providersFooter,
   providersOf,
@@ -125,6 +126,7 @@ export function Machines() {
 
   const retention = mr?.retention;
   // The hub's runner for hosted sandboxes is no machine of the team's.
+  const team = teamMachines(state.machines);
   const ours = mr === undefined || machinesRun("agents", mr.machines.filter((m) => state.machines.find((x) => x.machineId === m.machineId)?.runner !== true));
   const current = sb?.linux ?? "ours_first";
   const choices = linuxChoices(sb?.providers ?? [], ours, current);
@@ -155,8 +157,8 @@ export function Machines() {
       refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={t.secondary} />}
     >
       <ListSection header="Machines">
-        {state.machines.length === 0 ? <ListRow title="No machines yet" chevron={false} /> : null}
-        {state.machines.map((m) => {
+        {team.length === 0 ? <ListRow title="No machines yet" chevron={false} /> : null}
+        {team.map((m) => {
           const v = machineValue(m);
           return <ListRow key={m.machineId} title={m.name} value={v.text} {...(v.warn ? { valueDot: t.warning } : {})} chevron={false} />;
         })}

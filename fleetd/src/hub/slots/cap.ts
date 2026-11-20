@@ -14,6 +14,7 @@ import type {
 } from "../../shared/contracts.ts";
 import { capRaisedText, fleetLine, machineLine, projectLine } from "../../shared/cap_lines.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { RUNNER_ID, runnerRefused } from "../../shared/sandbox.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
 import { requireRole, refused } from "../api/grants.ts";
@@ -163,6 +164,14 @@ export async function capSet(hub: Hub, caller: Caller, input: CapSetInput): Prom
   }
   if ((input.cap !== undefined || input.machine !== undefined) && !allowsEverywhere(caller, "admin")) {
     throw refused(caller, "admin");
+  }
+  // Hosted sandboxes have no max of their own: their provider's limit is how many run at once (board.ts ownCap).
+  if (input.machine?.machineId === RUNNER_ID) {
+    throw new ToolError(
+      "invalid",
+      runnerRefused("boat.dev's limit is how many run at once."),
+      "Set it on boat.dev's row in Settings › Hub › Machines › Providers.",
+    );
   }
   const hubStore = store(hub);
   if (input.machine && !hubStore.machineGet(input.machine.machineId)) throw unknownMachine(input.machine.machineId);

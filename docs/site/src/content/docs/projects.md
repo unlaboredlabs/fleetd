@@ -221,7 +221,7 @@ on. Its rows:
 
 | Row | Shows |
 |---|---|
-| Runs on | Where every agent of the bot runs: **Automatic**, or one real machine, provider and exact size together. See [Runs on](#runs-on). The bot's own Computer only. |
+| Runs on | Where the agents the lead starts run: **Automatic**, or one real machine, provider and exact size together. The lead itself stays on the bot's machine. See [Runs on](#runs-on). The bot's own Computer only. |
 | Image | **Built 3 h ago · 1.1 GB**, **Building…**, **Failed** with its **Log**, or **Not built yet**. |
 | Rebuild | Builds the image again now. Hidden while it builds, and with no setup commands. |
 | Setup | The [setup commands](#setup), which are the image's recipe. |
@@ -253,9 +253,10 @@ The image is the repo's setup commands run once, kept as the disk new agents sta
 
 ### Runs on {#runs-on}
 
-One pick per bot for where its agents run, each choice a real machine: provider and exact size together, as
-**Local VM · 2 vCPU / 4 GB** or **boat.dev · 4 vCPU / 8 GB**. Every agent of the bot gets exactly that machine, never another
-size or provider. The choices are:
+One pick per bot for where the agents its lead starts run, each choice a real machine: provider and exact size together,
+as **Local VM · 2 vCPU / 4 GB** or **boat.dev · 4 vCPU / 8 GB**. Every such agent gets exactly that machine, never another
+size or provider. The lead itself runs on the bot's machine whatever the pick (a bot on hosted sandboxes, in a boat.dev
+sandbox of its own), so what it runs itself runs there; the row's hover names that machine. The choices are:
 
 | Choice | Sizes |
 |---|---|

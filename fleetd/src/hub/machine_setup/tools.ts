@@ -1,7 +1,7 @@
 // machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove, machine_join and
 // machine_claude_login: an owner's or admin's device only, as
 // everything on the Hub pages of the app's Settings.
-import { RUNNER_ID } from "../../shared/sandbox.ts";
+import { RUNNER_ID, runnerRefused } from "../../shared/sandbox.ts";
 import type { MachineHost, MachineHostSource } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isMachineId, readSetup } from "../../cli/common.ts";
@@ -122,6 +122,11 @@ export function register(tools: Registry): void {
 
   tools.add("machine_join", (hub, caller, input) => {
     admin(caller);
+    // The hub's own runner joins with a code of the hub's own (hub/runner); a computer joining as it would get hosted's
+    // secrets and break hosted sandboxes for the team.
+    if (input.machineId === RUNNER_ID) {
+      throw new ToolError("invalid", runnerRefused("nothing joins as them."), "Join the computer under a name of its own.");
+    }
     const mac = input.mac === true;
     let join;
     try {

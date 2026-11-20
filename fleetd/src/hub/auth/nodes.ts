@@ -3,7 +3,7 @@
 // minted with no machine (the app's Connect a computer) takes the name the node asks for, made unique.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";
-import { RUNNER_ID } from "../../shared/sandbox.ts";
+import { RUNNER_ID, runnerRefused } from "../../shared/sandbox.ts";
 import { isoMs, sha256 } from "./index.ts";
 import {
   anotherComputer,
@@ -13,6 +13,8 @@ import {
   ENROLL_CODE_ID_LEN,
   enrolledAs,
   NAMELESS,
+  notTheRunner,
+  RUNNER_CODE,
   secret,
   SPENT_CODE_KEPT_MS,
   suffixed,
@@ -37,8 +39,19 @@ export class NodeKeys {
   ) {}
 
   /** One-time, valid for 15 minutes; replaces the machine's open one. With no machine, it enrolls a node under the
-   * name it asks for, made unique (freeId), and replaces none. `by` names the caller in the hub log. */
+   * name it asks for, made unique (freeId), and replaces none. `by` names the caller in the hub log. Never one for the
+   * hub's own runner's id: only createRunnerEnrollToken mints that. */
   createEnrollToken(machineId: string | undefined, by: string): EnrollToken {
+    if (machineId === RUNNER_ID) throw new Error(runnerRefused("nothing joins as them."));
+    return this.mint(machineId, machineId ?? NAMELESS, by);
+  }
+
+  /** The code the hub's runner (hub/runner) joins as RUNNER_ID with: the one way any node enrolls under that id. */
+  createRunnerEnrollToken(): EnrollToken {
+    return this.mint(RUNNER_ID, RUNNER_CODE, "the hub's runner");
+  }
+
+  private mint(machineId: string | undefined, row: string, by: string): EnrollToken {
     const now = this.clock.now();
     const expires = now + ENROLL_TTL_MS;
     const token = secret(ENROLL_PREFIX);
@@ -46,10 +59,8 @@ export class NodeKeys {
       const { changes } =
         machineId === undefined
           ? { changes: 0 }
-          : conn.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(machineId, now);
-      conn
-        .query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)")
-        .run(sha256(token), machineId ?? NAMELESS, expires);
+          : conn.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(row, now);
+      conn.query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)").run(sha256(token), row, expires);
       return changes;
     });
     // Never the code: its id is what `fleetd pair --worker-codes` lists.
@@ -66,7 +77,7 @@ export class NodeKeys {
     );
     return rows.map((r) => ({
       id: r.id,
-      machineId: r.machine_id,
+      machineId: r.machine_id === RUNNER_CODE ? RUNNER_ID : r.machine_id,
       createdAt: isoMs(r.expires_ms - ENROLL_TTL_MS),
       expiresAt: isoMs(r.expires_ms),
     }));
@@ -80,7 +91,7 @@ export class NodeKeys {
          AND used_ms IS NULL AND expires_ms > ?3 RETURNING machine_id`,
       )
       .get(ENROLL_CODE_ID_LEN, id, this.clock.now());
-    return row?.machine_id;
+    return row?.machine_id === RUNNER_CODE ? RUNNER_ID : row?.machine_id;
   }
 
   revokeEnrollSecret(token: string): boolean {
@@ -95,10 +106,12 @@ export class NodeKeys {
   }
 
   /** Burns the token and records `pubKey` as the machine's node key; throws Unauthorized with why it can't. A nameless
-   * token takes any id: enrollNode settles which. */
+   * token takes any id: enrollNode settles which. The runner's id takes only the runner's own code
+   * (createRunnerEnrollToken), never one a person minted for it. */
   consumeEnrollToken(token: string, machineId: string, pubKey: string): void {
     const now = this.clock.now();
     const hash = sha256(token);
+    const runner = machineId === RUNNER_ID;
     const burned = this.db.transaction((conn) => {
       // One statement, so two nodes racing on one token cannot both win.
       const row = conn
@@ -106,7 +119,7 @@ export class NodeKeys {
           `UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id IN ($machine, $nameless)
            AND used_ms IS NULL AND expires_ms > $now RETURNING hash`,
         )
-        .get({ now, hash, machine: machineId, nameless: NAMELESS });
+        .get(runner ? { now, hash, machine: RUNNER_CODE, nameless: RUNNER_CODE } : { now, hash, machine: machineId, nameless: NAMELESS });
       if (!row) return false;
       conn
         .query(
@@ -121,7 +134,8 @@ export class NodeKeys {
         "SELECT machine_id, expires_ms, used_ms FROM enroll_tokens WHERE hash = ?",
       )
       .get(hash);
-    throw codeRefusal(row ?? undefined, machineId, now);
+    if (runner && row && row.machine_id !== RUNNER_CODE) throw notTheRunner();
+    throw codeRefusal(row ? { ...row, machine_id: row.machine_id === RUNNER_CODE ? RUNNER_ID : row.machine_id } : undefined, machineId, now);
   }
 
   nodePubKey(machineId: string): string | undefined {

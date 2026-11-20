@@ -1,8 +1,9 @@
 // Max agents: how many of a project's agents may run at once, how many a machine runs, and the fleet-wide cap above
 // every project, which only the CLI sets (unset, every machine's cap added up). The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
 // them. Pure, so it is tested without a screen.
-import type { ProjectRef, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
+import type { ComputerPick, ProjectRef, SandboxState, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
 import { isolationOf, type Isolation } from "./placesModel";
+import { hostedProvider, RUNNER_ID, specOf } from "../../../shared/providers";
 
 export interface ProjectAgents {
   /** Agents of the project running now (its lead's own turns aside). Above `max` right after a lower. */
@@ -13,8 +14,11 @@ export interface ProjectAgents {
   readonly max: number;
   /** The default: its machine's cap, or the fleet cap when that is lower. */
   readonly cap: number;
-  /** Its machine's cap, which holds a higher max back until the machine is raised. */
+  /** What holds a higher max back until an admin raises it: its machine's cap with the hosted limits it goes on to,
+   * or the one provider's limit its bot picked (Hold). */
   readonly machineCap: number;
+  /** Its machine's own slots alone. */
+  readonly machineOwn: number;
   /** The slider's top: the fleet cap, which a machine may be raised to. */
   readonly top: number;
   /** What it runs at most now: its max, within its machine's cap and the fleet cap. */
@@ -33,11 +37,45 @@ const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId &&
  */
 export const sliderTop = (slots: SlotState): number => (slots.perMachine === undefined ? slots.cap : (slots.fleetCap ?? fleetTop(slots.cap)));
 
-export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAgents {
+/** A hosted provider's limit, by the name a person knows it by. */
+export interface ProviderLimit {
+  readonly name: string;
+  readonly limit: number;
+}
+
+/**
+ * Where a bot's agents go besides its machine's own slots, as the hub's slot board places them: the one provider its
+ * Runs on picked (`pinned`: that provider's limit alone holds them, never its machine's cap), or, on Automatic, the
+ * connected providers it goes on to once the machine is full (`spill`). A Local VM pick goes to neither.
+ */
+export interface Hold {
+  readonly pinned?: ProviderLimit;
+  readonly spill: ReadonlyArray<ProviderLimit>;
+}
+
+const NO_HOLD: Hold = { spill: [] };
+
+export function holdOf(pick: Pick<ComputerPick, "kind"> | undefined, sandboxes: Pick<SandboxState, "providers" | "linux"> | undefined): Hold {
+  const connected = (sandboxes?.providers ?? []).filter((p) => p.connected);
+  const of = (p: { provider: string; limit: number }): ProviderLimit => ({ name: specOf(p.provider).name, limit: p.limit });
+  if (pick !== undefined && pick.kind !== "vm") {
+    const p = connected.find((x) => x.provider === pick.kind);
+    return { pinned: p ? of(p) : { name: specOf(pick.kind).name, limit: 0 }, spill: [] };
+  }
+  if (pick !== undefined) return NO_HOLD;
+  const linux = sandboxes?.linux ?? "ours_first";
+  if (linux === "ours_only") return NO_HOLD;
+  return { spill: connected.filter((p) => linux === "ours_first" || p.provider === linux).map(of) };
+}
+
+export function projectAgents(slots: SlotState, project: ProjectRef, hold: Hold = NO_HOLD): ProjectAgents {
   const row = slots.perProject.find((p) => sameRef(p.projectRef, project));
-  // `slots.cap` is every machine's cap added up, so a project is held to its own machine's.
+  // `slots.cap` is every machine's cap added up, so a project is held to its own machine's, and the hosted limits it
+  // goes on to: the hub's runner has no slots of its own.
   const machine = slots.perMachine?.find((m) => m.machineId === project.machineId);
-  const machineCap = machine?.cap ?? slots.cap;
+  const machineOwn = project.machineId === RUNNER_ID ? 0 : (machine?.cap ?? slots.cap);
+  const hosted = hold.spill.reduce((n, p) => n + p.limit, 0);
+  const machineCap = hold.pinned ? hold.pinned.limit : machineOwn + hosted;
   const cap = Math.min(machineCap, slots.cap);
   const top = Math.max(1, sliderTop(slots));
   // A hub from before `own` lists only projects set or busy, and says nothing of which: a max at the top reads as the
@@ -46,25 +84,48 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
   // On the default (or no row: nothing running or waiting), it follows `cap` whatever the row says.
   const max = own && row !== undefined ? Math.min(row.maxAgents, top) : cap;
   // A hub from before machine caps runs its projects as one machine: what is used is what runs there.
-  const free = Math.max(0, Math.min(machineCap - (machine?.running ?? slots.used), slots.cap - slots.used));
-  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, machineCap, top, limit: Math.min(max, cap), free, own };
+  // On a provider it picked, its own agents are what the board shows of its use there.
+  const using = hold.pinned ? (row?.running ?? 0) : (machine?.running ?? slots.used);
+  const free = Math.max(0, Math.min(machineCap - using, slots.cap - slots.used));
+  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, machineCap, machineOwn, top, limit: Math.min(max, cap), free, own };
 }
 
 /** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
-export function sourceLine(slots: SlotState, a: ProjectAgents): string {
+export function sourceLine(slots: SlotState, a: ProjectAgents, machineId?: string, hold: Hold = NO_HOLD): string {
   if (a.own) return `Set for this bot. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
-  return fleet ? "Follows the default: the hub's fleet cap." : "Follows the default: its machine's cap.";
+  if (fleet) return "Follows the default: the hub's fleet cap.";
+  const provider = providerHolding(machineId, hold);
+  return provider !== undefined ? `Follows the default: ${provider}'s limit.` : "Follows the default: its machine's cap.";
 }
 
+/** The provider whose limit alone holds the bot: the one its Runs on picked, or on the hub's runner the hosted one. */
+const providerHolding = (machineId: string | undefined, hold: Hold): string | undefined =>
+  hold.pinned?.name ?? (machineId === RUNNER_ID ? (hold.spill[0]?.name ?? hostedProvider().name) : undefined);
+
 /**
- * Said under a project's slider moved past its machine's cap: the machine holds it there. Null within it. `machineId`
- * names the machine.
+ * Said under a project's slider moved past what holds it, null within it: its machine's cap (`machineId` names the
+ * machine) and the hosted limits it goes on to, or the one provider's limit that alone holds it.
  */
-export function machineHolds(a: ProjectAgents, value: number, machineId: string): string | null {
+export function machineHolds(a: ProjectAgents, value: number, machineId: string, hold: Hold = NO_HOLD): string | null {
   if (value <= a.machineCap) return null;
-  return `${machineId} runs at most ${a.machineCap} agents at once, so this bot runs ${a.machineCap} until an admin raises ${machineId}.`;
+  const n = a.machineCap;
+  const provider = providerHolding(machineId, hold);
+  if (provider !== undefined) return `${provider} runs at most ${n} agents at once, so this bot runs ${n} until an admin raises ${provider}'s limit.`;
+  if (hold.spill.length > 0) {
+    const then = hold.spill.map((p) => `${p.name} ${p.limit}`).join(", ");
+    return `${machineId} runs at most ${a.machineOwn} agents at once, then ${then}, so this bot runs ${n} until an admin raises one of them.`;
+  }
+  return `${machineId} runs at most ${n} agents at once, so this bot runs ${n} until an admin raises ${machineId}.`;
 }
+
+/** The admin's way from machineHolds to what holds it: the provider's limit on its row, or the machine's max. */
+export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_HOLD): { text: string; provider: boolean } => {
+  const provider = providerHolding(machineId, hold);
+  return provider !== undefined
+    ? { text: `${provider}'s limit (${a.machineCap}) in Hub › Machines`, provider: true }
+    : { text: `${machineId}'s max in Hub › Machines`, provider: false };
+};
 
 /** One machine as Settings shows it. */
 export interface MachineAgents {

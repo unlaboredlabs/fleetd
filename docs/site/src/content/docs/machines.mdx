@@ -534,7 +534,9 @@ an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.
 A team with a provider connected and no computer still runs agents. The hub starts a runner of its own, a fleetd node
 that runs no agent on the hub's machine, and every agent of a bot added there, its lead too, runs in a sandbox of the
 connected providers. It shows as **Hosted sandboxes** wherever a bot says where it runs, never in the list of
-computers, and it goes by itself once no provider is connected and no bot lives on it.
+computers (on the phone too) or the command palette, and it goes by itself once no provider is connected and no bot
+lives on it. It has no machine page: a link to one opens the provider's row under Providers, whose limit is how many
+run at once, and the hub refuses a join code, a role or a max agents of its own for it.
 
 - *Bots.* A bot there is a GitHub repository, cloned on the hub with the hub's [GitHub App](/docs/github) token for
   it; a folder of the hub's machine can't be one. Its agents push and open PRs from their sandboxes as any hosted

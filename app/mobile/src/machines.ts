@@ -14,6 +14,10 @@ export const providerName = (p: string): string => specOf(p).name;
 /** The Settings row shows for an admin. */
 export const machinesShown = (admin: boolean | undefined): boolean => admin === true;
 
+/** The team's computers, as Machines lists them: the hub's runner for hosted sandboxes is none (its provider's row
+ * under Providers is where hosted shows), as on the desktop (admin/MachineList.tsx). */
+export const teamMachines = <M extends Pick<Machine, "runner">>(machines: ReadonlyArray<M>): M[] => machines.filter((m) => m.runner !== true);
+
 /**
  * A machine's row value: Online, what the hub says is wrong, or Offline; `warn` while it needs someone. The hub's runner
  * with no Claude account for its sandboxes says that in a few words, not the hub's whole sentence.
