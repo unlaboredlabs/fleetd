@@ -96,6 +96,19 @@ test("says what the thread is doing now", () => {
   expect(t.tokens()).toEqual({ input: 100, output: 20, cacheRead: 5, live: false });
 });
 
+test("a hosted start's progress line is what the thread does until it ends, over the setup commands it runs", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  t.apply(item("starting-r1", "running", { type: "starting", text: "Starting its computer at boat.dev (first time: a few minutes)" }), T0 + 10);
+  expect(t.now(T0 + 20)?.activity).toEqual({ kind: "starting", text: "Starting its computer at boat.dev (first time: a few minutes)" });
+  t.apply(item("starting-r1", "running", { type: "starting", text: "Running setup" }), T0 + 30);
+  t.apply(item("setup-r1-0", "running", { type: "command", command: "bun install" }), T0 + 40);
+  expect(t.now(T0 + 50)?.activity).toEqual({ kind: "starting", text: "Running setup" });
+  t.apply(item("setup-r1-0", "completed", { type: "command", command: "bun install" }), T0 + 60);
+  t.apply(item("starting-r1", "completed", { type: "starting", text: "Running setup" }), T0 + 70);
+  expect(t.now(T0 + 80)?.activity).toEqual({ kind: "thinking" });
+});
+
 test("live usage counts until the run reports its own", () => {
   const t = new ActivityTracker();
   t.apply(run("running"), T0);

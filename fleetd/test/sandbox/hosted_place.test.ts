@@ -12,7 +12,7 @@ import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, ProviderError } from "../../src/sandbox/providers/index.ts";
 import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
-import { BOX_CLAUDE, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
+import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
@@ -214,15 +214,19 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   expect(Object.keys(readRecord(join(home, "hosts", "s-tail"))!)).not.toContain("relays");
   expect(JSON.stringify(await next(link))).toContain("m1");
   await placeAt(join(home, "hosts", "s-tail")).stop(join(home, "hosts", "s-tail"));
-  // Unreached with the team's tailnet off: the start refuses before claude runs, and says what to do.
+  // Unreached with the team's tailnet off: the start refuses before claude runs, and says what to do, in a person's
+  // words: the account, not the settings file it came from, nor the check's own output.
   reaches = false;
   rmSync(join(home, "node.sock"), { force: true });
-  const refused = await start("s-off").then(
-    () => "started",
-    (e: Error) => e.message,
+  const failure = await start("s-off").then(
+    () => undefined,
+    (e: Error) => e,
   );
-  expect(refused).toContain("the box can't reach Claude at 100.104.249.49:8317");
-  expect(refused).toContain(`(the endpoint from ${join(cfg, "settings.json")})`);
+  expect(failure).toBeInstanceOf(BoxNotReady);
+  const refused = failure!.message;
+  expect(refused).toContain("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49");
+  expect(refused).not.toContain("settings.json");
+  expect(refused).not.toContain("curl");
   expect(refused).toContain("Connect Tailscale in Settings › Hub › Machines");
   await placeAt(join(home, "hosts", "s-off")).stop(join(home, "hosts", "s-off"));
   // With it on, a new box is told so before its repo comes in (a stand-in box beside its node refuses the TUN: it
@@ -249,7 +253,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   await placeAt(join(home, "hosts", "s-on")).stop(join(home, "hosts", "s-on"));
 }, 60_000);
 
-test("a start that fails once its box exists deletes the box and its record, and the task hears the failure as it was", async () => {
+test("a start that fails once its box exists deletes the box and its record, and the task hears why in plain words", async () => {
   const { s, home, cwd, env, boxes } = await setup();
   const dir = join(home, "hosts", "s-unreached");
   const place = hostedPlace("boat", "s-unreached", dir);
@@ -261,14 +265,16 @@ test("a start that fails once its box exists deletes the box and its record, and
     throw new Error("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
   };
   const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
-  expect((failed as Error).message).toContain("the box can't reach Claude at localhost:8317: curl: (7) Failed to connect");
+  expect(failed).toBeInstanceOf(BoxNotReady);
+  expect((failed as Error).message).toContain("a boat.dev sandbox couldn't reach the hub's Claude account at ");
+  expect((failed as Error).message).not.toContain("curl");
   // Claude never started: it fails as a box that didn't come up, so a lead's chat says why and its message is kept;
   // and the box came up, so the provider isn't set aside.
   expect(failed).toBeInstanceOf(HostedDown);
   expect(boxes.usable()).toContain("boat");
   // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
   const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`);
-  expect(line).toStartWith("The lead couldn't start: the box can't reach Claude at localhost:8317");
+  expect(line).toStartWith("The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at ");
   expect(line).toEndWith("Your message is kept and goes in with your next one.");
   expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.

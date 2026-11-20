@@ -184,6 +184,24 @@
             "reason"
           ],
           "type": "object"
+        },
+        {
+          "description": "A hosted agent's computer starting: \"Starting its computer at boat.dev\", \"Cloning the repo\", \"Running setup\".",
+          "properties": {
+            "kind": {
+              "const": "starting",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
         }
       ]
     },

@@ -3,16 +3,18 @@
 // a join line and run it in a terminal; under it, a line of its own to copy for any other computer, which carries no
 // machine name: a computer joins under its own), or a hosted sandbox provider on their own key, connected right here as
 // in Settings. The screen moves on when a machine, or the hub's runner for hosted sandboxes, shows up in its list; the
-// runner's agents need a Claude account of the team's, which it asks for until one reaches them.
+// runner's agents need a Claude account of the team's, which it asks for until one reaches them. Hosted sandboxes that
+// don't get ready within a bounded wait (./hostedWait.ts) say why, with the fix and Try again.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MachineJoinOutput } from "../../../shared/contracts";
 import type { ConnectComputerOutcome } from "../../../shared/cloud";
-import { useData, useHub } from "../../src/data/react";
+import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Segmented, StateGlyph, Text } from "../../ui";
 import { useProviderRows } from "../settings/Providers";
 import { navigate } from "../shell/navigation";
 import { untilLine } from "../addMachine/model";
-import { errorText, useHubCall } from "../settings/hub";
+import { errorText, useHubCall, useRefetch } from "../settings/hub";
+import { hostedProblem, runnerNeedsClaude, useWaitedOut, type RunnerState } from "./hostedWait";
 import s from "./connectComputer.module.css";
 import { onWeb } from "../../src/web";
 
@@ -26,24 +28,87 @@ const useNow = (): number => {
   return now;
 };
 
+/** Each hub's machines when its Where agents run opened, kept across a remount: what joins (a computer, the hub's
+ * runner) comes with a resync, whose fresh snapshot mounts the home again. Dropped once the person moves on. */
+const opened = new Map<string, ReadonlySet<string>>();
+
+/** Whether Where agents run is open on hub `hub` (FirstRun keeps showing it). */
+export const whereOpen = (hub: string): boolean => opened.has(hub);
+
 export function ConnectComputer({ onAddProject }: { onAddProject: () => void }) {
+  const hub = useHub();
   const machines = useData((d) => d.machines);
   // The machines there were when this view opened (or Connect another computer was pressed): one more is the one
   // that joined.
-  const [before, setBefore] = useState<ReadonlySet<string>>(() => new Set(Object.keys(machines)));
+  const [before, setBefore] = useState<ReadonlySet<string>>(() => opened.get(hub.id) ?? new Set(Object.keys(machines)));
+  useEffect(() => void opened.set(hub.id, before), [hub.id, before]);
   const joined = Object.values(machines).find((m) => !before.has(m.machineId));
   const another = () => setBefore(new Set(Object.keys(machines)));
+  const moveOn = () => {
+    opened.delete(hub.id);
+    onAddProject();
+  };
   // The hub's runner: its sandboxes run agents only once a Claude account of the team's reaches them.
-  if (joined?.runner === true && joined.status !== "online") return <HostedNotReady claude={claudeMissing(joined)} />;
-  if (joined !== undefined) return <Joined name={joined.name} many={joined.runner === true} onAddProject={onAddProject} onAnother={another} />;
+  if (joined?.runner === true && joined.status !== "online") return <HostedNotReady runner={joined} />;
+  if (joined !== undefined) return <Joined name={joined.name} many={joined.runner === true} onAddProject={moveOn} onAnother={another} />;
   return <Connect />;
 }
 
-/** The runner is degraded for want of a Claude account (node/sessions runnerClaude's words). */
-const claudeMissing = (m: { status: string; degradedReason?: string | undefined }) => m.status === "degraded" && /Claude account/u.test(m.degradedReason ?? "");
+const noInput = {};
 
-/** Hosted sandboxes connected, their agents not able to run yet: Connect Claude, or a moment while they come up. */
-function HostedNotReady({ claude }: { claude: boolean }) {
+/** Hosted sandboxes connected, their agents not able to run yet: Connect Claude, or a moment while they come up; past
+ * the wait, why they aren't ready, its fix and Try again. */
+function HostedNotReady({ runner }: { runner: RunnerState }) {
+  const claude = runnerNeedsClaude(runner);
+  const call = useHubCall();
+  const refetch = useRefetch();
+  const sandboxes = useToolQuery("sandbox_get", noInput);
+  const provider = sandboxes.data?.providers.find((p) => p.connected);
+  const wait = useWaitedOut(!claude);
+  const [trying, setTrying] = useState(false);
+  const [tried, setTried] = useState<string | null>(null);
+  const problem = wait.over && provider !== undefined ? hostedProblem(provider.provider, provider.check, runner) : undefined;
+  const again = () => {
+    if (provider === undefined) return;
+    setTrying(true);
+    setTried(null);
+    call("sandbox_test", { provider: provider.provider }).then(
+      () => {
+        setTrying(false);
+        refetch(["sandbox_get"]);
+        wait.again();
+      },
+      (e: unknown) => {
+        setTrying(false);
+        setTried(errorText(e));
+      },
+    );
+  };
+  if (problem !== undefined)
+    return (
+      <div className={s.screen} data-screen="setup.machine.hosted.not-ready">
+        <div className={s.column}>
+          <div className={s.head}>
+            <Text as="h1" size="xl" strong>
+              Hosted sandboxes aren't ready
+            </Text>
+            <span role="alert">
+              <Text as="p" tone="warning">
+                {problem.reason}
+              </Text>
+            </span>
+            <Text as="p" tone="quiet">
+              {tried ?? problem.fix}
+            </Text>
+          </div>
+          <div className={s.next}>
+            <Button variant="primary" className={s.connect} disabled={trying} onClick={again}>
+              {trying ? "Trying again…" : "Try again"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   return (
     <div className={s.screen} data-screen="setup.machine.hosted">
       <div className={s.column}>

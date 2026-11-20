@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { boatStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
-import { TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
+import { SAVE_MS, STEP_MS, TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
 import { DEFAULT_SIZE, SIZES } from "../../src/sandbox/providers/common.ts";
 import { hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
 import { envFile, launcher } from "../../src/sandbox/providers/shell.ts";
@@ -159,6 +159,52 @@ for (const id of ["boat"] as const) {
     });
   });
 }
+
+describe("boat.dev's waits end", () => {
+  // A clock each poll moves on by a minute: a wait that never ends on boat's side ends here, with why.
+  const minutes = () => {
+    let t = Date.parse("2026-01-01T00:00:00Z");
+    return () => (t += 60_000);
+  };
+  const clocked = (s: StandIn) => provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 1, now: minutes() });
+
+  test("a template build step that never ends fails as unreachable after STEP_MS, and its box goes", async () => {
+    const s = boatStandIn();
+    running.push(s);
+    s.fail({ path: /^GET \/api\/v1\/sandboxes\/[^/]+\/commands\/\d+$/, status: 200, body: { ok: true, running: true, status: "running" }, times: 1_000 });
+    const e = await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect(e.reason).toBe("unreachable");
+    expect(e.message).toBe(`a step of boat.dev's sandbox build didn't finish within ${STEP_MS / 60_000} minutes`);
+    // About a poll per minute of the step's deadline, not forever.
+    const polls = s.calls.filter((c) => /\/commands\/\d+$/.test(c.path)).length;
+    expect(polls).toBeLessThanOrEqual(STEP_MS / 60_000 + 1);
+    expect(s.boxes.size).toBe(0);
+    expect(s.calls.some((c) => c.path === "/api/v1/saved-snapshots")).toBe(false);
+  });
+
+  test("a snapshot stuck saving fails as unreachable after SAVE_MS, in a build and on its own", async () => {
+    const s = boatStandIn();
+    running.push(s);
+    s.fail({ path: /^GET \/api\/v1\/saved-snapshots\/[^/]+$/, status: 200, body: { ok: true, snapshot: { name: "fleetd-abc", status: "saving" } }, times: 1_000 });
+    const words = `boat.dev didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`;
+    const built = await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
+    expect(built.reason).toBe("unreachable");
+    expect(built.message).toBe(words);
+    expect(s.boxes.size).toBe(0);
+    const p = clocked(s);
+    const b = await create(p);
+    const saved = await p.snapshot!(b.id, "fleetd-img").catch((e) => e);
+    expect(saved.reason).toBe("unreachable");
+    expect(saved.message).toBe(words);
+  });
+
+  test("a build whose steps and save answer in time is unchanged by the deadlines", async () => {
+    const s = boatStandIn();
+    running.push(s);
+    expect(await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" })).toBe("fleetd-abc");
+  });
+});
 
 describe("refusals in plain words", () => {
   const cases: [ProviderId, number, unknown, string, RegExp][] = [

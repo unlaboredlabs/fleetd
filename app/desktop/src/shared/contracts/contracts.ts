@@ -252,6 +252,10 @@ export type Activity = {
   kind: "retrying";
   of: number;
   reason: string;
+} | {
+  /** A hosted agent's computer starting: "Starting its computer at boat.dev", "Cloning the repo", "Running setup". */
+  kind: "starting";
+  text: string;
 };
 
 export type ActivityNow = {

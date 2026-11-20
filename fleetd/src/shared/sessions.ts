@@ -553,6 +553,8 @@ export type ItemKind =
   | { type: "compaction"; trigger: string; preTokens?: number; postTokens?: number }
   | { type: "api_retry"; attempt: number; maxRetries: number; errorStatus?: number; error: string; retryDelayMs?: number }
   | { type: "node_retry"; attempt: number; of: number; delayMs: number; reason: RunFailure }
+  /** A hosted session's start while its computer comes up, in plain words (node/place/hosted_steps.ts). */
+  | { type: "starting"; text: string }
   | { type: "error"; failure: RunFailure };
 
 export type ThreadItem = {

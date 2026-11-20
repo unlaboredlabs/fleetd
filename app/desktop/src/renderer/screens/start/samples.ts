@@ -32,6 +32,15 @@ export const SAMPLES = {
     project: pick,
   },
   offline: { ...owner, computer: { at: "offline", machine: "devbox" }, tailscale: { at: "todo" }, claude: { at: "wait" }, github: { at: "todo" }, project: pick },
+  // ...or a hosted provider whose sandboxes didn't get ready within the wait: why, the fix and Try again.
+  "hosted-failed": {
+    ...owner,
+    computer: { at: "hosted_failed", provider: "boat.dev", reason: "boat.dev's sandboxes didn't get ready.", fix: "If it keeps failing, check boat.dev in Settings › Hub › Machines." },
+    tailscale: { at: "todo" },
+    claude: { at: "wait" },
+    github: { at: "todo" },
+    project: pick,
+  },
   // 2. Tailscale, optional: Connect and sign in at Tailscale, or Skip.
   tailscale: { ...owner, computer: { at: "hosted", provider: "boat.dev" }, tailscale: { at: "todo" }, claude: { at: "account", provider: "boat.dev" }, tailnet: false, github: { at: "todo" }, project: pick },
   "tailscale-signin": {

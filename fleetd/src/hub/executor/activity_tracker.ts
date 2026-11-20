@@ -200,6 +200,8 @@ export class ActivityTracker {
     const at = (activity: Activity, sinceMs: number): ActivityNow => ({ activity, since: isoMs(Math.min(sinceMs, nowMs)) });
     let newest: Open | undefined;
     for (const o of this.open.values()) if (!newest || o.startedMs > newest.startedMs) newest = o;
+    // A hosted start's progress says more than the setup commands it runs meanwhile.
+    for (const o of this.open.values()) if (o.activity.kind === "starting") newest = o;
     if (newest) return at(newest.activity, newest.startedMs);
     if (this.retry && this.activeRun !== undefined) return at(this.retry[0], this.retry[1]);
     if (this.activeRun === undefined) return undefined;
@@ -337,6 +339,8 @@ export function activityOf(kind: ItemKind, root: string | undefined): Activity |
     }
     case "compaction":
       return { kind: "compacting" };
+    case "starting":
+      return { kind: "starting", text: clip(kind.text) };
     case "api_retry":
     case "node_retry":
       return retryOf(kind);

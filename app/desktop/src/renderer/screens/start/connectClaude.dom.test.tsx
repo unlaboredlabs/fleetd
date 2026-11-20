@@ -92,7 +92,7 @@ const runner = (status: "degraded" | "online"): Machine => ({
   nodeVersion: "1.0.0",
   runner: true,
   boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
-  ...(status === "degraded" ? { degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." } : {}),
+  ...(status === "degraded" ? { degradedCause: "claude_login" as const, degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." } : {}),
 });
 
 const answer = (tool: string): unknown =>

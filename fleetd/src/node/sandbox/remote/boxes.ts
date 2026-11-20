@@ -22,6 +22,7 @@ import { ASIDE_MS, NAMES } from "../../../shared/sandbox.ts";
 import type { SandboxTrouble } from "../../../shared/node_link.ts";
 import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
+import { stepped } from "../../place/hosted_steps.ts";
 import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
@@ -180,8 +181,9 @@ export class Boxes {
 
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
    * needed. boat sizes a box at create, so one serves every size; a provider that fixed a box's size in its template
-   * would build one per size (`<name>-<cpu>c<mem>g`). */
-  template(p: ProviderId, size: Size = DEFAULT_SIZE): Promise<string> {
+   * would build one per size (`<name>-<cpu>c<mem>g`). `onBuild`: called when it isn't built yet (a build starts, or
+   * one is under way). */
+  template(p: ProviderId, size: Size = DEFAULT_SIZE, onBuild?: () => void): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
     const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
     const name = `${this.templateName()}${sized}`;
@@ -192,6 +194,7 @@ export class Boxes {
       kept = JSON.parse(readFileSync(file, "utf8"));
     } catch {}
     if (kept.name === name && kept.id) return Promise.resolve(kept.id);
+    onBuild?.();
     let building = this.#templates.get(key);
     if (!building) {
       console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
@@ -231,7 +234,7 @@ export class Boxes {
     // A size the provider has no exact box of is refused here, before any box or template is made.
     const not = size ? notOffered(p, size, NAMES[p]) : undefined;
     if (not) throw new ProviderError("failed", not);
-    const template = o.template ?? (await this.template(p, size));
+    const template = o.template ?? (await this.template(p, size, () => stepped(session, "template")));
     // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;

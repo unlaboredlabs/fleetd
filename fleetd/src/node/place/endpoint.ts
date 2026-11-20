@@ -229,12 +229,17 @@ export async function probe(box: Box, url: string): Promise<void> {
   if (probed.exitCode !== 0) throw new Error(`the box can't reach Claude at ${label}: ${said(probed)}`);
 }
 
-/** Why a hosted box didn't reach the endpoint `e` (`why`, the check's words), with what to do: a hosted box reaches the
- * internet, and the team's tailnet once Tailscale is connected (`tailnet`), and nothing of a machine's own. */
-export async function unreached(e: Endpoint, why: string, tailnet: boolean, resolve?: (host: string) => Promise<string[]>): Promise<string> {
-  const said = `${why} (the endpoint from ${e.source})`;
+/** Why a box of provider `at` (its name, "boat.dev") didn't reach the endpoint `e`, in a person's words with what to
+ * do: a hosted box reaches the internet, and the team's tailnet once Tailscale is connected (`tailnet`), and nothing
+ * of a machine's own. Never the check's own output or where the endpoint was set: the log keeps those. */
+export async function unreached(e: Endpoint, at: string, tailnet: boolean, resolve?: (host: string) => Promise<string[]>): Promise<string> {
+  let host = e.url;
+  try {
+    host = parse(e.url).host;
+  } catch {}
+  const said = `a ${at} sandbox couldn't reach the hub's Claude account at ${host}`;
   const hint = await hostedHint(e.url, tailnet, resolve);
-  return hint ? `${said}: ${hint}` : said;
+  return `${said}: ${hint ?? "it didn't answer from there. Check that it is up, then try again"}`;
 }
 
 /** What to do when the hosted side (a box, the hub's runner) doesn't reach `url`; none for an internet endpoint. */

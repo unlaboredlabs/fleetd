@@ -16,6 +16,7 @@ import { resetServes } from "../admin/role";
 import { FirstRun } from "../setup/FirstRun";
 import { readKept, resetReturn, takeGithubReturn } from "./kept";
 import { StartScreen } from "./StartScreen";
+import { HOSTED_WAIT } from "../setup/hostedWait";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -283,7 +284,7 @@ it("where agents run is a computer or hosted sandboxes: the second lists the pro
 }, 20_000);
 
 it("a provider connected and no computer: step 1 is done on it, and Claude takes the hub's key or your subscription while its sandboxes have no account", async () => {
-  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedCause: "claude_login", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });
   const sandbox = [{ provider: "boat", connected: true, ok: true }];
   let stop = await render({ machines: [runner], sandbox });
   expect(screen()).toBe("start.claude");
@@ -296,11 +297,34 @@ it("a provider connected and no computer: step 1 is done on it, and Claude takes
   stop();
   act(() => root.unmount());
   host.remove();
-  const { degradedReason: _was, ...online } = runner;
+  const { degradedReason: _was, degradedCause: _cause, ...online } = runner;
   stop = await render({ machines: [{ ...online, status: "online" }], sandbox });
   expect(screen()).toBe("start.github");
   expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
   stop();
+}, 20_000);
+
+it("a provider whose sandboxes don't get ready within the wait says why, the fix and Try again, which tests the key and waits again", async () => {
+  const was = HOSTED_WAIT.ms;
+  HOSTED_WAIT.ms = 50;
+  try {
+    const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "checking the node's runner" });
+    const stop = await render({ machines: [runner], sandbox: [{ provider: "boat", connected: true, ok: true }] });
+    expect(screen()).toBe("start.computer");
+    expect(host.textContent).toContain("Getting boat.dev's sandboxes ready");
+    await act(() => new Promise((r) => setTimeout(r, 120)));
+    const step = host.querySelector('[data-step="computer"]');
+    expect(step?.querySelector("[role=alert]")?.textContent).toBe("boat.dev's sandboxes didn't get ready.");
+    expect(step?.textContent).toContain("If it keeps failing, check boat.dev in Settings › Hub › Machines.");
+    expect(step?.textContent).not.toContain("runner");
+    expect(step?.textContent).not.toContain("Getting boat.dev's sandboxes ready");
+    await click("Try again");
+    expect(calls.some((c) => c.tool === "sandbox_test" && (c.input as { provider: string }).provider === "boat")).toBe(true);
+    expect(host.textContent).toContain("Getting boat.dev's sandboxes ready");
+    stop();
+  } finally {
+    HOSTED_WAIT.ms = was;
+  }
 }, 20_000);
 
 it("with no computer, step 1 is open on the team's join line, ready to copy", async () => {
@@ -541,7 +565,7 @@ it("a hub with no Tailscale device leaves the step out", async () => {
 
 it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with Connect, then seals the key with the endpoint", async () => {
   window.localStorage.setItem("fleetd.start.sam", JSON.stringify({ tailscale: "skipped" }));
-  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them.", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedCause: "claude_login", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them.", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
   const sandbox = [{ provider: "boat", connected: true, ok: true }];
   const stop = await render({ machines: [runner], sandbox, tailnet: { status: "off" } });
   await until("start.claude");
