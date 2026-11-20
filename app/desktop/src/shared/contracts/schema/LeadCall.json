@@ -2498,6 +2498,19 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/RepoCreateCall",
+          "properties": {
+            "op": {
+              "const": "repo_create",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/RepoRemoveCall",
           "properties": {
             "op": {
@@ -3318,6 +3331,40 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "RepoCreateCall": {
+      "description": "`repo_create`: a lead makes a new GitHub repo for its own project, on the person's word, with the hub's own GitHub\nconnection, and adds it to the project as `repo_add` does. It is made with a README, so it has a first commit.",
+      "properties": {
+        "description": {
+          "description": "One line GitHub shows under its name.",
+          "maxLength": 350,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name on GitHub, such as `email-client`.",
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]{1,100}$",
+          "type": "string"
+        },
+        "owner": {
+          "description": "A GitHub organisation to make it in. Absent: the account the hub's GitHub connection signs in as.",
+          "maxLength": 39,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$",
+          "type": "string"
+        },
+        "private": {
+          "description": "true for a private repo, false for a public one, as the person said.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "private"
+      ],
       "type": "object"
     },
     "RepoName": {

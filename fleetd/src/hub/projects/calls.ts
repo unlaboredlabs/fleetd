@@ -1,4 +1,4 @@
-// A lead's setup calls for its own project (W614): `repo_add`, `repo_remove` and `project_setup`, and a person's
+// A lead's setup calls for its own project (W614): `repo_add`, `repo_create` (W762), `repo_remove` and `project_setup`, and a person's
 // `project_setup_undo`. They are a lead's alone, pinned to its own project by its session (lead_calls), and do what a
 // person does in the project's settings: add and remove repos, and set the title, icon, picture and color, the
 // project's Instructions, its setup commands, plain variables and archive. What guards people has no field here and
@@ -38,16 +38,18 @@ import { changed as promptChanged } from "../prompts/tools.ts";
 import { redact } from "../redact.ts";
 import * as repos from "../repos/store.ts";
 import { store } from "../store/hub_store.ts";
+import { GH_AUTH_FIX, GhError } from "../train/github.ts";
 import { checkEnvName } from "../vault/fields.ts";
 import * as avatar from "./avatar.ts";
-import { projectAt } from "./discover.ts";
+import { addingGh, projectAt, requireRepoNode } from "./discover.ts";
 import * as icon from "./icon.ts";
 import { peopleOnly } from "./people_only.ts";
 import * as propose from "./propose.ts";
+import * as create from "./repo_create_rules.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
 import { announce, projectSettings, rename, repoNamed, setColor, setEnv, setupChanged } from "./settings.ts";
 
-export const OPS = ["repo_add", "repo_remove", "project_setup"] as const;
+export const OPS = ["repo_add", "repo_create", "repo_remove", "project_setup"] as const;
 
 /** What was there before a change, by its kind: what Undo puts back. */
 type Before =
@@ -180,6 +182,62 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
     path: out.path,
     next: `Cloning ${url} into ${out.path} on ${m}. You are woken when it ends, or when it fails, with the fix: carry on with other work or end your turn, and spawn nothing in it before then.`,
   };
+}
+
+/** What `repo_create` asks GitHub for. Its `gh` is the hub machine's own login: an App's token can't make a person's repo. */
+const ACCEPT = "Accept: application/vnd.github+json";
+
+/**
+ * `repo_create`: a new repo on GitHub, made with the hub's own `gh` login, then added to the bot as `repo_add` adds
+ * one by URL. Only on the person's word, which the prompt holds the lead to.
+ */
+async function repoCreate(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Record<string, unknown>> {
+  onlyLead(caller, "repo_create");
+  const want = create.checkCreate(call);
+  // Nothing is made on GitHub that the bot's machine can't take now.
+  requireRepoNode(hub, caller.projectRef.machineId);
+  const gh = addingGh(hub).github();
+  const asked = async <T>(run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof GhError)) throw error;
+      // gh missing or signed out says its own fix: the hub's GitHub login is the person's to give, on the hub machine.
+      throw new ToolError(error.kind === "unavailable" ? "failed" : "forbidden", error.message, error.kind === "unavailable" ? "Try again shortly" : undefined);
+    }
+  };
+  const me = await asked(() => gh.get("user"));
+  const login = me.ok ? (me.value as { login?: unknown } | null)?.login : undefined;
+  if (typeof login !== "string") {
+    throw new ToolError("forbidden", `GitHub didn't say whose login the hub's gh is${me.ok ? "" : `: ${me.message}`}.`, `${GH_AUTH_FIX}, then try again`);
+  }
+  const { path, body } = create.createRequest(want, login);
+  const full = `${create.ownerOf(want, login)}/${want.name}`;
+  if ((await asked(() => gh.get(`repos/${full}`))).ok) throw create.alreadyThere(full);
+  const fields: [string, string][] = [["name", body.name], ...(body.description !== undefined ? [["description", body.description] as [string, string]] : [])];
+  const out = await asked(() => gh.exchange("POST", path, ACCEPT, fields, ["-F", `private=${body.private}`, "-F", "auto_init=true"]));
+  if (!out.ok) {
+    const grant =
+      path === "user/repos"
+        ? `The hub signs in to GitHub as ${login} with gh: ${GH_AUTH_FIX} with an account that may create repos`
+        : `An owner of ${want.owner} lets ${login} create repos there (the organisation's Settings › Member privileges), or the person names an account ${login} may create in`;
+    throw create.createRefused(out.status, out.message, full, `The hub's GitHub login ${login}`, grant);
+  }
+  let made = full;
+  let url = `https://github.com/${full}`;
+  try {
+    const got = JSON.parse(out.text) as { full_name?: unknown; html_url?: unknown };
+    if (typeof got.full_name === "string") made = got.full_name;
+    if (typeof got.html_url === "string") url = got.html_url;
+  } catch {}
+  let added: Record<string, unknown>;
+  try {
+    added = await repoAdd(hub, caller, { op: "repo_add", url: made } as unknown as LeadCall);
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    throw new ToolError("failed", `Created ${made} on GitHub, but it was not added to the bot: ${why}`, `repo_add with url ${made} adds it`);
+  }
+  return { created: made, url, private: want.private, ...added, next: `${create.createdLine(made, want.private)} ${added.next as string}` };
 }
 
 async function repoRemove(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Record<string, unknown>> {
@@ -602,7 +660,8 @@ export function register(tools: Registry): void {
 /** The lead's calls, and the wake owed to each lead whose clone a hub restart cut off. */
 export function registerLeadCalls(hub: Hub): void {
   leadCalls(hub).register("repo_add", (caller, call) => repoAdd(hub, caller, call));
-  leadCalls(hub).register("repo_remove", (caller, call) => repoRemove(hub, caller, call));
+  leadCalls(hub).register("repo_create", (caller, call) => repoCreate(hub, caller, call));
+  leadCalls(hub).register("repo_remove",(caller, call) => repoRemove(hub, caller, call));
   leadCalls(hub).register("project_setup", (caller, call) => setup(hub, caller, call));
   leadCalls(hub).register("project_propose", (caller, call) => {
     onlyLead(caller, "project_propose", "A person makes a bot themselves with New bot in the app.");

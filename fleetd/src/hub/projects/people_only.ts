@@ -54,7 +54,7 @@ const NAMES: Record<PeopleOnly, string[]> = {
 const BY_NAME = new Map(Object.entries(NAMES).flatMap(([thing, names]) => names.map((n) => [n, thing as PeopleOnly] as const)));
 
 /** The ops whose calls are checked for people-only fields. */
-export const SETUP_OPS: readonly string[] = ["repo_add", "repo_remove", "project_setup"];
+export const SETUP_OPS: readonly string[] = ["repo_add", "repo_create", "repo_remove", "project_setup"];
 
 /** The refusal for `thing`. `detail` goes first, for what the line alone doesn't name. */
 export const peopleOnly = (thing: PeopleOnly, detail?: string) =>

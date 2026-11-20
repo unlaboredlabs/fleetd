@@ -76,6 +76,15 @@ the lead does the work itself: it chats, remembers, writes drafts and notes, rea
 folder. Agents that change code need a repo. Add one later in **Settings → Bots → Repos**, or with
 `fleetd project repo add`. On the phone, **New Bot** from the Chats list's **+** has the same name, repos and machine.
 
+When the work in a bot with no repo turns into real software (an app, a service, a codebase of several files), its
+lead says so once, in one line, and offers a repo: history, reviews, agents working in parallel, and nothing lost
+with the folder. A script, a document or a one-off file never gets this offer. Say no and it carries on in the folder
+and doesn't ask again for that work. Say yes, public or private, and the lead makes the repo on GitHub with the bot's
+GitHub connection (on your own hub, the hub machine's `gh` login), adds it to the bot, and has a writer bring the
+files made so far in as the repo's first pull request. From then on agents change the code, and the merge train
+reviews and merges their pull requests. If the connection can't create repos, the lead says what's missing and how to
+fix it. It never asks you for a token. If you already have a repo for the work, give its URL instead.
+
 From a terminal:
 
 ```sh
