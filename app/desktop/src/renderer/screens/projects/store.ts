@@ -55,15 +55,25 @@ const hubState = (): DataState | undefined => layer?.store.getState();
 /** A machine's name from the store, else its id. */
 export const machineName = (id: string): string => hubState()?.machines[id]?.name ?? id;
 
-/** The bot just made, to open once the hub's snapshot lists it, so its chat never shows as missing first. */
-let toOpen: { machineId: string; projectId: string } | undefined;
+/** Stops waiting for the bot just made to be listed. */
+let stopWaiting: (() => void) | undefined;
 
-const openWhenListed = () => {
-  const next = toOpen;
-  if (next === undefined || hubState()?.projects[projectKey(next)] === undefined) return;
-  toOpen = undefined;
-  // On the hub it was made on, which may be another than the one on screen.
-  navigate({ id: "project", project: next, message: null, ...(layer === undefined ? {} : { at: layer.hub }) });
+/**
+ * Opens the bot just made once its hub's snapshot lists it, so its chat never shows as missing first. It watches the
+ * store of the hub it was made on (`on`), whichever hub the flow follows by then: a dialog done at once lets go of
+ * that hub, and the screen may be on another one.
+ */
+const openWhenListed = (project: { machineId: string; projectId: string }, on: DataLayer) => {
+  stopWaiting?.();
+  const look = () => {
+    if (on.store.getState().projects[projectKey(project)] === undefined) return;
+    stop();
+    stopWaiting = undefined;
+    navigate({ id: "project", project, message: null, at: on.hub });
+  };
+  const stop = on.store.subscribe(look);
+  stopWaiting = stop;
+  look();
 };
 
 /** A fresh, closed dialog: what the next New bot opens on. */
@@ -76,8 +86,7 @@ const dispatch = (msg: CreateMsg) => {
   for (const c of calls) run(c);
   if (before.phase.kind === "creating" && next.phase.kind === "made") {
     // Made: its chat opens behind the dialog at once, which stays to show its repos coming in, if it has any.
-    toOpen = next.phase.bot.project;
-    openWhenListed();
+    if (layer !== undefined) openWhenListed(next.phase.bot.project, layer);
     if (next.jobs.every((j) => j.state.t === "added")) {
       // Nothing more to show, open or hidden: one toast, and the next New bot starts fresh.
       const done = next.phase.bot.title;
@@ -131,7 +140,6 @@ const connect = (next: DataLayer): void => {
     if (prev === undefined) lastSeq = d.cursor;
     const msgs = hubMessages(prev, now, lastSeq);
     prev = now;
-    openWhenListed();
     for (const msg of msgs) {
       if (msg.t === "event") lastSeq = msg.event.seq;
       dispatch(msg);

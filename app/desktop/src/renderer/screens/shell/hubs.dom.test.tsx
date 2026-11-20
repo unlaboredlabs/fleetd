@@ -26,8 +26,8 @@ interface FakeHub {
 }
 
 const fake = vi.hoisted(() => {
-  // `discover`: what project_discover answers, when a test sets it.
-  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown }>();
+  // `discover` and `add`: what project_discover and project_add answer, when a test sets them.
+  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown; add?: unknown }>();
   const badge: number[] = [];
   // The chat each hub streams, as the page last asked (hub.chat): a project, or null for none.
   const chats: Array<[string, unknown]> = [];
@@ -68,6 +68,8 @@ const fake = vi.hoisted(() => {
         if (tool === "orders_board") return Promise.resolve({ ok: true, output: { orders: [] } });
         const discover = of(id).discover;
         if (tool === "project_discover" && discover !== undefined) return Promise.resolve({ ok: true, output: discover });
+        const add = of(id).add;
+        if (tool === "project_add" && add !== undefined) return Promise.resolve({ ok: true, output: add });
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
       },
       chat: (id: string, project: unknown) => (chats.push([id, project]), done()),
@@ -594,8 +596,9 @@ it("opens New bot on the hub on view, from the sidebar's +, the palette and a li
   expect(await opened(() => runCommand("go:projects.add"))).toEqual({ hub: "Personal", on: "devbox" });
 });
 
-it("makes the bot on the hub picked in Adds to", async () => {
+it("makes the bot on the hub picked in Adds to, and opens its chat there once that hub lists it", async () => {
   fake.of("a1b2").discover = { machines: [{ machineId: "laptop", online: true, cloneRoot: "/home/l/src", projectsRoot: "/home/l/fleetd/projects", repos: [] }], github: { owners: [], repos: [] }, best: "laptop" };
+  fake.of("a1b2").add = { machineId: "laptop", path: "/home/l/fleetd/projects/notes", projectId: "notes", created: true, inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] } };
   await pickAcme(machineOnly("laptop"));
   expect(document.body.textContent).toContain("On laptop");
   const press = async (button: HTMLElement | null | undefined) => {
@@ -609,6 +612,13 @@ it("makes the bot on the hub picked in Adds to", async () => {
   await press([...document.querySelectorAll<HTMLButtonElement>("[data-screen='projects.add'] button")].find((b) => b.textContent === "Create"));
   expect(hub("a1b2").calls.filter((c) => c.tool === "project_add").map((c) => c.input)).toEqual([expect.objectContaining({ machineId: "laptop", title: "Notes" })]);
   expect(hub("hub").calls.filter((c) => c.tool === "project_add")).toEqual([]);
+  // Made with no repo: the dialog is done at once and lets go of Acme, the screen still on Personal's chat. The chat
+  // opens once Acme's snapshot lists the bot, on Acme.
+  expect(dialog()).toBeNull();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  act(() => hub("a1b2").send(project("laptop", "notes")));
+  await settle();
+  expect(window.location.hash).toBe("#/project/laptop/notes?at=a1b2");
 });
 
 it("opens on the one sidebar on a computer that kept the old List or Rail layout", async () => {
