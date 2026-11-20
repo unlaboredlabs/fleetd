@@ -22,9 +22,9 @@ test("a lead's state is read off its thread; a removed bot's lead is stopped", (
     startedAt: "2026-11-08T10:00:00.000Z",
     sessionGeneration: 2,
   });
-  const thread = (status: string) =>
+  const thread = (status: string, stale = false) =>
     store(hub).threadUpsert({
-      thread: { machineId: "lab-a", threadId: "t1", projectId: PROJECT.projectId, status, lastProgressAt: "2026-11-08T10:00:00.000Z" } as unknown as ThreadSummary,
+      thread: { machineId: "lab-a", threadId: "t1", projectId: PROJECT.projectId, status, lastProgressAt: "2026-11-08T10:00:00.000Z", stale } as unknown as ThreadSummary,
     });
   for (const [status, state] of [
     ["running", "working"],
@@ -35,6 +35,11 @@ test("a lead's state is read off its thread; a removed bot's lead is stopped", (
     thread(status as string);
     expect(area.get(PROJECT)?.state).toBe(state as never);
   }
+  // A thread its node no longer has (a host rebuilt under it) is gone, whatever it last reported.
+  for (const status of ["running", "idle", "failed"]) {
+    thread(status, true);
+    expect(area.get(PROJECT)?.state).toBe("stopped");
+  }
   expect(leadProfile(hub, PROJECT)).toBe("high");
   // A new session drops the old one's profile.
   area.records.leadPut({ projectRef: PROJECT, threadId: "t2", startedAt: "2026-11-08T11:00:00.000Z", sessionGeneration: 3 });
@@ -42,6 +47,36 @@ test("a lead's state is read off its thread; a removed bot's lead is stopped", (
   expect(area.list().map((l) => l.threadId)).toEqual(["t2"]);
   store(hub).projectRemove(PROJECT);
   expect(area.get(PROJECT)?.state).toBe("stopped");
+  done();
+});
+
+test("a message to a lead whose thread is gone starts it fresh, however recently that thread moved", async () => {
+  const { hub, clock, done } = testHub();
+  start(hub);
+  const prompts: string[] = [];
+  Object.assign(leadWiring(hub).ports, {
+    launch: async (_machineId: string, input: { prompt: string }) => {
+      prompts.push(input.prompt);
+      return `lead-${prompts.length}`;
+    },
+    send: async () => false,
+  });
+  await leads(hub).start(PROJECT);
+  const at = isoMs(clock.now());
+  const { threadId } = leads(hub).records.leadGet(PROJECT)!;
+  const thread = (stale: boolean) =>
+    store(hub).threadUpsert({
+      thread: { machineId: PROJECT.machineId, threadId, projectId: PROJECT.projectId, title: "lead", status: "idle", headline: "", latestMessageTail: "", lastProgressAt: at, stale, asOf: at } as never,
+    });
+  thread(false);
+  expect(await leads(hub).freshIfDue(PROJECT, "Human: continue")).toBeUndefined();
+  // The devbox was rebuilt: its node's snapshot no longer has the lead's session.
+  thread(true);
+  expect(leads(hub).get(PROJECT)?.state).toBe("stopped");
+  const fresh = await leads(hub).freshIfDue(PROJECT, "Human: continue");
+  expect(fresh?.threadId).toBe("lead-2");
+  expect(prompts[1]).toContain("Human: continue");
+  hub.shutdown.abort();
   done();
 });
 
