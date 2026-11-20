@@ -193,8 +193,7 @@ if wanted fleetd "${fleetd_paths[@]}"; then
   head=$(merged) || { echo "check.sh: couldn't merge the worktree onto origin/main; checking HEAD's migrations" >&2; head=HEAD; }
   step fleetd node .github/migrations-check.mjs origin/main "$head"
   step fleetd in_fleetd bun run typecheck
-  # SQLite's temp files off a VM's shared $TMPDIR, as the node sets it in a box (fleetd/src/node/place/microvm.ts
-  # BOX_SQLITE_TMPDIR), for a session that started without it.
+  # SQLite's temp files (a big sort's spill) in /var/tmp, on the machine's disk: never /tmp, which may be held in memory.
   SQLITE_TMPDIR=${SQLITE_TMPDIR:-/var/tmp} step fleetd in_fleetd bun test --parallel=4
 fi
 

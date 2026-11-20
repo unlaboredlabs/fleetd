@@ -97,9 +97,8 @@ export const fixtures = [
   // ...and one that had E2B and Daytona connected before fleetd removed them: a line each (D576).
   "machines-e2b-removed",
   // ...and the page as one model (W693): several machines with each one's state and load, both kinds of provider
-  // connected or not, and a machine whose agents can't run in VMs, with why.
+  // connected or not.
   "machines-places",
-  "machines-places-vm-off",
   "machines-places-one",
   // ...and no machine of the team's, its hosted agents with no Claude account (W721).
   "machines-none",
@@ -266,8 +265,6 @@ export const fixtures = [
   // Runs on, the bot's one pick of provider and size, and a pick whose provider went (fixtures/computer, W720).
   "computer-runs-on",
   "computer-runs-on-gone",
-  // ...and a machine that can't run VMs: why once under its Local VM sizes, with the fix to copy (W730).
-  "computer-runs-on-no-vms",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
@@ -3241,9 +3238,8 @@ export const screens: readonly Screen[] = [
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // W100: the hub admin's setup: the welcome, a step open beside the list
-  // (Tailscale's Connect, Claude to do with its key and endpoint, the GitHub App), and the end.
+  // (Claude to do with its key and endpoint, the GitHub App), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
-  { id: "setup", route: "#/setup/tailscale", fixtures: ["setup-fresh", "setup-all"], variant: "tailscale" },
   // The first run's Claude step holds the key and its endpoint: one on the tailnet says Tailscale isn't connected.
   {
     id: "setup",
@@ -3257,14 +3253,14 @@ export const screens: readonly Screen[] = [
   },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // A link to the cloud step, which is gone: it opens the first step left to do, Tailscale (optional, Skip).
+  // A link to the cloud step, which is gone: it opens the first step left to do, Claude.
   {
     id: "setup",
     route: "#/setup/cloud",
     fixtures: ["setup-fresh"],
     variant: "old-cloud-link",
     open: async (page) => {
-      await page.locator("article[data-step='tailscale']").waitFor();
+      await page.locator("article[data-step='claude']").waitFor();
     },
   },
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
@@ -3877,7 +3873,7 @@ export const screens: readonly Screen[] = [
   },
   // W693: the page as one model, every place agents and screens run a row with its state as a dot: three machines (one
   // busy, one logged out, one offline) with boat.dev (refused) connected, so What runs where's Linux machine is a pick; one machine and nothing
-  // connected; and each machine's page with where its agents run, in VMs or as processes and why.
+  // connected; and each machine's page.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-places", "machines-places-one"], variant: "places" },
   // ...Connect on a provider opens its key's sealed field in its row, the same for each of them.
   {
@@ -3901,7 +3897,7 @@ export const screens: readonly Screen[] = [
       await page.locator("[data-tailscale-row]").scrollIntoViewIfNeeded();
     },
   },
-  { id: "settings.hub.machine", route: "#/settings/hub/machines/devbox", fixtures: ["machines-places", "machines-places-vm-off"], variant: "places" },
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/devbox", fixtures: ["machines-places"], variant: "places" },
   { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-places"], variant: "places-offline" },
   { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-places"], variant: "places-laptop" },
   // D576: a hub that had Revyl connected before fleetd removed it says so in one plain line above the providers.
@@ -4579,7 +4575,7 @@ export const screens: readonly Screen[] = [
       await row.scrollIntoViewIfNeeded();
       await pick.click();
       await expect(page.getByRole("option", { name: "boat.dev · 16 vCPU / 32 GB" })).toBeVisible();
-      await expect(page.getByRole("option", { name: "Local VM · 2 vCPU / 4 GB" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "boat.dev · 2 vCPU / 4 GB" })).toBeVisible();
     },
   },
   // ...its pick's provider disconnected: the pick stays, and the row says its agents wait and why.
@@ -4593,21 +4589,6 @@ export const screens: readonly Screen[] = [
       await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("boat.dev · 8 vCPU / 16 GB");
       await expect(row).toContainText("Its agents wait: boat.dev isn't connected");
       await row.scrollIntoViewIfNeeded();
-    },
-  },
-  // ...its machine can't run VMs: each Local VM size one greyed row, why said once under them with its command to copy.
-  {
-    id: "settings.projects",
-    variant: "computer-runs-on-no-vms",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["computer-runs-on-no-vms"],
-    open: async (page) => {
-      const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
-      await row.scrollIntoViewIfNeeded();
-      await row.getByRole("combobox", { name: "Runs on" }).click();
-      await expect(page.getByRole("option", { name: "Local VM · 2 vCPU / 4 GB", exact: true })).toBeDisabled();
-      await expect(page.getByText(/AppArmor keeps this user/u)).toHaveCount(1);
-      await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
     },
   },
   // ...on a machine that builds no images: its setup alone, no image row and no Rebuild.

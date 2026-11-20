@@ -112,10 +112,7 @@ The **ⓘ** at the top of a chat opens its bot's page:
 - **Agent profiles**, when the hub has more than one: the profiles its lead may run agents on. The hub's default is
   always allowed.
 - **Machine** and **Folder**: where it runs, read only.
-- **[Computer](/docs/projects#computer)**: **Agents run on**, where the agents its lead starts run (Automatic, or one real
-  machine such as **boat.dev · 4 vCPU / 8 GB**; tap one to pick it, and one that can't be used now says why under it), each repo's setup commands, and the image its agents' computers start from: **Ready**,
-  **Building…**, **Failed** (tap it for the build's log) or **Not built yet**, when it was built and its size.
-  **Rebuild** builds it again in the background. Edit the commands in the desktop app.
+- **[Computer](/docs/projects#computer)**: each repo's setup commands. Edit them in the desktop app.
 - **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the bot's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
   and what it learned, as in the desktop app's settings.
@@ -177,17 +174,13 @@ version, **Versions** picks an older one, which says so over the page with the w
 ## Machines {#machines}
 
 An admin has **Machines** in Settings, the desktop app's [Machines page](/docs/machines#page) in three groups: the
-machines and how each is; the providers the team connects with its own keys (boat.dev), each
-with what it can run, a tap opening one to connect it (its key in a secure field, sealed on the phone), set its limit,
-test or disconnect it; and what runs where, **Linux machine** (a pick of the same places as on the desktop, once there is more than one) and
-**Mac machine**, then how long recordings are kept. Members don't see it.
+machines and how each is; and what runs where, **Mac machine**, then how long recordings are kept. Members don't see it.
 
 ## Claude {#claude}
 
 An admin has **Claude** under Machines in Settings, as the desktop app's Settings › Hub › Setup › Claude: the hub's API
 key in a secure field, sealed on the phone to every machine, and its endpoint, Anthropic's own filled in. **Save and
-Test** saves and tries it at once; Test and Remove are there once it is set. An endpoint on your tailnet says, while
-Tailscale isn't connected, that hosted agents reach it only once it is, with **Connect Tailscale** right under it.
+Test** saves and tries it at once; Test and Remove are there once it is set.
 
 ## Update fleetd {#update}
 

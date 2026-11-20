@@ -7,7 +7,7 @@
 // heartbeats size machines (loops.ts); `cap_set` is `setCaps` in cap.ts.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "../../shared/clock.ts";
-import type { ComputerPick, HubEventType, MachineId, ProjectRef, SlotSandbox, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
+import type { HubEventType, MachineId, ProjectRef, SlotState, TaskKind, ThreadRef } from "../../shared/contracts.ts";
 import type { NodeLoad, SandboxTrouble } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
@@ -25,13 +25,11 @@ import {
   type SlotPriority,
   slotState,
 } from "./board.ts";
-import { withSandbox } from "./board.ts";
-import { autoCap, diskRoom, type Host, hostOf } from "./sizing.ts";
-import { computers } from "../project_lead/store.ts";
+import { autoCap, diskRoom } from "./sizing.ts";
 import type { Size } from "../../sandbox/providers/common.ts";
-import { type Limit, RUNNER_ID } from "../../shared/sandbox.ts";
 
-export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority, withSandbox } from "./board.ts";
+
+export { GRANTED, type Grant, LOCAL, type MaxSource, type SlotPriority } from "./board.ts";
 
 const RUNNING: HubEventType[] = ["thread.started"];
 const STOPPED: HubEventType[] = [
@@ -223,7 +221,6 @@ function load(db: HubDb): Board {
   const sessionsOnly = db.all<{ machine_id: string }>("SELECT machine_id FROM machine_roles WHERE agents = 0");
   const board = new Board(cap, shares, machines, claims);
   for (const { machine_id } of sessionsOnly) board.setRunsAgents(machine_id, false);
-  for (const [r, pick] of computers(db.conn)) board.setComputer(r, pick);
   return board;
 }
 
@@ -320,8 +317,7 @@ export class Slots {
    * it takes more than before, starts the queued agents that now fit.
    */
   observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
-    // The hub's own runner runs no agent on its machine: its every agent is in a hosted box, counted by provider.
-    const auto = machineId === RUNNER_ID ? { cap: 0, why: "hosted sandboxes only" } : { ...withSandbox(autoCap(load), load.sandbox), host: hostOf(load) };
+    const auto = autoCap(load);
     const room = diskRoom(load);
     const sandboxes = Array.isArray(load.sandboxes) ? load.sandboxes.filter((p): p is string => typeof p === "string") : [];
     const places: Record<string, string> = {};
@@ -336,16 +332,6 @@ export class Slots {
   /** Takes a slot now, or queues the request (reviews first, then the oldest) and says why. */
   acquire(request: SlotRequest): Grant {
     return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority, request.hostable === true), false]);
-  }
-
-  /** Forgets the machines' word on `provider`'s trouble until a heartbeat says it again (hub/sandbox's test). */
-  clearTrouble(provider: string): void {
-    this.locked((b) => (b.clearTrouble(provider), [undefined, false]));
-  }
-
-  /** The team's hosted providers' limits (hub/sandbox), in the order agents go to them, and its Linux machine. */
-  setHosted(limits: Limit[], linux?: string): void {
-    this.locked((b) => [undefined, b.setHosted(limits, linux)]);
   }
 
   /** Where the holder's slot runs: LOCAL or a hosted provider; undefined while it holds none. */
@@ -366,16 +352,6 @@ export class Slots {
   /** The size the computer of the slot that follows the thread starts at (`sizeOf`). */
   sizeOfThread(r: ThreadRef): Size | undefined {
     return this.board.sizeOfThread(r.machineId, r.threadId);
-  }
-
-  /** A bot's pick of its agents' computer changed (project_settings_set): its queued agents go where it says now. */
-  setComputer(r: ProjectRef, pick: ComputerPick | undefined): void {
-    this.locked((b) => [undefined, b.setComputer(r, pick)]);
-  }
-
-  /** Machine `m` as a bot's computer choices read it: its name, whether it runs VMs, its CPUs and memory. */
-  machineFacts(m: MachineId): { name: string; sandbox?: SlotSandbox; host?: Host } | undefined {
-    return this.board.machineFacts(m);
   }
 
   /** The holder's slot follows `thread` from now on, taken again whenever it runs, even past the cap. */

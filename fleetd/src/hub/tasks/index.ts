@@ -1984,7 +1984,7 @@ export class Tasks {
   }
 
   /** Has the node close an ended task's agent, off the lock, unless it may still go on by itself (the node decides):
-   * an agent in a VM otherwise holds its memory until the idle reap. One it can't reach closes then anyway. */
+   * an agent in a hosted box otherwise keeps it running until the idle reap. One it can't reach closes then anyway. */
   private stopIdle(task: Task): void {
     const thread = task.threadRef;
     if (!thread) return;

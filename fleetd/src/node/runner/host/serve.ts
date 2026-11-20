@@ -10,7 +10,7 @@ import { closeSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import { nowIso } from "../../util.ts";
 import { COMMAND, leftFile, marker as newMarker, PROTOCOL, startOf, sweep, type Registration } from "../host.ts";
-import { reapLeaked } from "../../place/box_record.ts";
+import { reapLeaked } from "../../place/left_vm.ts";
 import type { RunnerEvent, SessionCommand } from "./events.ts";
 import { adoptOrphans, recordLeftIn, SESSION_MARKER } from "./reaper.ts";
 import { startSession, type Session } from "./session.ts";
@@ -217,7 +217,7 @@ export async function main(argv: string[]): Promise<number> {
   if (argv.length === 2 && argv[0] === "stop-all") {
     const stopped = await sweep(argv[1]!, new Set());
     const reaped = await reapLeaked(argv[1]!);
-    console.log(`stopped ${stopped} agent session(s)${reaped ? `, and ended ${reaped} process(es) of VMs no session recorded` : ""}`);
+    console.log(`stopped ${stopped} agent session(s)${reaped ? `, and ended ${reaped} process(es) of VMs left from before fleetd removed them` : ""}`);
     return 0;
   }
   const split = argv.indexOf("--");

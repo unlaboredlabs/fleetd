@@ -1,8 +1,6 @@
 // project_add: add a path (a git checkout or a plain folder), make a new
 // folder (`create`), or clone a GitHub repository with progress events; then register it on its node and emit
 // `project.added` with its inspect. A clone cut off by a hub restart gets its `project.add_failed` at the next start.
-import { RUNNER_ID } from "../../shared/sandbox.ts";
-import { sendGithubTokens } from "../runner/github.ts";
 import type {
   CloneProgressData,
   GitHubRepo,
@@ -408,8 +406,6 @@ export async function cloneAndRegister(
   };
   let facts: RepoFacts;
   try {
-    // The hub's runner clones with the hub's GitHub token for the repo: there is no computer's login to use.
-    if (m === RUNNER_ID) await sendGithubTokens(hub, [repo]).catch((e: unknown) => console.warn(`runner: GitHub token not sent: ${(e as Error).message}`));
     facts = await repoClone(hub, m, addId, `https://github.com/${repo}`, path);
   } catch (e) {
     const message = e instanceof ExecutorError && e.kind === "node_failed" ? (e.extra.nodeMessage ?? e.message) : (e as Error).message;

@@ -35,7 +35,7 @@ export const imageSize = (bytes: number): string => (bytes < GB ? `${String(Math
 
 /**
  * Whether its machine keeps images at all: one that can build them says where even before the first (`none` with
- * `where`); a bare `none` is a machine that builds none (no VMs and no hosted provider), whose agents start clean.
+ * `where`); a bare `none` is a machine that builds none (a self-hosted hub's), whose agents start clean.
  */
 const imaged = (image: ComputerImage | undefined): image is ComputerImage => image !== undefined && (image.state !== "none" || image.where !== undefined);
 
@@ -83,7 +83,7 @@ export interface RunsOnRow {
   readonly selected: boolean;
   /** Why it can't be picked now; it isn't tappable then. */
   readonly why?: string;
-  /** Said once under the last of the rows side by side that share a `why` (a machine's every Local VM size), with the
+  /** Said once under the last of the rows side by side that share a `why` (a provider's every size), with the
    * command that fixes it when there is one. */
   readonly note?: { readonly why: string; readonly fix?: string };
 }

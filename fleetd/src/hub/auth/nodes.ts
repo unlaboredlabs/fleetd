@@ -3,7 +3,7 @@
 // minted with no machine (the app's Connect a computer) takes the name the node asks for, made unique.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";
-import { RUNNER_ID, runnerRefused } from "../../shared/sandbox.ts";
+import { HOSTED_ID, hostedIdRefused } from "../hosted_gone/index.ts";
 import { isoMs, sha256 } from "./index.ts";
 import {
   anotherComputer,
@@ -12,9 +12,8 @@ import {
   ENROLL_TTL_MS,
   ENROLL_CODE_ID_LEN,
   enrolledAs,
+  notHosted,
   NAMELESS,
-  notTheRunner,
-  RUNNER_CODE,
   secret,
   SPENT_CODE_KEPT_MS,
   suffixed,
@@ -39,16 +38,11 @@ export class NodeKeys {
   ) {}
 
   /** One-time, valid for 15 minutes; replaces the machine's open one. With no machine, it enrolls a node under the
-   * name it asks for, made unique (freeId), and replaces none. `by` names the caller in the hub log. Never one for the
-   * hub's own runner's id: only createRunnerEnrollToken mints that. */
+   * name it asks for, made unique (freeId), and replaces none. `by` names the caller in the hub log. Never one for
+   * HOSTED_ID, which no computer takes. */
   createEnrollToken(machineId: string | undefined, by: string): EnrollToken {
-    if (machineId === RUNNER_ID) throw new Error(runnerRefused("nothing joins as them."));
+    if (machineId === HOSTED_ID) throw new Error(hostedIdRefused("nothing joins as it."));
     return this.mint(machineId, machineId ?? NAMELESS, by);
-  }
-
-  /** The code the hub's runner (hub/runner) joins as RUNNER_ID with: the one way any node enrolls under that id. */
-  createRunnerEnrollToken(): EnrollToken {
-    return this.mint(RUNNER_ID, RUNNER_CODE, "the hub's runner");
   }
 
   private mint(machineId: string | undefined, row: string, by: string): EnrollToken {
@@ -77,7 +71,7 @@ export class NodeKeys {
     );
     return rows.map((r) => ({
       id: r.id,
-      machineId: r.machine_id === RUNNER_CODE ? RUNNER_ID : r.machine_id,
+      machineId: r.machine_id,
       createdAt: isoMs(r.expires_ms - ENROLL_TTL_MS),
       expiresAt: isoMs(r.expires_ms),
     }));
@@ -91,7 +85,7 @@ export class NodeKeys {
          AND used_ms IS NULL AND expires_ms > ?3 RETURNING machine_id`,
       )
       .get(ENROLL_CODE_ID_LEN, id, this.clock.now());
-    return row?.machine_id === RUNNER_CODE ? RUNNER_ID : row?.machine_id;
+    return row?.machine_id;
   }
 
   revokeEnrollSecret(token: string): boolean {
@@ -106,12 +100,11 @@ export class NodeKeys {
   }
 
   /** Burns the token and records `pubKey` as the machine's node key; throws Unauthorized with why it can't. A nameless
-   * token takes any id: enrollNode settles which. The runner's id takes only the runner's own code
-   * (createRunnerEnrollToken), never one a person minted for it. */
+   * token takes any id: enrollNode settles which. HOSTED_ID takes none. */
   consumeEnrollToken(token: string, machineId: string, pubKey: string): void {
+    if (machineId === HOSTED_ID) throw notHosted();
     const now = this.clock.now();
     const hash = sha256(token);
-    const runner = machineId === RUNNER_ID;
     const burned = this.db.transaction((conn) => {
       // One statement, so two nodes racing on one token cannot both win.
       const row = conn
@@ -119,7 +112,7 @@ export class NodeKeys {
           `UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id IN ($machine, $nameless)
            AND used_ms IS NULL AND expires_ms > $now RETURNING hash`,
         )
-        .get(runner ? { now, hash, machine: RUNNER_CODE, nameless: RUNNER_CODE } : { now, hash, machine: machineId, nameless: NAMELESS });
+        .get({ now, hash, machine: machineId, nameless: NAMELESS });
       if (!row) return false;
       conn
         .query(
@@ -134,8 +127,7 @@ export class NodeKeys {
         "SELECT machine_id, expires_ms, used_ms FROM enroll_tokens WHERE hash = ?",
       )
       .get(hash);
-    if (runner && row && row.machine_id !== RUNNER_CODE) throw notTheRunner();
-    throw codeRefusal(row ? { ...row, machine_id: row.machine_id === RUNNER_CODE ? RUNNER_ID : row.machine_id } : undefined, machineId, now);
+    throw codeRefusal(row ?? undefined, machineId, now);
   }
 
   nodePubKey(machineId: string): string | undefined {
@@ -180,8 +172,8 @@ export class NodeKeys {
       .get(pubKey);
     if (held) return held.machine_id;
     const taken = (id: string) => {
-      // The hub's own runner's id is never a computer's.
-      if (id === RUNNER_ID) return true;
+      // The hosted sandboxes' id is never a computer's.
+      if (id === HOSTED_ID) return true;
       const key = this.db.conn
         .query<{ fingerprint: string | null }, [string]>("SELECT fingerprint FROM node_keys WHERE machine_id = ?")
         .get(id);

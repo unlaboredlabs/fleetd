@@ -10,8 +10,8 @@
 //   relay names, as this machine reaches it (a Claude gateway on its tailnet, say);
 // - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
 //   (`slots`: the node's is ../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
-// - each dial the node opens (`dial`): a connection the guest makes from inside the box, the browser's way out
-//   (../browser/egress.ts), so the agent's browser reaches what the box reaches and no more;
+// - each dial the node opens (`dial`): a connection the guest makes from inside the box (a screen's, its port on the
+//   box's loopback), so it reaches what the box reaches and no more;
 // - in a hosted box, each connection to the team's tailnet and each lookup of a tailnet name its capture makes
 //   (./tailnet_box.ts), carried on to the team's gateway by the node (./tailnet.ts `tailnet`).
 // A channel to anywhere else is refused.
@@ -34,16 +34,14 @@ const GONE_MS = 30_000;
 const REDIAL_MIN_MS = 50;
 const REDIAL_MAX_MS = 1_000;
 /** How often the node asks a box's guest whether it still answers, and how long it waits before the box counts as
- * hung (a frozen or panicked guest keeps its vsock socket open, so its link never drops by itself). */
+ * hung (a frozen guest can keep its link open, so it never drops by itself). */
 export const PING_MS = 10_000;
 export const SILENT_MS = 60_000;
-/** How often a local VM's clock is set again from this machine's. */
-export const CLOCK_MS = 10 * 60_000;
 
 export type BoxOptions = {
   /** The session the box runs: every call from it acts as this session. */
   session: string;
-  /** A new stream to the guest helper: vsock through the VMM's socket, or a unix socket to a stand-in. */
+  /** A new stream to the guest helper: the provider's port, or a unix socket to a stand-in. */
   dial: () => Promise<Duplex>;
   /** The node's socket, at whose path the guest listens (FLEETD_NODE_SOCK). */
   nodeSock: string;
@@ -59,15 +57,12 @@ export type BoxOptions = {
   slots?: { sock: string; channel: () => Duplex };
   /** How long a dropped link is dialled again before the guest counts as gone. */
   goneMs?: number;
-  /** Whether the box still runs (its VMM): a dropped link of a box that doesn't ends at once, with no redial. */
+  /** Whether the box still runs: a dropped link of a box that doesn't ends at once, with no redial. */
   alive?: () => boolean;
   /** Called once when the guest stopped answering for `silentMs` (it's ended then); and the stand-ins' times. */
   hung?: (why: string) => void;
   pingMs?: number;
   silentMs?: number;
-  /** Set the guest's clock from this machine's, on each link and every CLOCK_MS: a local VM's (it has no clock of
-   * its own to keep). */
-  clock?: boolean;
   /** Where the box's tailnet connections and lookups go (a hosted box's): none, and the box opens none. */
   tailnet?: TailnetHooks;
 };
@@ -99,7 +94,6 @@ export class Box {
   readonly gone: Promise<string> = new Promise((r) => (this.#goneResolve = r));
 
   #ping: ReturnType<typeof setInterval> | undefined;
-  #clockAt = 0;
 
   private constructor(readonly o: BoxOptions) {
     this.#tcp = new Set(o.tcp);
@@ -127,8 +121,8 @@ export class Box {
   }
 
   /** Runs a command in the box (a setup command), confined to its cwd, its group killed at its timeout or `r.signal`.
-   * A link that drops meanwhile ends the wait with a run that didn't finish. As the agent's user where the guest runs
-   * it as one (a local VM's), unless `root`: the node's own commands in the box (its pin to Claude's relay). */
+   * A link that drops meanwhile ends the wait with a run that didn't finish. `root`: the node's own commands in the box
+   * (its pin to Claude's relay). */
   async run(r: ConfinedRun & { root?: boolean }): Promise<RunOutcome> {
     const run = `r${++this.#runs}`;
     const cancel = () => void this.#request({ op: "cancel", run }).catch(() => {});
@@ -157,7 +151,7 @@ export class Box {
     return bridge.socket;
   }
 
-  /** A connection the guest makes from inside the box to `host`:`port` (a browser's: ../browser/egress.ts), so it
+  /** A connection the guest makes from inside the box to `host`:`port` (a screen's: ../place/box_screens.ts), so it
    * reaches what the box reaches and no more: its stream here once the guest connected. Throws why not, in the guest's
    * words (ECONNREFUSED, ENOTFOUND), or that its guest predates dials. */
   async dial(host: string, port: number): Promise<Duplex> {
@@ -170,7 +164,7 @@ export class Box {
     const said = new Promise<string | undefined>((resolve) => (settle = resolve));
     this.#dials.set(channel, settle);
     // Ended or dropped before a word: a guest that doesn't dial (an older one) ends the channel at once.
-    const closed = () => settle("the box's guest ended the connection before it connected (a guest from before dials: a new task's VM has one)");
+    const closed = () => settle("the box's guest ended the connection before it connected (a guest from before dials)");
     there.once("finish", closed);
     there.once("close", closed);
     const timer = setTimeout(() => settle(`the box's guest didn't answer the dial within ${DIAL_WAIT_MS / 1000} s`), DIAL_WAIT_MS);
@@ -240,12 +234,6 @@ export class Box {
     }
   }
 
-  /** Has the box's kernel forget the files it caches but holds no open file of (a local VM's: its share's server
-   * then closes the fd it keeps for each). */
-  async forget(): Promise<void> {
-    await this.#request({ op: "forget" }, ANSWER_MS * 4);
-  }
-
   /** Whether the link ended for good: the guest went away, or the node let go. */
   get ended(): boolean {
     return this.#over;
@@ -267,7 +255,7 @@ export class Box {
   }
 
   async #dial(): Promise<void> {
-    // A dial that never answers (a vsock connect, say) counts as a failed one.
+    // A dial that never answers counts as a failed one.
     let late = false;
     const dialled = this.o.dial();
     dialled.then((l) => late && l.destroy(), () => {});
@@ -279,7 +267,7 @@ export class Box {
       }),
     ]);
     let hello!: (m: Record<string, unknown> | undefined) => void;
-    // A link that closes before its hello (a VM whose guest isn't listening yet) fails the dial at once.
+    // A link that closes before its hello (a box whose guest isn't listening yet) fails the dial at once.
     const said = new Promise<Record<string, unknown> | undefined>((r) => (hello = r));
     const mux: Mux = new Mux(link, {
       control: (m) => {
@@ -308,7 +296,6 @@ export class Box {
       if (this.o.slots) await this.#request({ op: "listen", unix: this.o.slots.sock });
       for (const port of this.#tcp) await this.#request({ op: "listen", tcp: port });
       for (const r of this.#relays.values()) await this.#request(listenOf(r));
-      if (this.o.clock) await this.#setClock();
     } catch (error) {
       if (this.#mux === mux) this.#mux = undefined;
       mux.close((error as Error).message);
@@ -414,7 +401,7 @@ export class Box {
   async #redial(why: string): Promise<void> {
     const deadline = Date.now() + (this.o.goneMs ?? GONE_MS);
     for (let wait = REDIAL_MIN_MS; !this.#over; wait = Math.min(wait * 2, REDIAL_MAX_MS)) {
-      // A box whose VMM is gone won't answer again: its link ends now, not when the redials give up.
+      // A box that is gone won't answer again: its link ends now, not when the redials give up.
       if (this.o.alive && !this.o.alive()) {
         this.#end(`the box ended: ${why}`);
         return;
@@ -441,8 +428,7 @@ export class Box {
     this.#pinging = true;
     const silent = this.o.silentMs ?? SILENT_MS;
     try {
-      if (this.o.clock && Date.now() - this.#clockAt >= CLOCK_MS) await this.#setClock(silent);
-      else await this.#request({ op: "ping" }, silent);
+      await this.#request({ op: "ping" }, silent);
     } catch (error) {
       const message = (error as Error).message;
       if (this.#over || !/didn't answer/u.test(message)) return;
@@ -455,17 +441,6 @@ export class Box {
   }
 
   #pinging = false;
-
-  /** The guest's clock set to this machine's, to the millisecond. */
-  async #setClock(ms = ANSWER_MS): Promise<void> {
-    this.#clockAt = Date.now();
-    try {
-      await this.#request({ op: "clock", ms: Date.now() }, ms);
-    } catch (error) {
-      // A guest from before `clock` answers that it has none: its clock is the kernel line's, as it was.
-      if (/didn't answer/u.test((error as Error).message)) throw error;
-    }
-  }
 
   #end(why: string): void {
     if (this.#over) return;

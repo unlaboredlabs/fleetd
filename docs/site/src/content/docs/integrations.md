@@ -94,7 +94,7 @@ A hub with no https address signs in to such a service only from its own machine
 from half its life left and at most 30 minutes before, and hands the new one to the bot's machine. Agents never hold
 the token themselves: their claude reaches a signed-in server through fleetd's MCP relay, which takes the machine's
 newest token for each request, so an agent keeps the server for its whole session, the lead and tasks alike, on the
-machine, in a local VM or in a hosted sandbox. If the server turns a token away anyway, the relay has the hub renew
+machine or in a hosted sandbox. If the server turns a token away anyway, the relay has the hub renew
 it at once and sends again. Scheduled runs use it the same way. Where the service lists `offline_access` among its
 scopes, fleetd asks for it (with `openid` where listed too), since some services send the refresh token renewing needs
 only then.

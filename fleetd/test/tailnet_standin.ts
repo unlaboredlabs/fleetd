@@ -1,5 +1,5 @@
-// A stand-in for Tailscale's own programs as the hub's gateway runs them (src/hub/tailnet/local.ts), so its tests need
-// no Tailscale and reach no tailnet:
+// A stand-in for Tailscale's own programs as a gateway runs them (fleetd cloud's tests use it: src/hub/tailnet/
+// tailscale.ts says why it stays), so its tests need no Tailscale and reach no tailnet:
 // - `daemon` (tailscaled): serves the local API on its --socket: status (logged in once its --state file says
 //   `approved`, which is what a test writes for "the person approved it"; a sign-in page once `up` asked for one; its
 //   own addresses and its peers), a dial (to 127.0.0.1 at the port asked, whatever the address, and refused for

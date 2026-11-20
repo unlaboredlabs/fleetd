@@ -10,11 +10,6 @@ export const SPENT_CODE_KEPT_MS = 24 * 60 * 60_000;
 export const ENROLL_CODE_ID_LEN = 12;
 /** An enroll code's machine_id when it names no machine: never a valid machine id. */
 export const NAMELESS = "";
-/**
- * The machine_id of the code the hub's own runner joins with (NodeKeys.createRunnerEnrollToken): never a valid
- * machine id, so no code a person mints, named or not, enrolls a computer as the runner (W743).
- */
-export const RUNNER_CODE = "(the hub's runner)";
 export const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
 /** RFC 4648 base32, lowercase, unpadded. */
@@ -94,11 +89,11 @@ export function codeRefusal(row: { machine_id: string; expires_ms: number; used_
   ]);
 }
 
-/** A node that asked to enroll as the hub's own runner with a code a person minted. */
-export const notTheRunner = () =>
+/** A node that asked to enroll as `hosted`, the id of the hosted sandboxes fleetd no longer runs (hosted_gone). */
+export const notHosted = () =>
   refusal([
-    ["hosted is the hub's own runner, not a computer's id", "join under a name of its own (--machine-id)"],
-    ["hosted is the hub's own", "join under a name of its own"],
+    ["hosted was the hub's hosted sandboxes, never a computer's id", "join under a name of its own (--machine-id)"],
+    ["hosted is no computer's id", "join under a name of its own"],
   ]);
 
 /** `machineId` is already another computer's (its fingerprint differs). */

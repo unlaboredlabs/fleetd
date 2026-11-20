@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 // A machine's agents, on its page in Hub › Machines: how many at once (where that comes from in its hover, what runs now
-// beside it), the slider that sets it and the way back to auto, and where they run (each in a VM, or as processes with
-// why and the fix); the line a fleet cap the CLI set gets under What runs where's Agents; and Settings → Projects → Agents' project slider past
+// beside it), the slider that sets it and the way back to auto; the line a fleet cap the CLI set gets under What runs where's Agents; and Settings → Projects → Agents' project slider past
 // its machine's cap, which says the machine holds it, with the way to that machine's page for an owner or admin and
 // nothing more for anyone else.
 import { act } from "react";
@@ -118,7 +117,7 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean, start: 
               <WhatRunsWhere />
               {["devbox", "builder"].map((id) => (
                 <section key={id} aria-label={id}>
-                  <MachineCap machineId={id} name={id} />
+                  <MachineCap machineId={id} />
                 </section>
               ))}
             </>
@@ -223,61 +222,4 @@ it("says a fleet cap the CLI set below the machines' total, and nothing without 
   const { fleetCap: _, ...none } = slots;
   await render("hub", true, { ...none, cap: 62 });
   expect(host.querySelector("[data-fleet-cap]")).toBeNull();
-});
-
-it("says where each machine's agents run: a VM, or a process with why and its fix, and by design only in the hover", async () => {
-  const fix = "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0";
-  await render("hub", true, {
-    ...slots,
-    perMachine: [
-      { machineId: "devbox", cap: 22, auto: 22, running: 22, why: "memory 60 GB, about 2 GB an agent; each agent in a VM of its own", sandbox: { kind: "microvm" } },
-      {
-        machineId: "builder",
-        cap: 40,
-        maxAgents: 40,
-        auto: 28,
-        running: 0,
-        why: `28 of 32 CPUs; agents run as plain processes: AppArmor blocks user namespaces. Fix: ${fix}`,
-        sandbox: { kind: "process", why: "AppArmor blocks user namespaces", fix },
-      },
-    ],
-  });
-  const vm = (id: string) => section(id).querySelector<HTMLElement>("[data-vm]");
-  expect(vm("devbox")?.getAttribute("data-vm")).toBe("on");
-  expect(vm("devbox")?.textContent).toContain("A VM");
-  // Its reason is the cap's alone: where its agents run is a row of its own.
-  expect(section("devbox").querySelector("[data-hint]")?.textContent).toBe("Auto: memory 60 GB, about 2 GB an agent.");
-  expect(vm("builder")?.getAttribute("data-vm")).toBe("off");
-  expect(vm("builder")?.textContent).toContain("A process");
-  expect(vm("builder")?.textContent).toContain("AppArmor blocks user namespaces. Run on builder:");
-  expect(vm("builder")?.textContent).toContain(fix);
-
-  act(() => root.unmount());
-  root = createRoot(host);
-  const why = "VMs need Linux with KVM; this machine runs macOS, so its agents run as plain processes.";
-  await render("hub", true, {
-    ...slots,
-    perMachine: [{ machineId: "devbox", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent; agents run as plain processes: ${why}`, sandbox: { kind: "process", why, expected: true } }],
-  });
-  // By the machine's design: nothing to fix, so nothing under the row; why is its hover.
-  expect(vm("devbox")?.querySelector("[data-hint]")?.textContent).toBe(why);
-  expect(vm("devbox")?.textContent.replace(why, "")).not.toContain("macOS");
-  expect(vm("devbox")?.textContent).not.toContain("Run on");
-});
-
-it("says a VM that didn't start in one plain sentence, its console only behind Show details", async () => {
-  const why = "the last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after 00:08 UTC";
-  const detail = "2026-11-19T23:48:34.000Z WARN sandbox-guest: can't listen at /run/fleetd/link.sock\nfleetd-init: sandbox-guest ended (1): powering off\n[    1.126180] sysrq: Power Off";
-  await render("hub", true, {
-    ...slots,
-    perMachine: [{ machineId: "devbox", cap: 10, auto: 10, running: 7, why: `memory 60 GB, about 4 GB an agent; agents run as plain processes: ${why}`, sandbox: { kind: "process", why, detail } }],
-  });
-  const vm = () => section("devbox").querySelector<HTMLElement>("[data-vm]") ?? document.body;
-  expect(vm().textContent).toContain("The last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after 00:08 UTC.");
-  for (const raw of ["sandbox-guest", "fleetd-init", "sysrq"]) expect(vm().textContent).not.toContain(raw);
-  const toggle = () => [...vm().querySelectorAll("button")].find((b) => b.textContent.includes("details"));
-  expect(toggle()?.textContent).toBe("Show details");
-  act(() => toggle()?.click());
-  expect(toggle()?.textContent).toBe("Hide details");
-  expect(vm().querySelector("pre")?.textContent).toBe(detail);
 });

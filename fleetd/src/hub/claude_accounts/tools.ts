@@ -5,7 +5,6 @@
 //
 // A key or token comes sealed to each machine's box key; the hub relays each box to its node and records the
 // fingerprint it answers. The boxes are never stored, logged or returned, and no agent key reaches these tools.
-import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type { ClaudeAccount, ClaudeSeal, ClaudeSealedOn, ClaudeTest, Person } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
@@ -18,7 +17,6 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { accountKey, ClaudeAccountStore } from "./index.ts";
 import { accountRemoved, activePeople, administrator, me as person, refOf } from "./people.ts";
-import { toRunner } from "./runner.ts";
 import { signedInAgain } from "../leads/signed_in.ts";
 import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
@@ -68,8 +66,8 @@ export function register(tools: Registry): void {
       updatedBy: refOf(by),
     };
     s.putHubApi(api);
-    // A lead Claude refused for its sign-in carries on with this one, once the hub's runner holds it too.
-    void toRunner(hub).finally(() => signedInAgain(hub));
+    // A lead Claude refused for its sign-in carries on with this one.
+    signedInAgain(hub);
     return {
       hubApi: api,
       missingOn: missingOn(hub, api.sealedOn),
@@ -110,8 +108,8 @@ export function register(tools: Registry): void {
     if (held.length === 0) throw noneTook(problems);
     const subscription = { sealedOn: held, connectedAt: isoMs(hub.clock.now()) };
     s.putSubscription(p.personId, subscription);
-    // A lead Claude refused for its sign-in carries on with this one, once the hub's runner holds it too.
-    void toRunner(hub).finally(() => signedInAgain(hub));
+    // A lead Claude refused for its sign-in carries on with this one.
+    signedInAgain(hub);
     return {
       me: s.setup().person(p),
       missingOn: missingOn(hub, subscription.sealedOn),
@@ -257,8 +255,7 @@ function holding(hub: Hub, held: ClaudeSealedOn[], asked: string | undefined, no
     }
     m = asked;
   } else {
-    // A computer of the team's first, which tries it with its own Claude Code; the hub's runner asks its endpoint.
-    const ids = held.map((s) => s.machineId).sort((a, b) => Number(a === RUNNER_ID) - Number(b === RUNNER_ID));
+    const ids = held.map((s) => s.machineId);
     const found = ids.find((x) => readyOk(hub, x));
     if (found === undefined) throw new ToolError("machine_offline", none, fix);
     m = found;

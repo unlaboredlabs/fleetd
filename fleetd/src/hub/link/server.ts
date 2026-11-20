@@ -6,7 +6,6 @@
 //
 // `hub.area("link")` is the seam other areas use: `on(tag, fn)` for node frames, `send`/`request` for hub frames,
 // `can(machineId, cap)` for what the node's hello listed, `linkId`, and `onLinked`/`onUnlinked`.
-import { CAP_RUNNER, RUNNER_ID } from "../../shared/sandbox.ts";
 import { hostname } from "node:os";
 import { NODE_TO_HUB, type NodeToHubTag } from "../../shared/wire_tags.ts";
 import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
@@ -584,8 +583,6 @@ export class Link {
     if (hello.boxPubKey) machine.boxPubKey = hello.boxPubKey;
     if (lastSlept) machine.lastSlept = lastSlept;
     if (agentsMac) machine.agentsMac = true;
-    // The hub's own runner, only under its own id (hub/runner).
-    if (machineId === RUNNER_ID && caps.includes(CAP_RUNNER)) machine.runner = true;
     try {
       hubStore.machineUpsert(machine as Machine);
     } catch (error) {

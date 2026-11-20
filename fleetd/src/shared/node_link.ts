@@ -199,9 +199,8 @@ export type NodeLoad = {
   android?: ScreenHealth;
   ios?: ScreenHealth;
   desktop?: ScreenHealth;
-  /** Where the machine's agents run: in a VM of their own each, or as plain processes and why (turned off, no KVM…),
-   * with the command that fixes it where a person has one; `expected` when that's by choice or the machine's design;
-   * `detail`, the last VM's console when one didn't come up, for whoever looks into it. */
+  /** No node of this fleetd sends it (agents run on their machine, W760): fleetd cloud reads it until its pin move.
+   * Where the machine's agents ran: in a VM of their own each, or as plain processes and why. */
   sandbox?: { kind: "microvm"; why?: string; fix?: string; accountsOnly?: true } | { kind: "process"; why: string; fix?: string; expected?: true; detail?: string };
   mac?: MacHealth;
 };

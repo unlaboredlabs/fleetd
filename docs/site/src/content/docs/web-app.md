@@ -20,10 +20,9 @@ bot's lead. The one step still to do is open; each one done keeps a line saying 
 1. **Where agents run.** A computer of yours or hosted sandboxes; either one is enough, and a machine is optional.
    **A computer**: copy the line shown and paste it in a terminal on a Mac or Linux computer; it installs fleetd and
    joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out.
-   **Hosted sandboxes**: **Connect** beside boat.dev and paste an API key of your own account there
-   ([Hosted sandboxes](/docs/machines#sandboxes)).
+   **Hosted sandboxes**: **Connect** beside boat.dev and paste an API key of your own account there.
 2. **Tailscale** (optional). **Connect Tailscale** opens Tailscale's sign-in page: sign in and approve, and hosted
-   agents reach your tailnet through [one device the hub runs](/docs/machines#tailscale). **Skip** goes on; it isn't
+   agents reach your tailnet through one device fleetd cloud runs for your team. **Skip** goes on; it isn't
    asked again, and the step's row keeps a quiet **Connect**.
 3. **Claude.** **API key**: the endpoint, Anthropic's own filled in (type a gateway's over it), and a key from the
    Claude Console; **Save** seals it on your device to every machine. An endpoint on your tailnet says so while

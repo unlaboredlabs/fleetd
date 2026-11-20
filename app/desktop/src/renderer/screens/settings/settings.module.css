@@ -530,14 +530,6 @@
   min-width: 0;
 }
 
-/* What's behind a reason (a VM's console): its lines as they were, scrolled sideways rather than wrapped. */
-.details {
-  margin: 0;
-  max-height: 240px;
-  overflow: auto;
-  white-space: pre;
-}
-
 /* A title with a quiet word beside it, on its line: a provider and what it can run. */
 .titleMeta {
   display: inline-flex;

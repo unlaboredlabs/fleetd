@@ -94,10 +94,9 @@ describe("machines", () => {
     expect(b.machineCap).toBe(30);
     expect(machineHolds(b, 64, "devbox", auto)).toBe("devbox runs at most 10 agents at once, then boat.dev 20, so this bot runs 30 until an admin raises one of them.");
     expect(holdsLink(b, "devbox", auto)).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
-    // A Local VM pick, or a Linux machine kept to the team's own: the machine alone.
-    expect(holdOf({ kind: "vm" }, boat)).toEqual({ spill: [] });
+    // A Linux machine kept to the team's own: the machine alone.
     expect(holdOf(undefined, { ...boat, linux: "ours_only" })).toEqual({ spill: [] });
-    expect(projectAgents(ten, storefront, holdOf({ kind: "vm" }, boat)).machineCap).toBe(10);
+    expect(projectAgents(ten, storefront, holdOf(undefined, { ...boat, linux: "ours_only" })).machineCap).toBe(10);
   });
 
   it("names boat.dev's limit, not a machine, for a bot on the hosted sandboxes", () => {

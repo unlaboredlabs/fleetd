@@ -15,8 +15,6 @@ import { link } from "../link/index.ts";
 import { HubDb } from "../store/db.ts";
 import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
-import { dialUrl, runner } from "../runner/index.ts";
-import { tailnet } from "../tailnet/index.ts";
 
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
@@ -154,8 +152,6 @@ export async function hubStart(argv: string[]): Promise<number> {
   // On stderr as the Rust hub's, which what starts a hub reads it from, and an INFO line all the same.
   console.error(`${new Date().toISOString()} INFO fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
   startAll(hub);
-  // The hub's own runner, where a provider is connected or a bot lives on it: agents run with no computer connected.
-  runner(hub).start(dialUrl(options.listen.host, server.port ?? options.listen.port));
   // From here on one task's failure never takes the hub down, as a tokio task's panic doesn't: it is logged and the
   // hub carries on. A failure to start (above) still ends it.
   process.on("unhandledRejection", (reason) => console.error("fleetd hub: a task failed:", reason));
@@ -171,10 +167,6 @@ export async function hubStart(argv: string[]): Promise<number> {
   await link(hub).stop(LEAD_CALLS_GRACE_MS);
   hub.shutdown.abort();
   await stop(server);
-  // The team's Tailscale gateway ends with the hub, its state sealed first.
-  await tailnet(hub)
-    .stop()
-    .catch(() => {});
   hub.db.close();
   return 0;
 }

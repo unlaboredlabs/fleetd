@@ -19,24 +19,18 @@
 // - runs a command where the agent runs when the node asks (a worktree's setup commands), confined to its cwd and
 //   killed with its process group at its timeout or the node's `cancel`.
 //
-// With FLEETD_GUEST_ONCE=1 (a VM's kernel argument `fleetd.once=1`), the guest ends once the session host it started
-// ended, or when it ran neither a host nor a command for IDLE_MS: its init then powers the VM off, so a box goes with
-// its session, with the node or without it.
-//
 // Control messages, node → guest: `{"id":n,"op":"listen","unix":path}` or `"tcp":port` (with `"addr":ip`, one of the
 // guest's own addresses, to listen there instead of its loopback),
 // `{"id":n,"op":"start","sessionId","program","args","cwd","env"}`, `{"id":n,"op":"run","run","argv","cwd","env",
 // "timeoutSec","scrub","root"?}` (`root`: the node's own command, never run as the agent's user) and `{"id":n,"op":"cancel","run"}`, and for a box without the node's files (hosted)
 // `{"id":n,"op":"write","path","data":base64,"append"?,"mode"?}` and `{"id":n,"op":"read","path","offset","max"}`
-// (answers `{"data":base64,"size"}`), and in a local VM `{"id":n,"op":"forget"}` (its kernel drops the files it
-// caches, and the share's server the fd it keeps for each), `{"id":n,"op":"ping"}` (any answer: it still answers) and
-// `{"id":n,"op":"clock","ms"}` (a local VM's clock set to the node's); guest → node `{"id":n,"ok":{…}}` or
+// (answers `{"data":base64,"size"}`), and `{"id":n,"op":"ping"}` (any answer: it still answers); guest → node `{"id":n,"ok":{…}}` or
 // `{"id":n,"error":"…"}`, on every link first `{"op":"hello","protocol":n,"host":{"protocol","refused","lines"}|null}`,
 // `{"op":"hostLines","n":n}`: the session host has taken the node's first n lines, and `{"op":"dial","channel"[,"error"]}`.
 // In a hosted box, `{"id":n,"op":"tailnet","suffix":s|null}` switches the team's tailnet in the box on or off
 // (./tailnet_box.ts), and the node says how each of its connections' dials went with `{"op":"tailnetDialed","channel"[,"error"]}`.
 import { type ChildProcess, spawn } from "node:child_process";
-import { chownSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
 import { createServer, connect, isIP, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
@@ -48,7 +42,6 @@ import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
 import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
 import { GUEST_PROTOCOL, HOST, type HostInfo, Mux, NODE_CHANNELS, READ_CHUNK, type Target } from "./mux.ts";
 import { BoxTailnet } from "./tailnet_box.ts";
-import { setClock, setUpGuest, watchOom } from "./system.ts";
 
 export { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./mux.ts";
 
@@ -57,10 +50,6 @@ const START_TIMEOUT_MS = 10_000;
 /** How long an ended connection to the session host may take to close before it is cut. */
 const CLOSE_MS = 2_000;
 const CONFIRM_MS = 200;
-/** A guest with FLEETD_GUEST_ONCE that ran nothing this long ends. */
-export const IDLE_MS = 10 * 60_000;
-/** How long a once guest outlives its session host, for the node to take the host's last lines. */
-const AFTER_HOST_MS = 2_000;
 /** The variable holding the per-box secret a hosted guest takes its link with. */
 export const SECRET_ENV = "FLEETD_BOX_SECRET";
 
@@ -70,9 +59,6 @@ type Options = {
   /** The address the TCP forwards listen on: 127.0.0.1 in a box; a stand-in box beside its node takes another of
    * 127/8, where the node's own ports aren't. */
   loopback: string;
-  /** Called once the guest is done (FLEETD_GUEST_ONCE): its session host ended, or it sat idle for `idleMs`. */
-  done?: () => void;
-  idleMs?: number;
 };
 
 const warn = (message: string) => process.stderr.write(`${new Date().toISOString()} WARN sandbox-guest: ${message}\n`);
@@ -85,27 +71,14 @@ export class Guest {
   #server: Server | undefined;
   /** Commands running for the node, by its run id. */
   #runs = new Map<string, AbortController>();
-  #busyAt = Date.now();
-  #idle: ReturnType<typeof setInterval> | undefined;
   #ws: { stop(close?: boolean): void } | undefined;
   #tailnet: BoxTailnet | undefined;
 
-  constructor(readonly o: Options) {
-    const done = o.done;
-    if (!done) return;
-    const idleMs = o.idleMs ?? IDLE_MS;
-    this.#idle = setInterval(() => {
-      if (this.#host || this.#runs.size) this.#busyAt = Date.now();
-      else if (Date.now() - this.#busyAt >= idleMs) {
-        clearInterval(this.#idle);
-        done();
-      }
-    }, Math.min(30_000, Math.max(50, idleMs / 4)));
-  }
+  constructor(readonly o: Options) {}
 
-  /** Listens for the node. A socket at `listen` that nothing answers is a guest's that ended without removing it: a
-   * local VM's /run is on its box's own disk, kept between the session's boxes, and the node ends a box by killing its
-   * VM. It goes, and this one takes its place; one a live guest answers stays, and this guest doesn't listen. */
+  /** Listens for the node on the unix socket `listen` (a stand-in box beside its node). A socket there that nothing
+   * answers is a guest's that ended without removing it: it goes, and this one takes its place; one a live guest
+   * answers stays, and this guest doesn't listen. */
   async serve(): Promise<void> {
     mkdirSync(this.o.dir, { recursive: true, mode: 0o700 });
     const server = createServer({ allowHalfOpen: false }, (socket) => this.#link(socket));
@@ -181,7 +154,6 @@ export class Guest {
   }
 
   stop(): void {
-    clearInterval(this.#idle);
     for (const r of this.#runs.values()) r.abort();
     this.#ws?.stop(true);
     this.#server?.close();
@@ -223,9 +195,7 @@ export class Guest {
       else if (m.op === "write") answer = { ok: await write(m) };
       else if (m.op === "read") answer = { ok: await read(m) };
       else if (m.op === "cancel") answer = { ok: this.#runs.get(String(m.run))?.abort() ?? null };
-      else if (m.op === "forget") answer = { ok: await forget() };
       else if (m.op === "ping") answer = { ok: null };
-      else if (m.op === "clock") answer = { ok: clock(m) };
       else if (m.op === "tailnet") answer = { ok: await this.#setTailnet(m) };
       else throw new Error(`no such op: ${String(m.op)}`);
     } catch (error) {
@@ -293,7 +263,7 @@ export class Guest {
       return await runConfined(
         {
           cwd,
-          argv: runArgv(argv as string[], m.root === true),
+          argv: argv as string[],
           timeoutSec,
           ...(env && typeof env === "object" ? { env: { ...(env as Record<string, string>), ...imageEnv() } } : {}),
           scrub: Array.isArray(scrub) ? scrub.filter((v): v is string => typeof v === "string") : [],
@@ -303,7 +273,6 @@ export class Guest {
       );
     } finally {
       this.#runs.delete(run);
-      this.#busyAt = Date.now();
     }
   }
 
@@ -318,10 +287,7 @@ export class Guest {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     for (const f of ["host.json", "sock"]) rmSync(join(dir, f), { force: true });
     const log = openSync(join(dir, "host.log"), "w");
-    const user = guestUser();
-    // Its dir, and the one beside it its host records what its tree left in (`<dir>.left`), are the user's.
-    if (user) for (const f of [this.o.dir, dir, join(dir, "host.log")]) chownSync(f, user.uid, user.gid);
-    const [exe, ...argv] = asUser([...selfArgv(), SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])]);
+    const [exe, ...argv] = [...selfArgv(), SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])];
     let child: ChildProcess;
     try {
       child = spawn(exe!, argv, {
@@ -350,33 +316,10 @@ export class Guest {
     const info = { protocol: r.protocol, refused: r.refused ?? null };
     if (!r.refused) {
       this.#host = { dir, child, info, pipe: new HostPipe(dir, (n) => this.#mux?.control({ op: "hostLines", n })) };
-      const done = this.o.done;
-      if (done) child.once("exit", () => setTimeout(done, AFTER_HOST_MS));
     }
     return info;
   }
 }
-
-/** The user a local VM's guest runs the agent as, from the kernel's command line (FLEETD_GUEST_UID and _GID, the
- * node's own user): what runs on this machine as a plain process runs as that user, never root (Postgres refuses
- * root, and so do others). None where the guest isn't root or wasn't given one (a hosted box, a stand-in). */
-export function guestUser(env: Record<string, string | undefined> = process.env, root = process.getuid?.() === 0): { uid: number; gid: number } | undefined {
-  const uid = Number(env.FLEETD_GUEST_UID);
-  const gid = Number(env.FLEETD_GUEST_GID);
-  if (!root || !env.FLEETD_GUEST_UID || !env.FLEETD_GUEST_GID || !Number.isInteger(uid) || !Number.isInteger(gid) || uid <= 0) return undefined;
-  return { uid, gid };
-}
-
-/** `argv` run as the guest's user, where it has one: through setpriv (util-linux's, on every Linux and in the image),
- * which execs it, so its pid and process group are the command's own. */
-export function asUser(argv: string[], user = guestUser()): string[] {
-  if (!user) return argv;
-  // The guest's own helpers are out of its OOM killer's reach; what it starts goes back to the default first.
-  return ["/bin/sh", "-c", 'echo 0 > /proc/self/oom_score_adj; exec "$@"', "sh", "/usr/bin/setpriv", `--reuid=${user.uid}`, `--regid=${user.gid}`, "--clear-groups", "--", ...argv];
-}
-
-/** A `run`'s argv: as the guest's user, but for the node's own (`root`). */
-export const runArgv = (argv: string[], root: boolean, user = guestUser()): string[] => (root ? argv : asUser(argv, user));
 
 /** Where a box's image names what its own programs need (Playwright's browsers, say): its init gives them to the guest,
  * and the guest to every session host and command it starts, over what the node sent. */
@@ -503,24 +446,6 @@ async function write(m: Record<string, unknown>): Promise<number> {
   return bytes.length;
 }
 
-/** The kernel's caches a guest drops at `forget`: 2, its dentries and inodes, and with them their pages. */
-export const DROP_CACHES = "/proc/sys/vm/drop_caches";
-
-/** `forget`: the guest's kernel forgets every file it holds no open file or cwd of, which tells the share's server
- * (virtiofsd) to close the fd it keeps for each (the node's watch, ../place/microvm.ts watchShares). */
-async function forget(): Promise<null> {
-  await writeFile(DROP_CACHES, "2");
-  return null;
-}
-
-/** `clock`: a local VM's clock set to the node's `ms`. Nothing elsewhere (a hosted box keeps its provider's). */
-function clock(m: Record<string, unknown>): boolean {
-  if (typeof m.ms !== "number" || !Number.isFinite(m.ms) || m.ms <= 0) throw new Error("clock needs ms");
-  if (!guestUser()) return false;
-  setClock(m.ms);
-  return true;
-}
-
 /** `read`: up to READ_CHUNK bytes of a file of the box from `offset`, and its size. */
 async function read(m: Record<string, unknown>): Promise<{ data: string; size: number }> {
   if (typeof m.path !== "string") throw new Error("read needs a path");
@@ -540,7 +465,7 @@ async function read(m: Record<string, unknown>): Promise<{ data: string; size: n
 /** How long a dial from inside the box may take to connect. */
 const DIAL_MS = 10_000;
 
-/** The node's dial (its browser's connection, ../browser/egress.ts): made from inside the box, so it reaches what the
+/** The node's dial (a screen's connection, ../place/box_screens.ts): made from inside the box, so it reaches what the
  * box reaches and no more, its name looked up by the box's own DNS. The node hears how it went before any byte. */
 function dial(mux: Mux, channel: number, to: { host?: unknown; port?: unknown } | undefined): Duplex | undefined {
   const host = to?.host;
@@ -610,19 +535,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   let finished!: () => void;
   const over = new Promise<void>((r) => (finished = r));
-  const once = process.env.FLEETD_GUEST_ONCE === "1";
-  // A local VM's agent user and limits, before anything runs.
-  if (listen) {
-    try {
-      const done = setUpGuest();
-      if (done) process.stderr.write(`${new Date().toISOString()} INFO sandbox-guest: ${done}\n`);
-      watchOom();
-    } catch (error) {
-      warn(`can't set the VM up: ${(error as Error).message}`);
-      return 1;
-    }
-  }
-  const guest = new Guest({ listen: listen ?? "", dir, loopback: flag("--loopback") ?? "127.0.0.1", ...(once ? { done: () => finished() } : {}) });
+  const guest = new Guest({ listen: listen ?? "", dir, loopback: flag("--loopback") ?? "127.0.0.1" });
   try {
     if (listen) await guest.serve();
     else {
@@ -647,8 +560,8 @@ export async function main(argv: string[]): Promise<number> {
   return 0;
 }
 
-/** Runs `script` with sh as root: as the guest itself where it is root (a local VM's, Daytona's), else with sudo (a
- * hosted box's user has it, with no password). */
+/** Runs `script` with sh as root: as the guest itself where it is root, else with sudo (a hosted box's user has it,
+ * with no password). */
 export async function asRoot(script: string, timeoutMs = 30_000): Promise<{ code: number | null; out: string }> {
   const argv = process.getuid?.() === 0 ? ["sh", "-c", script] : ["sudo", "-n", "sh", "-c", script];
   const child = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });

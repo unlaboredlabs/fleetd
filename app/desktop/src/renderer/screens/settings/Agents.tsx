@@ -35,7 +35,6 @@ import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { RUNNER_ID } from "../../../shared/providers";
 import { revealNext } from "./search";
-import { CommandLine } from "../onboarding/Prose";
 import s from "./settings.module.css";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
@@ -296,64 +295,14 @@ function MachineHolds(props: { note: string | null; link: { text: string; provid
   );
 }
 
-/**
- * A machine's agents, on its page: how many it runs at once, where that comes from, and the slider that changes it;
- * then where they run, each in a VM of its own or as plain processes, with why and the command that fixes it.
- */
-export function MachineCap({ machineId, name }: { machineId: string; name: string }) {
+/** A machine's agents, on its page: how many it runs at once, where that comes from, and the slider that changes it. */
+export function MachineCap({ machineId }: { machineId: string }) {
   const slots = useSlots();
   const live = useLive();
   if (!live || !slots) return <GroupNote>{live ? "Loading…" : "Connect to a hub to see and change this."}</GroupNote>;
   const m = machineAgents(slots).find((x) => x.machineId === machineId);
   if (m === undefined) return <GroupNote>It hasn&apos;t reported yet.</GroupNote>;
-  return (
-    <>
-      <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />
-      {m.isolation === undefined ? null : (
-        <SettingsRow
-          reveal="hub.vm"
-          title="Each agent runs in"
-          hint={
-            !m.isolation.vm && m.isolation.expected
-              ? m.isolation.why
-              : "A VM of its own keeps an agent from the machine's other agents and its files. Where a machine can't run VMs, its agents run as plain processes."
-          }
-          control={<Text tone={(!m.isolation.vm && !m.isolation.expected) || (m.isolation.vm && m.isolation.why) ? "warning" : "quiet"}>{m.isolation.vm ? "A VM" : "A process"}</Text>}
-          data={{ "data-vm": m.isolation.vm ? "on" : "off" }}
-        >
-          {/* Visible only when something is wrong; a choice or the machine's design is the hover's. */}
-          {(m.isolation.vm && !m.isolation.why) || (!m.isolation.vm && m.isolation.expected) ? null : (
-            <div className={s.fixBlock}>
-              <Text size="sm" tone="warning">
-                {m.isolation.fix === undefined ? m.isolation.why : `${m.isolation.why} Run on ${name}:`}
-              </Text>
-              {m.isolation.fix === undefined ? null : <CommandLine command={m.isolation.fix} />}
-              {m.isolation.vm || m.isolation.detail === undefined ? null : <Details text={m.isolation.detail} />}
-            </div>
-          )}
-        </SettingsRow>
-      )}
-    </>
-  );
-}
-
-/** What's behind a reason (a VM's console), shown only when asked for. */
-function Details({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <span>
-        <Button variant="link" size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? "Hide details" : "Show details"}
-        </Button>
-      </span>
-      {open ? (
-        <Text as="pre" size="xs" tone="faint" mono className={s.details}>
-          {text}
-        </Text>
-      ) : null}
-    </>
-  );
+  return <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />;
 }
 
 function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number }) {

@@ -1,8 +1,7 @@
-// `fleetd init`'s own Tailscale and Claude steps against a stand-in hub client: Connect shows Tailscale's sign-in page
-// and waits for it, and the hub's API key is sealed here to each machine (never the agents' Mac), with Anthropic's own
-// endpoint kept as none; an endpoint on the tailnet while Tailscale isn't connected says so and offers Connect.
+// `fleetd init`'s own Claude step against a stand-in hub client: the hub's API key is sealed here to each machine (never
+// the agents' Mac), with Anthropic's own endpoint kept as none.
 import { expect, test } from "bun:test";
-import { boxesOf, claudeKey, connectTailscale, endpointProblem, keyOf, sealTo } from "../../src/cli/setup/connect_steps.ts";
+import { boxesOf, claudeKey, endpointProblem, keyOf, sealTo } from "../../src/cli/setup/connect_steps.ts";
 import { Checklist } from "../../src/cli/setup/checklist.ts";
 import type { Ui } from "../../src/cli/setup/wizard.ts";
 import type { McpClient } from "../../src/cli/mcp_client.ts";
@@ -61,35 +60,6 @@ test("Anthropic's own endpoint, as prefilled, is saved as none", async () => {
   expect(set.sealed.map((s: { machineId: string }) => s.machineId)).toEqual(["devbox", "hosted"]);
   expect(JSON.stringify(calls)).not.toContain("sk-ant-api03-standin");
   expect(calls.some(([t]) => t === "tailnet_get")).toBe(false);
-});
-
-test("a tailnet endpoint with Tailscale off says so and offers Connect, which shows the sign-in page and waits for it", async () => {
-  const { client, calls } = hub({
-    fleetd_status: [{ machines }],
-    claude_hub_api_set: [{}],
-    tailnet_get: [{ status: "off" }, { status: "login", loginUrl: "https://login.tailscale.com/a/standin" }, { status: "connected", tailnet: "acme.com", device: "fleetd-devbox" }],
-    tailnet_connect: [{ status: "login", loginUrl: "https://login.tailscale.com/a/standin" }],
-  });
-  const list = new Checklist();
-  const said: string[] = [];
-  list.note = (t: string) => void said.push(t);
-  list.warn = (_t: string, d: string) => void said.push(d);
-  const orig = Bun.sleep;
-  (Bun as { sleep: unknown }).sleep = async () => undefined;
-  try {
-    expect(await claudeKey(ui({ endpoint: "http://100.104.249.49:8317/", key: "sk-ant-api03-standin", confirm: true }), list, client, (use) => use(client))).toBe(true);
-  } finally {
-    (Bun as { sleep: unknown }).sleep = orig;
-  }
-  expect(calls.find(([t]) => t === "claude_hub_api_set")?.[1].endpoint).toBe("http://100.104.249.49:8317");
-  expect(said[0]).toBe("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
-  expect(said[1]).toContain("https://login.tailscale.com/a/standin");
-  expect(calls.filter(([t]) => t === "tailnet_connect")).toHaveLength(1);
-});
-
-test("Connect on a hub already connected says so at once", async () => {
-  const { client } = hub({ tailnet_connect: [{ status: "connected", tailnet: "acme.com" }] });
-  expect(await connectTailscale(ui({}), new Checklist(), client)).toBe(true);
 });
 
 test("no key typed saves nothing", async () => {

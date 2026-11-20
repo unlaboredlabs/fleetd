@@ -10,7 +10,7 @@ import { type GitIdentity, isMachineId, parseGitIdentity, type SetupState } from
 import { localHostName, machineIdFromHost } from "../project.ts";
 import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
-import { asOwner, claudeKey, connectTailscale } from "./connect_steps.ts";
+import { asOwner, claudeKey } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
@@ -499,7 +499,6 @@ export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: i
   for (;;) {
     const actions: [string, string, string][] = [];
     if (step.id === "people") actions.push(["invite", "Invite someone now", "a link and a code, for 7 days"]);
-    if (step.id === "tailscale" && step.status !== "done") actions.push(["tailscale", "Connect Tailscale", "opens Tailscale's sign-in; nothing to paste"]);
     if (step.id === "claude") actions.push(["key", "Give the hub an API key", "an endpoint and a key, sealed here"]);
     if (step.test !== undefined || (step.ways ?? []).length > 0) actions.push(["test", "Test it", "run its checks now"]);
     actions.push(["next", step.need?.kind === "optional" && step.status !== "done" ? "Skip" : "Go on", ""]);
@@ -507,8 +506,6 @@ export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: i
     if (picked === "invite") {
       await inviteStep(opts, ui, list);
       if ((await tested(list, client, step.id)) === "done") return "done";
-    } else if (picked === "tailscale") {
-      if ((await connectTailscale(ui, list, client)) && (await tested(list, client, step.id)) === "done") return "done";
     } else if (picked === "key") {
       if ((await claudeKey(ui, list, client, (use) => asOwner(opts.home, use))) && (await tested(list, client, step.id)) === "done") return "done";
     } else if (picked === "test") {

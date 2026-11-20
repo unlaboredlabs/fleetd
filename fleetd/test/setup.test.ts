@@ -139,22 +139,3 @@ test("the 1Password step's Test tests the caller's own token and keeps it as its
   expect(out.step).toMatchObject({ status: "done", said: "Ann's 1Password token reads one vault, fleetd." });
 });
 
-test("Tailscale is optional and right before Claude; the hub's gateway decides it", async () => {
-  const { tailnetGateway } = await import("../src/hub/doctor/checks.ts");
-  const steps = guides("http://devbox:4790");
-  const ids = steps.map((s) => s.id);
-  expect(ids.indexOf("tailscale")).toBe(ids.indexOf("claude") - 1);
-  expect(steps.find((s) => s.id === "tailscale")?.need).toEqual({ kind: "optional" });
-  const tailscale = (checks: DoctorCheck[]) => read(steps, checks).find((s) => s.id === "tailscale");
-  // Off where it can run: nothing to say, to do and never required.
-  expect(tailnetGateway({ status: "off" })).toBeUndefined();
-  expect(tailscale([])?.status).toBe("todo");
-  expect(requiredLeft(tailscale([]) as HubSetupStep)).toBe(false);
-  const on = tailnetGateway({ status: "connected", tailnet: "acme.com", device: "fleetd-devbox" });
-  expect([tailscale([on!])?.status, tailscale([on!])?.said]).toEqual(["done", "Connected to acme.com as fleetd-devbox."]);
-  expect(tailscale([tailnetGateway({ status: "login", loginUrl: "https://login.tailscale.com/a/1" })!])?.status).toBe("todo");
-  const failed = tailscale([tailnetGateway({ status: "failed", problem: "tailscaled exited." })!]);
-  expect([failed?.status, failed?.failing, failed?.said]).toEqual(["look", false, "Tailscale: tailscaled exited."]);
-  // A hub whose OS can't run it says why, and the step stays optional.
-  expect(tailscale([tailnetGateway({ status: "off", problem: "Tailscale runs on a Linux hub" })!])?.said).toBe("Tailscale runs on a Linux hub.");
-});

@@ -196,8 +196,8 @@ export class Browser {
   }
 }
 
-/** Launches Chrome on a fresh profile under `profiles`, or on `kept` (a project's), with `extra` flags (a boxed
- * session's proxy, egress.ts), and waits until it answers on its pipe. */
+/** Launches Chrome on a fresh profile under `profiles`, or on `kept` (a project's), with `extra` flags, and waits until
+ * it answers on its pipe. */
 export async function launch(chrome: string, profiles: string, sandboxed: boolean, kept?: string, extra: string[] = []): Promise<Browser> {
   let profile: string;
   if (kept) {
@@ -295,11 +295,6 @@ export class Pool<B extends Launched = Launched> {
     const taken = browser ?? (await this.launch());
     this.refill();
     return taken;
-  }
-
-  /** A browser launched now on a fresh profile with `extra` flags (a boxed session's proxy): the warm ones have none. */
-  async takeWith(extra: string[]): Promise<B> {
-    return this.launch(undefined, extra);
   }
 
   /** A browser on a project's kept profile, launched now: the warm ones have fresh profiles. It holds `lease` until it

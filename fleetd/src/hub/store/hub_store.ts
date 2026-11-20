@@ -46,6 +46,7 @@ export const MACHINE_TABLES = [
   "shell_cursors",
   "projects",
   "project_settings",
+  "hosted_removed",
   "project_env",
   "project_avatars",
   "project_icons",

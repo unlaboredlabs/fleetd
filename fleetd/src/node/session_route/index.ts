@@ -145,12 +145,11 @@ export class Router {
     const op = frame.call.op;
     if (screens(this.node).live(thread)) return this.here(thread, frame);
     const host = hostOf(frame);
-    // A lead's runs here, on its project's kept profile: another machine hasn't that profile. So does the browser of
-    // an agent in a box: it goes out through the box (browser/egress.ts), which only this node reaches. And every
-    // Linux screen of an agent in a hosted box (up, or being made) runs in that box (place/box_screens.ts,
-    // place/box_android.ts), as its browser does: where the agent runs.
+    // A lead's runs here, on its project's kept profile: another machine hasn't that profile. And the browser and every
+    // Linux screen of an agent in a hosted box (up, or being made) run in that box (place/box_screens.ts,
+    // place/box_android.ts), which only this node reaches: where the agent runs.
     const boxed = this.broker.boxed?.(thread);
-    const hosted = boxed === "starting" ? hasBox(thread) : boxed?.box !== undefined;
+    const hosted = boxed === "starting" ? hasBox(thread) : boxed !== undefined;
     if (this.broker.staysHere(thread) || (host === "browser" && boxed !== undefined) || (hosted && (host === "desktop" || host === "android"))) return this.here(thread, frame);
     // A fill of a session hosted elsewhere: its runner asks the hub's vault itself. Only a 1Password reference the vault
     // doesn't hold yet (one release) is read here, with this machine's token, and only the value goes, sealed.

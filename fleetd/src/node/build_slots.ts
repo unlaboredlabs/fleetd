@@ -2,8 +2,8 @@
 // takes one of the machine's build slots (a file under `<node home>/build-slots` it holds a flock on) while the real
 // cargo runs; with every slot in use it queues, first come first served. Every other cargo command runs at once.
 //
-// In a VM (../place/microvm.ts) the node's home is hidden, and a flock there would be the VM's alone (virtiofs keeps
-// locks inside the guest). So a build in a box asks the node for its slots instead, over the box's link
+// In a hosted box the node's home isn't there, and a flock there would be the box's alone. So a build in a box asks
+// the node for its slots instead, over the box's link
 // (`FLEETD_BUILD_SLOT_SOCK`, where the box's guest listens): the node takes them here, in the same queue as every
 // other agent's build, and holds them until the build's connection ends, however it ends (slotChannel).
 import { closeSync, mkdirSync, openSync, readSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";

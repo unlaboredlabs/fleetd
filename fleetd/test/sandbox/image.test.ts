@@ -1,29 +1,18 @@
-// The sandbox image's recipe (sandbox/image/): its key follows every part of it, its Dockerfile stays buildable by
+// The base of a hosted box's template (sandbox/image/Dockerfile, sandbox/providers/recipe.ts): it stays buildable by
 // hosted providers with no context, and its pins are fleetd's own.
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PLAYWRIGHT_VERSION } from "../../src/node/browser/chrome.ts";
-import { DOCKERFILE, IMAGE, imageKey, INIT, SOURCES } from "../../src/sandbox/image/recipe.ts";
 import { hosted } from "../../src/sandbox/providers/recipe.ts";
 import { TESTED } from "../../src/node/runner/claude.ts";
 
-const dir = join(import.meta.dir, "../../src/sandbox/image");
-
-test("the key is the recipe's hash, and any part of it changes it", () => {
-  const parts = { dockerfile: DOCKERFILE, init: INIT, build: readFileSync(join(dir, "build.sh"), "utf8"), sources: SOURCES };
-  expect(imageKey(parts)).toBe(IMAGE.key);
-  expect(IMAGE.tag).toBe(`vm-${IMAGE.key.slice(0, 12)}`);
-  for (const changed of [
-    { ...parts, dockerfile: `${parts.dockerfile}\n` },
-    { ...parts, init: `${parts.init}#` },
-    { ...parts, build: `${parts.build} ` },
-    { ...parts, sources: { ...SOURCES, passt: { ...SOURCES.passt, commit: "0".repeat(40) } } },
-  ]) {
-    expect(imageKey(changed)).not.toBe(IMAGE.key);
-  }
-});
+const DOCKERFILE = readFileSync(join(import.meta.dir, "../../src/sandbox/image/Dockerfile"), "utf8");
+const pin = (re: RegExp): string => {
+  const m = re.exec(DOCKERFILE);
+  if (!m?.[1]) throw new Error(`no pin ${String(re)} in the Dockerfile`);
+  return m[1];
+};
 
 test("the Dockerfile is one FROM, by digest, then RUN and ENV lines only", () => {
   const steps = DOCKERFILE.replace(/\\\n/gu, " ")
@@ -36,20 +25,17 @@ test("the Dockerfile is one FROM, by digest, then RUN and ENV lines only", () =>
 });
 
 test("its pins are fleetd's own: Playwright's and bun's", () => {
-  expect(IMAGE.pins.playwright).toBe(PLAYWRIGHT_VERSION);
-  expect(DOCKERFILE).toContain(`/playwright-core-${PLAYWRIGHT_VERSION}.tgz`);
-  expect(DOCKERFILE).toContain(`bun-v${IMAGE.pins.bun}/`);
-  expect(DOCKERFILE).toContain(`gh_${IMAGE.pins.gh}_linux_amd64`);
+  expect(pin(/\/playwright-core-([0-9.]+)\.tgz/u)).toBe(PLAYWRIGHT_VERSION);
   const ci = readFileSync(join(import.meta.dir, "../../../.github/workflows/ci.yml"), "utf8");
-  expect(ci).toContain(`bun-version: ${IMAGE.pins.bun}`);
+  expect(ci).toContain(`bun-version: ${pin(/bun-v([0-9.]+)\//u)}`);
+  expect(pin(/gh_([0-9.]+)_linux_amd64/u)).toMatch(/^\d+\.\d+\.\d+$/u);
 });
 
 test("a box has what fleetd's own lockfile installs run (a box sees nothing of its machine's home): real Node, npm, pnpm at the desktop app's pin, Yarn", () => {
-  expect(DOCKERFILE).toContain(`node-v${IMAGE.pins.node}-linux-x64.tar.xz`);
+  expect(pin(/node-v([0-9.]+)-linux-x64\.tar\.xz/u)).toMatch(/^24\./u);
   const desktop = JSON.parse(readFileSync(join(import.meta.dir, "../../../app/desktop/package.json"), "utf8")) as { packageManager: string };
-  expect(desktop.packageManager).toBe(`pnpm@${IMAGE.pins.pnpm}`);
-  expect(DOCKERFILE).toContain(`/exe.linux-x64-${IMAGE.pins.pnpm}.tgz`);
-  expect(DOCKERFILE).toContain(`/yarn-${IMAGE.pins.yarn}.tgz`);
+  expect(desktop.packageManager).toBe(`pnpm@${pin(/\/exe\.linux-x64-([0-9.]+)\.tgz/u)}`);
+  expect(pin(/\/yarn-([0-9.]+)\.tgz/u)).toMatch(/^\d+\.\d+\.\d+$/u);
   for (const b of ["node", "npm", "npx", "pnpm", "yarn"]) expect(DOCKERFILE).toContain(` ${b} `);
   // `node` is Node.js itself, never Bun (a test of fleetd-cloud runs `node --input-type=module`).
   expect(DOCKERFILE).not.toContain("ln -sf bun /usr/local/bin/node");
@@ -75,13 +61,6 @@ test("every download into an image is checked against its pinned SHA-256, and ap
   expect(DOCKERFILE.indexOf("snapshot.ubuntu.com")).toBeLessThan(first);
 });
 
-test("the init parses, and starts sandbox-guest on the link socket", () => {
-  const ran = Bun.spawnSync(["bash", "-n", join(dir, "init.sh")], { stderr: "pipe" });
-  expect(ran.stderr.toString()).toBe("");
-  expect(ran.exitCode).toBe(0);
-  expect(INIT).toContain('"$exe" sandbox-guest --listen "$link" --dir /run/fleetd/guest');
-});
-
 // scripts/check.sh desktop and site, which every writer runs before a push, pass in a box as on its machine.
 test("a box has what the pre-push checks need: GTK for Electron, and CHROME naming the headless shell", () => {
   expect(DOCKERFILE).toContain("install -y --no-install-recommends dbus-x11 libgtk-3-0t64 ");
@@ -90,26 +69,4 @@ test("a box has what the pre-push checks need: GTK for Electron, and CHROME nami
   // The link, and guest.env naming it for sessions sandbox-guest starts.
   expect(DOCKERFILE).toContain('/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME"');
   expect(DOCKERFILE).toContain(String.raw`CHROME=%s\n' "$CHROME" > /etc/fleetd/guest.env`);
-  // build.sh checks both in the image it builds.
-  const build = readFileSync(join(dir, "build.sh"), "utf8");
-  expect(build).toContain("ldd /usr/lib/x86_64-linux-gnu/libgtk-3.so.0");
-  expect(build).toContain('"$CHROME" --version');
-});
-
-test("the init gives each box a machine id of its own, as systemd's: 32 hex digits, new each boot", () => {
-  const lines = INIT.split("\n").filter((l) => l.includes("/etc/machine-id") && !l.trim().startsWith("#"));
-  expect(lines.length).toBeGreaterThan(0);
-  const tmp = mkdtempSync(join(tmpdir(), "machine-id-"));
-  try {
-    const file = join(tmp, "machine-id");
-    const ids = [1, 2].map(() => {
-      const ran = Bun.spawnSync(["bash", "-euc", lines.join("\n").replaceAll("/etc/machine-id", file)], { stderr: "pipe" });
-      expect(ran.stderr.toString()).toBe("");
-      return readFileSync(file, "utf8");
-    });
-    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{32}\n$/u);
-    expect(ids[0]).not.toBe(ids[1]);
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
 });

@@ -1,5 +1,5 @@
 // The node's half of `fleetd mcp-relay` (cli/mcp_relay.ts), on its own socket, for the session the relay runs in
-// (a process here, or a local VM's or hosted box's through its node.sock forward): `mcp_header`, a signed-in server's
+// (a process here, or a hosted box's through its node.sock forward): `mcp_header`, a signed-in server's
 // headers as the node holds them now, and `mcp_renew`, the hub's renewal (`mcp_oauth_renew`) of a token the server
 // turned away. The token goes to that relay alone: never to the hub, a log or the session's files.
 import { join } from "node:path";

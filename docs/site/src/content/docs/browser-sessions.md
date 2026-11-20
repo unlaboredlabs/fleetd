@@ -171,16 +171,10 @@ answers at once, its screen on its way. `screen_end` with the waitId gives up a 
   so once. System Chrome brings its own sandbox helper, so `FLEETD_CHROME` set to it keeps the sandbox there.
 - **The node's own connection is hidden from the agent.** The node uses its connection for the recording. The
   agent's driver never sees the node's target sessions or screencast frames.
-- **An agent in a local VM gets its VM's network.** Its Chrome is launched fresh for the screen (about a second, not
-  taken warm), pointed at a proxy of the screen's own whose connections the VM makes, with no bypass for loopback, no
-  QUIC and no WebRTC around it. So `localhost` is the VM's, and this machine's own addresses are out of reach as they
-  are from the VM. The screen stays on the agent's machine, the only one that reaches its VM. It opens only `http`,
-  `https`, `data:` and `blob:` pages and refuses `file:`, `chrome:` and the like. Downloads and uploads take only paths
-  the VM shows from this machine (your worktree), never the VM's own `/tmp`.
 - **An agent in a hosted sandbox gets a screen in its sandbox.** Its browser (a fresh Chrome on a throwaway profile),
   its Linux desktop (an X display of its own) and its Android emulator run in the sandbox, beside its files and on its network; the machine
-  or the hub's runner drives, records and shows them over the sandbox's link, and takeover works as anywhere
-  ([Hosted sandboxes](/docs/machines#sandboxes)). Ending the screen kills it and what was launched on it.
+  drives, records and shows them over the sandbox's link, and takeover works as anywhere. On fleetd's cloud only.
+  Ending the screen kills it and what was launched on it.
 
 Agents aren't sandboxed on their machine (see [Security](/docs/security#keys)). These measures keep screens apart and
 recorded. They can't stop an agent that sets out to get around them, for example by starting a browser of its own.

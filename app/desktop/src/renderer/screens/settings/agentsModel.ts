@@ -2,7 +2,6 @@
 // every project, which only the CLI sets (unset, every machine's cap added up). The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
 // them. Pure, so it is tested without a screen.
 import type { ComputerPick, ProjectRef, SandboxState, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
-import { isolationOf, type Isolation } from "./placesModel";
 import { hostedProvider, RUNNER_ID, specOf } from "../../../shared/providers";
 
 export interface ProjectAgents {
@@ -46,7 +45,7 @@ export interface ProviderLimit {
 /**
  * Where a bot's agents go besides its machine's own slots, as the hub's slot board places them: the one provider its
  * Runs on picked (`pinned`: that provider's limit alone holds them, never its machine's cap), or, on Automatic, the
- * connected providers it goes on to once the machine is full (`spill`). A Local VM pick goes to neither.
+ * connected providers it goes on to once the machine is full (`spill`).
  */
 export interface Hold {
   readonly pinned?: ProviderLimit;
@@ -58,11 +57,10 @@ const NO_HOLD: Hold = { spill: [] };
 export function holdOf(pick: Pick<ComputerPick, "kind"> | undefined, sandboxes: Pick<SandboxState, "providers" | "linux"> | undefined): Hold {
   const connected = (sandboxes?.providers ?? []).filter((p) => p.connected);
   const of = (p: { provider: string; limit: number }): ProviderLimit => ({ name: specOf(p.provider).name, limit: p.limit });
-  if (pick !== undefined && pick.kind !== "vm") {
+  if (pick !== undefined) {
     const p = connected.find((x) => x.provider === pick.kind);
     return { pinned: p ? of(p) : { name: specOf(pick.kind).name, limit: 0 }, spill: [] };
   }
-  if (pick !== undefined) return NO_HOLD;
   const linux = sandboxes?.linux ?? "ours_first";
   if (linux === "ours_only") return NO_HOLD;
   return { spill: connected.filter((p) => linux === "ours_first" || p.provider === linux).map(of) };
@@ -139,16 +137,13 @@ export interface MachineAgents {
   readonly running: number;
   /** Where the number comes from, in plain words. */
   readonly source: string;
-  /** Where its agents run: each in a VM, or as processes and why; undefined from a node that doesn't say. */
-  readonly isolation?: Isolation | undefined;
 }
 
 const sentence = (text: string): string => (text.endsWith(".") ? text : `${text}.`);
 
 /** Where a machine's number comes from: "Auto: memory 60 GB, about 2 GB an agent.", or a person's setting. */
 export function machineSource(m: SlotStatePerMachine): string {
-  // Where its agents run is a row of its own on the machine's page, not a part of the number's reason.
-  const { why } = isolationOf(m.why, m.sandbox);
+  const { why } = m;
   if (m.maxAgents === undefined) return sentence(`Auto: ${why}`);
   return sentence(`Set by you. Auto would be ${m.auto}: ${why}`);
 }
@@ -162,7 +157,6 @@ export const machineAgents = (slots: SlotState): MachineAgents[] =>
     auto: m.auto,
     running: m.running,
     source: machineSource(m),
-    isolation: isolationOf(m.why, m.sandbox).isolation,
   }));
 
 /** How many running agents a new max leaves over it: they finish their work, and no new one starts until under. */

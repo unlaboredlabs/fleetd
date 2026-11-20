@@ -110,7 +110,7 @@ const ATTACHMENT_PIECE = 4 * 1024 * 1024;
 
 /**
  * `attachment_read`: the file, a piece at a time, saved in this session's own TMPDIR, which is where the agent runs
- * (a worktree, a VM, a hosted box), and out of its worktree, so git never sees it. Says where, to open with Read.
+ * (a worktree, a hosted box), and out of its worktree, so git never sees it. Says where, to open with Read.
  */
 export async function saveAttachment(call: Call, deps: LeadDeps): Promise<ToolResult> {
   const id = String(call.attachmentId);

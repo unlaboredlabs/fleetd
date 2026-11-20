@@ -87,12 +87,11 @@ configuration**. They can switch at any time.
 - **The account wins over the machine's own Claude setup.** A gateway, token or cloud switch in the `env` of the
   machine's `~/.claude/settings.json` (an `ANTHROPIC_BASE_URL` on its `localhost`, say) is set aside for that agent:
   the account's endpoint, Anthropic's API when it names none, goes in the agent's own settings, which outrank the
-  machine's. Hosted agents check that endpoint before they start. Only an `ANTHROPIC_API_KEY` or
+  machine's. Only an `ANTHROPIC_API_KEY` or
   `CLAUDE_CODE_OAUTH_TOKEN` in those settings still wins, since the account's key is never written to a file: the
   doctor warns of it.
-- **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it. Sealed on the hosted
-  sandboxes instead, it asks the endpoint for its models, through the team's Tailscale gateway for an endpoint on the
-  tailnet. An endpoint that doesn't answer says what to do.
+- **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it. An endpoint that doesn't
+  answer says what to do.
 - With no choice made, your subscription is used once you connect one, on each machine that holds it; on a machine
   that doesn't, your work there runs on the hub's API. Choose your subscription to have it refused there instead.
 - **Members may use the hub's API** is on by default. An owner or admin can turn it off on the Hub pages of the app's Settings;
@@ -113,8 +112,7 @@ In the app:
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
 - **Settings › Hub › Setup › Claude** is for owners and admins. *Hub API key* takes the key and its endpoint,
   Anthropic's own filled in (Save and test), then shows the machines that hold it, its last Test, and Test, Change and
-  Remove. A change to the endpoint alone keeps the saved key. An endpoint on your tailnet says, while Tailscale isn't
-  connected, that hosted agents reach it only once it is, with **Connect Tailscale** beside it. The phone has the same
+  Remove. A change to the endpoint alone keeps the saved key. The phone has the same
   under Settings › Claude. A line under it says leads and automations run on it, else the hub owner's
   subscription; without a key, whether that subscription is connected. *Members* is the switch.
 - **Settings › Hub › People** shows each person's way on their row, beside their GitHub, with any usage pause on

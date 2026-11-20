@@ -1,6 +1,7 @@
 // The chat's moving parts over the hub: a human's message reaches the project's
 // lead (a new turn when it is idle, joined to its turn when it is working, held while it starts), the lead's replies
 // stream back and land as messages, the project's past is read in once, and the needs-you state follows.
+import { HOSTED_ID, hostedGone } from "../hosted_gone/index.ts";
 import type {
   ChatDelivery,
   ChatMessage,
@@ -206,6 +207,10 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
   if (!store(hub).projectGet(r)) throw new ToolError("not_found", `No bot ${r.projectId} on ${r.machineId}.`, "Pick a bot from fleetd_status.");
   const archived = archivedNote(hub, r);
   if (archived) throw new ToolError("invalid", archived.message, archived.fix);
+  if (r.machineId === HOSTED_ID) {
+    const gone = hostedGone(hub, r);
+    throw new ToolError("invalid", gone.message, gone.fix);
+  }
   const writer = writerOf(hub, caller, input);
   const tz = writer.author === "human" && input.tz !== undefined ? zone(input.tz) : undefined;
   if (tz !== undefined) setZone(hub.db, writer.person?.personId, tz);
@@ -269,6 +274,10 @@ export async function sendAsAgent(
   request: string,
   lead?: LeadText,
 ): Promise<{ message: ChatMessage; leadWaiting?: string }> {
+  if (to.machineId === HOSTED_ID) {
+    const gone = hostedGone(hub, to);
+    throw new ToolError("invalid", gone.message, gone.fix);
+  }
   let message = chat(hub).byRequest(to, request);
   if (!message) {
     if (!chat(hub).allowAgent(by)) {

@@ -43,8 +43,6 @@ import { Credentials, type FillCredentialCall, fillCredential, filledFieldRefusa
 import type { Credential } from "./onepassword.ts";
 import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
 import { Proxy } from "./proxy.ts";
-import { boxedArgs, boxPaths, type Dial, Egress } from "./egress.ts";
-import type { View } from "../place/view.ts";
 import { boxChrome, type ScreenBox } from "../place/box_screens.ts";
 import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting } from "./secure_input.ts";
@@ -64,14 +62,14 @@ export const INSTALL_WAIT_MS = 30_000;
 
 const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
-type Open = { session: Session; browser: Launched; purpose: string; note?: string; egress?: Egress };
+type Open = { session: Session; browser: Launched; purpose: string; note?: string };
 
-/** Where an agent session's box is, for its browser (egress.ts): its dial and what of this machine it shows, or
- * `starting` while it boots. A hosted box gives `box` too: its browser runs in it (../place/box_screens.ts). */
-export type BoxedFor = { dial: Dial; view?: View; box?: ScreenBox } | "starting";
+/** Where an agent session's hosted box is, for its browser, which runs in it (../place/box_screens.ts), or `starting`
+ * while it is being made. */
+export type BoxedFor = { box: ScreenBox } | "starting";
 
 /** How a session's browser starts: the node's Chrome through its pool, or a test's, on a fresh profile or `kept`, with
- * `extra` flags (a boxed session's proxy). */
+ * `extra` flags. */
 export type Launcher = (kept?: string, extra?: string[]) => Promise<Launched>;
 
 /** What installs the browser's parts: the pinned installs, or a test's stand-ins. */
@@ -315,7 +313,7 @@ export class Broker {
   async policy(thread: string, credentials: boolean): Promise<void> {
     writePolicy(this.home, thread, credentials);
     const boxed = this.boxed?.(thread);
-    if (boxed && boxed !== "starting" && boxed.box) await boxed.box.write(policyPath(this.home, thread), new TextEncoder().encode(agentBrowserPolicy(credentials)), 0o600);
+    if (boxed && boxed !== "starting") await boxed.box.write(policyPath(this.home, thread), new TextEncoder().encode(agentBrowserPolicy(credentials)), 0o600);
   }
 
   /** The agent's `session_start`: a browser for its session, reported live to the hub. */
@@ -358,15 +356,10 @@ export class Broker {
         }
       }
       let browser: Launched;
-      let egress: Egress | undefined;
       try {
         if (inside) browser = await this.inBox(inside);
-        else {
-          if (boxed) egress = await Egress.start(boxed.dial);
-          browser = egress ? await pool!.takeWith(boxedArgs(egress.url)) : lease ? await pool!.takeKept(lease) : await pool!.take();
-        }
+        else browser = lease ? await pool!.takeKept(lease) : await pool!.take();
       } catch (e) {
-        egress?.close();
         throw new ToolError(
           "failed",
           `The browser didn't start: ${(e as Error).message}`,
@@ -378,7 +371,6 @@ export class Broker {
         own = secrets ?? this.ownSecrets(thread);
       } catch (e) {
         await browser.close?.().catch(() => {});
-        egress?.close();
         throw new ToolError(
           "failed",
           `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
@@ -393,8 +385,6 @@ export class Broker {
         void this.report(session, "live");
       };
       session.outgoingHook = outgoing;
-      // In a hosted box its pages see the box's own files, which are the agent's: nothing to check them against.
-      if (boxed && !inside) session.boxedPaths = boxPaths(boxed.view);
       const dir = join(recordingsDir(this.node.home), session.id);
       writeMeta(dir, { sessionId: session.id, kind: "browser", threadId: thread, cwd: "/", purpose, startedAt: session.startedAt, credentialsFilled: 0 });
       const ffmpeg = findFfmpeg(installDir(this.node.home));
@@ -411,14 +401,12 @@ export class Broker {
         browser,
         purpose,
         ...(note ? { note } : {}),
-        ...(egress ? { egress } : {}),
       });
       try {
         await session.start();
       } catch (e) {
         this.sessions.delete(thread);
         await browser.close?.().catch(() => {});
-        egress?.close();
         throw new ToolError("failed", `The browser didn't start: ${(e as Error).message}`);
       }
       await this.report(session, "live");
@@ -455,7 +443,6 @@ export class Broker {
     this.credentials.forget(session.id);
     for (const key of [...this.waiting.keys()]) if (key.startsWith(`${session.id}/`)) this.waiting.delete(key);
     await open.browser.close?.();
-    open.egress?.close();
     const r = session.recording;
     // The text files scrubbed once more whole, with every value the session knew.
     if (r) for (const file of [RECORDING_FILES.actions.name, RECORDING_FILES.dom.name]) scrubFile(join(r.dir, file), session.scrub());

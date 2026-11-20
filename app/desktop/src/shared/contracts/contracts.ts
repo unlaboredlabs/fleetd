@@ -2281,8 +2281,8 @@ export type CommandStat = {
 export type CommitSha = string;
 
 /**
- * A repo's computer image: its setup commands run once, kept as the disk new agents start from (a local VM's layer, or a
- * hosted provider's snapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start
+ * A repo's computer image: its setup commands run once, kept as the disk new agents start from (a hosted provider's
+ * snapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start
  * from now, kept through a rebuild and a failed build.
  */
 export type ComputerImage = {
@@ -2297,7 +2297,7 @@ export type ComputerImage = {
   /** When the build under way started (`building`). */
   startedAt?: Timestamp;
   state: ComputerImageState;
-  /** Where it is kept: this machine's VMs, or a hosted provider's snapshot. */
+  /** Where it is kept: a hosted provider's snapshot. */
   where?: ComputerImageWhere;
 };
 
@@ -2306,8 +2306,8 @@ export type KnownComputerImageState = "none" | "building" | "ready" | "failed";
 /** KnownComputerImageState, or a value from a newer hub. */
 export type ComputerImageState = KnownComputerImageState | (string & {});
 
-/** "vm": this machine's local VMs; else the hosted provider. */
-export type KnownComputerImageWhere = "vm" | "boat";
+/** The hosted provider whose snapshot holds it. */
+export type KnownComputerImageWhere = "boat";
 /** KnownComputerImageWhere, or a value from a newer hub. */
 export type ComputerImageWhere = KnownComputerImageWhere | (string & {});
 
@@ -6429,8 +6429,9 @@ export type ProjectSettings = {
   /** Its pick of its agents' computer, exactly what each of them gets; absent: none (the default placement and size). */
   computer?: ComputerPick;
   /**
-   * What it may pick, each a real machine: the Local VM where its machine runs VMs, and each connected provider's
-   * sizes; one that can't be used now says why, the pick among them. Absent with `repo`, and from older hubs.
+   * What it may pick, each a real machine: each connected provider's sizes; one that can't be used now says why, the
+   * pick among them. Absent with `repo`, from older hubs, and from a hub with nothing to pick (its bots run on their
+   * machine).
    */
   computers?: ComputerChoice[];
   /** Its agents' variables, by name. A secret's value is never here. */
@@ -7228,8 +7229,8 @@ export type SandboxDisconnectInput = {
 
 export type SandboxGetInput = { [key: string]: unknown };
 
-/** Where an agent's computer is: its machine's own VM (`vm`), or a box of a hosted provider. */
-export type KnownComputerKind = "vm" | "boat";
+/** Where an agent's computer is: a box of a hosted provider. */
+export type KnownComputerKind = "boat";
 /** KnownComputerKind, or a value from a newer hub. */
 export type ComputerKind = KnownComputerKind | (string & {});
 
@@ -8020,6 +8021,7 @@ export type SlotStatePerMachine = {
 };
 
 /**
+ * fleetd cloud reads this until its W760 pin move, and no node of this fleetd sends it (agents run on their machine).
  * Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes
  * (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice
  * or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).

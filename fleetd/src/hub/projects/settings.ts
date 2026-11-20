@@ -2,8 +2,7 @@
 // `project_settings_get`, `project_settings_set` and `project_env_set`, and what the hub keeps of them:
 // `project_settings.setup` (each new worktree's commands, in the project's own directory) and the `project_env` rows.
 // Each of the project's other repos has its own `setup` (`repos.setup`); none falls back to another's.
-// A repo's setup commands are also its computer image's recipe (node/place/image.ts): its checkout's node builds the
-// image when they change and on a Rebuild (`project_image_rebuild`), and says when it did; the settings show it.
+// A bot's agents run on its machine, so it has no computer to pick and no computer image: the settings carry neither.
 //
 // A variable is set on the project's node first, which keeps the value; only then does the hub record it. The hub's
 // row holds a plain variable's value and a secret's fingerprint: a secret reaches the hub sealed to the node's box
@@ -24,26 +23,19 @@ import type {
   RepoId,
   RepoName,
   WorktreeSetup,
-  ComputerChoice,
-  ComputerImage,
-  ComputerPick,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { CAP_COMPUTER_IMAGE, CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
+import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownMachine, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { executors } from "../executor/index.ts";
-import { projectEnv, projectImage, projectUpsert, projectWorktrees } from "../executor/projects.ts";
+import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { chatTagsOn, computerOf, setAvatarColor, setChatTags, setComputer } from "../project_lead/store.ts";
-import { providerStates } from "../sandbox/index.ts";
-import { anyTaskAccount } from "../claude_accounts/index.ts";
-import { slots } from "../slots/index.ts";
-import { computerChoices, computerLabel, type ComputerMachine, RUNNER_ID } from "../../shared/sandbox.ts";
+import { chatTagsOn, setAvatarColor, setChatTags } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -232,41 +224,6 @@ export function repoNamed(hub: Hub, r: ProjectRef, name: RepoName | undefined): 
   throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no repo ${name}.`, fix);
 }
 
-/** Where `repo` of the project (its own directory when none) has its files, and so its computer image. */
-const checkoutOf = (r: ProjectRef, repo: ProjectRepo | undefined): ProjectRef => repo?.checkout ?? r;
-
-/** `repo`'s computer image from its checkout's node, for `setup`; undefined while it is offline, too old or silent. A
- * build that's due starts there. */
-async function imageOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined, setup: WorktreeSetup, rebuild = false): Promise<ComputerImage | undefined> {
-  const c = checkoutOf(r, repo);
-  if (!executors(hub).isConnected(c.machineId) || !link(hub).can(c.machineId, CAP_COMPUTER_IMAGE)) return undefined;
-  // Built from the repo's base branch, where its new worktrees start.
-  const base = (repo ?? repos.own(hub.db.conn, r))?.base;
-  try {
-    return await projectImage(hub, c.machineId, c.projectId, setup, rebuild, base);
-  } catch (error) {
-    if (rebuild) throw fromExecutor(error);
-    return undefined;
-  }
-}
-
-/** The setup of `repo` (or the project's own) changed: its checkout's node builds the image for the new commands. */
-export function setupChanged(hub: Hub, r: ProjectRef, repoId: RepoId | undefined): void {
-  const repo = repoId === undefined ? undefined : repos.get(hub.db.conn, repoId)?.repo;
-  const setup = projectSettings(hub).setupIn(r, repoId);
-  if (!setup) return;
-  void imageOf(hub, r, repo, setup);
-}
-
-/** A checkout's computer image changed on machine `m`: every bot holding it reads its settings again. */
-export function imageChanged(hub: Hub, m: MachineId, projectId: string): void {
-  const checkout = { machineId: m, projectId };
-  const bots: { r: ProjectRef; repo?: RepoName }[] = [];
-  if (store(hub).projectGet(checkout)) bots.push({ r: checkout });
-  for (const h of repos.holders(hub.db.conn, checkout)) bots.push({ r: h.project, repo: h.repo.name });
-  for (const b of bots) announce(hub, b.r, "its computer image changed", { image: true, ...(b.repo ? { repo: b.repo } : {}) });
-}
-
 /** The project's settings, with `setup` that of `repo` when one is given. */
 async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined): Promise<ProjectSettings> {
   const project = store(hub).projectGet(r);
@@ -289,10 +246,6 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   const signinsKept = worktrees?.signinsKept;
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
-  const image = await imageOf(hub, r, repo, setup);
-  // The bot's computer is the bot's, not a repo's: read with `repo`, the settings leave it out.
-  const computer = repo ? undefined : computerOf(hub.db.conn, r);
-  const computers = repo ? undefined : choicesOf(hub, r, computer);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -301,54 +254,10 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     ...(repo ? { repo: repo.name } : {}),
     env: s.env(r),
     setup,
-    ...(image ? { image } : {}),
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
     ...(signinsKept !== undefined ? { signinsKept } : {}),
-    ...(computer ? { computer } : {}),
-    ...(computers ? { computers } : {}),
   } as ProjectSettings;
-}
-
-/** What the bot may pick for its agents' computers now (shared/sandbox.ts computerChoices). */
-function choicesOf(hub: Hub, r: ProjectRef, pick: ComputerPick | undefined): ComputerChoice[] {
-  let machine: ComputerMachine | undefined;
-  if (r.machineId !== RUNNER_ID) {
-    try {
-      machine = slots(hub).machineFacts(r.machineId);
-    } catch {}
-    machine ??= { name: store(hub).machineGet(r.machineId)?.name ?? r.machineId };
-  }
-  // Whether the bot's agents may run on a Claude account (the hub's, or the person's who starts a task): only those go
-  // into a machine's VMs that sign in with its own login, or to a hosted sandbox.
-  const account = anyTaskAccount(hub.db, r, r.machineId);
-  return computerChoices({ ...(machine ? { machine } : {}), providers: providerStates(hub), ...(pick ? { pick } : {}), account });
-}
-
-/** Sets the bot's agents' computer to `pick`, one of its choices that can be used now, or drops it (undefined). Its
- * queued agents go where it says at once; running ones keep their computer until their claude next starts. */
-export function setComputerOf(hub: Hub, project: ProjectSummary, pick: ComputerPick | undefined): void {
-  const r = { machineId: project.machineId, projectId: project.projectId };
-  const now = computerOf(hub.db.conn, r);
-  const same = (a?: ComputerPick, b?: ComputerPick) => a?.kind === b?.kind && a?.cpu === b?.cpu && a?.memGb === b?.memGb;
-  if (same(now, pick)) return;
-  if (pick) {
-    const choices = choicesOf(hub, r, undefined);
-    const choice = choices.find((c) => same(c, pick));
-    if (!choice) {
-      const offered = choices.filter((c) => !c.unavailable).map((c) => c.label);
-      throw new ToolError(
-        "invalid",
-        `${computerLabel(pick)} isn't a computer this bot can have.`,
-        offered.length ? `Pick one of: ${offered.join("; ")}.` : "Connect a hosted sandbox provider in Settings › Hub › Machines, or run the bot on a computer that runs VMs.",
-      );
-    }
-    if (choice.unavailable) throw new ToolError("invalid", `${choice.label} can't be used now: ${choice.unavailable}.`, "Pick another, or fix that first.");
-  }
-  const kept = pick ? { kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb } : undefined;
-  setComputer(hub.db.conn, r, kept);
-  slots(hub).setComputer(r, kept);
-  announce(hub, r, kept ? `${project.title}'s agents run on ${computerLabel(kept)} now` : `${project.title}'s agents run where they fit again`, { computer: kept ?? null });
 }
 
 /**
@@ -403,43 +312,18 @@ export function register(tools: Registry): void {
       announce(hub, r, `${project.title}'s chat tags are ${input.chatTags ? "on" : "off"}`, { chatTags: input.chatTags });
     }
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
-    if (input.computer !== undefined && input.computerDefault === true)
-      throw new ToolError("invalid", "It names a computer and drops the pick at once.", "Send computer or computerDefault, not both.");
-    if (input.computer !== undefined) setComputerOf(hub, project, input.computer);
-    else if (input.computerDefault === true) setComputerOf(hub, project, undefined);
+    // A self-hosted hub's bots run on their machine: there is no computer to pick (an app made for fleetd's cloud may
+    // still send one).
+    if (input.computer !== undefined)
+      throw new ToolError("invalid", "This hub's bots run on their own machine: there is no computer to pick.", "Leave the computer out.");
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the bot use these settings.";
-    if (input.computer !== undefined && input.setup === undefined && input.title === undefined) {
-      next = `Its agents start on ${computerLabel(input.computer)} from now on; running ones keep theirs until they next start.`;
-    } else if (input.computerDefault === true && input.setup === undefined && input.title === undefined) {
-      next = "Its agents run where they fit again: its machine's own slots, then the team's hosted sandboxes.";
-    } else if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
+    if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
       next = `Its bot is ${input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }
     return { settings, next };
-  });
-
-  tools.add("project_image_rebuild", async (hub, caller, input) => {
-    const m = input.machineId;
-    requireRole(caller, "operate", m);
-    const r = { machineId: m, projectId: input.projectId };
-    if (!store(hub).projectGet(r)) throw unknownProject(r);
-    const repo = repoNamed(hub, r, input.repo);
-    const setup = projectSettings(hub).setupIn(r, repo?.repoId);
-    if (!setup) throw new ToolError("invalid", "It has no setup commands, so it has no computer image to build.", "Set its setup commands first.");
-    const c = checkoutOf(r, repo);
-    if (!store(hub).machineGet(c.machineId)) throw unknownMachine(c.machineId);
-    if (!executors(hub).isConnected(c.machineId)) throw offline(c.machineId);
-    if (!link(hub).can(c.machineId, CAP_COMPUTER_IMAGE))
-      throw new ToolError("invalid", `${c.machineId}'s node is too old to build computer images.`, `Update fleetd on ${c.machineId} and restart its node.`);
-    const image = (await imageOf(hub, r, repo, setup, true))!;
-    const next =
-      image.state === "building"
-        ? "It builds in the background; new agents start from it once it's ready."
-        : `${c.machineId} builds no computer images: its agents run as plain processes there, and setup runs in each new worktree.`;
-    return { image, next };
   });
 
   tools.add("project_env_set", async (hub, caller, input) => {

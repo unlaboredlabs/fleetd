@@ -124,7 +124,7 @@ test("a hosted agent's browser starts in its box, not on the node's machine", as
   const b = broker(t.node);
   const { box } = standInBox();
   const asked: ScreenBox[] = [];
-  b.boxed = (thread) => (thread === THREAD ? { dial: (h, p) => box.dial(h, p), box } : undefined);
+  b.boxed = (thread) => (thread === THREAD ? { box } : undefined);
   b.inBox = async (given) => {
     asked.push(given);
     throw new Error("no Chrome in the stand-in");

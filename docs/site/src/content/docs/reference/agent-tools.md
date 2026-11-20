@@ -1105,7 +1105,7 @@ Read a report published in this bot (publish_artifact), yours or another agent's
 
 ### attachment_read
 
-Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a VM, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
+Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1681,7 +1681,7 @@ Read a report published in this bot (publish_artifact), yours or another agent's
 
 ### attachment_read (task)
 
-Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a VM, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
+Save a file a person attached (a screenshot, a PDF, a document) in your own session, by its id (F12) as your brief or the chat names it, then open the path it returns with Read. It works wherever you run (a worktree, a hosted box), where a path into the lead's or another agent's folder does not. Another bot's are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

@@ -346,7 +346,7 @@ describe("Settings → Bots", () => {
         ...settings,
         computer: boat,
         computers: [
-          { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
+          { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" },
           { ...boat, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
         ],
       },
@@ -405,7 +405,7 @@ describe("Settings → Bots", () => {
       {
         ...settings,
         setup: { commands: ["pnpm install", "cargo fetch"], inputs: [] },
-        image: { state: "failed", failedAt: ago(12 * 60_000), log: "$ cargo fetch\nerror: failed to fetch `https://index.crates.io/`", builtAt: ago(3 * 3_600_000), bytes: 1_181_116_006, where: "vm" },
+        image: { state: "failed", failedAt: ago(12 * 60_000), log: "$ cargo fetch\nerror: failed to fetch `https://index.crates.io/`", builtAt: ago(3 * 3_600_000), bytes: 1_181_116_006, where: "boat" },
       },
     ];
     await render();
@@ -416,7 +416,7 @@ describe("Settings → Bots", () => {
     };
     expect(row().getAttribute("data-image-state")).toBe("failed");
     expect(row().textContent).toContain("Failed 12m ago · last built 3h ago");
-    expect(row().textContent).toContain("Kept as a local VM image.");
+    expect(row().textContent).toContain("Kept as a boat.dev snapshot.");
     // Its log only behind Log.
     expect(row().querySelector("pre")).toBeNull();
     await click(button("Log"));
