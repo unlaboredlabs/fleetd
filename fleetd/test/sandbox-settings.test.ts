@@ -166,6 +166,20 @@ test("a provider its runner set aside reaches the row with its reason and fix, a
   expect(slots(t.hub).placeOf("T1")).toBe("boat");
 });
 
+test("the runner keeps a provider set aside as its pick, so a new lead's start says why rather than that none is connected", async () => {
+  machine("devbox");
+  await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD), limit: 4 });
+  const node = nodes.get("devbox")!;
+  for (let i = 0; node.placeable().length === 0 && i < 200; i++) await Bun.sleep(5);
+  expect(node.forRunner()).toBe("boat");
+  // Set aside: the slot board is offered it no more, but a session the hub placed nowhere still goes there and fails
+  // with boat.dev's reason (node/place/hosted.ts). On main the runner had no provider: "no hosted sandbox provider of the
+  // team's is connected".
+  (node as unknown as { boxes: Boxes }).boxes.setAside("boat", "boat won't run sandboxes on this account until its billing is sorted out.", Date.now(), "billing");
+  expect(node.placeable()).toEqual([]);
+  expect(node.forRunner()).toBe("boat");
+});
+
 test("limits and keys reach the team's machines in the fixed order, at each change and as one links, and the slot board", async () => {
   machine("devbox");
   await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD), limit: 4 });
