@@ -1,7 +1,8 @@
 // Each person's own GitHub account through the hub's App (D187): the app
 // opens GitHub's sign-in with PKCE and a loopback redirect, and `connect` trades the code, with the App's client
 // secret, for a user-to-server token (eight hours) and its refresh token (six months, renewed with each refresh). Both
-// are sealed to the hub's box key in `github_accounts`; `userToken` refreshes the pair before the access token ends.
+// are sealed to the hub's box key in `github_accounts`; `userToken` refreshes the pair before the access token ends, and
+// hands the new token on before it returns, since GitHub ends the old one at the refresh.
 // Disconnecting revokes the token at GitHub and forgets it.
 import type { GithubAccount, GithubApp, PersonId } from "../../shared/contracts.ts";
 import { isoMs } from "../train/seams.ts";
@@ -141,10 +142,16 @@ export async function connect(
 
 /**
  * The person's access token with at least `SESSION_MARGIN_MS` left, refreshed first when it has less, and when it
- * ends. Undefined when they haven't connected. A refresh GitHub refuses marks the account lapsed.
+ * ends. Undefined when they haven't connected. A refresh GitHub refuses marks the account lapsed. A refresh ends the
+ * token before at GitHub ("that refresh token and the old user access token will no longer work"), so `handOn` gives
+ * the new one to everyone who holds the old before this returns.
  */
-export async function userToken(apps: GithubApps, person: PersonId): Promise<{ token: string; expiresMs: number } | undefined> {
-  return apps.accounts.run(async () => {
+export async function userToken(
+  apps: GithubApps,
+  person: PersonId,
+  handOn: (token: string, expiresMs: number) => Promise<void>,
+): Promise<{ token: string; expiresMs: number } | undefined> {
+  const got = await apps.accounts.run(async (): Promise<{ token: string; expiresMs: number; refreshed?: true } | undefined> => {
     const k = kept(apps, person);
     if (!k) return undefined;
     if (k.account.lapsed === true) {
@@ -178,8 +185,11 @@ export async function userToken(apps: GithubApps, person: PersonId): Promise<{ t
       );
     }
     putAccount(apps, person, k.account, pair);
-    return { token: pair.access, expiresMs: pair.accessExpiresMs };
+    return { token: pair.access, expiresMs: pair.accessExpiresMs, refreshed: true };
   });
+  if (!got?.refreshed) return got;
+  await handOn(got.token, got.expiresMs);
+  return { token: got.token, expiresMs: got.expiresMs };
 }
 
 /** Revokes the person's token at GitHub (best effort) and forgets it. True when GitHub confirmed the revoke. */

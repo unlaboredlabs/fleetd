@@ -198,6 +198,7 @@ export const ENTRIES: RegistryEntry[] = [
     placeholders: "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the bot's title; title=the task's title; task!=the lead's task text; workstream=the order's whole brief (goal, why, pointers, constraints, done-when) and the decisions it names by id or key, or nothing; elsewhere=work in flight elsewhere it may overlap, or nothing; branch!=the task's branch; baseBranch=the default branch",
     rules: [
       { id: "train-only-merges", label: "never merges; the train does", needle: "never merge", enforced: "prompt" },
+      { id: "refused-token-retries", label: "a refused GitHub token: keeps its work committed and tries again before asking its lead", needle: "read again at each command", enforced: "prompt" },
     ],
   },
   {

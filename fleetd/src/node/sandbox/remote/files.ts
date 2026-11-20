@@ -80,6 +80,45 @@ export async function mirror(box: BoxFs, paths: string[], root = ""): Promise<vo
   }
 }
 
+/**
+ * Sends the files among `paths` to the box again each time one changes (its mtime), looked at every `everyMs` until
+ * the answer is called: one send at a time, and a send that fails (the box's link down a moment) goes again at the
+ * next look. `sent` is each file's mtime as it last went in; a file it lacks goes at the first look. The order's
+ * variables are among them, so a GitHub token the hub renews reaches the agent's next command in the box.
+ */
+export function keepMirrored(
+  box: BoxFs,
+  paths: string[],
+  everyMs: number,
+  o: { sent?: Map<string, number>; failed?: (error: Error | undefined) => void; root?: string } = {},
+): () => void {
+  const seen = new Map(paths.filter((p) => !isDir(p)).map((p) => [p, o.sent?.get(p) ?? -1]));
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    const changed = [...seen].filter(([p, t]) => mtimeOf(p) !== t).map(([p]) => [p, mtimeOf(p)] as const);
+    if (changed.length === 0) return;
+    busy = true;
+    mirror(box, changed.filter(([p]) => existsSync(p)).map(([p]) => p), o.root)
+      .then(() => {
+        for (const [p, t] of changed) seen.set(p, t);
+        o.failed?.(undefined);
+      })
+      .catch((error: unknown) => o.failed?.(error as Error))
+      .finally(() => (busy = false));
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+const isDir = (p: string) => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 /** Host tar, throwing its output's tail when it fails. */
 async function tar(args: string[]): Promise<void> {
   const child = Bun.spawn(["tar", ...args], { stdout: "ignore", stderr: "pipe" });
@@ -264,6 +303,9 @@ export async function syncOut(box: BoxFs, o: { cwd: string; session: string; bas
   const at = `${o.root ?? ""}${BOX_DIR}/out-${session}.bundle`;
   const script = [
     "set -e",
+    // What the agent's commands source (the order's variables): git fetches what the clone left on origin (blobs a
+    // bundle of a rebase needs) with the order's GitHub token as it is now.
+    `[ -z "\${CLAUDE_ENV_FILE:-}" ] || [ ! -r "$CLAUDE_ENV_FILE" ] || . "$CLAUDE_ENV_FILE"`,
     `cd ${q((o.root ?? "") + cwd)}`,
     `t=$(mktemp); g=$(git rev-parse --absolute-git-dir); [ ! -e "$g/index" ] || cp "$g/index" "$t"`,
     `GIT_INDEX_FILE=$t git add -A`,

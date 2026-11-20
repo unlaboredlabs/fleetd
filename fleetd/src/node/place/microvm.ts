@@ -49,7 +49,7 @@ import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxP
 import type { Place } from "./index.ts";
 import { blockLines, blockScript, hostAddrs, netTools, setBlocks, type NetTools } from "./net.ts";
 import { claudeEndpoint, fromProject, reach, reachOf, withPostToolHook, type Reach } from "./endpoint.ts";
-import { BOX_HOME, forClaude, machineSignIn, NoClaudeLogin, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
+import { BOX_HOME, forClaude, machineSignIn, NoClaudeLogin, orderRefresh, provision, transcriptBack, unprovision, type Provisioned, type Transcript } from "./provision.ts";
 import { imagesDir, newDisk, sessionDisk, sessionLayer, type Backend, type Built, type Job } from "./image.ts";
 import { IMAGE } from "../../sandbox/image/recipe.ts";
 import { how, SETUP_TIMEOUT_SEC, type Ran } from "../worktree/setup.ts";
@@ -765,6 +765,9 @@ export class MicroVm {
     try {
       const link = await HostLink.connect(dir, { dial: (h) => box.dialHost(withTranscriptBack(h, record.transcript)), registration });
       this.#boxes.set(dir, Promise.resolve({ box, view: record.view, record }));
+      // Its order's variables go on being copied in as the node renews them (a GitHub token the hub refreshed).
+      const refresh = orderRefresh(this.o.home, session);
+      if (refresh) this.#refresh.set(dir, refresh);
       return link;
     } catch {
       box.close();

@@ -156,6 +156,15 @@ function orderCopies(file: string | undefined, dir: string): { file: string; ref
   for (const [s, c] of copies) out = out.replaceAll(`'${s}'`, `'${c}'`);
   const at = join(dir, "env.sh");
   writeAtomic(at, out);
+  // What a node after this one copies in again (`orderRefresh`): it adopts the box without its launch.
+  writeAtomic(join(dir, SOURCES), JSON.stringify([...copies]));
+  return { file: at, refresh: copying(copies) };
+}
+
+const SOURCES = "sources.json";
+
+/** Copies each source into its copy where it changed since the last look (the first look copies all). */
+function copying(copies: Map<string, string>): () => void {
   const seen = new Map<string, number>();
   const refresh = () => {
     for (const [s, c] of copies) {
@@ -170,7 +179,17 @@ function orderCopies(file: string | undefined, dir: string): { file: string; ref
     }
   };
   refresh();
-  return { file: at, refresh };
+  return refresh;
+}
+
+/** For a box a node adopts: its order's variables copied in again as the node renews them, as `provision` set them. */
+export function orderRefresh(node: string, session: string): (() => void) | undefined {
+  try {
+    const pairs = JSON.parse(readFileSync(join(boxEnvDir(node, session), SOURCES), "utf8")) as [string, string][];
+    return copying(new Map(pairs));
+  } catch {
+    return undefined;
+  }
 }
 
 export type ForClaude = {
