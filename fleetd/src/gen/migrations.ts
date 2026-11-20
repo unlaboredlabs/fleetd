@@ -178,6 +178,7 @@ import m174 from "../hub/store/migrations/202611190200_tailnet_gateway.sql" with
 import m175 from "../hub/store/migrations/202611190400_sandbox_where.sql" with { type: "text" };
 import m176 from "../hub/store/migrations/202611190500_e2b_daytona_removed.sql" with { type: "text" };
 import m177 from "../hub/store/migrations/202611192300_agent_notes.sql" with { type: "text" };
+import m178 from "../hub/store/migrations/202611200100_project_ask_reply.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -358,4 +359,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611190400_sandbox_where", sql: m175 },
   { name: "202611190500_e2b_daytona_removed", sql: m176 },
   { name: "202611192300_agent_notes", sql: m177 },
+  { name: "202611200100_project_ask_reply", sql: m178 },
 ];

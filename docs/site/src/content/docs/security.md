@@ -187,7 +187,8 @@ or Ask me about everything to be asked):
   server saved without `integration` runs every tool unasked, as it does for the bot's agents, who never get an
   integration.
 - A first fetch or browser visit to a site the person didn't give it (a link in their own message is given).
-- `project_message`, `confirm_step` and `automation_confirm`.
+- `project_message` to a bot on a linked hub (a text to another bot on this hub never asks), `confirm_step` and
+  `automation_confirm`.
 
 A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A bot
 that had a home of its own from an earlier fleetd still runs its lead's commands there (in the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose

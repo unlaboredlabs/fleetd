@@ -2,7 +2,7 @@
 // are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
-import type { Tag } from "./chatTags";
+import { agentName, type Tag } from "./chatTags";
 import { workedFor, type ChatItem } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
@@ -262,7 +262,7 @@ const msOf = (at: string): number => {
 };
 
 /** Who wrote it, as grouping sees it: two agents' messages don't group, nor the lead's with an agent's. */
-const voice = (item: ChatItem): string => `${item.author}:${item.author === "agent" ? (item.message?.by ?? "") : ""}`;
+const voice = (item: ChatItem): string => `${item.author}:${item.author === "agent" ? agentName(item.message) : ""}`;
 
 const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
   a !== undefined && b !== undefined && sideOf(a) !== "center" && sideOf(a) === sideOf(b) && voice(a) === voice(b) && msOf(b.at) - msOf(a.at) < GROUP_MS;

@@ -24,24 +24,32 @@ function setup() {
   k.hub.db.conn.run(`INSERT INTO project_settings (machine_id, project_id, only_me, created_ms, created_by_key, created_by_name)
                      VALUES ('devbox', 'inbox', 1, 1792000000000, 'k1', 'desk')`);
   const posts: [string, string, string][] = [];
-  found.sendAsAgent = async (_hub, to, by, body) => {
+  const leads: unknown[] = [];
+  found.sendAsAgent = async (_hub, to, by, body, _request, lead) => {
     posts.push([to.projectId, by, body]);
+    leads.push(lead);
     return {};
+  };
+  const copies: [string, string, unknown][] = [];
+  found.noteSent = async (_hub, r, _by, text, _request, lead) => {
+    copies.push([r.projectId, text, lead]);
   };
   const woken: [string, Trigger][] = [];
   leadWakes(k.hub).trigger = (r, t) => woken.push([r.projectId, t]);
-  return { ...k, posts, woken };
+  return { ...k, posts, leads, copies, woken };
 }
 
 const message = (text: string) => ({ op: "project_message", project: "storefront", text });
 
 test("a lead writes to another bot's lead as its bot, and a retry is the first ask", async () => {
-  const { hub, posts, clock } = setup();
+  const { hub, posts, leads, copies, clock } = setup();
   const inbox = ref("inbox");
   const first = (await answer(hub, inbox, message("Gift cards, please."))) as Record<string, unknown>;
   expect(first).toMatchObject({ handle: "N1", projectRef: ref("storefront"), title: "Storefront" });
-  expect(posts[0]?.slice(0, 2)).toEqual(["storefront", "Home"]);
-  expect(posts[0]?.[2]).toStartWith(`Gift cards, please.\n\n(Ask N1. If you open an order for it, pass asked: "N1" to brief`);
+  // The words as the lead wrote them, its handle beside them; the sender's chat gets its copy.
+  expect(posts[0]).toEqual(["storefront", "Home", "Gift cards, please."]);
+  expect(leads[0]).toEqual({ handle: "N1" });
+  expect(copies[0]).toEqual(["inbox", "Gift cards, please.", { handle: "N1", to: "Storefront" }]);
   expect(((await answer(hub, inbox, message("Gift cards, please."))) as { handle: string }).handle).toBe("N1");
   expect(((await answer(hub, inbox, message("And dark mode."))) as { handle: string }).handle).toBe("N2");
   clock.ms += 11 * 60 * 1000;
@@ -89,11 +97,15 @@ test("the asker hears when its order opens, its PRs merge or fail, and it closes
 });
 
 test("a link's asks go out on its feed, not as wakes; asks sent through a kept link are recorded once", async () => {
-  const { hub, woken } = setup();
+  const { hub, woken, posts, leads, copies } = setup();
   const bridge = bridgeOf(hub);
   const link = { linkId: "L1", label: "Work", grants: [{ role: "operate" as const, machines: "*" as const }], who: "Ada" };
   const sent = await bridge.projectMessage({ kind: "link", link }, { project: "Storefront", text: "Invoices." });
   expect(sent.handle).toBe("N1");
+  // A link's ask is no lead's text: its handle rides in its words, and no chat here holds a sent copy.
+  expect(posts[0]?.[1]).toBe("Ada via Work");
+  expect(posts[0]?.[2]).toStartWith(`Invoices.\n\n(Ask N1. If you open an order for it, pass asked: "N1" to brief`);
+  expect([leads[0], copies]).toEqual([undefined, []]);
   const w = workstream(hub, ref("storefront"), "Invoices");
   events(hub).append({ at: "x", type: "workstream.created", machineId: "devbox", projectId: "storefront", summary: "s", data: { workstreamId: w.workstreamId, asked: "N1" } });
   expect(step(hub, 0).woken).toEqual([]);

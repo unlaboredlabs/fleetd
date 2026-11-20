@@ -68,6 +68,18 @@ describe("the chat's rows", () => {
     expect(shown).toEqual(["a:-:run", "b:-:-", "c:Agent · nightly-ci:run", "d:Agent · scout:run", "e:-:-"]);
   });
 
+  it("name another bot's lead texting this one, and this bot's lead texting another's, apart from agents", () => {
+    const text = (by: string, lead: ChatMessage["lead"]) =>
+      ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "agent", text: "v3?", createdAt: at(19, 9), state: "final", by, lead }) as ChatMessage;
+    const r = rows([
+      item("a", "agent", at(19, 9), { message: text("Shop", { handle: "N1", to: "Storefront" }) }),
+      item("b", "agent", at(19, 9, 1), { message: text("Storefront", { handle: "N2", reply: "N1" }) }),
+      item("c", "agent", at(19, 9, 2), { message: text("scout", undefined) }),
+    ]);
+    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}`] : []));
+    expect(shown).toEqual(["a:Lead to Storefront", "b:Lead of Storefront", "c:Agent · scout"]);
+  });
+
   it("name another person in a chat the team shares, and keep yours as You", () => {
     const by = (personId: string, name: string) =>
       ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "", createdAt: at(19, 9), state: "final", person: { personId, name } }) as ChatMessage;

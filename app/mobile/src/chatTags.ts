@@ -6,6 +6,13 @@
 import type { ChatItem, ChatMessage, ChatSend, OrderCard } from "./desktop";
 import { keyOf, type Key } from "./projectKey";
 
+/**
+ * Who an agent message is from: another bot's lead texting this one ("Lead of Shop"), this bot's lead texting
+ * another's ("Lead to Shop"), or the agent that wrote it.
+ */
+export const agentName = (m: ChatMessage | undefined): string =>
+  m?.lead === undefined ? (m?.by ?? "Agent") : m.lead.to !== undefined ? `Lead to ${m.lead.to}` : `Lead of ${m.by ?? "another bot"}`;
+
 export type ChatAbout = NonNullable<ChatMessage["about"]>;
 
 /** A message on its way, sent from a lens: the order it is about (chat_send's `about`), kept for every resend. */
@@ -79,7 +86,7 @@ export const tagOf = (item: Pick<ChatItem, "author" | "message">, view: TagView)
     const person = m?.person;
     who = person !== undefined && person.personId !== view.me ? person.name : undefined;
   } else if (item.author === "agent") {
-    who = m?.by ?? "Agent";
+    who = agentName(m);
   } else {
     const to = m?.for;
     who = to !== undefined && to.personId !== view.me ? `to ${firstName(to.name)}` : undefined;

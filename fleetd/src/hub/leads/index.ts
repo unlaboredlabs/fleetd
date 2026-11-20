@@ -354,7 +354,8 @@ export class Leads {
       const files = (m.attachments ?? []).map((f) => `${f.attachmentId} "${oneLine(f.name, RECENT_CHAT_NAME)}"`);
       const said = [clip(m.text.trim(), RECENT_CHAT_CHARS), files.length === 0 ? "" : `[attached: ${files.join(", ")}]`].filter(Boolean).join(" ");
       if (!said) continue;
-      const who = m.author === "human" ? "Human" : m.author === "lead" ? "You" : m.author === "agent" ? `Agent ${m.by ?? ""}` : undefined;
+      const agent = m.lead === undefined ? `Agent ${m.by ?? ""}` : m.lead.to !== undefined ? `You, to the lead of ${m.lead.to}` : `The lead of ${m.by ?? ""}`;
+      const who = m.author === "human" ? "Human" : m.author === "lead" ? "You" : m.author === "agent" ? agent : undefined;
       if (who === undefined) continue;
       const ms = parseMs(m.createdAt);
       lines.push(`${who.trim()}${ms === undefined ? "" : ` (${short(zone, ms)})`}: ${said}`);

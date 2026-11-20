@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   ChatNudge,
   ChatReplyTo,
+  LeadText,
   MemoryRefreshed,
   PersonId,
   PersonRef,
@@ -59,6 +60,8 @@ export type NewMessage = {
   vaultImport?: VaultImportCard;
   skills?: string[];
   by?: string;
+  /** An agent message that is one bot's lead texting another's (`project_message`). */
+  lead?: LeadText;
   person?: PersonRef;
   /** A lead message's or item's person (`ChatMessage.for`); absent on a lead's final message: the hub works it out. */
   for?: PersonRef;
@@ -103,6 +106,7 @@ export function serialize(m: ChatMessage): string {
     "clientRequestId",
     "delivery",
     "by",
+    "lead",
     "person",
     "for",
     "client",
