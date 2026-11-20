@@ -150,6 +150,7 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
   const commands: any[] = [];
   const ended = new Map<number, ReturnType<Step>>();
   const saved = new Map<string, { asked: number; at: string; failed?: boolean }>();
+  const deleted = new Set<string>();
   /** A snapshot as boat answers it: "saving" until it was asked after once, then "ready" (or "failed"). */
   const info = (name: string, v: { asked: number; at: string; failed?: boolean }) => ({ name, status: v.failed ? "failed" : v.asked < 2 ? "saving" : "ready", sourceSandboxId: "x", createdAt: v.at });
   const s = serve(
@@ -157,6 +158,9 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
     (c, s) => {
       const p = c.path.replace(/^\/api\/v1/, "");
       if (c.method === "POST" && p === "/sandboxes") {
+        // A saved snapshot that was deleted: boat's own refusal.
+        const from = String(c.body?.from ?? "");
+        if (deleted.has(from) && !saved.has(from)) return Response.json({ ok: false, code: "snapshot_not_found", message: "Saved snapshot not found" }, { status: 404 });
         const k = c.headers.get("idempotency-key");
         let id = k ? idem.get(k) : undefined;
         if (!id) {
@@ -229,6 +233,7 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
       m = /^\/saved-snapshots\/([^/]+)$/.exec(p);
       if (m && c.method === "DELETE") {
         saved.delete(m[1]!);
+        deleted.add(m[1]!);
         return Response.json({ ok: true });
       }
       if (m && !saved.has(m[1]!)) return Response.json({ ok: false, code: "snapshot_not_found", message: "Saved snapshot not found" }, { status: 404 });

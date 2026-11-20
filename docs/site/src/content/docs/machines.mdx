@@ -599,16 +599,18 @@ gateway, an MCP server or a dashboard there) through one device the hub runs for
   nameservers for everything else.
 - A local VM uses its machine's own network, tailnet included, as before.
 
-**What the machine does.** The machine builds fleetd's template in the team's account in the background, when it
-links to the hub and when a key is connected, never while someone waits on a message (the same recipe as a local VM's
-image, plus Claude Code at the version fleetd was tested with and the tunnel for your tailnet; every download in it is
-checked against a pinned SHA-256, and its packages come from Ubuntu's own archive as it was on one day). It takes a few
-minutes, once per recipe, and a template the account already holds is used, never built again. Until a new recipe's
-template is there, or when it didn't build, sandboxes start from the newest one that did, and the start says so ("a
-newer computer image didn't build; using the one from Nov 18"); the next link tries the build again. Only a team's
-very first sandbox, with no template at all, waits on the build. Each sandbox gets the machine's own fleetd at its start: a release build's from GitHub,
-fetched by the sandbox itself, else the machine sends it (about 57 MB). The machine labels each sandbox with its own
-id and deletes, every 10 minutes, any of its own that no agent holds any more.
+**What the machine does.** The machine builds fleetd's template in the team's account in the background, when it links
+to the hub and when a key is connected, never while someone waits on a message (the same recipe as a local VM's image,
+plus Claude Code at the version fleetd was tested with and the tunnel for your tailnet; every download in it is
+checked against a pinned SHA-256, and its packages come from Ubuntu's own archive as it was on one day). It takes a
+few minutes, once per recipe, and a template the account already holds is used, never built again. Until a new
+recipe's template is there, or when it didn't build, sandboxes start from the newest one that did, and the start says
+so ("a newer computer image didn't build; using the one from Nov 18"); the next link tries the build again. Only a
+team's very first sandbox, with no template at all, waits on the build. Each sandbox runs the machine's own fleetd: a
+release build's template holds that very build, so a sandbox starts it at once; a sandbox from an older template
+fetches it from GitHub itself, else the machine sends it (about 57 MB). A new template's build deletes the account's
+older ones past the newest two (each costs by the day), never a bot's computer image. The machine labels each sandbox
+with its own id and deletes, every 10 minutes, any of its own that no agent holds any more.
 
 **Cost.** Providers bill by the second while a sandbox runs, idle or not; a bigger [Runs on](/docs/projects#runs-on)
 size costs more. At the default size (2 vCPUs, 4 GiB),

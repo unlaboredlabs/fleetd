@@ -236,6 +236,34 @@ describe("boat.dev's waits end", () => {
   });
 });
 
+describe("asking boat.dev often while a box starts (W755 fix 4)", () => {
+  test("a call to a box still starting is asked again every 250 ms, not every 2 s", async () => {
+    const s = boatStandIn();
+    running.push(s);
+    // Its default polling, as the node makes its clients.
+    const p = provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` } });
+    const box = await create(p);
+    s.files.set("/etc/hostname", new TextEncoder().encode("fleetd-box\n"));
+    s.fail({ path: /GET \/api\/v1\/sandboxes\/[^/]+\/files$/, status: 409, body: { ok: false, code: "sandbox_starting", message: "starting" }, times: 3 });
+    const started = performance.now();
+    expect(new TextDecoder().decode(await p.read(box.id, "/etc/hostname", 100))).toBe("fleetd-box\n");
+    // Three answers "still starting", then the file: about 0.75 s, where it was 6 s.
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
+  test("the saved templates are read page by page, when boat pages them", async () => {
+    const s = boatStandIn();
+    running.push(s);
+    s.fail({ path: /GET \/api\/v1\/saved-snapshots$/, status: 200, body: { ok: true, snapshots: [{ name: "fleetd-p1-aaaaaaaaaaaa", status: "ready", createdAt: "2026-11-20T00:00:00Z" }], pageInfo: { hasMore: true, nextCursor: "c2" } }, times: 1 });
+    s.saved!.set("fleetd-aaaaaaaaaaaa", { asked: 2, at: "2026-11-19T00:00:00Z" });
+    const p = provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1` } });
+    const all = await p.saved!("fleetd-");
+    expect(all.map((t) => t.name)).toEqual(["fleetd-p1-aaaaaaaaaaaa", "fleetd-aaaaaaaaaaaa"]);
+    const lists = s.calls.filter((c) => c.method === "GET" && c.path === "/api/v1/saved-snapshots");
+    expect(lists.map((c) => c.query.get("cursor"))).toEqual([null, "c2"]);
+  });
+});
+
 describe("refusals in plain words", () => {
   const cases: [ProviderId, number, unknown, string, RegExp][] = [
     ["boat", 402, { ok: false, code: "billing_required", message: "Add a card", error: { code: "billing_required", message: "Add a card", status: 402 } }, "billing", /billing is sorted out/],
