@@ -9,15 +9,22 @@
 //   screen is named for (kebab-case, its directory's name for an index.ts, or PAGES) runs every settings screen.
 // - fixtures/<group>/: each screen's tests with the group's own fixtures, "<group>" and "<group>-<what>" (kit/group.ts).
 //   What a group's extend adds to a shared fixture, and fixtures/kit, aren't followed: they'd pick nearly every screen.
+// - qa/registry.ts, against its copy at --base=<rev> (by default the merge base with origin/main), and the files it
+//   imports (scroll.ts, fixtures/*/ids.ts): each screen whose entry changed, moved or is new, and each whose code calls
+//   a helper that changed (qa/registryChanges.ts). The harness and the checks every screen runs pick none.
 //
 // --near picks only what's closest to the change, for scripts/check.sh to run when the whole pick is too many: the
 // fixture groups' screens, and each changed file's own screens: its settings page (or, for a file that isn't one, the
-// settings pages that import it), or the screens/<dir> it's in (not settings or shell, whose files show on all theirs).
+// settings pages that import it), or the screens/<dir> it's in (not settings or shell, whose files show on all theirs),
+// and the screens whose registry entries changed, unless those alone are more than --most=<n> tests (a registry-wide
+// edit): then none of them.
 //
 // Prints nothing when no screen is picked; with --count, the number of tests (screen × fixture) instead.
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { label, screens } from "./registry.ts";
+import { changedScreens, imports, load } from "./registryChanges.ts";
 
 const APP = path.resolve(import.meta.dirname, "..");
 const RENDERER = path.join(APP, "src/renderer");
@@ -25,6 +32,8 @@ const SETTINGS = path.join(RENDERER, "screens/settings/SettingsScreen.tsx");
 const args = process.argv.slice(2);
 const count = args.includes("--count");
 const near = args.includes("--near");
+const option = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+const most = Number(option("most") ?? Infinity);
 const changed = args.filter((a) => !a.startsWith("--")).map((p) => path.resolve(APP, p));
 
 const sources = fs
@@ -97,10 +106,35 @@ for (const file of changed) {
   }
 }
 
+// The QA screens' own files: registry.ts against its base, and what it imports.
+const REGISTRY = path.join(APP, "qa/registry.ts");
+const source = fs.readFileSync(REGISTRY, "utf8");
+const from = imports(source);
+const helped = new Set(changed.flatMap((f) => from.get(path.relative(APP, f)) ?? []));
+const git = (...a: string[]) => execFileSync("git", a, { cwd: APP, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+let labels = new Set<string>();
+if (changed.includes(REGISTRY) || helped.size > 0) {
+  let before = { source, screens };
+  if (changed.includes(REGISTRY)) {
+    try {
+      const base = option("base") ?? git("merge-base", "origin/main", "HEAD").trim();
+      const was = git("show", `${base}:./qa/registry.ts`);
+      before = { source: was, screens: await load(was) };
+    } catch (e) {
+      // A base without the registry, or whose registry doesn't load (it imports a file since removed): none from it.
+      console.error(`touched.ts: qa/registry.ts's base didn't load, so its changes pick no screen: ${String(e).split("\n")[0]}`);
+    }
+  }
+  const { own, users } = changedScreens(before, { source, screens }, helped);
+  const testsOf = (of: ReadonlySet<string>) => screens.filter((s) => of.has(label(s))).reduce((n, s) => n + s.fixtures.length, 0);
+  labels = !near ? new Set([...own, ...users]) : testsOf(own) <= most ? own : new Set();
+  if (near && testsOf(own) > most) console.error(`touched.ts: the registry's own changes reach ${String(testsOf(own))} tests, past ${String(most)}: none run`);
+}
+
 const byId = (id: string) => [...prefixes].some((p) => id === p || id.startsWith(`${p}.`));
 const byFixture = (f: string) => [...groups].some((g) => f === g || f.startsWith(`${g}-`));
 /** Each picked test's title: screens.spec.ts names it "<label> · <fixture>". */
-const tests = screens.flatMap((s) => s.fixtures.filter((f) => byId(s.id) || byFixture(f)).map((f) => `${label(s)} · ${f}`));
+const tests = screens.flatMap((s) => s.fixtures.filter((f) => labels.has(label(s)) || byId(s.id) || byFixture(f)).map((f) => `${label(s)} · ${f}`));
 const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 if (count) console.log(tests.length);
 // A --grep for exactly those tests: Playwright matches it against the file and the title, space-separated.
