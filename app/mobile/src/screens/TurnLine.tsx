@@ -2,14 +2,15 @@
 // thread, so nothing in it moves as the line comes, changes or goes (D392). While the turn runs: a live glyph (thinking
 // walks its ring, anything else is grain), what the lead does now in the desktop's words under its dither scan, and how
 // long the turn has run, faint, counting. Writing the reply is a step like any other, so the line holds through it. A
-// new wording crossfades in place, rising a few points, and stays at least DWELL_MS, so a passing step doesn't flicker;
-// the count ticks without fading. Once the turn ends the line says "Worked for 4s" a moment (the reply keeps the time
+// new wording crossfades in place, rising a few points, held steady as the desktop's are (shared/steady.ts useSteady:
+// it stays a second at least, and the short gap between two tool calls never shows), so a passing step doesn't
+// flicker; the count ticks without fading. Once the turn ends the line says "Worked for 4s" a moment (the reply keeps the time
 // it took with its own, a drag left away: ui/Reveal.tsx), then fades. VoiceOver hears it turn from thinking to working
 // and back, never each tick. Off screen (`still`) the glyph holds still, and the scan and the count stop.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
-import { sentenceCase, workedFor } from "../desktop";
+import { sentenceCase, useSteady, workedFor } from "../desktop";
 import { LOOP_BEATS } from "../glyph";
 import { useHub } from "../hubContext";
 import type { Key } from "../store";
@@ -21,10 +22,6 @@ import { GLYPH_SIZE, StateGlyph } from "../ui/StateGlyph";
 
 /** The line's height; the thread keeps this much room over the composer for it, always, so it never moves for it. */
 export const TURN_LINE_HEIGHT = 20;
-/** A wording shows at least this long before the next takes its place. */
-const DWELL_MS = 380;
-/** The line waits this long before it goes, so a turn starting again right away turns it into its words instead. */
-const GRACE_MS = 450;
 /** How long "Worked for" stays over the composer once the turn is over; the reply's time column keeps it after. */
 const HOLD_MS = 3_000;
 
@@ -62,7 +59,8 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
     if (glyph !== undefined && now !== undefined) return { key: `${glyph}|${now}`, glyph, now };
     return worked === undefined ? undefined : { key: `done|${worked}`, glyph: "done", now: `Worked for ${worked}` };
   }, [glyph, now, worked]);
-  const { cur, n } = useShown(want);
+  // Thinking, working with nothing more known, and no line at all are the quiet states between steps.
+  const cur = useSteady(want, want?.key ?? "", want === undefined || want.now === "Thinking" || want.now === "Working");
   const [nowMs, setNow] = useState(() => Date.now());
   const counting = cur !== undefined && cur.glyph !== "done" && running && since !== undefined && !still;
   useEffect(() => {
@@ -78,7 +76,7 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
     <View style={styles.line} pointerEvents="none">
       {cur === undefined ? null : (
         <Animated.View
-          key={n}
+          key={cur.key}
           entering={swapIn(reduce)}
           exiting={swapOut(reduce)}
           // A soft patch of the thread's ground behind it keeps it legible over the thread scrolled up.
@@ -118,29 +116,6 @@ function Layer({ words, count, still }: { words: Words; count: string | undefine
       {count === undefined ? null : <Text style={[type.footnote, styles.text, styles.count, { color: theme.tertiary }]}>{count}</Text>}
     </>
   );
-}
-
-/**
- * The wording on show. A new one takes its place once it has stayed DWELL_MS (the newest waiting wins); nothing takes
- * its place only after GRACE_MS, so a wording followed at once by another never blinks out between them. `n` counts
- * the wordings, a key for each, so the one before leaves as the next comes.
- */
-function useShown(want: Words | undefined): { cur: Words | undefined; n: number } {
-  const [shown, setShown] = useState<{ cur: Words | undefined; n: number }>(() => ({ cur: want, n: 0 }));
-  const at = useRef(0);
-  const shownKey = shown.cur?.key;
-  useEffect(() => {
-    if (want?.key === shownKey) return;
-    const timer = setTimeout(
-      () => {
-        at.current = Date.now();
-        setShown((was) => ({ cur: want, n: was.n + 1 }));
-      },
-      want === undefined ? GRACE_MS : Math.max(0, at.current + DWELL_MS - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [want, shownKey]);
-  return shown;
 }
 
 /** Words under the desktop's dither scan: a checkered band of the thread's ground that steps across them on the beat. */

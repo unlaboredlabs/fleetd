@@ -1,6 +1,7 @@
 // The design system's public surface. Screens import from "../ui" (or "@/ui"), never from the files inside.
 export { UiProvider } from "./UiProvider";
 export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
+export { applySeeThrough, canSeeThrough, storedSeeThrough, useSeeThrough } from "./seeThrough";
 export { cx } from "./lib/cx";
 export { underModal } from "./lib/under";
 export { copyText } from "./lib/clipboard";

@@ -207,10 +207,13 @@ export const createDataLayer = (
     );
   };
 
+  // A file's bytes never change under its id (and its project's, which no other hub has), so they outlast a reconnect.
+  // Dropped too, every picture in the chat would go back to its file chip and load again, its row shrinking and
+  // growing under the reader.
   const reset = () => {
     dirty.clear();
     pending.clear();
-    void queryClient.resetQueries();
+    void queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== "call" || q.queryKey[1] !== "attachment_get" });
   };
 
   // The store takes call results only from what the query cache kept: a cancelled or superseded fetch never lands.

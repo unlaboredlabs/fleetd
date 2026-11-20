@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { sendKept } from "../screens/checklist/removal";
 import { registerSettingsCommands } from "../screens/settings/commands";
-import { applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
+import { applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
 import { App } from "./App";
 import { Boundary, reportError } from "./Boundary";
 import { FIRST_HUB } from "../../shared/hubs";
@@ -12,6 +12,9 @@ import "./styles.css";
 
 document.documentElement.dataset["platform"] = window.fleetd.platform;
 if (window.fleetd.vibrancy) document.documentElement.dataset["vibrancy"] = "";
+// The person's choice of a solid sidebar over the see-through one, before the first paint. It changes nothing where the
+// sidebar is solid anyway.
+applySeeThrough();
 if (window.fleetd.softwareCompositing) document.documentElement.dataset["compositing"] = "software";
 // Before the first render, so the first paint is already in the right theme.
 applyTheme();

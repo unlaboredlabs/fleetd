@@ -77,18 +77,23 @@ export const useOnScreen = (): readonly [boolean, (el: Element | null) => void] 
 };
 
 /**
- * Whether the element given to the returned ref has been on screen since it mounted; once it has, it stays true. A
- * row's read that only matters when shown (an image's bytes) waits for it: the chat mounts rows it then drops at once
- * while it measures them, and those never read.
+ * Whether the element given to the returned ref has come within a screen of being shown since it mounted; once it
+ * has, it stays true. A row's read that only matters when shown (an image's bytes) waits for it: the chat mounts rows
+ * it then drops at once while it measures them, and those never read. A screen ahead, in the list it scrolls in, so a
+ * picture's bytes land while its row is still out of sight: one that loaded in view would grow there and push every
+ * row under it down.
  */
 export const useSeen = (): readonly [boolean, (el: Element | null) => void] => {
   const [el, setEl] = useState<Element | null>(null);
   const [seen, setSeen] = useState(false);
   useEffect(() => {
     if (!el || seen) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setSeen(true);
-    });
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setSeen(true);
+      },
+      { root: el.closest("[role=list]"), rootMargin: "100% 0px" },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [el, seen]);

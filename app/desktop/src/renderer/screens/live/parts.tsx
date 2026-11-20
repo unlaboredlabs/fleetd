@@ -1,8 +1,9 @@
 // What an agent is doing, as the agents view draws it: words, then its machine text cut in the middle.
 import { useLayoutEffect, useRef, useState } from "react";
+import { useSteady } from "../../../shared/steady";
 import { Tooltip, Truncate, cx, useBeatRef } from "../../ui";
 import { middleEllipsis } from "./format";
-import type { Tone } from "./words";
+import type { Line, Tone } from "./words";
 import s from "./lanes.module.css";
 
 const TONE_CLASS: Partial<Record<Tone, string | undefined>> = {
@@ -52,6 +53,14 @@ export function MiddleCut({ text }: { text: string }) {
       )}
     </span>
   );
+}
+
+/** An agent's line held steady through a burst of short tool calls (shared/steady.ts): its glyph and its words with it. */
+export const useSteadyLine = (line: Line): Line => useSteady(line, `${line.tone}|${line.words}|${line.machine ?? ""}`, line.thinking);
+
+/** ActivityLine, held steady: for a line with no glyph of its own beside it. */
+export function SteadyActivityLine({ line }: { line: Line }) {
+  return <ActivityLine line={useSteadyLine(line)} />;
 }
 
 /**

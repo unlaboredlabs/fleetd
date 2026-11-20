@@ -22,6 +22,7 @@ import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/no-repo/ids.ts";
+import { notches, scrollMoves, watchScroll } from "./scroll.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -328,6 +329,9 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // W733: a busy bot's long chat with pictures, read up through, and the link dropping while scrolled up (fixtures/scroll).
+  "scroll-still",
+  "scroll-drop",
   // C1 and W38: the app's own update, the hub's and its machines', and the Update button's run (fixtures/updates).
   "updates-idle",
   "updates-checking",
@@ -2302,6 +2306,137 @@ export const screens: readonly Screen[] = [
     variant: "resilience",
     replay: true,
     realClock: true,
+  },
+  // W733: the conversation moves only by the wheel. Read up through a history of pictures and image blocks, each
+  // loading as it comes near: what is on screen never jumps (a picture growing above it, or in view).
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "read-up",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await watchScroll(page);
+      await notches(page, -40);
+      await page.waitForTimeout(1500);
+      expect(await scrollMoves(page)).toEqual([]);
+    },
+  },
+  // ...and a fold the reader opens in a row the view's top cuts through (a long diff's Show all) opens under what they
+  // read: the lines shown before stay where they were on screen, the lines opened below them.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "fold",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -9);
+      const more = page.getByRole("button", { name: /^Show all \d+ lines$/u });
+      await more.waitFor({ timeout: 10_000 });
+      // Scrolled up by the wheel so the button sits a third down the view, the diff's first lines and its message's top
+      // above it, away from the end (where the list follows the end as rows grow).
+      const by = await more.evaluate((b) => {
+        const list = b.closest("[role=list]");
+        return list === null ? 0 : b.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 3;
+      });
+      const log = await page.getByLabel("Conversation with the lead").boundingBox();
+      if (!log) throw new Error("no conversation");
+      await page.mouse.move(log.x + log.width / 2, log.y + log.height / 2);
+      await page.mouse.wheel(0, by);
+      await page.waitForTimeout(500);
+      // A line of the diff shown before, by its words (syntax colour splits a line into pieces).
+      const lineTop = (n: number) =>
+        page.evaluate((words) => {
+          const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          for (let t = walk.nextNode(); t !== null; t = walk.nextNode()) {
+            if (t.textContent?.trim() === words) {
+              const range = document.createRange();
+              range.selectNodeContents(t);
+              return range.getBoundingClientRect().top;
+            }
+          }
+          return null;
+        }, `line${String(n)}`);
+      const was = await lineTop(20);
+      expect(was).not.toBeNull();
+      await more.click();
+      await expect.poll(() => lineTop(120)).not.toBeNull();
+      await page.waitForTimeout(500);
+      expect(await lineTop(20)).toBe(was);
+    },
+  },
+  // ...and something growing at the top of the row the view's top cuts through (a picture loading there), with a scroll
+  // landing in the same frame, as one does nearly every frame while the reader scrolls, and without: what sits under
+  // the view's middle moves by the scroll alone.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-still"],
+    variant: "grow-at-top",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -6);
+      // A block at the top of the row the view's top cuts through, empty until it grows.
+      const placed = await page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>('[aria-label="Conversation with the lead"]');
+        const top = list?.getBoundingClientRect().top ?? 0;
+        const row = [...(list?.querySelectorAll<HTMLElement>("[data-index]") ?? [])].find((r) => r.getBoundingClientRect().top < top && r.getBoundingClientRect().bottom > top + 1);
+        if (!row) return false;
+        const grow = document.createElement("div");
+        grow.id = "qa-grow";
+        row.prepend(grow);
+        return true;
+      });
+      expect(placed).toBe(true);
+      await page.waitForTimeout(300);
+      // How far what sits under the view's middle moved, two frames after the block grows by 200 px and the list is
+      // scrolled by `by` px in the same task.
+      const grow = (by: number) =>
+        page.evaluate(async (by) => {
+          const list = document.querySelector<HTMLElement>('[aria-label="Conversation with the lead"]');
+          const block = document.getElementById("qa-grow");
+          if (!list || !block) return Number.NaN;
+          const r = list.getBoundingClientRect();
+          const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          const was = under?.getBoundingClientRect().top ?? Number.NaN;
+          block.style.height = `${String(block.offsetHeight + 200)}px`;
+          if (by !== 0) list.scrollTop += by;
+          await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+          return (under?.getBoundingClientRect().top ?? Number.NaN) - was;
+        }, by);
+      // Scrolled up a pixel in that frame: the rows come down that pixel, no more.
+      expect(Math.abs((await grow(-1)) - 1)).toBeLessThan(2);
+      await page.waitForTimeout(300);
+      expect(Math.abs(await grow(0))).toBeLessThan(2);
+    },
+  },
+  // ...and scrolled up, the link drops and comes back unable to resume: the offline banner floats over the chat rather
+  // than push it down, and the pictures on screen stay (their bytes outlast the reconnect).
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["scroll-drop"],
+    variant: "drop",
+    sizes: ["large"],
+    realClock: true,
+    open: async (page) => {
+      await page.getByLabel("Conversation with the lead").waitFor({ timeout: 30_000 });
+      await notches(page, -12);
+      await page.waitForTimeout(1000);
+      await watchScroll(page);
+      const banner = page.locator('[data-banner="reconnecting"]');
+      await expect(banner).toBeVisible({ timeout: 20_000 });
+      await expect(banner).toHaveCount(0, { timeout: 20_000 });
+      await page.waitForTimeout(1500);
+      expect(await scrollMoves(page)).toEqual([]);
+    },
   },
   // The error card itself, in place of the chat (the frame around it still works) and of the sidebar (the chat still
   // works). The QA build's probe makes the part throw.

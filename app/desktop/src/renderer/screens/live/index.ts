@@ -2,4 +2,5 @@
 export { Lanes } from "./AgentRows";
 export { useNow, useOnScreen, useSeen } from "./clock";
 export { middleEllipsis } from "./format";
+export { useSteadyLine } from "./parts";
 export { selectStrip, stripHeadline, type Strip, type StripAgent } from "./strip";

@@ -18,6 +18,64 @@ export function followOptions(followOutput: boolean | undefined, away = false) {
 /** Within this of the end, a reader who hasn't scrolled away from it is at it; one who has never is (-1). */
 const endThreshold = (away: boolean): number => (away ? -1 : 24);
 
+/**
+ * Whether a row changing size moves the view by as much, so what is on screen stays where it was. A row wholly above
+ * the view's top always does, whichever way the reader scrolls (TanStack's own rule skips it while they scroll up). A
+ * row the view's top cuts through does only when the change came above what sits at that top (`moved`: how far, within
+ * its row, the first thing starting at or below the view's top moved since it was last marked, topMark): a picture
+ * loading in its part out of sight grows upward instead of pushing every row in view down, while a fold the reader opens
+ * in view (a diff's Show all) or a reply streaming at its bottom leaves the view where it is. Unknown, nothing moves.
+ */
+export function keepsPlace(item: { readonly start: number; readonly end: number }, delta: number, offset: number, moved: number | undefined): boolean {
+  if (item.end <= offset) return true;
+  if (item.start >= offset || moved === undefined) return false;
+  return Math.abs(moved - delta) < Math.abs(moved);
+}
+
+/** What sits at a list's top: the first element starting at or below it, in the row the top cuts through. */
+export interface TopMark {
+  readonly row: Element;
+  readonly el: Element;
+  /** Its top within its row, px. */
+  readonly at: number;
+}
+
+/** The first element under `box` that starts at or below `top` (a screen y), descending only into what spans it. */
+const startingBelow = (box: Element, top: number): Element | undefined => {
+  for (const child of box.children) {
+    const c = child.getBoundingClientRect();
+    if (c.bottom <= top || c.height === 0) continue;
+    if (c.top >= top) return child;
+    const inner = startingBelow(child, top);
+    if (inner !== undefined) return inner;
+  }
+  return undefined;
+};
+
+/**
+ * Marks what sits at the scroller's top, in the row its top cuts through; undefined when no row is cut. "pending" while
+ * that row's height on screen isn't the one the list holds for it (`known`): a change it hasn't measured yet (a
+ * picture that just loaded, its ResizeObserver still to run in this frame), which a mark taken now would already
+ * count in, so the change would read as nothing having moved.
+ */
+export function topMark(scroller: Element, rows: Element, known: (row: Element) => number | undefined): TopMark | "pending" | undefined {
+  const top = scroller.getBoundingClientRect().top;
+  for (const row of rows.children) {
+    const r = row.getBoundingClientRect();
+    if (r.bottom <= top) continue;
+    if (r.top >= top) return undefined;
+    const size = known(row);
+    if (size === undefined || Math.abs(size - r.height) >= 1) return "pending";
+    const el = startingBelow(row, top);
+    return el === undefined ? undefined : { row, el, at: el.getBoundingClientRect().top - r.top };
+  }
+  return undefined;
+}
+
+/** How far `mark`'s element has moved within its row since it was marked; undefined once it isn't `row`'s. */
+const movedSince = (mark: TopMark | undefined, row: Element | undefined): number | undefined =>
+  mark === undefined || mark.row !== row || !mark.el.isConnected ? undefined : mark.el.getBoundingClientRect().top - mark.row.getBoundingClientRect().top - mark.at;
+
 /** Where a scroller stood at a scroll event. */
 export interface Scrolled {
   readonly top: number;
@@ -108,6 +166,20 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     scrollPaddingEnd: paddingEnd,
     ...followOptions(followOutput, away),
   });
+  // What sits at the view's top, marked as the reader scrolls and after each change, for keepsPlace. A mark is taken
+  // only from a layout the list has measured: while the row at the top has changed unmeasured, the one before stays.
+  const mark = useRef<TopMark>(undefined);
+  const remark = useRef(() => {
+    const scroller = scrollRef.current;
+    const list = rowsRef.current;
+    const next = scroller && list ? topMark(scroller, list, (row) => virtualizer.measurementsCache[Number((row as HTMLElement).dataset["index"])]?.size) : undefined;
+    if (next !== "pending") mark.current = next;
+  });
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, v) => {
+    const keep = keepsPlace(item, delta, v.scrollOffset ?? 0, movedSince(mark.current, v.elementsCache.get(item.key)));
+    requestAnimationFrame(remark.current);
+    return keep;
+  };
 
   const { virtualizerRef } = props;
   useEffect(() => {
@@ -138,6 +210,15 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [followOutput, virtualizer]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = remark.current;
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+  useLayoutEffect(() => remark.current());
 
   // TanStack skips measuring rows that mount while the list is scrolling (and for 150 ms after) and leaves them to
   // its ResizeObserver, whose re-render lands a frame or more later; until then the list's height and the first
