@@ -214,11 +214,13 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     record.env = { ...(HOME ? { HOME } : {}), PATH };
     save(dir, record);
     let box: Box | undefined;
+    let step: keyof typeof STEP_WORDS = "setup";
     try {
       box = await b.open(record, session);
       await withTailnet(box, session, false);
       await prepare(box, dirs);
       stepped(session, git ? "clone" : "files");
+      step = git ? "repo" : "files";
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
       record.since = nowIso();
       save(dir, record);
@@ -236,7 +238,8 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       box?.close();
       await b.destroy(record).catch(() => {});
       rmSync(recordFile(dir), { force: true });
-      throw error;
+      if (error instanceof ProviderError || error instanceof HostedDown) throw error;
+      throw new StartStep(STEP_WORDS[step], (error as Error).message);
     }
   })();
   made.catch(() => {
@@ -285,17 +288,39 @@ export class HostedDown extends LaunchError {}
  * task's recovery once, and the run then fails with these plain words; the log keeps the detail. */
 export class BoxNotReady extends HostedDown {}
 
+/** A step of a box's start that failed on fleetd's side, not the provider's: `plain` is what a person reads (the
+ * provider's row, a queued agent's reason, the lead's chat line); the error's own text, with its paths and tool output,
+ * goes to the log only. */
+class StartStep extends Error {
+  constructor(
+    readonly plain: string,
+    readonly detail: string,
+  ) {
+    super(plain);
+  }
+}
+
+/** What a person reads for each step of a box's start that can fail on fleetd's side. */
+const STEP_WORDS = {
+  setup: "fleetd couldn't set it up",
+  repo: "it couldn't get the repo",
+  files: "it couldn't get the bot's files",
+} as const;
+
 /** Why no box came up, in the provider's plain words (or the box's, for the repo's clone in it). The provider is set
  * aside for a while either way, so the run's retry goes to this machine's slots or waits in line rather than fail
  * there again. */
 function failed(provider: ProviderId, error: unknown): HostedDown {
   if (error instanceof HostedDown) return error;
-  const why = (error as Error).message;
+  const detail = (error as Error).message;
+  // Fleetd's own failures (a step of the start, or before the box) in plain words; their detail stays in the log.
+  if (!(error instanceof ProviderError)) console.warn(`${nowIso()} WARN a hosted box didn't come up {"provider":"${provider}","error":${JSON.stringify(detail)}}`);
+  const why = error instanceof ProviderError ? detail : `a sandbox at ${NAMES[provider]} didn't come up${error instanceof StartStep ? `: ${error.plain}` : ""}`;
   const b = boxes();
-  b?.setAside(provider, error instanceof ProviderError ? why : `a sandbox at ${NAMES[provider]} didn't come up: ${why}`, Date.now(), error instanceof ProviderError ? error.reason : "failed");
+  b?.setAside(provider, why, Date.now(), error instanceof ProviderError ? error.reason : "failed");
   // In the words the hub shows on the provider's row, in queued agents' reasons and in the lead's chat line.
   const aside = b?.trouble().find((t) => t.provider === provider && t.what === "start");
-  return new HostedDown(aside ? troubleLine(troubleOf(provider, aside)) : `no hosted sandbox came up at ${NAMES[provider]}: ${why}`);
+  return new HostedDown(aside ? troubleLine(troubleOf(provider, aside)) : `no hosted sandbox came up at ${NAMES[provider]}: ${error instanceof ProviderError ? why : error instanceof StartStep ? error.plain : "fleetd couldn't start it"}`);
 }
 
 /** The session's box, made when it has none; a provider set aside isn't asked for another until its time is out. */
@@ -310,6 +335,13 @@ async function boxFor(provider: ProviderId, session: string, dir: string, cwd: s
   }
 }
 
+/** `l`'s box is no longer live here: when it was its provider's last, a keep-alive failure has no box left to keep. */
+function letGo(l: Live | undefined): void {
+  if (!l) return;
+  const p = l.record.provider;
+  if (![...live.values()].some((o) => o.record.provider === p)) boxes()?.noneLive(p);
+}
+
 /** The session's box goes: its work and transcript back here, then the box is destroyed. Idempotent. */
 export function teardown(session: string, dir: string): Promise<void> {
   const already = ending.get(session);
@@ -317,6 +349,7 @@ export function teardown(session: string, dir: string): Promise<void> {
   const p = (async () => {
     const l = live.get(session);
     live.delete(session);
+    letGo(l);
     if (l?.extender) clearTimeout(l.extender);
     if (l?.refresher) clearInterval(l.refresher);
     // A turn's checkpoint under way ends first: one bundle at a time goes into the worktree.
@@ -637,6 +670,7 @@ export async function destroyHosted(dir: string): Promise<void> {
   if (!record) return;
   const l = live.get(record.session);
   live.delete(record.session);
+  letGo(l);
   if (l?.extender) clearTimeout(l.extender);
   l?.box.close();
   // `fleetd session-host stop-all` (a machine's removal) runs without the node: the keys are read from its home.

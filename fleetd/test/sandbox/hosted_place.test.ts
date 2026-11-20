@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { connect, createServer } from "node:net";
 import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
 import { provider, ProviderError } from "../../src/sandbox/providers/index.ts";
-import { Boxes, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
+import { Boxes, DOWN_MS, setBoxes } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { BOX_CLAUDE, BoxNotReady, hasBox, HostedDown, hostedBox, hostedPlace, hostedProbe, nobodyPid, readRecord } from "../../src/node/place/hosted.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
@@ -314,6 +314,18 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
   }
 }, 60_000);
 
+test("a template build step that fails says the template didn't build, its output only in the log", async () => {
+  const { s, home, cwd, env, boxes } = await setup();
+  // The build box's first step exits 2 with its own output, paths and all.
+  s.fail({ path: /^GET .*\/commands\/\d+$/, status: 200, body: { ok: true, running: false, exitCode: 2, stderr: `tar: ${home}/x: Cannot open: No such file or directory` } });
+  const failed = await hostedPlace("boat", "s-tpl", join(home, "hosts", "s-tpl"))
+    .start({ fleetd: [], dir: join(home, "hosts", "s-tpl"), sessionId: "s-tpl", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } })
+    .catch((e: Error) => e);
+  expect(failed).toBeInstanceOf(HostedDown);
+  expect((failed as Error).message).toStartWith("boat.dev's sandbox template didn't build (try again in a minute); trying again at ");
+  expect(boxes.trouble()[0]?.why).toBe("boat.dev's sandbox template didn't build");
+}, 60_000);
+
 test("boat.dev refusing a box for billing sets it aside saying so: the heartbeat's trouble and the next start's words", async () => {
   const { s, home, cwd, env, boxes } = await setup();
   // boat.dev answers every create (the template's build box too) with its 402.
@@ -339,6 +351,26 @@ test("a keep-alive that fails is reported until one works again", async () => {
   expect(boxes.trouble()).toEqual([]);
 });
 
+test("a keep-alive failure goes with Try again or a new key, and a while after the provider's last box went", async () => {
+  const { boxes } = await setup();
+  const fail = () => boxes.keptAlive("boat", new ProviderError("unreachable", "boat.dev didn't answer"));
+  // Try again: the hub's fresh word reaches the node as its limits, which ask every provider again.
+  fail();
+  boxes.retry();
+  expect(boxes.trouble()).toEqual([]);
+  // A new key (or none): the failure was the old key's.
+  fail();
+  boxes.setKeys({ boat: Buffer.from(KEY).toString("base64") });
+  expect(boxes.trouble()).toEqual([]);
+  // Its failed keep-alive ended the provider's last box: still said for DOWN_MS, so the row and leads hear of it, then
+  // gone, with no box left to keep.
+  fail();
+  const at = Date.now();
+  boxes.noneLive("boat", at);
+  expect(boxes.trouble(at + 1000)).toHaveLength(1);
+  expect(boxes.trouble(at + DOWN_MS + 1)).toEqual([]);
+});
+
 test("a box that doesn't come up sets its provider aside, and the next start there is refused without another box", async () => {
   const { s, home, env, boxes } = await setup();
   // The worktree doesn't go into the box (here: it isn't there at all), which is no fault of the provider's.
@@ -348,7 +380,11 @@ test("a box that doesn't come up sets its provider aside, and the next start the
   const made = () => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length;
   const first = await start("s-down1").catch((e: Error) => e);
   expect(first).toBeInstanceOf(HostedDown);
-  expect((first as Error).message).toStartWith("a sandbox at boat.dev didn't come up: ");
+  // In plain words: what didn't work, never the tar's output or the machine's paths (the log keeps those).
+  expect((first as Error).message).toStartWith("a sandbox at boat.dev didn't come up: it couldn't get the bot's files (try again in a minute)");
+  expect((first as Error).message).not.toContain("tar");
+  expect((first as Error).message).not.toContain(home);
+  expect(boxes.trouble()[0]?.why).toBe("a sandbox at boat.dev didn't come up: it couldn't get the bot's files");
   // The box it made went, and so did its record; the provider is out of what the heartbeat offers the slot board.
   expect(s.boxes.size).toBe(0);
   expect(readRecord(join(home, "hosts", "s-down1"))).toBeUndefined();
@@ -358,7 +394,8 @@ test("a box that doesn't come up sets its provider aside, and the next start the
   const second = await start("s-down2").catch((e: Error) => e);
   expect(second).toBeInstanceOf(HostedDown);
   // In the words the hub shows: what went wrong, its fix and when it is tried again.
-  expect((second as Error).message).toMatch(/^a sandbox at boat\.dev didn't come up: .*\(try again in a minute\); trying again at \d\d:\d\d$/);
+  expect((second as Error).message).toMatch(/^a sandbox at boat\.dev didn't come up: it couldn't get the bot's files \(try again in a minute\); trying again at \d\d:\d\d$/);
+  expect((second as Error).message).not.toContain(home);
   expect(made()).toBe(1);
   // So is setup's command, which doesn't run.
   const ran = await hostedPlace("boat", "s-down3", join(home, "hosts", "s-down3")).run({ cwd, argv: ["true"], timeoutSec: 30, env, scrub: [] });

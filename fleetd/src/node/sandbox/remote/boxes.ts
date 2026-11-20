@@ -55,8 +55,9 @@ export class Boxes {
   #reaper: ReturnType<typeof setInterval> | undefined;
   /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
   #down = new Map<ProviderId, { until: number; why: string; reason: Reason }>();
-  /** Providers whose live boxes couldn't be extended at the last try (`keptAlive`), and why. */
-  #unkept = new Map<ProviderId, { why: string; reason: Reason }>();
+  /** Providers whose live boxes couldn't be extended at the last try (`keptAlive`), and why; once none of their boxes
+   * is left (`noneLive`), until when it is still said. */
+  #unkept = new Map<ProviderId, { why: string; reason: Reason; until?: number }>();
   /** Boxes being made: their record isn't written yet, and the reaper leaves them. */
   #making = new Set<string>();
   /** Boxes no session's record holds that are still in use: a bot's image build's (../../place/hosted.ts). */
@@ -100,6 +101,8 @@ export class Boxes {
 
   /** The team's keys as the hub sent them last (sealed to this node, base64), by provider: one not sent is forgotten. */
   setKeys(sealed: Partial<Record<string, string>>): void {
+    // A new key, or none: the last keep-alive's failure was the old key's.
+    this.#unkept.clear();
     mkdirSync(join(this.home, "sandbox", "keys"), { recursive: true, mode: 0o700 });
     for (const p of PROVIDERS) {
       const b64 = sealed[p];
@@ -140,6 +143,7 @@ export class Boxes {
   /** Every provider set aside is offered again at once: the hub's fresh word (a key that works again, a change). */
   retry(): void {
     this.#down.clear();
+    this.#unkept.clear();
   }
 
   /** A keep-alive of `p`'s box: failed (`error`), or worked, which clears the last failure. */
@@ -152,6 +156,13 @@ export class Boxes {
     this.#unkept.set(p, { why: error instanceof Error ? error.message : String(error), reason });
   }
 
+  /** `p` has no live box left (its last session ended, a failed keep-alive's own end among them): its keep-alive
+   * failure is said for DOWN_MS more, so the row and the leads hear of it, then goes, with no box left to keep. */
+  noneLive(p: ProviderId, now = Date.now()): void {
+    const k = this.#unkept.get(p);
+    if (k && k.until === undefined) k.until = now + DOWN_MS;
+  }
+
   /** What the heartbeat says is wrong with each provider now (`load.sandboxTrouble`): set aside after a refusal or a
    * box that didn't come up, until when; or its boxes not kept alive. Only connected providers; empty when all is well. */
   trouble(now = Date.now()): SandboxTrouble[] {
@@ -159,7 +170,7 @@ export class Boxes {
       const d = this.#down.get(p);
       if (d && d.until > now) return [{ provider: p, what: "start", reason: d.reason, why: d.why, until: d.until }];
       const k = this.#unkept.get(p);
-      return k ? [{ provider: p, what: "keep_alive", reason: k.reason, why: k.why }] : [];
+      return k && (k.until ?? Infinity) > now ? [{ provider: p, what: "keep_alive", reason: k.reason, why: k.why }] : [];
     });
   }
 
@@ -205,6 +216,12 @@ export class Boxes {
           writeFileSync(file, JSON.stringify({ name, id }));
           console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
           return id;
+        })
+        .catch((error: unknown) => {
+          // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
+          if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
+          console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify(error.message)}}`);
+          throw new ProviderError("failed", `${NAMES[p]}'s sandbox template didn't build`);
         });
       building.catch(() => this.#templates.delete(key));
       this.#templates.set(key, building);
