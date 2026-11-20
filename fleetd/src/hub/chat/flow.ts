@@ -26,12 +26,14 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { approvals, openRequests, projectOf } from "../approvals/index.ts";
 import { chatItem } from "../approvals/outcome.ts";
+import { activity } from "../executor/activity.ts";
 import { executors } from "../executor/index.ts";
 import { interruptNow } from "../executor/projects.ts";
 import * as attachments from "../intake/attachments.ts";
 import { leads } from "../leads/index.ts";
 import { archivedNote } from "../leads/lead_wakes.ts";
 import { leadWiring } from "../leads/ports.ts";
+import type { StoredLead } from "../leads/stored.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { ofPerson, setZone, stamp } from "../leads/zone.ts";
 import { allowPasted } from "../project_lead/tools.ts";
@@ -655,55 +657,79 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
 /** `sent` for a reply that landed whole: nothing more streams into it. */
 const LANDED = Number.POSITIVE_INFINITY;
 
+/** A lead's thread, by `machineId\u0000threadId`. */
+const threadKey = (t: ThreadRef) => `${t.machineId}\u0000${t.threadId}`;
+
+/** The leads a stream pass saw, by their thread (threadKey). */
+export type LeadThreads = Map<string, StoredLead>;
+
 /**
  * Folds each working lead's streamed text into its chat: the first text of a reply starts a streaming message, later
  * text appends to it, and once the reply is complete it lands whole and final, even when a delta never came or the
- * reply reached the hub after its run ended.
+ * reply reached the hub after its run ended. Returns the leads it saw, for streamFirst.
  */
-export function streamPass(hub: Hub, sent: Map<string, number>, liveParts: (t: ThreadRef) => LiveParts | undefined = (t) => liveOf(hub, t)): void {
-  const c = chat(hub);
+export function streamPass(hub: Hub, sent: Map<string, number>, liveParts: (t: ThreadRef) => LiveParts | undefined = (t) => liveOf(hub, t)): LeadThreads {
+  const seen: LeadThreads = new Map();
   const live = new Set<string>();
   for (const lead of leads(hub).records.leadsList()) {
-    const r = lead.projectRef;
-    const thread = { machineId: r.machineId, threadId: lead.threadId };
-    const parts = liveParts(thread);
-    if (!parts || (!parts.runActive && parts.done.length === 0)) continue;
-    if (!c.historyRead(r)) continue;
-    // The complete replies first: they were said before the one streaming now.
-    for (const done of parts.done) {
-      const source = leadSource(thread.threadId, done.messageId);
-      live.add(source);
-      if (sent.get(source) !== LANDED && land(hub, r, source, done.text.trim())) sent.set(source, LANDED);
-    }
-    const text = parts.runActive ? parts.text : undefined;
-    if (!text) continue;
-    const source = leadSource(thread.threadId, text.messageId);
-    live.add(source);
-    const done = sent.get(source) ?? 0;
-    if (text.total <= done) continue;
-    const append = since(text, done);
-    // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply has
-    // words in it that can't still turn out to be QUIET.
-    if (done === 0 && QUIET.startsWith(append.trim())) continue;
-    let message: ChatMessage | undefined;
-    try {
-      message = c.bySource(r, source) ?? c.add(r, { author: "lead", streaming: true, source }).message;
-    } catch {
-      message = undefined;
-    }
-    if (message?.state !== "streaming") {
-      sent.set(source, text.total);
-      continue;
-    }
-    try {
-      c.append(message, append);
-    } catch (error) {
-      console.warn("chat: streamed text not kept:", error);
-      continue;
-    }
-    sent.set(source, text.total);
+    const thread = { machineId: lead.projectRef.machineId, threadId: lead.threadId };
+    seen.set(threadKey(thread), lead);
+    streamLead(hub, sent, lead, liveParts(thread), live);
   }
   for (const source of [...sent.keys()]) if (!live.has(source)) sent.delete(source);
+  return seen;
+}
+
+/**
+ * A lead's thread moved: a reply none of whose text is in the chat yet opens its bubble now, so its first words don't
+ * wait for the next tick. Later text keeps the tick (streamPass).
+ */
+export function streamFirst(hub: Hub, sent: Map<string, number>, lead: StoredLead, liveParts: (t: ThreadRef) => LiveParts | undefined = (t) => liveOf(hub, t)): void {
+  const parts = liveParts({ machineId: lead.projectRef.machineId, threadId: lead.threadId });
+  const text = parts?.runActive ? parts.text : undefined;
+  if (!text || sent.has(leadSource(lead.threadId, text.messageId))) return;
+  streamLead(hub, sent, lead, parts, new Set());
+}
+
+/** streamPass for one lead; adds the sources it read to `live`. */
+function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts: LiveParts | undefined, live: Set<string>): void {
+  const c = chat(hub);
+  const r = lead.projectRef;
+  if (!parts || (!parts.runActive && parts.done.length === 0)) return;
+  if (!c.historyRead(r)) return;
+  // The complete replies first: they were said before the one streaming now.
+  for (const done of parts.done) {
+    const source = leadSource(lead.threadId, done.messageId);
+    live.add(source);
+    if (sent.get(source) !== LANDED && land(hub, r, source, done.text.trim())) sent.set(source, LANDED);
+  }
+  const text = parts.runActive ? parts.text : undefined;
+  if (!text) return;
+  const source = leadSource(lead.threadId, text.messageId);
+  live.add(source);
+  const done = sent.get(source) ?? 0;
+  if (text.total <= done) return;
+  const append = since(text, done);
+  // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply has
+  // words in it that can't still turn out to be QUIET.
+  if (done === 0 && QUIET.startsWith(append.trim())) return;
+  let message: ChatMessage | undefined;
+  try {
+    message = c.bySource(r, source) ?? c.add(r, { author: "lead", streaming: true, source }).message;
+  } catch {
+    message = undefined;
+  }
+  if (message?.state !== "streaming") {
+    sent.set(source, text.total);
+    return;
+  }
+  try {
+    c.append(message, append);
+  } catch (error) {
+    console.warn("chat: streamed text not kept:", error);
+    return;
+  }
+  sent.set(source, text.total);
 }
 
 /** A complete reply in the chat: its streaming message finished, or a final one added. False when the store failed, to try again. */
@@ -844,14 +870,29 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
 export async function run(hub: Hub): Promise<void> {
   const signal = hub.shutdown.signal;
   const streamed = new Map<string, number>();
-  const streamer = setInterval(() => {
+  let leadThreads: LeadThreads = new Map();
+  const pass = () => {
     try {
-      streamPass(hub, streamed);
+      leadThreads = streamPass(hub, streamed);
     } catch (error) {
       if (!signal.aborted) console.warn("chat: stream pass failed:", error);
     }
-  }, STREAM_TICK_MS);
-  signal.addEventListener("abort", () => clearInterval(streamer), { once: true });
+  };
+  pass();
+  const streamer = setInterval(pass, STREAM_TICK_MS);
+  // A lead's first words go out as they come; the tick carries the rest.
+  const unwatch = activity(hub).watch((t) => {
+    const lead = leadThreads.get(threadKey(t));
+    if (lead) streamFirst(hub, streamed, lead);
+  });
+  signal.addEventListener(
+    "abort",
+    () => {
+      clearInterval(streamer);
+      unwatch();
+    },
+    { once: true },
+  );
   // The cursor first: a request that moves while the start shows the open ones is an event after it, followed below.
   // Showing is safe to repeat.
   let cursor = await startup(hub);
