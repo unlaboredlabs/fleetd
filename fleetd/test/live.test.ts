@@ -246,6 +246,14 @@ test("a board lane goes out as its agent moves and as a task starts, not on the 
   feed("t3", "i2", "bun run build");
   await app.next(has("T3", "bun run build"), 3000);
   expect(performance.now() - sent).toBeLessThan(400);
+  // A tick that falls due while the process is busy (a loaded machine) runs before the change it overtakes: the lane
+  // still goes out on it, not a second later on the board's read.
+  const until = performance.now() + 300;
+  while (performance.now() < until);
+  sent = performance.now();
+  feed("t3", "i3", "bun run lint");
+  await app.next(has("T3", "bun run lint"), 3000);
+  expect(performance.now() - sent).toBeLessThan(400);
   insert(4);
   sent = performance.now();
   events(hub).append({ at, type: "task.started", machineId: "devbox", projectId: "p1", summary: "T4 started", data: { taskId: "T4" } } as never);
