@@ -3,6 +3,9 @@
 // command, the port stream, reading a file, building a template), its own auth header and settings, and refusals in
 // plain words. A provider added later runs the same tests (the loop below).
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { boatStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { SAVE_MS, STEP_MS, TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
@@ -133,11 +136,13 @@ for (const id of ["boat"] as const) {
       const name = await p.build(DOCKERFILE, { name: "fleetd-abc", onLog: (l) => logs.push(l) });
       expect(name).toBe("fleetd-abc");
       const cmds = s.calls.filter((c) => /\/commands$/.test(c.path)).map((c) => c.body.command as string);
-      expect(cmds).toHaveLength(3);
-      expect(cmds[0]).toContain("apt-get install -y git curl");
-      expect(cmds[1]).toContain("cd '\\''/work'\\''");
-      expect(cmds[1]).toContain("export BUN_INSTALL='\\''/opt/bun'\\''");
-      expect(cmds[2]).toContain("/etc/environment");
+      expect(cmds).toHaveLength(4);
+      // boat's own apt sources go first (APT_OWN).
+      expect(cmds[0]).toContain("sources.list.d");
+      expect(cmds[1]).toContain("apt-get install -y git curl");
+      expect(cmds[2]).toContain("cd '\\''/work'\\''");
+      expect(cmds[2]).toContain("export BUN_INSTALL='\\''/opt/bun'\\''");
+      expect(cmds[3]).toContain("/etc/environment");
       expect(s.calls.some((c) => c.path === "/api/v1/saved-snapshots" && c.body.name === "fleetd-abc")).toBe(true);
       // The build's box goes once the snapshot is saved.
       expect(s.boxes.size).toBe(0);
@@ -261,6 +266,39 @@ describe("each provider's own settings", () => {
     expect(keys).toHaveLength(2);
     expect(keys[0]).not.toBe(keys[1]);
     expect(keys.every((k) => /^build-[0-9a-f]{8}-fleetd-abc$/.test(k!))).toBe(true);
+  });
+
+  test("boat: a third-party apt source in boat's base image never fails the build", async () => {
+    // boat's base image as on 2026-11-20: Ubuntu's own sources, and the ondrej/php PPA, whose release info changed
+    // (apt-get update then exits 100). The build's steps run here against a stand-in /etc/apt.
+    const etc = mkdtempSync(join(tmpdir(), "fleetd-apt-"));
+    mkdirSync(join(etc, "sources.list.d"));
+    mkdirSync(join(etc, "apt.conf.d"));
+    writeFileSync(join(etc, "sources.list.d", "ubuntu.sources"), "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\nSuites: noble\n");
+    writeFileSync(join(etc, "sources.list.d", "ondrej-ubuntu-php-noble.sources"), "Types: deb\nURIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu\n");
+    writeFileSync(join(etc, "sources.list.d", "other.list"), "deb https://example.com/apt stable main\n");
+    const changed = "E: Repository 'https://ppa.launchpadcontent.net/ondrej/php/ubuntu noble InRelease' changed its 'Label' value from '***** The main PPA for supported PHP versions with many PECL extensions *****' to 'PHP'";
+    const step = (command: string) => {
+      if (command.includes("apt-get update")) {
+        const third = readdirSync(join(etc, "sources.list.d")).filter((f) => f !== "ubuntu.sources");
+        return third.length > 0 ? { exitCode: 100, stderr: `Reading package lists...\n${changed}\nN: This must be accepted explicitly before updates for this repository can be applied.` } : { exitCode: 0 };
+      }
+      if (!command.includes("/etc/apt/")) return { exitCode: 0 };
+      // Boat runs a step as root with sudo; here it runs as this user, on the stand-in /etc/apt.
+      const r = Bun.spawnSync(["bash", "-c", command.replace(/^sudo (-H -u \S+ )?/, "").replaceAll("/etc/apt", etc)]);
+      return { exitCode: r.exitCode, stderr: r.stderr.toString() };
+    };
+    const s = boatStandIn(undefined, step);
+    running.push(s);
+    const p = provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1` }, pollMs: 5 });
+    expect(await p.build(DOCKERFILE, { name: "fleetd-abc" })).toBe("fleetd-abc");
+    // Only Ubuntu's own sources are left in the template, and a release-info change on them is taken.
+    expect(readdirSync(join(etc, "sources.list.d"))).toEqual(["ubuntu.sources"]);
+    expect(readFileSync(join(etc, "apt.conf.d", "99fleetd-release-info"), "utf8")).toContain('Acquire::AllowReleaseInfoChange "true";');
+    // Before the recipe's first step.
+    const cmds = s.calls.filter((c) => /\/commands$/.test(c.path)).map((c) => c.body.command as string);
+    expect(cmds[0]).toContain("sources.list.d");
+    rmSync(etc, { recursive: true, force: true });
   });
 
 

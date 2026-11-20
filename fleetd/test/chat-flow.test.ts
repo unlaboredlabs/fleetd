@@ -15,7 +15,7 @@ import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
-function withFlow() {
+function withFlow(o: { sleep?: (ms: number) => Promise<void> } = {}) {
   const t = testHub();
   const launches: string[] = [];
   const sends: { text: string; crid: string; mode?: string }[] = [];
@@ -33,7 +33,7 @@ function withFlow() {
       }),
   );
   // After the start, which wires the real ports: this stands in for the executor's launch.
-  start(t.hub);
+  start(t.hub, o);
   Object.assign(leadWiring(t.hub).ports, {
     launch: async (_m: string, input: { prompt: string }) => {
       launches.push(input.prompt);
@@ -93,37 +93,114 @@ test("a message the lead took is announced again as delivered, stamped after its
   done();
 });
 
-test("a lead whose hosted sandbox doesn't come up says so in the chat, once a run, and the next message goes to it", async () => {
-  // A bot with no repo on hosted sandboxes: the person's message, then nothing at all (W737).
-  const { hub, call, sends, done } = withFlow();
+/** Sleeps a test ends by hand, each with how long it was asked for. */
+function sleeps() {
+  const asked: { ms: number; end: () => void }[] = [];
+  const sleep = (ms: number) => new Promise<void>((end) => void asked.push({ ms, end }));
+  return { asked, sleep };
+}
+
+test("a lead whose hosted sandbox doesn't come up says so in the chat, once a run, and is started again by itself with the message", async () => {
+  // A bot with no repo on hosted sandboxes: the person's message, then nothing at all (W737), then a line that
+  // promised a retry nothing made (W753).
+  const timers = sleeps();
+  const { hub, clock, call, sends, done } = withFlow({ sleep: timers.sleep });
   await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
-  const failed = {
+  const failed = (runId: string, message: string) => ({
     machineId: PROJECT.machineId,
     projectId: PROJECT.projectId,
     threadId: "lead-1",
     summary: "failed",
-    data: {
-      runId: "r1",
-      endCause: "failed",
-      error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: no hosted sandbox came up at boat.dev: git rev-parse failed: fatal: not a git repository (cwd /srv/x)" },
-    },
+    data: { runId, endCause: "failed", error: { class: "sandbox", message } },
+  });
+  const boxless = "could not start /opt/claude/.local/bin/claude: no hosted sandbox came up at boat.dev: git rev-parse failed: fatal: not a git repository (cwd /srv/x)";
+  const at = (ms: number) => new Date(ms).toISOString();
+  events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r1", boxless) });
+  events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r1", boxless) });
+  const lines = async () =>
+    (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
+  const until = async (ok: () => Promise<boolean> | boolean) => {
+    for (let i = 0; i < 200 && !(await ok()); i++) await Bun.sleep(10);
   };
-  events(hub).append({ at: "2026-11-19T23:17:39Z", type: "thread.failed", ...failed });
-  events(hub).append({ at: "2026-11-19T23:17:40Z", type: "thread.failed", ...failed });
-  const lines = async () => (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system");
-  for (let i = 0; i < 100 && (await lines()).length === 0; i++) await Bun.sleep(10);
-  await Bun.sleep(50);
-  const said = await lines();
-  expect(said.map((m: { text: string }) => m.text)).toEqual([
-    "The lead couldn't start: no sandbox came up for it at boat.dev. Your message is kept and goes in with your next one: send a message in about 10 minutes to try again. If it keeps failing, check boat.dev in Settings › Hub › Machines.",
+  await until(async () => (await lines()).length === 1 && timers.asked.length === 1);
+  expect(await lines()).toEqual([
+    "The lead couldn't start: no sandbox came up for it at boat.dev. It tries again by itself in about 10 minutes, and your message is kept for it. If it keeps failing, check boat.dev in Settings › Hub › Machines.",
   ]);
-  // In the person's words: no path, no git.
-  expect(said[0].text).not.toMatch(/\/|git/);
-  // No wake: it would fail the same way while the provider is set aside.
+  // In the person's words: no path, no git, no clock time.
+  expect((await lines())[0]).not.toMatch(/\/|git|\d:\d\d/);
+  // Nothing at once, which would fail the same way while the provider is set aside: once it is offered again.
   expect(sends).toEqual([]);
-  // The next message goes to the lead's session, where the node puts the kept one ahead of it.
-  await call(human, "chat_send", { projectRef: PROJECT, text: "are you there?", clientRequestId: "c2" });
-  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("are you there?")]);
+  // One wait for the run, though its failure came twice.
+  await Bun.sleep(30);
+  expect(timers.asked.map((t) => t.ms)).toEqual([630_000]);
+  clock.ms += 630_000;
+  timers.asked[0]!.end();
+  await until(() => leads(hub).wakes.pending(PROJECT));
+  expect(leads(hub).wakes.pending(PROJECT)).toBe(true);
+  // The wake goes to the lead's session, where the node puts the kept message ahead of it.
+  // 10 s of it is the wake's own wait, in real time.
+  for (let i = 0; i < 1500 && sends.length === 0; i++) await Bun.sleep(10);
+  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("the message above never reached you until now")]);
+
+  // It didn't come up again (the provider's template didn't build): twice as long, the node's UTC time gone.
+  events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r2", "boat.dev's sandbox template didn't build (try again in a minute); trying again at 19:20") });
+  await until(async () => (await lines()).length === 2 && timers.asked.length === 2);
+  expect((await lines())[1]).toBe("The lead couldn't start: boat.dev's sandbox template didn't build. It tries again by itself in about 20 minutes, and your message is kept for it.");
+  expect(timers.asked[1]!.ms).toBe(1_230_000);
+  // A completed turn ends the run of failed starts: the wait due then wakes nothing.
+  events(hub).append({ at: at(clock.ms), type: "thread.completed", machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-1", summary: "completed" });
+  clock.ms += 1_230_000;
+  timers.asked[1]!.end();
+  await Bun.sleep(30);
+  expect(sends.length).toBe(1);
+  done();
+}, 30_000);
+
+test("a lead's start again is bounded: three, at 10, 20 and 40 minutes, then the line says the next message tries", async () => {
+  const timers = sleeps();
+  const { hub, clock, call, done } = withFlow({ sleep: timers.sleep });
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  const lines = async () =>
+    (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
+  for (let i = 1; i <= 4; i++) {
+    events(hub).append({
+      at: new Date(clock.ms).toISOString(),
+      type: "thread.failed",
+      machineId: PROJECT.machineId,
+      projectId: PROJECT.projectId,
+      threadId: "lead-1",
+      summary: "failed",
+      data: { runId: `r${i}`, endCause: "failed", error: { class: "sandbox", message: "boat.dev's sandbox template didn't build" } },
+    });
+    for (let j = 0; j < 200 && (await lines()).length < i; j++) await Bun.sleep(10);
+    clock.ms += 60_000;
+  }
+  await Bun.sleep(30);
+  expect(timers.asked.map((t) => t.ms)).toEqual([630_000, 1_230_000, 2_430_000]);
+  expect((await lines()).at(-1)).toBe(
+    "The lead couldn't start: boat.dev's sandbox template didn't build. It was tried again 3 times by itself; your message is kept, and the lead tries again when you send another.",
+  );
+  done();
+}, 30_000);
+
+test("after a hub restart, a lead's start again that was due keeps its time", async () => {
+  const timers = sleeps();
+  const { hub, clock, call, done } = withFlow({ sleep: timers.sleep });
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  events(hub).append({
+    at: new Date(clock.ms).toISOString(),
+    type: "thread.failed",
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    threadId: "lead-1",
+    summary: "failed",
+    data: { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "boat.dev's sandbox template didn't build" } },
+  });
+  // The hub restarts 4 minutes later: what it reads at its start (`start` again, as serve does).
+  clock.ms += 240_000;
+  const after = sleeps();
+  start(hub, { sleep: after.sleep });
+  expect(after.asked.map((t) => t.ms)).toEqual([390_000]);
   done();
 });
 

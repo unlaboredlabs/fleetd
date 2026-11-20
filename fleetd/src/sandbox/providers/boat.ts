@@ -10,7 +10,9 @@
 //   with fleetd's own secret besides.
 // - A bot's computer image (`snapshot`) is a saved snapshot of a box that ran its setup; `forget` deletes it.
 // - boat builds no images: `build` replays the recipe's steps as root on a fresh box from boat's own Ubuntu 24.04
-//   image, saves it as a saved snapshot, and deletes the box.
+//   image, saves it as a saved snapshot, and deletes the box. That image comes with apt sources of its own besides
+//   Ubuntu's (the ondrej/php PPA), which the recipe doesn't use and which can break `apt-get update` from outside
+//   (a changed release info, an unreachable host): the build drops them first (`APT_OWN`).
 import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, notOffered, type ProviderAuth, sameSize, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
@@ -37,6 +39,10 @@ const BUILD_UP_MS = 10 * 60_000;
  * answering (`unreachable`), so a hung step or a save stuck in "saving" fails every start waiting on it, with why. */
 export const STEP_MS = 15 * 60_000;
 export const SAVE_MS = 20 * 60_000;
+/** A template build's first step: only Ubuntu's own apt sources stay (noble's ubuntu.sources), and a change of their
+ * release info (an Ubuntu point release) is taken rather than failing `apt-get update`. */
+export const APT_OWN = `for f in /etc/apt/sources.list.d/*; do [ -e "$f" ] || continue; [ "\${f##*/}" = ubuntu.sources ] || rm -rf -- "$f"; done
+mkdir -p /etc/apt/apt.conf.d && printf 'Acquire::AllowReleaseInfoChange "true";\\n' > /etc/apt/apt.conf.d/99fleetd-release-info`;
 
 /** The boat type of exactly `size`; a size boat has no type of is refused, never rounded up to a larger one. */
 export function typeFor(size: Size): string {
@@ -203,6 +209,11 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       await http.call("DELETE", `/saved-snapshots/${encodeURIComponent(template)}`, { ok: [404], signal: f.signal });
     },
 
+    async built(name, o = {}) {
+      const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { ok: [404], signal: o.signal });
+      return g.status !== 404 && g.body?.snapshot?.status === "ready" ? name : undefined;
+    },
+
     async build(dockerfile: string, b: BuildOptions) {
       const r = parse(dockerfile);
       b.onLog?.(`boat builds no images: the recipe's steps run on boat's own Ubuntu 24.04 image, not ${r.from}`);
@@ -225,6 +236,8 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           if (now() > until) throw new ProviderError("failed", "boat.dev's build box didn't start within 10 minutes");
           await pause(pollMs, b.signal);
         }
+        b.onLog?.("dropping the apt sources boat's image adds besides Ubuntu's own");
+        await run(id, `sudo bash -c ${shq(`set -e; ${APT_OWN}`)}`, true, b.signal);
         const env: [string, string][] = [];
         let cwd = "/";
         let user = "root";

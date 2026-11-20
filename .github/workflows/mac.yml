@@ -8,7 +8,8 @@ name: Nightly
 # too, nightly and on a manual run of it alone, never in a run of the Mac checks on demand or in release.yml's call.
 #
 # A manual run's `only` picks a part: `all` (the default) runs the Mac checks, `ios` builds just the iOS simulator app
-# (with `metro` for a Debug build), `links` runs just the link check (Actions › Nightly › Run workflow, or
+# (with `metro` for a Debug build), `links` runs just the link check, `hosted` just the hosted template's build at
+# boat.dev (below) (Actions › Nightly › Run workflow, or
 # `gh workflow run mac.yml --ref <branch> -f only=ios -f metro=<host:port>`). No EAS, no Expo service and no secret:
 # signed builds are mobile-release.yml's.
 #
@@ -23,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "What to run: the Mac checks, only the iOS simulator build, or only the site's external link check."
+        description: "What to run: the Mac checks, only the iOS simulator build, only the site's external link check, or only the hosted template's build."
         type: choice
-        options: [all, ios, links]
+        options: [all, ios, links, hosted]
         default: all
       metro:
         description: >-
@@ -253,6 +254,29 @@ jobs:
           npm run build --prefix docs/site
       - run: node .github/docs-links.mjs --external
 
+  hosted-template:
+    # The hosted sandbox template built from scratch at boat.dev, as a runner builds it the first time, then deleted
+    # (fleetd/scripts/hosted-template-check.ts): its recipe runs on boat's current base image and fetches from outside
+    # (apt, Claude Code's installer, pinned downloads), so it can break with no commit here, and a runner builds it only
+    # when its account has none. Needs the BOAT_API_KEY secret (a boat.dev key of fleetd's own); without it, a warning.
+    # Like the link check: nightly and on its own manual run, never in release.yml's call, not in the issue below.
+    if: ${{ github.workflow == 'Nightly' && (github.event_name == 'schedule' || inputs.only == 'hosted') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: fleetd
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # As ci.yml's fleetd job's.
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/hosted-template-check.ts
+        env:
+          BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+
   report:
     # A failed (or timed out) Mac job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
     # with every Mac job green closes it. Runs off main, a release's among them, and a manual run of one part report
@@ -272,7 +296,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" -q '[.jobs[] | select(.name != "report" and .name != "site-external-links")]')
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" -q '[.jobs[] | select(.name != "report" and .name != "site-external-links" and .name != "hosted-template")]')
           failed=$(jq -r '[.[] | select(.conclusion != "success" and .conclusion != "skipped") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$jobs")
           open=$(gh issue list --label macos-nightly-failed --state open --json number -q '.[].number')
           if [ -n "$failed" ]; then

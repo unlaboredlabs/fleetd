@@ -2,7 +2,8 @@
 // restarting under it wakes it every time; its own turn ending badly (the stall guard, its claude exiting unasked, its
 // machine sleeping) wakes it once per run of such turns, so a turn that keeps hanging doesn't loop. The wake goes
 // through the offline write queue like any other. A run whose hosted sandbox didn't come up never reached claude: the
-// person reads why in the chat, and their message, which the node keeps, goes in with the next one (`not_started`).
+// person reads why in the chat, and the lead is started again by itself once its provider is offered again, its message
+// (which the node keeps) first (`not_started`, ./start_retry.ts).
 import type { HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
 import { ASIDE_MS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
@@ -77,26 +78,73 @@ export function death(type: HubEventType, data: Record<string, unknown> | undefi
   return { kind, text: t === "" ? (kind === "exited" ? "the agent exited" : "it failed without saying why") : oneLine(t, 200) };
 }
 
-/** How a lead's thread ended, as its wakes see it. `not_started`: its claude never started, so no wake reaches it;
- * `text` is the chat's line for the person, once per run (`runId`). */
-export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: string } | { kind: "not_started"; text: string; runId?: string } | { kind: "completed" };
+/** How a lead's thread ended, as its wakes see it. `not_started`: its claude never started; `message` is the node's
+ * words for why (`notStartedLine` makes the chat's line of them), once per run (`runId`). */
+export type End = { kind: "node_lost"; text: string } | { kind: "own"; text: string } | { kind: "not_started"; message: string; runId?: string } | { kind: "completed" };
 
-/** The chat's line when the lead's hosted sandbox didn't come up (the node's words: "… no hosted sandbox came up at
- * boat.dev: …"): where, that the message is kept, and when a message starts it again. In the person's words: the
- * provider's own error stays in the run's failure. A box that came up but couldn't start the lead (Claude out of its
- * reach) has the node's own sentence, which says what to do, without the node's wrapper (its claude's path, its cwd). */
-export function notStartedLine(message: string): string {
+/** How many times in a row a lead whose start didn't come up is started again by itself. */
+export const START_RETRIES = 3;
+/** A little past the provider's set-aside, so the start again finds it offered. */
+const RETRY_MARGIN_MS = 30_000;
+
+/** The minutes after its `n`-th start in a row that didn't come up until the lead is started again: the provider's
+ * set-aside, doubled each time (10, 20, 40); none after START_RETRIES. */
+const retryMinutes = (n: number): number | undefined => (n >= 1 && n <= START_RETRIES ? (ASIDE_MS / 60_000) * 2 ** (n - 1) : undefined);
+
+/** The wait in milliseconds after the `n`-th start in a row that didn't come up, a little past `retryMinutes`. */
+export function retryWaitMs(n: number): number | undefined {
+  const m = retryMinutes(n);
+  return m === undefined ? undefined : m * 60_000 + RETRY_MARGIN_MS;
+}
+
+/** The chat's line when the lead's `n`-th start in a row didn't come up (the node's words: "… no hosted sandbox came
+ * up at boat.dev: …"): why, and that it is tried again by itself with the person's message kept, or, past
+ * START_RETRIES, that their next message tries again. In the person's words: the provider's own error stays in the
+ * run's failure, and the node's "try again" and its clock time (UTC, the node's) go, since this line says when. A box
+ * that came up but couldn't start the lead (Claude out of its reach) has the node's own sentence, which says what to do,
+ * without the node's wrapper (its claude's path, its cwd). */
+export function notStartedLine(message: string, n: number): string {
+  const minutes = retryMinutes(n);
+  const again =
+    minutes === undefined
+      ? `It was tried again ${START_RETRIES} times by itself; your message is kept, and the lead tries again when you send another.`
+      : `It tries again by itself in about ${minutes} minutes, and your message is kept for it.`;
   const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
-  if (!at) {
-    const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
-      // A path the node names (its settings file's) is for the log, not the person.
-      .replace(/\s*\([^()]*\/[^()]*\)/g, "")
-      .trim()
-      .replace(/[.\s]+$/, "");
-    return `The lead couldn't start${own ? `: ${own}` : ""}. Your message is kept and goes in with your next one.`;
+  if (at) return `The lead couldn't start: no sandbox came up for it at ${at}. ${again} If it keeps failing, check ${at} in Settings › Hub › Machines.`;
+  const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
+    // A path the node names (its settings file's) is for the log, not the person.
+    .replace(/\s*\([^()]*\/[^()]*\)/g, "")
+    // The provider's set-aside as the node words it (shared/sandbox.ts troubleLine): this line says when instead.
+    .replace(/;\s*trying again at \d{1,2}:\d{2}/g, "")
+    .replace(/\s*\(try again in a minute\)/g, "")
+    .trim()
+    .replace(/[.\s]+$/, "");
+  return `The lead couldn't start${own ? `: ${own}` : ""}. ${again}`;
+}
+
+/** The wake's line for a lead started again by itself: the message ahead of it (the node's kept one) never reached it. */
+export const RETRY_LINE =
+  "- Your last start didn't come up (no sandbox), so the message above never reached you until now: fleetd started you again by itself. Answer it.";
+
+/** The lead's starts in a row that didn't come up, from its project's `thread.failed` and `thread.completed` events
+ * newest first: how many runs (`n`), and the newest one's event (`seq`, `at`); they end at its thread's last other end
+ * (a completed turn, another failure). Undefined when its thread's newest end is another. The start again is due
+ * `retryWaitMs(n)` after `at`. */
+export function failedRun(newestFirst: Iterable<HubEvent>, lead: StoredLead): { n: number; seq: number; at: string } | undefined {
+  const runs = new Set<string>();
+  let newest: HubEvent | undefined;
+  for (const e of newestFirst) {
+    const found = end(e, [lead]);
+    if (!found) {
+      // Its thread's end that wakes nothing (a stop asked for): the run of failed starts is over there.
+      if ((e.threadId ?? (e.data as { threadId?: unknown } | undefined)?.threadId) === lead.threadId) break;
+      continue;
+    }
+    if (found.end.kind !== "not_started") break;
+    newest ??= e;
+    runs.add(found.end.runId ?? `seq:${e.seq}`);
   }
-  const minutes = Math.round(ASIDE_MS / 60_000);
-  return `The lead couldn't start: no sandbox came up for it at ${at}. Your message is kept and goes in with your next one: send a message in about ${minutes} minutes to try again. If it keeps failing, check ${at} in Settings › Hub › Machines.`;
+  return newest ? { n: runs.size, seq: newest.seq, at: newest.at } : undefined;
 }
 
 /** The project and how its lead's thread ended; undefined for another thread, or an end that wakes nothing. */
@@ -122,7 +170,7 @@ export function end(event: HubEvent, leads: StoredLead[]): { project: ProjectRef
   if (died.kind === "no_sandbox") {
     const runId = typeof data?.runId === "string" ? data.runId : undefined;
     const message = (data?.error as { message?: unknown } | undefined)?.message;
-    return { project: lead.projectRef, end: { kind: "not_started", text: notStartedLine(typeof message === "string" ? message : ""), ...(runId ? { runId } : {}) } };
+    return { project: lead.projectRef, end: { kind: "not_started", message: typeof message === "string" ? message : "", ...(runId ? { runId } : {}) } };
   }
   if (died.kind === "stalled" || died.kind === "exited" || died.kind === "unreachable") {
     return {

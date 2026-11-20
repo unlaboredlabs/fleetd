@@ -4,7 +4,8 @@
 //
 // With a `Runner`, a box is more than a record: the command a client starts in it runs on this machine (its
 // environment as the provider would give it, boat's environment file read back from what the client
-// wrote), and the box's port is carried to the port the runner says, so a test drives a box's whole life.
+// wrote), and the box's port is carried to the port the runner says, so a test drives a box's whole life. With a
+// `Step`, each other command (a template build's) ends as it says, so a test stands in for what boat's base image does.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -28,6 +29,8 @@ export type StandIn = {
 };
 
 type Handler = (c: Call, s: StandIn) => Response | Promise<Response>;
+/** How a command a client starts (not a box's start) ends: its exit code and output. */
+export type Step = (command: string) => { exitCode: number; stdout?: string; stderr?: string };
 
 /** Runs what a client starts in a box, here. */
 export type Runner = {
@@ -132,9 +135,10 @@ let n = 0;
 const nextId = (p: string) => `${p}${(++n).toString().padStart(8, "0")}`;
 
 /** boat's API. */
-export function boatStandIn(runner?: Runner): StandIn {
+export function boatStandIn(runner?: Runner, step?: Step): StandIn {
   const idem = new Map<string, string>();
   const commands: any[] = [];
+  const ended = new Map<number, ReturnType<Step>>();
   const saved = new Map<string, number>();
   const s = serve(
     (h) => h.get("authorization") === `Bearer ${KEY}`,
@@ -192,10 +196,11 @@ export function boatStandIn(runner?: Runner): StandIn {
         s.boxes.get(m[1]!).commands = commands;
         // Only a box's start (the one with an environment file), never a template build's steps.
         if (runner && /\.fleetd-env-/.test(c.body.command)) launch(runner, m[1]!, c.body.command, s.files);
+        else if (step) ended.set(commands.length, step(c.body.command));
         return Response.json({ ok: true, type: "command.started", success: true, processId: commands.length, pid: 100 + commands.length, command: c.body.command, startedAt: "2026-01-01T00:00:00Z" });
       }
       m = /^\/sandboxes\/([^/]+)\/commands\/(\d+)$/.exec(p);
-      if (m) return Response.json({ ok: true, type: "command.status", success: true, processId: Number(m[2]), status: "exited", running: false, exitCode: 0, stdout: "", stderr: "" });
+      if (m) return Response.json({ ok: true, type: "command.status", success: true, processId: Number(m[2]), status: "exited", running: false, exitCode: 0, stdout: "", stderr: "", ...ended.get(Number(m[2])) });
       m = /^\/sandboxes\/([^/]+)\/host$/.exec(p);
       if (m) return Response.json({ ok: true, type: "port.hosted", success: true, port: c.body.port, url: `${s.url}/ws/${m[1]}?_token=port-token`, isProtected: true, access: "private" });
       if (c.method === "POST" && p === "/saved-snapshots") {
@@ -207,6 +212,7 @@ export function boatStandIn(runner?: Runner): StandIn {
         saved.delete(m[1]!);
         return Response.json({ ok: true });
       }
+      if (m && !saved.has(m[1]!)) return Response.json({ ok: false, code: "snapshot_not_found", message: "Saved snapshot not found" }, { status: 404 });
       if (m) {
         const k = (saved.get(m[1]!) ?? 0) + 1;
         saved.set(m[1]!, k);

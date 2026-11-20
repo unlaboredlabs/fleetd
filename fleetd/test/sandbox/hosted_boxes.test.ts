@@ -85,6 +85,37 @@ for (const id of ["boat"] as const) {
   });
 }
 
+test("boat: a machine whose home was wiped finds the template at boat.dev by its name and builds none", async () => {
+  const { s, boxes, home } = await world("boat");
+  const name = await boxes.template("boat");
+  const builds = () => s.calls.filter((c) => c.method === "POST" && String(c.body?.name ?? "").startsWith("fleetd build")).length;
+  expect(builds()).toBe(1);
+  // The host was rebuilt: the runner's home, and its note of the template, are gone.
+  rmSync(join(home, "sandbox"), { recursive: true, force: true });
+  const again = new Boxes(home, "devbox", { open: (b) => b }, {
+    provider: (p, auth) => provider(p, auth, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
+    source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
+  });
+  again.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  expect(await again.template("boat")).toBe(name);
+  expect(builds()).toBe(1);
+  // And it keeps the note again: no second lookup.
+  const lookups = () => s.calls.filter((c) => c.method === "GET" && c.path === `/api/v1/saved-snapshots/${name}`).length;
+  const seen = lookups();
+  expect(await again.template("boat")).toBe(name);
+  expect(lookups()).toBe(seen);
+  // One the account doesn't have ready is built: a deleted one.
+  rmSync(join(home, "sandbox"), { recursive: true, force: true });
+  await provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1` } }).forget!(name);
+  const third = new Boxes(home, "devbox", { open: (b) => b }, {
+    provider: (p, auth) => provider(p, auth, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
+    source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
+  });
+  third.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  expect(await third.template("boat")).toBe(name);
+  expect(builds()).toBe(2);
+}, 60_000);
+
 test("boat: a bot's picked size is the box's own, exactly, and one boat doesn't give is refused before any box", async () => {
   const { s, boxes } = await world("boat");
   const size = { cpu: 4, memGb: 8 };
