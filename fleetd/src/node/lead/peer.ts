@@ -3,22 +3,12 @@
 // ancestry and environment. Never what the caller claims.
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { readFileSync } from "node:fs";
+import type { PeerSession } from "./channel.ts";
 
 /** Set in every runner child's environment to its spawn's marker. */
 export const SESSION_MARKER = "FLEETD_RUNNER_SESSION";
 
-export type PeerSession = { kind: "session"; session: string } | { kind: "detached"; session: string } | { kind: "outside" };
-
-/** Where a call to the node came in: a process on this machine, by the kernel's pid for it (undefined when the kernel
- * didn't say), or a box's channel (../sandbox/box.ts), which is its session's by the connection alone: nothing in a
- * box has a pid on this machine, and nothing it sends names another session. */
-export type Caller = number | undefined | { box: string };
-
-/** The session `caller` runs in: a box's is its own; a process's is what `byPid` finds from its pid. */
-export function identify(caller: Caller, byPid: (pid: number) => PeerSession): PeerSession | undefined {
-  if (typeof caller === "object") return { kind: "session", session: caller.box };
-  return caller === undefined ? undefined : byPid(caller);
-}
+export { identify, type Caller, type PeerSession } from "./channel.ts";
 
 let libc: { symbols: { getsockopt: (...a: unknown[]) => number } } | undefined | null;
 function getsockopt() {

@@ -15,7 +15,7 @@ import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./p
 import { destroyBox } from "../place/box_record.ts";
 import { HostLink as Link, type HostDial, type Registration } from "./host_link.ts";
 
-export { PROTOCOL, shutdown, type HostDial, type HostHandlers, type HostSocket, type Refusal, type Registration, type RunnerEvent, type SessionCommand } from "./host_link.ts";
+export { PROTOCOL, shutdown, type HostDial, type HostHandlers, type HostSocket, type Numbered, type Refusal, type Registration, type RunnerEvent, type SessionCommand } from "./host_link.ts";
 
 export const COMMAND = "session-host";
 const START_TIMEOUT_MS = 10_000;

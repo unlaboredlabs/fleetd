@@ -54,8 +54,8 @@ export class HostLink {
   #last = 0;
   #ended = false;
   #exitSeen = false;
-  #queue: RunnerEvent[] = [];
-  #waiter: ((e: RunnerEvent | undefined) => void) | undefined;
+  #queue: Numbered[] = [];
+  #waiter: ((e: Numbered | undefined) => void) | undefined;
   #ticker: ReturnType<typeof setInterval> | undefined;
   #closed: Promise<void>;
   #closedResolve!: () => void;
@@ -108,11 +108,11 @@ export class HostLink {
       this.#last = parsed.seq;
       if (typeof parsed.event === "object" && "Exited" in parsed.event) this.#exitSeen = true;
       this.#handed.push(parsed.seq);
-      this.#push(parsed.event);
+      this.#push({ seq: parsed.seq, event: parsed.event });
     }
   }
 
-  #push(event: RunnerEvent | undefined): void {
+  #push(event: Numbered | undefined): void {
     const waiter = this.#waiter;
     if (waiter) {
       this.#waiter = undefined;
@@ -131,6 +131,15 @@ export class HostLink {
 
   /** The next event; undefined once the host went away (or the node let go of it). */
   next(): Promise<RunnerEvent | undefined> {
+    const queued = this.#queue.shift();
+    if (queued !== undefined) return Promise.resolve(queued.event);
+    if (this.#ended) return Promise.resolve(undefined);
+    return new Promise((resolve) => (this.#waiter = (e) => resolve(e?.event)));
+  }
+
+  /** `next`, with the seq the host gave the event: a service that keeps the events it applied across links (a host
+   * resends what wasn't acknowledged to the next link, whose seqs start afresh here) tells a resent one by it. */
+  nextWithSeq(): Promise<Numbered | undefined> {
     const queued = this.#queue.shift();
     if (queued !== undefined) return Promise.resolve(queued);
     if (this.#ended) return Promise.resolve(undefined);
@@ -179,6 +188,9 @@ export class HostLink {
     this.#gone();
   }
 }
+
+/** An event as the host numbered it. */
+export type Numbered = { seq: number; event: RunnerEvent };
 
 /** What a link writes to: a host's socket, or a box's channel to one. */
 export type HostSocket = { write(data: Uint8Array): number; end(): void };

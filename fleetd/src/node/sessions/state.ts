@@ -1,11 +1,10 @@
 // The session service's decisions, kept pure: a summary's derived fields,
 // how runs close when a process ends, permission answers from policy, and the bounded copies of items that go over
-// the link.
-import { existsSync } from "node:fs";
+// the link. Box side (docs/CONTRIBUTING.md "The package"): a service with no node settles a box's session as the node
+// does.
 import { join } from "node:path";
-import { headUtf16, tailUtf16 } from "../util.ts";
-import { ALWAYS_DISALLOWED } from "../runner/claude.ts";
-import type { SessionLocal } from "./store.ts";
+import { headUtf16, tailUtf16 } from "../text.ts";
+import { ALWAYS_DISALLOWED } from "../runner/claude_spec.ts";
 import { isActive, RESUME_REFUSED, type FailureClass, type PermissionDecision, type RunEnd, type RunFailure, type RunInfo, type RuntimeMode, type SessionSummary, type ThreadItem } from "./types.ts";
 
 /** Item outputs longer than this go over the link cut to their tail; `read_item` returns them whole. */
@@ -126,10 +125,15 @@ export function claudeSessionFile(configDir: string, cwd: string, sessionId: str
 }
 
 /** Whether the next start resumes, or (throws) why it must not start: a session resumes only in the config dir it
- * was started with. */
-export function startMode(local: SessionLocal, configDir: string, sessionId: string): boolean {
+ * was started with, when `exists` finds its conversation there (the node's: node:fs existsSync). */
+export function startMode(
+  local: { started: boolean; configDir: string; cwd: string },
+  configDir: string,
+  sessionId: string,
+  exists: (path: string) => boolean,
+): boolean {
   if (!local.started) return false;
-  if (local.configDir !== configDir && existsSync(claudeSessionFile(local.configDir, local.cwd, sessionId)))
+  if (local.configDir !== configDir && exists(claudeSessionFile(local.configDir, local.cwd, sessionId)))
     throw new Error(
       `${RESUME_REFUSED}session ${sessionId} was started with the claude config dir ${local.configDir} and cannot resume under ${configDir}: claude keeps the conversation there. Point the machine back at it ("claudeConfigDir": "${local.configDir}" in the node's node.json, then restart the node), or start a new session`,
     );
