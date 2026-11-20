@@ -172,19 +172,20 @@ export class Leads {
     });
   }
 
-  /** The project's lead and when its thread last moved, while it is idle. */
-  private idle(r: ProjectRef): { lead: StoredLead; since?: number } | undefined {
+  /** The project's lead and when its thread last moved, while it is idle or its node no longer has the thread (gone). */
+  private idle(r: ProjectRef): { lead: StoredLead; since?: number; gone?: true } | undefined {
     const lead = this.records.leadGet(r);
     if (!lead) return undefined;
     const thread = store(this.hub).threadGet({ machineId: r.machineId, threadId: lead.threadId })?.thread;
-    if (!thread || leadState(thread, false) !== "idle") return undefined;
+    if (!thread || (!thread.stale && leadState(thread, false) !== "idle")) return undefined;
     const since = parseMs(thread.lastProgressAt);
-    return { lead, ...(since === undefined ? {} : { since }) };
+    return { lead, ...(since === undefined ? {} : { since }), ...(thread.stale ? { gone: true as const } : {}) };
   }
 
-  /** Whether the lead is idle and has been since before LEAD_FRESH_AFTER: its prompt cache is gone. */
+  /** Whether the lead is idle and has been since before LEAD_FRESH_AFTER, or its thread is gone: its prompt cache is gone. */
   cold(r: ProjectRef): boolean {
     const idle = this.idle(r);
+    if (idle?.gone) return true;
     return idle?.since !== undefined && nowMs(this.hub.clock) - idle.since > LEAD_FRESH_AFTER_MS;
   }
 
