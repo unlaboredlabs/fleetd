@@ -654,3 +654,28 @@ test("a bot's server signs the team in: Connect from an older app, on a bot, end
   // The app still asking for it as the bot's reaches the team's.
   expect(((await l.call("mcp_server_test", { scope, name: "paper" })).result as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
 });
+
+test("two agents turned away at once: the older token's refusal never signs out the token just renewed", async () => {
+  const l = lab();
+  await signedIn(l);
+  registerLeadCalls(l.hub);
+  const renew = leadCalls(l.hub).handler("mcp_oauth_renew")!;
+  const print = (header: string) => new Bun.CryptoHasher("sha256").update(header).digest("hex").slice(0, 8);
+  const first = print(l.link.opened.at(-1)!);
+  const renewals = svc.seen.refreshes;
+  // Both held the first token. One has it renewed; the other, a moment behind, says the first token was refused
+  // after its renewal, before the new one reached its node.
+  const [a, b] = await Promise.all([
+    renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", fingerprint: first }),
+    renew({ ...agentCaller, threadId: "th-2" }, { op: "mcp_oauth_renew", server: "docs", fingerprint: first, refused: true }),
+  ]);
+  expect([a, b]).toEqual([{ renewed: "yes" }, { renewed: "yes" }]);
+  expect(svc.seen.refreshes).toBe(renewals + 1);
+  expect(mcpServers(l.hub).get(team, "docs")!.oauth).toMatchObject({ status: "connected" });
+  // A second turn-away of the first token renews nothing again either.
+  expect(await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", fingerprint: first })).toEqual({ renewed: "yes" });
+  expect(svc.seen.refreshes).toBe(renewals + 1);
+  // The current token refused after its renewal does sign out.
+  const now = print(l.link.opened.at(-1)!);
+  expect(await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", fingerprint: now, refused: true })).toMatchObject({ renewed: "signed_out" });
+});
