@@ -1034,7 +1034,8 @@ export function bootFailure(error: string, console: string): BootFailed {
       : error.startsWith("the VM ended before its guest answered")
         ? "the VM stopped right after it booted"
         : error;
-  const detail = [...(own ? [own] : []), ...(why === error ? [] : [error]), ...lines.slice(-DETAIL_LINES)].join("\n");
+  // The guest's own line leads, and isn't repeated among the console's last lines.
+  const detail = [...(own ? [own] : []), ...(why === error ? [] : [error]), ...lines.filter((l) => l !== own).slice(-DETAIL_LINES)].join("\n");
   return new BootFailed(why, detail);
 }
 

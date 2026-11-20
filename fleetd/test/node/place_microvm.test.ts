@@ -755,6 +755,7 @@ test("a VM whose guest stops as it boots: the machine says so in one plain sente
   const lines = status.detail!.split("\n");
   expect(lines[0]).toBe("2026-11-19T23:57:42.101Z WARN sandbox-guest: can't listen at /run/fleetd/link.sock: listen EADDRINUSE: address already in use /run/fleetd/link.sock");
   expect(lines[1]).toStartWith("the VM ended before its guest answered");
+  expect(lines.filter((l) => l.includes("WARN sandbox-guest")).length).toBe(1);
   expect(lines.at(-1)).toBe("[    1.130301] reboot: Power down");
   // The hub keeps the sentence and the detail apart: the line people read never holds the console.
   const load: Pick<NodeLoad, "sandbox" | "memPerAgentBytes"> = {};

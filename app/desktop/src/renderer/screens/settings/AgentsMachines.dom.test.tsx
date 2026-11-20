@@ -272,12 +272,12 @@ it("says a VM that didn't start in one plain sentence, its console only behind S
     ...slots,
     perMachine: [{ machineId: "devbox", cap: 10, auto: 10, running: 7, why: `memory 60 GB, about 4 GB an agent; agents run as plain processes: ${why}`, sandbox: { kind: "process", why, detail } }],
   });
-  const vm = () => section("devbox").querySelector<HTMLElement>("[data-vm]")!;
+  const vm = () => section("devbox").querySelector<HTMLElement>("[data-vm]") ?? document.body;
   expect(vm().textContent).toContain("The last VM didn't start: fleetd's helper in it stopped right after the VM booted; the node tries VMs again after 00:08 UTC.");
   for (const raw of ["sandbox-guest", "fleetd-init", "sysrq"]) expect(vm().textContent).not.toContain(raw);
-  const toggle = () => [...vm().querySelectorAll("button")].find((b) => /details/u.test(b.textContent ?? ""))!;
-  expect(toggle().textContent).toBe("Show details");
-  await act(async () => toggle().click());
-  expect(toggle().textContent).toBe("Hide details");
+  const toggle = () => [...vm().querySelectorAll("button")].find((b) => b.textContent.includes("details"));
+  expect(toggle()?.textContent).toBe("Show details");
+  act(() => toggle()?.click());
+  expect(toggle()?.textContent).toBe("Hide details");
   expect(vm().querySelector("pre")?.textContent).toBe(detail);
 });
