@@ -13,6 +13,8 @@ export type McpSessionServer = {
   transport: McpServer["transport"];
   env: McpSessionValue[];
   headers: McpSessionValue[];
+  /** It signs in with OAuth: the node relays it (`fleetd mcp-relay`) with the token it holds now. */
+  oauth?: true;
 };
 export type McpSessionConfig = { userServers: boolean; servers: McpSessionServer[] };
 
@@ -76,6 +78,7 @@ export function forSession(s: McpServer, machineId: string): McpSessionServer | 
     transport: transportOf(s.transport),
     env: values(s.env),
     headers: values(s.headers),
+    ...(s.oauth !== undefined ? { oauth: true as const } : {}),
   };
 }
 

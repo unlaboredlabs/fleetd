@@ -150,6 +150,7 @@ export const LEAD_CALLS = [
   "mac",
   "mac_where",
   "mac_send",
+  "mcp_oauth_renew",
   "project_message",
   "factory_status",
   "chat_search",

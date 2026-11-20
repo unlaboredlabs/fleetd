@@ -5,6 +5,7 @@ import type { Node } from "./api.ts";
 import { broker, start as startBrowser } from "./browser/index.ts";
 import { start as startDevices, stop as stopDevices } from "./device/index.ts";
 import { start as startMac, stop as stopMac } from "./mac_tool/index.ts";
+import { start as startMcpRelay } from "./actions/mcp_relay.ts";
 import { start as startDesktop, stop as stopDesktop } from "./desktop/index.ts";
 import { start as startHosts } from "./hosts/index.ts";
 import { start as startScreens } from "./screens/index.ts";
@@ -12,6 +13,8 @@ import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
 export function registerAreas(node: Node): void {
+  // Every session's signed-in MCP servers reach it through `fleetd mcp-relay`, wherever it runs.
+  startMcpRelay(node);
   // The hub's own runner runs every agent in a hosted box, and has no screens or tools of its machine's to offer: its
   // agents' browser, Linux desktop and Android run in their own boxes (place/box_screens.ts, place/box_android.ts),
   // driven, recorded and watched from here as a machine's are (shared/sandbox.ts CAP_RUNNER).

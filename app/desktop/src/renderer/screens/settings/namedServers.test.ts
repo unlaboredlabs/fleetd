@@ -60,6 +60,10 @@ describe("named MCP servers", () => {
     expect(at({}).kind).toBe("signin");
     expect(at({ oauth: { status: "signed_out", issuer: "https://app.paper.design", signingIn: true } }).kind).toBe("signing");
     expect(at({ oauth: { status: "connected", issuer: "https://app.paper.design" } }).kind).toBe("connected");
+    // Its token ended and can't be renewed: agents are turned away, so it says so rather than Connected.
+    const stuck = at({ oauth: { status: "connected", issuer: "https://app.paper.design", problem: "fleetd can't renew its sign-in: down. It keeps trying." } });
+    expect(stuck).toMatchObject({ kind: "signin", problem: "fleetd can't renew its sign-in: down. It keeps trying." });
+    expect(namedWord(stuck)).toEqual({ text: "Sign in needed", tone: "danger" });
     expect(at({ enabled: false }).kind).toBe("off");
     // Added by hand with a key of its own: nothing to sign in to.
     expect(at({ headers: [{ name: "Authorization", kind: "secret", sealedOn: [] }] }).kind).toBe("connected");
