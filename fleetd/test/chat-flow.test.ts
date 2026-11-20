@@ -4,7 +4,8 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { excerpt, registerLeadCalls, when } from "../src/hub/chat/calls.ts";
-import { type LiveParts, since, streamPass } from "../src/hub/chat/flow.ts";
+import { type LiveParts, run, since, streamPass } from "../src/hub/chat/flow.ts";
+import { activity } from "../src/hub/executor/activity.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
@@ -13,6 +14,7 @@ import { leadWiring } from "../src/hub/leads/ports.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
+import type { ThreadEvent } from "../src/shared/sessions.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 function withFlow(o: { sleep?: (ms: number) => Promise<void> } = {}) {
@@ -253,6 +255,39 @@ test("the stream pass opens a bubble, appends to it and lands the reply whole; a
   streamPass(hub, sent, () => parts);
   expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toBeUndefined();
   expect(since({ messageId: "x", tail: "défg", total: 10 }, 8)).toBe("fg");
+  done();
+});
+
+test("a lead's first streamed words reach the chat as they come; later ones wait for the tick", async () => {
+  const { hub, done } = testHub();
+  leads(hub).records.leadPut({ projectRef: PROJECT, threadId: "lead-1", startedAt: "2026-11-08T10:00:00Z", sessionGeneration: 1 });
+  await chat(hub).readHistory(PROJECT, () => []);
+  const appended: string[] = [];
+  chat(hub).subscribe((d) => appended.push(d.append));
+  void run(hub);
+  // Its start read through: it now waits on the event log, which the hub's stop ends.
+  await Bun.sleep(20);
+  const feed = (event: unknown) =>
+    activity(hub).onThreadEvent(PROJECT.machineId, { sessionId: "lead-1", at: "2026-11-08T10:00:00Z", event: event as ThreadEvent });
+  feed({
+    type: "snapshot",
+    summary: { sessionId: "lead-1", projectId: PROJECT.projectId, title: "lead", status: "running", activeRunId: "r1" },
+    messages: [],
+    items: [],
+    runs: [{ id: "r1", status: "running", ordinal: 1 }],
+    truncated: false,
+  });
+  // Nothing between the delta and the check lets a tick run: the bubble opened on the delta itself.
+  feed({ type: "delta", messageId: "a", runId: "r1", append: "Hel" });
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toMatchObject({ state: "streaming", text: "Hel" });
+  expect(appended).toEqual(["Hel"]);
+  feed({ type: "delta", messageId: "a", runId: "r1", append: "lo" });
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")?.text).toBe("Hel");
+  // A reply that may still be the quiet one waits for words; once it has them, they go at once too.
+  feed({ type: "delta", messageId: "b", runId: "r1", append: "(" });
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toBeUndefined();
+  feed({ type: "delta", messageId: "b", runId: "r1", append: "Also" });
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toMatchObject({ state: "streaming", text: "(Also" });
   done();
 });
 
