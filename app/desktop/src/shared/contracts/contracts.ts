@@ -8015,6 +8015,11 @@ export type SlotSandbox = {
    * which never goes into a VM, so a bot with none runs its agents as plain processes there.
    */
   accountsOnly?: boolean;
+  /**
+   * What a person looks into only when they want to (the last VM's console when one didn't come up), behind the
+   * plain `why`: never in it. Cut with an ellipsis past 2000 characters.
+   */
+  detail?: string;
   /** The plain processes are by choice or the machine's design: nothing to fix. */
   expected?: boolean;
   /** The command that fixes it, run on the machine. */

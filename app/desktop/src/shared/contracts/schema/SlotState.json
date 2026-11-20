@@ -118,6 +118,12 @@
           "description": "In VMs, but only agents on a Claude account of their bot's: the machine signs in to Claude with its own login,\nwhich never goes into a VM, so a bot with none runs its agents as plain processes there.",
           "type": "boolean"
         },
+        "detail": {
+          "description": "What a person looks into only when they want to (the last VM's console when one didn't come up), behind the\nplain `why`: never in it. Cut with an ellipsis past 2000 characters.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
         "expected": {
           "description": "The plain processes are by choice or the machine's design: nothing to fix.",
           "type": "boolean"

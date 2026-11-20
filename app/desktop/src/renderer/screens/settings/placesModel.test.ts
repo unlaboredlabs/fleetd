@@ -32,6 +32,13 @@ describe("where a machine's agents run", () => {
       why: MEM,
       isolation: { vm: false, why: "No KVM.", expected: false, fix: "sudo modprobe kvm" },
     });
+    // A VM that didn't start: its console comes along apart from the sentence, for whoever asks to see it.
+    expect(isolationOf(`${MEM}; agents run as plain processes: the last VM didn't start`, { kind: "process", why: "the last VM didn't start", detail: "fleetd-init: …" }).isolation).toEqual({
+      vm: false,
+      why: "The last VM didn't start.",
+      expected: false,
+      detail: "fleetd-init: …",
+    });
     // By choice or the machine's design: nothing to fix, even where a fix was given.
     expect(isolationOf(`${MEM}; agents run as plain processes: turned off`, { kind: "process", why: "turned off", fix: "x", expected: true }).isolation).toEqual({
       vm: false,

@@ -959,6 +959,7 @@ export class Board {
 export const WHY_MAX = 1000;
 export const SANDBOX_WHY_MAX = 600;
 export const SANDBOX_FIX_MAX = 300;
+export const SANDBOX_DETAIL_MAX = 2000;
 
 /** `text`, or its first `max - 1` characters and an ellipsis. */
 export function clip(text: string, max: number): string {
@@ -984,7 +985,8 @@ export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoa
   // Whole, or cut with an ellipsis: a reason is never dropped from the line people read.
   const reason = clip(String(sandbox.why ?? "") || "no reason given", SANDBOX_WHY_MAX);
   const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
-  const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}) };
+  const detail = typeof sandbox.detail === "string" && sandbox.detail ? clip(sandbox.detail, SANDBOX_DETAIL_MAX) : undefined;
+  const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}), ...(detail ? { detail } : {}) };
   return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
 }
 
