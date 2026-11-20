@@ -4,7 +4,7 @@
 //
 // - `prepare`: the dirs those paths live under, made the box user's (with sudo where the box's user can't).
 // - `mirror`: files and dirs under the node's home that the session's launch names (its MCP config, settings, skills,
-//   the order's variables, the screens' tools), packed with tar and unpacked at the same paths.
+//   the order's variables, the screens' tools), packed with tar and unpacked at the same paths (`unpack`).
 // - `syncIn`: the repo cloned at the checkout's path from its origin (blobs fetched as needed, with the order's GitHub
 //   token), the worktree added at the same path and name, so its git dir is the same path as here and fleetd's hooks
 //   and pre-push gate (worktree/hooks.ts) hold; then the machine's commits and its uncommitted work (untracked files
@@ -13,38 +13,20 @@
 //   box started from: after each of its turns, and when it ends.
 // - A bot with no repo has a plain folder, not a checkout: it goes in as a tar, and comes back over the machine's as one,
 //   with what the box removed of it removed here too (`PLAIN`).
-// Each piece travels over the guest's link (`BoxFs`), never through the provider's own file calls.
+// Each piece travels over the guest's link (`BoxFs`), never through the provider's own file calls. What only runs in the
+// box (`sh`, `prepare`, `unpack`) is ./box_files.ts, box side.
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import type { ConfinedRun, RunOutcome } from "../../cmd/index.ts";
 import { readImage, type Image } from "../../actions/image.ts";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts.ts";
 import { BOX_DIR } from "./bootstrap.ts";
+import { type BoxFs, q, sh, unpack } from "./box_files.ts";
 
-/** What the node does with a box's files: Box (../box.ts) over the guest's link. */
-export interface BoxFs {
-  run(r: ConfinedRun): Promise<RunOutcome>;
-  write(path: string, bytes: Uint8Array, mode?: number): Promise<void>;
-  /** From byte `from` on, where the box kind can (a stand-in may give the whole file). */
-  read(path: string, max: number, from?: number): Promise<Uint8Array>;
-}
+export { prepare, sh, unpack, type BoxFs } from "./box_files.ts";
 
 /** The largest bundle a box's work comes back in. */
 const BUNDLE_MAX = 2 * 1024 ** 3;
-const GIT_SEC = 600;
-
-const q = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
-
-/** Runs a shell script in the box; throws its output's tail when it fails. */
-export async function sh(box: BoxFs, what: string, script: string, env: Record<string, string | undefined> = {}, timeoutSec = GIT_SEC): Promise<string> {
-  const all: Record<string, string> = { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" };
-  for (const [k, v] of Object.entries(env)) if (v !== undefined) all[k] = v;
-  const r = await box.run({ argv: ["sh", "-c", script], cwd: "/", env: all, timeoutSec });
-  if (r.notRun !== undefined) throw new Error(`${what}: ${r.notRun}`);
-  if (r.exitCode !== 0) throw new Error(`${what} failed in the box${r.timedOut ? ` (it ran past ${timeoutSec} s)` : ""}: ${r.outputTail.trim().slice(-600)}`);
-  return r.outputTail;
-}
 
 /** Host git, with an environment of its own on top of the node's. */
 async function git(cwd: string, args: string[], env: Record<string, string> = {}): Promise<string> {
@@ -60,15 +42,6 @@ async function git(cwd: string, args: string[], env: Record<string, string> = {}
 }
 
 const tryGit = (cwd: string, args: string[]) => git(cwd, args).catch(() => undefined);
-
-/** Makes each of `dirs` (outermost first) and leaves it the box user's. */
-export async function prepare(box: BoxFs, dirs: string[]): Promise<void> {
-  const roots = [...new Set(dirs.filter((d) => isAbsolute(d) && d !== "/"))].sort((a, b) => a.length - b.length);
-  const steps = roots.map(
-    (d) => `d=${q(d)}; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || sudo -n mkdir -p "$d"; [ -w "$d" ] || sudo -n chown "$(id -u):$(id -g)" "$d"`,
-  );
-  await sh(box, "making the agent's dirs", ["set -e", `mkdir -p ${q(BOX_DIR)}`, ...steps].join("\n"));
-}
 
 /** The files and dirs under `under` that a launch names, in its argv and its environment's values (each part of a
  * PATH-like one), and what the environment file the agent's commands source names in turn. */
@@ -101,9 +74,7 @@ export async function mirror(box: BoxFs, paths: string[], root = ""): Promise<vo
     const [err, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
     // 1: some file changed while it was read, which the next mirror catches up.
     if (code !== 0 && code !== 1) throw new Error(`packing the agent's files failed: ${err.trim().slice(-300)}`);
-    const at = `${root}${BOX_DIR}/files-${crypto.randomUUID()}.tar`;
-    await box.write(at, readFileSync(tar));
-    await sh(box, "unpacking the agent's files", `tar -C ${q(root || "/")} -xf ${q(at)} --no-same-owner; s=$?; rm -f ${q(at)}; exit $s`);
+    await unpack(box, readFileSync(tar), root);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -15,7 +15,7 @@ test("every module the package exports is pure, through all it imports", () => {
       expect(path).toEndWith(".json");
       continue;
     }
-    for (const f of findings(path, readRepo, { allow: allowed(path) })) impure.push(`fleetd${name.slice(1)}: ${line(f)}`);
+    for (const f of findings(path, readRepo, { allow: allowed(name) })) impure.push(`fleetd${name.slice(1)}: ${line(f)}`);
   }
   // A module named here either stays pure (its new import goes elsewhere) or loses its line in package.json's
   // `exports`, which whoever imports the package then sees at their next bump.
@@ -105,7 +105,27 @@ test("an import carries what it reaches: through a chain, a type import, the Hub
   expect(lines("gone.ts")).toEqual(["missing: src/hub/a/nowhere.ts no such file (through src/hub/a/gone.ts)"]);
   // A fake is a client: it may open a socket, and nothing else.
   expect(findings("fleetd/test/fake.ts", read).map((f) => f.taint)).toEqual(["network"]);
-  expect(findings("fleetd/test/fake.ts", read, { allow: allowed("fleetd/test/fake.ts") })).toEqual([]);
+  expect(findings("fleetd/test/fake.ts", read, { allow: allowed("./fakes/fake") })).toEqual([]);
+});
+
+test("the box side drives a box over the network and nothing else: no file, process, environment or Hub", () => {
+  const files: Record<string, string> = {
+    "fleetd/src/node/sandbox/link.ts": `import { connect } from "node:net";\nimport { Duplex } from "node:stream";\nexport const open = (url: string) => [new WebSocket(url), fetch(url), connect(1), Duplex];`,
+    "fleetd/src/node/sandbox/reads.ts": `import { readFileSync } from "node:fs";\nexport const read = () => readFileSync("/etc/hostname");`,
+    "fleetd/src/node/sandbox/spawns.ts": `export const run = () => Bun.spawn(["true"]);`,
+    "fleetd/src/node/sandbox/env.ts": `export const home = () => process.env.HOME;`,
+  };
+  const read: Read = (path) => files[path];
+  const taints = (file: string) => findings(`fleetd/src/node/sandbox/${file}`, read, { allow: allowed("./box/x") }).map((f) => f.taint);
+  expect(taints("link.ts")).toEqual([]);
+  expect(taints("reads.ts")).toEqual(["filesystem"]);
+  expect(taints("spawns.ts")).toEqual(["process"]);
+  expect(taints("env.ts")).toEqual(["machine"]);
+  // Anywhere else, the network is as impure as the rest.
+  expect(findings("fleetd/src/node/sandbox/link.ts", read, { allow: allowed("./hub/x") }).map((f) => f.taint)).toEqual(["network", "network", "network"]);
+  // What a service with no node needs to drive a box with fleetd's own code (the cloud's), each entry box side.
+  const box = exported().filter((e) => e.name.startsWith("./box/")).map((e) => e.name);
+  expect(box.sort()).toEqual(["./box/bootstrap", "./box/box", "./box/files", "./box/host_link", "./box/mux", "./box/providers"]);
 });
 
 test("a pure module left out on purpose is still pure and still left out", () => {
