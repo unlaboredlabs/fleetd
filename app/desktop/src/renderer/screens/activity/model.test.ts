@@ -241,6 +241,9 @@ group("agents' DMs", () => {
     const line = describe(dm(today("23:02"), "T2573", [{ taskId: "T2577" }, { taskId: "T2576" }]));
     expect(line).toMatchObject({ kind: "dms", icon: "dm", text: "T2573 → T2577, T2576", detail: "Use 1001 for the restart close.", link: { tab: "activity", dms: true } });
     expect(describe(dm(today("23:09"), "T2573", [{ taskId: "T2577", outcome: "woke" }], "Yes: ws.ts redials."))?.detail).toBe("woke T2577 · Yes: ws.ts redials.");
+    // A note to the bot: no recipients, sent to the bot.
+    const note = ev("agent.messaged", today("23:10"), { messageId: "M9", from: "T2573", to: [], toBot: true, text: "Moving the cloud pin in #404" });
+    expect(describe(note)).toMatchObject({ kind: "dms", icon: "dm", text: "T2573 → the bot", detail: "Moving the cloud pin in #404", link: { tab: "activity", dms: true } });
   });
 
   it("folds a pair's DMs of one hour into one row, either way round", () => {
