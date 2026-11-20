@@ -11,7 +11,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, 
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, TopBar } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
-import { ProjectsHost } from "../projects";
+import { NewBot, ProjectsHost } from "../projects";
 import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
@@ -83,20 +83,25 @@ export function Shell() {
   const [away, setAway] = useState<Screen>(HOME);
   const left: Screen = { ...route, at };
   if (route.id !== "settings" && route.id !== "onboarding" && toHash(left) !== toHash(away)) setAway(left);
+  const view = useSidebarView();
   if (hub === undefined) return null;
   const sheetHub = hubs.find((h) => h.id === route.at) ?? hub;
   const open = route.id === "project" || route.id === "session" ? route.project : homeRow?.hub === hub.id ? homeOpen : null;
   // Keyed by the hub: a query keeps the client it was made with, so what is on screen starts afresh on another hub
-  // rather than reading the one before. The sidebar's shown or hidden is the window's, not a hub's.
+  // rather than reading the one before. The sidebar's shown or hidden is the window's, not a hub's. New bot is outside
+  // it, on the hub on view unless it picks another: neither its Adds to nor the bot it opens on another hub remounts it.
   return (
-    <HubScope key={hub.id} hub={hub}>
-      {hubs.map((h) => (
-        <HubScope key={h.id} hub={h}>
-          <HubWatch open={h.id === hub.id ? open : null} />
-        </HubScope>
-      ))}
-      <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} sheetHub={sheetHub} />
-    </HubScope>
+    <>
+      <HubScope key={hub.id} hub={hub}>
+        {hubs.map((h) => (
+          <HubScope key={h.id} hub={h}>
+            <HubWatch open={h.id === hub.id ? open : null} />
+          </HubScope>
+        ))}
+        <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} sheetHub={sheetHub} />
+      </HubScope>
+      <NewBot on={viewedHub(view, hubs, hub.id)} />
+    </>
   );
 }
 
