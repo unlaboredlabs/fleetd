@@ -46,6 +46,7 @@ export const NODE_OPS: readonly string[] = [
   "session_step",
   "mac_where",
   "mac_send",
+  "mcp_oauth_renew",
 ];
 /** The calls that start an agent. */
 export const SPAWN_OPS: readonly string[] = ["task_spawn"];

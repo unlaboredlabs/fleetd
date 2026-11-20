@@ -90,18 +90,25 @@ to the hub's own key. Signing in uses PKCE, and goes over https unless the servi
 A hub with no https address signs in to such a service only from its own machine: give it one (see
 [Troubleshooting](/docs/troubleshooting#hub)) and sign in again.
 
-**Renewing.** A sign-in's token lasts a while (often an hour). The hub renews it before it ends, from half its life left
-and at most 30 minutes before, and hands the new one to the bot's machine; the lead's next message picks it up,
-without starting a new conversation. Scheduled runs use it the same way. Where the service lists `offline_access`
-among its scopes, fleetd asks for it (with `openid` where listed too), since some services send the refresh token
-renewing needs only then.
+**Renewing.** A sign-in's token may last an hour, or only minutes (Paper's last 5). The hub renews it before it ends,
+from half its life left and at most 30 minutes before, and hands the new one to the bot's machine. Agents never hold
+the token themselves: their claude reaches a signed-in server through fleetd's MCP relay, which takes the machine's
+newest token for each request, so an agent keeps the server for its whole session, the lead and tasks alike, on the
+machine, in a local VM or in a hosted sandbox. If the server turns a token away anyway, the relay has the hub renew
+it at once and sends again. Scheduled runs use it the same way. Where the service lists `offline_access` among its
+scopes, fleetd asks for it (with `openid` where listed too), since some services send the refresh token renewing needs
+only then.
 
 
-**When the service ends the sign-in** (you revoked fleetd's access, changed your password, or the sign-in expired with
-no way to renew it), the server shows **Signed out** with the service's reason and **Reconnect**, the lead goes without
-it, and its chat says so once: "mail is signed out: … the bot can't use it until you press Reconnect". **Reconnect** signs
-in again with the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token
-has ended, the chat says that once too, and again when it works.
+**When the service ends the sign-in** (you revoked fleetd's access, changed your password, the sign-in expired with
+no way to renew it, or the service turns away a token fleetd has just renewed), the server shows **Sign in needed**
+with the service's reason, and its chat says so once: "mail is signed out: … the bot can't use it until you press
+Reconnect". The dead token leaves the bot's machine (when the machine is offline, as soon as it is back), so new agents
+start without the server; an agent already running is answered, at its next call, that the sign-in has ended and that
+you sign in again from the bot's Settings › Integrations, and carries on without it. **Reconnect** signs in again with
+the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token has ended, the
+row shows why, and the chat says so once, and again when it works. An agent whose call can't reach the server is told
+so in plain words and keeps the server for its next call.
 
 ## Example: Paper {#paper}
 
@@ -141,5 +148,5 @@ out at the service too, where the service offers that (token revocation).
 | What | Where |
 |---|---|
 | A server's key | Sealed in the app to the bot's machine. The hub keeps only a fingerprint; the node keeps the value in `~/.fleetd/node/mcp-secrets/` (mode `0600`). See [MCP servers](/docs/mcp-servers#secrets). |
-| A sign-in's tokens | The hub keeps the access and refresh tokens, and your own app's secret, sealed to its own key (`<hub home>/box.key`) in its database, since it renews them. Each access token is sealed to the bot's machine as the server's `Authorization` header, where it is kept as a key is. |
+| A sign-in's tokens | The hub keeps the access and refresh tokens, and your own app's secret, sealed to its own key (`<hub home>/box.key`) in its database, since it renews them. Each access token is sealed to the bot's machine as the server's `Authorization` header, where it is kept as a key is. It never goes into an agent's MCP config: fleetd's MCP relay takes it from the node for each request. |
 | In the chat, transcripts, memory | Never. The node puts the key only into the MCP config it writes for the lead's claude (mode `0600`), not into its conversation; a call holding something that looks like a key is refused. |

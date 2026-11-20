@@ -223,16 +223,28 @@ export function sessionSecrets(home: string, dir: string): Vars {
  * `--strict-mcp-config` keeps the person's own servers out. */
 export type SessionMcp = { json: string; secrets: Vars; strict: boolean };
 
+/** A signed-in server's entry: `fleetd mcp-relay --server <name>`, which takes the server's headers from the node at
+ * each request. */
+export type RelayEntry = (server: string) => Record<string, unknown>;
+
 /** The session's `--mcp-config`: the configured servers of its role (one whose secrets the node doesn't all hold is
- * left out, with a warning naming them), then fleetd's own server, which no configured one can replace. */
-export function sessionConfig(home: string, k: Kept | undefined, fleetd: Record<string, unknown> | undefined, sessionId: string): SessionMcp {
+ * left out, with a warning naming them), then fleetd's own server, which no configured one can replace. A server that
+ * signs in with OAuth is reached through `relay` (when given): its token, which the hub renews every few minutes, never
+ * sits in the file, and a running agent always sends the newest. */
+export function sessionConfig(
+  home: string,
+  k: Kept | undefined,
+  fleetd: Record<string, unknown> | undefined,
+  sessionId: string,
+  relay?: RelayEntry,
+): SessionMcp {
   const servers: Record<string, unknown> = {};
   const secrets: Vars = [];
   for (const server of k ? ofRole(k) : []) {
     if (server.name.toLowerCase() === FLEETD_SERVER) continue;
     try {
       const resolved = resolve(home, server);
-      servers[resolved.name] = entry(resolved);
+      servers[resolved.name] = relay && relayed(server) ? relay(resolved.name) : entry(resolved);
       secrets.push(...resolved.secrets);
     } catch (error) {
       if (!(error instanceof MissingSecrets)) throw error;
@@ -250,4 +262,38 @@ export function roleOf(role: string | undefined, branch: string | undefined): Mc
   if (role === "lead" || role === "assistant") return "lead";
   if (role === "worker") return branch ? "writer" : "reviewer";
   return undefined;
+}
+
+/** The server signs in with OAuth and is reached by URL: the session gets it through `fleetd mcp-relay`. */
+export const relayed = (server: McpSessionServer) => server.oauth === true && server.transport.type !== "stdio";
+
+/** What `fleetd mcp-relay` sends a server with now: where it is, its headers, and the fingerprint of its token, by
+ * which a later renewal knows whether the token it was turned away with is still the current one. */
+export type RelayHeaders = { transport: McpTransport; headers: Record<string, string>; fingerprint: string };
+
+/** Why the relay can't reach the server now, in words for the agent. `signedOut`: its sign-in is gone. */
+export class RelayRefused extends Error {
+  constructor(
+    message: string,
+    readonly signedOut: boolean,
+  ) {
+    super(message);
+  }
+}
+
+/** The relayed server `name` of the session whose directory is `dir`, with its headers as the node holds them now. */
+export function relayHeaders(home: string, dir: string, name: string): RelayHeaders {
+  const k = kept(dir);
+  const server = k ? ofRole(k).find((s) => s.name === name && relayed(s)) : undefined;
+  if (!server) throw new RelayRefused(`${name} isn't one of this session's signed-in servers`, true);
+  let resolved: Resolved;
+  try {
+    resolved = resolve(home, server);
+  } catch (error) {
+    if (!(error instanceof MissingSecrets)) throw error;
+    throw new RelayRefused(`${name} is signed out`, true);
+  }
+  const headers = Object.fromEntries(resolved.values);
+  const token = Object.entries(headers).find(([h]) => h.toLowerCase() === "authorization")?.[1] ?? "";
+  return { transport: server.transport, headers, fingerprint: fingerprintOf(token) };
 }
