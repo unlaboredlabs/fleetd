@@ -6,8 +6,8 @@
 // again when it closes. Before fleetd's computers are on for teams the screen is that one line, with nothing to buy.
 import { useFocusEffect } from "@react-navigation/native";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, Alert, AppState, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   billingPage,
   buys,
@@ -59,7 +59,25 @@ export function Billing() {
     void load().finally(() => setRefreshing(false));
   };
 
-  /** Stripe's page for `what` in the browser sheet; the screen reads again once it closes. */
+  // Stripe's page is away from the app: iOS's browser sheet returns once it closes, Android's Custom Tab as it opens
+  // ("opened"), so there the app coming back to the front is the return, and the screen reads again then (as
+  // manage/Named.tsx does for a sign-in page).
+  const away = useRef(false);
+  const back = useCallback(async () => {
+    away.current = false;
+    await load();
+  }, [load]);
+  const returned = useEffectEvent(() => {
+    if (away.current) void back();
+  });
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") returned();
+    });
+    return () => sub.remove();
+  }, []);
+
+  /** Stripe's page for `what` in the browser; the screen reads again once the person is back from it. */
   const open = (what: "portal" | BillingBuy, label: string) => {
     setBusy(label);
     setProblem(undefined);
@@ -67,8 +85,9 @@ export function Billing() {
       .then(async (page) => {
         if (!page.ok) return setProblem(failureWords(page.failure));
         haptics.select();
-        await WebBrowser.openBrowserAsync(page.value);
-        await load();
+        away.current = true;
+        const shown = await WebBrowser.openBrowserAsync(page.value);
+        if (shown.type !== "opened") await back();
       })
       .finally(() => setBusy(null));
   };
