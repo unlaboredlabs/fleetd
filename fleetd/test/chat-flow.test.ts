@@ -436,3 +436,46 @@ test("a lead started ahead takes the bot's first message as a send into its sess
   expect(t.launches).toEqual([expect.stringContaining("hello")]);
   t.done();
 });
+
+test("a lead started ahead before its bot's repos came in starts fresh with the first message, on what the bot holds now", async () => {
+  const { hub, call, sends, done } = withFlow();
+  // On a one-lead node, a bot with no repo is the lead's own work: started ahead as the assistant.
+  leadWiring(hub).ports.oneLeadMode = () => true;
+  const launched: { role: string; prompt: string; ahead?: true }[] = [];
+  leadWiring(hub).ports.launch = async (_m, input, role) => {
+    launched.push({ role, prompt: input.prompt, ...(input.ahead ? { ahead: input.ahead } : {}) });
+    return `lead-${launched.length}`;
+  };
+  await leads(hub).startAhead(PROJECT);
+  expect(launched).toEqual([{ role: "assistant", prompt: expect.any(String), ahead: true }]);
+  // Its repo lands after (the new bot dialog clones once the bot is made): the start ahead is out of date.
+  const { ensureOwn } = await import("../src/hub/repos/store.ts");
+  hub.db.transaction((c) => ensureOwn(c, PROJECT, "/srv/shop"));
+  const first = await call(human, "chat_send", { projectRef: PROJECT, text: "add dark mode", clientRequestId: "c1" });
+  expect(first.message.delivery).toBe("turn");
+  expect(launched.length).toBe(2);
+  expect(launched[1]).toEqual({ role: "lead", prompt: expect.stringContaining("add dark mode") });
+  expect(sends).toEqual([]);
+  expect(leads(hub).get(PROJECT)?.sessionGeneration).toBe(1);
+  // Once that session has taken it, the next message goes into it.
+  events(hub).append({ at: "2026-11-20T21:00:00Z", type: "thread.started", machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-2", summary: "started" });
+  await call(human, "chat_send", { projectRef: PROJECT, text: "and a toggle", clientRequestId: "c2" });
+  expect(launched.length).toBe(2);
+  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("and a toggle")]);
+  done();
+});
+
+test("a lead started ahead whose bot is as it was takes the first message into that session", async () => {
+  const { hub, call, sends, done } = withFlow();
+  leadWiring(hub).ports.oneLeadMode = () => true;
+  const roles: string[] = [];
+  leadWiring(hub).ports.launch = async (_m, _input, role) => {
+    roles.push(role);
+    return `lead-${roles.length}`;
+  };
+  await leads(hub).startAhead(PROJECT);
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  expect(roles).toEqual(["assistant"]);
+  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("hello")]);
+  done();
+});

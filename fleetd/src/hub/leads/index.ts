@@ -227,9 +227,41 @@ export class Leads {
     return mcpServers(this.hub).leadSet(r);
   }
 
-  /** Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, or its profile switch is due. */
+  /**
+   * Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, its profile switch is due,
+   * or it was started ahead on what its bot has changed since.
+   */
   freshDue(r: ProjectRef): boolean {
-    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r);
+    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r) || this.aheadStale(r);
+  }
+
+  /** What a lead's start hangs on besides the digest: whether it does its own work (no repo), and its bot's repos. */
+  private shapeOf(r: ProjectRef, project: ProjectSummary): string {
+    const ownWork = leadWiring(this.hub).ports.oneLeadMode(r.machineId) && (project.repos ?? []).length === 0;
+    return JSON.stringify({ ownWork, repos: reposBlock(r, project.repos ?? []) ?? null });
+  }
+
+  /**
+   * A lead started ahead (`startAhead`) that hasn't run a turn, whose bot's repos changed since its start was built, as
+   * repos a new bot's dialog adds after making it do: that start says the wrong repos (and maybe the wrong role).
+   */
+  private aheadStale(r: ProjectRef): boolean {
+    const lead = this.records.leadGet(r);
+    if (!lead) return false;
+    const started = this.hub.db.all<{ shape: string | null }>(
+      `SELECT json_extract(data, '$.data.shape') AS shape FROM events
+       WHERE type = 'lead.started' AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 ORDER BY seq DESC LIMIT 1`,
+      [r.machineId, lead.threadId],
+    )[0];
+    if (started?.shape == null) return false;
+    const ran = this.hub.db.all<{ n: number }>(
+      `SELECT 1 AS n FROM events WHERE type IN ('thread.started', 'thread.completed', 'thread.failed', 'thread.interrupted')
+       AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 LIMIT 1`,
+      [r.machineId, lead.threadId],
+    );
+    if (ran.length > 0) return false;
+    const project = store(this.hub).projectGet(r);
+    return project !== undefined && started.shape !== this.shapeOf(r, project);
   }
 
   /** What a lead session started now is launched with: the lead profile's name, model, effort and fast mode. */
@@ -298,7 +330,7 @@ export class Leads {
     return this.locked(async () => {
       const changed = this.mcpChanged(r);
       const existing = this.records.leadGet(r);
-      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r))) return undefined;
+      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r) && !this.aheadStale(r))) return undefined;
       const project = this.projectOf(r);
       // A digest as of no wake, as at any start.
       const { lastWakeAt: _, ...rest } = existing;
@@ -469,7 +501,8 @@ export class Leads {
       projectId: r.projectId,
       threadId,
       summary: `Lead of ${project.title} started (session ${sessionGeneration}${ahead ? ", ahead of its first message" : ""})`,
-      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha, ...(ahead ? { ahead: true } : {}) },
+      // An ahead start's shape: its bot's first message starts it fresh if that changes before its first turn.
+      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha, ...(ahead ? { ahead: true, shape: this.shapeOf(r, project) } : {}) },
     });
     return this.withState(lead);
   }
