@@ -8,10 +8,17 @@ FROM ubuntu@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 
+# Every package comes from Ubuntu's own archive as it was on one day (snapshot.ubuntu.com), never from a source that
+# changes under a build or one the base image brought (a hosted provider's base adds PPAs): moving the date is a
+# change of this file, so a new image. snapshot.ubuntu.com is served over https, and Docker's ubuntu image has no CA
+# certificates yet: those alone come from the image's own Ubuntu sources first.
 # What agents reach for on a plain Linux machine: git and gh, a C toolchain (native modules, cargo's linker), the
 # usual unpackers and network tools, `ss` and `script` (some of fleetd's own tests run them), and tini and socat for
 # the init.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN { [ -s /etc/ssl/certs/ca-certificates.crt ] || { apt-get update && apt-get install -y --no-install-recommends ca-certificates; }; } \
+ && rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources && : > /etc/apt/sources.list \
+ && printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
+ && apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file git git-lfs gnupg iproute2 iputils-ping jq less locales make \
       netcat-openbsd openssh-client patch pkg-config procps python3 python3-venv ripgrep rsync socat sqlite3 sudo \
       tini tzdata unzip util-linux wget xz-utils zip zstd \
@@ -41,17 +48,39 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 # (.github/site-layout-check.mjs), here and in /etc/fleetd/guest.env.
 ENV CHROME=/usr/local/bin/chrome-headless-shell
 # Node.js 24, pinned and checked, with npm, and pnpm and Yarn at their pins (fleetd's own lockfile installs:
-# app/desktop's pnpm-lock.yaml, the package-lock.json files, a yarn.lock), all in /opt/node and on PATH. Playwright's
-# installer runs under it, as the node runs it (npx).
+# app/desktop's pnpm-lock.yaml, the package-lock.json files, a yarn.lock), all in /opt/node and on PATH. Every download
+# is checked against its SHA-256 here, none comes from the npm registry's latest word: pnpm's linux build is its own
+# binary (@pnpm/exe.linux-x64), Yarn 1 has no dependencies, and Playwright's builds (its 1.64.1 browsers.json:
+# chromium-headless-shell 1248 at Chrome for Testing 156.0.8078.4, ffmpeg 1013) are unpacked where its installer puts
+# them; only its own list of the system libraries they need runs (`install-deps`, from the archive above).
 RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz \
  && echo "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb  /tmp/node.txz" | sha256sum -c - \
  && mkdir -p /opt/node /tmp/pw && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 \
  && ln -sf /opt/node/bin/node /usr/local/bin/node \
- && /opt/node/bin/npm install -g --prefix /opt/node --no-fund --no-audit pnpm@12.11.2 yarn@1.22.22 \
+ && curl -fsSL -o /tmp/pw/pnpm.tgz https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.11.2.tgz \
+ && curl -fsSL -o /tmp/pw/yarn.tgz https://registry.npmjs.org/yarn/-/yarn-1.22.22.tgz \
+ && curl -fsSL -o /tmp/pw/core.tgz https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.1.tgz \
+ && curl -fsSL -o /tmp/pw/shell.zip https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/chrome-headless-shell-linux64.zip \
+ && curl -fsSL -o /tmp/pw/ffmpeg.zip https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1013/ffmpeg-linux.zip \
+ && printf '%s\n' \
+      "79008d3130845ee8a0fe4381e6b81815e80e1bd411702f34721b1cc63e6e20bf  /tmp/pw/pnpm.tgz" \
+      "c17d3797fb9a9115bf375e31bfd30058cac6bc9c3b8807a3d8cb2094794b51ca  /tmp/pw/yarn.tgz" \
+      "3af03703c967c95037454f2283f709d53ce804a4776d4219d319f5bbcc2a0185  /tmp/pw/core.tgz" \
+      "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20  /tmp/pw/shell.zip" \
+      "ee986434d158f74fb5d9c5ff1092026ceedb63f324fe90b5be89460926b7b679  /tmp/pw/ffmpeg.zip" | sha256sum -c - \
+ && tar -xzf /tmp/pw/pnpm.tgz -C /tmp/pw && install -m 0755 /tmp/pw/package/pnpm /opt/node/bin/pnpm && rm -rf /tmp/pw/package \
+ && printf '#!/bin/sh\nexec /opt/node/bin/pnpm dlx "$@"\n' > /opt/node/bin/pnpx && chmod 755 /opt/node/bin/pnpx \
+ && mkdir -p /opt/node/lib/node_modules/yarn && tar -xzf /tmp/pw/yarn.tgz -C /opt/node/lib/node_modules/yarn --strip-components=1 \
+ && ln -sf ../lib/node_modules/yarn/bin/yarn.js /opt/node/bin/yarn && ln -sf ../lib/node_modules/yarn/bin/yarn.js /opt/node/bin/yarnpkg \
  && for b in npm npx corepack pnpm pnpx yarn yarnpkg; do [ ! -e /opt/node/bin/$b ] || ln -sf /opt/node/bin/$b /usr/local/bin/$b; done \
  && node --version && npm --version && pnpm --version && yarn --version \
- && cd /tmp/pw && npx --yes playwright@1.64.1 install --with-deps chromium-headless-shell ffmpeg \
- && ln -s /opt/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME" \
+ && mkdir -p /tmp/pw/core /opt/ms-playwright/chromium_headless_shell-1248 /opt/ms-playwright/ffmpeg-1013 \
+ && tar -xzf /tmp/pw/core.tgz -C /tmp/pw/core --strip-components=1 \
+ && unzip -q /tmp/pw/shell.zip -d /opt/ms-playwright/chromium_headless_shell-1248 \
+ && unzip -q /tmp/pw/ffmpeg.zip -d /opt/ms-playwright/ffmpeg-1013 \
+ && touch /opt/ms-playwright/chromium_headless_shell-1248/INSTALLATION_COMPLETE /opt/ms-playwright/ffmpeg-1013/INSTALLATION_COMPLETE \
+ && node /tmp/pw/core/cli.js install-deps chromium-headless-shell ffmpeg \
+ && ln -s /opt/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME" \
  && chmod -R a+rX /opt/ms-playwright /opt/node \
  && cd / && rm -rf /tmp/pw /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
  && mkdir -p /etc/fleetd \

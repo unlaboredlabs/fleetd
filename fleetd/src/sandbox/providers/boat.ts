@@ -108,9 +108,19 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     }
   }
 
-  /** Saves box `id` as the snapshot `name`, waiting until boat says it is ready (at most SAVE_MS). */
+  /** Saves box `id` as the snapshot `name`, waiting until boat says it is ready (at most SAVE_MS). A save of that name
+   * already under way (another machine's build of the same recipe) is waited for instead, never saved over. */
   async function save(id: string, name: string, signal?: AbortSignal): Promise<string> {
-    await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name }, signal });
+    try {
+      await http.call("POST", "/saved-snapshots", { body: { sandboxId: id, name }, signal });
+    } catch (e) {
+      if (!(e instanceof ProviderError && e.code === "save_in_progress")) throw e;
+    }
+    return settle(name, signal);
+  }
+
+  /** Waits until the save of `name` is ready (at most SAVE_MS), failing as boat says it failed. */
+  async function settle(name: string, signal?: AbortSignal): Promise<string> {
     const until = now() + SAVE_MS;
     for (;;) {
       const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal });
@@ -209,10 +219,12 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       await http.call("DELETE", `/saved-snapshots/${encodeURIComponent(template)}`, { ok: [404], signal: f.signal });
     },
 
-    async built(name, o = {}) {
-      const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { ok: [404], signal: o.signal });
-      return g.status !== 404 && g.body?.snapshot?.status === "ready" ? name : undefined;
+    async saved(prefix, o = {}) {
+      const a = await http.call("GET", "/saved-snapshots", { query: { namePrefix: prefix }, signal: o.signal });
+      return ((a.body?.snapshots ?? []) as any[]).map((s) => ({ name: String(s.name), status: s.status, at: String(s.createdAt ?? "") }));
     },
+
+    settled: (name, o = {}) => settle(name, o.signal),
 
     async build(dockerfile: string, b: BuildOptions) {
       const r = parse(dockerfile);
@@ -221,11 +233,12 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       // would answer the box that build already deleted. Retries inside this call share it, and make no second box.
       const key = `build-${crypto.randomUUID().slice(0, 8)}-${b.name}`.slice(0, 63).replace(/-+$/, "");
       const s = await create(
-        { type: typeFor(b.size ?? DEFAULT_SIZE), ttlSeconds: 2 * 3600, labels: { [LABEL]: "1", "fleetd-build": b.name }, name: `fleetd build ${b.name}`, noEnv: true },
+        { type: typeFor(b.size ?? DEFAULT_SIZE), ttlSeconds: 2 * 3600, labels: { ...b.labels, [LABEL]: "1", "fleetd-build": b.name }, name: `fleetd build ${b.name}`, noEnv: true },
         key,
         b.signal,
       );
       const id = String(s.id);
+      b.onBox?.(id);
       try {
         const until = now() + BUILD_UP_MS;
         for (;;) {
@@ -267,7 +280,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
 const seconds = (ms: number) => Math.min(2_592_000, Math.max(1, Math.ceil(ms / 1000)));
 
 /** boat's own error codes (docs.boat.dev/api/v1, "Error model" and "Limits and retries"). */
-function refine(a: Answer, words: string): { reason: "billing" | "limit" | "failed"; message: string } | undefined {
+function refine(a: Answer, words: string): { reason: "billing" | "limit" | "rate" | "failed"; message: string } | undefined {
   const code = String(a.body?.code ?? a.body?.error?.code ?? "");
   switch (code) {
     case "billing_required":
@@ -283,8 +296,15 @@ function refine(a: Answer, words: string): { reason: "billing" | "limit" | "fail
       return { reason: "billing", message: `boat.dev's plan for this account doesn't include that sandbox size (${words}).` };
     case "trial_compute_limit_reached":
       return { reason: "billing", message: `boat.dev's free trial hours are used up (${words}).` };
-    case "rate_limited":
-      return { reason: "limit", message: `boat.dev's limit on sandbox starts is reached for now (${words}).` };
+    case "rate_limited": {
+      // It names the window whose starts are used up (docs.boat.dev/limits): a minute's free by themselves within one,
+      // so asked again then (`rate`); an hour's or a day's don't, and a retry each minute wouldn't help: the plan's
+      // limit, with its wait.
+      const b = a.body;
+      const window = String(b?.window ?? b?.error?.window ?? b?.details?.window ?? b?.error?.details?.window ?? "");
+      if (window === "minute") return { reason: "rate", message: `boat.dev's limit on sandbox starts a minute is reached for now (${words}).` };
+      return { reason: "limit", message: `boat.dev's limit on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached (${words}).` };
+    }
     case "limit_reached":
       return { reason: "limit", message: `boat.dev's limit on sandboxes at once is reached (${words}).` };
     case "snapshot_not_found":

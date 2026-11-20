@@ -88,6 +88,15 @@ export type HostedPins = {
   fleetd?: { url: string; sha256: string };
 };
 
+/** Claude Code's linux x64 build of each version a hosted template installs (TESTED of runner/claude.ts), by its
+ * SHA-256 as its release's manifest.json gives it (downloads.claude.ai/claude-code-releases/<version>/manifest.json,
+ * `platforms["linux-x64"].checksum`): the binary is fetched and checked, never an install script's latest word. A
+ * bump of TESTED adds its line here. */
+export const CLAUDE_LINUX_X64: Readonly<Record<string, string>> = {
+  "2.1.314": "4487042b4c4f5d88d4568f68ae98aae0b1ffae58864cf57fb868641bc5f84594",
+};
+export const CLAUDE_DOWNLOADS = "https://downloads.claude.ai/claude-code-releases";
+
 /** The tunnel that carries a box's tailnet connections to its guest (node/sandbox/tailnet_box.ts): hev-socks5-tunnel
  * (MIT), its static x86_64 build, pinned. */
 export const TUNNEL = {
@@ -100,6 +109,8 @@ export const TUNNEL = {
  * for every user. */
 export function hosted(base: string, pins: HostedPins): string {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(pins.claude)) throw new Error(`claude's pin ${JSON.stringify(pins.claude)} isn't a version`);
+  const claudeSha = CLAUDE_LINUX_X64[pins.claude];
+  if (!claudeSha) throw new Error(`claude ${pins.claude} has no pinned SHA-256 in CLAUDE_LINUX_X64 (sandbox/providers/recipe.ts)`);
   const f = pins.fleetd;
   if (f && !/^[0-9a-f]{64}$/.test(f.sha256)) throw new Error("fleetd's pin needs its SHA-256 in hex");
   if (f && !/^https:\/\/[^\s'"]+$/.test(f.url)) throw new Error("fleetd's pin needs an https URL");
@@ -112,12 +123,10 @@ export function hosted(base: string, pins: HostedPins): string {
     : "";
   return `${base.trimEnd()}
 
-# Hosted boxes only: Claude Code, the tailnet's tunnel${f ? " and fleetd" : ""}, pinned (sandbox/providers/recipe.ts). boat runs these steps with sudo, where
-# the installer wants to be told that a system-wide install is meant.
-RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \\
- && HOME=/opt/claude CLAUDE_INSTALL_ALLOW_SUDO=1 bash /tmp/claude-install.sh ${pins.claude} \\
- && ln -sf "$(readlink -f /opt/claude/.local/bin/claude)" /usr/local/bin/claude \\
- && chmod -R a+rX /opt/claude && rm -f /tmp/claude-install.sh \\
+# Hosted boxes only: Claude Code, the tailnet's tunnel${f ? " and fleetd" : ""}, pinned and checked (sandbox/providers/recipe.ts).
+RUN mkdir -p /opt/claude && curl -fsSL ${CLAUDE_DOWNLOADS}/${pins.claude}/linux-x64/claude -o /opt/claude/claude-${pins.claude} \\
+ && echo '${claudeSha}  /opt/claude/claude-${pins.claude}' | sha256sum -c - \\
+ && chmod 755 /opt/claude/claude-${pins.claude} && ln -sf /opt/claude/claude-${pins.claude} /usr/local/bin/claude \\
  && claude --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
 RUN curl -fsSL ${TUNNEL.url} -o ${TUNNEL.path} \\
  && echo '${TUNNEL.sha256}  ${TUNNEL.path}' | sha256sum -c - \\

@@ -256,7 +256,8 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
     const reason = reasonOf(reply.reason);
     // The machine that ran it and the provider's status code are the log's, not the line's.
     console.warn(`sandbox: ${m.name} found the team's ${NAMES[provider]} key failing (${reason})`);
-    check = { at, ok: false, reason, message: `${refusalWords(provider, reason, reply.message)}.`, fix: checkFix(provider, reason) };
+    const fix = checkFix(provider, reason);
+    check = { at, ok: false, reason, message: `${refusalWords(provider, reason, reply.message)}.`, ...(fix ? { fix } : {}) };
     break;
   }
   const why = runner(hub).unsupported;

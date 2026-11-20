@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLAYWRIGHT_VERSION } from "../../src/node/browser/chrome.ts";
 import { DOCKERFILE, IMAGE, imageKey, INIT, SOURCES } from "../../src/sandbox/image/recipe.ts";
+import { hosted } from "../../src/sandbox/providers/recipe.ts";
+import { TESTED } from "../../src/node/runner/claude.ts";
 
 const dir = join(import.meta.dir, "../../src/sandbox/image");
 
@@ -35,7 +37,7 @@ test("the Dockerfile is one FROM, by digest, then RUN and ENV lines only", () =>
 
 test("its pins are fleetd's own: Playwright's and bun's", () => {
   expect(IMAGE.pins.playwright).toBe(PLAYWRIGHT_VERSION);
-  expect(DOCKERFILE).toContain(`playwright@${PLAYWRIGHT_VERSION} `);
+  expect(DOCKERFILE).toContain(`/playwright-core-${PLAYWRIGHT_VERSION}.tgz`);
   expect(DOCKERFILE).toContain(`bun-v${IMAGE.pins.bun}/`);
   expect(DOCKERFILE).toContain(`gh_${IMAGE.pins.gh}_linux_amd64`);
   const ci = readFileSync(join(import.meta.dir, "../../../.github/workflows/ci.yml"), "utf8");
@@ -46,10 +48,31 @@ test("a box has what fleetd's own lockfile installs run (a box sees nothing of i
   expect(DOCKERFILE).toContain(`node-v${IMAGE.pins.node}-linux-x64.tar.xz`);
   const desktop = JSON.parse(readFileSync(join(import.meta.dir, "../../../app/desktop/package.json"), "utf8")) as { packageManager: string };
   expect(desktop.packageManager).toBe(`pnpm@${IMAGE.pins.pnpm}`);
-  expect(DOCKERFILE).toContain(`pnpm@${IMAGE.pins.pnpm} yarn@${IMAGE.pins.yarn}`);
+  expect(DOCKERFILE).toContain(`/exe.linux-x64-${IMAGE.pins.pnpm}.tgz`);
+  expect(DOCKERFILE).toContain(`/yarn-${IMAGE.pins.yarn}.tgz`);
   for (const b of ["node", "npm", "npx", "pnpm", "yarn"]) expect(DOCKERFILE).toContain(` ${b} `);
   // `node` is Node.js itself, never Bun (a test of fleetd-cloud runs `node --input-type=module`).
   expect(DOCKERFILE).not.toContain("ln -sf bun /usr/local/bin/node");
+});
+
+// What goes into an image is fleetd's to say (W756): a source that changes under a build broke the hosted template on
+// 2026-11-20 (a PPA boat.dev's base image carries). So every download is checked against a SHA-256 written here, and
+// every package comes from Ubuntu's own archive on one day.
+test("every download into an image is checked against its pinned SHA-256, and apt reads Ubuntu's archive on one day", () => {
+  const hostedText = hosted(DOCKERFILE, { claude: TESTED });
+  for (const text of [DOCKERFILE, hostedText]) {
+    const flat = text.replace(/\\\n/gu, " ");
+    const fetched = [...flat.matchAll(/curl [^&]*?-o (\S+)/gu)].map((m) => m[1]!);
+    expect(fetched.length).toBeGreaterThan(0);
+    for (const file of fetched) expect(flat).toMatch(new RegExp(`[0-9a-f]{64}  ${file.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u"));
+    // Nothing installed by a registry's or an installer's own latest word.
+    for (const word of ["npx --", "npm install", "install.sh", "pip install", "add-apt-repository"]) expect(text).not.toContain(word);
+  }
+  expect(DOCKERFILE).toMatch(/URIs: https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\d{8}T\d{6}Z\//u);
+  // The sources the base image came with go before the first apt-get update reads the archive.
+  const first = DOCKERFILE.indexOf("&& apt-get update && apt-get install");
+  expect(DOCKERFILE.indexOf("rm -f /etc/apt/sources.list.d/")).toBeLessThan(first);
+  expect(DOCKERFILE.indexOf("snapshot.ubuntu.com")).toBeLessThan(first);
 });
 
 test("the init parses, and starts sandbox-guest on the link socket", () => {

@@ -43,6 +43,8 @@ const troubleWhy = (t: ProviderTrouble): string => {
       return "billing isn't set up";
     case "limit":
       return "its plan's limit is reached";
+    case "rate":
+      return "its start rate is reached for a minute";
     case "unreachable":
       return "it didn't answer";
     default:

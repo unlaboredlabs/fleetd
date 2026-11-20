@@ -37,7 +37,7 @@ export function* newestFirst(hub: Hub, r: ProjectRef): Generator<HubEvent> {
  * event is the newest failed start (one wait per start, not per event of it). */
 export function retryWhenDue(hub: Hub, r: ProjectRef, lead: StoredLead, wake: (r: ProjectRef, line: string) => void, sleep: Sleep, leadNow: () => StoredLead | undefined, seq?: number): void {
   const f = failedStarts(hub, lead);
-  const wait = f ? retryWaitMs(f.n) : undefined;
+  const wait = f ? retryWaitMs(f.n, f.message) : undefined;
   if (!f || wait === undefined || (seq !== undefined && f.seq !== seq)) return;
   void sleep(Math.max(0, (parseMs(f.at) ?? nowMs(hub.clock)) + wait - nowMs(hub.clock))).then(() => {
     if (hub.shutdown.signal.aborted) return;

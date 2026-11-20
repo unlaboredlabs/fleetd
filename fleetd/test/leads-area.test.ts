@@ -3,7 +3,8 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
-import { end, notStartedLine } from "../src/hub/leads/cut_off.ts";
+import { end, notStartedLine, retryWaitMs } from "../src/hub/leads/cut_off.ts";
+import { troubleLine, troubleOf } from "../src/shared/sandbox.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { Debouncer, WAKE_COALESCE_MS, WAKE_DEBOUNCE_MS, WAKE_MAX_WAIT_MS } from "../src/hub/leads/lead_wakes.ts";
 import { start } from "../src/hub/leads/loops.ts";
@@ -214,6 +215,17 @@ test("a lead cut off by its node is woken every time; one whose own turn hung, o
   expect(notStartedLine((unreached as { message: string }).message, 1)).toBe(
     "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines. It tries again by itself in about 10 minutes, and your message is kept for it.",
   );
+});
+
+test("a lead boat.dev's start rate refused is started again in a minute, and its line says so (W8)", () => {
+  // The node's words for it (shared/sandbox.ts troubleLine of a `rate` refusal): no clock time, no plan to raise.
+  const line = troubleLine(troubleOf("boat", { what: "start", reason: "rate", why: "boat.dev's limit on sandbox starts is reached for now (12 per minute).", until: Date.parse("2026-11-20T19:21:00Z") }));
+  expect(line).toBe("boat.dev's start rate: trying again in a minute");
+  expect(notStartedLine(line, 1)).toBe("The lead couldn't start: boat.dev's start rate: trying again in a minute. It tries again by itself in about a minute, and your message is kept for it.");
+  expect(retryWaitMs(1, line)).toBe(90_000);
+  expect(retryWaitMs(2, line)).toBe(90_000);
+  // Any other refusal keeps the provider's set-aside, doubled.
+  expect(retryWaitMs(2, "no hosted sandbox came up at boat.dev: HTTP 402")).toBe(20 * 60_000 + 30_000);
 });
 
 test("workstream_list and project_set", async () => {

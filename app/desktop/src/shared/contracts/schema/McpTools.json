@@ -19343,6 +19343,7 @@
         "invalid_key",
         "limit",
         "billing",
+        "rate",
         "unreachable",
         "failed"
       ],

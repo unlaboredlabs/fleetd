@@ -5,9 +5,11 @@
 import type { ProviderId } from "../../sandbox/providers/index.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 
-/** `computer`: its box is being made; `template`: and the provider's template is built first; `clone`: the repo goes
- * in (`files`: a folder that isn't one); `setup`: the bot's setup runs; `again`: the start is tried once more. */
-export type HostedStep = "computer" | "template" | "clone" | "files" | "setup" | "again";
+/** `computer`: its box is being made; `template`: and the provider's template is built first (the account has none
+ * yet); `older`: it starts from the last good template, saved on that day, since this release's is still being built
+ * or didn't build; `clone`: the repo goes in (`files`: a folder that isn't one); `setup`: the bot's setup runs;
+ * `again`: the start is tried once more. */
+export type HostedStep = "computer" | "template" | { older: string; building: boolean } | "clone" | "files" | "setup" | "again";
 
 const watchers = new Map<string, (step: HostedStep) => void>();
 
@@ -29,6 +31,8 @@ export function stepped(session: string, step: HostedStep): void {
 /** The step in a person's words. */
 export function stepWords(step: HostedStep, provider: ProviderId): string {
   const at = NAMES[provider] ?? provider;
+  if (typeof step === "object")
+    return `Starting its computer at ${at} (a newer computer image ${step.building ? "is still being made" : "didn't build"}; using the one from ${step.older})`;
   switch (step) {
     case "computer":
       return `Starting its computer at ${at}`;

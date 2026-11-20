@@ -1,9 +1,9 @@
 // The providers' HTTP calls, and what a refusal means in plain words. The key is sent only in the header the provider
 // names, and masked out of anything a provider says back before it reaches a message.
 
-/** Why a provider call failed, for the one who fixes it: the key, a plan limit, the account's billing, the network, or
- * anything else. Settings' Test picks its fix line by this. */
-export type Reason = "invalid_key" | "limit" | "billing" | "unreachable" | "failed";
+/** Why a provider call failed, for the one who fixes it: the key, a plan limit, the account's billing, its start rate
+ * (which frees by itself within a minute or so), the network, or anything else. Settings' Test picks its fix line by this. */
+export type Reason = "invalid_key" | "limit" | "billing" | "rate" | "unreachable" | "failed";
 
 export class ProviderError extends Error {
   constructor(
