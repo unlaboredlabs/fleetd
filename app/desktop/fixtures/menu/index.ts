@@ -104,7 +104,7 @@ export default defineGroup({
     return [
       made("setup", "Sam's hub with one required setup step left: the menu's line, and Finish.", setupLeft),
       made("machine-offline", "Sam's hub with buildbox offline: the menu names it, and Open goes to its page.", (f) => offline(f, "buildbox")),
-      made("hosted-account", "Sam's hub whose hosted agents have no Claude account: the menu says so, and Connect opens Your accounts.", (f) => {
+      made("hosted-account", "Sam's hub whose hosted agents have no Claude account: boat.dev isn't ready, and Connect opens Your accounts.", (f) => {
         const hosted = {
           machineId: "hosted",
           name: "Hosted sandboxes",
@@ -116,6 +116,15 @@ export default defineGroup({
           degradedCause: "claude_login",
         };
         if (f.snapshot !== undefined) f.snapshot["machines"] = [...arr(f.snapshot["machines"]), hosted];
+      }),
+      made("hosted-refused", "Sam's hub whose boat.dev refused a sandbox for billing: boat.dev isn't ready, why, and Try again.", (f) => {
+        const hosted = { machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "online", lastSeenAt: f.now, nodeVersion: "0.9.0" };
+        if (f.snapshot === undefined) return;
+        f.snapshot["machines"] = [...arr(f.snapshot["machines"]), hosted];
+        const trouble = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard" };
+        const slots = (s: unknown) => ({ ...(typeof s === "object" && s !== null ? (s as Record<string, unknown>) : { cap: 4, used: 0, queued: 0, perProject: [] }), hosted: [{ provider: "boat", limit: 20, running: 0, trouble }] });
+        f.snapshot["slots"] = slots(f.snapshot["slots"]);
+        for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = slots(frame["slots"]);
       }),
       made("offline", "Sam's hub stops answering once the app is open: Can't reach devbox, and Retry.", (f) => {
         f.later(300, "state", { phase: "retrying", hub: f.state.phase === "live" ? f.state.hub : "", reason: "Nothing is listening at devbox:4790", fix: "Start the hub on that machine (`fleetd doctor` there says why it's down).", retryAt: Date.parse(f.now) + 25_000 });

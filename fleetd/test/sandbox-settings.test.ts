@@ -157,6 +157,9 @@ test("a provider its runner set aside reaches the row with its reason and fix, a
   addProject(t.hub, RUNNER_ID, "bot1");
   const grant = slots(t.hub).acquire({ holder: "T1", projectRef: { machineId: RUNNER_ID, projectId: "bot1" }, priority: "work", hostable: true });
   expect(grant).toEqual({ granted: false, reason: `boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying again at ${new Date(until).toISOString().slice(11, 16)}` });
+  // Try again: a test that works clears it on the row at once, and has the machines try boat.dev again.
+  await call(admin, "sandbox_test", { provider: "boat" });
+  expect((await call(member, "sandbox_get")).providers[0].trouble).toBeUndefined();
   // Back: the heartbeat offers boat.dev again and says nothing is wrong; the row is clear and the agent starts.
   slots(t.hub).observeMachine(RUNNER_ID, "Hosted sandboxes", runnerLoad({ sandboxes: ["boat"] }));
   expect((await call(member, "sandbox_get")).providers[0].trouble).toBeUndefined();

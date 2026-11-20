@@ -402,6 +402,16 @@ export class Board {
     return undefined;
   }
 
+  /** Forgets what the machines said is wrong with `provider` (a test of its key just worked, and they were told to try
+   * it again): until a heartbeat says it again. */
+  clearTrouble(provider: string): void {
+    for (const m of this.machines) {
+      if (!m.trouble) continue;
+      m.trouble = m.trouble.filter((t) => t.provider !== provider);
+      if (m.trouble.length === 0) delete m.trouble;
+    }
+  }
+
   /** The troubles of the picked providers, each as its line (`troubleLine`). */
   private troubleLines(): string[] {
     return this.picked().flatMap((l) => {

@@ -16,9 +16,11 @@ import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
 import { startScreen } from "../start/kept";
 import { useStartLeft } from "../start/state";
-import { appLine, machinesLine, menuLines, setupLine, updateLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
+import { appLine, hostedLine, machinesLine, menuLines, setupLine, updateLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
+import type { SlotHosted } from "../../../shared/contracts";
+import { RUNNER_ID } from "../../../shared/hostedRow";
 
 const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 
@@ -95,6 +97,9 @@ export const useHubUpdate = (): string | null => updateLine(useQuiet(useHubState
 /** This hub's machines as the menu reads them; undefined until they are known. */
 const useMenuMachines = (): readonly MenuMachine[] | undefined => useData(selectMachines)?.map((m) => m.machine);
 
+/** The connected hosted providers as the slot board pushes them: their live count and trouble. */
+const useHosted = (): readonly SlotHosted[] | undefined => useData((s) => (s.live.slots ?? s.slots)?.hosted);
+
 /** How many of the hub's required setup steps are left, for an admin; 0 for anyone else and a hub before setup steps. */
 const useSetupLeft = (admin: boolean): number => {
   const served = useServes("setup_list");
@@ -109,14 +114,14 @@ const useWork = () => {
   const several = useSeveralHubs();
   const admin = useSettledAdministers();
   // A team on the web is named by its label even alone: its address is fleetd cloud's, not a host of yours.
-  return { label: several || onWeb() ? self.label : null, admin, machines: useMenuMachines(), setupLeft: useSetupLeft(admin) };
+  return { label: several || onWeb() ? self.label : null, admin, machines: useMenuMachines(), hosted: useHosted(), setupLeft: useSetupLeft(admin) };
 };
 
 /** What else marks your avatar for the hub in scope, while it answers: a machine that needs someone, then setup steps left. */
 export const useWorkMark = (): HubMark | null => {
-  const { label, admin, machines, setupLeft } = useWork();
+  const { label, admin, machines, hosted, setupLeft } = useWork();
   const live = useData((s) => s.hub.phase === "live");
-  return live ? workMark([machinesLine(machines, admin), setupLine(setupLeft, admin)], label) : null;
+  return live ? workMark([hostedLine(machines, hosted, admin), machinesLine(machines, admin), setupLine(setupLeft, admin)], label) : null;
 };
 
 /**
@@ -145,7 +150,11 @@ export function HubLines() {
     else if (does.to === "accounts") navigate({ id: "settings", tab: "accounts", at: self.id });
     else if (does.to === "start") navigate(startScreen(self.id));
     else if (does.to === "updates") navigate({ id: "settings", tab: "hub.updates", at: self.id });
-    else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
+    else if (does.to === "hosted") {
+      // The provider's row, in Hub › Machines (admin/HubPages.tsx reveals it); Try again tests its key there too.
+      navigate({ id: "settings", tab: "hub.machines", at: self.id, machine: RUNNER_ID });
+      if (does.retry !== undefined) void layer.call("sandbox_test", { provider: does.retry }, { timeoutMs: 60_000 });
+    } else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
     else if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
   };
   return (

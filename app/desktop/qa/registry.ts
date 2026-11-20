@@ -102,6 +102,10 @@ export const fixtures = [
   "machines-places-one",
   // ...and no machine of the team's, its hosted agents with no Claude account (W721).
   "machines-none",
+  // ...and boat.dev's row's own states (W743): starting, ready with how many run, and refused for billing.
+  "machines-hosted-starting",
+  "machines-hosted-ready",
+  "machines-hosted-refused",
   // F2: the lead chat's island with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -383,6 +387,7 @@ export const fixtures = [
   "menu-setup",
   "menu-machine-offline",
   "menu-hosted-account",
+  "menu-hosted-refused",
   "menu-offline",
   "menu-refused",
   "menu-updating",
@@ -2502,6 +2507,7 @@ export const screens: readonly Screen[] = [
       "menu-setup",
       "menu-machine-offline",
       "menu-hosted-account",
+      "menu-hosted-refused",
       "menu-offline",
       "menu-refused",
       "sidebar-hubs-offline",
@@ -3768,6 +3774,20 @@ export const screens: readonly Screen[] = [
       await expect(linux.getByRole("combobox", { name: "Where agents and their Linux screens run" })).toContainText("Your machines first, then boat.dev");
       await linux.getByRole("combobox").click();
       await expect(page.getByRole("option", { name: "boat.dev only" })).toBeVisible();
+    },
+  },
+  // W743: boat.dev's row says its real state with the one button that fixes it: Starting… while the hub's runner comes
+  // up; Ready with 3 of 20 running; Needs a Claude account with Connect; Couldn't start after a refusal for billing, with
+  // its fix and Try again; its key refused at its test, with Test again. No explaining text under it at rest.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-hosted-starting", "machines-hosted-ready", "machines-none", "machines-hosted-refused", "machines-sandboxes-on"],
+    variant: "hosted-states",
+    open: async (page) => {
+      const row = page.locator('[data-sandbox="boat"]');
+      await row.scrollIntoViewIfNeeded();
+      await expect(row).toHaveAttribute("data-hosted-state", /^(starting|ready|needs_claude|failed)$/);
     },
   },
   // W688: the team's own hosted sandbox account, one section on Machines: none connected, and one with a failed test.

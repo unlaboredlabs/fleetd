@@ -338,6 +338,11 @@ export class Slots {
     return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority, request.hostable === true), false]);
   }
 
+  /** Forgets the machines' word on `provider`'s trouble until a heartbeat says it again (hub/sandbox's test). */
+  clearTrouble(provider: string): void {
+    this.locked((b) => (b.clearTrouble(provider), [undefined, false]));
+  }
+
   /** The team's hosted providers' limits (hub/sandbox), in the order agents go to them, and its Linux machine. */
   setHosted(limits: Limit[], linux?: string): void {
     this.locked((b) => [undefined, b.setHosted(limits, linux)]);

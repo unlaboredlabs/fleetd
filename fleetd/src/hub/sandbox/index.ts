@@ -270,7 +270,12 @@ export async function test(hub: Hub, providerIn: string): Promise<SandboxState> 
       : { message: "The key couldn't be tested just now.", fix: "try again in a minute" }),
   };
   // A key that works again is tried again for new agents at once, where a machine had set its provider aside.
-  if (check.ok) sendLimits(hub);
+  if (check.ok) {
+    sendLimits(hub);
+    try {
+      slots(hub).clearTrouble(provider);
+    } catch {}
+  }
   hub.db.conn.query("UPDATE sandbox_providers SET check_json = ?1 WHERE provider = ?2").run(JSON.stringify(check), provider);
   return state(hub);
 }

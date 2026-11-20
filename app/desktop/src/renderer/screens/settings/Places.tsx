@@ -8,14 +8,13 @@
 import { useCallback, useState, type ReactNode } from "react";
 import type { SlotState } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Select, Text } from "../../ui";
-import { navigate } from "../shell/navigation";
+import { Select, Text } from "../../ui";
 import { fleetCapLine } from "./agentsModel";
 import { errorText, useHubCall, useLive } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { useProviderRows } from "./Providers";
 import { KINDS, LINUX, LINUX_NONE, linuxChoices, linuxValue, MAC, MAC_NONE, machinesRun, NONE, YOURS } from "../../../shared/providers";
-import { notPlacingLine, SECTION_HINT } from "./sandboxModel";
+import { SECTION_HINT } from "./sandboxModel";
 import { Recordings } from "./Screens";
 import s from "./settings.module.css";
 
@@ -25,27 +24,16 @@ const noInput = {};
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
 
 /**
- * Providers: every one, in the order agents go to the connected ones; nothing on a hub with none (fleetd cloud). Over
- * them, while the hub's runner has no Claude account for its sandboxes, that, with Connect to Your accounts.
+ * Providers: every one, in the order agents go to the connected ones; nothing on a hub with none (fleetd cloud). Each
+ * row says its own state (Sandboxes.tsx), a hosted provider's missing Claude account too.
  */
 export function ProvidersGroup() {
   const live = useLive();
   const read = useToolQuery("sandbox_get", noInput, { enabled: live });
   const rows = useProviderRows(KINDS);
-  const noAccount = useData((d) => Object.values(d.machines).some((m) => m.runner === true && m.status === "degraded" && m.degradedCause === "claude_login"));
   if (rows === null) return null;
   return (
     <SettingsSection title="Providers" reveal="hub.sandboxes" hint={SECTION_HINT} data={{ "data-sandboxes": "" }}>
-      {read.data === undefined || read.data.placing ? null : <GroupNote>{notPlacingLine(read.data)}</GroupNote>}
-      {noAccount ? (
-        <SettingsRow
-          mark="needs"
-          markLabel="Needs a Claude account"
-          title="Hosted agents need a Claude account"
-          control={<Button onClick={() => navigate({ id: "settings", tab: "accounts" })}>Connect</Button>}
-          data={{ "data-hosted-account": "" }}
-        />
-      ) : null}
       {/* A provider fleetd removed that this hub had connected: one plain line, for a while after the update. */}
       {read.data?.removed?.map((line) => <GroupNote key={line}>{line}</GroupNote>)}
       {rows}
