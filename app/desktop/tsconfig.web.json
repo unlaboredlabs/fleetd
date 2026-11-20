@@ -9,6 +9,6 @@
   },
   "include": ["src/renderer/src/**/*", "src/renderer/ui/**/*", "src/renderer/screens/**/*", "src/renderer/demo/**/*", "src/web/**/*", "src/shared/**/*", "src/preload/api.d.ts",
     // What the web app's shell (src/web) takes from main as it is: none of it touches Node.
-    "src/main/hub/client.ts", "src/main/hub/protocol.ts", "src/main/hub/source.ts", "src/main/hub/link.ts", "src/main/hub/explain.ts", "src/main/cloud/github.ts", "src/main/cloud/invites.ts", "src/main/pairing/hubHttp.ts", "src/main/external.ts", "src/main/secret.ts", "src/main/vault.ts"
+    "src/main/hub/client.ts", "src/main/hub/protocol.ts", "src/main/hub/source.ts", "src/main/hub/link.ts", "src/main/hub/explain.ts", "src/main/cloud/billing.ts", "src/main/cloud/github.ts", "src/main/cloud/invites.ts", "src/main/pairing/hubHttp.ts", "src/main/external.ts", "src/main/secret.ts", "src/main/vault.ts"
   ]
 }

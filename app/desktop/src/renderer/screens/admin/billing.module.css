@@ -1,0 +1,26 @@
+/* Settings › Hub › Billing (Billing.tsx): only what the soft groups don't already give. */
+
+/* The one line at the top sits close over the first group: 16 px, where the column puts 40 px between sections. */
+.top {
+  margin-bottom: calc(var(--space-4) - var(--space-10));
+}
+
+/* Hours and dollars line up down the column. */
+.figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The cap's field, its currency sign just before it. */
+.money {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.unit {
+  color: var(--quiet);
+}
+.capInput {
+  width: 112px;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,11 +1,11 @@
-// fleetd cloud in main: Sign in, Sign out, Connect this computer, a team's invites by email and installing fleetd's
-// GitHub App on a team, behind one interface, which a fixture (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
+// fleetd cloud in main: Sign in, Sign out, Connect this computer, a team's invites by email, installing fleetd's
+// GitHub App on a team and its billing, behind one interface, which a fixture (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
 // the page shows the self-hosted app alone.
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cloudDomain, teamOrigin } from "../../shared/accounts";
-import type { CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -14,6 +14,7 @@ import { realTerminalDeps } from "../pairing/terminal";
 import { systemCAs } from "../trust";
 import { CloudAccount, SavedAccount, type CloudHub } from "./account";
 import type { CloudConfig } from "./config";
+import { openBilling, readTeamBilling, setBillingCap } from "./billing";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
 import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
@@ -32,6 +33,9 @@ export interface Cloud {
   invite(hub: HubId, request: InviteRequest): Promise<InviteOutcome>;
   revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
   installGithub(hub: HubId): Promise<InstallGithubOutcome>;
+  billing(hub: HubId): Promise<BillingOutcome>;
+  billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
+  billingCap(hub: HubId, capCents: number | null): Promise<BillingCapOutcome>;
 }
 
 /** Asked of a hub that didn't come with the account: the page never offers it there. */
@@ -124,6 +128,18 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     installGithub: async (id) => {
       const t = team(id);
       return t === null ? NOT_CLOUD : installGithub(fetch, t, open);
+    },
+    billing: async (id) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : readTeamBilling(fetch, t);
+    },
+    billingOpen: async (id, what) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : openBilling(fetch, t, what, open);
+    },
+    billingCap: async (id, capCents) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : setBillingCap(fetch, t, capCents);
     },
   };
 };
