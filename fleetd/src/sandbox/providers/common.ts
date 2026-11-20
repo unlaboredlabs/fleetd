@@ -105,6 +105,9 @@ export interface Provider {
   lifetime(id: string, ms: number, o?: { signal?: AbortSignal }): Promise<void>;
   /** Builds `dockerfile` (one FROM, then RUN/ENV/WORKDIR/USER only) into the team's account as `o.name`; answers what `create` takes. */
   build(dockerfile: string, o: BuildOptions): Promise<string>;
+  /** The template `build` named `name`, when the account has it ready (a runner whose home was wiped finds it again
+   * rather than build it anew); undefined when it has none, or one not ready. */
+  built?(name: string, o?: { signal?: AbortSignal }): Promise<string | undefined>;
   /** Saves the box's disk as `name`, what `create` then takes as its template (a bot's computer image); a provider
    * without it gives its bots no image, and their boxes start from the template and run setup. */
   snapshot?(id: string, name: string, o?: { signal?: AbortSignal }): Promise<string>;

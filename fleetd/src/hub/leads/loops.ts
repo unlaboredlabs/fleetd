@@ -21,9 +21,11 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
-import { end } from "./cut_off.ts";
+import { end, notStartedLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
+import type { StoredLead } from "./stored.ts";
+import { failedStarts, hubSleep, retryWhenDue, type Sleep } from "./start_retry.ts";
 import { wire as wirePorts } from "./wiring.ts";
 import { intake } from "./workstreams.ts";
 
@@ -101,7 +103,8 @@ function projectsWithLiveWork(hub: Hub): ProjectRef[] {
   return [...refs.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, r]) => r);
 }
 
-export function start(hub: Hub): void {
+/** `sleep`: the waits before a lead whose start didn't come up is started again (tests pass their own). */
+export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   const area = leads(hub);
   // The executor's launch and the write queue behind the lead's ports.
   wirePorts(hub);
@@ -174,6 +177,11 @@ export function start(hub: Hub): void {
     await area.startWaiting(e.machineId).catch((error) => console.warn("waiting orders: leads not started:", error));
     await switchLeads(e.machineId);
   });
+  // Leads whose start didn't come up are started again by themselves; after a restart, at the time they were due.
+  const sleep = o.sleep ?? hubSleep(hub);
+  const retryLater = (r: ProjectRef, lead: StoredLead, seq?: number) =>
+    retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
+  for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {
@@ -184,10 +192,14 @@ export function start(hub: Hub): void {
       carriedOn.delete(key);
       return switchLead(found.project);
     }
-    // Its claude never started: the person reads why, and their message goes in with their next one (the node keeps
-    // it). No wake, which would fail the same way while the provider is set aside.
+    // Its claude never started: the person reads why, and the lead is started again by itself once its provider is
+    // offered again, the person's message (which the node keeps) first; not at once, which would fail the same way
+    // while the provider is set aside.
     if (found.end.kind === "not_started") {
-      chat(hub).add(found.project, { author: "system", text: found.end.text, source: `lead_start:${found.end.runId ?? e.seq}` });
+      const lead = area.records.leadGet(found.project);
+      const n = lead ? (failedStarts(hub, lead)?.n ?? 1) : 1;
+      chat(hub).add(found.project, { author: "system", text: notStartedLine(found.end.message, n), source: `lead_start:${found.end.runId ?? e.seq}` });
+      if (lead) retryLater(found.project, lead, e.seq);
       return;
     }
     if (found.end.kind === "own") {

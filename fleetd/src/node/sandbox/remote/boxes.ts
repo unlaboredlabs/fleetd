@@ -191,9 +191,11 @@ export class Boxes {
   }
 
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
-   * needed. boat sizes a box at create, so one serves every size; a provider that fixed a box's size in its template
-   * would build one per size (`<name>-<cpu>c<mem>g`). `onBuild`: called when it isn't built yet (a build starts, or
-   * one is under way). */
+   * needed. A machine that has no note of it (its home was wiped, or another machine of the team built it) looks it
+   * up at the provider by its name first, and builds it only when the account has none ready. boat sizes a box at
+   * create, so one serves every size; a provider that fixed a box's size in its template would build one per size
+   * (`<name>-<cpu>c<mem>g`). `onBuild`: called when this machine has no note of it (a lookup or build starts, or one
+   * is under way). */
   template(p: ProviderId, size: Size = DEFAULT_SIZE, onBuild?: () => void): Promise<string> {
     const recipe = hostedRecipe(base, { claude: TESTED });
     const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
@@ -208,14 +210,25 @@ export class Boxes {
     onBuild?.();
     let building = this.#templates.get(key);
     if (!building) {
-      console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
-      building = this.client(p)
-        .build(recipe, { name, size, onLog: () => {} })
-        .then((id) => {
-          mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
-          writeFileSync(file, JSON.stringify({ name, id }));
-          console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
-          return id;
+      const client = this.client(p);
+      const keep = (id: string) => {
+        mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
+        writeFileSync(file, JSON.stringify({ name, id }));
+        return id;
+      };
+      building = (client.built?.(name) ?? Promise.resolve(undefined))
+        // A lookup that fails builds, as one that finds none.
+        .catch(() => undefined)
+        .then((found) => {
+          if (found) {
+            console.log(`${nowIso()} INFO the hosted sandbox template is there already {"provider":"${p}","name":"${name}"}`);
+            return keep(found);
+          }
+          console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
+          return client.build(recipe, { name, size, onLog: () => {} }).then((id) => {
+            console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
+            return keep(id);
+          });
         })
         .catch((error: unknown) => {
           // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.

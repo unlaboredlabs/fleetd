@@ -273,9 +273,9 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(failed).toBeInstanceOf(HostedDown);
   expect(boxes.usable()).toContain("boat");
   // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
-  const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`);
+  const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`, 1);
   expect(line).toStartWith("The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at ");
-  expect(line).toEndWith("Your message is kept and goes in with your next one.");
+  expect(line).toEndWith("It tries again by itself in about 10 minutes, and your message is kept for it.");
   expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.
   expect(s.calls.filter((c) => c.method === "DELETE" && c.path === `/api/v1/sandboxes/${id}`).length).toBe(1);
