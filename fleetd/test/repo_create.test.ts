@@ -86,7 +86,7 @@ test("a lead makes a private repo with the hub's gh login, and the bot holds it 
   const k = await rig(replies);
   const out = result(await k.send("th-lead", { op: "repo_create", name: "email-client", private: true, description: "Ada's mail" }));
   expect(out).toMatchObject({ created: "ada/email-client", url: "https://github.com/ada/email-client", private: true });
-  expect(out.next).toStartWith("Created ada/email-client on GitHub, private, with a README as its first commit, and added it to the bot.");
+  expect(out.next).toStartWith("Created ada/email-client on GitHub, private, with a README as its first commit. ");
   const [post] = k.posts();
   expect(post?.slice(6)).toEqual(["user/repos", "-f", "name=email-client", "-f", "description=Ada's mail", "-F", "private=true", "-F", "auto_init=true"]);
   await settle();
@@ -105,7 +105,7 @@ test("a repo already on GitHub, an org that refuses, gh signed out: each is refu
   const org = await rig({ ...SIGNED_IN, "POST orgs/acme/repos": [403, { message: "You need admin access to the organization before adding a repository to it." }] });
   const refused = refusal(await org.send("th-lead", { op: "repo_create", name: "email-client", private: true, owner: "acme" }));
   expect(refused).toMatchObject({ code: "forbidden" });
-  expect(refused?.message).toBe("The hub's GitHub login ada may not create repos in acme: You need admin access to the organization before adding a repository to it..");
+  expect(refused?.message).toBe("The hub's GitHub login ada may not create repos in acme: You need admin access to the organization before adding a repository to it.");
   expect(refused?.fix).toContain("An owner of acme lets ada create repos there");
   expect(org.names()).toEqual([]);
 
@@ -114,6 +114,42 @@ test("a repo already on GitHub, an org that refuses, gh signed out: each is refu
   expect(signedOut?.code).toBe("forbidden");
   expect(signedOut?.message).toContain("gh auth login");
   expect(signedOut?.message).not.toMatch(/token/i);
+}, 15_000);
+
+test("an organisation's policy refusal (GitHub's 422) says GitHub's own reason and is never offered a retry; an unknown organisation is named", async () => {
+  // GitHub's real answer: the reason is in errors[], under a top-level "Repository creation failed."
+  const policy = await rig({
+    ...SIGNED_IN,
+    "POST orgs/acme/repos": [
+      422,
+      {
+        message: "Repository creation failed.",
+        errors: [{ resource: "Repository", code: "custom", field: "visibility", message: "Due to policy, repository visibility can not be set to public." }],
+        documentation_url: "https://docs.github.com/rest/repos/repos#create-an-organization-repository",
+        status: "422",
+      },
+    ],
+  });
+  const refused = refusal(await policy.send("th-lead", { op: "repo_create", name: "open", private: false, owner: "acme" }));
+  expect(refused).toMatchObject({ code: "forbidden", message: "GitHub refused to create acme/open (422): Repository creation failed: Due to policy, repository visibility can not be set to public." });
+  expect(refused?.fix).toStartWith("Tell the person GitHub's words: acme's own settings on GitHub decide this");
+  expect(refused?.fix).not.toMatch(/try again/i);
+  expect(policy.names()).toEqual([]);
+
+  // A name GitHub took between the lookup and the create: its 422 says so in errors[] too.
+  const raced = await rig({
+    ...SIGNED_IN,
+    "POST user/repos": [422, { message: "Repository creation failed.", errors: [{ resource: "Repository", code: "custom", field: "name", message: "name already exists on this account" }] }],
+  });
+  expect(refusal(await raced.send("th-lead", { op: "repo_create", name: "email-client", private: true }))).toMatchObject({ code: "invalid", message: "ada/email-client already exists on GitHub." });
+
+  // GitHub's 404 for an organisation is the same for a misspelled name and for one whose members don't include the
+  // login: the line says both, and the fix keeps the owner's grant beside checking the name.
+  const hidden = await rig({ ...SIGNED_IN, "POST orgs/acme/repos": [404, { message: "Not Found", documentation_url: "https://docs.github.com/rest/repos/repos#create-an-organization-repository", status: "404" }] });
+  const unseen = refusal(await hidden.send("th-lead", { op: "repo_create", name: "open", private: true, owner: "acme" }));
+  expect(unseen).toMatchObject({ code: "forbidden", message: "The hub's GitHub login ada found no organisation acme it may create repos in: Not Found." });
+  expect(unseen?.fix).toStartWith("Check the organisation's name with the person; if it is right: An owner of acme lets ada create repos there");
+  expect(hidden.names()).toEqual([]);
 }, 15_000);
 
 test("only a lead makes a repo, and only with a name and private said", async () => {
