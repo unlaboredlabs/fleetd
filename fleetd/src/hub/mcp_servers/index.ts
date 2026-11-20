@@ -136,7 +136,9 @@ export class McpServerStore {
         .map(([, v]) => (v.sealedOn ?? []).find((k) => k.machineId === r.machineId))
         .filter((k) => k !== undefined)
         .map((k) => k.fingerprint);
-      const what = { secrets: session.secrets, transport: session.transport, env: session.env, headers: session.headers, keys };
+      // A server that signs in counts its relay (`oauth`), so a lead that started before it reached it through one
+      // starts afresh once and is relayed from then on.
+      const what = { secrets: session.secrets, transport: session.transport, env: session.env, headers: session.headers, keys, ...(session.oauth ? { oauth: true } : {}) };
       servers[s.name] = createHash("sha256").update(JSON.stringify(sortedValue(what))).digest("hex");
     }
     return { userServers: this.userServers(), servers };
