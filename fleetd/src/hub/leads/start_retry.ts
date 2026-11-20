@@ -21,7 +21,8 @@ export function failedStarts(hub: Hub, lead: StoredLead): ReturnType<typeof fail
   return failedRun(newestFirst(hub, lead.projectRef), lead);
 }
 
-function* newestFirst(hub: Hub, r: ProjectRef): Generator<HubEvent> {
+/** The project's lead ends (`thread.failed`, `thread.completed`) newest first, as far back as SCAN. */
+export function* newestFirst(hub: Hub, r: ProjectRef): Generator<HubEvent> {
   let before: number | undefined;
   for (let scanned = 0; scanned < SCAN; scanned += PAGE) {
     const page = events(hub).projectPage(r, before, ["thread.failed", "thread.completed"], false, PAGE);

@@ -490,11 +490,13 @@ agents shows its own slots, and names the team's hosted limits beside them: they
 an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.dev · receipt-dates".
 
 **When the provider refuses.** A refusal (the key, the plan's limit, billing), a provider that doesn't answer, or a
-sandbox that doesn't come up sets the provider aside for 10 minutes on the machine that met it: no sandbox is asked of
-it meanwhile, and the agents it would take wait, saying why ("boat.dev refused: billing isn't set up on the account
-(set up billing in boat.dev's dashboard); trying again at 12:45", the hub's clock). The provider's row turns red with
-the same words and **Try again**; a lead that couldn't start says them in the chat. A provider whose running sandboxes
-can't be kept running says that on its row too.
+sandbox of its that doesn't come up sets the provider aside for 10 minutes on the machine that met it: no sandbox is
+asked of it meanwhile, and the agents it would take wait, saying why ("boat.dev refused: billing isn't set up on the
+account (set up billing in boat.dev's dashboard); trying again at 12:45", the hub's clock). The provider's row turns
+red with the same words and **Try again**; a lead that couldn't start says them in the chat. A provider whose running
+sandboxes can't be kept running says that on its row too. A start that fails for one bot's own reason (its repo
+didn't clone, its files didn't go in, its setup) fails that start alone, in its own words ("its boat.dev sandbox came
+up, but it couldn't get the repo"), and every other bot's start goes on.
 
 **What differs from an agent on its machine.**
 - *Files.* The sandbox starts from the agent's worktree on its machine: the repo cloned from its origin with the

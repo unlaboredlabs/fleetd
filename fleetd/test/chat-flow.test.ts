@@ -8,7 +8,9 @@ import { type LiveParts, run, since, streamPass } from "../src/hub/chat/flow.ts"
 import { activity } from "../src/hub/executor/activity.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
+import { accounts } from "../src/hub/claude_accounts/tools.ts";
 import { leads } from "../src/hub/leads/index.ts";
+import { signedInAgain } from "../src/hub/leads/signed_in.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
@@ -205,6 +207,69 @@ test("after a hub restart, a lead's start again that was due keeps its time", as
   expect(after.asked.map((t) => t.ms)).toEqual([390_000]);
   done();
 });
+
+test("a lead whose Claude sign-in stopped working says so plainly, wakes nothing, and carries on once it is reconnected", async () => {
+  // A hosted lead's subscription token expired or was revoked: claude's 401 is the run's `auth` failure (W756 W10).
+  // Before, the chat showed nothing at all and the person's message just went unanswered.
+  const { hub, clock, call, sends, done } = withFlow();
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  accounts(hub).setThreadAccount(PROJECT.machineId, "lead-1", { kind: "person", personId: "p_aaaaaaaa" });
+  const refused = {
+    at: new Date(clock.ms).toISOString(),
+    type: "thread.failed" as const,
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    threadId: "lead-1",
+    summary: "failed",
+    data: {
+      runId: "r1",
+      endCause: "failed",
+      error: { class: "auth", message: 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired."}}' },
+    },
+  };
+  events(hub).append(refused);
+  events(hub).append(refused);
+  const lines = async () =>
+    (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
+  for (let i = 0; i < 200 && (await lines()).length === 0; i++) await Bun.sleep(10);
+  expect(await lines()).toEqual(["Your Claude sign-in for this bot stopped working: reconnect it in Settings › Your accounts › Claude. The lead carries on by itself once it is."]);
+  // No wake, which would be refused the same way, over and over.
+  await Bun.sleep(50);
+  expect(leads(hub).wakes.pending(PROJECT)).toBe(false);
+  expect(sends).toEqual([]);
+  // Reconnected: the lead carries on by itself, once.
+  signedInAgain(hub);
+  signedInAgain(hub);
+  for (let i = 0; i < 1500 && sends.length === 0; i++) await Bun.sleep(10);
+  expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("Your Claude sign-in was reconnected")]);
+  // A lead whose last turn went through has nothing to carry on.
+  events(hub).append({ at: new Date(clock.ms).toISOString(), type: "thread.completed", machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-1", summary: "completed" });
+  await Bun.sleep(30);
+  signedInAgain(hub);
+  await Bun.sleep(50);
+  expect(leads(hub).wakes.pending(PROJECT)).toBe(false);
+  done();
+}, 30_000);
+
+test("a lead on the hub's API key whose key stopped working is told where an admin replaces it", async () => {
+  const { hub, clock, call, done } = withFlow();
+  await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
+  accounts(hub).setThreadAccount(PROJECT.machineId, "lead-1", { kind: "hub" });
+  events(hub).append({
+    at: new Date(clock.ms).toISOString(),
+    type: "thread.failed",
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    threadId: "lead-1",
+    summary: "failed",
+    data: { runId: "r1", endCause: "failed", error: { class: "auth", message: "Invalid API key · Fix external API key" } },
+  });
+  const lines = async () =>
+    (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
+  for (let i = 0; i < 200 && (await lines()).length === 0; i++) await Bun.sleep(10);
+  expect(await lines()).toEqual(["The hub's Claude API key stopped working for this bot: an admin replaces it in Settings › Hub › Setup › Claude. The lead carries on by itself once it is."]);
+  done();
+}, 30_000);
 
 test("chat_send refuses an empty message, an agent's `now`, and an unknown bot", async () => {
   const { call, done } = withFlow();

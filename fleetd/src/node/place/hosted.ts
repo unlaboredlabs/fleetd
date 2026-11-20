@@ -26,6 +26,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
+import { Stages } from "../../shared/stages.ts";
 import { NAMES, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
 import { HostLink, LaunchError, PROTOCOL, type HostHandlers, type Launch, type Registration } from "../runner/host.ts";
@@ -200,6 +201,8 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     let setupAgain: string[] = [];
     let made: BoxRecord;
     const asked = Date.now();
+    // Each step's time to the log, at info when the box was slow to be ready (shared/stages.ts).
+    const stages = new Stages("hosted box", session);
     stepped(session, "computer");
     try {
       made = await b.create(provider, session, forwardedPorts(env), dirs, size, image ? { template: image.ref } : {});
@@ -210,6 +213,7 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       setupAgain = image.worktree ? [] : (image.commands ?? []);
       made = await b.create(provider, session, forwardedPorts(env), dirs, size);
     }
+    stages.done("computer");
     const record: HostedRecord = { ...made, session, cwd, aliveUntil: asked + LIFETIME_MS };
     record.env = { ...(HOME ? { HOME } : {}), PATH };
     save(dir, record);
@@ -217,13 +221,16 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
     let step: keyof typeof STEP_WORDS = "setup";
     try {
       box = await b.open(record, session);
-      await withTailnet(box, session, false);
-      await prepare(box, dirs);
+      stages.done("link");
+      // The team's tailnet and the agent's dirs side by side: neither needs the other, and the files go in after both.
+      await Promise.all([withTailnet(box, session, false), prepare(box, dirs)]);
+      stages.done("tailnet and dirs");
       stepped(session, git ? "clone" : "files");
       step = git ? "repo" : "files";
       record.base = await syncIn(box, { cwd, session, env: { HOME, PATH, ...(env.GH_TOKEN ? { GH_TOKEN: env.GH_TOKEN } : {}) } });
       record.since = nowIso();
       save(dir, record);
+      stages.done(git ? "clone" : "files");
       if (setupAgain.length) stepped(session, "setup");
       for (const command of setupAgain) {
         const out = await box.run({ argv: ["sh", "-c", command], cwd, env: { ...env, HOME, PATH }, timeoutSec: SETUP_TIMEOUT_SEC });
@@ -232,6 +239,8 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
       const l: Live = { record, box, dir, failed: 0 };
       live.set(session, l);
       keepAlive(b, l, KEEP_ALIVE.everyMs);
+      if (setupAgain.length) stages.done("setup");
+      stages.end();
       console.log(`${nowIso()} INFO a hosted box is ready for the session {"sessionId":"${session}","provider":"${provider}"}`);
       return l;
     } catch (error) {
@@ -283,9 +292,10 @@ async function gitRoot(cwd: string): Promise<string | undefined> {
  * failure class), where the slot board then puts it. */
 export class HostedDown extends LaunchError {}
 
-/** A box came up but the session couldn't start in it: Claude's endpoint is out of its reach, or fleetd's session
- * host didn't come up there. The provider isn't set aside: a lead's start tries once more (../sessions/index.ts), a
- * task's recovery once, and the run then fails with these plain words; the log keeps the detail. */
+/** A box came up but the session couldn't start in it: a step of its start failed (its repo, its files, setup),
+ * Claude's endpoint is out of its reach, or fleetd's session host didn't come up there. The provider isn't set aside: a
+ * lead's start tries once more (../sessions/index.ts), a task's recovery once, and the run then fails with these plain
+ * words; the log keeps the detail. */
 export class BoxNotReady extends HostedDown {}
 
 /** A step of a box's start that failed on fleetd's side, not the provider's: `plain` is what a person reads (the
@@ -307,20 +317,26 @@ const STEP_WORDS = {
   files: "it couldn't get the bot's files",
 } as const;
 
-/** Why no box came up, in the provider's plain words (or the box's, for the repo's clone in it). The provider is set
- * aside for a while either way, so the run's retry goes to this machine's slots or waits in line rather than fail
- * there again. */
+/** Why no box came up for the session. Only the provider's own refusal (a ProviderError: its key, billing, limits, its
+ * template, its API not answering) sets it aside for a while, so the run's retry goes to this machine's slots or waits in
+ * line rather than fail there again. A failure of this session's own (a step of its start: its repo, its files, its
+ * setup) or of this machine's fails this start alone, in its own words, and every other bot's start goes on. */
 function failed(provider: ProviderId, error: unknown): HostedDown {
   if (error instanceof HostedDown) return error;
   const detail = (error as Error).message;
-  // Fleetd's own failures (a step of the start, or before the box) in plain words; their detail stays in the log.
-  if (!(error instanceof ProviderError)) console.warn(`${nowIso()} WARN a hosted box didn't come up {"provider":"${provider}","error":${JSON.stringify(detail)}}`);
-  const why = error instanceof ProviderError ? detail : `a sandbox at ${NAMES[provider]} didn't come up${error instanceof StartStep ? `: ${error.plain}` : ""}`;
+  if (!(error instanceof ProviderError)) {
+    // Fleetd's own failures (a step of the start, or before the box) in plain words; their detail stays in the log.
+    const logged = error instanceof StartStep ? `${error.plain}: ${error.detail}` : detail;
+    console.warn(`${nowIso()} WARN a hosted box didn't come up {"provider":"${provider}","error":${JSON.stringify(logged)}}`);
+    return error instanceof StartStep
+      ? new BoxNotReady(`its ${NAMES[provider]} sandbox came up, but ${error.plain}`)
+      : new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: fleetd couldn't start it`);
+  }
   const b = boxes();
-  b?.setAside(provider, why, Date.now(), error instanceof ProviderError ? error.reason : "failed");
+  b?.setAside(provider, detail, Date.now(), error.reason);
   // In the words the hub shows on the provider's row, in queued agents' reasons and in the lead's chat line.
   const aside = b?.trouble().find((t) => t.provider === provider && t.what === "start");
-  return new HostedDown(aside ? troubleLine(troubleOf(provider, aside)) : `no hosted sandbox came up at ${NAMES[provider]}: ${error instanceof ProviderError ? why : error instanceof StartStep ? error.plain : "fleetd couldn't start it"}`);
+  return new HostedDown(aside ? troubleLine(troubleOf(provider, aside)) : `no hosted sandbox came up at ${NAMES[provider]}: ${detail}`);
 }
 
 /** The session's box, made when it has none; a provider set aside isn't asked for another until its time is out. */
@@ -528,6 +544,14 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
   async function startIn(l: Live, launch: Launch): Promise<HostLink> {
     const env = launch.env;
     const box = l.box;
+    const stages = new Stages("hosted start", session);
+    // Claude: the box calls the endpoint as set, on the internet or the team's tailnet, checked from inside the box
+    // beside the readying below, which it needs none of; the agent starts there only once it answered.
+    const endpoint = claudeEndpoint(launch);
+    const reach = (hostedProbe.probe ?? probe)(box, endpoint.url).then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
     // Setup's commands may have made the box, with none of the session's ports: the browser's, adb's and a Claude
     // gateway's are forwarded now, and kept in the record for a re-adopt.
     const ports = forwardedPorts(env).filter((p) => !l.record.tcp.includes(p));
@@ -536,6 +560,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       l.record.tcp.push(p);
     }
     if (ports.length) save(dir, l.record);
+    stages.done("ports");
     const PATH = boxPath(env.PATH, home);
     // A box's user may be root, where claude skips its prompts only in a sandbox it is told of.
     const boxEnv = { ...env, PATH, IS_SANDBOX: "1" };
@@ -543,12 +568,15 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     // the hosts' dirs) or stays off inside boxes (the build slots).
     const skip = [join(home, "hosts"), join(home, "tmp"), join(home, "worktrees"), join(home, "build-slots"), launch.cwd];
     await prepare(box, [env.HOME ?? "", env.TMPDIR ?? "", dirname(env.FLEETD_NODE_SOCK ?? "")]);
+    stages.done("dirs");
     // The session's MCP config and hooks run this node's fleetd by its path here: in the box, that path is the fleetd
     // the box was given.
     const self = launch.fleetd.length === 1 ? launch.fleetd[0] : undefined;
     if (self) await sh(box, "linking fleetd", `mkdir -p ${shq(dirname(self))} && ln -sf ${shq(`${BOX_DIR}/fleetd`)} ${shq(self)}`);
+    stages.done("fleetd");
     const paths = named(launch.args, env, [home], skip);
     await mirror(box, paths);
+    stages.done("files");
     // The files among them go again when they change, while the box lives.
     const seen = new Map(paths.filter((p) => !isDir(p)).map((p) => [p, mtimeOf(p)]));
     if (l.refresher) clearInterval(l.refresher);
@@ -564,16 +592,14 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       l.record.transcript = transcript;
       if (existsSync(transcript)) await box.write(transcript, readFileSync(transcript));
     }
-    // Claude: the box calls the endpoint as set, on the internet or the team's tailnet, checked from inside the box
-    // before the agent starts there.
-    const endpoint = claudeEndpoint(launch);
-    try {
-      await (hostedProbe.probe ?? probe)(box, endpoint.url);
-    } catch (error) {
-      const detail = (error as Error).message;
+    stages.done("transcript");
+    const unreachable = await reach;
+    if (unreachable) {
+      const detail = unreachable.message;
       console.warn(`${nowIso()} WARN a hosted box can't reach Claude {"sessionId":"${session}","source":${JSON.stringify(endpoint.source)},"error":${JSON.stringify(detail)}}`);
       throw new BoxNotReady(await unreached(endpoint, NAMES[provider], nodeTailnet()?.on === true));
     }
+    stages.done("claude check");
     const notUp = (detail: string) => {
       console.warn(`${nowIso()} WARN fleetd's session host didn't come up in a hosted box {"sessionId":"${session}","error":${JSON.stringify(detail)}}`);
       return new BoxNotReady(`its ${NAMES[provider]} sandbox came up, but fleetd didn't start in it`);
@@ -588,6 +614,8 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     const registration: Registration = { protocol: info.protocol, hostPid: pid, pid, marker: env.FLEETD_RUNNER_SESSION ?? session, refused: info.refused };
     if (info.refused) throw notUp(info.refused.message);
     if (info.protocol !== PROTOCOL) throw notUp(`the box's session host speaks protocol ${info.protocol}, this node ${PROTOCOL}`);
+    stages.done("session host");
+    stages.end();
     l.record.registration = registration;
     save(dir, l.record);
     return linkTo(l, dir, registration);

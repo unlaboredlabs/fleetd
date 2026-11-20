@@ -1837,8 +1837,13 @@ export class SessionService {
       }
     }
     this.#retries.delete(runId);
-    if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now()));
-    else if (typeof outcome === "object" && "Completed" in outcome) this.#healthChanged((h) => h.runCompleted());
+    if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") {
+      this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now()));
+      // Claude refused the sign-in it was started with: this claude goes, so the next turn's start reads the session's
+      // account again (one reconnected meanwhile), as an idle one goes.
+      live.closing = true;
+      live.link.send(shutdown(REAP_GRACE_MS));
+    } else if (typeof outcome === "object" && "Completed" in outcome) this.#healthChanged((h) => h.runCompleted());
     const cause = live.ending ?? (this.#stopping ? ({ kind: "node_stopping" } as const) : undefined);
     live.ending = undefined;
     const end = state.runEnd(outcome, cause, false);

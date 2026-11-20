@@ -253,6 +253,16 @@ test("a model claude refuses falls back to the profile's own, once, and the sess
   expect(summary("s4")).toMatchObject({ model: "claude-opus-5-5", modelRefused: "claude-nonesuch-1" });
 });
 
+test("a run Claude refused for its sign-in ends its claude, so the next turn starts one that reads the account again", async () => {
+  // A token that expired or was revoked (W756 W10): the claude that holds it goes, so a reconnected account is what the
+  // next start runs on, and nothing wakes it meanwhile.
+  await ok("send", { sessionId: "s1", runId: "ra1", text: "auth: hello" });
+  await until("the refused run", () => summary("s1")?.latestRun?.id === "ra1" && summary("s1")?.latestRun?.status === "failed");
+  await until("its claude gone", () => service.store.session("s1")?.local.pid === undefined);
+  await ok("send", { sessionId: "s1", runId: "ra2", text: "hello again" });
+  await until("the next turn, in a new claude", () => summary("s1")?.latestRun?.id === "ra2" && summary("s1")?.latestRun?.status === "completed");
+});
+
 test("a tagged send's receipts follow claude's frames: delivered as a turn, then acknowledged by its reply", async () => {
   frames.length = 0;
   await ok("subscribe", { after: service.store.latestSeq() });

@@ -25,6 +25,8 @@ export type StandIn = {
   fail(f: Fail): void;
   /** What the box's WebSocket upgrade carried. */
   upgrades: Headers[];
+  /** Milliseconds each frame on a box's link waits, each way: a provider's proxy between the node and the box. */
+  latencyMs: number;
   stop(): void;
 };
 
@@ -63,9 +65,12 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
     boxes: new Map(),
     files: new Map(),
     upgrades: [],
+    latencyMs: 0,
     fail: (f) => fails.push({ times: 1, ...f }),
     stop: () => server.stop(true),
   };
+  // Frames keep their order: each waits the same time.
+  const later = (f: () => void) => (s.latencyMs > 0 ? void setTimeout(f, s.latencyMs) : f());
   type Link = { to?: number; secret?: string; peer?: WebSocket; held?: (string | Uint8Array)[] };
   const server = Bun.serve<Link, never>({
     port: 0,
@@ -111,7 +116,7 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
         peer.onopen = () => {
           for (const m of d.held!.splice(0)) peer.send(m);
         };
-        peer.onmessage = (e) => ws.send(typeof e.data === "string" ? e.data : new Uint8Array(e.data as ArrayBuffer));
+        peer.onmessage = (e) => later(() => ws.send(typeof e.data === "string" ? e.data : new Uint8Array(e.data as ArrayBuffer)));
         peer.onclose = () => ws.close();
         peer.onerror = () => ws.close();
       },
@@ -119,8 +124,10 @@ function serve(auth: (h: Headers) => boolean, route: Handler, portToken: (h: Hea
         const d = ws.data;
         if (!d.peer) return void ws.send(m);
         const bytes = typeof m === "string" ? m : new Uint8Array(m);
-        if (d.peer.readyState === WebSocket.OPEN) d.peer.send(bytes);
-        else d.held!.push(bytes);
+        later(() => {
+          if (d.peer!.readyState === WebSocket.OPEN) d.peer!.send(bytes);
+          else d.held!.push(bytes);
+        });
       },
       close(ws) {
         ws.data.peer?.close();
