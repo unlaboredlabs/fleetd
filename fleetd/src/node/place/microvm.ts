@@ -28,7 +28,7 @@ import { homedir, userInfo } from "node:os";
 import type { Duplex } from "node:stream";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { LeadSocketHooks } from "../lead/index.ts";
-import { leadSocketPath } from "../lead/index.ts";
+import { leadChannel, leadSocketPath } from "../lead/index.ts";
 import { agentScoreLine } from "../oom.ts";
 import { HostLink, LaunchError, prepare, readRegistration, stop as stopHost, startOf, type Launch, type Registration } from "../runner/host.ts";
 import { descendants, table } from "../runner/procs.ts";
@@ -43,7 +43,7 @@ import type { SessionRole } from "../../shared/sessions.ts";
 import type { Size } from "../../sandbox/providers/common.ts";
 import { readConfig } from "../config.ts";
 import { nowIso } from "../util.ts";
-import { SLOT_SOCK_VAR, slotSock } from "../build_slots.ts";
+import { SLOT_SOCK_VAR, slotChannel, slotSock } from "../build_slots.ts";
 import { heldDirOf } from "../hold.ts";
 import { BOX_MARKER, boxAlive, boxFile, destroyBox, liveProc, readBox, type BoxProc, type BoxRecord } from "./box_record.ts";
 import type { Place } from "./index.ts";
@@ -705,7 +705,7 @@ export class MicroVm {
 
   /** Dials the box's guest until it answers, the box ends, or `until`. */
   async #open(dir: string, session: string, record: BoxRecord, until: number): Promise<Box> {
-    const lead = this.o.lead;
+    const lead = lazyHooks(this.o.lead);
     const dial = this.o.dial ?? vsockDial;
     let last = "it didn't answer";
     for (;;) {
@@ -715,10 +715,10 @@ export class MicroVm {
           session,
           dial: () => dial(dir, record.port),
           nodeSock: leadSocketPath(this.o.home),
-          slots: { sock: slotSock(this.o.home), home: this.o.home },
+          slots: { sock: slotSock(this.o.home), channel: () => slotChannel(this.o.home) },
           tcp: record.tcp,
           ...(record.relays ? { relays: record.relays } : {}),
-          lead: lazyHooks(lead),
+          lead: (s) => leadChannel(s, lead),
           ...(this.o.goneMs !== undefined ? { goneMs: this.o.goneMs } : {}),
           // A box whose VMM ended ends its link at once; one whose guest stopped answering goes, and says so.
           alive: () => boxAlive(record),

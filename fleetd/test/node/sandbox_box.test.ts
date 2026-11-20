@@ -10,7 +10,7 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { sendToNode } from "../../src/cli/agent_mcp/socket.ts";
-import { LeadRelay, type LeadSocketHooks } from "../../src/node/lead/index.ts";
+import { leadChannel, LeadRelay, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { HostLink, marker, PROTOCOL, shutdown, stop, type RunnerEvent } from "../../src/node/runner/host.ts";
@@ -95,6 +95,9 @@ async function standIn() {
 }
 
 /** Hooks whose hub answers each call with the session it was made as. */
+/** Each node.sock connection of a box answered with `hooks`, as the node's are. */
+const channels = (hooks: LeadSocketHooks) => (session: string) => leadChannel(session, hooks);
+
 function leadHooks(): LeadSocketHooks {
   const relay = new LeadRelay();
   relay.attach((frame: NodeFrame) => {
@@ -143,7 +146,7 @@ const boxRegistration = { protocol: PROTOCOL, hostPid: 0, pid: 0, marker: "", re
 
 test("the session host's lines cross the box's link, and a link dropped and dialled again loses none", async () => {
   const b = await standIn();
-  const box = await Box.open({ session: "s-lines", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 10_000 });
+  const box = await Box.open({ session: "s-lines", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 10_000 });
   const fifo = join(b.dir, "go");
   Bun.spawnSync(["mkfifo", fifo]);
   const claude = await program("claude-lines", TALKING_CLAUDE);
@@ -175,7 +178,7 @@ test("the session host's lines cross the box's link, and a link dropped and dial
 
 test("commands cross a dropped link once each: one a dying link swallowed, one sent while it was down", async () => {
   const b = await standIn();
-  const box = await Box.open({ session: "s-cmd", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 10_000 });
+  const box = await Box.open({ session: "s-cmd", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 10_000 });
   const claude = await program("claude-echo", ECHO_CLAUDE);
   await box.start({ sessionId: "s-cmd", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: marker("box-test-cmd") } });
   const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
@@ -201,8 +204,8 @@ test("commands cross a dropped link once each: one a dying link swallowed, one s
 test("a call from a box acts as the box's session and no other", async () => {
   const [a, b] = [await standIn(), await standIn()];
   const hooks = leadHooks();
-  const boxA = await Box.open({ session: "s-a", dial: a.dial, nodeSock: a.nodeSock, tcp: [], lead: hooks });
-  const boxB = await Box.open({ session: "s-b", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: hooks });
+  const boxA = await Box.open({ session: "s-a", dial: a.dial, nodeSock: a.nodeSock, tcp: [], lead: channels(hooks) });
+  const boxB = await Box.open({ session: "s-b", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(hooks) });
   expect(await call(a.nodeSock, "whoami")).toMatchObject({ result: { as: "s-a" } });
   expect(await call(b.nodeSock, "whoami")).toMatchObject({ result: { as: "s-b" } });
   // Naming another session is refused; naming its own is fine.
@@ -221,8 +224,8 @@ test("a call from a box acts as the box's session and no other", async () => {
 test("two boxes calling at once, each naming the other, act only as themselves", async () => {
   const [a, b] = [await standIn(), await standIn()];
   const hooks = leadHooks();
-  const boxA = await Box.open({ session: "s-a", dial: a.dial, nodeSock: a.nodeSock, tcp: [], lead: hooks });
-  const boxB = await Box.open({ session: "s-b", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: hooks });
+  const boxA = await Box.open({ session: "s-a", dial: a.dial, nodeSock: a.nodeSock, tcp: [], lead: channels(hooks) });
+  const boxB = await Box.open({ session: "s-b", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(hooks) });
   const calls = Array.from({ length: 20 }, (_, i) => {
     const [sock, own, other] = i % 2 ? [a.nodeSock, "s-a", "s-b"] : [b.nodeSock, "s-b", "s-a"];
     return i % 4 < 2 ? call(sock, `op${i}`, other).then((r) => ({ r, own, other, claims: true })) : call(sock, `op${i}`).then((r) => ({ r, own, other, claims: false }));
@@ -281,7 +284,7 @@ test("a box opens channels to its node.sock and its forwards only, and none name
     dial: () => new Promise((r) => { const s = connect(sock, () => r(s)); }),
     nodeSock,
     tcp: [],
-    lead: leadHooks(),
+    lead: channels(leadHooks()),
   });
   await ready;
   const open = (channel: number, target: Target | Record<string, unknown>) => {
@@ -320,7 +323,7 @@ test.skipIf(process.platform !== "linux")("a TCP forward holds back a reader tha
   await new Promise<void>((r) => source.listen(0, "127.0.0.1", r));
   const port = (source.address() as { port: number }).port;
   const b = await standIn();
-  const box = await Box.open({ session: "s-tcp", dial: b.dial, nodeSock: b.nodeSock, tcp: [port], lead: leadHooks() });
+  const box = await Box.open({ session: "s-tcp", dial: b.dial, nodeSock: b.nodeSock, tcp: [port], lead: channels(leadHooks()) });
   // A reader in the box that doesn't read yet.
   const reader = connect({ host: "127.0.0.2", port });
   reader.pause();
@@ -346,7 +349,7 @@ test.skipIf(process.platform !== "linux")("many channels at once over one link",
   await new Promise<void>((r) => echo.listen(0, "127.0.0.1", r));
   const port = (echo.address() as { port: number }).port;
   const b = await standIn();
-  const box = await Box.open({ session: "s-many", dial: b.dial, nodeSock: b.nodeSock, tcp: [port], lead: leadHooks() });
+  const box = await Box.open({ session: "s-many", dial: b.dial, nodeSock: b.nodeSock, tcp: [port], lead: channels(leadHooks()) });
   const echoOnce = (i: number) =>
     new Promise<boolean>((resolve, reject) => {
       const payload = Buffer.alloc(200 * 1024 + i, i % 256);
@@ -366,7 +369,7 @@ test.skipIf(process.platform !== "linux")("many channels at once over one link",
 
 test("a guest that goes away ends the box, its session host's lines and its channels", async () => {
   const b = await standIn();
-  const box = await Box.open({ session: "s-gone", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 500 });
+  const box = await Box.open({ session: "s-gone", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 500 });
   const fifo = join(b.dir, "go");
   Bun.spawnSync(["mkfifo", fifo]);
   const claude = await program("claude-gone", TALKING_CLAUDE);
@@ -392,7 +395,7 @@ test.skipIf(process.platform !== "linux")("a relay reaches a host elsewhere thro
   const port = (spare.address() as { port: number }).port;
   await new Promise((r) => spare.close(r));
   const b = await standIn();
-  const box = await Box.open({ session: "s-relay", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks() });
+  const box = await Box.open({ session: "s-relay", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()) });
   await box.relay({ port, addr: "127.0.0.3", to });
   expect(box.relays).toEqual([{ port, addr: "127.0.0.3", to }]);
   const read = (host: string) =>
@@ -420,7 +423,7 @@ test.skipIf(process.platform !== "linux")("a relay reaches a host elsewhere thro
 test("a guest that stops answering (frozen, panicked) ends its box as hung, though its link never drops", async () => {
   const b = await standIn();
   let hung: string | undefined;
-  const box = await Box.open({ session: "s-hung", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), pingMs: 100, silentMs: 600, hung: (why) => (hung = why) });
+  const box = await Box.open({ session: "s-hung", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), pingMs: 100, silentMs: 600, hung: (why) => (hung = why) });
   // A guest that answers is left alone.
   await Bun.sleep(500);
   expect(hung).toBeUndefined();
@@ -437,7 +440,7 @@ test("a guest that stops answering (frozen, panicked) ends its box as hung, thou
 test("a box whose VMM is gone ends its link at once, without dialling for the guest", async () => {
   const b = await standIn();
   let alive = true;
-  const box = await Box.open({ session: "s-dead", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), goneMs: 30_000, alive: () => alive });
+  const box = await Box.open({ session: "s-dead", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 30_000, alive: () => alive });
   const at = Date.now();
   alive = false;
   b.proc.kill("SIGKILL");
@@ -448,7 +451,7 @@ test("a box whose VMM is gone ends its link at once, without dialling for the gu
 test("a local VM's clock is set from this machine's on each link; a guest that can't set one says so and goes on", async () => {
   const b = await standIn();
   // The stand-in isn't a VM's guest (not root, no kernel's user): it leaves its clock alone, and the link is fine.
-  const box = await Box.open({ session: "s-clock", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks(), clock: true });
+  const box = await Box.open({ session: "s-clock", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), clock: true });
   expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
   box.close();
 }, 20_000);
@@ -475,7 +478,7 @@ test("a guest takes over the link socket a killed one left (a session's next VM 
       for (;;) {
         if (third.exitCode !== null) throw new Error(`the guest ended (${third.exitCode}): ${await new Response(third.stderr).text()}`);
         try {
-          return await Box.open({ session: "s-again", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: leadHooks() });
+          return await Box.open({ session: "s-again", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()) });
         } catch {
           await Bun.sleep(20);
         }

@@ -2,9 +2,7 @@
 // -- <claude> <args…>` (./host/serve.ts, this binary) owns the session's claude, runs the stream mapper, the kill ladder
 // and the transcript, and outlives the node. The node starts it detached (a session of its own and, where systemd
 // answers, a scope of its own that the node's unit doesn't stop: scope.ts), waits for its registration (`host.json`),
-// and talks to its socket (`sock`), one JSON object per line:
-// - host → node: `{"seq":n,"event":<RunnerEvent>}`; the host keeps each until acknowledged and resends what it kept;
-// - node → host: `{"ack":n}` once the service applied events up to n, `{"command":<SessionCommand>}`, and `"stop"`.
+// and talks to its socket (`sock`) in the lines of ./host_link.ts.
 // Hosts the Rust build started speak the same lines and write the same registration, so a node adopts them as its own.
 import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, chmodSync } from "node:fs";
@@ -15,25 +13,13 @@ import { agentSpawn } from "../oom.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
 import { destroyBox } from "../place/box_record.ts";
+import { HostLink as Link, type HostDial, type Registration } from "./host_link.ts";
 
-/** Bumped when the lines between a host and a node change incompatibly (host.rs PROTOCOL). */
-export const PROTOCOL = 1;
+export { PROTOCOL, shutdown, type HostDial, type HostHandlers, type HostSocket, type Refusal, type Registration, type RunnerEvent, type SessionCommand } from "./host_link.ts";
+
 export const COMMAND = "session-host";
 const START_TIMEOUT_MS = 10_000;
-const ACK_EVERY_MS = 200;
-const DRAIN_MS = 5_000;
-const CLOSE_MS = 1_000;
 const STOP_WAIT_MS = 8_000;
-
-export type Registration = {
-  protocol: number;
-  hostPid: number;
-  hostStart?: number | null;
-  pid: number;
-  start?: number | null;
-  marker: string;
-  refused?: { message: string; missing: boolean } | null;
-};
 
 export function readRegistration(dir: string): Registration | undefined {
   try {
@@ -73,163 +59,17 @@ export const hostAlive = (r: Registration) => alive(r.hostPid, r.hostStart);
 let spawns = 0;
 export const marker = (session: string) => `${session}.${process.pid}.${(Date.now() * 1e6).toString(16)}.${spawns++}`;
 
-/** Normalized events of one session (runner/mod.rs `RunnerEvent`), as serde writes an externally tagged enum. */
-export type RunnerEvent = Record<string, any> | string;
-/** Commands to a session's process (`SessionCommand`). */
-export type SessionCommand =
-  | { Send: { run_id: string; text: string; mode: "plain" | "boundary" | "now" } }
-  | { Withdraw: { run_id: string } }
-  | "Interrupt"
-  | { Answer: { request_id: string; decision: unknown; by: string | null } }
-  | { Shutdown: { grace: { secs: number; nanos: number } } };
-
-export const shutdown = (graceMs = 0): SessionCommand => ({
-  Shutdown: { grace: { secs: Math.floor(graceMs / 1000), nanos: (graceMs % 1000) * 1e6 } },
-});
-
-/** The node's link to one host: events in order, commands out, acknowledgements of what the service applied. */
-export class HostLink {
-  /** Events the service applied: what the node acknowledges. */
-  applied = 0;
-  /** The node let go of the host (its shutdown): the events end without an exit, and the session goes on. */
-  detached = false;
-  #socket: HostSocket | undefined;
-  /** What the socket hasn't taken yet: Bun's sockets don't buffer, so a write past what the kernel takes at once goes
-   * when it drains (a long message, a pasted image, went cut otherwise). */
-  #out: Uint8Array | undefined;
-  #buf = "";
-  #handed: number[] = [];
-  #acked = 0;
-  #last = 0;
-  #ended = false;
-  #exitSeen = false;
-  #queue: RunnerEvent[] = [];
-  #waiter: ((e: RunnerEvent | undefined) => void) | undefined;
-  #ticker: ReturnType<typeof setInterval> | undefined;
-  #closed: Promise<void>;
-  #closedResolve!: () => void;
-
-  private constructor(readonly registration: Registration) {
-    this.#closed = new Promise((r) => (this.#closedResolve = r));
-  }
-
-  /** Connects to the host in `dir`: its events start with every one it kept. Refused for another PROTOCOL. A host in a
-   * box comes with its own `dial` (../sandbox/box.ts dialHost) and `registration`. */
-  static async connect(dir: string, o: { dial?: HostDial; registration?: Registration } = {}): Promise<HostLink> {
+/** The node's link to the host in `dir` (./host_link.ts): its own socket and registration, unless a host in a box
+ * comes with its own `dial` (../sandbox/box.ts dialHost) and `registration`. What a dropped link leaves of the host
+ * is killed. */
+export type HostLink = Link;
+export const HostLink = {
+  async connect(dir: string, o: { dial?: HostDial; registration?: Registration } = {}): Promise<HostLink> {
     const registration = o.registration ?? readRegistration(dir);
     if (!registration) throw new Error("no registration");
-    if (registration.protocol !== PROTOCOL) throw new Error(`it speaks protocol ${registration.protocol}, this node ${PROTOCOL}`);
-    if (registration.refused) throw new Error(registration.refused.message);
-    const link = new HostLink(registration);
-    // One decoder for the connection, streaming: a character split across two reads comes out whole.
-    const decoder = new TextDecoder();
-    link.#socket = await (o.dial ?? ((h) => dialSocket(dir, h)))({
-      data: (_s, chunk) => link.#data(decoder.decode(chunk, { stream: true })),
-      drain: () => link.#flush(),
-      close: () => link.#gone(),
-      error: () => link.#gone(),
-    });
-    link.#ticker = setInterval(() => link.#ack(), ACK_EVERY_MS);
-    return link;
-  }
-
-  get pid(): number {
-    return this.registration.pid;
-  }
-
-  #data(text: string): void {
-    this.#buf += text;
-    let nl: number;
-    while ((nl = this.#buf.indexOf("\n")) >= 0) {
-      const line = this.#buf.slice(0, nl);
-      this.#buf = this.#buf.slice(nl + 1);
-      let parsed: { seq: number; event: RunnerEvent };
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        this.#gone();
-        return;
-      }
-      if (parsed.seq <= this.#last) continue;
-      this.#last = parsed.seq;
-      if (typeof parsed.event === "object" && "Exited" in parsed.event) this.#exitSeen = true;
-      this.#handed.push(parsed.seq);
-      this.#push(parsed.event);
-    }
-  }
-
-  #push(event: RunnerEvent | undefined): void {
-    const waiter = this.#waiter;
-    if (waiter) {
-      this.#waiter = undefined;
-      waiter(event);
-    } else if (event !== undefined) this.#queue.push(event);
-  }
-
-  #gone(): void {
-    if (this.#ended) return;
-    this.#ended = true;
-    clearInterval(this.#ticker);
-    this.#closedResolve();
-    if (!this.detached && !this.#exitSeen) killTree(this.registration);
-    this.#push(undefined);
-  }
-
-  /** The next event; undefined once the host went away (or the node let go of it). */
-  next(): Promise<RunnerEvent | undefined> {
-    const queued = this.#queue.shift();
-    if (queued !== undefined) return Promise.resolve(queued);
-    if (this.#ended) return Promise.resolve(undefined);
-    return new Promise((resolve) => (this.#waiter = resolve));
-  }
-
-  #write(line: unknown): boolean {
-    if (this.#ended || !this.#socket) return false;
-    const bytes = new TextEncoder().encode(`${JSON.stringify(line)}\n`);
-    this.#out = this.#out ? Buffer.concat([this.#out, bytes]) : bytes;
-    this.#flush();
-    return true;
-  }
-
-  #flush(): void {
-    const out = this.#out;
-    if (!out || !this.#socket) return;
-    const wrote = this.#socket.write(out);
-    this.#out = wrote < 0 || wrote >= out.length ? undefined : out.subarray(wrote);
-  }
-
-  send(command: SessionCommand): boolean {
-    return this.#write({ command });
-  }
-
-  #ack(): void {
-    let upto: number | undefined;
-    while (this.#acked < this.applied && this.#handed.length) {
-      upto = this.#handed.shift();
-      this.#acked++;
-    }
-    if (upto !== undefined) this.#write({ ack: upto });
-  }
-
-  /** Lets go of the host without ending its session, once the service applied what it was handed. */
-  async detach(): Promise<void> {
-    if (this.#ended) return;
-    this.detached = true;
-    const total = this.#acked + this.#handed.length;
-    const deadline = Date.now() + DRAIN_MS;
-    while (this.applied < total && Date.now() < deadline) await Bun.sleep(10);
-    this.#ack();
-    while (this.#out && Date.now() < deadline) await Bun.sleep(10);
-    this.#socket?.end();
-    await Promise.race([this.#closed, Bun.sleep(CLOSE_MS)]);
-    this.#gone();
-  }
-}
-
-/** What a link writes to: a host's socket, or a box's channel to one. */
-export type HostSocket = { write(data: Uint8Array): number; end(): void };
-export type HostHandlers = { data(socket: unknown, chunk: Uint8Array): void; drain(): void; close(): void; error(): void };
-type HostDial = (handlers: HostHandlers) => Promise<HostSocket>;
+    return Link.open({ registration, dial: o.dial ?? ((h) => dialSocket(dir, h)), lost: killTree });
+  },
+};
 
 const socketPath = (dir: string) => join(dir, "sock");
 

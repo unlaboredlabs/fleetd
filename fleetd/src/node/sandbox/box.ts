@@ -3,27 +3,28 @@
 // - the session host's lines (`start`, then `dialHost`, which HostLink.connect takes as its dial), open across drops
 //   both ways: the session host inside resends the events the node didn't acknowledge, and the node resends the lines
 //   (commands, acks) the guest didn't confirm it took (./guest.ts HostPipe);
-// - each connection to the box's node.sock, answered as a node.sock call of the box's session (../lead/index.ts
-//   leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
+// - each connection to the box's node.sock, answered as a node.sock call of the box's session (`lead`: the node's is
+//   ../lead/index.ts leadChannel): the session is the box's, by the link it came in on, never a pid or what a call claims;
 // - each connection to one of the box's TCP forwards, piped to the same port on this machine's 127.0.0.1;
 // - each connection to one of its relays (a guest address and port the node named), piped to the host and port the
 //   relay names, as this machine reaches it (a Claude gateway on its tailnet, say);
 // - each connection to the box's build-slot socket: a build of the box's that takes the machine's build slots here
-//   (../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
+//   (`slots`: the node's is ../build_slots.ts slotChannel), so the box's builds queue with every other agent's.
 // - each dial the node opens (`dial`): a connection the guest makes from inside the box, the browser's way out
 //   (../browser/egress.ts), so the agent's browser reaches what the box reaches and no more;
 // - in a hosted box, each connection to the team's tailnet and each lookup of a tailnet name its capture makes
 //   (./tailnet_box.ts), carried on to the team's gateway by the node (./tailnet.ts `tailnet`).
 // A channel to anywhere else is refused.
+// Box side (docs/CONTRIBUTING.md "The package"): sockets only, and what answers node.sock and build-slot connections
+// comes in as options, so a service with no node drives a box with it too.
 import { connect } from "node:net";
 import { Duplex } from "node:stream";
-import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
-import type { HostHandlers, HostSocket } from "../runner/host.ts";
-import { slotChannel } from "../build_slots.ts";
-import { leadChannel, type LeadSocketHooks } from "../lead/index.ts";
-import { GUEST_PROTOCOL, READ_CHUNK, type HostInfo } from "./guest.ts";
-import { HOST, Mux, NODE_CHANNELS, pair, type Target } from "./mux.ts";
+import type { ConfinedRun, RunOutcome } from "../cmd/run.ts";
+import type { HostHandlers, HostSocket } from "../runner/host_link.ts";
+import { GUEST_PROTOCOL, HOST, type HostInfo, Mux, NODE_CHANNELS, pair, READ_CHUNK, type Target } from "./mux.ts";
 import type { TailnetHooks } from "./tailnet.ts";
+
+export type { TailnetHooks } from "./tailnet.ts";
 
 const HELLO_MS = 5_000;
 const ANSWER_MS = 15_000;
@@ -50,10 +51,12 @@ export type BoxOptions = {
   tcp: number[];
   /** Where the box reaches what this machine reaches, through the node. */
   relays?: Relay[];
-  /** How node.sock calls are answered (the node's serveLeadSocket hooks). */
-  lead: LeadSocketHooks;
-  /** Where the guest listens for its builds' slots, and the node home whose slots they take. */
-  slots?: { sock: string; home: string };
+  /** Answers one connection to the box's node.sock as a call of `session`, the box's (the node's: ../lead/index.ts
+   * leadChannel over its serveLeadSocket hooks). */
+  lead: (session: string) => Duplex;
+  /** Where the guest listens for its builds' slots, and what answers one connection to it (the node's:
+   * ../build_slots.ts slotChannel of its home). */
+  slots?: { sock: string; channel: () => Duplex };
   /** How long a dropped link is dialled again before the guest counts as gone. */
   goneMs?: number;
   /** Whether the box still runs (its VMM): a dropped link of a box that doesn't ends at once, with no redial. */
@@ -321,8 +324,8 @@ export class Box {
   #open(channel: number, target: Target): Duplex | undefined {
     if (channel <= HOST || channel >= NODE_CHANNELS) return undefined;
     // The target alone says what a channel is; nothing in it names a session.
-    if ("unix" in target && target.unix === this.o.nodeSock) return leadChannel(this.o.session, this.o.lead);
-    if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return slotChannel(this.o.slots.home);
+    if ("unix" in target && target.unix === this.o.nodeSock) return this.o.lead(this.o.session);
+    if ("unix" in target && this.o.slots && target.unix === this.o.slots.sock) return this.o.slots.channel();
     if ("tailnet" in target) return this.#tailnetDial(channel, target.tailnet);
     if ("tailnetDns" in target) return this.#tailnetDns(target.tailnetDns);
     if (!("tcp" in target)) return undefined;

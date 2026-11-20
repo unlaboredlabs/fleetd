@@ -12,15 +12,13 @@ import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Size } from "../../../sandbox/providers/index.ts";
-import { hosted as hostedRecipe, templateName } from "../../../sandbox/providers/recipe.ts";
-import base from "../../../sandbox/image/Dockerfile" with { type: "text" };
-import { TESTED } from "../../runner/claude.ts";
+import { hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
 import { ASIDE_MS, NAMES } from "../../../shared/sandbox.ts";
 import type { SandboxTrouble } from "../../../shared/node_link.ts";
-import { leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
+import { leadChannel, leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
 import { stepped } from "../../place/hosted_steps.ts";
 import { nodeTailnet } from "../tailnet.ts";
@@ -187,7 +185,7 @@ export class Boxes {
 
   /** The name of the template boxes start from, for this recipe: what a bot's computer image builds on. */
   templateName(): string {
-    return templateName(hostedRecipe(base, { claude: TESTED }));
+    return templateName(hostedDockerfile());
   }
 
   /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
@@ -197,7 +195,7 @@ export class Boxes {
    * (`<name>-<cpu>c<mem>g`). `onBuild`: called when this machine has no note of it (a lookup or build starts, or one
    * is under way). */
   template(p: ProviderId, size: Size = DEFAULT_SIZE, onBuild?: () => void): Promise<string> {
-    const recipe = hostedRecipe(base, { claude: TESTED });
+    const recipe = hostedDockerfile();
     const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
     const name = `${this.templateName()}${sized}`;
     const file = join(this.home, "sandbox", `template-${p}${sized}.json`);
@@ -344,7 +342,7 @@ export class Boxes {
         return t ? t.dns(name, type) : Promise.reject(new Error("this machine reaches no tailnet"));
       },
     };
-    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, ...(b.relays?.length ? { relays: b.relays } : {}), lead, tailnet, goneMs: 120_000 });
+    return Box.open({ session, dial: () => this.dial(b), nodeSock: leadSocketPath(this.home), tcp: b.tcp, ...(b.relays?.length ? { relays: b.relays } : {}), lead: (s) => leadChannel(s, lead), tailnet, goneMs: 120_000 });
   }
 
   /** Deletes the box; one already gone is no error. */

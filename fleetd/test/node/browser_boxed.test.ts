@@ -11,7 +11,7 @@ import { Duplex } from "node:stream";
 import { AGENT_BROWSER_METHODS, BOXED_CHECKED, BOXED_PLAIN, boxedUrlRefusal, refusal } from "../../src/node/browser/guard.ts";
 import { boxedArgs, boxPaths, Egress, greeting, replyFor, request } from "../../src/node/browser/egress.ts";
 import { args as chromeArgs } from "../../src/node/browser/chrome.ts";
-import type { LeadSocketHooks } from "../../src/node/lead/index.ts";
+import { leadChannel, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 import { Box } from "../../src/node/sandbox/box.ts";
 import { GUEST_PROTOCOL } from "../../src/node/sandbox/guest.ts";
 import { Mux, NODE_CHANNELS } from "../../src/node/sandbox/mux.ts";
@@ -226,7 +226,7 @@ test("a box dials from inside: its own loopback answers, a closed port is refuse
     await Bun.sleep(10);
   }
   const dial = () => dialGuest(sock);
-  const box = await Box.open({ session: "s-dial", dial, nodeSock: join(dir, "node.sock"), tcp: [], lead: noLead });
+  const box = await Box.open({ session: "s-dial", dial, nodeSock: join(dir, "node.sock"), tcp: [], lead: (s) => leadChannel(s, noLead) });
   cleanups.push(() => box.close());
   const inside = await server("127.0.0.2", "from the box");
   cleanups.push(inside.close);
@@ -259,7 +259,7 @@ test("a guest from before dials refuses one plainly, and a channel it opens in t
   await new Promise<void>((r) => srv.listen(sock, () => r()));
   cleanups.push(() => void srv.close());
   const dial = () => dialGuest(sock);
-  const box = await Box.open({ session: "s-old", dial, nodeSock: join(dir, "node.sock"), tcp: [7], lead: noLead });
+  const box = await Box.open({ session: "s-old", dial, nodeSock: join(dir, "node.sock"), tcp: [7], lead: (s) => leadChannel(s, noLead) });
   cleanups.push(() => box.close());
   await expect(box.dial("localhost", 80)).rejects.toThrow("a guest from before dials");
   // The guest's side opening a channel numbered as the node's: ended at once, never piped anywhere.

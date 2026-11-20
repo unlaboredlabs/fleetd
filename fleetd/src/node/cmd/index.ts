@@ -8,6 +8,7 @@ import { constants } from "node:os";
 import { errnoName, gitCommandEnv, scrubbedEnv, tailUtf16, type Env } from "../util.ts";
 import type { CmdCheck, CmdResult } from "../wire.ts";
 import { notRunResult, OUTPUT_TAIL_MAX, outsideRoots, REFUSED } from "./refusal.ts";
+import type { ConfinedRun, RunOutcome } from "./run.ts";
 
 export { OUTPUT_TAIL_MAX, REFUSED };
 const SCRUBBED = "[secret]";
@@ -42,19 +43,7 @@ export function scrubValues(text: string, values: string[]): string {
     .reduce((out, value) => out.split(value).join(SCRUBBED), text);
 }
 
-export type ConfinedRun = {
-  cwd: string;
-  argv: string[];
-  timeoutSec: number;
-  /** The child's whole environment. Default: the scrubbed node environment. */
-  env?: Env;
-  /** Values replaced by `[secret]` in the output, so they never leave the node. */
-  scrub?: string[];
-  /** Kills the run's process group: a lost link takes its commands with it. */
-  signal?: AbortSignal;
-};
-
-export type RunOutcome = { exitCode: number | null; outputTail: string; timedOut: boolean; notRun?: string };
+export type { ConfinedRun, RunOutcome } from "./run.ts";
 
 /** Runs argv in a directory under `roots`, in a process group of its own killed at the timeout. */
 export function runConfined(run: ConfinedRun, roots: string[]): Promise<RunOutcome> {

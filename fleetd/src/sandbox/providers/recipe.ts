@@ -7,6 +7,8 @@
 // The recipe holds one FROM, then only RUN, ENV, WORKDIR and USER, so it builds with no context files on any
 // provider: boat (which builds no images) replays them on a fresh box before saving it as a snapshot, and a provider
 // with a build API would take them as its steps.
+import base from "../image/Dockerfile" with { type: "text" };
+import { TESTED } from "../../node/runner/claude_pins.ts";
 
 export type Step = { op: "RUN" | "ENV" | "WORKDIR" | "USER"; args: string[] };
 export type Recipe = { from: string; steps: Step[] };
@@ -128,3 +130,8 @@ ${fleetd}ENV DISABLE_AUTOUPDATER=1
 export function templateName(dockerfile: string): string {
   return `fleetd-${new Bun.CryptoHasher("sha256").update(dockerfile).digest("hex").slice(0, 12)}`;
 }
+
+/** The hosted template's Dockerfile as fleetd builds it: its base (../image/Dockerfile) and the Claude Code fleetd was
+ * tested with. Whoever builds a team's template names it from this (`templateName`), so every builder finds the same
+ * one. */
+export const hostedDockerfile = (): string => hosted(base, { claude: TESTED });

@@ -13,7 +13,7 @@ import { Box } from "../../src/node/sandbox/box.ts";
 import { GUEST_PROTOCOL } from "../../src/node/sandbox/guest.ts";
 import { Mux, type Target } from "../../src/node/sandbox/mux.ts";
 import { BoxTailnet, DNS_ADDR, downScript, GUARD, nameservers, question, resolvScript, servfail, upScript } from "../../src/node/sandbox/tailnet_box.ts";
-import type { LeadSocketHooks } from "../../src/node/lead/index.ts";
+import { leadChannel, type LeadSocketHooks } from "../../src/node/lead/index.ts";
 
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-tailnet-box-"));
 const servers: Server[] = [];
@@ -306,7 +306,7 @@ async function boxWithPlayedGuest(hooks?: { dial: (h: string, p: number) => Prom
     }),
     nodeSock: join(root, `never-${played}.sock`),
     tcp: [],
-    lead: {} as LeadSocketHooks,
+    lead: (s) => leadChannel(s, {} as LeadSocketHooks),
     ...(hooks ? { tailnet: hooks } : {}),
   });
   await ready;

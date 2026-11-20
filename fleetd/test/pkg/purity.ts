@@ -1,7 +1,7 @@
 // Which modules the package may hold (the repo's root package.json `exports`, which another repository imports at a
 // pinned commit; docs/CONTRIBUTING.md "The package"). An exported module is pure: neither it nor anything it imports,
 // a type included, touches the database, the filesystem, a process, the network, the machine's environment, the
-// Hub, or an npm package. Read from the sources' text, so it needs nothing built: an import is any `import`,
+// Hub, or an npm package. A box-side one (`fleetd/box/…`) may use the network too, and nothing else of those. Read from the sources' text, so it needs nothing built: an import is any `import`,
 // `export … from`, `import()` or `require()`, in code or a string (a false find refuses a module; nothing is missed
 // for being unusual).
 //
@@ -22,7 +22,7 @@ export type Finding = Use & { in: string; via: string[] };
 type Import = { spec: string; typeOnly: boolean };
 
 /** Node's and Bun's own modules an exported module may import: they compute, and touch nothing outside the process. */
-const PURE_BUILTINS = new Set(["path", "crypto", "zlib", "url", "util", "buffer", "events", "assert", "string_decoder"]);
+const PURE_BUILTINS = new Set(["path", "crypto", "zlib", "url", "util", "buffer", "events", "assert", "string_decoder", "stream"]);
 
 const BUILTINS: [RegExp, Taint][] = [
   [/^bun:sqlite$/, "database"],
@@ -159,8 +159,12 @@ export function exported(): { name: string; path: string }[] {
   return Object.entries(manifest.exports).map(([name, target]) => ({ name, path: posix.normalize(target) }));
 }
 
-/** What an entry may do beyond pure: the fakes are clients of a server at an address. */
-export const allowed = (path: string): Taint[] => (path.startsWith("fleetd/test/") ? ["network"] : []);
+/**
+ * What an entry (its name in `exports`) may do beyond pure: the fakes are clients of a server at an address, and the
+ * box side (`./box/…`) drives a sandbox box over its sockets, WebSockets and fetch. Neither touches a file, a process
+ * or the machine's environment.
+ */
+export const allowed = (name: string): Taint[] => (name.startsWith("./fakes/") || name.startsWith("./box/") ? ["network"] : []);
 
 /**
  * Pure modules of the hub the package leaves out, each with why. One listed here that stops being pure, or gets
