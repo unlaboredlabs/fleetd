@@ -479,3 +479,23 @@ test("a lead started ahead whose bot is as it was takes the first message into t
   expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("hello")]);
   done();
 });
+
+test("lead_start on a lead started ahead that hasn't run a turn starts it for real: its first turn reads its start", async () => {
+  const { hub, call, done } = withFlow();
+  const launched: { prompt: string; ahead?: true }[] = [];
+  leadWiring(hub).ports.launch = async (_m, input) => {
+    launched.push({ prompt: input.prompt, ...(input.ahead ? { ahead: input.ahead } : {}) });
+    return `lead-${launched.length}`;
+  };
+  await leads(hub).startAhead(PROJECT);
+  const out = await call(caller("operate"), "lead_start", { machineId: PROJECT.machineId, projectId: PROJECT.projectId });
+  expect(out).toMatchObject({ threadId: "lead-2", sessionGeneration: 1 });
+  expect(launched).toEqual([
+    { prompt: expect.stringContaining("# bot Shop (lab-a/p1)"), ahead: true },
+    { prompt: expect.stringContaining("# bot Shop (lab-a/p1)") },
+  ]);
+  // A lead that runs is returned as it is.
+  await call(caller("operate"), "lead_start", { machineId: PROJECT.machineId, projectId: PROJECT.projectId });
+  expect(launched.length).toBe(2);
+  done();
+});

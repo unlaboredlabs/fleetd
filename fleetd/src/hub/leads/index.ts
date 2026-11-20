@@ -119,9 +119,17 @@ export class Leads {
     return p;
   }
 
-  /** Launches the project's lead, or returns the one it already has. */
+  /**
+   * Launches the project's lead, or returns the one it already has. One started ahead that hasn't run a turn starts
+   * for real, as a lead launched now does: its first turn reads its start.
+   */
   async start(r: ProjectRef): Promise<Lead> {
-    return (await this.startWith(r)).lead;
+    const { lead, launched } = await this.startWith(r);
+    if (launched) return lead;
+    return this.locked(async () => {
+      const ahead = this.aheadUnrun(r);
+      return ahead ? this.launch(r, this.projectOf(r), ahead.lead.sessionGeneration + 1) : (this.get(r) ?? lead);
+    });
   }
 
   private startWith(r: ProjectRef, first?: string): Promise<{ lead: Lead; launched: boolean }> {
@@ -241,27 +249,33 @@ export class Leads {
     return JSON.stringify({ ownWork, repos: reposBlock(r, project.repos ?? []) ?? null });
   }
 
-  /**
-   * A lead started ahead (`startAhead`) that hasn't run a turn, whose bot's repos changed since its start was built, as
-   * repos a new bot's dialog adds after making it do: that start says the wrong repos (and maybe the wrong role).
-   */
-  private aheadStale(r: ProjectRef): boolean {
+  /** The project's lead while its session was started ahead (`startAhead`) and hasn't run a turn, and what it was
+   * started on (`shapeOf`). */
+  private aheadUnrun(r: ProjectRef): { lead: StoredLead; shape: string } | undefined {
     const lead = this.records.leadGet(r);
-    if (!lead) return false;
+    if (!lead) return undefined;
     const started = this.hub.db.all<{ shape: string | null }>(
       `SELECT json_extract(data, '$.data.shape') AS shape FROM events
        WHERE type = 'lead.started' AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 ORDER BY seq DESC LIMIT 1`,
       [r.machineId, lead.threadId],
     )[0];
-    if (started?.shape == null) return false;
+    if (started?.shape == null) return undefined;
     const ran = this.hub.db.all<{ n: number }>(
       `SELECT 1 AS n FROM events WHERE type IN ('thread.started', 'thread.completed', 'thread.failed', 'thread.interrupted')
        AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 LIMIT 1`,
       [r.machineId, lead.threadId],
     );
-    if (ran.length > 0) return false;
-    const project = store(this.hub).projectGet(r);
-    return project !== undefined && started.shape !== this.shapeOf(r, project);
+    return ran.length > 0 ? undefined : { lead, shape: started.shape };
+  }
+
+  /**
+   * A lead started ahead that hasn't run a turn, whose bot's repos changed since its start was built, as repos a new
+   * bot's dialog adds after making it do: that start says the wrong repos (and maybe the wrong role).
+   */
+  private aheadStale(r: ProjectRef): boolean {
+    const ahead = this.aheadUnrun(r);
+    const project = ahead && store(this.hub).projectGet(r);
+    return project !== undefined && ahead!.shape !== this.shapeOf(r, project);
   }
 
   /** What a lead session started now is launched with: the lead profile's name, model, effort and fast mode. */
