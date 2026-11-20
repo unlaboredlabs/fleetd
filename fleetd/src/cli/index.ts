@@ -152,6 +152,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (command === "hub" && sub === "start") return await (await import("../hub/serve/index.ts")).hubStart(argv.slice(2));
     if (command === "agent-mcp") return await (await import("./agent_mcp/index.ts")).agentMcp(rest);
+    if (command === "mcp-relay") return await (await import("./mcp_relay.ts")).mcpRelay(rest);
     if (command === "update-finish" && sub !== undefined) return await (await import("../update/finish.ts")).run(sub);
     if (command === "update-hold" && sub !== undefined) return await (await import("../node/hold.ts")).runHook(sub);
     if (command === "update-claude") return await (await import("./update.ts")).runClaude();

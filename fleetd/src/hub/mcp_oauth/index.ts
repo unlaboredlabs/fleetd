@@ -385,20 +385,12 @@ export async function push(hub: Hub, row: Row): Promise<void> {
   const sealedBox = Buffer.from(seal(new Uint8Array(pub), new TextEncoder().encode(`Bearer ${access}`))).toString("base64");
   const server = mcpServers(hub).get(row.scope, row.name);
   if (!server) throw new Error("the server was removed");
-  const keep = valuesOf(server)
-    .filter(
-      ([f, v]) =>
-        v.kind === "secret" &&
-        !(f === "header" && v.name.toLowerCase() === OAUTH_HEADER.toLowerCase()) &&
-        (v.sealedOn ?? []).some((s) => s.machineId === m),
-    )
-    .map(([field, v]) => ({ field, name: v.name }));
   const out = await sessionCall(hub, m, {
     op: "mcp_secrets",
     scope: secretScope(row.scope),
     server: row.name,
     set: [{ field: "header", name: OAUTH_HEADER, sealed: sealedBox }],
-    keep,
+    keep: othersOn(server, m),
   });
   const saved = (out.secrets as { field: string; name: string; fingerprint: string }[] | undefined) ?? [];
   const fingerprint = saved.find((s) => s.field === "header" && s.name === OAUTH_HEADER)?.fingerprint;
@@ -411,8 +403,34 @@ export async function push(hub: Hub, row: Row): Promise<void> {
   putRow(hub, row);
 }
 
-/** The service won't renew: agents go without the server until the person signs in again. */
-function signOut(hub: Hub, row: Row, problem: string): void {
+/** The server's secrets on machine `m` other than its token: they stay there when the token changes or goes. */
+const othersOn = (server: McpServer, m: string) =>
+  valuesOf(server)
+    .filter(([f, v]) => v.kind === "secret" && !isToken(f, v.name) && (v.sealedOn ?? []).some((s) => s.machineId === m))
+    .map(([field, v]) => ({ field, name: v.name }));
+
+const isToken = (field: string, name: string) => field === "header" && name.toLowerCase() === OAUTH_HEADER.toLowerCase();
+
+/**
+ * Takes a signed-out server's dead token off its machine, keeping its other secrets there, then out of the server's
+ * headers: no session gets the server again, and a running agent's relay hears that it is signed out. A machine
+ * offline now has it taken on a later round of the renewal loop (`renewOne`).
+ */
+export async function erase(hub: Hub, row: Row): Promise<void> {
+  const r = projectOfRow(row);
+  const server = mcpServers(hub).get(row.scope, row.name);
+  if (!r || !server || row.access || !(server.headers ?? []).some((v) => isToken("header", v.name))) return;
+  const m = r.machineId;
+  nodeReady(hub, m);
+  await sessionCall(hub, m, { op: "mcp_secrets", scope: secretScope(row.scope), server: row.name, set: [], keep: othersOn(server, m) });
+  updateServer(hub, row.scope, row.name, (s) => {
+    s.headers = (s.headers ?? []).filter((v) => !isToken("header", v.name));
+  });
+}
+
+/** The service won't renew: agents go without the server until the person signs in again. Its token leaves the
+ * machine as well (`erase`). */
+async function signOut(hub: Hub, row: Row, problem: string): Promise<void> {
   delete row.access;
   delete row.refresh;
   delete row.record.expiresMs;
@@ -431,6 +449,11 @@ function signOut(hub: Hub, row: Row, problem: string): void {
     row,
     `${row.name} is signed out: ${problem} Its bot can't use it until you press Reconnect on it in the bot's settings › Integrations.`,
   );
+  try {
+    await erase(hub, row);
+  } catch (e) {
+    console.info(`a signed-out MCP server's token waits to leave its machine (${row.name}): ${(e as Error).message}`);
+  }
 }
 
 export type Renewed = "yes" | "later" | "signed_out";
@@ -443,7 +466,7 @@ export async function renew(hub: Hub, row: Row): Promise<Renewed> {
   const host = oauth.hostOf(client.issuer);
   if (!row.refresh) {
     if (row.record.expiresMs !== undefined && row.record.expiresMs <= at) {
-      signOut(hub, row, `its sign-in ended, and ${host} gives no way to renew it.`);
+      await signOut(hub, row, `its sign-in ended, and ${host} gives no way to renew it.`);
       return "signed_out";
     }
     return "later";
@@ -458,7 +481,7 @@ export async function renew(hub: Hub, row: Row): Promise<Renewed> {
   } catch (e) {
     if (!(e instanceof oauth.TokenError)) throw e;
     if (e.kind === "refused") {
-      signOut(hub, row, `${host} ended the sign-in (${e.message}), so you need to sign in again.`);
+      await signOut(hub, row, `${host} ended the sign-in (${e.message}), so you need to sign in again.`);
       return "signed_out";
     }
     row.record.failingSinceMs ??= at;
@@ -528,7 +551,11 @@ async function renewOne(hub: Hub, row: Row): Promise<void> {
       o.problem = "The sign-in wasn't finished within 15 minutes. Start it again.";
     });
   }
-  if (!row.access) return;
+  if (!row.access) {
+    // Signed out while its machine was offline: the dead token leaves it now.
+    await erase(hub, row).catch(() => {});
+    return;
+  }
   if (due(row.record, at) && (row.record.retryMs === undefined || row.record.retryMs <= at)) await renew(hub, row);
   if (row.access && !row.record.pushed) {
     // A machine offline now gets it on a later round.
@@ -574,5 +601,20 @@ export function renewNow(hub: Hub, scope: McpScope, name: string): Promise<Renew
     const row = getRow(hub, scope, name);
     if (!row?.access) return "signed_out";
     return renew(hub, row);
+  });
+}
+
+/**
+ * An agent's relay was turned away with the token just renewed (`mcp_oauth_renew` with `refused`): the service no
+ * longer takes this sign-in, so the server is signed out, which Settings and the chat say, and its token leaves the
+ * machine.
+ */
+export function turnedAway(hub: Hub, scope: McpScope, name: string): Promise<Renewed> {
+  return one(hub, async (): Promise<Renewed> => {
+    const row = getRow(hub, scope, name);
+    if (!row?.access) return "signed_out";
+    const host = row.record.client ? oauth.hostOf(row.record.client.issuer) : name;
+    await signOut(hub, row, `${host} turned away the sign-in fleetd had just renewed, so you need to sign in again.`);
+    return "signed_out";
   });
 }

@@ -2321,6 +2321,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/McpOauthRenewCall",
+          "description": "Made by the node for its agent's `fleetd mcp-relay`, never by the session itself (the node refuses that).",
+          "properties": {
+            "op": {
+              "const": "mcp_oauth_renew",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/ProjectMessageCall",
           "description": "The factory bridge (hub/project_lead/bridge.ts): any project's lead makes them (D310).",
           "properties": {
@@ -2743,6 +2757,23 @@
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "McpOauthRenewCall": {
+      "description": "`mcp_oauth_renew`: a server that signs in with OAuth turned an agent's relay away (HTTP 401). The hub finds the\nserver of that name the session's bot gets and renews its token now, handing it to the machine before it answers;\nwith `refused`, the token just renewed was turned away too, and the server is signed out.",
+      "properties": {
+        "refused": {
+          "description": "The token just renewed was turned away as well.",
+          "type": "boolean"
+        },
+        "server": {
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server"
+      ],
+      "type": "object"
     },
     "MemoryReadCall": {
       "description": "`memory_read`: one of this project's topic files.",
