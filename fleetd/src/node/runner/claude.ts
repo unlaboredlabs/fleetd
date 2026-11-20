@@ -1,160 +1,24 @@
 // The claude runner's spawn side (guide.rs, conformance.rs): the tools
-// fleetd keeps from agents, claude's argv for a session, the environment it starts with, and the zero-cost probe of
-// the installed claude. The stream-json mapping itself runs in each session's host (./host/mapper.ts).
+// fleetd keeps from agents, claude's argv for a session, the environment it starts with (./claude_spec.ts, box side),
+// and on this machine the installed claude, its config dir and the zero-cost probe of it. The stream-json mapping itself
+// runs in each session's host (./host/mapper.ts).
 import { existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { homeDir, type Env } from "../util.ts";
-import type { Effort } from "../../shared/contracts.ts";
 import { SUPPORTED, TESTED } from "./claude_pins.ts";
+import { AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, FLEETD_ENV_SOURCE } from "./claude_spec.ts";
 import { autoupdaterOff } from "./install.ts";
 import { accountOverrides, loginLabel, proxyOf } from "./claude/setup.ts";
-import {
-  AGENT_DISALLOWED_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, items, LEAD_ALLOWED_WHY, LEAD_ASK_WHY, LEAD_DISALLOWED_WHY,
-  NESTING_VARS_WHY, pairs, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY,
-  WORKER_ENV_WHY,
-} from "./claude/explained.ts";
-import type { RunnerInfo, RuntimeMode, SessionRole } from "../sessions/types.ts";
+import type { RunnerInfo } from "../sessions/types.ts";
 
-/** Every profile's own model (guide.rs MODEL). */
-export const MODEL = "claude-opus-5-5";
 export { RECORDED, SUPPORTED, TESTED } from "./claude_pins.ts";
+export {
+  MODEL, profileModel, profileOf, ALWAYS_DISALLOWED, roleDisallowed, roleAllowed, roleAsk, SUBAGENTS_OFF_ENV, subagentsOffSettingsEnv, ORDER_ENV_FILE_ENV, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, HEAVY_LSP_PLUGINS, heavyLspOn, DEFAULT_ENV, WORKER_ENV, roleEnv, PROMPT_CACHE_TTL_VARS, defaultCacheTtl, HELPER_MODEL_ENV, SESSION_ENV, FLEETD_ENV_SOURCE, SESSION_MARKER, runtimeTools, disallowedTools, args, spawnEnv,
+  type SessionSpec,
+} from "./claude_spec.ts";
+
 const INSTALL_FIX = "curl -fsSL https://claude.ai/install.sh | bash";
-
-/** A profile's own model and effort: `medium` at effort medium and any other at high. */
-export const profileModel = (profile: string): { model: string; effort: Effort } => ({ model: MODEL, effort: profile === "medium" ? "medium" : "high" });
-/** The profile of a model and effort stored before profiles. */
-export const profileOf = (model: string, effort: Effort) => (model === MODEL && effort === "medium" ? "medium" : "high");
-
-/** Tools no fleetd session gets, then the Bash rules against a nested claude. */
-export const ALWAYS_DISALLOWED = items(DISALLOWED_WHY);
-const AGENT_DISALLOWED = items(AGENT_DISALLOWED_WHY);
-const TASK_DISALLOWED = items(TASK_DISALLOWED_WHY);
-const LEAD_DISALLOWED = items(LEAD_DISALLOWED_WHY);
-
-export function roleDisallowed(role: SessionRole): string[] {
-  switch (role) {
-    case "plain":
-      return [];
-    case "worker":
-      return [...AGENT_DISALLOWED, ...TASK_DISALLOWED];
-    case "assistant":
-      return AGENT_DISALLOWED;
-    case "lead":
-      return [...AGENT_DISALLOWED, ...LEAD_DISALLOWED];
-  }
-}
-
-const LEAD_ALLOWED = items(LEAD_ALLOWED_WHY);
-const LEAD_ASK = items(LEAD_ASK_WHY);
-const manualLead = (role: SessionRole, mode: RuntimeMode) => (role === "lead" || role === "assistant") && mode === "approval-required";
-export const roleAllowed = (role: SessionRole, mode: RuntimeMode) => (manualLead(role, mode) ? LEAD_ALLOWED : []);
-export const roleAsk = (role: SessionRole, mode: RuntimeMode) => (manualLead(role, mode) ? LEAD_ASK : []);
-
-export const SUBAGENTS_OFF_ENV = pairs(SUBAGENTS_OFF_ENV_WHY);
-const SUBAGENTS_ON_ENV = items(SUBAGENTS_ON_ENV_WHY);
-export const subagentsOffSettingsEnv = (): Record<string, string> => ({
-  ...Object.fromEntries(SUBAGENTS_OFF_ENV),
-  ...Object.fromEntries(SUBAGENTS_ON_ENV.map((k) => [k, ""])),
-});
-
-export const ORDER_ENV_FILE_ENV = "CLAUDE_ENV_FILE";
-export const AUTO_MEMORY_OFF_ENV: [string, string] = ["CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"];
-export const AUTO_MEMORY_OFF_SETTINGS = '{"autoMemoryEnabled":false}';
-export const HEAVY_LSP_PLUGINS = [
-  "rust-analyzer-lsp@claude-plugins-official",
-  "clangd-lsp@claude-plugins-official",
-  "jdtls-lsp@claude-plugins-official",
-  "kotlin-lsp@claude-plugins-official",
-];
-export const heavyLspOn = (env: Env) => env.HEAVY_LANGUAGE_SERVERS?.trim() === "1";
-export const DEFAULT_ENV = pairs(DEFAULT_ENV_WHY);
-export const WORKER_ENV = pairs(WORKER_ENV_WHY);
-export const roleEnv = (role: SessionRole, env: Env): Env =>
-  role === "worker" ? Object.fromEntries(WORKER_ENV.filter(([k]) => !(k in env))) : {};
-export const PROMPT_CACHE_TTL_VARS = ["CLAUDE_CODE_PROMPT_CACHE_TTL", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"];
-export const defaultCacheTtl = (role: SessionRole) => PROMPT_CACHE_TTL_WHY.find(([[r]]) => r === role)?.[0][1] ?? "1h";
-const NESTING_VARS = items(NESTING_VARS_WHY);
-export const HELPER_MODEL_ENV = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
-export const SESSION_ENV = pairs(SESSION_ENV_WHY);
-export const FLEETD_ENV_SOURCE = "FLEETD_ENV_SOURCE";
-export const SESSION_MARKER = "FLEETD_RUNNER_SESSION";
-
-/** Everything a start (or resume) of one session's claude needs (runner/mod.rs `SessionSpec`). */
-export type SessionSpec = {
-  sessionId: string;
-  resume: boolean;
-  mustResume: boolean;
-  cwd: string;
-  addDirs: string[];
-  model: string;
-  effort: Effort;
-  helperModel: string;
-  runtimeMode: RuntimeMode;
-  allowedTools: string[];
-  allowedOnly: boolean;
-  systemPrompt?: string;
-  disallowedTools: string[];
-  mcpConfig?: string;
-  strictMcp: boolean;
-  settings?: string;
-  pluginDirs: string[];
-  env: Env;
-  hostDir?: string;
-  isolated: boolean;
-};
-
-/** The runtime tools `--tools` names: the tool of each rule, MCP tools excepted. */
-export function runtimeTools(rules: string[]): string[] {
-  const tools: string[] = [];
-  for (const rule of rules) {
-    const name = (rule.split("(")[0] ?? "").trim();
-    if (name && !name.startsWith("mcp__") && !tools.includes(name)) tools.push(name);
-  }
-  return tools;
-}
-
-export function disallowedTools(extra: string[]): string[] {
-  const tools = [...ALWAYS_DISALLOWED];
-  for (const t of extra) if (!tools.includes(t)) tools.push(t);
-  return tools;
-}
-
-/** claude's argv for a session (ClaudeRunner::args). */
-export function args(spec: SessionSpec): string[] {
-  const a = [
-    "-p", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages",
-    "--model", spec.model, "--effort", spec.effort, "--thinking", "adaptive", "--thinking-display", "summarized",
-    spec.resume ? "--resume" : "--session-id", spec.sessionId,
-    "--permission-prompt-tool", "stdio",
-    "--permission-mode", spec.allowedOnly || spec.runtimeMode === "approval-required" ? "manual" : "bypassPermissions",
-  ];
-  if (spec.allowedOnly) a.push("--tools", runtimeTools(spec.allowedTools).join(","));
-  if (spec.allowedTools.length) a.push("--allowedTools", ...spec.allowedTools);
-  a.push("--disallowedTools", ...disallowedTools(spec.disallowedTools));
-  if (spec.mcpConfig) {
-    a.push("--mcp-config", spec.mcpConfig);
-    if (spec.strictMcp) a.push("--strict-mcp-config");
-  }
-  if (spec.settings) a.push("--settings", spec.settings);
-  if (spec.systemPrompt) a.push("--append-system-prompt-file", spec.systemPrompt);
-  a.push("--setting-sources", spec.isolated ? "user" : "user,project,local");
-  for (const dir of spec.addDirs) a.push("--add-dir", dir);
-  for (const dir of spec.pluginDirs) a.push("--plugin-dir", dir);
-  return a;
-}
-
-/** The environment claude starts with: `env` without the variables fleetd sets or keeps from it, then fleetd's. */
-export function spawnEnv(spec: SessionSpec, marker: string): Env {
-  const set = new Set([...NESTING_VARS, ...SUBAGENTS_ON_ENV, SESSION_MARKER, FLEETD_ENV_SOURCE, HELPER_MODEL_ENV, ...SESSION_ENV.map(([k]) => k)]);
-  const env: Env = {};
-  for (const [k, v] of Object.entries(spec.env)) if (!set.has(k)) env[k] = v;
-  for (const [k, v] of SUBAGENTS_OFF_ENV) env[k] = v;
-  env[HELPER_MODEL_ENV] = spec.helperModel;
-  for (const [k, v] of SESSION_ENV) env[k] = v;
-  env[SESSION_MARKER] = marker;
-  return env;
-}
 
 /** Where claude files a session (`--resume` needs it): JS-replace naming, on the resolved cwd. */
 export function sessionFile(configDir: string, cwd: string, id: string): string | undefined {

@@ -1392,7 +1392,7 @@ export class SessionService {
     const env = runnerEnv(this.config);
     let resume: boolean;
     try {
-      resume = state.startMode(row.local, claude.configDir(env), id);
+      resume = state.startMode(row.local, claude.configDir(env), id, existsSync);
     } catch (error) {
       throw new Refusal("runner_unavailable", (error as Error).message);
     }
