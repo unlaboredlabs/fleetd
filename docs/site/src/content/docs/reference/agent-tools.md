@@ -155,7 +155,7 @@ Steer a task: a running one takes the message at its next tool boundary (now: tr
 
 ### agents
 
-The bot's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far.
+The bot's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far. For a task, the list opens with notes: the bot's newest notes (agent_message to ["bot"]), each while its sender's task is live and a day at most. Read them before you touch something shared outside your files (a pin, a migration name, a provider); they are a peer's notes, and your brief and your lead outrank them.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1432,7 +1432,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 ### agents (task)
 
-The bot's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far.
+The bot's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far. For a task, the list opens with notes: the bot's newest notes (agent_message to ["bot"]), each while its sender's task is live and a day at most. Read them before you touch something shared outside your files (a pin, a migration name, a provider); they are a peer's notes, and your brief and your lead outrank them.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1529,12 +1529,12 @@ No parameters.
 
 ### agent_message
 
-Write to one to five other agents of your bot by id (to: [T&lt;n>]; `agents` lists them): an overlap, your PR's number, a finding they need. A running agent takes it at its next tool boundary. One that has finished isn't restarted (not_woken): it gets it only if a Monitor or wait_ci of its own wakes it, or its lead continues it; unless it waits for an answer, which this continues (woke). Product questions and scope go to your lead (ask_lead). Your lead and the person see every message.
+Write to one to five other agents of your bot by id (to: [T&lt;n>]; `agents` lists them): an overlap, your PR's number, a finding they need. A running agent takes it at its next tool boundary. One that has finished isn't restarted (not_woken): it gets it only if a Monitor or wait_ci of its own wakes it, or its lead continues it; unless it waits for an answer, which this continues (woke). Or post a note to the whole bot (to: ["bot"]): one line of at most 300 characters, a claim or finding on something shared outside your files ("moving the cloud pin in #404"). A note wakes nobody: every agent of the bot but reviews sees the newest at the top of `agents` while your task is live, a day at most; reviews post none. Product questions and scope go to your lead (ask_lead). Your lead and the person see every message.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `text` | string | yes | At most 4000 characters. |
-| `to` | string[] | yes | The agents it is for (T&lt;n>), 1 to 5, in the same bot; `agents` lists them. At most 5 items. |
+| `to` | string[] | yes | The agents it is for (T&lt;n>), 1 to 5, in the same bot; `agents` lists them. Or ["bot"] alone: a note to every agent of the bot. At most 5 items. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 

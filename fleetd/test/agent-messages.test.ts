@@ -1,11 +1,13 @@
 // Agents write to each other: a running agent takes a message at its next
 // tool boundary, one that has finished keeps it for the turn something else starts (a Monitor of its own, its wait_ci,
-// its lead), and only a question it waits on lets another agent continue it.
+// its lead), and only a question it waits on lets another agent continue it. A note to the bot wakes nobody: its agents
+// read it at the top of `agents`.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
-import { list, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
+import { list, NOTE_MS, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
+import { leadCall } from "../src/hub/tasks/calls.ts";
 import { rehold, send, steerTasks, takeHeld } from "../src/hub/steer/index.ts";
 import * as steers from "../src/hub/steer/store.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -55,13 +57,19 @@ async function setup() {
       to,
       text,
     );
+  /** A note to the bot from `sender` (T2 unless named). */
+  const note = (text: string, sender: Task = from, to: string[] = ["bot"]) =>
+    sendMessage(k.hub, () => Promise.reject(new Error("a note is never delivered")), (id) => k.t.askedAt(id), sender, to, text);
+  /** `agents` as `taskId`'s own agent calls it, or the lead's. */
+  const agents = (taskId?: string) =>
+    leadCall(k.hub, k.t, { projectRef: P, by: "lead:lab-a/p1", agent: taskId === undefined ? { kind: "lead" } : { kind: "task", taskId } }, { op: "task_list" });
   const ended = async () => {
     k.threadRow("s1", "completed", "done");
     k.thread("thread.completed", "s1", { runId: "r1", endCause: "completed" });
     await until(() => k.t.get("T1")?.state === "done");
     k.ports.sends.length = 0;
   };
-  return { ...k, from, dm, ended, boundary };
+  return { ...k, from, dm, note, agents, ended, boundary };
 }
 
 const steerOf = (k: { hub: never }, messageId: string, pos = 0) => {
@@ -164,5 +172,65 @@ test("one message reaches each recipient, refuses those outside the bot, and cap
   expect(rest.output.messages.length).toBe(PER_MINUTE - 2 - 5);
   const mine = (await tools.call(k.hub, reader, "agent_messages", { projectRef: P, taskId: "T9" })) as { output: any };
   expect(mine.output.total).toBe(1);
+  k.hub.shutdown.abort();
+});
+
+test("a note to the bot wakes nobody, opens its agents' `agents`, and its lead and the person read it", async () => {
+  const k = await setup();
+  await k.spawn("Review #3", "review", { pr: "https://github.com/acme/shop/pull/3" });
+  const sent = await k.note("moving the fleetd-cloud pin in #404");
+  expect(sent).toMatchObject({ messageId: "M1", to: [], toBot: true });
+  expect(sent.next).toContain("It wakes nobody");
+  // No steer, no delivery, no wake: nobody's turn is touched.
+  expect(k.boundary).toEqual([]);
+  expect(k.ports.sends).toEqual([]);
+  expect((k.hub.db.conn.query("SELECT COUNT(*) AS n FROM agent_message_to").get() as { n: number }).n).toBe(0);
+  expect(k.wakes.at(-1)).toEqual({ kind: "line", line: "quiet", text: '- T2 → the bot (M1): "moving the fleetd-cloud pin in #404"' } as never);
+  // T1's `agents` opens with it; a review's and the lead's carry none.
+  const at = new Date(k.clock.ms).toISOString().slice(11, 16);
+  const seen = await k.agents("T1");
+  expect(Object.keys(seen)[0]).toBe("notes");
+  expect(seen.notes).toEqual([`M1 T2 ${at}: moving the fleetd-cloud pin in #404`]);
+  expect((await k.agents("T3")).notes).toBeUndefined();
+  expect((await k.agents()).notes).toBeUndefined();
+  // The person's log has it, marked as to the bot.
+  expect(list(k.hub.db, P, undefined, undefined, 50).messages[0]).toMatchObject({ id: "M1", to: [], toBot: true, text: "moving the fleetd-cloud pin in #404" });
+  expect(list(k.hub.db, P, "T2", undefined, 50).total).toBe(1);
+  const event = events(k.hub).page(0).events.find((e) => e.type === "agent.messaged");
+  expect(event?.data).toMatchObject({ messageId: "M1", from: "T2", to: [], toBot: true });
+  expect(event?.summary).toBe("M1 from T2 to the bot: 'moving the fleetd-cloud pin in #404'");
+  k.hub.shutdown.abort();
+});
+
+test("a note leaves `agents` once its sender's task ends, and after a day; ten show, newest first", async () => {
+  const k = await setup();
+  const t1 = k.t.get("T1") as Task;
+  await k.note("T1 owns migration 202611192300", t1);
+  expect((await k.agents("T2")).notes).toHaveLength(1);
+  await k.ended();
+  expect((await k.agents("T2")).notes).toBeUndefined();
+  // The log keeps it.
+  expect(list(k.hub.db, P, "T1", undefined, 50).total).toBe(1);
+  for (let i = 1; i <= 12; i++) await k.note(`claim ${i}`);
+  const shown = (await k.agents("T2")).notes as string[];
+  expect(shown).toHaveLength(10);
+  expect(shown[0]).toEndWith(": claim 12");
+  k.clock.ms += NOTE_MS;
+  expect((await k.agents("T2")).notes).toBeUndefined();
+  k.hub.shutdown.abort();
+});
+
+test("a review posts no notes, and a note is one line of at most 300 characters, to the bot alone", async () => {
+  const k = await setup();
+  const review = (await k.spawn("Review #3", "review", { pr: "https://github.com/acme/shop/pull/3" })) as Task;
+  await expect(k.note("found a bug", review)).rejects.toMatchObject({ code: "forbidden" });
+  await expect(k.note("two\nlines")).rejects.toMatchObject({ code: "invalid" });
+  await expect(k.note("x".repeat(301))).rejects.toMatchObject({ code: "invalid" });
+  await expect(k.note("and T1", k.from, ["bot", "T1"])).rejects.toMatchObject({ code: "invalid" });
+  expect((await k.note("y".repeat(300))).toBot).toBe(true);
+  expect(list(k.hub.db, P, undefined, undefined, 50).total).toBe(1);
+  // A note counts as one recipient in the minute's limit.
+  for (let i = 1; i < PER_MINUTE; i++) await k.note(`note ${i}`);
+  await expect(k.note("one more")).rejects.toMatchObject({ code: "forbidden" });
   k.hub.shutdown.abort();
 });
