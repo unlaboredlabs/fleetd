@@ -4456,6 +4456,8 @@ export type McpOauthStartOutput = {
   next?: string;
   /** Where the service sends the browser back, a page the hub serves: what the person's own client must allow. */
   redirectUri: string;
+  /** Where the server is now: a bot's server that signs in is the team's (global) from its sign-in on (D592). */
+  scope?: McpScope;
   truncated?: boolean;
 };
 
@@ -4498,6 +4500,11 @@ export type McpSealedOn = {
 
 /** One configured server as the hub keeps it. A secret has no value here. */
 export type McpServer = {
+  /**
+   * Who connected a server the whole team signs in to (scope global, D592): they or an admin disconnect it. None
+   * for one carried over from a bot, which an admin disconnects.
+   */
+  connectedBy?: PersonId;
   enabled: boolean;
   /** A stdio server's env. */
   env?: McpValue[];

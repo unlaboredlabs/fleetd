@@ -186,7 +186,11 @@ export type McpServerRequest = z.infer<typeof McpServerRequest>;
  * mcp_oauth_start with the client. The hub gets the box, never the secret. No secret: a public client.
  */
 export const McpOauthClientRequest = z.strictObject({
-  scope: z.strictObject({ kind: z.literal("project"), machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  // A bot's server, or the team's (D592), which every bot's agents get.
+  scope: z.union([
+    z.strictObject({ kind: z.literal("project"), machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+    z.strictObject({ kind: z.literal("global") }),
+  ]),
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
   hubUrl: z.string().trim().min(1).max(2048).optional(),
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),

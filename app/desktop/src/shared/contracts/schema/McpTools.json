@@ -10537,6 +10537,10 @@
           "description": "Where the service sends the browser back, a page the hub serves: what the person's own client must allow.",
           "type": "string"
         },
+        "scope": {
+          "$ref": "#/$defs/McpScope",
+          "description": "Where the server is now: a bot's server that signs in is the team's (global) from its sign-in on (D592)."
+        },
         "truncated": {
           "type": "boolean"
         }
@@ -10660,6 +10664,10 @@
     "McpServer": {
       "description": "One configured server as the hub keeps it. A secret has no value here.",
       "properties": {
+        "connectedBy": {
+          "$ref": "#/$defs/PersonId",
+          "description": "Who connected a server the whole team signs in to (scope global, D592): they or an admin disconnect it. None\nfor one carried over from a bot, which an admin disconnects."
+        },
         "enabled": {
           "type": "boolean"
         },

@@ -41,8 +41,9 @@ describe("settings search", () => {
     expect([tabOf("hubs"), tabOf("claude"), tabOf("github")]).toEqual(["hubs", "accounts", "accounts"]);
     expect([tabOf("notifications"), tabOf("version"), tabOf("check for updates")]).toEqual(["general", "general", "general"]);
     expect([tabOf("max agents"), tabOf("skills")]).toEqual(["agents", "agents"]);
-    // A project's MCP servers are one list, on its Project page (W467).
-    expect([tabOf("mcp"), tabOf("integrations")]).toEqual(["projects", "projects"]);
+    // A project's MCP servers are one list, on its Project page (W467); what the team signs in to once is on the
+    // Vault page (D592).
+    expect([tabOf("mcp"), tabOf("integrations"), tabOf("paper")]).toEqual(["projects", "vault", "vault"]);
     // Task profiles are the hub's, on Every project › Agents (W146).
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");

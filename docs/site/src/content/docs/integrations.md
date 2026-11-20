@@ -3,10 +3,11 @@ title: Integrations
 description: Connect a bot to any MCP server, with a key or by signing in with your own account. Reads run unasked; everything else goes by the bot's approval mode, and a card shows exactly what it would send.
 ---
 
-A bot's lead can reach any service with an MCP server. You connect each one yourself in the bot's settings,
-under **MCP servers** (the bot's one list of them), with a key you make or by signing in with your own account. Your keys are sealed on the
-bot's machine, and the lead never sees them. A named service, such as [Paper](#paper), heads the list and connects
-with one press.
+A bot's lead can reach any service with an MCP server. A server you give a key of your own is the bot's: you connect
+it in the bot's settings, under **MCP servers** (the bot's one list of them), and the key is sealed on the bot's
+machine, where the lead never sees it. A service you sign in to with your account instead is the whole team's: you
+connect it once, under **Settings › Vault › Integrations**, and every bot's agents use it, as they fill the team
+vault. A named service, such as [Paper](#paper), connects there with one press.
 
 An integration reaches the bot's lead alone: its agents never get one. Turn on **Agents get it too** when you add
 a server to give it to the bot's writers and reviewers as well: then none of its tools asks you, since an agent
@@ -70,7 +71,11 @@ and the like) can't be ticked, and is never run.
 
 ## Sign in with your account {#sign-in}
 
-Many hosted MCP servers take no key: you sign in on the service's own page instead (OAuth). fleetd does this as MCP's
+Many hosted MCP servers take no key: you sign in on the service's own page instead (OAuth). Such a sign-in is made once
+for the team: any person on the hub connects it and signs in, and every bot's lead and agents get it, with no switch
+per bot. The one who connected it, or an admin, disconnects it; anyone may sign in to it again. A server added to a
+bot that turns out to sign in becomes the team's as you sign in, and sign-ins made per bot before this were carried
+over as they were, so nobody signs in again (where two bots had each signed in, the newer sign-in is kept). fleetd does this as MCP's
 [authorization spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) says, with no
 fleetd-run app in between:
 
@@ -91,7 +96,8 @@ A hub with no https address signs in to such a service only from its own machine
 [Troubleshooting](/docs/troubleshooting#hub)) and sign in again.
 
 **Renewing.** A sign-in's token may last an hour, or only minutes (Paper's last 5). The hub renews it before it ends,
-from half its life left and at most 30 minutes before, and hands the new one to the bot's machine. Agents never hold
+from half its life left and at most 30 minutes before, and hands the new one to every machine a bot runs on (a machine
+offline gets it once it is back). Agents never hold
 the token themselves: their claude reaches a signed-in server through fleetd's MCP relay, which takes the machine's
 newest token for each request, so an agent keeps the server for its whole session, the lead and tasks alike, on the
 machine, in a local VM or in a hosted sandbox. If the server turns a token away anyway, the relay has the hub renew
@@ -102,22 +108,21 @@ only then.
 
 **When the service ends the sign-in** (you revoked fleetd's access, changed your password, the sign-in expired with
 no way to renew it, or the service turns away a token fleetd has just renewed), the server shows **Sign in needed**
-with the service's reason, and its chat says so once: "mail is signed out: … the bot can't use it until you press
-Reconnect". The dead token leaves the bot's machine (when the machine is offline, as soon as it is back), so new agents
-start without the server; an agent already running is answered, at its next call, that the sign-in has ended and that
-you sign in again from the bot's Settings › Integrations, and carries on without it. **Reconnect** signs in again with
+with the service's reason, and each bot's chat says so once: "mail is signed out: … No bot can use it until you press
+Reconnect on it in Settings › Vault › Integrations". The dead token leaves every machine (one offline, as soon as it is
+back), so new agents start without the server; an agent already running is answered, at its next call, that the
+sign-in has ended and that you sign in again from Settings › Vault › Integrations, and carries on without it. **Reconnect** signs in again with
 the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token has ended, the
 row shows why, and the chat says so once, and again when it works. An agent whose call can't reach the server is told
 so in plain words and keeps the server for its next call.
 
 ## Example: Paper {#paper}
 
-Paper (paper.design) is a design canvas with a hosted MCP server. Your agents use it with your own Paper account; no
-key and no Paper app on the bot's machine. It is a named service: **Paper** heads the bot's **MCP servers**,
-with nothing to type.
+Paper (paper.design) is a design canvas with a hosted MCP server. Every bot's agents use it with the Paper account the
+team signed in with; no key and no Paper app on the bots' machines. It is a named service: **Paper** heads the team's
+**Integrations**, with nothing to type.
 
-1. Settings › the bot › **Bot** › **MCP servers** › **Paper** › **Connect**. On the phone: the bot's
-   screen › **MCP servers** › **Paper**.
+1. **Settings › Vault › Integrations › Paper › Connect**. On the phone: **Vault › Integrations › Paper**.
 2. Paper's sign-in page opens: sign in and allow fleetd. The row then says **Connected**, and **Test** lists Paper's
    tools.
 
@@ -127,7 +132,7 @@ this row. When the sign-in ends, the row says **Sign in needed**, with **Sign in
 loopback callback, so the hub needs an https address (its `--url`, or Tailscale Serve in front of its port) unless you
 sign in on its machine.
 
-The bot's writers and reviewers then read Paper files (structure, screenshots, styles, JSX, text), create and edit
+Every bot's lead, writers and reviewers then read Paper files (structure, screenshots, styles, JSX, text), create and edit
 artboards and frames, set text and styles, export images, and manage files, unasked. A writer that has the repo
 checked out can design a screen in Paper, build it, and open the PR in one task. There is no Paper editor inside
 fleetd: open the file in Paper's own app (web or desktop) to watch an agent's edits live, and ask agents to link the
@@ -148,5 +153,5 @@ out at the service too, where the service offers that (token revocation).
 | What | Where |
 |---|---|
 | A server's key | Sealed in the app to the bot's machine. The hub keeps only a fingerprint; the node keeps the value in `~/.fleetd/node/mcp-secrets/` (mode `0600`). See [MCP servers](/docs/mcp-servers#secrets). |
-| A sign-in's tokens | The hub keeps the access and refresh tokens, and your own app's secret, sealed to its own key (`<hub home>/box.key`) in its database, since it renews them. Each access token is sealed to the bot's machine as the server's `Authorization` header, where it is kept as a key is. It never goes into an agent's MCP config: fleetd's MCP relay takes it from the node for each request. |
+| A sign-in's tokens | The hub keeps the access and refresh tokens, and your own app's secret, sealed to its own key (`<hub home>/box.key`) in its database, since it renews them. Each access token is sealed to every machine a bot runs on as the server's `Authorization` header, where it is kept as a key is. It never goes into an agent's MCP config: fleetd's MCP relay takes it from the node for each request. |
 | In the chat, transcripts, memory | Never. The node puts the key only into the MCP config it writes for the lead's claude (mode `0600`), not into its conversation; a call holding something that looks like a key is refused. |

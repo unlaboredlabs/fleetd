@@ -9,7 +9,7 @@
 // its sign-in page; signed in, its row says Connected, with Test, and Sign in when it needs one again.
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
-import type { McpOauthStartOutput, McpServer, McpServerSetOutput, McpTestResult } from "../../../shared/contracts";
+import type { McpOauthStartOutput, McpScope, McpServer, McpServerSetOutput, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -33,7 +33,7 @@ import { emptyDraft, globalsFor, nameProblem, requestOf, rolesText, type Draft }
 import { ServerEditor } from "./McpServers";
 import { NAMED, namedInput, namedState, namedWord, turnOnInput, unnamed, type Named } from "./namedServers";
 import { CommandLine, Prose } from "../onboarding/Prose";
-import { AddButton, SettingsList, SettingsListRow, SettingsRow } from "./parts";
+import { AddButton, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import { Plug } from "lucide-react";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
@@ -88,18 +88,18 @@ type SignInPhase =
  * A sign-in to a saved server, from the button to its end: mcp_oauth_start (or the person's own app, sealed in main),
  * the service's page opened in the browser, then the server's sign-in followed until the hub has the tokens.
  */
-function useSignIn(projectRef: Ref, name: string, onSignedIn: () => void) {
+function useSignIn(scope: McpScope, name: string, onSignedIn: () => void) {
   const { hub } = useDataLayer();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const live = useLive();
   // Where this app reaches the hub: the service sends the browser back there.
   const appUrl = useData((st) => (st.hub.phase === "unpaired" ? undefined : st.hub.hub));
-  const read = useToolQuery("mcp_servers_get", { project: projectRef }, { enabled: live });
-  const oauth = (read.data?.project ?? []).find((x) => x.name === name)?.oauth;
+  const read = useToolQuery("mcp_servers_get", scope.kind === "project" ? { project: { machineId: scope.machineId, projectId: scope.projectId } } : {}, { enabled: live });
+  // A bot's server that signs in is the team's from its sign-in on (D592): followed there.
+  const oauth = [...(read.data?.project ?? []), ...(read.data?.global ?? [])].find((x) => x.name === name && x.oauth !== undefined)?.oauth;
   const [phase, setPhase] = useState<SignInPhase>({ kind: "ready" });
   const [problem, setProblem] = useState<string | null>(null);
-  const scope = { kind: "project" as const, ...projectRef };
   const hubUrl = appUrl === undefined ? {} : { hubUrl: appUrl.includes("://") ? appUrl : `http://${appUrl}` };
   const opened = (out: McpOauthStartOutput) => {
     if (out.authorizeUrl !== undefined) {
@@ -255,11 +255,11 @@ function SignInFooter({ signIn, client, onCancel }: { signIn: SignIn; client: { 
 }
 
 /** Reconnect (or a first sign-in) from the list: signs in, then tests the server and shows what it found in its row. */
-function SignInDialog(props: { projectRef: Ref; server: McpServer; named?: Named | undefined; onClose: () => void; onTested: (name: string, t: Tested) => void }) {
+function SignInDialog(props: { server: McpServer; named?: Named | undefined; onClose: () => void; onTested: (name: string, t: Tested) => void }) {
   const hubCall = useHubCall();
   const { server } = props;
   const [client, setClient] = useState({ id: "", secret: "" });
-  const signIn = useSignIn(props.projectRef, server.name, () => {
+  const signIn = useSignIn(server.scope, server.name, () => {
     hubCall("mcp_server_test", { scope: server.scope, name: server.name }).then(
       (out) => props.onTested(server.name, { machineId: out.machineId, result: out.result }),
       (e: unknown) => props.onTested(server.name, { error: errorText(e) }),
@@ -333,20 +333,7 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
       }
     >
       <SettingsList label="MCP servers">
-        {NAMED.map((entry) => (
-          <NamedRow
-            key={entry.id}
-            entry={entry}
-            servers={all}
-            projectRef={projectRef}
-            machine={machine.name}
-            tests={tests}
-            onTested={tested}
-            onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
-            onSignIn={(s2) => setDialog({ kind: "signin", server: s2, named: entry })}
-          />
-        ))}
-        {unnamed(all).map((server) => (
+        {all.map((server) => (
           <Row
             key={server.name}
             title={server.name}
@@ -381,8 +368,62 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
         <ServerEditor scope={projectRef} editing={dialog.server} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onSaved={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={machine.name} onClose={() => setDialog(null)} /> : null}
-      {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} named={dialog.named} onClose={() => setDialog(null)} onTested={tested} /> : null}
+      {dialog?.kind === "signin" ? <SignInDialog server={dialog.server} named={dialog.named} onClose={() => setDialog(null)} onTested={tested} /> : null}
     </SettingsRow>
+  );
+}
+
+/** Where every bot's agents reach the team's services. */
+const EVERY_MACHINE = "every bot's machine";
+
+/**
+ * The services the whole team signs in to once (D592), on the Vault page: the named ones (Paper) with Connect, then any
+ * other the team signed in to, with Sign in, Test and Disconnect. No bot has a switch for them: every bot's agents get
+ * them.
+ */
+export function TeamIntegrations() {
+  const live = useLive();
+  const read = useToolQuery("mcp_servers_get", {}, { enabled: live });
+  const [dialog, setDialog] = useState<Dialogs | null>(null);
+  const [tests, setTests] = useState<Readonly<Record<string, Tested>>>({});
+  if (!live || read.data === undefined) return null;
+  const team = read.data.global;
+  const tested = (name: string, t: Tested) => setTests((list) => ({ ...list, [name]: t }));
+  return (
+    <SettingsSection title="Integrations" reveal="vault.integrations" data={{ "data-team-integrations": "" }}>
+      <SettingsList label="Integrations">
+        {NAMED.map((entry) => (
+          <NamedRow
+            key={entry.id}
+            entry={entry}
+            servers={team}
+            scope={{ kind: "global" }}
+            machine={EVERY_MACHINE}
+            tests={tests}
+            onTested={tested}
+            onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
+            onSignIn={(s2) => setDialog({ kind: "signin", server: s2, named: entry })}
+          />
+        ))}
+        {unnamed(team)
+          .filter((server) => server.oauth !== undefined)
+          .map((server) => (
+            <Row
+              key={server.name}
+              title={server.name}
+              what={server.transport.type === "stdio" ? server.transport.command : server.transport.url}
+              server={server}
+              machine={EVERY_MACHINE}
+              tested={tests[server.name]}
+              onTested={tested}
+              onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
+              onSignIn={(s2) => setDialog({ kind: "signin", server: s2 })}
+            />
+          ))}
+      </SettingsList>
+      {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={EVERY_MACHINE} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === "signin" ? <SignInDialog server={dialog.server} named={dialog.named} onClose={() => setDialog(null)} onTested={tested} /> : null}
+    </SettingsSection>
   );
 }
 
@@ -404,7 +445,7 @@ function Mark({ entry }: { entry: Named }) {
 function NamedRow(props: {
   entry: Named;
   servers: ReadonlyArray<McpServer>;
-  projectRef: Ref;
+  scope: McpScope;
   machine: string;
   tests: Readonly<Record<string, Tested>>;
   onTested: (name: string, t: Tested) => void;
@@ -443,7 +484,7 @@ function NamedRow(props: {
   };
   const connect = () => {
     setBusy("connect");
-    save(requestOf(namedInput(entry, { kind: "project", ...props.projectRef }, props.servers.map((x) => x.name))), props.onSignIn);
+    save(requestOf(namedInput(entry, props.scope, props.servers.map((x) => x.name))), props.onSignIn);
   };
   const turnOn = (sv: McpServer) => {
     setBusy("on");
@@ -511,12 +552,13 @@ function Row(props: {
   machine: string;
   tested: Tested | undefined;
   onTested: (name: string, t: Tested) => void;
-  onEdit: (server: McpServer) => void;
+  onEdit?: ((server: McpServer) => void) | undefined;
   onDisconnect: (server: McpServer) => void;
   onSignIn: (server: McpServer) => void;
 }) {
   const hubCall = useHubCall();
   const [testing, setTesting] = useState(false);
+  const edit = props.onEdit;
   const { server } = props;
   // One the project's agents get too: its roles stand for its policy, since every tool runs unasked.
   const agents = server.integration === undefined;
@@ -563,8 +605,8 @@ function Row(props: {
           <Button variant="ghost" disabled={testing} onClick={() => test(server)}>
             {testing ? "Testing…" : "Test"}
           </Button>
-          {agents ? (
-            <Button variant="ghost" onClick={() => props.onEdit(server)}>
+          {agents && edit !== undefined ? (
+            <Button variant="ghost" onClick={() => edit(server)}>
               Edit
             </Button>
           ) : null}
@@ -715,7 +757,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
   const failed = tested !== null && ("error" in tested || tested.result.error !== undefined);
   const name = draft.name.trim();
   // Signed in: test it now, and go on to its tools as a keyed server does.
-  const signIn = useSignIn(props.projectRef, name, () => {
+  const signIn = useSignIn({ kind: "project", ...props.projectRef }, name, () => {
     hubCall("mcp_server_test", { scope, name }).then(
       (t) => {
         setTested({ machineId: t.machineId, result: t.result });

@@ -1,18 +1,20 @@
-// The hub calls behind a project's named services on its screen (Named.tsx), as the desktop's MCP servers make them:
-// mcp_servers_get for the project's servers, Connect's mcp_server_set (the record the manual form saves, with no key:
-// namedInput), mcp_oauth_start for its sign-in page, mcp_server_test, Turn On (mcp_server_set again) and Disconnect
-// (mcp_server_remove). And what each row shows and does on a tap.
-import { namedInput, turnOnInput, type McpServer, type McpTestResult, type Named, type NamedState, type ProjectRef } from "../../desktop";
+// The hub calls behind the team's named services on the Vault screen (Named.tsx), as the desktop's make them: every
+// bot's agents get one the team connects once (D592). mcp_servers_get for the team's servers, Connect's
+// mcp_server_set (the record the manual form saves, with no key: namedInput), mcp_oauth_start for its sign-in page,
+// mcp_server_test, Turn On (mcp_server_set again) and Disconnect (mcp_server_remove). And what each row shows and does
+// on a tap.
+import { namedInput, turnOnInput, type McpServer, type McpTestResult, type Named, type NamedState } from "../../desktop";
 import type { Hub, Result } from "./api";
 
 /** A test reaches the server from the project's machine, as the desktop's waits for it. */
 export const TEST_MS = 45_000;
 
-const scopeOf = (p: ProjectRef) => ({ kind: "project" as const, machineId: p.machineId, projectId: p.projectId });
+/** The team's: every bot's agents reach it. */
+const TEAM = { kind: "global" as const };
 
-export const readServers = async (hub: Hub, p: ProjectRef): Promise<Result<McpServer[]>> => {
-  const r = await hub.call("mcp_servers_get", { project: { machineId: p.machineId, projectId: p.projectId } });
-  return r.ok ? { ok: true, value: r.output.project ?? [] } : r;
+export const readServers = async (hub: Hub): Promise<Result<McpServer[]>> => {
+  const r = await hub.call("mcp_servers_get", {});
+  return r.ok ? { ok: true, value: r.output.global } : r;
 };
 
 const save = async (hub: Hub, input: ReturnType<typeof namedInput>): Promise<Result<McpServer>> => {
@@ -21,12 +23,12 @@ const save = async (hub: Hub, input: ReturnType<typeof namedInput>): Promise<Res
 };
 
 /** Saved as the manual form would save it, under its own name or the first free one. */
-export const connect = (hub: Hub, entry: Named, p: ProjectRef, servers: readonly McpServer[]): Promise<Result<McpServer>> =>
+export const connect = (hub: Hub, entry: Named, servers: readonly McpServer[]): Promise<Result<McpServer>> =>
   save(
     hub,
     namedInput(
       entry,
-      scopeOf(p),
+      TEAM,
       servers.map((s) => s.name),
     ),
   );

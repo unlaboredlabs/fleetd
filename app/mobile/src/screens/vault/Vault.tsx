@@ -18,6 +18,7 @@ import { ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { SwipeGroup, SwipeRow, useSwipeGroup } from "../../ui/SwipeRow";
 import { confirmDestructive, errorWords, Problem, Symbol, useRead } from "../manage/parts";
+import { NamedServers } from "../manage/Named";
 import { deleteItem, listItems, moveItem, vaultErrorWords, vaultHub } from "./api";
 import { KIND_WORDS, rowLine, sections, SET_ASIDE_WHY, TEAM_KINDS, teamVault, titleOf } from "./model";
 import { KindTile, useVaultChanged, useVaultNav, useVaultRoute, whoseOf } from "./parts";
@@ -217,6 +218,8 @@ export function Vault() {
             ))}
           </ListSection>
         )}
+        {/* What the whole team signs in to once, every bot's agents use (D592). */}
+        {project === undefined && live ? <NamedServers /> : null}
       </ScrollView>
     </SwipeGroup>
   );

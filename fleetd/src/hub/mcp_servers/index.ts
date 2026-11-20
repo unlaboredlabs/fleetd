@@ -80,6 +80,20 @@ export class McpServerStore {
       ]);
   }
 
+  /** Every bot's own servers (none global), for the carry-over of their sign-ins to the team (D592). */
+  perBot(): McpServer[] {
+    return this.db.conn
+      .query<{ data: string }, []>("SELECT data FROM mcp_servers WHERE machine_id != '' ORDER BY machine_id, project_id, name")
+      .all()
+      .map((r) => parse(r.data))
+      .filter((s): s is McpServer => s !== undefined);
+  }
+
+  /** Queues machine `m`'s node to forget a bot's server's secrets (`forgetQueued`). */
+  forget(m: string, projectId: string, name: string): void {
+    this.db.conn.query("INSERT OR IGNORE INTO mcp_secret_forgets (machine_id, project_id, name) VALUES (?, ?, ?)").run(m, projectId, name);
+  }
+
   /** The node forgot them. */
   forgot(machineId: string, scope: McpSecretScope, name: string): void {
     const p = scope.kind === "global" ? "" : scope.projectId;

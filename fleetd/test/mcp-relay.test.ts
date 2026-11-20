@@ -179,12 +179,12 @@ test("a dead sign-in, a refused renewal and an unreachable server answer in word
   const said = last();
   expect(said).toMatchObject({ id: 1, result: { isError: true } });
   expect(textOf(said)).toBe(
-    "paper's sign-in has ended (login.stand-in ended the sign-in (invalid_grant), so you need to sign in again). Ask the person to sign in to paper again: Reconnect on paper in the bot's Settings › Integrations. Until then, carry on without paper and say so in your result.",
+    "paper's sign-in has ended (login.stand-in ended the sign-in (invalid_grant), so you need to sign in again). Ask the person to sign in to paper again: Reconnect on paper in Settings › Vault › Integrations. Until then, carry on without paper and say so in your result.",
   );
   expect(textOf(said)).not.toContain("/mcp");
   // A request other than a tool's call is answered with its error, in the same words.
   await r.deliver({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  expect(last()).toMatchObject({ id: 2, error: { code: -32603, message: expect.stringContaining("Settings › Integrations") } });
+  expect(last()).toMatchObject({ id: 2, error: { code: -32603, message: expect.stringContaining("Settings › Vault › Integrations") } });
 
   // Renewed, and the new token turned away too: the hub hears it (and signs the server out).
   hub.mode = "refused";
@@ -354,5 +354,19 @@ test("`fleetd mcp-relay` runs as claude starts it, asking the node over its sock
     expect(stdout + stderr).not.toContain("pt-");
   } finally {
     stop();
+  }
+});
+
+test("a session started while its bot had its own sign-in keeps the server once the sign-in is the team's", async () => {
+  const token = paper.issue();
+  // The bot's secrets are forgotten; the team's token is on the machine under the global scope.
+  hold(undefined);
+  writeFileSync(join(home.dir, "mcp-secrets", "global.json"), JSON.stringify({ servers: { paper: { "header/Authorization": { value: `Bearer ${token}` } } } }));
+  try {
+    expect(await relayCall(home.dir, SESSION, { op: "mcp_header", server: "paper" }, ask)).toMatchObject({ headers: { Authorization: `Bearer ${token}` } });
+    // Started again, it keeps the server too.
+    expect(JSON.parse(sessionConfig(home.dir, kept(dir), undefined, SESSION, relayServer(["/opt/fleetd"], "/n/node.sock", SESSION)).json).mcpServers.paper).toBeDefined();
+  } finally {
+    writeFileSync(join(home.dir, "mcp-secrets", "global.json"), JSON.stringify({ servers: {} }));
   }
 });
