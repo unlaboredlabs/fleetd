@@ -35,6 +35,12 @@ export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { boat: "bo
 /** How long a provider that failed to make a box is left out of placement (the node's boxes.ts), and so how long a
  * lead whose box didn't come up waits before a message can start it there again (the hub's leads/cut_off.ts). */
 export const ASIDE_MS = 10 * 60_000;
+/** How long one that refused for its start rate (`rate`: boat.dev's starts a minute) is left out: its starts free by
+ * themselves, so it is asked again in a minute, and a lead whose start it refused is started again then. */
+export const RATE_MS = 60_000;
+/** The few words a start-rate refusal reads as, after the provider's name (`refusalWords`); the hub's chat line for a
+ * lead that couldn't start finds them in the node's words to start it again in a minute (hub/leads/cut_off.ts). */
+export const RATE_WORDS = "start rate: trying again in a minute";
 
 export const isProvider = (p: string): p is KnownSandboxProvider => (ORDER as readonly string[]).includes(p);
 
@@ -56,13 +62,13 @@ export const MAX_LIMIT = 500;
 /** How long Settings' Test of a key may take on a machine (the provider's list). */
 export const CHECK_WAIT = 30_000;
 
-export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limit", "billing", "unreachable", "failed"];
+export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limit", "billing", "rate", "unreachable", "failed"];
 
 /** A check's reason as one this build knows; anything else is `failed`. */
 export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includes(r as KnownSandboxCheckReason) ? (r as KnownSandboxCheckReason) : "failed");
 
 /** What fixes a failed check of `provider`'s key, by its reason (the hub's and fleetd cloud's words): the dashboard to
- * go to, else trying again. */
+ * go to, else trying again; nothing for a start rate, which frees by itself. */
 export function checkFix(provider: KnownSandboxProvider, reason: string): string {
   const name = NAMES[provider];
   switch (reason) {
@@ -72,6 +78,8 @@ export function checkFix(provider: KnownSandboxProvider, reason: string): string
       return `raise the plan at ${name}, or lower the limit here`;
     case "billing":
       return `set up billing in ${name}'s dashboard`;
+    case "rate":
+      return "";
     default:
       return "try again in a minute";
   }
@@ -100,6 +108,8 @@ export function refusalWords(provider: KnownSandboxProvider, reason: string, why
       return `${name} refused: billing isn't set up on the account`;
     case "limit":
       return `${name} refused: the account is at its plan's limit`;
+    case "rate":
+      return `${name}'s ${RATE_WORDS}`;
     case "unreachable":
       return `${name} didn't answer`;
     default:
@@ -115,14 +125,15 @@ export function troubleOf(provider: KnownSandboxProvider, t: { what: string; rea
     t.what === "keep_alive"
       ? `${NAMES[provider]} couldn't keep its sandboxes running: ${reason === "failed" ? plainWhy(t.why) || "no reason given" : refusalWords(provider, reason, t.why)}`
       : refusalWords(provider, reason, t.why);
-  return { what: t.what, reason, message, fix: checkFix(provider, reason), ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}) };
+  const fix = checkFix(provider, reason);
+  return { what: t.what, reason, message, ...(fix ? { fix } : {}), ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}) };
 }
 
 /** A trouble's line where a person reads why an agent waits or didn't start: what is wrong, its fix, and when it is
  * tried again ("boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying
- * again at 12:45", the hub's clock, UTC, as its other lines). */
-export const troubleLine = (t: Pick<ProviderTrouble, "message" | "fix" | "until">): string =>
-  `${t.message}${t.fix ? ` (${t.fix})` : ""}${t.until ? `; trying again at ${t.until.slice(11, 16)}` : ""}`;
+ * again at 12:45", the hub's clock, UTC, as its other lines). A start rate's own words say when: "in a minute". */
+export const troubleLine = (t: Pick<ProviderTrouble, "message" | "fix" | "until"> & { reason?: string }): string =>
+  `${t.message}${t.fix ? ` (${t.fix})` : ""}${t.until && t.reason !== "rate" ? `; trying again at ${t.until.slice(11, 16)}` : ""}`;
 
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };

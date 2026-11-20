@@ -7,7 +7,7 @@
 // revoked token, a bad key) wakes nothing, which would be refused the same way: the person reads where to reconnect it,
 // and the lead carries on once they do (`signed_out`, ./signed_in.ts).
 import type { ClaudeAccount, HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
-import { ASIDE_MS } from "../../shared/sandbox.ts";
+import { ASIDE_MS, RATE_MS, RATE_WORDS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
 
@@ -108,12 +108,14 @@ export const START_RETRIES = 3;
 const RETRY_MARGIN_MS = 30_000;
 
 /** The minutes after its `n`-th start in a row that didn't come up until the lead is started again: the provider's
- * set-aside, doubled each time (10, 20, 40); none after START_RETRIES. */
-const retryMinutes = (n: number): number | undefined => (n >= 1 && n <= START_RETRIES ? (ASIDE_MS / 60_000) * 2 ** (n - 1) : undefined);
+ * set-aside, doubled each time (10, 20, 40); one each time when the node's words (`message`) say the provider's start
+ * rate refused it (shared/sandbox.ts RATE_WORDS), which frees by itself in a minute; none after START_RETRIES. */
+const retryMinutes = (n: number, message = ""): number | undefined =>
+  n >= 1 && n <= START_RETRIES ? (message.includes(RATE_WORDS) ? RATE_MS / 60_000 : (ASIDE_MS / 60_000) * 2 ** (n - 1)) : undefined;
 
 /** The wait in milliseconds after the `n`-th start in a row that didn't come up, a little past `retryMinutes`. */
-export function retryWaitMs(n: number): number | undefined {
-  const m = retryMinutes(n);
+export function retryWaitMs(n: number, message?: string): number | undefined {
+  const m = retryMinutes(n, message);
   return m === undefined ? undefined : m * 60_000 + RETRY_MARGIN_MS;
 }
 
@@ -124,11 +126,11 @@ export function retryWaitMs(n: number): number | undefined {
  * that came up but couldn't start the lead (Claude out of its reach) has the node's own sentence, which says what to do,
  * without the node's wrapper (its claude's path, its cwd). */
 export function notStartedLine(message: string, n: number): string {
-  const minutes = retryMinutes(n);
+  const minutes = retryMinutes(n, message);
   const again =
     minutes === undefined
       ? `It was tried again ${START_RETRIES} times by itself; your message is kept, and the lead tries again when you send another.`
-      : `It tries again by itself in about ${minutes} minutes, and your message is kept for it.`;
+      : `It tries again by itself in about ${minutes === 1 ? "a minute" : `${minutes} minutes`}, and your message is kept for it.`;
   const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
   if (at) return `The lead couldn't start: no sandbox came up for it at ${at}. ${again} If it keeps failing, check ${at} in Settings › Hub › Machines.`;
   const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
@@ -149,10 +151,11 @@ export const RETRY_LINE =
 /** The lead's starts in a row that didn't come up, from its project's `thread.failed` and `thread.completed` events
  * newest first: how many runs (`n`), and the newest one's event (`seq`, `at`); they end at its thread's last other end
  * (a completed turn, another failure). Undefined when its thread's newest end is another. The start again is due
- * `retryWaitMs(n)` after `at`. */
-export function failedRun(newestFirst: Iterable<HubEvent>, lead: StoredLead): { n: number; seq: number; at: string } | undefined {
+ * `retryWaitMs(n, message)` after `at`, `message` being the newest one's words. */
+export function failedRun(newestFirst: Iterable<HubEvent>, lead: StoredLead): { n: number; seq: number; at: string; message: string } | undefined {
   const runs = new Set<string>();
   let newest: HubEvent | undefined;
+  let message = "";
   for (const e of newestFirst) {
     const found = end(e, [lead]);
     if (!found) {
@@ -161,10 +164,10 @@ export function failedRun(newestFirst: Iterable<HubEvent>, lead: StoredLead): { 
       continue;
     }
     if (found.end.kind !== "not_started") break;
-    newest ??= e;
+    if (!newest) [newest, message] = [e, found.end.message];
     runs.add(found.end.runId ?? `seq:${e.seq}`);
   }
-  return newest ? { n: runs.size, seq: newest.seq, at: newest.at } : undefined;
+  return newest ? { n: runs.size, seq: newest.seq, at: newest.at, message } : undefined;
 }
 
 /** The project and how its lead's thread ended; undefined for another thread, or an end that wakes nothing. */

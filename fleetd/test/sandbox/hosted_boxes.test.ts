@@ -6,13 +6,15 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { boatStandIn, KEY, localRunner, type StandIn } from "./stand_ins.ts";
+import { boatStandIn, KEY, localRunner, type StandIn, type Step } from "./stand_ins.ts";
 import { provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { Boxes, DOWN_MS, hostable, MACHINE_LABEL, SESSION_LABEL } from "../../src/node/sandbox/remote/boxes.ts";
 import { BOX_DIR } from "../../src/node/sandbox/remote/bootstrap.ts";
 import { type Box } from "../../src/node/sandbox/box.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
+import { type HostedStep, stepWords, watchSteps } from "../../src/node/place/hosted_steps.ts";
+import { troubleLine, troubleOf } from "../../src/shared/sandbox.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-"));
@@ -34,13 +36,14 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
 
-/** A stand-in for `id` whose boxes run here, each with a port and a box dir of its own. */
-async function world(id: ProviderId) {
+/** A stand-in for `id` whose boxes run here, each with a port and a box dir of its own. `o.step`: how a template
+ * build's commands end; `o.before`: what the account holds before the keys come (`name`: this recipe's template). */
+async function world(id: ProviderId, o: { step?: Step; before?: (s: StandIn, name: string) => void } = {}) {
   const dir = join(root, `w${++made}`);
   mkdirSync(dir, { recursive: true });
   const local = localRunner(join(dir, "boxes"), BOX_DIR);
   cleanups.push(local.cleanup);
-  const s = boatStandIn(local.runner);
+  const s = boatStandIn(local.runner, o.step);
   running.push(s);
   local.track(s);
   const api = `${s.url}/api/v1`;
@@ -50,6 +53,7 @@ async function world(id: ProviderId) {
     provider: (p, auth) => provider(p, auth, { urls: { api, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
     source: () => ({ sha256: sha(FLEETD), bytes: async () => FLEETD }),
   });
+  o.before?.(s, boxes.templateName());
   boxes.setKeys({ [id]: Buffer.from(JSON.stringify({ provider: id, key: KEY })).toString("base64") });
   boxes.wire({ lead: { relay: new LeadRelay(), identify: () => ({ kind: "none" }) as never, maskFor: () => new Masker([]) } });
   return { s, boxes, home };
@@ -133,6 +137,138 @@ test("boat: a bot's picked size is the box's own, exactly, and one boat doesn't 
   expect(s.calls.length).toBe(before);
 }, 60_000);
 
+/** The template builds' boxes the stand-in was asked to make, and its saves. */
+const buildBoxes = (s: StandIn) => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && String(c.body?.name ?? "").startsWith("fleetd build"));
+const saves = (s: StandIn) => s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/saved-snapshots");
+/** Resolves once `ok()` holds, failing after `ms`. */
+async function until(ok: () => boolean, ms = 10_000) {
+  for (const end = Date.now() + ms; !ok(); await Bun.sleep(10)) if (Date.now() > end) throw new Error("it never happened");
+}
+/** A saved snapshot as another machine (or an older release) left it in the account. */
+const seed = (s: StandIn, name: string, at: string, status: "ready" | "saving" | "failed" = "ready") => s.saved!.set(name, { asked: status === "ready" ? 2 : 0, at, ...(status === "failed" ? { failed: true } : {}) });
+
+test("the template is built ahead when the keys come, so a box's start waits on no build (W756 W1)", async () => {
+  const { s, boxes } = await world("boat");
+  // Nothing asked for a box yet: the keys alone started the build.
+  await until(() => saves(s).length === 1);
+  const steps: HostedStep[] = [];
+  const unwatch = watchSteps("sess-ahead", (step) => steps.push(step));
+  const record = await boxes.create("boat", "sess-ahead", [], []);
+  unwatch();
+  expect(s.boxes.get(record.boxId).req.from).toBe(boxes.templateName());
+  expect(buildBoxes(s)).toHaveLength(1);
+  expect(saves(s)).toHaveLength(1);
+  // The keys again (the next link): nothing built again.
+  boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  await Bun.sleep(50);
+  expect(buildBoxes(s)).toHaveLength(1);
+  await boxes.destroy(record);
+}, 60_000);
+
+test("a template this recipe's build fails on: boxes start from the newest ready older one, said so, never saved over (W756 W1)", async () => {
+  // boat's base image breaks every step of the build, as its PPA did on 2026-11-20.
+  const { s, boxes } = await world("boat", {
+    step: () => ({ exitCode: 100, stderr: "E: Repository changed its 'Label' value" }),
+    before: (s) => {
+      seed(s, "fleetd-aaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+      seed(s, "fleetd-bbbbbbbbbbbb", "2026-11-10T09:00:00Z");
+      // A bot's computer image, and a template whose save failed, are never a template to start from.
+      seed(s, "fleetd-p1-0123456789ab", "2026-11-19T09:00:00Z");
+      seed(s, "fleetd-cccccccccccc", "2026-11-19T10:00:00Z", "failed");
+    },
+  });
+  // The build ahead the keys started fails.
+  await boxes.ahead("boat")?.done.catch(() => {});
+  const steps: HostedStep[] = [];
+  const unwatch = watchSteps("sess-older", (step) => steps.push(step));
+  const record = await boxes.create("boat", "sess-older", [], []);
+  unwatch();
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-aaaaaaaaaaaa");
+  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image didn't build; using the one from Nov 18)"]);
+  // The start built nothing, and nothing was set aside: the provider takes the next box.
+  expect(buildBoxes(s)).toHaveLength(1);
+  expect(boxes.usable()).toEqual(["boat"]);
+  // Nothing was saved: not the failed build, and never over the older templates.
+  expect(saves(s)).toHaveLength(0);
+  // The next link tries the build again, in the background.
+  boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  await until(() => buildBoxes(s).length === 2);
+  await boxes.destroy(record);
+}, 60_000);
+
+test("while this recipe's template is still being built, a box starts from the last good one and says so", async () => {
+  // The build's steps never end here: it is still under way when the box starts.
+  const { s, boxes } = await world("boat", { step: () => ({ exitCode: 0, running: true }), before: (s) => seed(s, "fleetd-aaaaaaaaaaaa", "2026-11-18T09:00:00Z") });
+  await until(() => buildBoxes(s).length === 1);
+  const steps: HostedStep[] = [];
+  const unwatch = watchSteps("sess-mid", (step) => steps.push(step));
+  const record = await boxes.create("boat", "sess-mid", [], []);
+  unwatch();
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-aaaaaaaaaaaa");
+  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image is still being made; using the one from Nov 18)"]);
+  await boxes.destroy(record);
+}, 60_000);
+
+test("a template another machine is still saving under this name is waited for, never built or saved over", async () => {
+  const { s, boxes } = await world("boat", { before: (s, name) => seed(s, name, "2026-11-20T09:00:00Z", "saving") });
+  expect(await boxes.template("boat")).toBe(boxes.templateName());
+  expect(buildBoxes(s)).toHaveLength(0);
+  expect(saves(s)).toHaveLength(0);
+}, 60_000);
+
+test("only a team with no template at all waits on a build, with the first-time words", async () => {
+  const { boxes } = await world("boat", { step: () => ({ exitCode: 1, stderr: "broken" }) });
+  await boxes.ahead("boat")?.done.catch(() => {});
+  const steps: HostedStep[] = [];
+  const unwatch = watchSteps("sess-first", (step) => steps.push(step));
+  await expect(boxes.create("boat", "sess-first", [], [])).rejects.toThrow("boat.dev's sandbox template didn't build");
+  unwatch();
+  expect(steps).toEqual(["template"]);
+}, 60_000);
+
+test("a template's build box carries the machine's label: the reaper leaves it while it builds, and takes one a dead build left (W12)", async () => {
+  let reaped: Promise<number> | undefined;
+  let boxesRef: Boxes | undefined;
+  const { s, boxes } = await world("boat", {
+    // While a step of the build runs, the reaper sweeps.
+    step: () => {
+      reaped ??= boxesRef?.reap(() => new Set());
+      return { exitCode: 0 };
+    },
+  });
+  boxesRef = boxes;
+  await boxes.template("boat").catch(() => {});
+  // The build ahead started before boxesRef was set: build once more so a sweep runs mid-build.
+  if (!reaped) {
+    s.saved!.clear();
+    rmSync(join(boxes.home, "sandbox", "template-boat.json"), { force: true });
+    boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+    await boxes.ahead("boat")?.done;
+  }
+  expect(await reaped).toBe(0);
+  for (const b of buildBoxes(s)) expect(b.body.labels).toMatchObject({ [MACHINE_LABEL]: "devbox", fleetd: "1" });
+  // A build box its machine's runner left when it died (no build of it runs here now) goes at the next sweep.
+  const orphan = await boxes.client("boat").create({ template: "t", key: "k-orphan", labels: { [MACHINE_LABEL]: "devbox", "fleetd-build": "fleetd-000000000000" }, lifetimeMs: 60_000 });
+  expect(await boxes.reap(() => new Set())).toBe(1);
+  expect(s.boxes.has(orphan.id)).toBe(false);
+}, 60_000);
+
+test("boat.dev's start rate sets it aside for a minute, in its own words, not the plan's limit (W8)", () => {
+  const boxes = new Boxes(join(root, "rate"), "devbox", { open: (b) => b }, {});
+  boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
+  const now = Date.parse("2026-11-20T19:20:00Z");
+  boxes.setAside("boat", "boat.dev's limit on sandbox starts is reached for now (12 per minute).", now, "rate");
+  expect(boxes.usable(now + 30_000)).toEqual([]);
+  expect(boxes.usable(now + 61_000)).toEqual(["boat"]);
+  const t = boxes.trouble(now)[0]!;
+  expect(troubleLine(troubleOf("boat", t))).toBe("boat.dev's start rate: trying again in a minute");
+  // A plan's limit is still set aside for DOWN_MS, with its fix.
+  boxes.setAside("boat", "at once", now, "limit");
+  expect(boxes.usable(now + 61_000)).toEqual([]);
+  expect(boxes.usable(now + DOWN_MS + 1)).toEqual(["boat"]);
+  expect(troubleLine(troubleOf("boat", boxes.trouble(now)[0]!))).toContain("plan's limit");
+});
+
 test("a box whose guest doesn't take the secret is never reached; the bootstrap refuses fleetd with a wrong checksum", async () => {
   const { boxes } = await world("boat");
   const bad = new Boxes(join(root, "bad"), "devbox", { open: (b) => b }, {
@@ -145,6 +281,8 @@ test("a box whose guest doesn't take the secret is never reached; the bootstrap 
 
 test("the reaper deletes this machine's boxes no session holds, and no one else's", async () => {
   const { s, boxes } = await world("boat");
+  // The template built ahead at the keys, its build box gone.
+  await boxes.template("boat");
   const client = boxes.client("boat");
   await client.create({ template: "t", key: "k-mine", labels: { [MACHINE_LABEL]: "devbox", [SESSION_LABEL]: "gone" }, lifetimeMs: 60_000 });
   const kept = await client.create({ template: "t", key: "k-kept", labels: { [MACHINE_LABEL]: "devbox", [SESSION_LABEL]: "live" }, lifetimeMs: 60_000 });

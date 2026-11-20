@@ -1,5 +1,6 @@
 // The node's hosted boxes: the team's provider keys as the hub sealed them to this node, each provider's client, its
-// template (built in the team's own account by itself on first use), and a box's whole life: created from the
+// template (built in the team's own account in the background when the keys come, and while it isn't there boxes
+// start from the last good one: `template`), and a box's whole life: created from the
 // template with labels and a lifetime and no secret, its bootstrap started with the box's own secret, fleetd handed
 // to it, and the guest's link opened (../box.ts). One box per agent; the node that made it destroys it, and reaps any
 // box of its own it no longer knows (`reap`).
@@ -11,16 +12,16 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Size } from "../../../sandbox/providers/index.ts";
+import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
 import { hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
-import { ASIDE_MS, NAMES } from "../../../shared/sandbox.ts";
+import { ASIDE_MS, NAMES, RATE_MS } from "../../../shared/sandbox.ts";
 import type { SandboxTrouble } from "../../../shared/node_link.ts";
 import { leadChannel, leadSocketPath, type LeadSocketHooks } from "../../lead/index.ts";
 import { Box, type Relay } from "../box.ts";
-import { stepped } from "../../place/hosted_steps.ts";
+import { type HostedStep, stepped } from "../../place/hosted_steps.ts";
 import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
 
@@ -37,6 +38,12 @@ const UP_MS = 90_000;
 
 type Opener = { open(sealed: Uint8Array): Uint8Array | null };
 
+/** A template's build on this machine (`Boxes.ahead`): `looked`, once the account's saved templates were read, this
+ * recipe's own when it is ready there (`own`) and the newest ready one of another recipe (`older`, the last good);
+ * `done`, the recipe's own once it is there; `failed`, set when it didn't build, until the next build ahead; `id`, set
+ * once it is there. */
+type Run = { looked: Promise<{ own?: string; older?: { id: string; at: string } }>; done: Promise<string>; failed?: boolean; id?: string };
+
 /** What the node gives every box's link: how node.sock calls are answered. */
 export type Wiring = { lead: LeadSocketHooks };
 
@@ -48,7 +55,7 @@ export type BoxRecord = { kind: "hosted"; provider: ProviderId; boxId: string; s
 export class Boxes {
   #auth = new Map<ProviderId, ProviderAuth>();
   #clients = new Map<ProviderId, Provider>();
-  #templates = new Map<string, Promise<string>>();
+  #runs = new Map<string, Run>();
   #wiring: Wiring | undefined;
   #reaper: ReturnType<typeof setInterval> | undefined;
   /** Providers that failed to make a box lately (a refused key, a limit, billing, an outage): until when, and why. */
@@ -109,10 +116,13 @@ export class Boxes {
       else if (!b64) {
         this.#auth.delete(p);
         this.#clients.delete(p);
-        for (const k of [...this.#templates.keys()]) if (k === p || k.startsWith(`${p}-`)) this.#templates.delete(k);
+        for (const k of [...this.#runs.keys()]) if (k === p || k.startsWith(`${p}-`)) this.#runs.delete(k);
         rmSync(this.#keyFile(p), { force: true });
       }
     }
+    // The hub sends the keys at each link and when one is connected: the template is built then, in the background,
+    // never at a person's message.
+    for (const p of this.connected()) this.ahead(p);
   }
 
   /** The providers this node holds a key for. */
@@ -134,8 +144,10 @@ export class Boxes {
   /** A provider that couldn't make a box is offered to the hub's placement no more for DOWN_MS: the agents it would
    * take run here or wait in line, rather than fail on it again. */
   setAside(p: ProviderId, why: string, now = Date.now(), reason: Reason = "failed"): void {
-    this.#down.set(p, { until: now + DOWN_MS, why, reason });
-    console.warn(`${nowIso()} WARN a hosted provider is set aside for ${DOWN_MS / 60_000} minutes {"provider":"${p}","why":${JSON.stringify(why)}}`);
+    // Its start rate frees by itself within a minute: asked again then, not in DOWN_MS.
+    const ms = reason === "rate" ? RATE_MS : DOWN_MS;
+    this.#down.set(p, { until: now + ms, why, reason });
+    console.warn(`${nowIso()} WARN a hosted provider is set aside for ${ms / 60_000} minutes {"provider":"${p}","why":${JSON.stringify(why)}}`);
   }
 
   /** Every provider set aside is offered again at once: the hub's fresh word (a key that works again, a change). */
@@ -188,56 +200,104 @@ export class Boxes {
     return templateName(hostedDockerfile());
   }
 
-  /** The template boxes start from: built in the team's account once per recipe, by itself, the first time it's
-   * needed. A machine that has no note of it (its home was wiped, or another machine of the team built it) looks it
-   * up at the provider by its name first, and builds it only when the account has none ready. boat sizes a box at
-   * create, so one serves every size; a provider that fixed a box's size in its template would build one per size
-   * (`<name>-<cpu>c<mem>g`). `onBuild`: called when this machine has no note of it (a lookup or build starts, or one
-   * is under way). */
-  template(p: ProviderId, size: Size = DEFAULT_SIZE, onBuild?: () => void): Promise<string> {
-    const recipe = hostedDockerfile();
-    const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
-    const name = `${this.templateName()}${sized}`;
-    const file = join(this.home, "sandbox", `template-${p}${sized}.json`);
-    const key = `${p}${sized}`;
+  /** The template a box starts from now. This recipe's own when the account has it (this machine's note of it, else
+   * found at the provider by its name). While it isn't, the newest ready template of an older recipe (the last good:
+   * fleetd itself reaches the box at its start, so an older one only has older pinned tools), said in the start's
+   * progress (`said`) and the log, while this recipe's is built in the background (`ahead`). Only an account with no
+   * template at all waits on a build. boat sizes a box at create, so one serves every size; a provider that fixed a
+   * box's size in its template would build one per size (`<name>-<cpu>c<mem>g`). */
+  async template(p: ProviderId, size: Size = DEFAULT_SIZE, said?: (step: HostedStep) => void): Promise<string> {
+    const { name, file, key } = this.#named(p, size);
     let kept: { name?: string; id?: string } = {};
     try {
       kept = JSON.parse(readFileSync(file, "utf8"));
     } catch {}
-    if (kept.name === name && kept.id) return Promise.resolve(kept.id);
-    onBuild?.();
-    let building = this.#templates.get(key);
-    if (!building) {
-      const client = this.client(p);
-      const keep = (id: string) => {
-        mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
-        writeFileSync(file, JSON.stringify({ name, id }));
-        return id;
-      };
-      building = (client.built?.(name) ?? Promise.resolve(undefined))
-        // A lookup that fails builds, as one that finds none.
-        .catch(() => undefined)
-        .then((found) => {
-          if (found) {
-            console.log(`${nowIso()} INFO the hosted sandbox template is there already {"provider":"${p}","name":"${name}"}`);
-            return keep(found);
-          }
-          console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
-          return client.build(recipe, { name, size, onLog: () => {} }).then((id) => {
-            console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
-            return keep(id);
-          });
-        })
-        .catch((error: unknown) => {
-          // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
-          if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
-          console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify(error.message)}}`);
-          throw new ProviderError("failed", `${NAMES[p]}'s sandbox template didn't build`);
-        });
-      building.catch(() => this.#templates.delete(key));
-      this.#templates.set(key, building);
+    if (kept.name === name && kept.id) return kept.id;
+    let run = this.#runs.get(key) ?? this.ahead(p, size)!;
+    const { own, older } = await run.looked;
+    // A build that is done answers at once; one that failed is tried again only when there is no other to start from.
+    if (run.id ?? own) return (run.id ?? own)!;
+    if (older) {
+      const from = new Date(older.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+      said?.({ older: from, building: !run.failed });
+      console.log(`${nowIso()} INFO a box starts from an older hosted sandbox template {"provider":"${p}","name":"${name}","from":"${older.id}","building":${!run.failed}}`);
+      return older.id;
     }
-    return building;
+    if (run.failed) run = this.ahead(p, size)!;
+    said?.("template");
+    return run.done;
+  }
+
+  /** The recipe's template name for `p` and `size`, this machine's note of it, and its key among the runs. */
+  #named(p: ProviderId, size: Size) {
+    const sized = (p as string) !== "boat" && !sameSize(size, DEFAULT_SIZE) ? `-${size.cpu}c${size.memGb}g` : "";
+    return { name: `${this.templateName()}${sized}`, sized, file: join(this.home, "sandbox", `template-${p}${sized}.json`), key: `${p}${sized}` };
+  }
+
+  /** Builds this recipe's template in the background unless it is there or under way: the account's saved templates
+   * are read first, and one ready under its name is noted, one still saving (another machine's build) waited for,
+   * never saved over; else it is built. A run that failed stays failed (boxes start from the last good) until the next
+   * call: the next link or connected key. Undefined when the template is noted already. */
+  ahead(p: ProviderId, size: Size = DEFAULT_SIZE): Run | undefined {
+    const { name, sized, file, key } = this.#named(p, size);
+    const was = this.#runs.get(key);
+    if (was && !was.failed) return was;
+    try {
+      const kept = JSON.parse(readFileSync(file, "utf8")) as { name?: string; id?: string };
+      if (kept.name === name && kept.id) return undefined;
+    } catch {}
+    let client: Provider;
+    try {
+      client = this.client(p);
+    } catch (error) {
+      const r: Run = { looked: Promise.resolve({}), done: Promise.reject(error), failed: true };
+      r.done.catch(() => {});
+      return r;
+    }
+    const recipe = hostedDockerfile();
+    const keep = (id: string) => {
+      mkdirSync(join(this.home, "sandbox"), { recursive: true, mode: 0o700 });
+      writeFileSync(file, JSON.stringify({ name, id }));
+      run.id = id;
+      return id;
+    };
+    // A lookup that fails builds, as one that finds none.
+    const list = (client.saved?.("fleetd-") ?? Promise.resolve([] as Saved[])).catch(() => [] as Saved[]);
+    const run: Run = {
+      looked: list.then((all) => ({ ...(all.some((t) => t.name === name && t.status === "ready") ? { own: name } : {}), older: lastGood(all, name, sized) })),
+      done: Promise.resolve(""),
+    };
+    run.done = list
+      .then(async (all) => {
+        const own = all.find((t) => t.name === name);
+        if (own?.status === "ready") {
+          console.log(`${nowIso()} INFO the hosted sandbox template is there already {"provider":"${p}","name":"${name}"}`);
+          return keep(name);
+        }
+        if (own?.status === "saving" && client.settled) {
+          console.log(`${nowIso()} INFO the hosted sandbox template is being saved by another machine {"provider":"${p}","name":"${name}"}`);
+          return keep(await client.settled(name));
+        }
+        console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
+        let release = () => {};
+        try {
+          const id = await client.build(recipe, { name, size, onLog: () => {}, labels: { [MACHINE_LABEL]: label(this.machineId) }, onBox: (box) => void (release = this.hold(box)) });
+          console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
+          return keep(id);
+        } finally {
+          release();
+        }
+      })
+      .catch((error: unknown) => {
+        run.failed = true;
+        console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify((error as Error).message)}}`);
+        // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
+        if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
+        throw new ProviderError("failed", `${NAMES[p]}'s sandbox template didn't build`);
+      });
+    run.done.catch(() => {});
+    this.#runs.set(key, run);
+    return run;
   }
 
   /** Where this node's fleetd comes from for a box: its own binary, and its release asset where it has one. */
@@ -262,7 +322,7 @@ export class Boxes {
     // A size the provider has no exact box of is refused here, before any box or template is made.
     const not = size ? notOffered(p, size, NAMES[p]) : undefined;
     if (not) throw new ProviderError("failed", not);
-    const template = o.template ?? (await this.template(p, size, () => stepped(session, "template")));
+    const template = o.template ?? (await this.template(p, size, (step) => stepped(session, step)));
     // A key per attempt, never the session's: boat keeps a key a day after its box is gone, and a session's next
     // box must be a new one.
     const key = `fleetd-${randomBytes(12).toString("hex")}`;
@@ -395,6 +455,14 @@ export class Boxes {
   stop(): void {
     if (this.#reaper) clearInterval(this.#reaper);
   }
+}
+
+/** The newest ready template of another recipe than `name` (`fleetd-<hash><sized>`, never a bot's computer image),
+ * with when it was saved. */
+function lastGood(all: Saved[], name: string, sized: string): { id: string; at: string } | undefined {
+  const re = new RegExp(`^fleetd-[0-9a-f]{12}${sized.replace(/[^a-z0-9-]/g, "")}$`);
+  const ready = all.filter((t) => t.status === "ready" && t.name !== name && re.test(t.name)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return ready[0] ? { id: ready[0].name, at: ready[0].at } : undefined;
 }
 
 /** Hosted boxes are x86_64 Linux, and each runs the node's own fleetd: only an x86_64 node can make them. */

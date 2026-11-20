@@ -84,7 +84,19 @@ export type StartOptions = {
   signal?: AbortSignal;
 };
 
-export type BuildOptions = { name: string; size?: Size; signal?: AbortSignal; onLog?: (line: string) => void };
+export type BuildOptions = {
+  name: string;
+  size?: Size;
+  signal?: AbortSignal;
+  onLog?: (line: string) => void;
+  /** Labels the build's box carries besides fleetd's own (the machine's, so its reaper takes one a dead build left). */
+  labels?: Record<string, string>;
+  /** Called with the build box's id once it is made, before its first step: its machine keeps it from the reaper. */
+  onBox?: (id: string) => void;
+};
+
+/** A template or image saved in the account (`build`'s, `snapshot`'s): its name, its state, and when it was saved. */
+export type Saved = { name: string; status: "saving" | "ready" | "failed"; at: string };
 
 /** What fleetd does with a provider: nothing more. */
 export interface Provider {
@@ -105,9 +117,12 @@ export interface Provider {
   lifetime(id: string, ms: number, o?: { signal?: AbortSignal }): Promise<void>;
   /** Builds `dockerfile` (one FROM, then RUN/ENV/WORKDIR/USER only) into the team's account as `o.name`; answers what `create` takes. */
   build(dockerfile: string, o: BuildOptions): Promise<string>;
-  /** The template `build` named `name`, when the account has it ready (a runner whose home was wiped finds it again
-   * rather than build it anew); undefined when it has none, or one not ready. */
-  built?(name: string, o?: { signal?: AbortSignal }): Promise<string | undefined>;
+  /** The account's saved templates and images whose name starts with `prefix`, in any state, in one call: a machine
+   * whose home was wiped finds this recipe's template again, or the newest one that is ready, rather than build. */
+  saved?(prefix: string, o?: { signal?: AbortSignal }): Promise<Saved[]>;
+  /** Waits for a save of `name` under way (another machine's build of it) to settle: answers what `create` takes, or
+   * throws as `build` does when it failed. */
+  settled?(name: string, o?: { signal?: AbortSignal }): Promise<string>;
   /** Saves the box's disk as `name`, what `create` then takes as its template (a bot's computer image); a provider
    * without it gives its bots no image, and their boxes start from the template and run setup. */
   snapshot?(id: string, name: string, o?: { signal?: AbortSignal }): Promise<string>;

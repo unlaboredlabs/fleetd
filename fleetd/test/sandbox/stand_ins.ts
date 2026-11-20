@@ -27,12 +27,15 @@ export type StandIn = {
   upgrades: Headers[];
   /** Milliseconds each frame on a box's link waits, each way: a provider's proxy between the node and the box. */
   latencyMs: number;
+  /** boat's saved snapshots by name: how many times each was asked after (ready from the second), when it was saved,
+   * and one that failed. A test puts one in as another machine (or an older release) saved it. */
+  saved?: Map<string, { asked: number; at: string; failed?: boolean }>;
   stop(): void;
 };
 
 type Handler = (c: Call, s: StandIn) => Response | Promise<Response>;
 /** How a command a client starts (not a box's start) ends: its exit code and output. */
-export type Step = (command: string) => { exitCode: number; stdout?: string; stderr?: string };
+export type Step = (command: string) => { exitCode: number; stdout?: string; stderr?: string; running?: boolean };
 
 /** Runs what a client starts in a box, here. */
 export type Runner = {
@@ -146,7 +149,9 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
   const idem = new Map<string, string>();
   const commands: any[] = [];
   const ended = new Map<number, ReturnType<Step>>();
-  const saved = new Map<string, number>();
+  const saved = new Map<string, { asked: number; at: string; failed?: boolean }>();
+  /** A snapshot as boat answers it: "saving" until it was asked after once, then "ready" (or "failed"). */
+  const info = (name: string, v: { asked: number; at: string; failed?: boolean }) => ({ name, status: v.failed ? "failed" : v.asked < 2 ? "saving" : "ready", sourceSandboxId: "x", createdAt: v.at });
   const s = serve(
     (h) => h.get("authorization") === `Bearer ${KEY}`,
     (c, s) => {
@@ -211,8 +216,15 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
       m = /^\/sandboxes\/([^/]+)\/host$/.exec(p);
       if (m) return Response.json({ ok: true, type: "port.hosted", success: true, port: c.body.port, url: `${s.url}/ws/${m[1]}?_token=port-token`, isProtected: true, access: "private" });
       if (c.method === "POST" && p === "/saved-snapshots") {
-        saved.set(c.body.name, 0);
+        const was = saved.get(c.body.name);
+        if (was && !was.failed && was.asked < 2) return Response.json({ ok: false, code: "save_in_progress", message: "A save under this name is running" }, { status: 409 });
+        saved.set(c.body.name, { asked: 0, at: new Date().toISOString() });
         return Response.json({ ok: true, snapshot: { name: c.body.name, status: "saving" } }, { status: 202 });
+      }
+      if (c.method === "GET" && p === "/saved-snapshots") {
+        const prefix = c.query.get("namePrefix") ?? "";
+        const all = [...saved].filter(([n]) => n.startsWith(prefix)).map(([n, v]) => info(n, v));
+        return Response.json({ ok: true, type: "snapshot.saved.list", snapshots: all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
       }
       m = /^\/saved-snapshots\/([^/]+)$/.exec(p);
       if (m && c.method === "DELETE") {
@@ -221,15 +233,16 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
       }
       if (m && !saved.has(m[1]!)) return Response.json({ ok: false, code: "snapshot_not_found", message: "Saved snapshot not found" }, { status: 404 });
       if (m) {
-        const k = (saved.get(m[1]!) ?? 0) + 1;
-        saved.set(m[1]!, k);
-        return Response.json({ ok: true, snapshot: { name: m[1], status: k < 2 ? "saving" : "ready", sourceSandboxId: "x", createdAt: "2026-01-01T00:00:00Z" } });
+        const v = saved.get(m[1]!)!;
+        v.asked++;
+        return Response.json({ ok: true, snapshot: info(m[1]!, v) });
       }
       return Response.json({ ok: false, code: "not_found", message: `no route ${c.method} ${p}` }, { status: 404 });
     },
     (_h, url) => url.searchParams.get("_token") === "port-token",
     runner,
   );
+  s.saved = saved;
   return s;
 }
 

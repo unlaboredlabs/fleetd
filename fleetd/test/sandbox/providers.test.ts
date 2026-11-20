@@ -10,7 +10,7 @@ import { boatStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { SAVE_MS, STEP_MS, TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
 import { DEFAULT_SIZE, SIZES } from "../../src/sandbox/providers/common.ts";
-import { hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
+import { CLAUDE_LINUX_X64, hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
 import { envFile, launcher } from "../../src/sandbox/providers/shell.ts";
 
 const running: StandIn[] = [];
@@ -215,7 +215,7 @@ describe("refusals in plain words", () => {
   const cases: [ProviderId, number, unknown, string, RegExp][] = [
     ["boat", 402, { ok: false, code: "billing_required", message: "Add a card", error: { code: "billing_required", message: "Add a card", status: 402 } }, "billing", /billing is sorted out/],
     ["boat", 429, { ok: false, code: "limit_reached", message: "100 at once" }, "limit", /sandboxes at once/],
-    ["boat", 429, { ok: false, code: "rate_limited", message: "12 per minute", window: "minute" }, "limit", /sandbox starts/],
+    ["boat", 429, { ok: false, code: "rate_limited", message: "12 per minute", window: "minute" }, "rate", /sandbox starts/],
     ["boat", 403, { ok: false, code: "trial_machine_class_not_allowed", message: "Needs a paid plan" }, "billing", /doesn't include that sandbox size/],
   ];
   for (const [id, status, body, reason, words] of cases) {
@@ -350,12 +350,17 @@ describe("the recipe", () => {
     const sha = "b".repeat(64);
     const d = hosted(DOCKERFILE, { claude: "2.1.314", fleetd: { url: "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-linux-x64-0123456789abcdef", sha256: sha } });
     expect(d.startsWith(DOCKERFILE.trimEnd())).toBe(true);
-    expect(d).toContain("bash /tmp/claude-install.sh 2.1.314");
+    // Claude Code's own build, fetched and checked, never its install script.
+    expect(d).toContain("https://downloads.claude.ai/claude-code-releases/2.1.314/linux-x64/claude");
+    expect(d).toContain(`echo '${CLAUDE_LINUX_X64["2.1.314"]}  /opt/claude/claude-2.1.314' | sha256sum -c -`);
+    expect(d).not.toContain("install.sh");
     expect(d).toContain(`echo '${sha}  /usr/local/bin/fleetd' | sha256sum -c -`);
     expect(parse(d).steps.at(-1)).toEqual({ op: "ENV", args: ["DISABLE_AUTOUPDATER", "1"] });
     expect(templateName(d)).toMatch(/^fleetd-[0-9a-f]{12}$/);
     expect(templateName(d)).not.toBe(templateName(DOCKERFILE));
     expect(() => hosted(DOCKERFILE, { claude: "latest", fleetd: { url: "https://x", sha256: sha } })).toThrow("isn't a version");
+    // A version with no pinned checksum isn't installed at all.
+    expect(() => hosted(DOCKERFILE, { claude: "2.1.1" })).toThrow("no pinned SHA-256");
   });
 
   test("launcher: quoted argv, the environment file read and removed, no stdin", () => {

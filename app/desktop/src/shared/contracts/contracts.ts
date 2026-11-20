@@ -5099,7 +5099,7 @@ export type NodeLoad = {
  */
 export type NodeSandboxTrouble = {
   provider: string;
-  /** Its kind: invalid_key, limit, billing, unreachable or failed (SandboxCheckReason). */
+  /** Its kind: invalid_key, limit, billing, rate, unreachable or failed (SandboxCheckReason). */
   reason: string;
   /** Epoch ms; only for `start`. */
   until?: number;
@@ -7199,7 +7199,7 @@ export type SafetyRule = {
  * refused it), `limit` (the account is at its plan's limit), `billing` (the account can't pay), `unreachable` (the
  * provider didn't answer), `failed` (anything else, or no machine could test it).
  */
-export type KnownSandboxCheckReason = "invalid_key" | "limit" | "billing" | "unreachable" | "failed";
+export type KnownSandboxCheckReason = "invalid_key" | "limit" | "billing" | "rate" | "unreachable" | "failed";
 /** KnownSandboxCheckReason, or a value from a newer hub. */
 export type SandboxCheckReason = KnownSandboxCheckReason | (string & {});
 
