@@ -31,9 +31,16 @@ export type Scope = { caller: Caller; board: boolean; focus?: WorkstreamId; agen
 /** The connection's running subscription. */
 const running = new WeakMap<AppConn, { stop: () => void }>();
 
-/** One tick's lanes, without duplicates: the focus's, the agent's, then the board's on a board tick; each part goes
- * through `read`, told whether its text is sent. */
-function lanesOf(hub: Hub, scope: Scope, boardTick: boolean, read: (lanes: LaneNow[], focus: boolean) => LaneNow[]): LaneNow[] {
+/** One tick's lanes, without duplicates: the focus's, the agent's, then the board's on a board tick, else the lanes
+ * whose threads moved since the frame before (`moved`, read after the focus's); each part but `moved` goes through
+ * `read`, told whether its text is sent. */
+function lanesOf(
+  hub: Hub,
+  scope: Scope,
+  boardTick: boolean,
+  read: (lanes: LaneNow[], focus: boolean) => LaneNow[],
+  moved: () => LaneNow[],
+): LaneNow[] {
   const lanes: LaneNow[] = [];
   const seen = new Set<string>();
   const add = (more: LaneNow[]) => {
@@ -46,6 +53,7 @@ function lanesOf(hub: Hub, scope: Scope, boardTick: boolean, read: (lanes: LaneN
   if (scope.focus) add(read(focusLanes(hub, scope.caller, scope.focus), true));
   if (scope.agent) add(read(agentLanes(hub, scope.caller, scope.agent), true));
   if (scope.board && boardTick) add(read(boardLanes(hub, scope.caller), false));
+  else add(moved());
   return lanes;
 }
 
@@ -78,6 +86,17 @@ export function subscribe(hub: Hub, ws: AppWs, conn: AppConn, scope: Scope, tick
     }
     return lanes;
   };
+  /** The lanes whose threads moved, their streamed text only on a focused one. */
+  const movedLanes = () => {
+    const lanes: LaneNow[] = [];
+    for (const id of moved) {
+      for (const l of agentLanes(hub, scope.caller, id)) {
+        if (!focused.has(id)) delete l.text;
+        lanes.push(l);
+      }
+    }
+    return lanes;
+  };
   const step = () => {
     if (conn.closed || hub.shutdown.signal.aborted) return stop();
     const now = hub.clock.now();
@@ -92,7 +111,7 @@ export function subscribe(hub: Hub, ws: AppWs, conn: AppConn, scope: Scope, tick
       if (boardTick) lanesBy.clear();
       frame = pump.frame({
         nowMs: now,
-        lanes: lanesOf(hub, scope, boardTick, read),
+        lanes: lanesOf(hub, scope, boardTick, read, movedLanes),
         boardComplete: !scope.board || boardTick,
         ...(m ? { machines: m } : {}),
         ...(s ? { slots: s } : {}),
@@ -116,13 +135,7 @@ export function subscribe(hub: Hub, ws: AppWs, conn: AppConn, scope: Scope, tick
     if (boardMoved) return step();
     let frame;
     try {
-      const lanes: LaneNow[] = [];
-      for (const id of moved) {
-        for (const l of agentLanes(hub, scope.caller, id)) {
-          if (!focused.has(id)) delete l.text;
-          lanes.push(l);
-        }
-      }
+      const lanes = movedLanes();
       moved.clear();
       frame = pump.frame({ nowMs: now, lanes, boardComplete: false });
     } catch (error) {
