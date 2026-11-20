@@ -155,7 +155,7 @@ test("the server stays usable past its token's life: each request takes the newe
   paper.endAll();
   await r.deliver(call(3));
   expect(last()).toMatchObject({ id: 3, result: { content: [{ text: "a frame" }] } });
-  expect(hub.asks).toEqual([{ server: "paper" }]);
+  expect(hub.asks).toEqual([{ server: "paper", fingerprint: expect.stringMatching(/^[0-9a-f]{8}$/) }]);
 
   // A session the server forgot is started again, and the call goes through.
   paper.s.sessions.clear();
@@ -190,7 +190,10 @@ test("a dead sign-in, a refused renewal and an unreachable server answer in word
   hub.mode = "refused";
   hub.asks = [];
   await r.deliver(call(3));
-  expect(hub.asks).toEqual([{ server: "paper" }, { server: "paper", refused: true }]);
+  expect(hub.asks).toEqual([
+    { server: "paper", fingerprint: expect.any(String) },
+    { server: "paper", fingerprint: expect.any(String), refused: true },
+  ]);
   expect(textOf(last())).toContain("Reconnect on paper");
 
   // The server is down for a while: it says so, and the next call after works.
@@ -314,7 +317,7 @@ test("the older SSE transport is relayed too: a turned-away POST renews, and a d
     paper.endAll();
     await r.deliver(call(2));
     expect(out.at(-1)).toMatchObject({ id: 2, result: { content: [{ text: "old frame" }] } });
-    expect(hub.asks).toEqual([{ server: "old" }]);
+    expect(hub.asks).toEqual([{ server: "old", fingerprint: expect.any(String) }]);
     // The server drops the stream: the next call opens it again, initializes the new session itself, and goes.
     old.drop();
     await Bun.sleep(20);

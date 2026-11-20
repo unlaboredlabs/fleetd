@@ -2761,6 +2761,11 @@
     "McpOauthRenewCall": {
       "description": "`mcp_oauth_renew`: a server that signs in with OAuth turned an agent's relay away (HTTP 401). The hub finds the\nserver of that name the session's bot gets and renews its token now, handing it to the machine before it answers;\nwith `refused`, the token just renewed was turned away too, and the server is signed out.",
       "properties": {
+        "fingerprint": {
+          "description": "The fingerprint of the token the agent was turned away with, as its node holds it: one older than the\nhub's current token is neither renewed again nor signed out.",
+          "pattern": "^[0-9a-f]{8}$",
+          "type": "string"
+        },
         "refused": {
           "description": "The token just renewed was turned away as well.",
           "type": "boolean"

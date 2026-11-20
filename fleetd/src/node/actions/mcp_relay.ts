@@ -41,7 +41,9 @@ export async function renew(
   if ("refused" in now || now.fingerprint !== stale) return now;
   let out: Record<string, unknown>;
   try {
-    out = await ask({ server: name, ...(refused ? { refused: true } : {}) });
+    // The token's fingerprint goes too: the hub acts only on its current token, never on one another agent's
+    // renewal has replaced since.
+    out = await ask({ server: name, fingerprint: stale, ...(refused ? { refused: true } : {}) });
   } catch (e) {
     const why = e instanceof ToolError ? e.message : (e as Error).message;
     return { refused: `fleetd couldn't ask its hub to renew ${name}'s sign-in (${why})`, signedOut: false };

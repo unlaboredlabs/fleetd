@@ -725,11 +725,24 @@ export function forget(hub: Hub, scope: McpScope, name: string): Promise<void> {
   });
 }
 
-/** Renews the server's token now, as when the server turned the token away before it was due. */
-export function renewNow(hub: Hub, scope: McpScope, name: string): Promise<Renewed> {
+/**
+ * The token an agent was turned away with (`stale`, the fingerprint its node holds) is older than the hub's: another
+ * agent's turn-away renewed it in between. Nothing is renewed or signed out for it; the current token goes to the
+ * machines that still lack it, and the agent tries that one.
+ */
+async function superseded(hub: Hub, row: Row, stale: string | undefined): Promise<boolean> {
+  if (stale === undefined || !row.access || printOf(openOwn(hub, row.access)) === stale) return false;
+  await push(hub, row).catch((e) => console.info(`a renewed MCP token waits for its machine (${row.name}): ${(e as Error).message}`));
+  return true;
+}
+
+/** Renews the server's token now, as when the server turned the token away before it was due: unless `stale`, the
+ * token it turned away, is older than the hub's current one (`superseded`). */
+export function renewNow(hub: Hub, scope: McpScope, name: string, stale?: string): Promise<Renewed> {
   return one(hub, async () => {
     const row = getRow(hub, scope, name);
     if (!row?.access) return "signed_out";
+    if (await superseded(hub, row, stale)) return "yes";
     return renew(hub, row);
   });
 }
@@ -737,12 +750,14 @@ export function renewNow(hub: Hub, scope: McpScope, name: string): Promise<Renew
 /**
  * An agent's relay was turned away with the token just renewed (`mcp_oauth_renew` with `refused`): the service no
  * longer takes this sign-in, so the server is signed out, which Settings and the chat say, and its token leaves the
- * machine.
+ * machines. Only for the hub's current token: one older than it (`stale`, superseded by another agent's renewal)
+ * never signs out.
  */
-export function turnedAway(hub: Hub, scope: McpScope, name: string): Promise<Renewed> {
+export function turnedAway(hub: Hub, scope: McpScope, name: string, stale?: string): Promise<Renewed> {
   return one(hub, async (): Promise<Renewed> => {
     const row = getRow(hub, scope, name);
     if (!row?.access) return "signed_out";
+    if (await superseded(hub, row, stale)) return "yes";
     const host = row.record.client ? oauth.hostOf(row.record.client.issuer) : name;
     await signOut(hub, row, `${host} turned away the sign-in fleetd had just renewed, so you need to sign in again.`);
     return "signed_out";
