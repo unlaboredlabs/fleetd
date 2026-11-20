@@ -937,7 +937,7 @@ export class SessionService {
       .filter((r) => r.summary.projectId === projectId && r.local.baseRef && r.summary.worktreePath && existsSync(r.local.cwd));
     const [dirty, baseBranch] = await Promise.all([
       worktree.uncommittedAll(held.map((r) => r.local.cwd)),
-      worktree.hasCommit(root).then((has) => (has ? worktree.defaultBranch(root) : undefined)),
+      worktree.hasCommit(root).then((has) => (has ? worktree.knownDefaultBranch(root) : undefined)),
     ]);
     const worktrees = held.map((r, i) => ({
       sessionId: r.summary.sessionId,
