@@ -24,6 +24,7 @@ import {
 const at = "2026-11-17T09:00:00.000Z";
 const sb = (provider: string, connected: boolean, limit = connected ? 5 : 0) => ({ provider, connected, limit });
 const BOX = "box";
+const BILLING = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard" };
 
 describe("Settings › Machines", () => {
   it("lists the team's computers, never the hub's runner for hosted sandboxes", () => {
@@ -59,21 +60,24 @@ describe("its providers", () => {
     expect(providersOf(undefined)).toEqual([]);
   });
 
-  it("says each one's state: not connected, its limit, connected, or a check that failed", () => {
+  it("says each one's real state, as the desktop's row: not connected, starting, how many run, its account, or why it can't", () => {
+    const online = { status: "online" } as const;
     expect(providerValue({ id: "boat", connected: false, limit: 0 })).toEqual({ text: "Not connected", problem: false });
-    expect(providerValue({ id: "boat", connected: true, limit: 20 })).toEqual({ text: "20 at once", problem: false });
-    expect(providerValue({ id: "boat", connected: true, limit: 0 })).toEqual({ text: "None at once", problem: false });
+    expect(providerValue({ id: "boat", connected: true, limit: 20, running: 3 }, online)).toEqual({ text: "3 of 20 running", problem: false });
+    expect(providerValue({ id: "boat", connected: true, limit: 20 })).toEqual({ text: "0 of 20 running", problem: false });
     expect(providerValue({ id: "modal", connected: true })).toEqual({ text: "Connected", problem: false });
-    expect(providerValue({ id: "boat", connected: true, limit: 5, check: { ok: false, at } })).toEqual({ text: "Check failed", problem: true });
+    expect(providerValue({ id: "boat", connected: true, limit: 20 }, { status: "degraded", degradedCause: "starting" })).toEqual({ text: "Starting…", problem: false });
+    expect(providerValue({ id: "boat", connected: true, limit: 20 }, { status: "degraded", degradedCause: "claude_login" })).toEqual({ text: "Needs a Claude account", problem: false, warn: true });
+    expect(providerValue({ id: "boat", connected: true, limit: 20, trouble: BILLING }, online)).toEqual({ text: "Couldn't start", problem: true });
+    expect(providerValue({ id: "boat", connected: true, limit: 5, check: { ok: false, at } })).toEqual({ text: "Key refused", problem: true });
   });
 
-  it("says what they cost and the order, and that none runs agents yet while none does", () => {
-    expect(providersFooter({ placing: true })).toContain("which bill you");
-    expect(providersFooter({ placing: true })).not.toContain("yet");
-    expect(providersFooter({ placing: false })).toContain("Agents don't run in hosted sandboxes yet");
+  it("says what they cost and the order, and no stale line about agents not running there", () => {
+    expect(providersFooter({})).toContain("which bill you");
+    expect(providersFooter({})).not.toContain("yet");
     // A provider fleetd removed that the hub had connected: its line after them, for as long as the hub lists it.
     const gone = "Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine.";
-    expect(providersFooter({ placing: true, removed: [gone] }).endsWith(`once your machines are full.\n\n${gone}`)).toBe(true);
+    expect(providersFooter({ removed: [gone] }).endsWith(`once your machines are full.\n\n${gone}`)).toBe(true);
   });
 
   it("offers none up to 500, keeping one set that isn't a step", () => {
@@ -87,11 +91,21 @@ describe("its providers", () => {
   it("puts a failed check with its fix on a provider's screen, else nothing", () => {
     expect(providerFooter({ id: "boat", connected: false })).toBeUndefined();
     expect(providerFooter({ id: "boat", connected: true, check: { ok: true, at } })).toBeUndefined();
-    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at, message: "boat.dev refused the key (401).", fix: "make a new one" } })).toEqual({
-      text: "boat.dev refused the key (401). Make a new one.",
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at, message: "boat.dev refused the key.", fix: "make a new key in boat.dev's dashboard and connect it again" } })).toEqual({
+      text: "boat.dev refused the key. Make a new key in boat.dev's dashboard and connect it again.",
       problem: true,
+      action: "test",
     });
-    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "boat.dev didn't take the key.", problem: true });
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "boat.dev didn't take the key.", problem: true, action: "test" });
+    // A refusal at boat.dev: why, its fix and Try again; no Claude account: Connect; starting or ready, nothing.
+    expect(providerFooter({ id: "boat", connected: true, limit: 20, trouble: BILLING }, { status: "online" })).toEqual({
+      text: "Couldn't start: boat.dev refused: billing isn't set up on the account. Set up billing in boat.dev's dashboard.",
+      problem: true,
+      action: "retry",
+    });
+    expect(providerFooter({ id: "boat", connected: true, limit: 20 }, { status: "degraded", degradedCause: "claude_login" })).toEqual({ text: "Needs a Claude account", problem: false, action: "connect" });
+    expect(providerFooter({ id: "boat", connected: true, limit: 20 }, { status: "degraded", degradedCause: "starting" })).toBeUndefined();
+    expect(providerFooter({ id: "boat", connected: true, limit: 20, running: 2 }, { status: "online" })).toBeUndefined();
   });
 });
 

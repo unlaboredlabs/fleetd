@@ -444,7 +444,7 @@ export async function startNode(
   registerAreas(node);
   // The hub's own runner: every session in a box of the first connected provider the hub didn't place it elsewhere in.
   if (config.runner) {
-    useRunner(() => sandboxesOf(node)?.placeable()[0]);
+    useRunner(() => sandboxesOf(node)?.forRunner());
     useGithubTokens(home);
   }
   // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).

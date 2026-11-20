@@ -25,6 +25,7 @@ import {
   providersFooter,
   providersOf,
   providerValue,
+  runnerOf,
   specOf,
   tailnetValue,
   tailnetWaiting,
@@ -108,6 +109,7 @@ export function Machines() {
     setTimeout(rereadTailnet, 1_000);
   };
   const providers = providersOf(sb);
+  const runner = runnerOf(state.machines);
   const failed = [sandboxes.value].flatMap((v) => (v !== undefined && !v.ok && v.error.code !== "not_found" ? [errorWords(v.error)] : []));
 
   const setDays = (retention: NonNullable<MachineRolesOutput["retention"]>) => {
@@ -166,14 +168,14 @@ export function Machines() {
       {providers.length === 0 && failed.length === 0 ? null : (
         <ListSection header="Providers" footer={providersFooter(sb)}>
           {providers.map((p) => {
-            const v = providerValue(p);
+            const v = providerValue(p, runner);
             return (
               <ListRow
                 key={p.id}
                 title={specOf(p.id).name}
                 detail={canWords(specOf(p.id))}
                 value={v.text}
-                {...(v.problem ? { valueColor: t.danger } : {})}
+                {...(v.problem ? { valueColor: t.danger } : v.warn === true ? { valueColor: t.warning } : {})}
                 onPress={() => navigation.navigate("Provider", { id: p.id })}
               />
             );

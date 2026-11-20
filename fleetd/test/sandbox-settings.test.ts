@@ -17,8 +17,9 @@ import { Boxes } from "../src/node/sandbox/remote/boxes.ts";
 import { slots } from "../src/hub/slots/index.ts";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { NodeAction } from "../src/shared/node_link.ts";
-import { addMachine, caller, testHub } from "./screens_helpers.ts";
+import type { NodeAction, NodeLoad } from "../src/shared/node_link.ts";
+import { RUNNER_ID } from "../src/shared/sandbox.ts";
+import { addMachine, addProject, caller, testHub } from "./screens_helpers.ts";
 
 let t: ReturnType<typeof testHub>;
 const admin = caller("admin", { kind: "human", name: "ana" });
@@ -81,7 +82,7 @@ test("connect: the key is kept sealed, checked at once on a machine of the team'
   ], linux: "ours_first" });
   await expect(call(member, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD) })).rejects.toThrow();
   const on = await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD) });
-  expect(on.providers[0]).toEqual({ provider: "boat", connected: true, limit: 5, check: { at: expect.any(String), ok: true } });
+  expect(on.providers[0]).toEqual({ provider: "boat", connected: true, limit: 5, check: { at: expect.any(String), ok: true }, running: 0 });
   expect(asked).toEqual([{ id: "boat", auth: { key: GOOD } }]);
   const stored = t.hub.db.conn.query<{ sealed: Uint8Array }, []>("SELECT sealed FROM sandbox_providers").get()!;
   expect(Buffer.from(stored.sealed).includes(Buffer.from(GOOD))).toBe(false);
@@ -94,13 +95,15 @@ test("a refused key says why, masked, with what fixes it; one nothing can test s
   const bad = await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(BAD), limit: 3 });
   const d = bad.providers[0];
   expect(d).toMatchObject({ provider: "boat", connected: true, limit: 3, check: { ok: false, reason: "invalid_key" } });
-  expect(d.check.message).toBe("devbox: boat refused the key …");
-  expect(d.check.fix).toContain("Make a new one in boat.dev's dashboard");
+  // No machine's name and no status code: the line is the provider's, whichever machine ran the test.
+  expect(d.check.message).toBe("boat.dev refused the key.");
+  expect(d.check.fix).toBe("make a new key in boat.dev's dashboard and connect it again");
   expect(JSON.stringify(bad)).not.toContain(BAD);
   t.link.unlink("devbox");
   const none = await call(admin, "sandbox_test", { provider: "boat" });
-  // With no machine, the hub's own runner tests it: here it never came up.
-  expect(none.providers[0].check).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("The hub's runner for hosted sandboxes didn't come up") });
+  // With no machine, the hub's own runner tests it: here it never came up. One plain reason and Try again; the log
+  // keeps the rest.
+  expect(none.providers[0].check).toMatchObject({ ok: false, reason: "failed", message: "The key couldn't be tested just now.", fix: "try again in a minute" });
 });
 
 test("a removed provider is refused saying why; a limit is 0 to 500; set and disconnect", async () => {
@@ -126,6 +129,55 @@ test("the Linux machine: machines first until set, a provider only or machines o
   expect((await call(admin, "sandbox_where_set", { linux: "boat" })).linux).toBe("boat");
   expect((await call(member, "sandbox_get")).linux).toBe("boat");
   expect((await call(admin, "sandbox_where_set", { linux: "ours_only" })).linux).toBe("ours_only");
+});
+
+test("a provider its runner set aside reaches the row with its reason and fix, and a queued agent's reason says the same", async () => {
+  machine(RUNNER_ID);
+  await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD), limit: 20 });
+  const runnerLoad = (extra: Partial<NodeLoad>): NodeLoad => ({ cpus: 4, load1: 0, ...extra });
+  // Three boxes run: the row's "3 of 20 running".
+  slots(t.hub).observeMachine(RUNNER_ID, "Hosted sandboxes", runnerLoad({ sandboxes: ["boat"], places: { a: "boat", b: "boat", c: "boat" } }));
+  expect((await call(member, "sandbox_get")).providers[0]).toMatchObject({ provider: "boat", connected: true, limit: 20, running: 3, check: { ok: true } });
+  expect((await call(member, "sandbox_get")).providers[0].trouble).toBeUndefined();
+  // boat.dev refused a box for billing (the stand-in's 402, as hosted_place.test.ts drives it): the runner's heartbeat
+  // says so and offers boat.dev no more. On main the row stayed green and the agent read "the hosted sandbox providers
+  // aren't ready on the hub yet".
+  const until = t.hub.clock.now() + 10 * 60_000;
+  const why = "boat won't run sandboxes on this account until its billing is sorted out (402 Payment required).";
+  slots(t.hub).observeMachine(RUNNER_ID, "Hosted sandboxes", runnerLoad({ sandboxTrouble: [{ provider: "boat", what: "start", reason: "billing", why, until }] }));
+  const row = (await call(member, "sandbox_get")).providers[0];
+  expect(row.trouble).toEqual({
+    what: "start",
+    reason: "billing",
+    message: "boat.dev refused: billing isn't set up on the account",
+    fix: "set up billing in boat.dev's dashboard",
+    until: new Date(until).toISOString(),
+  });
+  expect(JSON.stringify(row)).not.toContain("402");
+  addProject(t.hub, RUNNER_ID, "bot1");
+  const grant = slots(t.hub).acquire({ holder: "T1", projectRef: { machineId: RUNNER_ID, projectId: "bot1" }, priority: "work", hostable: true });
+  expect(grant).toEqual({ granted: false, reason: `boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying again at ${new Date(until).toISOString().slice(11, 16)}` });
+  // Try again: a test that works clears it on the row at once, and has the machines try boat.dev again.
+  await call(admin, "sandbox_test", { provider: "boat" });
+  expect((await call(member, "sandbox_get")).providers[0].trouble).toBeUndefined();
+  // Back: the heartbeat offers boat.dev again and says nothing is wrong; the row is clear and the agent starts.
+  slots(t.hub).observeMachine(RUNNER_ID, "Hosted sandboxes", runnerLoad({ sandboxes: ["boat"] }));
+  expect((await call(member, "sandbox_get")).providers[0].trouble).toBeUndefined();
+  expect(slots(t.hub).placeOf("T1")).toBe("boat");
+});
+
+test("the runner keeps a provider set aside as its pick, so a new lead's start says why rather than that none is connected", async () => {
+  machine("devbox");
+  await call(admin, "sandbox_connect", { provider: "boat", sealed: sealed(GOOD), limit: 4 });
+  const node = nodes.get("devbox")!;
+  for (let i = 0; node.placeable().length === 0 && i < 200; i++) await Bun.sleep(5);
+  expect(node.forRunner()).toBe("boat");
+  // Set aside: the slot board is offered it no more, but a session the hub placed nowhere still goes there and fails
+  // with boat.dev's reason (node/place/hosted.ts). On main the runner had no provider: "no hosted sandbox provider of the
+  // team's is connected".
+  (node as unknown as { boxes: Boxes }).boxes.setAside("boat", "boat won't run sandboxes on this account until its billing is sorted out.", Date.now(), "billing");
+  expect(node.placeable()).toEqual([]);
+  expect(node.forRunner()).toBe("boat");
 });
 
 test("limits and keys reach the team's machines in the fixed order, at each change and as one links, and the slot board", async () => {
@@ -164,7 +216,7 @@ for (const id of ["boat"] as const) {
       const wrong = "wrong-key-987654321";
       const off = await call(admin, "sandbox_connect", { provider: id, sealed: sealed(wrong) });
       const check = off.providers.find((p: { provider: string }) => p.provider === id).check;
-      expect(check).toMatchObject({ ok: false, reason: "invalid_key", message: expect.stringMatching(/^devbox: /) });
+      expect(check).toMatchObject({ ok: false, reason: "invalid_key", message: "boat.dev refused the key." });
       expect(JSON.stringify(off)).not.toContain(wrong);
     } finally {
       server.stop();

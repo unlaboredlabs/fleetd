@@ -14,8 +14,10 @@
 // and Daytona, a line each. `machines-places` has machines and boat.dev both, so What runs where's Linux machine is a
 // pick; `machines-places-one` a machine alone, a plain value.
 // `machines-none` is a team with no machine of its own, its agents only in boat.dev through the hub's runner, which has no
-// Claude account yet (W721): the list's empty state with its own Add machine, and the runner's one notice over the
-// providers.
+// Claude account yet (W721): the list's empty state with its own Add machine, and boat.dev's row saying so with Connect.
+// The boat.dev row's own states (W743), on a team whose agents run only there: `machines-hosted-starting` while the
+// hub's runner comes up, `machines-hosted-ready` with 3 of 20 running, `machines-hosted-refused` after boat.dev refused a
+// sandbox for billing (why, its fix and Try again), and `machines-sandboxes-on` its key refused at its test (Test again).
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -258,8 +260,8 @@ const SANDBOXES_ON_PAUSED: JsonObject = {
         ok: false,
         at: "2026-10-19T08:55:00.000Z",
         reason: "invalid_key",
-        message: "devbox: boat.dev refused the key (401).",
-        fix: "Make a new one in boat.dev's dashboard and connect it again.",
+        message: "boat.dev refused the key.",
+        fix: "make a new key in boat.dev's dashboard and connect it again",
       },
     },
   ],
@@ -357,6 +359,34 @@ function none(from: Fixture): Fixture {
   return f;
 }
 
+/** A team whose agents run only in boat.dev, through the hub's runner in `runner`'s state, with `hosted` the slot
+ * board's live word on boat.dev (its count and trouble) and `provider` what sandbox_get says of it. */
+function hostedOnly(from: Fixture, name: string, note: string, runner: JsonObject, hosted: JsonObject, provider: JsonObject = {}): Fixture {
+  const f = one(from, name, note);
+  const machine: JsonObject = { machineId: "hosted", name: "Hosted sandboxes", runner: true, lastSeenAt: f.now, nodeVersion: "0.9.0", ...runner };
+  f.snapshot = { ...f.snapshot, machines: [machine] };
+  const slots = (s: JsonValue | undefined): JsonObject => ({ ...(isObject(s) ? s : { cap: 20, used: 0, queued: 0, perProject: [] }), hosted: [{ provider: "boat", limit: 20, ...hosted }] });
+  f.snapshot["slots"] = slots(f.snapshot["slots"]);
+  for (const frame of f.live) {
+    if (Array.isArray(frame["machines"])) frame["machines"] = [];
+    if (frame["slots"] !== undefined) frame["slots"] = slots(frame["slots"]);
+  }
+  f.update("machine_roles", (out) => (isObject(out) ? { ...out, machines: [] } : out));
+  const boat: JsonObject = { provider: "boat", connected: true, limit: 20, running: 0, check: { ok: true, at: f.now }, ...provider };
+  f.answer("sandbox_get", undefined, { ...SANDBOXES_OFF, placing: true, providers: [boat] });
+  f.answer("sandbox_test", undefined, { ...SANDBOXES_OFF, placing: true, providers: [boat] });
+  return f;
+}
+
+/** boat.dev's refusal of a sandbox for billing, as the hub has it from the runner. */
+const BILLING: JsonObject = {
+  what: "start",
+  reason: "billing",
+  message: "boat.dev refused: billing isn't set up on the account",
+  fix: "set up billing in boat.dev's dashboard",
+  until: "2026-10-19T09:10:00.000Z",
+};
+
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
@@ -397,6 +427,20 @@ export default defineGroup({
     ),
     onePlace(base("empty")),
     none(base("empty")),
+    hostedOnly(base("empty"), "machines-hosted-starting", "boat.dev connected and the hub's runner coming up: Starting… on its row, no button", {
+      status: "degraded",
+      degradedReason: "Starting…",
+      degradedCause: "starting",
+    }, { running: 0 }),
+    hostedOnly(base("empty"), "machines-hosted-ready", "boat.dev ready with 3 of its 20 sandboxes running", { status: "online" }, { running: 3 }, { running: 3 }),
+    hostedOnly(
+      base("empty"),
+      "machines-hosted-refused",
+      "boat.dev refused a sandbox for billing: Couldn't start with why, its fix and Try again",
+      { status: "online" },
+      { running: 0, trouble: BILLING },
+      { trouble: BILLING },
+    ),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),
     ]),

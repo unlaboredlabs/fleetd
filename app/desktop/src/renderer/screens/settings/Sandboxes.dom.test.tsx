@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 // The hosted sandbox provider in Hub › Machines' Providers (boat.dev), saying what it runs; Connect opens a sealed key
 // field whose key goes to main only, never shown again; once connected, the limit and a menu with Test and Disconnect.
-// While no machine places agents there yet the section says so. What runs where is two rows: Linux machine, a pick once
+// Its dot and line are its real state: Starting…, Ready with how many run, Needs a Claude account (Connect), Couldn't
+// start with why and its fix (Try again), a refused key (Test again). What runs where is two rows: Linux machine, a pick once
 // there is more than one place, and Mac machine. A hub too old for sandbox_get shows no provider.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { SandboxProviderState, SandboxState } from "../../../shared/contracts";
+import type { Machine, ProviderTrouble, SandboxProviderState, SandboxState, SlotState } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
 import type { SandboxKeyRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -42,6 +43,7 @@ beforeEach(() => {
   calls = [];
   sealed = [];
   state = off;
+  snap = { machines: [], slots: { cap: 12, used: 0, queued: 0, perProject: [] } };
   testAnswer = boatOn;
   (globalThis as { fleetd?: unknown }).fleetd = {
     platform: "linux",
@@ -61,6 +63,9 @@ afterEach(() => {
 });
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+
+/** The hub's machines and slot board in its snapshot: its runner, and the live count and trouble. */
+let snap: { machines: Machine[]; slots: SlotState } = { machines: [], slots: { cap: 12, used: 0, queued: 0, perProject: [] } };
 
 const render = async () => {
   let listener: (frame: HubFrame) => void = () => undefined;
@@ -102,7 +107,7 @@ const render = async () => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [], slots: { cap: 12, used: 0, queued: 0, perProject: [] } } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: snap.machines, projects: [], slots: snap.slots } });
     await new Promise((r) => setTimeout(r, 0));
   });
   await settle();
@@ -144,7 +149,7 @@ const typeInto = async (label: string, text: string) => {
 
 const where = (kind: string) => host.querySelector<HTMLElement>(`[data-where-kind='${kind}']`);
 
-it("lists boat.dev with what it runs and Connect, and says none runs agents yet", async () => {
+it("lists boat.dev with what it runs and Connect, and no stale line about agents not running there", async () => {
   await render();
   const rows = [...host.querySelectorAll<HTMLElement>("[data-sandbox]")].map((r) => r.getAttribute("data-sandbox"));
   expect(rows).toEqual(["boat"]);
@@ -152,10 +157,10 @@ it("lists boat.dev with what it runs and Connect, and says none runs agents yet"
   expect(row("boat")?.querySelector("[role='alert'], [role='status']:not(:empty)")).toBeNull();
   expect(row("boat")?.querySelector("[data-mark='off']")).not.toBeNull();
   expect(button("Connect", within(row("boat")))).toBeDefined();
-  expect(host.textContent).toContain("Agents don't run in hosted sandboxes yet");
+  expect(host.textContent).not.toContain("Agents don't run in hosted sandboxes yet");
 });
 
-it("connects boat.dev through a sealed field whose key goes to main only, then says it works", async () => {
+it("connects boat.dev through a sealed field whose key goes to main only, then says it is ready", async () => {
   await render();
   await click(button("Connect", within(row("boat"))));
   expect(host.querySelector("input[aria-label='boat.dev API key']")?.hasAttribute("data-secret")).toBe(true);
@@ -167,23 +172,90 @@ it("connects boat.dev through a sealed field whose key goes to main only, then s
   expect(JSON.stringify(calls)).not.toContain(KEY);
   expect(host.textContent).not.toContain(KEY);
   expect(row("boat")?.getAttribute("data-sandbox-state")).toBe("connected");
-  expect(row("boat")?.textContent).toContain("Works");
+  expect(words()).toBe("Ready · 0 of 5 running");
   expect(row("boat")?.querySelector("[data-mark='ready']")).not.toBeNull();
   expect(row("boat")?.querySelector("button[aria-haspopup='menu']")).not.toBeNull();
 });
 
 it("says what a failed test found with its fix, and disconnects", async () => {
   state = boatOn;
-  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "devbox: boat.dev refused the key", fix: "make a new one" } });
+  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "boat.dev refused the key.", fix: "make a new key in boat.dev's dashboard and connect it again" } });
   await render();
-  expect(row("boat")?.textContent).not.toContain("Works");
+  expect(row("boat")?.querySelector("[role='alert']")).toBeNull();
   await fromMenu("boat", "Test");
   expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
-  expect(row("boat")?.querySelector("[role='alert']")?.textContent).toBe("devbox: boat.dev refused the key Make a new one.");
+  // No machine's name and no status code; Test again on the line itself.
+  expect(words()).toBe("boat.dev refused the key. Make a new key in boat.dev's dashboard and connect it again.");
   expect(row("boat")?.querySelector("[data-mark='failed']")).not.toBeNull();
+  calls = [];
+  await click(button("Test again", within(row("boat"))));
+  expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
   await fromMenu("boat", "Disconnect");
   expect(calls.find((c) => c.tool === "sandbox_disconnect")?.input).toEqual({ provider: "boat" });
   expect(row("boat")?.getAttribute("data-sandbox-state")).toBe("off");
+});
+
+const runner = (status: Machine["status"], more: Partial<Machine> = {}): Machine => ({
+  machineId: "hosted",
+  name: "Hosted sandboxes",
+  nodeVersion: "1.0.0",
+  status,
+  lastSeenAt: AT,
+  runner: true,
+  tags: [],
+  ...more,
+});
+const billing: ProviderTrouble = {
+  what: "start",
+  reason: "billing",
+  message: "boat.dev refused: billing isn't set up on the account",
+  fix: "set up billing in boat.dev's dashboard",
+  until: "2026-11-17T10:10:00.000Z",
+};
+const line = () => row("boat");
+/** The row's line, without the button at its end. */
+const words = () => row("boat")?.querySelector("[data-line]")?.textContent;
+
+it("says Starting… while its runner comes up, with no button", async () => {
+  state = boatOn;
+  snap.machines = [runner("degraded", { degradedCause: "starting", degradedReason: "Starting…" })];
+  await render();
+  expect(row("boat")?.getAttribute("data-hosted-state")).toBe("starting");
+  expect(words()).toBe("Starting…");
+  expect(row("boat")?.querySelector("[data-mark='starting']")).not.toBeNull();
+  expect(button("Try again", within(row("boat")))).toBeUndefined();
+});
+
+it("is Ready with how many of its limit run now, from the hub's live count", async () => {
+  state = boatOn;
+  snap = { machines: [runner("online")], slots: { cap: 12, used: 3, queued: 0, perProject: [], hosted: [{ provider: "boat", limit: 20, running: 3 }] } };
+  await render();
+  expect(words()).toBe("Ready · 3 of 20 running");
+  expect(row("boat")?.querySelector("[data-mark='ready']")).not.toBeNull();
+});
+
+it("needs a Claude account, with Connect on the line", async () => {
+  state = boatOn;
+  snap.machines = [runner("degraded", { degradedCause: "claude_login", degradedReason: "no Claude account is connected for hosted sandboxes" })];
+  await render();
+  expect(words()).toBe("Needs a Claude account");
+  expect(row("boat")?.querySelector("[data-mark='needs']")).not.toBeNull();
+  expect(button("Connect", line() ?? undefined)).toBeDefined();
+  // The separate notice above the providers is gone: the row says it.
+  expect(host.querySelector("[data-hosted-account]")).toBeNull();
+});
+
+it("a refusal turns it red with the reason and its fix, and Try again asks again", async () => {
+  state = withRow(off, { provider: "boat", connected: true, limit: 20, running: 0, check: { ok: true, at: AT }, trouble: billing });
+  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 20, running: 0, check: { ok: true, at: AT } });
+  snap.machines = [runner("online")];
+  await render();
+  expect(row("boat")?.querySelector("[data-mark='failed']")).not.toBeNull();
+  expect(words()).toBe("Couldn't start: boat.dev refused: billing isn't set up on the account. Set up billing in boat.dev's dashboard.");
+  await click(button("Try again", line() ?? undefined));
+  expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
+  expect(row("boat")?.querySelector("[role='alert']")).toBeNull();
+  expect(words()).toBe("Ready · 0 of 20 running");
 });
 
 it("What runs where is two rows: the Linux machine a pick once boat.dev is connected, the Mac machine a value", async () => {

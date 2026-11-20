@@ -45,8 +45,10 @@ export function ProviderRow(props: {
   hint?: string | undefined;
   connected: boolean;
   mark: Mark;
-  /** What its last check found: the row's line, null for none. */
-  line: { node: ReactNode; tone?: TextTone | undefined } | null;
+  /** The dot's words for assistive tech; absent: connected, its key failed, or not connected. */
+  markLabel?: string | undefined;
+  /** Its state or what its last check found: the row's line, with the one button that fixes it; null for none. */
+  line: { node: ReactNode; tone?: TextTone | undefined; action?: ReactNode } | null;
   /** Connected: what it has to set, before its menu. */
   setting?: ReactNode;
   busy: Busy;
@@ -86,7 +88,9 @@ export function ProviderRow(props: {
     <SettingsRow
       reveal={props.reveal}
       mark={props.mark}
-      markLabel={props.connected ? (props.mark === "failed" ? `${props.name}: its key failed` : `${props.name}: connected`) : `${props.name}: not connected`}
+      markLabel={
+        props.markLabel ?? (props.connected ? (props.mark === "failed" ? `${props.name}: its key failed` : `${props.name}: connected`) : `${props.name}: not connected`)
+      }
       title={
         props.can === undefined ? (
           props.name
@@ -103,6 +107,7 @@ export function ProviderRow(props: {
       hint={props.hint}
       line={line?.node ?? null}
       lineTone={line?.tone}
+      lineAction={running === null ? props.line?.action : undefined}
       control={control}
       data={props.data}
     >

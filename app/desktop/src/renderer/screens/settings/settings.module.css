@@ -402,6 +402,13 @@
   flex-basis: 100%;
   margin: 0;
 }
+/* A provider's state line with the one button that fixes it at its end, wrapping under the words when narrow. */
+.rowLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
 /* A hosted sandbox provider's limit, "500 at once" at most. */
 .sandboxLimit {
   width: 132px;

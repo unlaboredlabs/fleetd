@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import type { SandboxState } from "../../../desktop/src/shared/contracts";
 import { useHub, type SettingsProps } from "../hubContext";
-import { canWords, limitChoices, limitWords, providerFooter, providerName, providersOf, specOf, type ProviderState } from "../machines";
+import { canWords, type HostedAction, limitChoices, limitWords, providerFooter, providerName, providersOf, runnerOf, specOf, type ProviderState } from "../machines";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
@@ -14,7 +14,7 @@ import { sealToHub } from "./vault/api";
 /** Connect and Test wait for the provider's answer from one of the team's machines (the hub waits up to 45 s for it). */
 const CHECK_TIMEOUT_MS = 60_000;
 
-export function Provider({ route }: SettingsProps<"Provider">) {
+export function Provider({ route, navigation }: SettingsProps<"Provider">) {
   const t = useTheme();
   const { session } = useHub();
   const read = useRead(() => session.call("sandbox_get", {}), [session]);
@@ -36,15 +36,15 @@ export function Provider({ route }: SettingsProps<"Provider">) {
       ) : state === undefined ? (
         <Problem text="This hub doesn't have it." />
       ) : (
-        <Keyed p={state} boxPubKey={boxPubKey} reload={read.reload} />
+        <Keyed p={state} boxPubKey={boxPubKey} reload={read.reload} connectClaude={() => navigation.navigate("Claude")} />
       )}
     </ScrollView>
   );
 }
 
-function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; reload: () => void }) {
+function Keyed({ p, boxPubKey, reload, connectClaude }: { p: ProviderState; boxPubKey: string; reload: () => void; connectClaude: () => void }) {
   const t = useTheme();
-  const { session } = useHub();
+  const { session, state } = useHub();
   const name = providerName(p.id);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<"connect" | "test" | "limit" | "disconnect" | null>(null);
@@ -95,15 +95,22 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
       onConfirm: () => void run("disconnect", () => session.call("sandbox_disconnect", { provider: p.id }), "Not disconnected"),
     });
 
-  const footer = providerFooter(p);
+  // Its real state (shared/hostedRow.ts, as the desktop's row): while someone has to act, why with its fix, and the
+  // one row that fixes it.
+  const footer = providerFooter(p, runnerOf(state.machines));
+  const test = () => void run("test", () => session.call("sandbox_test", { provider: p.id }, CHECK_TIMEOUT_MS), "Not tested");
+  const fix = footer?.action;
   const footerText = problem ?? footer?.text;
   return (
     <>
       <ListSection header={canWords(specOf(p.id))} {...(footerText === undefined || problem !== undefined || footer?.problem === true ? {} : { footer: footerText })}>
         {p.connected ? (
           <>
+            {fix === undefined || problem !== undefined ? null : (
+              <ListRow title={busy === "test" ? "Testing…" : FIX_TITLES[fix]} {...(busy === null ? { onPress: fix === "connect" ? connectClaude : test } : {})} chevron={fix === "connect"} />
+            )}
             {p.limit === undefined ? null : <ListRow title="At Once" value={limitWords(p.limit)} {...(busy === null ? { onPress: pickLimit } : {})} chevron={false} />}
-            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: () => void run("test", () => session.call("sandbox_test", { provider: p.id }, CHECK_TIMEOUT_MS), "Not tested") } : {})} chevron={false} />
+            <ListRow title={busy === "test" ? "Testing…" : "Test"} value={works ? "Works" : undefined} valueColor={t.success} {...(busy === null ? { onPress: test } : {})} chevron={false} />
             <ListRow title={busy === "disconnect" ? "Disconnecting…" : "Disconnect"} destructive {...(busy === null ? { onPress: disconnect } : {})} chevron={false} />
           </>
         ) : (
@@ -133,6 +140,9 @@ function Keyed({ p, boxPubKey, reload }: { p: ProviderState; boxPubKey: string; 
     </>
   );
 }
+
+/** The fix's row, in the phone's title case: the desktop's button words (shared/hostedRow.ts ACTION_LABELS). */
+const FIX_TITLES: Readonly<Record<HostedAction, string>> = { connect: "Connect a Claude Account", retry: "Try Again", test: "Test Again" };
 
 const styles = StyleSheet.create({
   loading: { marginTop: 64 },

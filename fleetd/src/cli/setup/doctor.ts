@@ -119,7 +119,8 @@ export async function addProject(home: string, machineId: string, path: string):
   }
 }
 
-const CHECKING = ["checking the node's runner", "checking the node's claude runner"];
+// "Starting…" from this hub on; the words before it from older hubs.
+const CHECKING = ["Starting…", "checking the node's runner", "checking the node's claude runner"];
 
 /** A machine's degraded reason that only means its first runner check hasn't answered yet. */
 export const stillChecking = (reason: string) => CHECKING.some((c) => reason.includes(c));
