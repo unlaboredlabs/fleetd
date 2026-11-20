@@ -24,7 +24,7 @@ export function register(tools: Registry): void {
     }
     if (!found) throw notFound(scope, input.name);
     // A bot's server that signs in is the team's from now on: one sign-in for every bot.
-    const server = await teamScope(hub, found);
+    const server = await teamScope(hub, found, caller.person?.personId);
     if (!urlOf(server)) {
       throw new ToolError(
         "invalid",
