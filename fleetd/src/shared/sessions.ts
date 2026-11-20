@@ -531,6 +531,11 @@ export type MachineEvent =
   | ({ type: "steer" } & SteerReceipt)
   /** A checkout's computer image changed: a build started, ended or failed. */
   | { type: "image"; projectId: ProjectId; image: ComputerImage }
+  /** A hosted box's work didn't come back to the machine (node/place/hosted.ts): after a turn (`not_back`, tried
+   * again after the next), as the box ended (`kept`: the box is kept and tried again until `untilMs`), or for good
+   * (`given_up`: the box was deleted without it). `text` is the lead's line, after the task's id. Only a runner of
+   * fleetd's cloud runs hosted boxes, and the cloud routes it; a self-hosted hub never gets one. */
+  | { type: "box_work"; sessionId: string; state: "not_back" | "kept" | "given_up"; text: string; untilMs?: number }
   /** Everything before it on this subscription is out. */
   | { type: "caught_up" };
 

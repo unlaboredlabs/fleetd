@@ -16,7 +16,7 @@ import { rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { mkdirPrivate, readConfig } from "../config.ts";
 import type { ClaudeAccount, ComputerImage } from "../../shared/contracts.ts";
-import type { McpSessionConfig, SkillBundle } from "../../shared/sessions.ts";
+import type { MachineEvent, McpSessionConfig, SkillBundle } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
@@ -597,6 +597,12 @@ export class SessionService {
     const env: Record<string, string> = { ...gitCommandEnv() } as Record<string, string>;
     for (const [k, v] of projectVars(this.home, projectId)) if (!(k in env) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
     return { env, secrets: projectSecrets(this.home, projectId) };
+  }
+
+  /** A hosted box's work didn't come back (place/hosted.ts `boxWork`): the server this runner links to (fleetd's cloud)
+   * tells the task's lead. */
+  boxWork(e: Omit<Extract<MachineEvent, { type: "box_work" }>, "type">): void {
+    this.#machine(this.store.appendEvent({ type: "box_work", ...e }));
   }
 
   /** A checkout's computer image changed: the hub hears it, and tells its apps. */

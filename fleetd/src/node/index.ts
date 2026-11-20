@@ -22,7 +22,7 @@ import { boxOf, inBox, runnerProvider, useRunner } from "./place/index.ts";
 import { Images, useImages } from "./place/image.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
 import { NodeTailnet, nodeTailnet, setNodeTailnet } from "./sandbox/tailnet.ts";
-import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
+import { BOX_CLAUDE, boxWork, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
@@ -405,6 +405,8 @@ export async function startNode(
     setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
   }
   const sessions = await SessionService.start(sessionConfig);
+  // A hosted box whose work didn't come back: the server it links to (fleetd's cloud) tells the task's lead.
+  boxWork.said = (e) => sessions.boxWork(e);
   // Its bots' computer images (place/image.ts): on the hub's runner, in the hosted provider's snapshots.
   useImages(
     new Images({

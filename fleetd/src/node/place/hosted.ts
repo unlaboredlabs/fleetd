@@ -11,9 +11,11 @@
 //   bot's computer image (`buildSnapshot`): a box that ran only its setup, with its bot's variables and no session's,
 //   checked for their values, then saved by the provider; a session placed in that provider starts from it.
 // - After each of its turns, its work comes back to the machine's worktree and its transcript to the machine's
-//   (`checkpoint`), so a box that dies loses only the turn under way. Once the session host in it is gone (the agent
-//   idled out, stopped, or the box died), they come back once more where the box still answers, and the box is
-//   destroyed. The next start makes a new one, from the work as it came back last.
+//   (`checkpoint`), so a box that dies loses only the turn under way; one that doesn't come back is said to the lead.
+//   Once the session host in it is gone (the agent idled out, stopped, or the box died), they come back once more
+//   where the box still answers, and the box is destroyed. A box whose work still didn't come back is kept instead and
+//   tried again for a while (`KEPT`), then given up with the lead told. The next start makes a new one, from the work
+//   as it came back last.
 // - A box is kept alive by its provider's lifetime, extended while it runs. One that can't be extended (a revoked key,
 //   an outage) is reported, and ended with its work brought back before its lifetime is out; so is every box of a
 //   provider whose key is disconnected (`endHosted`).
@@ -23,7 +25,7 @@
 // - The team's tailnet (its Tailscale gateway, which the hub runs) is in every box while it is on, from the box's
 //   start, before its repo comes in (../sandbox/tailnet_box.ts): Claude's endpoint, a git host or an MCP server there
 //   is reached as the box reaches the internet. Nothing of this machine's own network is relayed into a box.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CLAUDE_PATH, ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { Stages } from "../../shared/stages.ts";
@@ -88,6 +90,8 @@ type Live = {
   failed: number;
   /** Stops sending the launch's files again as they change (`keepMirrored`). */
   refresher?: () => void;
+  /** Its work didn't come back after its last turn, and the lead was told. */
+  notBack?: boolean;
 };
 
 /** The keep-alive's timing: an extension every `everyMs`; after one fails, again every `retryMs`, and the session ends
@@ -97,6 +101,41 @@ export const KEEP_ALIVE = { everyMs: EXTEND_MS, retryMs: 2 * 60_000, endBeforeMs
 /** How often the files a session's launch named are checked for changes (the order's variables, which the node
  * rewrites when the hub renews its GitHub token) and sent to the box again. Tests set a shorter one. */
 export const REFRESH = { everyMs: 30_000 };
+
+/**
+ * A box whose work didn't come back as its session ended is kept, not deleted with the only copy of that work: tried
+ * again at once, then every `everyMs` (the node's sweep, and its start) for `forMs` from then, within the hour its life
+ * is set to when it is kept. boat.dev erases a stopped box's disk, so a kept box runs, and costs as one does, until its
+ * work is back or the last try; then it is deleted without it and the lead is told. Tests set shorter ones.
+ */
+export const KEPT = { forMs: 50 * 60_000, everyMs: 10 * 60_000 };
+
+/** A box's work that didn't come back, for the task's lead: node/index.ts hands it, as a machine event, to the server
+ * the runner links to (fleetd's cloud). */
+export type BoxWork = { sessionId: string; state: "not_back" | "kept" | "given_up"; text: string; untilMs?: number };
+export const boxWork: { said?: (e: BoxWork) => void } = {};
+
+/** Why, as one short line for the lead: git's first line, not its advice. */
+const short = (why: string) => {
+  const line = why.split("\n")[0]!.trim();
+  return line.length > 240 ? `${line.slice(0, 239)}…` : line;
+};
+
+const say = (e: BoxWork) => {
+  try {
+    boxWork.said?.(e);
+  } catch {}
+};
+
+/** `ms` (epoch, or an ISO time) as the lead reads it: `21:36 UTC`. */
+const hhmm = (at: number | string | undefined) => (at === undefined ? "its start" : `${new Date(at).toISOString().slice(11, 16)} UTC`);
+
+/** A kept box, as `<home>/sandbox/kept/<session>.json` holds it: outside the session's host dir, which a stop removes. */
+type KeptBox = { record: HostedRecord; untilMs: number };
+const keptDir = (home: string) => join(home, "sandbox", "kept");
+const keptFile = (home: string, session: string) => join(keptDir(home), `${session}.json`);
+/** Kept boxes being tried now. */
+const retrying = new Set<string>();
 
 const live = new Map<string, Live>();
 const making = new Map<string, Promise<Live>>();
@@ -199,6 +238,9 @@ async function ensure(provider: ProviderId, session: string, dir: string, cwd: s
   const made = (async (): Promise<Live> => {
     const b = need();
     const home = homeOf(dir);
+    // A box kept from the session's last end goes first, its work brought back if it can be: a new box starts from the
+    // machine's worktree, and the kept one's work must never land over the new one's.
+    await settleKept(home, session);
     // A record without a live box here: what a node before this one left. That box goes first.
     const old = readRecord(dir);
     if (old) await teardown(session, dir);
@@ -396,21 +438,41 @@ export function teardown(session: string, dir: string, o: { takeBack?: boolean }
       console.warn(`${nowIso()} WARN a hosted box was lost: its work since its last checkpoint didn't come back {"sessionId":"${session}","since":"${record.since ?? ""}"}`);
       box = undefined;
     }
+    let kept = false;
     if (box && o.takeBack !== false && record.cwd && record.base && existsSync(record.cwd)) {
       try {
         await syncOut(box, { cwd: record.cwd, session, base: record.base, env: record.env ?? {} });
       } catch (error) {
-        console.warn(`${nowIso()} WARN a hosted box's work didn't come back {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+        let why: string | undefined = (error as Error).message;
+        // Once more at once, over a link of its own: the session's may have dropped as it ended.
+        try {
+          const again = await b.open(record, session);
+          try {
+            await syncOut(again, { cwd: record.cwd, session, base: record.base, env: record.env ?? {} });
+            why = undefined;
+          } finally {
+            again.close();
+          }
+        } catch (error) {
+          why = (error as Error).message;
+        }
+        if (why !== undefined) {
+          console.warn(`${nowIso()} WARN a hosted box's work didn't come back {"sessionId":"${session}","error":${JSON.stringify(why)}}`);
+          // Not deleted with the only copy of that work: kept, and tried again.
+          kept = await keep(b, record, homeOf(dir), why);
+        }
       }
     }
     if (box && o.takeBack !== false && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
     box?.close();
     l?.box.close();
-    try {
-      await b.destroy(record);
-    } catch (error) {
-      // The reaper deletes it later, by its labels.
-      console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+    if (!kept) {
+      try {
+        await b.destroy(record);
+      } catch (error) {
+        // The reaper deletes it later, by its labels.
+        console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+      }
     }
     rmSync(recordFile(dir), { force: true });
   })().finally(() => {
@@ -450,9 +512,114 @@ async function bringBack(l: Live): Promise<void> {
     await syncOut(box, { cwd: record.cwd, session: record.session, base: record.base, env: record.env ?? {} });
     if (record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
     record.since = at;
+    l.notBack = false;
     if (live.get(record.session) === l) save(l.dir, record);
   } catch (error) {
-    console.warn(`${nowIso()} WARN a hosted box's work didn't come back after its turn: the next turn tries again {"sessionId":"${record.session}","error":${JSON.stringify((error as Error).message)}}`);
+    const why = (error as Error).message;
+    console.warn(`${nowIso()} WARN a hosted box's work didn't come back after its turn: the next turn tries again {"sessionId":"${record.session}","error":${JSON.stringify(why)}}`);
+    if (l.notBack) return;
+    l.notBack = true;
+    say({ sessionId: record.session, state: "not_back", text: `its sandbox's work since ${hhmm(record.since)} didn't come back to the machine after its turn (${short(why)}); fleetd tries again after its next turn.` });
+  }
+}
+
+/**
+ * Keeps the box of `record`, whose work didn't come back as it ended (`why`): its life set to an hour from now and its
+ * record kept for `tryKept`. False when it couldn't be kept: the box goes, and the lead is told its work went with it.
+ */
+async function keep(b: Boxes, record: HostedRecord, home: string, why: string): Promise<boolean> {
+  const untilMs = Date.now() + KEPT.forMs;
+  try {
+    await b.extend(record);
+    mkdirSync(keptDir(home), { recursive: true, mode: 0o700 });
+    writeFileSync(keptFile(home, record.session), JSON.stringify({ record, untilMs } satisfies KeptBox), { mode: 0o600 });
+  } catch (error) {
+    const e = (error as Error).message;
+    console.warn(`${nowIso()} WARN a hosted box whose work didn't come back couldn't be kept {"sessionId":"${record.session}","error":${JSON.stringify(e)}}`);
+    say({ sessionId: record.session, state: "given_up", text: givenUp(record, why, `the sandbox couldn't be kept to try again: ${short(e)}`) });
+    return false;
+  }
+  console.warn(`${nowIso()} WARN a hosted box is kept: its work didn't come back as it ended {"sessionId":"${record.session}","until":"${new Date(untilMs).toISOString()}"}`);
+  say({
+    sessionId: record.session,
+    state: "kept",
+    untilMs,
+    text: `its sandbox ended with its work since ${hhmm(record.since)} not back on the machine (${short(why)}), so the sandbox is kept and fleetd tries again every ${KEPT.everyMs / 60_000} minutes until ${hhmm(untilMs)}.`,
+  });
+  return true;
+}
+
+const givenUp = (r: HostedRecord, why: string, then?: string) =>
+  `its sandbox's work since ${hhmm(r.since)} never came back to the machine (${short(why)}${then ? `; ${then}` : ""}), so fleetd gave it up and deleted the sandbox; the machine's worktree has its work as of ${hhmm(r.since)}.`;
+
+/** The ids of the boxes kept here (`keep`), which the node's sweep of leftover boxes leaves alone. */
+export function keptBoxes(home: string): Set<string> {
+  const out = new Set<string>();
+  for (const name of existsSync(keptDir(home)) ? readdirSync(keptDir(home)) : []) {
+    try {
+      out.add((JSON.parse(readFileSync(join(keptDir(home), name), "utf8")) as KeptBox).record.boxId);
+    } catch {}
+  }
+  return out;
+}
+
+/** Before a new box for `session` starts: its kept box's work back if it can be, and the kept box gone either way. */
+export const settleKept = (home: string, session: string) => tryKept(home, session, true);
+
+/** Tries every kept box again (the node's sweep, and its start). */
+export async function retryKept(home: string): Promise<void> {
+  for (const name of existsSync(keptDir(home)) ? readdirSync(keptDir(home)) : []) {
+    if (name.endsWith(".json")) await tryKept(home, name.slice(0, -".json".length), false);
+  }
+}
+
+/**
+ * Brings the kept box of `session` back, if there is one: deleted once its work is on the machine; kept for the next
+ * try while it answers and its time isn't up; else (or `last`: a new box for the session is starting) deleted without
+ * it, and the lead is told.
+ */
+async function tryKept(home: string, session: string, last: boolean): Promise<void> {
+  const file = keptFile(home, session);
+  const b = boxes();
+  if (!b || !existsSync(file) || retrying.has(session)) return;
+  let k: KeptBox;
+  try {
+    k = JSON.parse(readFileSync(file, "utf8")) as KeptBox;
+  } catch {
+    return;
+  }
+  retrying.add(session);
+  try {
+    const r = k.record;
+    let box: Box | undefined;
+    try {
+      box = await b.open(r, session);
+    } catch {}
+    let why: string | undefined;
+    if (!box || box.ended) why = "the sandbox is gone";
+    else if (!r.cwd || !r.base || !existsSync(r.cwd)) why = "its worktree is gone from the machine";
+    else {
+      try {
+        await syncOut(box, { cwd: r.cwd, session, base: r.base, env: r.env ?? {} });
+        if (r.transcript) await fetchNew(box, r.transcript, TRANSCRIPT_MAX);
+      } catch (error) {
+        why = (error as Error).message;
+      }
+    }
+    const answers = box !== undefined && !box.ended;
+    box?.close();
+    if (why !== undefined && !last && answers && Date.now() < k.untilMs) return;
+    if (why === undefined) console.warn(`${nowIso()} WARN a kept hosted box's work came back {"sessionId":"${session}"}`);
+    else say({ sessionId: session, state: "given_up", text: givenUp(r, why, last ? "a new sandbox started from the machine's work" : undefined) });
+    try {
+      await b.destroy(r);
+    } catch (error) {
+      // The reaper deletes it later, by its labels.
+      console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+    }
+    rmSync(file, { force: true });
+  } finally {
+    retrying.delete(session);
   }
 }
 
