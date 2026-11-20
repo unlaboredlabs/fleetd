@@ -96,6 +96,18 @@ export const CLAUDE_LINUX_X64: Readonly<Record<string, string>> = {
   "2.1.314": "4487042b4c4f5d88d4568f68ae98aae0b1ffae58864cf57fb868641bc5f84594",
 };
 export const CLAUDE_DOWNLOADS = "https://downloads.claude.ai/claude-code-releases";
+/** Where every hosted template has its Claude Code, which a hosted start runs (node/place/hosted.ts BOX_CLAUDE): its
+ * own, not /usr/local/bin's, which a provider's image or a bot's setup may hold another of. The pinned binary is
+ * linked here; templates from before it was pinned had its installer's launcher at the same path. */
+export const CLAUDE_PATH = "/opt/claude/.local/bin/claude";
+
+/** What a template must hold before it is saved, run as the box's own user (the one a session runs as) in the build's
+ * box, its last step (each provider's `build`, BuildOptions.check): the Claude Code a start runs, at CLAUDE_PATH and
+ * at `claude`'s version, and the Bun a box's bootstrap runs under. A build that fails it saves nothing, so a template
+ * a start couldn't run in is never one to start from (W756: one without CLAUDE_PATH was, on 2026-11-20). */
+export function templateCheck(claude: string): string {
+  return `test -x ${CLAUDE_PATH} && ${CLAUDE_PATH} --version | grep -q '^${claude.replaceAll(".", "\\.")} ' && bun --version >/dev/null`;
+}
 
 /** The tunnel that carries a box's tailnet connections to its guest (node/sandbox/tailnet_box.ts): hev-socks5-tunnel
  * (MIT), its static x86_64 build, pinned. */
@@ -124,10 +136,11 @@ export function hosted(base: string, pins: HostedPins): string {
   return `${base.trimEnd()}
 
 # Hosted boxes only: Claude Code, the tailnet's tunnel${f ? " and fleetd" : ""}, pinned and checked (sandbox/providers/recipe.ts).
-RUN mkdir -p /opt/claude && curl -fsSL ${CLAUDE_DOWNLOADS}/${pins.claude}/linux-x64/claude -o /opt/claude/claude-${pins.claude} \\
+RUN mkdir -p ${CLAUDE_PATH.slice(0, CLAUDE_PATH.lastIndexOf("/"))} && curl -fsSL ${CLAUDE_DOWNLOADS}/${pins.claude}/linux-x64/claude -o /opt/claude/claude-${pins.claude} \\
  && echo '${claudeSha}  /opt/claude/claude-${pins.claude}' | sha256sum -c - \\
- && chmod 755 /opt/claude/claude-${pins.claude} && ln -sf /opt/claude/claude-${pins.claude} /usr/local/bin/claude \\
- && claude --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
+ && chmod 755 /opt/claude/claude-${pins.claude} \\
+ && ln -sf /opt/claude/claude-${pins.claude} ${CLAUDE_PATH} && ln -sf /opt/claude/claude-${pins.claude} /usr/local/bin/claude \\
+ && chmod -R a+rX /opt/claude && ${CLAUDE_PATH} --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
 RUN curl -fsSL ${TUNNEL.url} -o ${TUNNEL.path} \\
  && echo '${TUNNEL.sha256}  ${TUNNEL.path}' | sha256sum -c - \\
  && chmod 755 ${TUNNEL.path}
@@ -135,12 +148,17 @@ ${fleetd}ENV DISABLE_AUTOUPDATER=1
 `;
 }
 
-/** A template's name for a recipe: the same text, the same name, so a changed pin builds a new one. */
+/** A template's name for a recipe: the same text, the same name, so a changed pin builds a new one. `fleetd-t`: one
+ * built with `templateCheck` passed before its save (the names before it, `fleetd-<hash>`, weren't, and one of them
+ * couldn't run a session: none of those is a template to start from). */
 export function templateName(dockerfile: string): string {
-  return `fleetd-${new Bun.CryptoHasher("sha256").update(dockerfile).digest("hex").slice(0, 12)}`;
+  return `fleetd-t${new Bun.CryptoHasher("sha256").update(dockerfile).digest("hex").slice(0, 12)}`;
 }
 
 /** The hosted template's Dockerfile as fleetd builds it: its base (../image/Dockerfile) and the Claude Code fleetd was
  * tested with. Whoever builds a team's template names it from this (`templateName`), so every builder finds the same
  * one. */
 export const hostedDockerfile = (): string => hosted(base, { claude: TESTED });
+/** The check every hosted template's build passes before its save: `templateCheck` at the Claude Code fleetd was tested
+ * with. */
+export const hostedCheck = (): string => templateCheck(TESTED);

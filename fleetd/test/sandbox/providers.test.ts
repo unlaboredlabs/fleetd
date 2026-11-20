@@ -10,7 +10,8 @@ import { boatStandIn, KEY, SECRET, type StandIn } from "./stand_ins.ts";
 import { GUEST_PORT, provider, ProviderError, type Provider, type ProviderId } from "../../src/sandbox/providers/index.ts";
 import { SAVE_MS, STEP_MS, TYPES, typeFor } from "../../src/sandbox/providers/boat.ts";
 import { DEFAULT_SIZE, SIZES } from "../../src/sandbox/providers/common.ts";
-import { CLAUDE_LINUX_X64, hosted, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
+import { CLAUDE_LINUX_X64, CLAUDE_PATH, hosted, hostedCheck, parse, templateName } from "../../src/sandbox/providers/recipe.ts";
+import { TESTED } from "../../src/node/runner/claude_pins.ts";
 import { envFile, launcher } from "../../src/sandbox/providers/shell.ts";
 
 const running: StandIn[] = [];
@@ -204,6 +205,30 @@ describe("boat.dev's waits end", () => {
     expect(saved.message).toBe(words);
   });
 
+  test("a build proves what a start needs, as the box's own user, last, and saves nothing when it isn't there (W756)", async () => {
+    // Its check fails: the box has no Claude Code where a start runs it.
+    const failing = boatStandIn(undefined, (command) => (command.includes(" --version") && !command.includes("sudo") ? { exitCode: 1, stderr: "no such file" } : { exitCode: 0 }));
+    running.push(failing);
+    const p = provider("boat", { key: KEY }, { urls: { api: `${failing.url}/api/v1` }, pollMs: 5 });
+    await expect(p.build(DOCKERFILE, { name: "fleetd-tabc", check: hostedCheck() })).rejects.toThrow("a step failed");
+    expect(failing.calls.some((c) => c.method === "POST" && c.path === "/api/v1/saved-snapshots")).toBe(false);
+    // One that passes runs after every step of the recipe, before the save, without sudo.
+    const ok = boatStandIn();
+    running.push(ok);
+    const q = provider("boat", { key: KEY }, { urls: { api: `${ok.url}/api/v1` }, pollMs: 5 });
+    expect(await q.build(DOCKERFILE, { name: "fleetd-tabc", check: hostedCheck() })).toBe("fleetd-tabc");
+    const order = ok.calls.filter((c) => (c.method === "POST" && /\/commands$/.test(c.path)) || c.path === "/api/v1/saved-snapshots").map((c) => String(c.body?.command ?? "save"));
+    const at = order.findIndex((c) => c.includes(CLAUDE_PATH));
+    expect(at).toBe(order.length - 2);
+    expect(order.at(-1)).toBe("save");
+    expect(order[at]).not.toContain("sudo");
+    // The program a hosted start runs is the one every template's recipe puts there, and its check names.
+    // (Read off its declaration: other tests point BOX_CLAUDE at a stand-in in this process.)
+    expect(readFileSync(join(import.meta.dir, "../../src/node/place/hosted.ts"), "utf8")).toContain("export const BOX_CLAUDE = { path: CLAUDE_PATH };");
+    expect(hosted(DOCKERFILE, { claude: TESTED })).toContain(`ln -sf /opt/claude/claude-${TESTED} ${CLAUDE_PATH}`);
+    expect(hostedCheck()).toContain(`test -x ${CLAUDE_PATH}`);
+  });
+
   test("a build whose steps and save answer in time is unchanged by the deadlines", async () => {
     const s = boatStandIn();
     running.push(s);
@@ -359,7 +384,7 @@ describe("the recipe", () => {
     expect(d).not.toContain("install.sh");
     expect(d).toContain(`echo '${sha}  /usr/local/bin/fleetd' | sha256sum -c -`);
     expect(parse(d).steps.at(-1)).toEqual({ op: "ENV", args: ["DISABLE_AUTOUPDATER", "1"] });
-    expect(templateName(d)).toMatch(/^fleetd-[0-9a-f]{12}$/);
+    expect(templateName(d)).toMatch(/^fleetd-t[0-9a-f]{12}$/);
     expect(templateName(d)).not.toBe(templateName(DOCKERFILE));
     expect(() => hosted(DOCKERFILE, { claude: "latest", fleetd: { url: "https://x", sha256: sha } })).toThrow("isn't a version");
     // A version with no pinned checksum isn't installed at all.

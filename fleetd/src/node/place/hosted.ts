@@ -25,7 +25,7 @@
 //   is reached as the box reaches the internet. Nothing of this machine's own network is relayed into a box.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
+import { CLAUDE_PATH, ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { Stages } from "../../shared/stages.ts";
 import { NAMES, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
@@ -50,10 +50,10 @@ export const HOSTED_NO_MAC = "This agent runs in a hosted sandbox, so the agents
 /** How a box's reach of Claude is checked (./endpoint.ts probe); tests set a stand-in. */
 export const hostedProbe: { probe?: (box: Box, url: string) => Promise<void> } = {};
 
-/** The Claude Code every hosted template installs, at the version fleetd was tested with (sandbox/providers/recipe.ts):
- * its own install, not /usr/local/bin's, which a provider's image may hold another of (boat's did). Tests set a
- * stand-in. */
-export const BOX_CLAUDE = { path: "/opt/claude/.local/bin/claude" };
+/** The Claude Code every hosted template installs, at the version fleetd was tested with: the recipe's own path
+ * (sandbox/providers/recipe.ts CLAUDE_PATH, which every template's build proves before its save), not /usr/local/bin's,
+ * which a provider's image may hold another of (boat's did). Tests set a stand-in. */
+export const BOX_CLAUDE = { path: CLAUDE_PATH };
 /** Dirs every box has, after the machine's own PATH. */
 const BOX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const TRANSCRIPT_MAX = 512 * 1024 ** 2;
@@ -359,7 +359,7 @@ function letGo(l: Live | undefined): void {
 }
 
 /** The session's box goes: its work and transcript back here, then the box is destroyed. Idempotent. */
-export function teardown(session: string, dir: string): Promise<void> {
+export function teardown(session: string, dir: string, o: { takeBack?: boolean } = {}): Promise<void> {
   const already = ending.get(session);
   if (already) return already;
   const p = (async () => {
@@ -383,14 +383,14 @@ export function teardown(session: string, dir: string): Promise<void> {
       console.warn(`${nowIso()} WARN a hosted box was lost: its work since its last checkpoint didn't come back {"sessionId":"${session}","since":"${record.since ?? ""}"}`);
       box = undefined;
     }
-    if (box && record.cwd && record.base && existsSync(record.cwd)) {
+    if (box && o.takeBack !== false && record.cwd && record.base && existsSync(record.cwd)) {
       try {
         await syncOut(box, { cwd: record.cwd, session, base: record.base, env: record.env ?? {} });
       } catch (error) {
         console.warn(`${nowIso()} WARN a hosted box's work didn't come back {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
       }
     }
-    if (box && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
+    if (box && o.takeBack !== false && record.transcript) await fetchNew(box, record.transcript, TRANSCRIPT_MAX);
     box?.close();
     l?.box.close();
     try {
@@ -631,10 +631,12 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       const l = await boxFor(provider, session, dir, launch.cwd, env, size);
       // A start that fails once the box exists (Claude out of its reach, a host that didn't come up) ends the box and
       // its record, or its keep-alive would renew it and the reaper would spare it; the error reaches the task as is.
+      // A box no session ever ran in has nothing to bring back: its files are the worktree's as they went in.
+      const ran = l.record.registration !== undefined;
       try {
         return await startIn(l, launch);
       } catch (error) {
-        await teardown(session, dir);
+        await teardown(session, dir, { takeBack: ran });
         throw error;
       }
     },

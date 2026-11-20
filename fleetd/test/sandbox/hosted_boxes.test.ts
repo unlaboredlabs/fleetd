@@ -165,16 +165,37 @@ test("the template is built ahead when the keys come, so a box's start waits on 
   await boxes.destroy(record);
 }, 60_000);
 
+test("a template saved before builds proved it is never one to start from, however new (W756)", async () => {
+  const fail = () => ({ exitCode: 100, stderr: "E: broken" });
+  // fleetd-94251c014f62's kind: newer, ready, and without the Claude Code a start runs.
+  const { s, boxes } = await world("boat", { step: fail, before: (s) => {
+    seed(s, "fleetd-94251c014f62", "2026-11-20T21:26:01Z");
+    seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+  } });
+  await boxes.ahead("boat")?.done.catch(() => {});
+  const record = await boxes.create("boat", "sess-proven", [], []);
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
+  await boxes.destroy(record);
+  // With only such a template, the first start waits on a build, saying so, rather than start where it can't run.
+  const { boxes: only } = await world("boat", { step: fail, before: (s) => seed(s, "fleetd-94251c014f62", "2026-11-20T21:26:01Z") });
+  await only.ahead("boat")?.done.catch(() => {});
+  const steps: HostedStep[] = [];
+  const unwatch = watchSteps("sess-unproven", (step) => steps.push(step));
+  await expect(only.create("boat", "sess-unproven", [], [])).rejects.toThrow("boat.dev's sandbox template didn't build");
+  unwatch();
+  expect(steps).toEqual(["template"]);
+}, 60_000);
+
 test("a template this recipe's build fails on: boxes start from the newest ready older one, said so, never saved over (W756 W1)", async () => {
   // boat's base image breaks every step of the build, as its PPA did on 2026-11-20.
   const { s, boxes } = await world("boat", {
     step: () => ({ exitCode: 100, stderr: "E: Repository changed its 'Label' value" }),
     before: (s) => {
-      seed(s, "fleetd-aaaaaaaaaaaa", "2026-11-18T09:00:00Z");
-      seed(s, "fleetd-bbbbbbbbbbbb", "2026-11-10T09:00:00Z");
+      seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z");
+      seed(s, "fleetd-tbbbbbbbbbbbb", "2026-11-10T09:00:00Z");
       // A bot's computer image, and a template whose save failed, are never a template to start from.
       seed(s, "fleetd-p1-0123456789ab", "2026-11-19T09:00:00Z");
-      seed(s, "fleetd-cccccccccccc", "2026-11-19T10:00:00Z", "failed");
+      seed(s, "fleetd-tcccccccccccc", "2026-11-19T10:00:00Z", "failed");
     },
   });
   // The build ahead the keys started fails.
@@ -183,7 +204,7 @@ test("a template this recipe's build fails on: boxes start from the newest ready
   const unwatch = watchSteps("sess-older", (step) => steps.push(step));
   const record = await boxes.create("boat", "sess-older", [], []);
   unwatch();
-  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-aaaaaaaaaaaa");
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
   expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image didn't build; using the one from Nov 18)"]);
   // The start built nothing, and nothing was set aside: the provider takes the next box.
   expect(buildBoxes(s)).toHaveLength(1);
@@ -198,13 +219,13 @@ test("a template this recipe's build fails on: boxes start from the newest ready
 
 test("while this recipe's template is still being built, a box starts from the last good one and says so", async () => {
   // The build's steps never end here: it is still under way when the box starts.
-  const { s, boxes } = await world("boat", { step: () => ({ exitCode: 0, running: true }), before: (s) => seed(s, "fleetd-aaaaaaaaaaaa", "2026-11-18T09:00:00Z") });
+  const { s, boxes } = await world("boat", { step: () => ({ exitCode: 0, running: true }), before: (s) => seed(s, "fleetd-taaaaaaaaaaaa", "2026-11-18T09:00:00Z") });
   await until(() => buildBoxes(s).length === 1);
   const steps: HostedStep[] = [];
   const unwatch = watchSteps("sess-mid", (step) => steps.push(step));
   const record = await boxes.create("boat", "sess-mid", [], []);
   unwatch();
-  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-aaaaaaaaaaaa");
+  expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
   expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image is still being made; using the one from Nov 18)"]);
   await boxes.destroy(record);
 }, 60_000);

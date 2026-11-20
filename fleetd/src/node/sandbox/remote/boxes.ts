@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
-import { hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
+import { hostedCheck, hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
 import { VERSION } from "../../../shared/version.ts";
@@ -281,7 +281,8 @@ export class Boxes {
         console.log(`${nowIso()} INFO building the hosted sandbox template {"provider":"${p}","name":"${name}"}`);
         let release = () => {};
         try {
-          const id = await client.build(recipe, { name, size, onLog: () => {}, labels: { [MACHINE_LABEL]: label(this.machineId) }, onBox: (box) => void (release = this.hold(box)) });
+          // Saved only once what a start runs is proven in it (recipe.ts templateCheck).
+          const id = await client.build(recipe, { name, size, onLog: () => {}, labels: { [MACHINE_LABEL]: label(this.machineId) }, onBox: (box) => void (release = this.hold(box)), check: hostedCheck() });
           console.log(`${nowIso()} INFO the hosted sandbox template is built {"provider":"${p}","name":"${name}"}`);
           return keep(id);
         } finally {
@@ -457,10 +458,11 @@ export class Boxes {
   }
 }
 
-/** The newest ready template of another recipe than `name` (`fleetd-<hash><sized>`, never a bot's computer image),
- * with when it was saved. */
+/** The newest ready template of another recipe than `name`, with when it was saved: only one whose build proved what a
+ * start runs before its save (`fleetd-t<hash><sized>`, recipe.ts templateName), never an older name's (one of those
+ * couldn't run a session) nor a bot's computer image. */
 function lastGood(all: Saved[], name: string, sized: string): { id: string; at: string } | undefined {
-  const re = new RegExp(`^fleetd-[0-9a-f]{12}${sized.replace(/[^a-z0-9-]/g, "")}$`);
+  const re = new RegExp(`^fleetd-t[0-9a-f]{12}${sized.replace(/[^a-z0-9-]/g, "")}$`);
   const ready = all.filter((t) => t.status === "ready" && t.name !== name && re.test(t.name)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return ready[0] ? { id: ready[0].name, at: ready[0].at } : undefined;
 }
