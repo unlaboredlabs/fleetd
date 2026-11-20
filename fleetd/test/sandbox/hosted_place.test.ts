@@ -297,6 +297,31 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(existsSync(join(dir, "place.json"))).toBe(false);
 }, 60_000);
 
+test("a start whose Claude Code isn't in the box says so, and a box no session ran in brings nothing back (W756)", async () => {
+  const { s, home, cwd, env } = await setup();
+  const dir = join(home, "hosts", "s-noclaude");
+  // The template has no Claude Code where the start runs it (fleetd-94251c014f62 on 2026-11-20).
+  BOX_CLAUDE.path = join(tmp, "no-such-claude");
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]) => void warned.push(a.map(String).join(" "));
+  try {
+    const failed = await hostedPlace("boat", "s-noclaude", dir).start({ fleetd: [], dir, sessionId: "s-noclaude", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
+    expect(failed).toBeInstanceOf(BoxNotReady);
+    expect((failed as Error).message).toBe("its boat.dev sandbox came up, but fleetd didn't start in it");
+  } finally {
+    console.warn = warn;
+  }
+  expect(warned.some((w) => w.includes("fleetd's session host didn't come up in a hosted box"))).toBe(true);
+  // Nothing was taken back from a box no session ran in: no second, misleading error, and no sync ref in the repo.
+  expect(warned.filter((w) => w.includes("work didn't come back"))).toEqual([]);
+  expect(sh(cwd, "git for-each-ref refs/fleetd/sync/s-noclaude")).toBe("");
+  // A take-back resets the worktree to what the box sent (files.ts syncOut): none did here.
+  expect(sh(cwd, "git reflog -n 50 --format=%gs")).not.toContain("fleetd/sync/s-noclaude/out-head");
+  expect(s.boxes.size).toBe(0);
+  expect(existsSync(join(dir, "place.json"))).toBe(false);
+}, 60_000);
+
 test("a box checks the Claude account's endpoint, not the gateway on the machine's loopback its claude settings name", async () => {
   const { home, cwd, env } = await setup();
   const cfg = join(tmp, "cfg-loopback");

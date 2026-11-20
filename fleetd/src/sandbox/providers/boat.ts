@@ -269,6 +269,11 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           const lines = env.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n");
           await run(id, `sudo bash -c ${shq(`printf '%s\\n' ${shq(lines)} >> /etc/environment`)}`, true, b.signal);
         }
+        // What a start needs in it, as the box's own user, before anything is saved under the name.
+        if (b.check) {
+          b.onLog?.("checking what a start needs is in the template");
+          await run(id, `bash -c ${shq(`set -e; ${b.check}`)}`, true, b.signal);
+        }
         return await save(id, b.name, b.signal);
       } finally {
         await destroy(id).catch(() => {});

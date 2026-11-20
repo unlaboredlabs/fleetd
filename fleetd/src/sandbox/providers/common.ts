@@ -93,6 +93,9 @@ export type BuildOptions = {
   labels?: Record<string, string>;
   /** Called with the build box's id once it is made, before its first step: its machine keeps it from the reaper. */
   onBox?: (id: string) => void;
+  /** A command the build's box runs last, as its own user (the one a session runs as), before the save: a non-zero exit
+   * fails the build and saves nothing (recipe.ts templateCheck). */
+  check?: string;
 };
 
 /** A template or image saved in the account (`build`'s, `snapshot`'s): its name, its state, and when it was saved. */
